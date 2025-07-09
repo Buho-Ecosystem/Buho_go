@@ -15,11 +15,6 @@
               fill="#43B65B"/>
           </svg>
           <span class="title q-pl-md">BuhoGO</span>
-          <div class="text-h5 q-my-md text-weight-bold gradient-text">Connect Wallet</div>
-          <div class="text-subtitle2" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">Link your Buho Wallet
-            with
-            NWC
-          </div>
         </q-card-section>
 
         <q-card-section class="q-pt-none">
