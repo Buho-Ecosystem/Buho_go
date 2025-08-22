@@ -554,36 +554,41 @@ export default {
 
 /* Stats Section */
 .stats-section {
-  background: white;
-  padding: 1rem;
+  background: #f8f9fa;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid #e5e7eb;
 }
 
 .stats-container {
   display: flex;
   align-items: center;
-  justify-content: space-around;
-  background: #f8f9fa;
-  border-radius: 12px;
-  padding: 1rem;
-  border: 1px solid #e5e7eb;
+  justify-content: space-between;
+  background: white;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .stat-item {
-  text-align: center;
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
 }
 
 .stat-label {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: #6b7280;
-  margin-bottom: 0.125rem;
-  font-weight: 500;
+  margin-bottom: 0.25rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
 }
 
 .stat-value {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .stat-value.positive {
@@ -594,12 +599,7 @@ export default {
   color: #dc2626;
 }
 
-.stat-divider {
-  width: 1px;
-  height: 1.5rem;
-  background: #e5e7eb;
-  margin: 0 0.75rem;
-}
+/* Remove dividers for cleaner mobile look */
 
 /* Transaction Content */
 .transaction-content {
@@ -857,21 +857,17 @@ export default {
   }
   
   .stats-container {
-    padding: 0.75rem;
-    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
   }
   
   .stat-label {
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
+    margin-bottom: 0.125rem;
   }
   
   .stat-value {
-    font-size: 0.875rem;
-  }
-  
-  .stat-divider {
-    height: 1.25rem;
-    margin: 0 0.5rem;
+    font-size: 0.8125rem;
   }
   
   .transaction-item {
@@ -882,17 +878,6 @@ export default {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.25rem;
-  }
-  
-  .stats-container {
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .stat-divider {
-    width: 100%;
-    height: 1px;
-    margin: 0;
   }
   
   .group-header {
