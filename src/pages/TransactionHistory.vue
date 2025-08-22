@@ -588,7 +588,7 @@ export default {
 }
 
 .stat-value.negative {
-  color: #6b7280;
+  color: #dc2626;
 }
 
 .stat-divider {
@@ -661,7 +661,7 @@ export default {
 }
 
 .group-total.negative {
-  color: #6b7280;
+  color: #dc2626;
 }
 
 .expand-icon {
@@ -788,7 +788,7 @@ export default {
 }
 
 .amount-negative {
-  color: #6b7280;
+  color: #dc2626;
 }
 
 .amount-fiat {

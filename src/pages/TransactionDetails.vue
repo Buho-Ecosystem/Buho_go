@@ -706,7 +706,7 @@ export default {
 }
 
 .amount-negative {
-  color: #6b7280;
+  color: #dc2626;
 }
 
 .amount-fiat {
