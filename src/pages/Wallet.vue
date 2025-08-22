@@ -1984,6 +1984,274 @@ export default {
   background: #f8f9fa;
 }
 
+/* Payment Confirmation Dialog */
+.confirmation-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 24px;
+  overflow: hidden;
+  margin: 1rem;
+}
+
+.confirmation-header {
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.confirmation-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.title-icon {
+  font-size: 24px;
+  color: #78D53C;
+}
+
+.confirmation-header .close-btn {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.confirmation-header .close-btn:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.confirmation-content {
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Amount Section */
+.amount-section {
+  text-align: center;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 16px;
+  border: 2px solid #e5e7eb;
+}
+
+.amount-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.amount-display {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.amount-value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #059573;
+  line-height: 1;
+}
+
+.amount-unit {
+  font-size: 1.25rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.amount-fiat {
+  font-size: 1rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+/* Payment Details */
+.payment-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.detail-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.detail-icon {
+  font-size: 16px;
+  color: #9ca3af;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: #1f2937;
+  font-weight: 600;
+  text-align: right;
+  max-width: 60%;
+  word-break: break-word;
+}
+
+/* Slide to Confirm */
+.slide-to-confirm {
+  margin-top: 1rem;
+}
+
+.slide-track {
+  position: relative;
+  width: 100%;
+  height: 64px;
+  background: #f3f4f6;
+  border-radius: 32px;
+  border: 2px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.slide-track.confirmed {
+  background: linear-gradient(135deg, #059573, #43B65B);
+  border-color: #059573;
+}
+
+.slide-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #6b7280;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.confirmed-text {
+  color: white;
+}
+
+.slide-button {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 56px;
+  height: 56px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 2;
+}
+
+.slide-button:active {
+  cursor: grabbing;
+  transform: scale(1.05);
+}
+
+.slide-button.confirmed {
+  background: #059573;
+  color: white;
+}
+
+.slide-button.sending {
+  background: #3b82f6;
+  color: white;
+}
+
+.slide-button .q-icon {
+  font-size: 24px;
+  transition: all 0.3s ease;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Mobile Responsive */
+@media (max-width: 480px) {
+  .confirmation-card {
+    margin: 0.5rem;
+    border-radius: 20px;
+  }
+  
+  .confirmation-header {
+    padding: 1rem;
+  }
+  
+  .confirmation-title {
+    font-size: 1.125rem;
+  }
+  
+  .confirmation-content {
+    padding: 1.5rem 1rem;
+    gap: 1.5rem;
+  }
+  
+  .amount-section {
+    padding: 1rem;
+  }
+  
+  .amount-value {
+    font-size: 2rem;
+  }
+  
+  .amount-unit {
+    font-size: 1rem;
+  }
+  
+  .detail-row {
+    padding: 0.75rem;
+  }
+  
+  .detail-value {
+    max-width: 50%;
+    font-size: 0.8125rem;
+  }
+  
+  .slide-track {
+    height: 56px;
+  }
+  
+  .slide-button {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .slide-text {
+    font-size: 0.875rem;
+  }
+}
+
 /* Responsive Design */
 @media (max-width: 480px) {
   .bottom-actions {
