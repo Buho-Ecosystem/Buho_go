@@ -775,7 +775,7 @@ export default {
 }
 
 .notifications-icon {
-  background: linear-gradient(135deg, #F59E0B, #D97706);
+  background: linear-gradient(135deg, #9CA3AF, #6B7280);
   color: white;
 }
 
