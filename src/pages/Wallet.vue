@@ -1169,15 +1169,22 @@ export default {
       }
     },
 
-    handleQRScan(result) {
-      this.sendForm.input = result.trim();
-      this.showQRScanner = false;
-      this.showSendDialog = false;
-      
-      // Small delay to ensure dialog closes
-      setTimeout(async () => {
-        await this.processPaymentInput();
-      }, 100);
+    async handleQRScan(result) {
+      try {
+        this.sendForm.input = result;
+        this.showQRScanner = false;
+        
+        setTimeout(async () => {
+          await this.processPaymentInput();
+        }, 500);
+      } catch (error) {
+        console.error('Error processing QR scan:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Error processing QR code',
+          position: 'top'
+        });
+      }
     },
 
     async copyInvoice() {
