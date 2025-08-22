@@ -20,11 +20,16 @@
           flat 
           round 
           dense 
-          icon="las la-bars" 
+          class="modern-menu-btn"
           @click="$router.push('/settings')" 
-          class="settings-btn"
           aria-label="Settings"
-        />
+        >
+          <div class="menu-icon">
+            <div class="menu-line"></div>
+            <div class="menu-line"></div>
+            <div class="menu-line"></div>
+          </div>
+        </q-btn>
       </div>
     </div>
 
@@ -868,14 +873,60 @@ export default {
   -webkit-text-fill-color: transparent;
 }
 
-.settings-btn {
+.modern-menu-btn {
   color: #6b7280;
   transition: all 0.2s;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.settings-btn:hover {
+.modern-menu-btn:hover {
   color: #374151;
   background: #f3f4f6;
+  transform: translateY(-1px);
+}
+
+.menu-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 18px;
+  height: 14px;
+}
+
+.menu-line {
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  transition: all 0.3s ease;
+}
+
+.menu-line:nth-child(1) {
+  width: 100%;
+}
+
+.menu-line:nth-child(2) {
+  width: 75%;
+}
+
+.menu-line:nth-child(3) {
+  width: 100%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(1) {
+  width: 75%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(2) {
+  width: 100%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(3) {
+  width: 85%;
 }
 
 /* Main Content */
@@ -1022,7 +1073,7 @@ export default {
 
 .action-btn {
   flex: 1;
-  height: 64px;
+  height: 72px;
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -1033,6 +1084,8 @@ export default {
   transition: all 0.2s ease;
   position: relative;
   overflow: hidden;
+  min-height: 72px;
+  min-width: 120px;
 }
 
 .action-btn:hover {
@@ -1063,7 +1116,7 @@ export default {
 }
 
 .btn-text {
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -1413,7 +1466,9 @@ export default {
   }
   
   .action-btn {
-    height: 56px;
+    height: 68px;
+    min-height: 68px;
+    min-width: 100px;
   }
   
   .main-content {
