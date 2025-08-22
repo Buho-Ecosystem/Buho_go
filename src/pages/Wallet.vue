@@ -2273,6 +2273,8 @@ export default {
 }
 
 /* Manual Input */
+}
+
 .scan-corner.top-right {
   top: -3px;
   right: -3px;
