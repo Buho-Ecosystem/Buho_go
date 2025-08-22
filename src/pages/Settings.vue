@@ -63,9 +63,9 @@
           </div>
           <div class="card-content">
             <div class="card-title">Notifications</div>
-            <div class="card-subtitle">Coming soon</div>
+            <div class="card-subtitle">Live Information</div>
           </div>
-          <div class="coming-soon-badge">Soon</div>
+          <div class="coming-soon-badge">Coming Soon</div>
         </div>
 
         <div class="section-card disabled-card">
@@ -74,9 +74,9 @@
           </div>
           <div class="card-content">
             <div class="card-title">Security</div>
-            <div class="card-subtitle">Coming soon</div>
+            <div class="card-subtitle">PIN Protection</div>
           </div>
-          <div class="coming-soon-badge">Soon</div>
+          <div class="coming-soon-badge">Coming Soon</div>
         </div>
       </div>
     </div>
