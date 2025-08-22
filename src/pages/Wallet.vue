@@ -1,22 +1,30 @@
 <template>
-  <q-page class="wallet-page">
+  <q-page class="wallet-page" :class="{ 'dark-mode': $q.dark.isActive }">
     <!-- Header -->
     <div class="wallet-header">
       <div class="header-content">
         <div class="logo-container">
-          <svg xmlns="http://www.w3.org/2000/svg" width="30" height="32" viewBox="0 0 30 32" fill="none">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo-svg">
             <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                  fill="#059573"/>
+                  fill="var(--color-primary-600)"/>
             <path
               d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-              fill="#78D53C"/>
+              fill="var(--color-accent-400)"/>
             <path
               d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-              fill="#43B65B"/>
+              fill="var(--color-primary-500)"/>
           </svg>
           <div class="title">BuhoGO</div>
         </div>
-        <q-btn flat round dense icon="las la-bars" @click="$router.push('/settings')" class="settings-btn"/>
+        <q-btn 
+          flat 
+          round 
+          dense 
+          icon="las la-bars" 
+          @click="$router.push('/settings')" 
+          class="settings-btn"
+          :aria-label="$t('settings')"
+        />
       </div>
     </div>
 
@@ -24,12 +32,20 @@
     <div class="main-content">
       <!-- Balance Display -->
       <div class="balance-section">
-        <div class="balance-container">
-          <div class="balance-amount" @click="toggleCurrency">
-            <span class="amount-number">{{ formatMainBalance(walletState.balance) }}</span>
-            <span class="amount-unit">{{ getCurrentUnit() }}</span>
+        <div class="balance-container" @click="toggleCurrency" :class="{ 'switching': isSwitchingCurrency }">
+          <div class="balance-amount">
+            <transition name="balance-fade" mode="out-in">
+              <div :key="currentDisplayMode" class="amount-display">
+                <span class="amount-number">{{ formatMainBalance(walletState.balance) }}</span>
+                <span class="amount-unit">{{ getCurrentUnit() }}</span>
+              </div>
+            </transition>
           </div>
-          <div class="balance-fiat" @click="toggleCurrency">{{ getSecondaryValue(walletState.balance) }}</div>
+          <transition name="secondary-fade" mode="out-in">
+            <div :key="currentDisplayMode" class="balance-secondary">
+              {{ getSecondaryValue(walletState.balance) }}
+            </div>
+          </transition>
         </div>
       </div>
 
@@ -42,9 +58,9 @@
           icon="las la-history"
           @click="$router.push('/transactions')"
           class="transaction-history-btn"
-        >
-          <q-tooltip>Transaction History</q-tooltip>
-        </q-btn>
+          aria-label="Open transaction history"
+          :class="{ 'pulse': shouldPulse }"
+        />
       </div>
     </div>
 
@@ -56,8 +72,9 @@
           @click="showReceiveDialog = true"
           no-caps
           unelevated
+          aria-label="Receive payment"
         >
-          <q-icon name="las la-arrow-down" size="28px"/>
+          <q-icon name="las la-arrow-down" size="24px"/>
           <div class="btn-text">Receive</div>
         </q-btn>
         <q-btn
@@ -65,8 +82,9 @@
           @click="showSendDialog = true"
           no-caps
           unelevated
+          aria-label="Send payment"
         >
-          <q-icon name="las la-arrow-up" size="28px"/>
+          <q-icon name="las la-arrow-up" size="24px"/>
           <div class="btn-text">Send</div>
         </q-btn>
       </div>
@@ -106,7 +124,7 @@
                 <q-btn
                   flat
                   dense
-                  color="#059573"
+                  color="primary"
                   icon="las la-paste"
                   label="Paste"
                   @click="pasteFromClipboard"
@@ -245,7 +263,7 @@
             <div class="invoice-actions">
               <q-btn
                 outline
-                color="#059573"
+                color="primary"
                 label="Copy Invoice"
                 icon="las la-copy"
                 @click="copyInvoice"
@@ -253,7 +271,7 @@
               />
               <q-btn
                 flat
-                color="#059573"
+                color="primary"
                 label="Share"
                 icon="las la-share-alt"
                 @click="shareInvoice"
@@ -319,6 +337,8 @@ export default {
       showQRScanner: false,
       isSending: false,
       isCreatingInvoice: false,
+      isSwitchingCurrency: false,
+      shouldPulse: false,
       paymentData: null,
       lightningAddress: '',
       sendForm: {
@@ -331,7 +351,8 @@ export default {
         description: ''
       },
       generatedInvoice: null,
-      refreshInterval: null
+      refreshInterval: null,
+      pulseInterval: null
     }
   },
   computed: {
@@ -344,10 +365,14 @@ export default {
     await this.loadTransactions();
     await this.loadNostrProfiles();
     this.startPeriodicRefresh();
+    this.startPulseAnimation();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
+    }
+    if (this.pulseInterval) {
+      clearInterval(this.pulseInterval);
     }
   },
   watch: {
@@ -417,9 +442,7 @@ export default {
               settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
             }));
 
-            // Sort by date (newest first)
             this.recentTransactions.sort((a, b) => b.settled_at - a.settled_at);
-
             await this.processZapTransactions();
           }
         } catch (error) {
@@ -499,6 +522,32 @@ export default {
       }, 30000);
     },
 
+    startPulseAnimation() {
+      this.pulseInterval = setInterval(() => {
+        this.shouldPulse = true;
+        setTimeout(() => {
+          this.shouldPulse = false;
+        }, 1000);
+      }, 25000);
+    },
+
+    async toggleCurrency() {
+      if (this.isSwitchingCurrency) return;
+      
+      this.isSwitchingCurrency = true;
+      
+      const modes = ['sats', 'fiat', 'btc'];
+      const currentIndex = modes.indexOf(this.currentDisplayMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      
+      this.walletState.displayMode = modes[nextIndex];
+      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+      
+      setTimeout(() => {
+        this.isSwitchingCurrency = false;
+      }, 200);
+    },
+
     formatMainBalance(balance) {
       switch (this.currentDisplayMode) {
         case 'btc':
@@ -538,15 +587,6 @@ export default {
       }
     },
 
-    toggleCurrency() {
-      const modes = ['sats', 'fiat', 'btc'];
-      const currentIndex = modes.indexOf(this.currentDisplayMode);
-      const nextIndex = (currentIndex + 1) % modes.length;
-      
-      this.walletState.displayMode = modes[nextIndex];
-      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-    },
-
     formatBalance(balance) {
       return balance.toLocaleString() + ' sats';
     },
@@ -568,74 +608,6 @@ export default {
       return symbol + fiatValue.toFixed(2);
     },
 
-    getTransactionTypeText(tx) {
-      if (tx.senderNpub && this.nostrProfiles[tx.senderNpub]) {
-        return `Zap from ${this.getSenderDisplayName(tx.senderNpub)}`;
-      }
-      return tx.type === 'incoming' ? 'Received' : 'Sent';
-    },
-
-    getTransactionIconClass(tx) {
-      if (tx.senderNpub) return 'tx-icon-zap';
-      return tx.type === 'incoming' ? 'tx-icon-received' : 'tx-icon-sent';
-    },
-
-    getTransactionIcon(tx) {
-      if (tx.senderNpub) return 'las la-bolt';
-      return tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
-    },
-
-    getAmountClass(tx) {
-      return tx.type === 'incoming' ? 'amount-positive' : 'amount-negative';
-    },
-
-    getFormattedAmount(tx) {
-      const prefix = tx.type === 'incoming' ? '+' : '-';
-      return prefix + ' ' + Math.abs(tx.amount).toLocaleString() + ' sats';
-    },
-
-    getFiatAmount(tx) {
-      const btcAmount = Math.abs(tx.amount) / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
-      
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
-      
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
-    },
-
-    formatTransactionTime(timestamp) {
-      const date = new Date(timestamp * 1000);
-      const now = new Date();
-      const diffInHours = (now - date) / (1000 * 60 * 60);
-      const diffInDays = Math.floor(diffInHours / 24);
-      const diffInMonths = Math.floor(diffInDays / 30);
-
-      if (diffInHours < 1) {
-        const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-        return `${diffInMinutes} minutes ago`;
-      } else if (diffInHours < 24) {
-        return `${Math.floor(diffInHours)} hours ago`;
-      } else if (diffInDays < 30) {
-        return `${diffInDays} days ago`;
-      } else if (diffInMonths === 1) {
-        return 'a month ago';
-      } else {
-        return `${diffInMonths} months ago`;
-      }
-    },
-
-    viewTransactionDetail(tx) {
-      this.$router.push(`/transaction/${tx.id}`);
-    },
-
     async processPaymentInput() {
       this.paymentData = null;
       this.sendForm.amount = '';
@@ -644,7 +616,6 @@ export default {
       if (!this.sendForm.input.trim()) return;
 
       try {
-        // Validate input format first
         const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
         if (!validation.valid) {
           throw new Error(validation.error);
@@ -658,7 +629,6 @@ export default {
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
         this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
         
-        // For zero-amount invoices, we might need to set a default amount
         if (this.paymentData.type === 'lightning_invoice' && this.paymentData.amount === 0) {
           this.paymentData.requiresAmount = true;
         }
@@ -863,29 +833,98 @@ export default {
 </script>
 
 <style scoped>
-/* CSS Variables for consistent theming */
+/* Design Tokens */
 :root {
-  --primary-gradient: linear-gradient(135deg, #059573, #78D53C);
-  --primary-color: #059573;
-  --primary-hover: #047857;
-  --shadow-light: 0 2px 8px rgba(5, 149, 115, 0.15);
-  --shadow-medium: 0 4px 16px rgba(5, 149, 115, 0.2);
-  --border-radius: 20px;
-  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Brand Colors from BuhoGO Logo */
+  --color-primary-400: #78D53C;
+  --color-primary-500: #43B65B;
+  --color-primary-600: #059573;
+  --color-primary-700: #047857;
+  --color-primary-800: #065f46;
+  
+  --color-accent-400: #78D53C;
+  --color-accent-500: #6BC93A;
+  
+  --color-secondary-500: #3B82F6;
+  --color-secondary-600: #2563EB;
+  --color-secondary-700: #1D4ED8;
+  
+  /* Neutral Colors */
+  --color-ink-900: #111827;
+  --color-ink-700: #374151;
+  --color-ink-500: #6B7280;
+  --color-ink-300: #D1D5DB;
+  --color-ink-100: #F3F4F6;
+  
+  --color-surface-50: #FAFBFC;
+  --color-surface-100: #F8F9FA;
+  --color-surface-200: #F1F3F4;
+  
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
+  
+  /* Border Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 50%;
+  
+  /* Shadows */
+  --shadow-soft: 0 2px 8px rgba(5, 149, 115, 0.08);
+  --shadow-medium: 0 4px 16px rgba(5, 149, 115, 0.12);
+  --shadow-strong: 0 8px 32px rgba(5, 149, 115, 0.16);
+  
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* Typography */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
 }
 
+/* Dark Mode Tokens */
+.dark-mode {
+  --color-ink-900: #F9FAFB;
+  --color-ink-700: #E5E7EB;
+  --color-ink-500: #9CA3AF;
+  --color-ink-300: #4B5563;
+  --color-ink-100: #374151;
+  
+  --color-surface-50: #111827;
+  --color-surface-100: #1F2937;
+  --color-surface-200: #374151;
+  
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Base Styles */
 .wallet-page {
-  background: #ffffff;
+  background: var(--color-surface-50);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  color: var(--color-ink-900);
 }
 
 /* Header */
 .wallet-header {
-  background: white;
-  padding: 1rem;
+  background: var(--color-surface-50);
+  padding: var(--spacing-md);
   flex-shrink: 0;
+  border-bottom: 1px solid var(--color-ink-100);
 }
 
 .header-content {
@@ -897,26 +936,42 @@ export default {
 .logo-container {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--spacing-sm);
 }
 
-.logo-container svg {
-  width: 26px;
-  height: 28px;
-  filter: drop-shadow(0 2px 4px rgba(5, 149, 115, 0.2));
+.logo-svg {
+  filter: drop-shadow(0 2px 4px rgba(5, 149, 115, 0.15));
+  transition: var(--transition-normal);
+}
+
+.logo-svg:hover {
+  filter: drop-shadow(0 4px 8px rgba(5, 149, 115, 0.25));
 }
 
 .title {
-  font-size: 1.4rem;
-  font-weight: 700;
-  background: var(--primary-gradient);
+  font-size: 1.375rem;
+  font-weight: var(--font-weight-bold);
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-accent-400));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 1px 2px rgba(5, 149, 115, 0.1));
+  letter-spacing: -0.025em;
 }
 
 .settings-btn {
-  color: #6b7280;
+  color: var(--color-ink-500);
+  transition: var(--transition-fast);
+  border-radius: var(--radius-full);
+}
+
+.settings-btn:hover {
+  color: var(--color-ink-700);
+  background: var(--color-ink-100);
+  transform: scale(1.05);
+}
+
+.settings-btn:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
 }
 
 /* Main Content */
@@ -926,117 +981,151 @@ export default {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 2rem 1rem;
+  padding: var(--spacing-xl) var(--spacing-md);
   min-height: 0;
 }
 
 /* Balance Section */
 .balance-section {
-  padding: 3rem 1rem 2rem;
+  padding: var(--spacing-2xl) var(--spacing-md);
   text-align: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--spacing-lg);
 }
 
 .balance-container {
   max-width: 400px;
   margin: 0 auto;
   cursor: pointer;
-  transition: var(--transition);
+  transition: var(--transition-normal);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
 }
 
 .balance-container:hover {
   transform: translateY(-2px);
+  background: var(--color-surface-100);
+}
+
+.balance-container:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.balance-container.switching {
+  pointer-events: none;
 }
 
 .balance-amount {
+  margin-bottom: var(--spacing-md);
+}
+
+.amount-display {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-  transition: var(--transition);
-}
-
-.balance-amount:active {
-  transform: scale(0.98);
+  gap: var(--spacing-md);
 }
 
 .amount-number {
-  font-size: 4rem;
-  font-weight: 800;
-  color: #1f2937;
+  font-size: 4.5rem;
+  font-weight: var(--font-weight-extrabold);
+  color: var(--color-ink-900);
   line-height: 1;
-  transition: var(--transition);
+  letter-spacing: -0.05em;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .amount-unit {
-  font-size: 1.75rem;
-  color: #6b7280;
-  font-weight: 600;
-  transition: var(--transition);
+  font-size: 1.875rem;
+  color: var(--color-ink-500);
+  font-weight: var(--font-weight-semibold);
 }
 
-.balance-fiat {
-  font-size: 1.4rem;
-  color: #6b7280;
-  font-weight: 400;
-  transition: var(--transition);
-  cursor: pointer;
+.balance-secondary {
+  font-size: 1.5rem;
+  color: var(--color-ink-500);
+  font-weight: var(--font-weight-normal);
 }
 
-.balance-fiat:hover {
-  color: #4b5563;
+/* Balance Transitions */
+.balance-fade-enter-active,
+.balance-fade-leave-active,
+.secondary-fade-enter-active,
+.secondary-fade-leave-active {
+  transition: var(--transition-normal);
 }
 
-.currency-hint {
-  font-size: 0.875rem;
-  color: #9ca3af;
-  margin-top: 0.5rem;
-  opacity: 0.7;
-  transition: var(--transition);
+.balance-fade-enter-from,
+.balance-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
 }
 
-.balance-container:hover .currency-hint {
-  opacity: 1;
-  color: var(--primary-color);
+.secondary-fade-enter-from,
+.secondary-fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 
-/* Transaction History Icon */
+/* Transaction History Button */
 .transaction-icon-section {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-top: 1.5rem;
-  margin-bottom: 1rem;
+  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
 }
 
 .transaction-history-btn {
-  width: 48px;
-  height: 48px;
-  background: rgba(107, 114, 128, 0.08);
-  color: #9ca3af;
-  border-radius: 50%;
-  transition: var(--transition);
-  opacity: 0.6;
-  backdrop-filter: blur(10px);
+  width: 44px;
+  height: 44px;
+  background: var(--color-surface-100);
+  color: var(--color-ink-300);
+  border-radius: var(--radius-full);
+  transition: var(--transition-normal);
+  opacity: 0.4;
   position: relative;
   overflow: hidden;
 }
 
 .transaction-history-btn:hover {
-  background: rgba(5, 149, 115, 0.1);
-  color: var(--primary-color);
-  transform: translateY(-3px) scale(1.1);
+  background: var(--color-primary-600);
+  color: white;
+  transform: translateY(-2px) scale(1.05);
   opacity: 1;
-  box-shadow: var(--shadow-light);
+  box-shadow: var(--shadow-medium);
 }
 
 .transaction-history-btn:active {
-  transform: translateY(-1px) scale(1.05);
+  transform: translateY(0) scale(1.02);
 }
 
-/* Ripple effect */
+.transaction-history-btn:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+  opacity: 1;
+}
+
+/* Pulse Animation */
+.transaction-history-btn.pulse {
+  animation: subtle-pulse 1s ease-out;
+}
+
+@keyframes subtle-pulse {
+  0% { 
+    opacity: 0.4; 
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.7; 
+    transform: scale(1.02);
+  }
+  100% { 
+    opacity: 0.4; 
+    transform: scale(1);
+  }
+}
+
+/* Ripple Effect */
 .transaction-history-btn::before {
   content: '';
   position: absolute;
@@ -1044,35 +1133,15 @@ export default {
   left: 50%;
   width: 0;
   height: 0;
-  border-radius: 50%;
-  background: rgba(5, 149, 115, 0.3);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.3);
   transform: translate(-50%, -50%);
   transition: width 0.6s, height 0.6s;
 }
 
 .transaction-history-btn:active::before {
-  width: 300px;
-  height: 300px;
-}
-
-/* Subtle pulse animation */
-@keyframes subtle-pulse {
-  0%, 100% { 
-    opacity: 0.6; 
-    transform: scale(1);
-  }
-  50% { 
-    opacity: 0.8; 
-    transform: scale(1.02);
-  }
-}
-
-.transaction-history-btn {
-  animation: subtle-pulse 8s ease-in-out infinite;
-}
-
-.transaction-history-btn:hover {
-  animation: none;
+  width: 200px;
+  height: 200px;
 }
 
 /* Bottom Actions */
@@ -1081,35 +1150,35 @@ export default {
   bottom: 0;
   left: 0;
   right: 0;
-  background: white;
-  padding: 1.5rem;
-  border-top: 1px solid #f3f4f6;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
+  background: var(--color-surface-50);
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--color-ink-100);
+  box-shadow: var(--shadow-strong);
   backdrop-filter: blur(20px);
 }
 
 .action-buttons {
   display: flex;
-  gap: 1.25rem;
+  gap: var(--spacing-md);
   max-width: 400px;
   margin: 0 auto;
 }
 
 .action-btn {
   flex: 1;
-  height: 68px;
-  border-radius: var(--border-radius);
-  color: #1f2937;
+  height: 64px;
+  border-radius: var(--radius-xl);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  font-weight: 700;
-  transition: var(--transition);
+  gap: var(--spacing-xs);
+  font-weight: var(--font-weight-bold);
+  transition: var(--transition-normal);
   position: relative;
   overflow: hidden;
   min-width: 120px;
+  min-height: 44px;
 }
 
 .action-btn:hover {
@@ -1121,7 +1190,12 @@ export default {
   transform: translateY(-1px) scale(0.98);
 }
 
-/* Ripple effect for buttons */
+.action-btn:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+}
+
+/* Ripple Effect for Buttons */
 .action-btn::before {
   content: '';
   position: absolute;
@@ -1129,8 +1203,8 @@ export default {
   left: 50%;
   width: 0;
   height: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.2);
   transform: translate(-50%, -50%);
   transition: width 0.6s, height 0.6s;
 }
@@ -1142,35 +1216,27 @@ export default {
 
 .receive-btn {
   color: white;
-  background: var(--primary-gradient);
-  box-shadow: var(--shadow-light);
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-500));
+  box-shadow: var(--shadow-soft);
 }
 
 .receive-btn:hover {
-  background: linear-gradient(135deg, #047857, #059573);
-  box-shadow: var(--shadow-medium);
-}
-
-.receive-btn::before {
-  background: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, var(--color-primary-700), var(--color-primary-600));
 }
 
 .send-btn {
-  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
-  border: 2px solid #e2e8f0;
-  color: #475569;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  color: white;
+  background: linear-gradient(135deg, var(--color-secondary-600), var(--color-secondary-500));
+  box-shadow: var(--shadow-soft);
 }
 
 .send-btn:hover {
-  background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
-  border-color: #94a3b8;
-  color: #334155;
+  background: linear-gradient(135deg, var(--color-secondary-700), var(--color-secondary-600));
 }
 
 .btn-text {
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0.025em;
 }
 
@@ -1178,27 +1244,29 @@ export default {
 .dialog-card {
   width: 100%;
   max-width: 500px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-50);
+  color: var(--color-ink-900);
 }
 
 .dialog-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  background: rgba(5, 149, 115, 0.05);
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--color-ink-100);
+  background: var(--color-surface-100);
 }
 
 .dialog-content {
-  padding: 1rem;
+  padding: var(--spacing-md);
 }
 
 /* Send Form */
 .send-form {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--spacing-md);
 }
 
 .input-section {
@@ -1206,78 +1274,85 @@ export default {
 }
 
 .payment-input {
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--spacing-sm);
 }
 
 .input-actions {
   display: flex;
-  gap: 1rem;
+  gap: var(--spacing-md);
   justify-content: flex-end;
 }
 
 .scan-btn,
 .paste-btn {
   font-size: 0.875rem;
-  color: #059573;
+  color: var(--color-primary-600);
+  transition: var(--transition-fast);
+}
+
+.scan-btn:hover,
+.paste-btn:hover {
+  color: var(--color-primary-700);
+  background: var(--color-surface-100);
 }
 
 /* Payment Type Indicator */
 .payment-type {
-  margin-bottom: 1rem;
+  margin-bottom: var(--spacing-md);
 }
 
 .type-indicator {
   display: flex;
   align-items: center;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   background: rgba(5, 149, 115, 0.1);
-  color: #059573;
+  color: var(--color-primary-600);
 }
 
 /* Amount Section */
 .amount-section {
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 8px;
-  margin-bottom: 1rem;
+  padding: var(--spacing-md);
+  background: var(--color-surface-100);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-md);
 }
 
 .amount-input {
-  margin-bottom: 1rem;
+  margin-bottom: var(--spacing-md);
 }
 
 .amount-limits {
   font-size: 0.875rem;
-  color: #6b7280;
-  margin-bottom: 1rem;
+  color: var(--color-ink-500);
+  margin-bottom: var(--spacing-md);
 }
 
 /* Invoice Details */
 .invoice-details-section {
-  margin-bottom: 1rem;
+  margin-bottom: var(--spacing-md);
 }
 
 .invoice-details {
-  background: #f9fafb;
-  border-radius: 8px;
-  padding: 1rem;
+  background: var(--color-surface-100);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
 }
 
 .details-header {
   display: flex;
   align-items: center;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 1rem;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-ink-900);
+  margin-bottom: var(--spacing-md);
 }
 
 .detail-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--spacing-sm);
 }
 
 .detail-row:last-child {
@@ -1285,174 +1360,214 @@ export default {
 }
 
 .detail-label {
-  font-weight: 500;
-  color: #6b7280;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-ink-500);
 }
 
 .detail-value {
-  font-weight: 600;
-  color: #1f2937;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-ink-900);
 }
 
 /* Payment Actions */
 .payment-actions {
-  margin-top: 1rem;
+  margin-top: var(--spacing-md);
 }
 
 .send-payment-btn {
-  background: linear-gradient(135deg, #059573, #047857);
-  border-radius: 12px;
-  padding: 0.75rem;
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.2);
-  transition: all 0.2s ease;
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-500));
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-soft);
+  transition: var(--transition-normal);
 }
 
 .send-payment-btn:hover {
-  background: linear-gradient(135deg, #047857, #065f46);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3);
+  background: linear-gradient(135deg, var(--color-primary-700), var(--color-primary-600));
+  box-shadow: var(--shadow-medium);
 }
 
 /* Receive Form */
 .invoice-form {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--spacing-md);
 }
 
 .create-invoice-btn {
-  background: linear-gradient(135deg, #059573, #047857);
-  border-radius: 12px;
-  padding: 0.75rem;
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.2);
-  transition: all 0.2s ease;
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-500));
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-soft);
+  transition: var(--transition-normal);
 }
 
 .create-invoice-btn:hover {
-  background: linear-gradient(135deg, #047857, #065f46);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3);
+  background: linear-gradient(135deg, var(--color-primary-700), var(--color-primary-600));
+  box-shadow: var(--shadow-medium);
 }
 
 /* Invoice Result */
 .invoice-result {
-  margin-top: 1rem;
+  margin-top: var(--spacing-md);
   text-align: center;
 }
 
 .qr-code-container {
-  margin-bottom: 1rem;
-  padding: 1rem;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
   background: white;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-ink-100);
 }
 
 .qr-code {
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .invoice-details {
-  margin-bottom: 1rem;
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 8px;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-surface-100);
+  border-radius: var(--radius-sm);
 }
 
 .invoice-amount {
   font-size: 1.5rem;
-  font-weight: 700;
-  color: #059573;
-  margin-bottom: 0.5rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-600);
+  margin-bottom: var(--spacing-sm);
 }
 
 .invoice-description {
-  color: #6b7280;
+  color: var(--color-ink-500);
   font-size: 0.875rem;
 }
 
 .invoice-text {
-  margin-bottom: 1rem;
+  margin-bottom: var(--spacing-md);
   font-family: monospace;
   font-size: 0.75rem;
 }
 
 .invoice-actions {
   display: flex;
-  gap: 1rem;
+  gap: var(--spacing-md);
 }
 
 .copy-btn,
 .share-btn {
   flex: 1;
-  color: #059573;
-  border-color: #059573;
+  color: var(--color-primary-600);
+  border-color: var(--color-primary-600);
+  transition: var(--transition-fast);
+}
+
+.copy-btn:hover,
+.share-btn:hover {
+  background: var(--color-primary-600);
+  color: white;
 }
 
 /* QR Scanner */
 .qr-scanner-container {
   height: 300px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--color-ink-100);
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .logo-container svg {
-    width: 24px;
-    height: 26px;
+  .logo-svg {
+    width: 22px;
+    height: 24px;
   }
   
   .title {
-    font-size: 1.3rem;
+    font-size: 1.25rem;
   }
   
   .main-content {
-    padding: 1rem;
+    padding: var(--spacing-md);
   }
   
   .balance-section {
-    padding: 2rem 1rem 1.5rem;
+    padding: var(--spacing-xl) var(--spacing-md) var(--spacing-lg);
   }
   
   .amount-number {
-    font-size: 3rem;
+    font-size: 3.5rem;
   }
       
   .amount-unit {
-    font-size: 1.4rem;
+    font-size: 1.5rem;
   }
       
-  .balance-fiat {
-    font-size: 1.2rem;
+  .balance-secondary {
+    font-size: 1.25rem;
   }
   
   .transaction-history-btn {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
   }
   
   .bottom-actions {
-    padding: 1rem;
+    padding: var(--spacing-md);
   }
   
   .action-buttons {
-    gap: 1rem;
+    gap: var(--spacing-sm);
   }
   
   .action-btn {
-    height: 60px;
+    height: 56px;
     min-width: 100px;
   }
   
   .btn-text {
-    font-size: 0.95rem;
+    font-size: 0.875rem;
   }
   
   .invoice-actions {
     flex-direction: column;
+  }
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  .transaction-history-btn {
+    opacity: 0.8;
+    border: 1px solid var(--color-ink-300);
+  }
+  
+  .action-btn {
+    border: 1px solid transparent;
+  }
+  
+  .receive-btn {
+    border-color: var(--color-primary-600);
+  }
+  
+  .send-btn {
+    border-color: var(--color-secondary-600);
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  .transaction-history-btn.pulse {
+    animation: none;
   }
 }
 </style>
