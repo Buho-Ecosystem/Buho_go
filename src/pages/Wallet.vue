@@ -428,17 +428,17 @@ export default {
     async initializeWallet() {
       try {
         this.loadingText = 'Loading wallet state...';
-    await this.loadWalletState();
+        await this.loadWalletState();
         
         this.loadingText = 'Fetching transactions...';
-    await this.loadTransactions();
+        await this.loadTransactions();
         
         this.loadingText = 'Loading profiles...';
-    await this.loadNostrProfiles();
+        await this.loadNostrProfiles();
         
         this.loadingText = 'Starting services...';
-    this.startPeriodicRefresh();
-    this.startPulseAnimation();
+        this.startPeriodicRefresh();
+        this.startPulseAnimation();
         
         // Hide loading screen
         this.loadingText = 'Ready!';
@@ -1553,6 +1553,9 @@ export default {
     font-size: 0.9rem;
   }
 }
+
+.copy-btn:hover,
+.copy-btn:focus {
   background: #059573;
   color: white;
   border-color: #059573;
