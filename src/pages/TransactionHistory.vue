@@ -69,18 +69,12 @@
           class="transaction-group"
         >
           <!-- Group Header -->
-          <div class="group-header" 
-               :class="{ 
-                 'today-group': group.isToday,
-                 'yesterday-group': group.isYesterday,
-                 'recent-group': group.isRecent,
-                 'non-collapsible': group.date === 'today' || group.date === 'yesterday'
-               }" 
-               @click="toggleGroup(group.date)">
+          <div class="group-header" :class="{ 'recent-group': group.isRecent }" @click="toggleGroup(group.date)">
             <div class="group-info">
               <div class="group-date">{{ group.dateLabel }}</div>
               <div class="group-summary">
                 {{ group.transactions.length }} transaction{{ group.transactions.length !== 1 ? 's' : '' }}
+                <span v-if="group.isRecent" class="recent-badge">Recent</span>
               </div>
             </div>
             <div class="group-amount">
@@ -88,9 +82,14 @@
                 {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
               </div>
               <q-icon
-                v-if="group.date !== 'today' && group.date !== 'yesterday'"
+                v-if="!group.isRecent"
                 :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'" 
                 class="expand-icon"
+              />
+              <q-icon
+                v-else
+                name="las la-chevron-up"
+                class="expand-icon recent-expanded"
               />
             </div>
           </div>
@@ -278,11 +277,6 @@ export default {
       return this.totalReceived - this.totalSent;
     }
   },
-  async created() {
-    await this.loadTransactions();
-    this.loadNostrProfiles();
-  },
-  methods: {
   async created() {
     await this.loadTransactions();
     this.loadNostrProfiles();
@@ -716,30 +710,9 @@ export default {
 .group-header.recent-group {
   background: rgba(5, 149, 115, 0.05);
   border: 1px solid rgba(5, 149, 115, 0.1);
-  cursor: pointer;
 }
 
 .group-header.recent-group:hover {
-  background: rgba(5, 149, 115, 0.08);
-}
-
-.group-header.today-group {
-  background: rgba(5, 149, 115, 0.08);
-  border: 1px solid rgba(5, 149, 115, 0.15);
-  cursor: default;
-}
-
-.group-header.yesterday-group {
-  background: rgba(5, 149, 115, 0.05);
-  border: 1px solid rgba(5, 149, 115, 0.1);
-  cursor: default;
-}
-
-.group-header.non-collapsible {
-  cursor: default;
-}
-
-.group-header.non-collapsible:hover {
   background: rgba(5, 149, 115, 0.08);
 }
 
@@ -760,6 +733,17 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.recent-badge {
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
 }
 
 .group-amount {
@@ -784,6 +768,11 @@ export default {
 .expand-icon {
   color: #6b7280;
   transition: transform 0.2s;
+}
+
+.expand-icon.recent-expanded {
+  color: #059573;
+  opacity: 0.7;
 }
 /* Group Transactions */
 .group-transactions {
