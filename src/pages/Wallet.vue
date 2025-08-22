@@ -264,6 +264,58 @@
 
           <!-- Generated Invoice -->
           <div class="invoice-result" v-if="generatedInvoice">
+            <!-- Payment Success State -->
+            <div class="payment-success" v-if="!waitingForPayment && generatedInvoice">
+              <div class="success-icon">
+                <q-icon name="las la-check-circle" size="48px" color="positive"/>
+              </div>
+              <div class="success-text">Payment Received!</div>
+              <div class="success-amount">{{ parseInt(receiveForm.amount).toLocaleString() }} sats</div>
+            </div>
+
+            <!-- Waiting for Payment State -->
+            <div class="waiting-state" v-else-if="waitingForPayment">
+              <!-- QR Code Section -->
+              <div class="qr-code-section">
+                <vue-qrcode
+                  :value="generatedInvoice.paymentRequest"
+                  :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
+                  class="qr-code"
+                />
+              </div>
+              
+              <!-- Amount Display -->
+              <div class="amount-section">
+                <div class="amount-value">
+                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                </div>
+                <div class="description-text" v-if="receiveForm.description">
+                  {{ receiveForm.description }}
+                </div>
+              </div>
+
+              <!-- Waiting Indicator -->
+              <div class="waiting-indicator">
+                <q-spinner-dots color="primary" size="24px"/>
+                <div class="waiting-text">Waiting for payment...</div>
+                <div class="waiting-subtitle">Scan the QR code or share the invoice</div>
+              </div>
+              
+              <!-- Copy Button -->
+              <q-btn
+                outline
+                color="primary"
+                icon="las la-copy"
+                label="Copy Invoice"
+                @click="copyInvoice"
+                class="copy-invoice-btn"
+                no-caps
+                unelevated
+              />
+            </div>
+
+            <!-- Static Invoice Display (fallback) -->
+            <div class="static-invoice" v-else>
             <!-- QR Code Section -->
             <div class="qr-code-section">
               <vue-qrcode
@@ -294,6 +346,7 @@
               no-caps
               unelevated
             />
+            </div>
           </div>
         </q-card-section>
       </q-card>
@@ -372,6 +425,10 @@ export default {
       generatedInvoice: null,
       refreshInterval: null,
       pulseInterval: null,
+      // Invoice payment tracking
+      currentInvoicePaymentHash: null,
+      invoiceCheckInterval: null,
+      waitingForPayment: false,
       showLoadingScreen: true,
       loadingText: 'Loading wallet...'
     };
@@ -391,11 +448,19 @@ export default {
     if (this.pulseInterval) {
       clearInterval(this.pulseInterval);
     }
+    if (this.invoiceCheckInterval) {
+      clearInterval(this.invoiceCheckInterval);
+    }
   },
   watch: {
     'sendForm.input': {
       handler: 'processPaymentInput',
       immediate: false
+    },
+    showReceiveDialog(newVal) {
+      if (!newVal) {
+        this.resetReceiveForm();
+      }
     }
   },
   methods: {
@@ -820,6 +885,13 @@ export default {
         // Ensure we have the amount for display
         this.generatedInvoice.amount = parseInt(this.receiveForm.amount);
         
+        // Store payment hash for tracking
+        this.currentInvoicePaymentHash = this.generatedInvoice.payment_hash;
+        this.waitingForPayment = true;
+        
+        // Start checking for payment
+        this.startPaymentCheck();
+        
         console.log('✅ Invoice creation completed successfully');
       } catch (error) {
         console.error('❌ Failed to create invoice:', error);
@@ -836,6 +908,109 @@ export default {
       } finally {
         this.isCreatingInvoice = false;
       }
+    },
+
+    startPaymentCheck() {
+      console.log('🔍 Starting payment check for invoice:', this.currentInvoicePaymentHash);
+      
+      // Check immediately
+      this.checkInvoiceStatus();
+      
+      // Then check every 3 seconds
+      this.invoiceCheckInterval = setInterval(() => {
+        this.checkInvoiceStatus();
+      }, 3000);
+    },
+
+    async checkInvoiceStatus() {
+      if (!this.currentInvoicePaymentHash) return;
+      
+      try {
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (!activeWallet) return;
+
+        const nwc = new webln.NostrWebLNProvider({
+          nostrWalletConnectUrl: activeWallet.nwcString,
+        });
+
+        await nwc.enable();
+        
+        // Get recent transactions
+        const transactionsResponse = await nwc.listTransactions({ 
+          limit: 50, 
+          offset: 0 
+        });
+
+        if (transactionsResponse && transactionsResponse.transactions) {
+          // Look for our invoice payment
+          const paidTransaction = transactionsResponse.transactions.find(tx => 
+            tx.payment_hash === this.currentInvoicePaymentHash && 
+            tx.type === 'incoming' &&
+            (tx.state === 'settled' || tx.settled)
+          );
+
+          if (paidTransaction) {
+            console.log('🎉 Invoice paid!', paidTransaction);
+            this.handleInvoicePaid(paidTransaction);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking invoice status:', error);
+      }
+    },
+
+    async handleInvoicePaid(transaction) {
+      // Stop checking
+      if (this.invoiceCheckInterval) {
+        clearInterval(this.invoiceCheckInterval);
+        this.invoiceCheckInterval = null;
+      }
+
+      this.waitingForPayment = false;
+
+      // Show success notification
+      this.$q.notify({
+        type: 'positive',
+        message: `🎉 Payment received! ${parseInt(this.receiveForm.amount).toLocaleString()} sats`,
+        position: 'top',
+        timeout: 4000,
+        actions: [
+          { 
+            label: 'View', 
+            color: 'white', 
+            handler: () => {
+              this.$router.push(`/transaction/${transaction.id || transaction.payment_hash}`);
+            }
+          }
+        ]
+      });
+
+      // Update wallet balance and transactions
+      await this.updateWalletBalance();
+      await this.loadTransactions();
+
+      // Close dialog after a short delay to show success state
+      setTimeout(() => {
+        this.showReceiveDialog = false;
+      }, 2000);
+    },
+
+    resetReceiveForm() {
+      // Clear interval
+      if (this.invoiceCheckInterval) {
+        clearInterval(this.invoiceCheckInterval);
+        this.invoiceCheckInterval = null;
+      }
+
+      // Reset form data
+      this.receiveForm.amount = '';
+      this.receiveForm.description = '';
+      this.generatedInvoice = null;
+      this.currentInvoicePaymentHash = null;
+      this.waitingForPayment = false;
     },
 
     handleQRScan(result) {
@@ -1415,6 +1590,76 @@ export default {
   text-align: center;
 }
 
+/* Payment Success State */
+.payment-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 1rem;
+  background: rgba(34, 197, 94, 0.05);
+  border: 2px solid rgba(34, 197, 94, 0.2);
+  border-radius: 16px;
+  text-align: center;
+}
+
+.success-icon {
+  margin-bottom: 0.5rem;
+}
+
+.success-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #059669;
+  margin-bottom: 0.5rem;
+}
+
+.success-amount {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #059573;
+}
+
+/* Waiting State */
+.waiting-state {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+.waiting-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+
+.waiting-text {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.waiting-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* Static Invoice (fallback) */
+.static-invoice {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  text-align: center;
+}
+
 /* QR Code Section */
 .qr-code-section {
   display: flex;
@@ -1489,6 +1734,26 @@ export default {
   .copy-invoice-btn {
     height: 44px;
     font-size: 0.875rem;
+  }
+  
+  .payment-success {
+    padding: 1.5rem 1rem;
+  }
+  
+  .success-text {
+    font-size: 1.25rem;
+  }
+  
+  .success-amount {
+    font-size: 1.125rem;
+  }
+  
+  .waiting-indicator {
+    padding: 1rem;
+  }
+  
+  .waiting-text {
+    font-size: 1rem;
   }
 }
 
