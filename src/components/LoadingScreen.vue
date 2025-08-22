@@ -71,7 +71,7 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: white;
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -248,12 +248,5 @@ export default {
 
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
-  .loading-screen {
-    background: #1a1a1a;
-  }
-  
-  .loading-text {
-    color: #9ca3af;
-  }
 }
 </style>
