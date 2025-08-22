@@ -643,23 +643,38 @@ export default {
 
     async processPaymentInput() {
       this.paymentData = null;
+      this.sendForm.amount = '';
+      this.sendForm.comment = '';
 
       if (!this.sendForm.input.trim()) return;
 
       try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
+        // Validate input format first
+        const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
+        if (!validation.valid) {
+          throw new Error(validation.error);
+        }
 
-        if (!activeWallet) return;
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        await lightningService.enable();
-
-        this.paymentData = await lightningService.processPaymentInput(this.sendForm.input);
+        this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
+        
+        // For zero-amount invoices, we might need to set a default amount
+        if (this.paymentData.type === 'lightning_invoice' && this.paymentData.amount === 0) {
+          this.paymentData.requiresAmount = true;
+        }
+        
       } catch (error) {
         console.error('Error processing payment input:', error);
-        this.paymentData = null;
+        this.$q.notify({
+          type: 'negative',
+          message: error.message,
+          position: 'top'
+        });
       }
     },
 
@@ -675,8 +690,11 @@ export default {
     },
 
     requiresAmount() {
-      return this.paymentData && 
-             (this.paymentData.type === 'lnurl_pay' || this.paymentData.type === 'lightning_address');
+      if (!this.paymentData) return false;
+      
+      return this.paymentData.type === 'lnurl_pay' || 
+             this.paymentData.type === 'lightning_address' ||
+             (this.paymentData.type === 'lightning_invoice' && this.paymentData.requiresAmount);
     },
 
     getAmountLimits() {
@@ -693,8 +711,13 @@ export default {
       
       if (this.requiresAmount()) {
         const amount = parseInt(this.sendForm.amount);
-        const limits = this.getAmountLimits();
-        return amount >= limits.min && amount <= limits.max;
+        if (!amount || amount <= 0) return false;
+        
+        if (this.paymentData.type !== 'lightning_invoice') {
+          const limits = this.getAmountLimits();
+          return amount >= limits.min && amount <= limits.max;
+        }
+        return true;
       }
       
       return true;
@@ -715,19 +738,19 @@ export default {
 
       this.isSending = true;
       try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (!activeWallet) throw new Error('No active wallet');
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        await lightningService.enable();
 
         const amount = this.requiresAmount() ? parseInt(this.sendForm.amount) : null;
         const comment = this.sendForm.comment || null;
 
-        await lightningService.sendPayment(this.paymentData, amount, comment);
+        const result = await lightningService.sendPayment(this.paymentData, amount, comment);
+        
+        console.log('Payment result:', result);
 
         this.$q.notify({
           type: 'positive',
@@ -739,6 +762,7 @@ export default {
         this.resetSendForm();
         await this.updateWalletBalance();
         await this.loadTransactions();
+        
       } catch (error) {
         console.error('Payment failed:', error);
         this.$q.notify({
@@ -759,23 +783,31 @@ export default {
     },
 
     async createInvoice() {
-      if (!this.receiveForm.amount) return;
+      if (!this.receiveForm.amount || this.receiveForm.amount <= 0) {
+        this.$q.notify({
+          type: 'negative',
+          message: 'Please enter a valid amount',
+          position: 'top'
+        });
+        return;
+      }
 
       this.isCreatingInvoice = true;
       try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (!activeWallet) throw new Error('No active wallet');
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        await lightningService.enable();
 
         this.generatedInvoice = await lightningService.createInvoice(
-          this.receiveForm.amount,
-          this.receiveForm.description
+          parseInt(this.receiveForm.amount),
+          this.receiveForm.description || 'BuhoGO Payment'
         );
+        
+        console.log('Generated invoice:', this.generatedInvoice);
+        
       } catch (error) {
         console.error('Failed to create invoice:', error);
         this.$q.notify({
@@ -812,7 +844,7 @@ export default {
         try {
           await navigator.share({
             title: 'Lightning Invoice',
-            text: `Payment request for ${this.formatBalance(this.receiveForm.amount)}`,
+            text: `Payment request for ${this.formatBalance(parseInt(this.receiveForm.amount))}`,
             url: `lightning:${this.generatedInvoice.payment_request}`
           });
         } catch (error) {
@@ -821,6 +853,18 @@ export default {
       } else {
         this.copyInvoice();
       }
+    },
+    
+    getActiveWallet() {
+      return this.walletState.connectedWallets?.find(
+        w => w.id === this.walletState.activeWalletId
+      );
+    },
+    
+    resetReceiveForm() {
+      this.receiveForm.amount = '';
+      this.receiveForm.description = '';
+      this.generatedInvoice = null;
     }
   }
 }
