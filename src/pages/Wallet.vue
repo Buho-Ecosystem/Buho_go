@@ -273,53 +273,27 @@
               />
             </div>
             
-            <!-- Amount and Description -->
-            <div class="invoice-details-section">
-              <div class="amount-display">
+            <!-- Amount Display -->
+            <div class="amount-section">
+              <div class="amount-value">
                 {{ parseInt(receiveForm.amount).toLocaleString() }} sats
               </div>
-              <div class="description-display" v-if="receiveForm.description">
+              <div class="description-text" v-if="receiveForm.description">
                 {{ receiveForm.description }}
               </div>
             </div>
             
-            <!-- Lightning Invoice Text -->
-            <div class="invoice-text-section">
-              <div class="invoice-label">Lightning Invoice</div>
-              <q-input
-                v-model="generatedInvoice.payment_request"
-                readonly
-                outlined
-                type="textarea"
-                rows="4"
-                class="invoice-text-input"
-                dense
-              />
-            </div>
-            
-            <!-- Copy and Share Buttons -->
-            <div class="invoice-action-buttons">
-              <q-btn
-                outline
-                color="primary"
-                icon="las la-copy"
-                label="Copy"
-                @click="copyInvoice"
-                class="invoice-copy-btn"
-                no-caps
-                unelevated
-              />
-              <q-btn
-                outline
-                color="primary"
-                icon="las la-share-alt"
-                label="Share"
-                @click="shareInvoice"
-                class="invoice-share-btn"
-                no-caps
-                unelevated
-              />
-            </div>
+            <!-- Copy Button -->
+            <q-btn
+              outline
+              color="primary"
+              icon="las la-copy"
+              label="Copy"
+              @click="copyInvoice"
+              class="copy-invoice-btn"
+              no-caps
+              unelevated
+            />
           </div>
         </q-card-section>
       </q-card>
@@ -1415,142 +1389,75 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 2rem 1.5rem;
+  padding: 1.5rem;
   background: white;
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid #e5e7eb;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin-bottom: 1rem;
 }
 
 .qr-code {
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
 }
 
-/* Invoice Details Section */
-.invoice-details-section {
-  padding: 1.25rem;
+/* Amount Section */
+.amount-section {
+  text-align: center;
+  padding: 1rem;
   background: rgba(5, 149, 115, 0.05);
   border-radius: 16px;
   border: 1px solid rgba(5, 149, 115, 0.1);
+  margin-bottom: 1.5rem;
 }
 
-.amount-display {
-  font-size: 1.75rem;
+.amount-value {
+  font-size: 1.5rem;
   font-weight: 700;
   color: #059573;
   margin-bottom: 0.5rem;
-  line-height: 1.2;
 }
 
-.description-display {
+.description-text {
   color: #6b7280;
-  font-size: 0.95rem;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-/* Invoice Text Section */
-.invoice-text-section {
-  background: #f9fafb;
-  border-radius: 12px;
-  padding: 1.25rem;
-  border: 1px solid #e5e7eb;
-}
-
-.invoice-label {
   font-size: 0.875rem;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 0.75rem;
-  text-align: left;
+  font-weight: 500;
 }
 
-.invoice-text-input :deep(.q-field__control) {
-  font-family: monospace;
-  font-size: 0.75rem;
-  background: white;
-  border-radius: 8px;
-  line-height: 1.3;
-}
-
-.invoice-text-input :deep(.q-field__native) {
-  padding: 0.75rem;
-  word-break: break-all;
-}
-
-/* Action Buttons */
-.invoice-action-buttons {
-  display: flex;
-  gap: 1rem;
-}
-
-.invoice-copy-btn,
-.invoice-share-btn {
-  flex: 1;
+/* Copy Button */
+.copy-invoice-btn {
+  width: 100%;
   height: 48px;
-  border-radius: 14px;
+  border-radius: 12px;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 1rem;
   transition: all 0.2s ease;
   border: 2px solid #059573;
   color: #059573;
 }
 
-.invoice-copy-btn:hover {
+.copy-invoice-btn:hover {
   background: #059573;
   color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.25);
-}
-
-.invoice-share-btn {
-  border-color: #3b82f6;
-  color: #3b82f6;
-}
-
-.invoice-share-btn:hover {
-  background: #3b82f6;
-  color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
 }
 
 /* Responsive Design for Invoice */
 @media (max-width: 480px) {
   .qr-code-section {
-    padding: 1.5rem 1rem;
-  }
-  
-  .invoice-details-section {
     padding: 1rem;
   }
   
-  .amount-display {
-    font-size: 1.5rem;
-  }
-  
-  .description-display {
-    font-size: 0.875rem;
-  }
-  
-  .invoice-text-section {
+  .amount-section {
     padding: 1rem;
   }
   
-  .invoice-text-input :deep(.q-field__control) {
-    font-size: 0.7rem;
+  .amount-value {
+    font-size: 1.25rem;
   }
   
-  .invoice-action-buttons {
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  
-  .invoice-copy-btn,
-  .invoice-share-btn {
+  .copy-invoice-btn {
     height: 44px;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
   }
 }
 
