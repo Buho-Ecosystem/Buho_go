@@ -208,35 +208,6 @@
         </div>
       </q-slide-transition>
 
-      <!-- Action Buttons -->
-      <div class="action-buttons">
-        <q-btn
-          outline
-          color="primary"
-          icon="las la-redo-alt"
-          label="Pay Again"
-          @click="payAgain"
-          v-if="transaction.type === 'outgoing' && transaction.payment_request"
-          class="action-btn"
-        />
-        <q-btn
-          outline
-          color="primary"
-          icon="las la-receipt"
-          label="Create Similar"
-          @click="createSimilar"
-          v-if="transaction.type === 'incoming'"
-          class="action-btn"
-        />
-        <q-btn
-          outline
-          color="negative"
-          icon="las la-exclamation-triangle"
-          label="Report Issue"
-          @click="reportIssue"
-          class="action-btn"
-        />
-      </div>
     </div>
 
     <!-- Error State -->
@@ -516,31 +487,6 @@ export default {
       }
     },
     
-    payAgain() {
-      if (this.transaction.payment_request) {
-        this.$router.push({
-          path: '/wallet',
-          query: { invoice: this.transaction.payment_request }
-        });
-      }
-    },
-    
-    createSimilar() {
-      this.$router.push({
-        path: '/wallet',
-        query: { 
-          amount: Math.abs(this.transaction.amount),
-          description: this.transaction.description
-        }
-      });
-    },
-    
-    reportIssue() {
-      // Open support/issue reporting
-      const subject = encodeURIComponent(`Issue with transaction ${this.transaction.id}`);
-      const body = encodeURIComponent(`Transaction ID: ${this.transaction.id}\nAmount: ${this.getFormattedAmount()}\nDate: ${this.formatDateTime(this.transaction.settled_at)}\n\nIssue description:`);
-      window.open(`mailto:support@buhogo.com?subject=${subject}&body=${body}`);
-    }
   }
 }
 </script>
@@ -884,20 +830,6 @@ export default {
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 4px;
-}
-
-/* Action Buttons */
-.action-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
-}
-
-.action-btn {
-  border-radius: 12px;
-  padding: 0.75rem;
-  font-weight: 500;
 }
 
 /* Error State */
