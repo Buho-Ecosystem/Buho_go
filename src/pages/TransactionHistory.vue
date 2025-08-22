@@ -489,6 +489,11 @@ export default {
       return getDateFromGroup(b) - getDateFromGroup(a);
     },
 
+    getSenderDisplayName(npub) {
+      const profile = this.nostrProfiles[npub];
+      return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
+    },
+
       const profile = this.nostrProfiles[npub];
       return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
     },
