@@ -411,9 +411,9 @@ export default {
 
 /* Header */
 .receive-header {
-  background: #f8f9fa;
+  background: white;
   border-bottom: 1px solid #e5e7eb;
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   flex-shrink: 0;
 }
 
@@ -421,30 +421,30 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: 44px;
 }
 
 .back-btn {
   color: #1f2937;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  width: 40px;
+  height: 40px;
 }
 
 .header-title {
-  font-size: 1.375rem;
+  font-size: 1.125rem;
   font-weight: 600;
   color: #1f2937;
   flex: 1;
   text-align: center;
+  margin: 0 1rem;
 }
 
-.header-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.address-btn,
 .address-btn {
   color: #6b7280;
-  font-size: 1.25rem;
+  font-size: 1rem;
+  width: 40px;
+  height: 40px;
 }
 
 /* Content */
