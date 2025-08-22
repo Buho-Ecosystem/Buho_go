@@ -532,7 +532,12 @@ export default {
     formatMainBalance(balance) {
       switch (this.currentDisplayMode) {
         case 'btc':
-          return (balance / 100000000).toFixed(8);
+          const btcAmount = balance / 100000000;
+          // Show in sats if BTC amount is very small (less than 0.001 BTC)
+          if (btcAmount < 0.001) {
+            return balance.toLocaleString();
+          }
+          return btcAmount.toFixed(8);
         case 'fiat':
           const btcAmount = balance / 100000000;
           const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
@@ -547,6 +552,11 @@ export default {
     getCurrentUnit() {
       switch (this.currentDisplayMode) {
         case 'btc':
+          const btcAmount = this.walletState.balance / 100000000;
+          // Show sats unit if BTC amount is very small
+          if (btcAmount < 0.001) {
+            return 'sats';
+          }
           return 'BTC';
         case 'fiat':
           return this.walletState.preferredFiatCurrency || 'USD';
@@ -559,6 +569,11 @@ export default {
     getSecondaryValue(balance) {
       switch (this.currentDisplayMode) {
         case 'btc':
+          const btcAmount = balance / 100000000;
+          // Show fiat value if displaying sats due to small BTC amount
+          if (btcAmount < 0.001) {
+            return this.getFiatValue(balance);
+          }
           return balance.toLocaleString() + ' sats';
         case 'fiat':
           return balance.toLocaleString() + ' sats';
@@ -870,7 +885,7 @@ export default {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 2rem 1rem;
+  padding: 2rem 1rem 8rem 1rem;
 }
 
 /* Balance Section */
@@ -988,9 +1003,14 @@ export default {
 /* Bottom Actions */
 .bottom-actions {
   background: white;
-  padding: 1.5rem;
+  padding: 1rem 1.5rem 2rem 1.5rem;
   border-top: 1px solid #e5e7eb;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
 }
 
 .action-buttons {
@@ -1384,6 +1404,30 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .bottom-actions {
+    padding: 0.75rem 1rem 1.5rem 1rem;
+  }
+  
+  .action-buttons {
+    gap: 0.75rem;
+  }
+  
+  .action-btn {
+    height: 56px;
+  }
+  
+  .main-content {
+    padding: 1.5rem 1rem 7rem 1rem;
+  }
+  
+  .amount-number {
+    font-size: 3rem;
+  }
+  
+  .amount-unit {
+    font-size: 1.25rem;
+  }
+  
   .payment-dialog .dialog-header,
   .payment-dialog .dialog-content {
     padding: 1rem;
