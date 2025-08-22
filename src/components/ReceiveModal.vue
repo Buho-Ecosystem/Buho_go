@@ -334,6 +334,8 @@ export default {
           message: 'Failed to create invoice: ' + error.message,
           position: 'top'
         });
+        // Reset the generated invoice on error
+        this.generatedInvoice = null;
       } finally {
         this.isCreatingInvoice = false;
       }
