@@ -222,6 +222,24 @@ export default {
       }
     },
 
+    getCurrencyLabel() {
+      switch (this.currentCurrency) {
+        case 'sats':
+          return 'sats';
+        case 'btc':
+          return '₿';
+        case 'usd':
+          return '$';
+        case 'eur':
+          return '€';
+        case 'gbp':
+          return '£';
+        case 'jpy':
+          return '¥';
+        default:
+          return '$';
+      }
+    },
     getAmountPlaceholder() {
       switch (this.currentCurrency) {
         case 'sats':
