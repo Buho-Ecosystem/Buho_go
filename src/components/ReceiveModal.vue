@@ -317,6 +317,10 @@ export default {
           description: this.description || 'BuhoGO Payment'
         });
 
+        this.generatedInvoice = invoice;
+        
+        this.$emit('invoice-created', invoice);
+
         this.$q.notify({
           type: 'positive',
           message: 'Invoice created successfully!',
