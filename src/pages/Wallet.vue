@@ -314,36 +314,36 @@
 
             <!-- Static Invoice Display (fallback) -->
             <div class="static-invoice" v-else>
-              <!-- QR Code Section -->
-              <div class="qr-code-section">
-                <vue-qrcode
-                  :value="generatedInvoice.paymentRequest"
-                  :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
-                  class="qr-code"
-                />
-              </div>
-              
-              <!-- Amount Display -->
-              <div class="amount-section">
-                <div class="amount-value">
-                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
-                </div>
-                <div class="description-text" v-if="receiveForm.description">
-                  {{ receiveForm.description }}
-                </div>
-              </div>
-              
-              <!-- Copy Button -->
-              <q-btn
-                outline
-                color="primary"
-                icon="las la-copy"
-                label="Copy"
-                @click="copyInvoice"
-                class="copy-invoice-btn"
-                no-caps
-                unelevated
+            <!-- QR Code Section -->
+            <div class="qr-code-section">
+              <vue-qrcode
+                :value="generatedInvoice.paymentRequest"
+                :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
+                class="qr-code"
               />
+            </div>
+            
+            <!-- Amount Display -->
+            <div class="amount-section">
+              <div class="amount-value">
+                {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+              </div>
+              <div class="description-text" v-if="receiveForm.description">
+                {{ receiveForm.description }}
+              </div>
+            </div>
+            
+            <!-- Copy Button -->
+            <q-btn
+              outline
+              color="primary"
+              icon="las la-copy"
+              label="Copy"
+              @click="copyInvoice"
+              class="copy-invoice-btn"
+              no-caps
+              unelevated
+            />
             </div>
           </div>
         </q-card-section>
@@ -1982,21 +1982,20 @@ export default {
   overflow: hidden;
   border: 1px solid #e5e7eb;
   background: #f8f9fa;
-  z-index: 5000;
 }
 
-/* Payment Confirmation Dialog */
-.confirmation-card {
+/* Send Dialog Styles */
+.send-dialog {
   width: 100%;
-  width: 100vw;
-  height: 100vh;
-  max-width: none;
-  max-height: none;
-  border-radius: 0;
-  margin: 0;
+  max-width: 480px;
+  border-radius: 16px;
 }
 
-.confirmation-header {
+.send-dialog :deep(.q-dialog__inner) {
+  padding: 0;
+}
+
+.send-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2008,390 +2007,10 @@ export default {
   z-index: 100;
 }
 
-.confirmation-title {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.title-icon {
-  font-size: 24px;
-  color: #78D53C;
-}
-
-.confirmation-header .close-btn {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.confirmation-header .close-btn:hover {
-  color: white;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.confirmation-content {
-  padding: 2rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-/* Amount Section */
-.amount-section {
-  text-align: center;
-  padding: 1.5rem;
-  background: #f8f9fa;
-  border-radius: 16px;
-  border: 2px solid #e5e7eb;
-}
-
-.amount-label {
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-}
-
-.amount-display {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.amount-value {
-  font-size: 2.5rem;
-  font-weight: 800;
-  color: #059573;
-  line-height: 1;
-}
-
-.amount-unit {
-  font-size: 1.25rem;
-  color: #6b7280;
-  font-weight: 600;
-}
-
-.amount-fiat {
-  font-size: 1rem;
-  color: #9ca3af;
-  font-weight: 500;
-}
-
-/* Payment Details */
-.payment-details {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.detail-icon {
-  font-size: 16px;
-  color: #9ca3af;
-}
-
-.detail-value {
-  font-weight: 600;
-  text-align: right;
-  color: #6b7280;
-  margin-top: 1rem;
-}
-
-.header-icon {
-  color: #059573;
-  font-size: 1.25rem;
-}
-
-.header-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-/* Slide to Confirm */
-.step-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  border-radius: 32px;
-  border: 2px solid #e5e7eb;
-  display: flex;
-}
-
-.back-btn {
-  color: #6b7280;
-}
-
-.step-info {
-  flex: 1;
-}
-
-.step-title {
+.send-title {
   font-size: 1.25rem;
   font-weight: 600;
   color: #1f2937;
-  margin-bottom: 0.25rem;
-}
-
-.step-subtitle {
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-/* Payment Methods */
-.payment-methods {
-  justify-content: center;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.method-card {
-  display: flex;
-  overflow: hidden;
-  gap: 1rem;
-  padding: 1.25rem;
-  background: white;
-  border: 2px solid #e5e7eb;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.input-help {
-  font-size: 0.875rem;
-  color: #6b7280;
-  text-align: center;
-  margin-top: -0.5rem;
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
-}
-
-.continue-btn {
-  height: 48px;
-  border-radius: 12px;
-  font-size: 1rem;
-  font-weight: 500;
-  margin-top: 1rem;
-  width: 48px;
-  height: 48px;
-}
-
-/* QR Scanner */
-.scan-content {
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-}
-
-.scan-content .step-header {
-  padding: 1rem;
-  margin-bottom: 0;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  flex-shrink: 0;
-}
-
-.scanner-container {
-  flex: 1;
-  position: relative;
-  background: #000;
-}
-
-.qr-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.scan-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-}
-
-.paste-method .method-icon {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-}
-
-.scan-frame {
-  width: 250px;
-  height: 250px;
-  position: relative;
-  border: 2px solid rgba(255, 255, 255, 0.5);
-  border-radius: 12px;
-  flex: 1;
-}
-
-.scan-corner {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border: 3px solid #10b981;
-  color: #6b7280;
-}
-
-.method-arrow {
-}
-
-.scan-corner.top-left {
-  top: -3px;
-  left: -3px;
-  border-right: none;
-  border-bottom: none;
-  border-radius: 12px 0 0 0;
-}
-
-/* Manual Input */
-.scan-corner.top-right {
-  top: -3px;
-  right: -3px;
-  border-left: none;
-  border-bottom: none;
-  border-radius: 0 12px 0 0;
-  font-size: 1.125rem;
-  height: 56px;
-}
-
-.scan-corner.bottom-left {
-  bottom: -3px;
-  left: -3px;
-  border-right: none;
-  border-top: none;
-  border-radius: 0 0 0 12px;
-  transform: scale(1.05);
-}
-
-.scan-corner.bottom-right {
-  bottom: -3px;
-  right: -3px;
-  border-left: none;
-  border-top: none;
-  border-radius: 0 0 12px 0;
-  color: white;
-}
-
-/* Responsive Design */
-@media (min-width: 768px) {
-  .send-card {
-    width: 100%;
-    height: auto;
-    max-width: 480px;
-    max-height: 90vh;
-    border-radius: 16px;
-    margin: auto;
-  }
-  
-  .send-header {
-    position: static;
-  }
-}
-
-@media (max-width: 480px) {
-  .send-content {
-    padding: 0.75rem;
-  }
-  
-  .method-card {
-    padding: 1rem;
-  }
-  
-  .method-icon {
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
-  }
-  
-  .step-title {
-    font-size: 1.125rem;
-  }
-  
-  .animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* Mobile Responsive */
-@media (max-width: 480px) {
-  .confirmation-card {
-    margin: 0.5rem;
-    border-radius: 20px;
-  }
-  
-  .confirmation-header {
-    padding: 1rem;
-  }
-  
-  .confirmation-title {
-    font-size: 1.125rem;
-  }
-  
-  .confirmation-content {
-    padding: 1.5rem 1rem;
-    gap: 1.5rem;
-  }
-  
-  .amount-section {
-    padding: 1rem;
-  }
-  
-  .amount-value {
-    font-size: 2rem;
-  }
-  
-  .amount-unit {
-    font-size: 1rem;
-  }
-  
-  .detail-row {
-    padding: 0.75rem;
-  }
-  
-  .detail-value {
-    max-width: 50%;
-    font-size: 0.8125rem;
-  }
-  
-  .slide-track {
-    height: 56px;
-  }
-  
-  .slide-button {
-    width: 48px;
-    height: 48px;
-  }
-  
-  .slide-text {
-    font-size: 0.875rem;
-  }
 }
 
 /* Responsive Design */
