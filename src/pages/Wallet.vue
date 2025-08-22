@@ -25,11 +25,12 @@
       <!-- Balance Display -->
       <div class="balance-section">
         <div class="balance-container">
-          <div class="balance-amount">
+          <div class="balance-amount" @click="toggleCurrency">
             <span class="amount-number">{{ formatMainBalance(walletState.balance) }}</span>
-            <span class="amount-unit">sats</span>
+            <span class="amount-unit">{{ getCurrentUnit() }}</span>
           </div>
-          <div class="balance-fiat">{{ getFiatValue(walletState.balance) }}</div>
+          <div class="balance-fiat" @click="toggleCurrency">{{ getSecondaryValue(walletState.balance) }}</div>
+          <div class="currency-hint">Tap to switch currency</div>
         </div>
       </div>
 
@@ -38,11 +39,13 @@
         <q-btn
           flat
           round
-          size="lg"
-          icon="las la-chevron-up"
+          size="md"
+          icon="las la-history"
           @click="$router.push('/transactions')"
           class="transaction-history-btn"
-        />
+        >
+          <q-tooltip>Transaction History</q-tooltip>
+        </q-btn>
       </div>
     </div>
 
@@ -332,6 +335,11 @@ export default {
       refreshInterval: null
     }
   },
+  computed: {
+    currentDisplayMode() {
+      return this.walletState.displayMode || 'sats';
+    }
+  },
   async created() {
     await this.loadWalletState();
     await this.loadTransactions();
@@ -493,7 +501,51 @@ export default {
     },
 
     formatMainBalance(balance) {
-      return balance.toLocaleString();
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          return (balance / 100000000).toFixed(8);
+        case 'fiat':
+          const btcAmount = balance / 100000000;
+          const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
+          const fiatValue = btcAmount * rate;
+          return fiatValue.toFixed(2);
+        case 'sats':
+        default:
+          return balance.toLocaleString();
+      }
+    },
+
+    getCurrentUnit() {
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          return 'BTC';
+        case 'fiat':
+          return this.walletState.preferredFiatCurrency || 'USD';
+        case 'sats':
+        default:
+          return 'sats';
+      }
+    },
+
+    getSecondaryValue(balance) {
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          return balance.toLocaleString() + ' sats';
+        case 'fiat':
+          return balance.toLocaleString() + ' sats';
+        case 'sats':
+        default:
+          return this.getFiatValue(balance);
+      }
+    },
+
+    toggleCurrency() {
+      const modes = ['sats', 'fiat', 'btc'];
+      const currentIndex = modes.indexOf(this.currentDisplayMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      
+      this.walletState.displayMode = modes[nextIndex];
+      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
     },
 
     formatBalance(balance) {
@@ -812,6 +864,17 @@ export default {
 </script>
 
 <style scoped>
+/* CSS Variables for consistent theming */
+:root {
+  --primary-gradient: linear-gradient(135deg, #059573, #78D53C);
+  --primary-color: #059573;
+  --primary-hover: #047857;
+  --shadow-light: 0 2px 8px rgba(5, 149, 115, 0.15);
+  --shadow-medium: 0 4px 16px rgba(5, 149, 115, 0.2);
+  --border-radius: 20px;
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .wallet-page {
   background: #ffffff;
   min-height: 100vh;
@@ -835,15 +898,22 @@ export default {
 .logo-container {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
+}
+
+.logo-container svg {
+  width: 26px;
+  height: 28px;
+  filter: drop-shadow(0 2px 4px rgba(5, 149, 115, 0.2));
 }
 
 .title {
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #059573, #78D53C);
+  background: var(--primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 2px rgba(5, 149, 115, 0.1));
 }
 
 .settings-btn {
@@ -863,40 +933,74 @@ export default {
 
 /* Balance Section */
 .balance-section {
-  padding: 2rem 1rem;
+  padding: 3rem 1rem 2rem;
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .balance-container {
   max-width: 400px;
   margin: 0 auto;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.balance-container:hover {
+  transform: translateY(-2px);
 }
 
 .balance-amount {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  transition: var(--transition);
+}
+
+.balance-amount:active {
+  transform: scale(0.98);
 }
 
 .amount-number {
-  font-size: 3.5rem;
-  font-weight: 700;
+  font-size: 4rem;
+  font-weight: 800;
   color: #1f2937;
   line-height: 1;
+  transition: var(--transition);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .amount-unit {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   color: #6b7280;
-  font-weight: 500;
+  font-weight: 600;
+  transition: var(--transition);
 }
 
 .balance-fiat {
-  font-size: 1.25rem;
+  font-size: 1.4rem;
   color: #6b7280;
+  font-weight: 400;
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.balance-fiat:hover {
+  color: #4b5563;
+}
+
+.currency-hint {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  margin-top: 0.5rem;
+  opacity: 0.7;
+  transition: var(--transition);
+}
+
+.balance-container:hover .currency-hint {
+  opacity: 1;
+  color: var(--primary-color);
 }
 
 /* Transaction History Icon */
@@ -904,22 +1008,72 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .transaction-history-btn {
-  width: 60px;
-  height: 60px;
-  background: #f8f9fa;
-  color: #6b7280;
+  width: 48px;
+  height: 48px;
+  background: rgba(107, 114, 128, 0.08);
+  color: #9ca3af;
   border-radius: 50%;
-  transition: all 0.2s ease;
+  transition: var(--transition);
+  opacity: 0.6;
+  backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
 }
 
 .transaction-history-btn:hover {
-  background: #f3f4f6;
-  color: #059573;
-  transform: translateY(-2px);
+  background: rgba(5, 149, 115, 0.1);
+  color: var(--primary-color);
+  transform: translateY(-3px) scale(1.1);
+  opacity: 1;
+  box-shadow: var(--shadow-light);
+}
+
+.transaction-history-btn:active {
+  transform: translateY(-1px) scale(1.05);
+}
+
+/* Ripple effect */
+.transaction-history-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(5, 149, 115, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.transaction-history-btn:active::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Subtle pulse animation */
+@keyframes subtle-pulse {
+  0%, 100% { 
+    opacity: 0.6; 
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.8; 
+    transform: scale(1.02);
+  }
+}
+
+.transaction-history-btn {
+  animation: subtle-pulse 8s ease-in-out infinite;
+}
+
+.transaction-history-btn:hover {
+  animation: none;
 }
 
 /* Bottom Actions */
@@ -931,65 +1085,94 @@ export default {
   background: white;
   padding: 1.5rem;
   border-top: 1px solid #f3f4f6;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(20px);
 }
 
 .action-buttons {
   display: flex;
-  gap: 1.5rem;
+  gap: 1.25rem;
   max-width: 400px;
   margin: 0 auto;
 }
 
 .action-btn {
   flex: 1;
-  height: 64px;
-  border-radius: 20px;
-  background: #f1f5f9;
+  height: 68px;
+  border-radius: var(--border-radius);
   color: #1f2937;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  font-weight: 600;
-  border: 1px solid #e2e8f0;
-  transition: all 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  gap: 0.4rem;
+  font-weight: 700;
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+  min-width: 120px;
 }
 
 .action-btn:hover {
-  background: #e2e8f0;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-medium);
+}
+
+.action-btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+/* Ripple effect for buttons */
+.action-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.action-btn:active::before {
+  width: 300px;
+  height: 300px;
 }
 
 .receive-btn {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
   color: white;
-  background: linear-gradient(135deg, #059573, #047857);
-  border-color: #059573;
+  background: var(--primary-gradient);
+  box-shadow: var(--shadow-light);
 }
 
 .receive-btn:hover {
-  background: linear-gradient(135deg, #047857, #065f46);
+  background: linear-gradient(135deg, #047857, #059573);
+  box-shadow: var(--shadow-medium);
+}
+
+.receive-btn::before {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .send-btn {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border: 2px solid #e2e8f0;
   color: #475569;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .send-btn:hover {
-  background: #f1f5f9;
+  background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
   border-color: #94a3b8;
+  color: #334155;
 }
 
 .btn-text {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
 }
 
 /* Dialog Styles */
@@ -1218,24 +1401,38 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .logo-container svg {
+    width: 24px;
+    height: 26px;
+  }
+  
+  .title {
+    font-size: 1.3rem;
+  }
+  
   .main-content {
     padding: 1rem;
   }
   
   .balance-section {
-    padding: 1.5rem 1rem;
+    padding: 2rem 1rem 1.5rem;
   }
   
   .amount-number {
-    font-size: 2.5rem;
+    font-size: 3rem;
   }
       
   .amount-unit {
-    font-size: 1.25rem;
+    font-size: 1.4rem;
   }
       
   .balance-fiat {
-    font-size: 1.125rem;
+    font-size: 1.2rem;
+  }
+  
+  .transaction-history-btn {
+    width: 44px;
+    height: 44px;
   }
   
   .bottom-actions {
@@ -1247,11 +1444,12 @@ export default {
   }
   
   .action-btn {
-    height: 56px;
+    height: 60px;
+    min-width: 100px;
   }
   
   .btn-text {
-    font-size: 0.875rem;
+    font-size: 0.95rem;
   }
   
   .invoice-actions {
