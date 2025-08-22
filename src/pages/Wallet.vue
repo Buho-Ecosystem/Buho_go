@@ -678,6 +678,12 @@ export default {
       }
     },
 
+    getActiveWallet() {
+      return this.walletState.connectedWallets.find(
+        w => w.id === this.walletState.activeWalletId
+      );
+    },
+
     getPaymentTypeLabel() {
       if (!this.paymentData) return '';
       
@@ -738,19 +744,19 @@ export default {
 
       this.isSending = true;
       try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (!activeWallet) throw new Error('No active wallet');
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        await lightningService.enable();
 
         const amount = this.requiresAmount() ? parseInt(this.sendForm.amount) : null;
         const comment = this.sendForm.comment || null;
 
-        await lightningService.sendPayment(this.paymentData, amount, comment);
+        const result = await lightningService.sendPayment(this.paymentData, amount, comment);
+        
+        console.log('Payment result:', result);
 
         this.$q.notify({
           type: 'positive',
@@ -762,6 +768,7 @@ export default {
         this.resetSendForm();
         await this.updateWalletBalance();
         await this.loadTransactions();
+        
       } catch (error) {
         console.error('Payment failed:', error);
         this.$q.notify({
@@ -782,23 +789,31 @@ export default {
     },
 
     async createInvoice() {
-      if (!this.receiveForm.amount) return;
+      if (!this.receiveForm.amount || this.receiveForm.amount <= 0) {
+        this.$q.notify({
+          type: 'negative',
+          message: 'Please enter a valid amount',
+          position: 'top'
+        });
+        return;
+      }
 
       this.isCreatingInvoice = true;
       try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (!activeWallet) throw new Error('No active wallet');
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        await lightningService.enable();
 
         this.generatedInvoice = await lightningService.createInvoice(
-          this.receiveForm.amount,
-          this.receiveForm.description
+          parseInt(this.receiveForm.amount),
+          this.receiveForm.description || 'BuhoGO Payment'
         );
+        
+        console.log('Generated invoice:', this.generatedInvoice);
+        
       } catch (error) {
         console.error('Failed to create invoice:', error);
         this.$q.notify({
