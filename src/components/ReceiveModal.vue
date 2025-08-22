@@ -29,14 +29,6 @@
               @click="showLightningAddress"
               class="address-btn"
             />
-            <q-btn 
-              flat 
-              round 
-              dense 
-              icon="las la-expand" 
-              @click="toggleFullscreen"
-              class="fullscreen-btn"
-            />
           </div>
         </div>
       </q-card-section>
@@ -399,15 +391,6 @@ export default {
         message: 'Lightning address feature coming soon!',
         position: 'top'
       });
-    },
-
-    toggleFullscreen() {
-      // Implementation for fullscreen QR view
-      this.$q.notify({
-        type: 'info',
-        message: 'Fullscreen view coming soon!',
-        position: 'top'
-      });
     }
   }
 }
@@ -459,7 +442,7 @@ export default {
 }
 
 .address-btn,
-.fullscreen-btn {
+.address-btn {
   color: #6b7280;
   font-size: 1.25rem;
 }
