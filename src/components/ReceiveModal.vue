@@ -296,47 +296,111 @@ export default {
     async createInvoice() {
       if (!this.isValidAmount) return;
 
+      console.log('🚀 Starting invoice creation process');
+      console.log('📊 Invoice details:', {
+        amountInSats: this.amountInSats,
+        description: this.description,
+        currentCurrency: this.currentCurrency,
+        displayAmount: this.displayAmount
+      });
+
       this.isCreatingInvoice = true;
       try {
+        console.log('🔍 Looking for active wallet...');
         const activeWallet = this.walletState.connectedWallets?.find(
           w => w.id === this.walletState.activeWalletId
         );
 
         if (!activeWallet) {
+          console.error('❌ No active wallet found');
           throw new Error('No active wallet found');
         }
 
+        console.log('✅ Active wallet found:', {
+          id: activeWallet.id,
+          name: activeWallet.name,
+          type: activeWallet.type
+        });
+
+        console.log('🔌 Creating NWC connection...');
         const nwc = new webln.NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
 
+        console.log('🔓 Enabling NWC connection...');
         await nwc.enable();
+        console.log('✅ NWC connection enabled successfully');
 
-        const invoice = await nwc.makeInvoice({
+        const invoiceRequest = {
           amount: this.amountInSats,
-          description: this.description || 'BuhoGO Payment'
+          description: this.description || 'BuhoGO Payment',
+          expiry: 3600 // 1 hour expiry
+        };
+
+        console.log('📝 Creating invoice with request:', invoiceRequest);
+        const invoice = await nwc.makeInvoice(invoiceRequest);
+        
+        console.log('✅ Invoice created successfully:', {
+          payment_request: invoice.payment_request ? 'Present' : 'Missing',
+          payment_hash: invoice.payment_hash ? 'Present' : 'Missing',
+          amount: invoice.amount,
+          description: invoice.description,
+          expires_at: invoice.expires_at
         });
 
-        // Store the invoice to show QR code
-        this.generatedInvoice = invoice;
+        // Validate the invoice has required fields
+        if (!invoice.payment_request) {
+          console.error('❌ Invoice missing payment_request field:', invoice);
+          throw new Error('Invalid invoice: missing payment request');
+        }
 
+        // Ensure the invoice has the correct structure
+        const processedInvoice = {
+          payment_request: invoice.payment_request,
+          payment_hash: invoice.payment_hash,
+          amount: invoice.amount || this.amountInSats,
+          description: invoice.description || this.description || 'BuhoGO Payment',
+          expires_at: invoice.expires_at,
+          created_at: Math.floor(Date.now() / 1000)
+        };
+
+        console.log('📦 Processed invoice:', processedInvoice);
+
+        // Store the invoice to show QR code
+        this.generatedInvoice = processedInvoice;
+        
+        console.log('💾 Invoice stored in component state');
+
+        // Emit to parent component
+        this.$emit('invoice-created', processedInvoice);
+        console.log('📡 Invoice-created event emitted to parent');
         this.$q.notify({
           type: 'positive',
           message: 'Invoice created successfully!',
           position: 'top'
         });
+        
+        console.log('🎉 Invoice creation process completed successfully');
 
       } catch (error) {
-        console.error('Error creating invoice:', error);
+        console.error('❌ Error creating invoice:', {
+          message: error.message,
+          stack: error.stack,
+          error: error
+        });
+        
         this.$q.notify({
           type: 'negative',
           message: 'Failed to create invoice: ' + error.message,
           position: 'top'
         });
+        
         // Reset the generated invoice on error
         this.generatedInvoice = null;
+        console.log('🔄 Reset generatedInvoice due to error');
       } finally {
         this.isCreatingInvoice = false;
+        console.log('🏁 Invoice creation process finished, loading state reset');
       }
     },
 
