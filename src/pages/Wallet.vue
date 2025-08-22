@@ -382,7 +382,7 @@ export default {
       generatedInvoice: null,
       refreshInterval: null,
       pulseInterval: null
-    }
+    };
   },
   computed: {
     currentDisplayMode() {
@@ -810,7 +810,7 @@ export default {
       return `${Math.floor(diffMinutes / 1440)} days`;
     }
   }
-}
+};
 </script>
 
 <style scoped>
@@ -1069,6 +1069,7 @@ export default {
   font-weight: 600;
   color: #1f2937;
 }
+
 .payment-dialog .close-btn {
   color: #6b7280;
 }
@@ -1097,41 +1098,33 @@ export default {
   gap: 0.75rem;
 }
 
-.input-actions .action-btn {
+.action-btn {
   flex: 1;
   height: 44px;
   border-radius: 12px;
   font-weight: 500;
-  border: 2px solid transparent;
+  border: 1px solid #e5e7eb;
   transition: all 0.2s ease;
-  background: #f8f9fa;
-  color: #374151;
 }
 
-.input-actions .scan-btn {
+.scan-btn {
   color: #059573;
-  border-color: rgba(5, 149, 115, 0.2);
-  background: rgba(5, 149, 115, 0.05);
-}
-
-.input-actions .scan-btn:hover {
   border-color: #059573;
-  background: rgba(5, 149, 115, 0.1);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
 }
 
-.input-actions .paste-btn {
+.scan-btn:hover {
+  background: #059573;
+  color: white;
+}
+
+.paste-btn {
   color: #3b82f6;
-  border-color: rgba(59, 130, 246, 0.2);
-  background: rgba(59, 130, 246, 0.05);
+  border-color: #3b82f6;
 }
 
-.input-actions .paste-btn:hover {
-  border-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.1);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+.paste-btn:hover {
+  background: #3b82f6;
+  color: white;
 }
 
 /* Payment Type Section */
