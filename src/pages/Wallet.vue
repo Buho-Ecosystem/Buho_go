@@ -449,6 +449,9 @@ export default {
     if (this.invoiceCheckInterval) {
       clearInterval(this.invoiceCheckInterval);
     }
+    if (this.qrScanner) {
+      this.qrScanner.destroy();
+    }
   },
   watch: {
     'sendForm.input': {
