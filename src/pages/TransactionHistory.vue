@@ -759,6 +759,8 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 200px;
+  display: block;
 }
 
 .nostr-info {
@@ -858,6 +860,20 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .transaction-description {
+    max-width: 150px;
+    font-size: 0.75rem;
+  }
+  
+  .transaction-details {
+    max-width: calc(100% - 140px);
+  }
+  
+  .transaction-amount {
+    min-width: 100px;
+    flex-shrink: 0;
+  }
+  
   .stats-section {
     padding: 0.75rem;
   }
