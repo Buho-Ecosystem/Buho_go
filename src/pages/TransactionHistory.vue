@@ -538,6 +538,15 @@ export default {
 .filter-tabs :deep(.q-tab) {
   font-weight: 500;
   text-transform: none;
+  color: #6b7280;
+}
+
+.filter-tabs :deep(.q-tab--active) {
+  color: #059573;
+}
+
+.filter-tabs :deep(.q-indicator) {
+  background: #059573;
 }
 
 /* Stats Section */
@@ -826,7 +835,13 @@ export default {
 
 /* Floating Action Button */
 .refresh-fab {
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  background: linear-gradient(135deg, #059573, #047857);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3);
+}
+
+.refresh-fab:hover {
+  background: linear-gradient(135deg, #047857, #065f46);
+  box-shadow: 0 6px 16px rgba(5, 149, 115, 0.4);
 }
 
 /* Responsive Design */
