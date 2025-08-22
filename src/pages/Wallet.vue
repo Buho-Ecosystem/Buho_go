@@ -690,8 +690,11 @@ export default {
     },
 
     requiresAmount() {
-      return this.paymentData && 
-             (this.paymentData.type === 'lnurl_pay' || this.paymentData.type === 'lightning_address');
+      if (!this.paymentData) return false;
+      
+      return this.paymentData.type === 'lnurl_pay' || 
+             this.paymentData.type === 'lightning_address' ||
+             (this.paymentData.type === 'lightning_invoice' && this.paymentData.requiresAmount);
     },
 
     getAmountLimits() {
@@ -708,8 +711,13 @@ export default {
       
       if (this.requiresAmount()) {
         const amount = parseInt(this.sendForm.amount);
-        const limits = this.getAmountLimits();
-        return amount >= limits.min && amount <= limits.max;
+        if (!amount || amount <= 0) return false;
+        
+        if (this.paymentData.type !== 'lightning_invoice') {
+          const limits = this.getAmountLimits();
+          return amount >= limits.min && amount <= limits.max;
+        }
+        return true;
       }
       
       return true;
