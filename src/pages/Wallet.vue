@@ -690,11 +690,8 @@ export default {
     },
 
     requiresAmount() {
-      if (!this.paymentData) return false;
-      
-      return this.paymentData.type === 'lnurl_pay' || 
-             this.paymentData.type === 'lightning_address' ||
-             (this.paymentData.type === 'lightning_invoice' && this.paymentData.requiresAmount);
+      return this.paymentData && 
+             (this.paymentData.type === 'lnurl_pay' || this.paymentData.type === 'lightning_address');
     },
 
     getAmountLimits() {
@@ -711,13 +708,8 @@ export default {
       
       if (this.requiresAmount()) {
         const amount = parseInt(this.sendForm.amount);
-        if (!amount || amount <= 0) return false;
-        
-        if (this.paymentData.type !== 'lightning_invoice') {
-          const limits = this.getAmountLimits();
-          return amount >= limits.min && amount <= limits.max;
-        }
-        return true;
+        const limits = this.getAmountLimits();
+        return amount >= limits.min && amount <= limits.max;
       }
       
       return true;
@@ -738,19 +730,19 @@ export default {
 
       this.isSending = true;
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (!activeWallet) throw new Error('No active wallet');
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        await lightningService.enable();
 
         const amount = this.requiresAmount() ? parseInt(this.sendForm.amount) : null;
         const comment = this.sendForm.comment || null;
 
-        const result = await lightningService.sendPayment(this.paymentData, amount, comment);
-        
-        console.log('Payment result:', result);
+        await lightningService.sendPayment(this.paymentData, amount, comment);
 
         this.$q.notify({
           type: 'positive',
@@ -762,7 +754,6 @@ export default {
         this.resetSendForm();
         await this.updateWalletBalance();
         await this.loadTransactions();
-        
       } catch (error) {
         console.error('Payment failed:', error);
         this.$q.notify({
@@ -783,31 +774,23 @@ export default {
     },
 
     async createInvoice() {
-      if (!this.receiveForm.amount || this.receiveForm.amount <= 0) {
-        this.$q.notify({
-          type: 'negative',
-          message: 'Please enter a valid amount',
-          position: 'top'
-        });
-        return;
-      }
+      if (!this.receiveForm.amount) return;
 
       this.isCreatingInvoice = true;
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (!activeWallet) throw new Error('No active wallet');
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        await lightningService.enable();
 
         this.generatedInvoice = await lightningService.createInvoice(
-          parseInt(this.receiveForm.amount),
-          this.receiveForm.description || 'BuhoGO Payment'
+          this.receiveForm.amount,
+          this.receiveForm.description
         );
-        
-        console.log('Generated invoice:', this.generatedInvoice);
-        
       } catch (error) {
         console.error('Failed to create invoice:', error);
         this.$q.notify({
@@ -844,7 +827,7 @@ export default {
         try {
           await navigator.share({
             title: 'Lightning Invoice',
-            text: `Payment request for ${this.formatBalance(parseInt(this.receiveForm.amount))}`,
+            text: `Payment request for ${this.formatBalance(this.receiveForm.amount)}`,
             url: `lightning:${this.generatedInvoice.payment_request}`
           });
         } catch (error) {
@@ -854,17 +837,16 @@ export default {
         this.copyInvoice();
       }
     },
-    
-    getActiveWallet() {
-      return this.walletState.connectedWallets?.find(
-        w => w.id === this.walletState.activeWalletId
-      );
-    },
-    
-    resetReceiveForm() {
-      this.receiveForm.amount = '';
-      this.receiveForm.description = '';
-      this.generatedInvoice = null;
+
+    formatExpiry(expiry) {
+      const expiryDate = new Date(expiry * 1000);
+      const now = new Date();
+      const diffMinutes = Math.floor((expiryDate - now) / (1000 * 60));
+      
+      if (diffMinutes < 0) return 'Expired';
+      if (diffMinutes < 60) return `${diffMinutes} minutes`;
+      if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours`;
+      return `${Math.floor(diffMinutes / 1440)} days`;
     }
   }
 }
@@ -1420,646 +1402,6 @@ export default {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.25rem;
-  }
-  
-  .invoice-actions {
-    flex-direction: column;
-  }
-}
-</style>
-
-    formatExpiry(expiry) {
-      const expiryDate = new Date(expiry * 1000);
-      const now = new Date();
-      const diffMinutes = Math.floor((expiryDate - now) / (1000 * 60));
-      
-      if (diffMinutes < 0) return 'Expired';
-      if (diffMinutes < 60) return `${diffMinutes} minutes`;
-      if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours`;
-      return `${Math.floor(diffMinutes / 1440)} days`;
-
-    }
-  }
-}
-
-<style scoped>
-.wallet-page {
-  background: #f8f9fa;
-  min-height: 100vh;
-}
-
-/* Header */
-.wallet-header {
-  background: white;
-  padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.logo-container {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #10b981, #059669);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.settings-btn {
-  color: #6b7280;
-}
-
-/* Balance Section */
-.balance-section {
-  background: white;
-  padding: 3rem 1rem;
-  text-align: center;
-}
-
-.balance-container {
-  max-width: 400px;
-  margin: 0 auto;
-}
-
-.balance-amount {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.amount-number {
-  font-size: 3.5rem;
-  font-weight: 700;
-  color: #1f2937;
-  line-height: 1;
-}
-
-.amount-unit {
-  font-size: 1.5rem;
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.balance-fiat {
-  font-size: 1.25rem;
-  color: #6b7280;
-}
-
-/* Action Section */
-.action-section {
-  background: white;
-  padding: 2rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 1rem;
-  max-width: 400px;
-  margin: 0 auto;
-}
-
-.action-btn {
-  flex: 1;
-  height: 80px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #059573, #047857);
-  color: white;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.2);
-  transition: all 0.2s ease;
-}
-
-.action-btn:hover {
-  background: linear-gradient(135deg, #047857, #065f46);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(5, 149, 115, 0.3);
-}
-
-.btn-text {
-  font-size: 1.125rem;
-}
-
-/* Transactions Section */
-.transactions-section {
-  background: white;
-  padding: 1rem;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  padding: 0 0.5rem;
-}
-
-.section-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin: 0;
-}
-
-.view-all-btn {
-  font-weight: 500;
-  text-transform: none;
-  color: #10b981;
-}
-
-.transaction-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.transaction-item {
-  display: flex;
-  align-items: center;
-  padding: 1rem 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  border-radius: 8px;
-}
-
-.transaction-item:hover {
-  background: #f9fafb;
-}
-
-.transaction-icon {
-  margin-right: 1rem;
-}
-
-.tx-icon-container {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.tx-icon-received {
-  background: #059573;
-}
-
-.tx-icon-sent {
-  background: #6b7280;
-}
-
-.tx-icon-zap {
-  background: #059573;
-}
-
-.transaction-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.transaction-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.25rem;
-}
-
-.transaction-type {
-  font-weight: 500;
-  color: #1f2937;
-  margin-bottom: 0.25rem;
-  font-size: 1rem;
-}
-
-.transaction-time {
-  color: #6b7280;
-  font-size: 0.875rem;
-  margin-bottom: 0.25rem;
-}
-
-.transaction-description {
-  color: #6b7280;
-  font-size: 0.75rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-bottom: 0.25rem;
-}
-
-.nostr-info {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: #059573;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.sender-avatar {
-  border: 1px solid rgba(5, 149, 115, 0.3);
-}
-
-.sender-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 120px;
-}
-
-.transaction-amount {
-  text-align: right;
-  min-width: 100px;
-}
-
-.amount-sats {
-  font-weight: 600;
-  font-size: 1rem;
-  margin-bottom: 0.25rem;
-}
-
-.amount-positive {
-  color: #059573;
-}
-
-.amount-negative {
-  color: #6b7280;
-}
-
-.amount-fiat {
-  color: #6b7280;
-  font-size: 0.875rem;
-}
-
-/* Empty State */
-.empty-transactions {
-  background: white;
-  padding: 3rem 1rem;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  max-width: 300px;
-  margin: 0 auto;
-}
-
-.empty-icon {
-  margin-bottom: 1rem;
-}
-
-.empty-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin: 0 0 0.5rem;
-}
-
-.empty-subtitle {
-  color: #6b7280;
-  font-size: 0.875rem;
-}
-
-/* Dialog Styles */
-.dialog-card {
-  width: 100%;
-  max-width: 500px;
-  border-radius: 16px;
-}
-
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  background: rgba(5, 149, 115, 0.05);
-}
-
-.dialog-content {
-  padding: 1rem;
-}
-
-/* Payment Method Tabs */
-.payment-method-tabs {
-  margin-bottom: 1.5rem;
-}
-
-.receive-tabs {
-  background: #f9fafb;
-  border-radius: 8px;
-  padding: 0.25rem;
-}
-
-.receive-tabs :deep(.q-tab) {
-  border-radius: 6px;
-  font-weight: 500;
-}
-
-.receive-tabs :deep(.q-tab--active) {
-  background: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.receive-panels {
-  background: transparent;
-}
-
-/* Send Form Styles */
-.send-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.input-section {
-  position: relative;
-}
-
-.payment-input {
-  margin-bottom: 0.5rem;
-}
-
-.input-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-}
-
-.scan-btn,
-.paste-btn {
-  font-size: 0.875rem;
-}
-
-/* Payment Type Indicator */
-.payment-type {
-  margin-bottom: 1rem;
-}
-
-.type-indicator {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.type-invoice {
-  background: rgba(5, 149, 115, 0.1);
-  color: #059573;
-}
-
-.type-lnurl {
-  background: rgba(120, 213, 60, 0.1);
-  color: #78D53C;
-}
-
-.type-address {
-  background: rgba(107, 114, 128, 0.1);
-  color: #6b7280;
-}
-
-/* Amount Section */
-.amount-section {
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-.amount-input {
-  margin-bottom: 1rem;
-}
-
-/* Invoice Details Section */
-.invoice-details-section {
-  margin-bottom: 1rem;
-}
-
-.invoice-details {
-  background: #f9fafb;
-  border-radius: 8px;
-  padding: 1rem;
-}
-
-.details-header {
-  display: flex;
-  align-items: center;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 1rem;
-}
-
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.detail-row:last-child {
-  margin-bottom: 0;
-}
-
-.detail-label {
-  font-weight: 500;
-  color: #6b7280;
-}
-
-.detail-value {
-  font-weight: 600;
-  color: #1f2937;
-}
-
-/* Address Form Styles */
-.address-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.address-info {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 8px;
-}
-
-.address-icon {
-  width: 48px;
-  height: 48px;
-  background: rgba(5, 149, 115, 0.1);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.address-text {
-  flex: 1;
-}
-
-.address-title {
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 0.25rem;
-}
-
-.address-subtitle {
-  color: #6b7280;
-  font-size: 0.875rem;
-}
-
-.address-input {
-  font-family: monospace;
-}
-
-.address-actions {
-  display: flex;
-  gap: 1rem;
-}
-
-.copy-address-btn,
-.qr-address-btn {
-  flex: 1;
-}
-
-/* Invoice Result Styles */
-.invoice-result {
-  margin-top: 1rem;
-  text-align: center;
-}
-
-.qr-code-container {
-  margin-bottom: 1rem;
-  padding: 1rem;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
-}
-
-.qr-code {
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.invoice-details {
-  margin-bottom: 1rem;
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 8px;
-}
-
-.invoice-amount {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #059573;
-  margin-bottom: 0.5rem;
-}
-
-.invoice-description {
-  color: #6b7280;
-  font-size: 0.875rem;
-}
-
-.invoice-text {
-  margin-bottom: 1rem;
-  font-family: monospace;
-  font-size: 0.75rem;
-}
-
-.invoice-actions {
-  display: flex;
-  gap: 1rem;
-}
-
-.copy-btn,
-.share-btn {
-  flex: 1;
-}
-
-/* Payment Actions */
-.payment-actions {
-  margin-top: 1rem;
-}
-
-.send-payment-btn,
-.create-invoice-btn {
-  background: linear-gradient(135deg, #059573, #047857);
-  border-radius: 12px;
-  padding: 0.75rem;
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.2);
-  transition: all 0.2s ease;
-}
-
-.send-payment-btn:hover,
-.create-invoice-btn:hover {
-  background: linear-gradient(135deg, #047857, #065f46);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3);
-}
-
-.qr-scanner-container {
-  height: 300px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid #e5e7eb;
-}
-
-/* Responsive Design */
-@media (max-width: 480px) {
-  .amount-number {
-    font-size: 2.5rem;
-  }
-  
-  .amount-unit {
-    font-size: 1.25rem;
-  }
-  
-  .balance-fiat {
-    font-size: 1.125rem;
-  }
-  
-  .action-btn {
-    height: 70px;
-  }
-  
-  .btn-text {
-    font-size: 1rem;
-  }
-  
-  .transaction-item {
-    padding: 0.75rem 0.25rem;
-  }
-  
-  .transaction-main {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
-  }
-  
-  .address-actions {
-    flex-direction: column;
   }
   
   .invoice-actions {
