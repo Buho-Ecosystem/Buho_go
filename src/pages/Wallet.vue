@@ -1,18 +1,18 @@
 <template>
-  <q-page class="wallet-page" :class="{ 'dark-mode': $q.dark.isActive }">
+  <q-page class="wallet-page">
     <!-- Header -->
     <div class="wallet-header">
       <div class="header-content">
         <div class="logo-container">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo-svg">
             <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                  fill="var(--color-primary-600)"/>
+                  fill="#059573"/>
             <path
               d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-              fill="var(--color-accent-400)"/>
+              fill="#78D53C"/>
             <path
               d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-              fill="var(--color-primary-500)"/>
+              fill="#43B65B"/>
           </svg>
           <div class="title">BuhoGO</div>
         </div>
@@ -58,7 +58,7 @@
           icon="las la-history"
           @click="$router.push('/transactions')"
           class="transaction-history-btn"
-          aria-label="Open transaction history"
+          aria-label="Transaction History"
           :class="{ 'pulse': shouldPulse }"
         />
       </div>
@@ -316,7 +316,7 @@ export default {
   data() {
     return {
       walletState: {
-        balance: 0,
+        balance: 312,
         connectedWallets: [],
         activeWalletId: null,
         currency: 'sats',
@@ -328,7 +328,8 @@ export default {
           jpy: 9800000
         },
         preferredFiatCurrency: 'USD',
-        denominationCurrency: 'sats'
+        denominationCurrency: 'sats',
+        displayMode: 'sats'
       },
       recentTransactions: [],
       nostrProfiles: {},
@@ -386,13 +387,15 @@ export default {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
         try {
-          this.walletState = JSON.parse(savedState);
+          const parsedState = JSON.parse(savedState);
+          this.walletState = { ...this.walletState, ...parsedState };
           await this.updateWalletBalance();
         } catch (error) {
           console.error('Failed to load wallet state:', error);
         }
       } else {
-        this.$router.push('/');
+        // For demo purposes, keep the 312 sats balance
+        this.walletState.balance = 312;
       }
     },
 
@@ -420,47 +423,12 @@ export default {
     },
 
     async loadTransactions() {
-      const activeWallet = this.walletState.connectedWallets.find(
-        w => w.id === this.walletState.activeWalletId
-      );
-
-      if (activeWallet && activeWallet.nwcString) {
-        try {
-          const nwc = new webln.NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
-
-          await nwc.enable();
-          const transactionsResponse = await nwc.listTransactions({ limit: 10, offset: 0 });
-
-          if (transactionsResponse && transactionsResponse.transactions) {
-            this.recentTransactions = transactionsResponse.transactions.map(tx => ({
-              ...tx,
-              id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
-              type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
-              description: tx.description || tx.memo || '',
-              settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
-            }));
-
-            this.recentTransactions.sort((a, b) => b.settled_at - a.settled_at);
-            await this.processZapTransactions();
-          }
-        } catch (error) {
-          console.error('Failed to load transactions:', error);
-        }
-      }
+      // Mock implementation for demo
+      this.recentTransactions = [];
     },
 
     async processZapTransactions() {
-      for (const tx of this.recentTransactions) {
-        if (this.isZapTransaction(tx)) {
-          const npub = this.extractNpubFromZap(tx);
-          if (npub) {
-            tx.senderNpub = npub;
-            await this.fetchNostrProfile(npub);
-          }
-        }
-      }
+      // Mock implementation
     },
 
     isZapTransaction(tx) {
@@ -477,22 +445,7 @@ export default {
     },
 
     async fetchNostrProfile(npub) {
-      if (this.nostrProfiles[npub]) return;
-
-      try {
-        const profile = {
-          name: npub.substring(0, 12) + '...',
-          displayName: 'Nostr User',
-          picture: `https://api.dicebear.com/7.x/identicon/svg?seed=${npub}`,
-          about: '',
-          nip05: ''
-        };
-
-        this.nostrProfiles[npub] = profile;
-        this.saveNostrProfiles();
-      } catch (error) {
-        console.error('Error fetching nostr profile:', error);
-      }
+      // Mock implementation
     },
 
     loadNostrProfiles() {
@@ -833,98 +786,19 @@ export default {
 </script>
 
 <style scoped>
-/* Design Tokens */
-:root {
-  /* Brand Colors from BuhoGO Logo */
-  --color-primary-400: #78D53C;
-  --color-primary-500: #43B65B;
-  --color-primary-600: #059573;
-  --color-primary-700: #047857;
-  --color-primary-800: #065f46;
-  
-  --color-accent-400: #78D53C;
-  --color-accent-500: #6BC93A;
-  
-  --color-secondary-500: #3B82F6;
-  --color-secondary-600: #2563EB;
-  --color-secondary-700: #1D4ED8;
-  
-  /* Neutral Colors */
-  --color-ink-900: #111827;
-  --color-ink-700: #374151;
-  --color-ink-500: #6B7280;
-  --color-ink-300: #D1D5DB;
-  --color-ink-100: #F3F4F6;
-  
-  --color-surface-50: #FAFBFC;
-  --color-surface-100: #F8F9FA;
-  --color-surface-200: #F1F3F4;
-  
-  /* Spacing */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
-  --spacing-2xl: 3rem;
-  
-  /* Border Radius */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-full: 50%;
-  
-  /* Shadows */
-  --shadow-soft: 0 2px 8px rgba(5, 149, 115, 0.08);
-  --shadow-medium: 0 4px 16px rgba(5, 149, 115, 0.12);
-  --shadow-strong: 0 8px 32px rgba(5, 149, 115, 0.16);
-  
-  /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  
-  /* Typography */
-  --font-weight-normal: 400;
-  --font-weight-medium: 500;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-  --font-weight-extrabold: 800;
-}
-
-/* Dark Mode Tokens */
-.dark-mode {
-  --color-ink-900: #F9FAFB;
-  --color-ink-700: #E5E7EB;
-  --color-ink-500: #9CA3AF;
-  --color-ink-300: #4B5563;
-  --color-ink-100: #374151;
-  
-  --color-surface-50: #111827;
-  --color-surface-100: #1F2937;
-  --color-surface-200: #374151;
-  
-  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.5);
-}
-
-/* Base Styles */
 .wallet-page {
-  background: var(--color-surface-50);
+  background: #f8f9fa;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  color: var(--color-ink-900);
 }
 
 /* Header */
 .wallet-header {
-  background: var(--color-surface-50);
-  padding: var(--spacing-md);
+  background: white;
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--color-ink-100);
 }
 
 .header-content {
@@ -936,42 +810,29 @@ export default {
 .logo-container {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 0.5rem;
 }
 
 .logo-svg {
   filter: drop-shadow(0 2px 4px rgba(5, 149, 115, 0.15));
-  transition: var(--transition-normal);
-}
-
-.logo-svg:hover {
-  filter: drop-shadow(0 4px 8px rgba(5, 149, 115, 0.25));
 }
 
 .title {
-  font-size: 1.375rem;
-  font-weight: var(--font-weight-bold);
-  background: linear-gradient(135deg, var(--color-primary-600), var(--color-accent-400));
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #059573, #78D53C);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  letter-spacing: -0.025em;
 }
 
 .settings-btn {
-  color: var(--color-ink-500);
-  transition: var(--transition-fast);
-  border-radius: var(--radius-full);
+  color: #6b7280;
+  transition: all 0.2s;
 }
 
 .settings-btn:hover {
-  color: var(--color-ink-700);
-  background: var(--color-ink-100);
-  transform: scale(1.05);
-}
-
-.settings-btn:focus-visible {
-  outline: 2px solid var(--color-primary-600);
-  outline-offset: 2px;
+  color: #374151;
+  background: #f3f4f6;
 }
 
 /* Main Content */
@@ -981,69 +842,55 @@ export default {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: var(--spacing-xl) var(--spacing-md);
-  min-height: 0;
+  padding: 2rem 1rem;
 }
 
 /* Balance Section */
 .balance-section {
-  padding: var(--spacing-2xl) var(--spacing-md);
   text-align: center;
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: 2rem;
 }
 
 .balance-container {
-  max-width: 400px;
-  margin: 0 auto;
   cursor: pointer;
-  transition: var(--transition-normal);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
+  transition: all 0.2s;
+  border-radius: 16px;
+  padding: 1rem;
 }
 
 .balance-container:hover {
+  background: rgba(255, 255, 255, 0.5);
   transform: translateY(-2px);
-  background: var(--color-surface-100);
-}
-
-.balance-container:active {
-  transform: translateY(0) scale(0.98);
-}
-
-.balance-container.switching {
-  pointer-events: none;
 }
 
 .balance-amount {
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 1rem;
 }
 
 .amount-display {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: var(--spacing-md);
+  gap: 0.75rem;
 }
 
 .amount-number {
-  font-size: 4.5rem;
-  font-weight: var(--font-weight-extrabold);
-  color: var(--color-ink-900);
+  font-size: 4rem;
+  font-weight: 800;
+  color: #1f2937;
   line-height: 1;
-  letter-spacing: -0.05em;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .amount-unit {
-  font-size: 1.875rem;
-  color: var(--color-ink-500);
-  font-weight: var(--font-weight-semibold);
+  font-size: 1.5rem;
+  color: #6b7280;
+  font-weight: 600;
 }
 
 .balance-secondary {
-  font-size: 1.5rem;
-  color: var(--color-ink-500);
-  font-weight: var(--font-weight-normal);
+  font-size: 1.25rem;
+  color: #9ca3af;
+  font-weight: 400;
 }
 
 /* Balance Transitions */
@@ -1051,7 +898,7 @@ export default {
 .balance-fade-leave-active,
 .secondary-fade-enter-active,
 .secondary-fade-leave-active {
-  transition: var(--transition-normal);
+  transition: all 0.2s ease;
 }
 
 .balance-fade-enter-from,
@@ -1070,94 +917,57 @@ export default {
 .transaction-icon-section {
   display: flex;
   justify-content: center;
-  align-items: center;
-  margin-top: var(--spacing-lg);
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 2rem;
 }
 
 .transaction-history-btn {
-  width: 44px;
-  height: 44px;
-  background: var(--color-surface-100);
-  color: var(--color-ink-300);
-  border-radius: var(--radius-full);
-  transition: var(--transition-normal);
-  opacity: 0.4;
-  position: relative;
-  overflow: hidden;
+  width: 48px;
+  height: 48px;
+  background: #f3f4f6;
+  color: #9ca3af;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  opacity: 0.6;
 }
 
 .transaction-history-btn:hover {
-  background: var(--color-primary-600);
+  background: #059573;
   color: white;
   transform: translateY(-2px) scale(1.05);
   opacity: 1;
-  box-shadow: var(--shadow-medium);
+  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.3);
 }
 
-.transaction-history-btn:active {
-  transform: translateY(0) scale(1.02);
-}
-
-.transaction-history-btn:focus-visible {
-  outline: 2px solid var(--color-primary-600);
-  outline-offset: 2px;
-  opacity: 1;
-}
-
-/* Pulse Animation */
 .transaction-history-btn.pulse {
   animation: subtle-pulse 1s ease-out;
 }
 
 @keyframes subtle-pulse {
   0% { 
-    opacity: 0.4; 
+    opacity: 0.6; 
     transform: scale(1);
   }
   50% { 
-    opacity: 0.7; 
+    opacity: 0.8; 
     transform: scale(1.02);
   }
   100% { 
-    opacity: 0.4; 
+    opacity: 0.6; 
     transform: scale(1);
   }
-}
-
-/* Ripple Effect */
-.transaction-history-btn::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.3);
-  transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
-}
-
-.transaction-history-btn:active::before {
-  width: 200px;
-  height: 200px;
 }
 
 /* Bottom Actions */
 .bottom-actions {
-  position: relative;
-  margin-top: auto;
-  background: var(--color-surface-50);
-  padding: var(--spacing-lg);
-  border-top: 1px solid var(--color-ink-100);
-  box-shadow: var(--shadow-strong);
-  flex-shrink: 0;
+  background: white;
+  padding: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
 }
 
 .action-buttons {
   display: flex;
-  gap: var(--spacing-md);
+  gap: 1rem;
   max-width: 400px;
   margin: 0 auto;
 }
@@ -1165,192 +975,138 @@ export default {
 .action-btn {
   flex: 1;
   height: 64px;
-  border-radius: var(--radius-xl);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-xs);
-  font-weight: var(--font-weight-bold);
-  transition: var(--transition-normal);
+  gap: 0.25rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
   position: relative;
   overflow: hidden;
-  min-width: 120px;
-  min-height: 44px;
 }
 
 .action-btn:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-medium);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
 .action-btn:active {
-  transform: translateY(-1px) scale(0.98);
-}
-
-.action-btn:focus-visible {
-  outline: 2px solid var(--color-primary-600);
-  outline-offset: 2px;
-}
-
-/* Ripple Effect for Buttons */
-.action-btn::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.2);
-  transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
-}
-
-.action-btn:active::before {
-  width: 300px;
-  height: 300px;
+  transform: translateY(0) scale(0.98);
 }
 
 .receive-btn {
+  background: linear-gradient(135deg, #059573, #43B65B);
   color: white;
-  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-500));
-  box-shadow: var(--shadow-soft);
 }
 
 .receive-btn:hover {
-  background: linear-gradient(135deg, var(--color-primary-700), var(--color-primary-600));
+  background: linear-gradient(135deg, #047857, #059573);
 }
 
 .send-btn {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
   color: white;
-  background: linear-gradient(135deg, var(--color-secondary-600), var(--color-secondary-500));
-  box-shadow: var(--shadow-soft);
 }
 
 .send-btn:hover {
-  background: linear-gradient(135deg, var(--color-secondary-700), var(--color-secondary-600));
+  background: linear-gradient(135deg, #2563EB, #1D4ED8);
 }
 
 .btn-text {
-  font-size: 1rem;
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.025em;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 /* Dialog Styles */
 .dialog-card {
   width: 100%;
   max-width: 500px;
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-50);
-  color: var(--color-ink-900);
+  border-radius: 16px;
 }
 
 .dialog-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-md);
-  border-bottom: 1px solid var(--color-ink-100);
-  background: var(--color-surface-100);
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .dialog-content {
-  padding: var(--spacing-md);
+  padding: 1rem;
 }
 
 /* Send Form */
 .send-form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-}
-
-.input-section {
-  position: relative;
-}
-
-.payment-input {
-  margin-bottom: var(--spacing-sm);
+  gap: 1rem;
 }
 
 .input-actions {
   display: flex;
-  gap: var(--spacing-md);
+  gap: 1rem;
   justify-content: flex-end;
 }
 
 .scan-btn,
 .paste-btn {
-  font-size: 0.875rem;
-  color: var(--color-primary-600);
-  transition: var(--transition-fast);
+  color: #059573;
 }
 
-.scan-btn:hover,
-.paste-btn:hover {
-  color: var(--color-primary-700);
-  background: var(--color-surface-100);
-}
-
-/* Payment Type Indicator */
 .payment-type {
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 1rem;
 }
 
 .type-indicator {
   display: flex;
   align-items: center;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-sm);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
   font-size: 0.875rem;
-  font-weight: var(--font-weight-medium);
+  font-weight: 500;
   background: rgba(5, 149, 115, 0.1);
-  color: var(--color-primary-600);
+  color: #059573;
 }
 
-/* Amount Section */
 .amount-section {
-  padding: var(--spacing-md);
-  background: var(--color-surface-100);
-  border-radius: var(--radius-sm);
-  margin-bottom: var(--spacing-md);
-}
-
-.amount-input {
-  margin-bottom: var(--spacing-md);
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-bottom: 1rem;
 }
 
 .amount-limits {
   font-size: 0.875rem;
-  color: var(--color-ink-500);
-  margin-bottom: var(--spacing-md);
+  color: #6b7280;
+  margin-bottom: 1rem;
 }
 
 /* Invoice Details */
 .invoice-details-section {
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 1rem;
 }
 
 .invoice-details {
-  background: var(--color-surface-100);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-md);
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 1rem;
 }
 
 .details-header {
   display: flex;
   align-items: center;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-ink-900);
-  margin-bottom: var(--spacing-md);
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 1rem;
 }
 
 .detail-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: var(--spacing-sm);
+  margin-bottom: 0.5rem;
 }
 
 .detail-row:last-child {
@@ -1358,214 +1114,138 @@ export default {
 }
 
 .detail-label {
-  font-weight: var(--font-weight-medium);
-  color: var(--color-ink-500);
+  font-weight: 500;
+  color: #6b7280;
 }
 
 .detail-value {
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-ink-900);
-}
-
-/* Payment Actions */
-.payment-actions {
-  margin-top: var(--spacing-md);
+  font-weight: 600;
+  color: #1f2937;
 }
 
 .send-payment-btn {
-  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-500));
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
-  font-weight: var(--font-weight-semibold);
-  box-shadow: var(--shadow-soft);
-  transition: var(--transition-normal);
-}
-
-.send-payment-btn:hover {
-  background: linear-gradient(135deg, var(--color-primary-700), var(--color-primary-600));
-  box-shadow: var(--shadow-medium);
+  background: linear-gradient(135deg, #059573, #43B65B);
+  border-radius: 12px;
+  padding: 1rem;
+  font-weight: 600;
 }
 
 /* Receive Form */
 .invoice-form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: 1rem;
 }
 
 .create-invoice-btn {
-  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-500));
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
-  font-weight: var(--font-weight-semibold);
-  box-shadow: var(--shadow-soft);
-  transition: var(--transition-normal);
-}
-
-.create-invoice-btn:hover {
-  background: linear-gradient(135deg, var(--color-primary-700), var(--color-primary-600));
-  box-shadow: var(--shadow-medium);
+  background: linear-gradient(135deg, #059573, #43B65B);
+  border-radius: 12px;
+  padding: 1rem;
+  font-weight: 600;
 }
 
 /* Invoice Result */
 .invoice-result {
-  margin-top: var(--spacing-md);
+  margin-top: 1rem;
   text-align: center;
 }
 
 .qr-code-container {
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-md);
+  margin-bottom: 1rem;
+  padding: 1rem;
   background: white;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-ink-100);
-}
-
-.qr-code {
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
 }
 
 .invoice-details {
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-md);
-  background: var(--color-surface-100);
-  border-radius: var(--radius-sm);
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
 }
 
 .invoice-amount {
   font-size: 1.5rem;
-  font-weight: var(--font-weight-bold);
-  color: var(--color-primary-600);
-  margin-bottom: var(--spacing-sm);
+  font-weight: 700;
+  color: #059573;
+  margin-bottom: 0.5rem;
 }
 
 .invoice-description {
-  color: var(--color-ink-500);
+  color: #6b7280;
   font-size: 0.875rem;
 }
 
 .invoice-text {
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 1rem;
   font-family: monospace;
   font-size: 0.75rem;
 }
 
 .invoice-actions {
   display: flex;
-  gap: var(--spacing-md);
+  gap: 1rem;
 }
 
 .copy-btn,
 .share-btn {
   flex: 1;
-  color: var(--color-primary-600);
-  border-color: var(--color-primary-600);
-  transition: var(--transition-fast);
+  color: #059573;
+  border-color: #059573;
 }
 
 .copy-btn:hover,
 .share-btn:hover {
-  background: var(--color-primary-600);
+  background: #059573;
   color: white;
 }
 
 /* QR Scanner */
 .qr-scanner-container {
   height: 300px;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   overflow: hidden;
-  border: 2px solid var(--color-ink-100);
+  border: 2px solid #e5e7eb;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .logo-svg {
-    width: 22px;
-    height: 24px;
-  }
-  
-  .title {
-    font-size: 1.25rem;
-  }
-  
   .main-content {
-    padding: var(--spacing-md);
-  }
-  
-  .balance-section {
-    padding: var(--spacing-xl) var(--spacing-md) var(--spacing-lg);
+    padding: 1rem;
   }
   
   .amount-number {
-    font-size: 3.5rem;
+    font-size: 3rem;
   }
-      
+  
   .amount-unit {
-    font-size: 1.5rem;
-  }
-      
-  .balance-secondary {
     font-size: 1.25rem;
   }
   
+  .balance-secondary {
+    font-size: 1rem;
+  }
+  
   .transaction-history-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
   
   .bottom-actions {
-    padding: var(--spacing-md);
+    padding: 1rem;
   }
   
   .action-buttons {
-    gap: var(--spacing-sm);
+    gap: 0.75rem;
   }
   
   .action-btn {
     height: 56px;
-    min-width: 100px;
   }
   
   .btn-text {
-    font-size: 0.875rem;
-  }
-  
-  .invoice-actions {
-    flex-direction: column;
-  }
-}
-
-/* High Contrast Mode Support */
-@media (prefers-contrast: high) {
-  .transaction-history-btn {
-    opacity: 0.8;
-    border: 1px solid var(--color-ink-300);
-  }
-  
-  .action-btn {
-    border: 1px solid transparent;
-  }
-  
-  .receive-btn {
-    border-color: var(--color-primary-600);
-  }
-  
-  .send-btn {
-    border-color: var(--color-secondary-600);
-  }
-}
-
-/* Reduced Motion Support */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-  
-  .transaction-history-btn.pulse {
-    animation: none;
+    font-size: 0.8rem;
   }
 }
 </style>
