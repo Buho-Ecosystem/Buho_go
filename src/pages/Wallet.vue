@@ -158,6 +158,11 @@
               <q-icon name="las la-info-circle" class="limits-icon"/>
               <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
             </div>
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
     <!-- Receive Modal -->
     <ReceiveModal 
       v-model="showReceiveModal"
@@ -234,6 +239,78 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Receive Dialog -->
+    <q-dialog v-model="showReceiveDialog" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Receive Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <!-- Invoice Form -->
+          <div class="invoice-form" v-if="!generatedInvoice">
+            <q-input
+              v-model="receiveForm.amount"
+              outlined
+              label="Amount (sats)"
+              type="number"
+              min="1"
+              class="amount-input"
+              :rules="[val => val > 0 || 'Amount must be greater than 0']"
+            />
+            
+            <q-input
+              v-model="receiveForm.description"
+              outlined
+              label="Description (optional)"
+              placeholder="What is this payment for?"
+              class="description-input"
+            />
+            
+            <q-btn
+              class="create-invoice-btn"
+              @click="createInvoice"
+              :loading="isCreatingInvoice"
+              :disable="!receiveForm.amount || receiveForm.amount <= 0"
+              no-caps
+              unelevated
+            >
+              Create Invoice
+            </q-btn>
+          </div>
+
+          <!-- Invoice Result -->
+          <div class="invoice-result" v-else>
+            <!-- Payment Success State -->
+            <div class="payment-success" v-if="invoicePaid">
+              <q-icon name="las la-check-circle" size="64px" color="positive" class="success-icon"/>
+              <div class="success-text">Payment Received!</div>
+              <div class="success-amount">{{ formatBalance(receiveForm.amount) }}</div>
+            </div>
+
+            <!-- Compact Invoice Display (waiting for payment) -->
+            <div class="compact-invoice" v-else-if="waitingForPayment">
+              <!-- QR Code Section -->
+              <div class="qr-code-section compact">
+                <vue-qrcode
+                  :value="generatedInvoice.paymentRequest"
+                  :options="{ width: 200, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
+                  class="qr-code"
+                />
+              </div>
+              
+              <!-- Invoice Info -->
+              <div class="invoice-info-compact">
+                <div class="amount-compact">
+                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                </div>
+                <div class="description-compact" v-if="receiveForm.description">
+                  {{ receiveForm.description }}
+                </div>
+                
+                <div class="waiting-indicator-compact">
                   <q-spinner-dots color="primary" size="18px"/>
                   <span class="waiting-text-compact">Waiting for payment...</span>
                 </div>
@@ -380,6 +457,8 @@ export default {
         return this.paymentAmount && this.paymentAmount > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
       }
       return true;
+    }
+  },
   async created() {
     this.initializeWallet();
   },
@@ -884,6 +963,13 @@ export default {
       this.isCreatingInvoice = true;
       try {
         console.log('🔍 Starting invoice creation...');
+      } catch (error) {
+        console.error('Error creating invoice:', error);
+      } finally {
+        this.isCreatingInvoice = false;
+      }
+    },
+
     onInvoiceCreated(invoice) {
       // Refresh balance after invoice creation
       this.updateBalance();
@@ -1045,6 +1131,10 @@ export default {
         this.isSendingPayment = false;
       }
     },
+
+    async checkInvoicePayment() {
+      if (this.invoiceCheckInterval) {
+        clearInterval(this.invoiceCheckInterval);
         this.invoiceCheckInterval = null;
       }
 
