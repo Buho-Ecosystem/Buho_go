@@ -16,23 +16,38 @@
           </svg>
           <div class="title">BuhoGO</div>
         </div>
-        <q-btn flat round dense icon="las la-cog" @click="$router.push('/settings')" class="settings-btn"/>
+        <q-btn flat round dense icon="las la-bars" @click="$router.push('/settings')" class="settings-btn"/>
       </div>
     </div>
 
-    <!-- Balance Display -->
-    <div class="balance-section">
-      <div class="balance-container">
-        <div class="balance-amount">
-          <span class="amount-number">{{ formatMainBalance(walletState.balance) }}</span>
-          <span class="amount-unit">sats</span>
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Balance Display -->
+      <div class="balance-section">
+        <div class="balance-container">
+          <div class="balance-amount">
+            <span class="amount-number">{{ formatMainBalance(walletState.balance) }}</span>
+            <span class="amount-unit">sats</span>
+          </div>
+          <div class="balance-fiat">{{ getFiatValue(walletState.balance) }}</div>
         </div>
-        <div class="balance-fiat">{{ getFiatValue(walletState.balance) }}</div>
+      </div>
+
+      <!-- Transaction History Icon -->
+      <div class="transaction-icon-section">
+        <q-btn
+          flat
+          round
+          size="lg"
+          icon="las la-chevron-up"
+          @click="$router.push('/transactions')"
+          class="transaction-history-btn"
+        />
       </div>
     </div>
 
-    <!-- Action Buttons -->
-    <div class="action-section">
+    <!-- Bottom Action Buttons -->
+    <div class="bottom-actions">
       <div class="action-buttons">
         <q-btn
           class="action-btn receive-btn"
@@ -40,7 +55,7 @@
           no-caps
           unelevated
         >
-          <q-icon name="las la-arrow-down" size="24px"/>
+          <q-icon name="las la-arrow-down" size="28px"/>
           <div class="btn-text">Receive</div>
         </q-btn>
         <q-btn
@@ -49,83 +64,9 @@
           no-caps
           unelevated
         >
-          <q-icon name="las la-arrow-up" size="24px"/>
+          <q-icon name="las la-arrow-up" size="28px"/>
           <div class="btn-text">Send</div>
         </q-btn>
-      </div>
-    </div>
-
-    <!-- Recent Transactions -->
-    <div class="transactions-section" v-if="recentTransactions.length > 0">
-      <div class="section-header">
-        <h3 class="section-title">Recent Activity</h3>
-        <q-btn
-          flat
-          no-caps
-          color="primary"
-          @click="$router.push('/transactions')"
-          class="view-all-btn"
-        >
-          View All
-          <q-icon name="las la-chevron-right" size="16px" class="q-ml-xs"/>
-        </q-btn>
-      </div>
-
-      <div class="transaction-list">
-        <div
-          v-for="(tx, index) in recentTransactions.slice(0, 4)"
-          :key="tx.id"
-          class="transaction-item"
-          @click="viewTransactionDetail(tx)"
-        >
-          <div class="transaction-icon">
-            <div class="tx-icon-container" :class="getTransactionIconClass(tx)">
-              <q-icon :name="getTransactionIcon(tx)" size="20px"/>
-            </div>
-          </div>
-
-          <div class="transaction-info">
-            <div class="transaction-main">
-              <div class="transaction-type">{{ getTransactionTypeText(tx) }}</div>
-              <div class="transaction-time">{{ formatTransactionTime(tx.settled_at) }}</div>
-            </div>
-            <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
-              {{ tx.description }}
-            </div>
-            <div class="transaction-description" v-else-if="tx.memo">
-              {{ tx.memo }}
-            </div>
-            <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
-              <q-avatar size="16px" class="sender-avatar">
-                <img 
-                  v-if="nostrProfiles[tx.senderNpub].picture" 
-                  :src="nostrProfiles[tx.senderNpub].picture"
-                  :alt="getSenderDisplayName(tx.senderNpub)"
-                />
-                <q-icon v-else name="las la-user" size="10px"/>
-              </q-avatar>
-              <span class="sender-name">{{ getSenderDisplayName(tx.senderNpub) }}</span>
-            </div>
-          </div>
-
-          <div class="transaction-amount">
-            <div class="amount-sats" :class="getAmountClass(tx)">
-              {{ getFormattedAmount(tx) }}
-            </div>
-            <div class="amount-fiat">{{ getFiatAmount(tx) }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Empty State -->
-    <div class="empty-transactions" v-else>
-      <div class="empty-content">
-        <div class="empty-icon">
-          <q-icon name="las la-receipt" size="3rem" color="grey-4"/>
-        </div>
-        <div class="empty-title">No transactions yet</div>
-        <div class="empty-subtitle">Your transaction history will appear here</div>
       </div>
     </div>
 
@@ -872,15 +813,17 @@ export default {
 
 <style scoped>
 .wallet-page {
-  background: #f8f9fa;
+  background: #ffffff;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Header */
 .wallet-header {
   background: white;
   padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .header-content {
@@ -907,11 +850,22 @@ export default {
   color: #6b7280;
 }
 
+/* Main Content */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 1rem;
+  min-height: 0;
+}
+
 /* Balance Section */
 .balance-section {
-  background: white;
-  padding: 3rem 1rem;
+  padding: 2rem 1rem;
   text-align: center;
+  margin-bottom: 2rem;
 }
 
 .balance-container {
@@ -945,225 +899,97 @@ export default {
   color: #6b7280;
 }
 
-/* Action Section */
-.action-section {
+/* Transaction History Icon */
+.transaction-icon-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 2rem;
+}
+
+.transaction-history-btn {
+  width: 60px;
+  height: 60px;
+  background: #f8f9fa;
+  color: #6b7280;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.transaction-history-btn:hover {
+  background: #f3f4f6;
+  color: #059573;
+  transform: translateY(-2px);
+}
+
+/* Bottom Actions */
+.bottom-actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   background: white;
-  padding: 2rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 1.5rem;
+  border-top: 1px solid #f3f4f6;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
 }
 
 .action-buttons {
   display: flex;
-  gap: 1rem;
+  gap: 1.5rem;
   max-width: 400px;
   margin: 0 auto;
 }
 
 .action-btn {
   flex: 1;
-  height: 80px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #059573, #047857);
-  color: white;
+  height: 64px;
+  border-radius: 20px;
+  background: #f1f5f9;
+  color: #1f2937;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   font-weight: 600;
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.2);
+  border: 1px solid #e2e8f0;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .action-btn:hover {
+  background: #e2e8f0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.receive-btn {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: white;
+  background: linear-gradient(135deg, #059573, #047857);
+  border-color: #059573;
+}
+
+.receive-btn:hover {
   background: linear-gradient(135deg, #047857, #065f46);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(5, 149, 115, 0.3);
+}
+
+.send-btn {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.send-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
 }
 
 .btn-text {
-  font-size: 1.125rem;
-}
-
-/* Transactions Section */
-.transactions-section {
-  background: white;
-  padding: 1rem;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  padding: 0 0.5rem;
-}
-
-.section-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin: 0;
-}
-
-.view-all-btn {
-  font-weight: 500;
-  text-transform: none;
-  color: #059573;
-}
-
-.transaction-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.transaction-item {
-  display: flex;
-  align-items: center;
-  padding: 1rem 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  border-radius: 8px;
-}
-
-.transaction-item:hover {
-  background: #f9fafb;
-}
-
-.transaction-icon {
-  margin-right: 1rem;
-}
-
-.tx-icon-container {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.tx-icon-received {
-  background: #059573;
-}
-
-.tx-icon-sent {
-  background: #6b7280;
-}
-
-.tx-icon-zap {
-  background: #78D53C;
-}
-
-.transaction-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.transaction-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.25rem;
-}
-
-.transaction-type {
-  font-weight: 500;
-  color: #1f2937;
-  margin-bottom: 0.25rem;
   font-size: 1rem;
-}
-
-.transaction-time {
-  color: #6b7280;
-  font-size: 0.875rem;
-  margin-bottom: 0.25rem;
-}
-
-.transaction-description {
-  color: #6b7280;
-  font-size: 0.75rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-bottom: 0.25rem;
-}
-
-.nostr-info {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: #059573;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.sender-avatar {
-  border: 1px solid rgba(5, 149, 115, 0.3);
-}
-
-.sender-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 120px;
-}
-
-.transaction-amount {
-  text-align: right;
-  min-width: 100px;
-}
-
-.amount-sats {
   font-weight: 600;
-  font-size: 1rem;
-  margin-bottom: 0.25rem;
-}
-
-.amount-positive {
-  color: #059573;
-}
-
-.amount-negative {
-  color: #6b7280;
-}
-
-.amount-fiat {
-  color: #6b7280;
-  font-size: 0.875rem;
-}
-
-/* Empty State */
-.empty-transactions {
-  background: white;
-  padding: 3rem 1rem;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  max-width: 300px;
-  margin: 0 auto;
-}
-
-.empty-icon {
-  margin-bottom: 1rem;
-}
-
-.empty-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin: 0 0 0.5rem;
-}
-
-.empty-subtitle {
-  color: #6b7280;
-  font-size: 0.875rem;
 }
 
 /* Dialog Styles */
@@ -1392,6 +1218,14 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .main-content {
+    padding: 1rem;
+  }
+  
+  .balance-section {
+    padding: 1.5rem 1rem;
+  }
+  
   .amount-number {
     font-size: 2.5rem;
   }
@@ -1404,22 +1238,20 @@ export default {
     font-size: 1.125rem;
   }
   
+  .bottom-actions {
+    padding: 1rem;
+  }
+  
+  .action-buttons {
+    gap: 1rem;
+  }
+  
   .action-btn {
-    height: 70px;
+    height: 56px;
   }
   
   .btn-text {
-    font-size: 1rem;
-  }
-  
-  .transaction-item {
-    padding: 0.75rem 0.25rem;
-  }
-  
-  .transaction-main {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
+    font-size: 0.875rem;
   }
   
   .invoice-actions {
