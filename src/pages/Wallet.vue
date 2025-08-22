@@ -423,6 +423,13 @@ export default {
       pendingPayment: null,
       paymentAmount: '',
       paymentComment: '',
+      slidePosition: 0,
+      slideConfirmed: false,
+      isSliding: false,
+      slideStartX: 0,
+      maxSlideDistance: 0,
+      paymentAmount: '',
+      paymentComment: '',
       parsedInvoice: null,
       lightningAddress: '',
       sendForm: {
