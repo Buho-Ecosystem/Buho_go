@@ -442,14 +442,36 @@ export default {
     
     formatDateTime(timestamp) {
       const date = new Date(timestamp * 1000);
-      return date.toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const txDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      
+      // Check if it's today, yesterday, or older
+      if (txDate.getTime() === today.getTime()) {
+        return `Today at ${date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        })}`;
+      } else if (txDate.getTime() === yesterday.getTime()) {
+        return `Yesterday at ${date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        })}`;
+      } else {
+        // For older dates, show friendly format
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        }) + ` at ${date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        })}`;
+      }
     },
     
     formatTimestamp(timestamp) {
