@@ -30,7 +30,6 @@
             <span class="amount-unit">{{ getCurrentUnit() }}</span>
           </div>
           <div class="balance-fiat" @click="toggleCurrency">{{ getSecondaryValue(walletState.balance) }}</div>
-          <div class="currency-hint">Tap to switch currency</div>
         </div>
       </div>
 
