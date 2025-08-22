@@ -1,4 +1,10 @@
 <template>
+  <!-- Loading Screen -->
+  <LoadingScreen 
+    :show="showLoadingScreen" 
+    :loading-text="loadingText"
+  />
+  
   <q-page class="transaction-details-page">
     <!-- Header -->
     <div class="page-header">
@@ -228,26 +234,53 @@
 
 <script>
 import { webln } from "@getalby/sdk";
+import LoadingScreen from '../components/LoadingScreen.vue';
 
 export default {
   name: 'TransactionDetailsPage',
+  components: {
+    LoadingScreen
+  },
   data() {
     return {
       loading: true,
       showDeveloperMode: false,
       transaction: null,
       nostrProfile: null,
-      walletState: {}
+      walletState: {},
+      showLoadingScreen: true,
+      loadingText: 'Loading transaction details...'
     }
   },
   async created() {
-    await this.loadTransactionDetails();
-    this.loadDeveloperModePreference();
+    this.initializeTransactionDetails();
   },
   methods: {
+    async initializeTransactionDetails() {
+      try {
+        this.loadingText = 'Loading transaction details...';
+    await this.loadTransactionDetails();
+        
+        this.loadingText = 'Loading preferences...';
+    this.loadDeveloperModePreference();
+        
+        // Hide loading screen
+        this.loadingText = 'Ready!';
+        await new Promise(resolve => setTimeout(resolve, 300));
+        this.showLoadingScreen = false;
+      } catch (error) {
+        console.error('Error initializing transaction details:', error);
+        this.showLoadingScreen = false;
+      }
+    },
+    
     async loadTransactionDetails() {
       this.loading = true;
       try {
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Finding transaction...';
+        }
+        
         const txId = this.$route.params.id;
         
         // Load wallet state
@@ -265,11 +298,17 @@ export default {
         
         // If not found locally, fetch from wallet
         if (!this.transaction) {
+          if (this.showLoadingScreen) {
+            this.loadingText = 'Fetching from wallet...';
+          }
           await this.fetchTransactionFromWallet(txId);
         }
         
         // Load nostr profile if it's a zap
         if (this.transaction && this.transaction.senderNpub) {
+          if (this.showLoadingScreen) {
+            this.loadingText = 'Loading profile...';
+          }
           await this.loadNostrProfile(this.transaction.senderNpub);
         }
         
@@ -292,11 +331,20 @@ export default {
       
       if (activeWallet) {
         try {
+          if (this.showLoadingScreen) {
+            this.loadingText = 'Connecting to wallet...';
+          }
+          
           const nwc = new webln.NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
           
           await nwc.enable();
+          
+          if (this.showLoadingScreen) {
+            this.loadingText = 'Fetching transaction data...';
+          }
+          
           const transactionsResponse = await nwc.listTransactions({ limit: 100 });
           
           if (transactionsResponse && transactionsResponse.transactions) {

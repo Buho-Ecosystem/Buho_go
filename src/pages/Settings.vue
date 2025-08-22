@@ -361,7 +361,7 @@ export default {
         try {
           const parsedState = JSON.parse(savedState);
           this.walletState = parsedState;
-
+          
           for (const wallet of this.walletState.connectedWallets) {
             if (wallet.type === 'nwc' && wallet.nwcString) {
               try {

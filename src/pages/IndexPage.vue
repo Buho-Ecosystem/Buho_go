@@ -1,4 +1,10 @@
 <template>
+  <!-- Loading Screen -->
+  <LoadingScreen 
+    :show="showLoadingScreen" 
+    :loading-text="loadingText"
+  />
+  
   <q-page class="wallet-connect-page flex flex-center" :class="{ 'bg-dark': $q.dark.isActive }">
     <div class="container">
 
@@ -128,6 +134,7 @@
 <script>
 import {webln} from "@getalby/sdk";
 import {QrcodeStream, QrcodeDropZone, QrcodeCapture} from 'vue-qrcode-reader'
+import LoadingScreen from '../components/LoadingScreen.vue'
 
 export default {
   name: 'WalletConnectPage',
@@ -135,6 +142,7 @@ export default {
     QrcodeStream,
     QrcodeDropZone,
     QrcodeCapture,
+    LoadingScreen,
   },
   data() {
     return {
@@ -144,20 +152,39 @@ export default {
       isScanning: false,
       scanError: null,
       showNameDialog: false,
-      walletName: ''
+      walletName: '',
+      showLoadingScreen: true,
+      loadingText: 'Initializing BuhoGO...'
     }
   },
   mounted() {
+    this.initializeApp();
+  },
+  methods: {
+    async initializeApp() {
+      this.loadingText = 'Checking wallet state...';
+      
+      // Simulate some loading time for better UX
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
     // Check for existing wallet state
     const existingState = localStorage.getItem('buhoGO_wallet_state');
     if (existingState) {
       const walletInfo = JSON.parse(existingState);
       if (walletInfo.activeWalletId) {
+        this.loadingText = 'Loading wallet...';
+        await new Promise(resolve => setTimeout(resolve, 800));
         this.$router.push('/wallet');
+        return;
       }
     }
-  },
-  methods: {
+      
+      // Hide loading screen after initialization
+      this.loadingText = 'Ready!';
+      await new Promise(resolve => setTimeout(resolve, 500));
+      this.showLoadingScreen = false;
+    },
+    
     async connectWallet() {
       if (!this.nwcString.trim()) return
 
@@ -167,6 +194,9 @@ export default {
     async proceedWithConnection() {
       if (!this.walletName.trim()) return
 
+      this.showLoadingScreen = true;
+      this.loadingText = 'Connecting to wallet...';
+      
       this.isConnecting = true
       this.showNameDialog = false
 
@@ -175,6 +205,8 @@ export default {
         const nwc = new webln.NostrWebLNProvider({
           nostrWalletConnectUrl: this.nwcString,
         });
+        
+        this.loadingText = 'Verifying connection...';
 
         await nwc.enable();
         const info = await nwc.getInfo();
@@ -225,6 +257,9 @@ export default {
         // Reset wallet name
         this.walletName = ''
 
+        this.loadingText = 'Loading wallet interface...';
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
         // Navigate to wallet dashboard
         this.$router.push('/wallet')
       } catch (error) {
@@ -236,6 +271,7 @@ export default {
         });
       } finally {
         this.isConnecting = false;
+        this.showLoadingScreen = false;
       }
     },
     async handleNWCScan(result) {

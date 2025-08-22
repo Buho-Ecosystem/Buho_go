@@ -1,4 +1,10 @@
 <template>
+  <!-- Loading Screen -->
+  <LoadingScreen 
+    :show="showLoadingScreen" 
+    :loading-text="loadingText"
+  />
+  
   <q-page class="wallet-page">
     <!-- Header -->
     <div class="wallet-header">
@@ -339,12 +345,14 @@ import { webln } from "@getalby/sdk";
 import { LightningPaymentService } from '../utils/lightning.js';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { QrcodeCapture } from 'vue-qrcode-reader';
+import LoadingScreen from '../components/LoadingScreen.vue';
 
 export default {
   name: 'WalletPage',
   components: {
     VueQrcode,
-    QrcodeCapture
+    QrcodeCapture,
+    LoadingScreen
   },
   data() {
     return {
@@ -386,7 +394,9 @@ export default {
       },
       generatedInvoice: null,
       refreshInterval: null,
-      pulseInterval: null
+      pulseInterval: null,
+      showLoadingScreen: true,
+      loadingText: 'Loading wallet...'
     };
   },
   computed: {
@@ -395,11 +405,7 @@ export default {
     }
   },
   async created() {
-    await this.loadWalletState();
-    await this.loadTransactions();
-    await this.loadNostrProfiles();
-    this.startPeriodicRefresh();
-    this.startPulseAnimation();
+    this.initializeWallet();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -416,6 +422,33 @@ export default {
     }
   },
   methods: {
+    async initializeWallet() {
+      try {
+        this.loadingText = 'Loading wallet state...';
+    await this.loadWalletState();
+        
+        this.loadingText = 'Fetching transactions...';
+    await this.loadTransactions();
+        
+        this.loadingText = 'Loading profiles...';
+    await this.loadNostrProfiles();
+        
+        this.loadingText = 'Starting services...';
+    this.startPeriodicRefresh();
+    this.startPulseAnimation();
+        
+        // Hide loading screen
+        this.loadingText = 'Ready!';
+        await new Promise(resolve => setTimeout(resolve, 500));
+        this.showLoadingScreen = false;
+      } catch (error) {
+        console.error('Error initializing wallet:', error);
+        this.loadingText = 'Error loading wallet';
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        this.showLoadingScreen = false;
+      }
+    },
+    
     async loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
@@ -439,6 +472,11 @@ export default {
 
       if (activeWallet && activeWallet.nwcString) {
         try {
+          // Show loading for balance updates only if it's a manual refresh
+          if (this.showLoadingScreen) {
+            this.loadingText = 'Updating balance...';
+          }
+          
           const nwc = new webln.NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
@@ -843,9 +881,7 @@ export default {
 
 /* Header */
 .wallet-header {
-  background: white;
   padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
 }
 
@@ -874,35 +910,39 @@ export default {
 }
 
 .modern-menu-btn {
-  color: #6b7280;
-  transition: all 0.2s;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  color: #374151;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  position: relative;
 }
 
 .modern-menu-btn:hover {
-  color: #374151;
-  background: #f3f4f6;
-  transform: translateY(-1px);
+  background: #f1f5f9;
+}
+
+.modern-menu-btn:active {
+  transform: scale(0.95);
+  background: #e2e8f0;
 }
 
 .menu-icon {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  width: 18px;
-  height: 14px;
+  gap: 2.5px;
+  width: 16px;
+  height: 12px;
 }
 
 .menu-line {
-  height: 2px;
+  height: 1.5px;
   background: currentColor;
-  border-radius: 1px;
-  transition: all 0.3s ease;
+  border-radius: 0.75px;
+  transition: all 0.2s ease;
 }
 
 .menu-line:nth-child(1) {
@@ -910,7 +950,7 @@ export default {
 }
 
 .menu-line:nth-child(2) {
-  width: 75%;
+  width: 70%;
 }
 
 .menu-line:nth-child(3) {
@@ -918,7 +958,7 @@ export default {
 }
 
 .modern-menu-btn:hover .menu-line:nth-child(1) {
-  width: 75%;
+  width: 85%;
 }
 
 .modern-menu-btn:hover .menu-line:nth-child(2) {
@@ -926,7 +966,7 @@ export default {
 }
 
 .modern-menu-btn:hover .menu-line:nth-child(3) {
-  width: 85%;
+  width: 90%;
 }
 
 /* Main Content */
@@ -1017,19 +1057,15 @@ export default {
 .transaction-history-btn {
   width: 48px;
   height: 48px;
-  background: #f3f4f6;
-  color: #9ca3af;
+  background: #f8f9fa;
+  color: #6b7280;
   border-radius: 50%;
-  transition: all 0.3s ease;
+  transition: transform 0.1s ease;
   opacity: 0.6;
 }
 
-.transaction-history-btn:hover {
-  background: #059573;
-  color: white;
-  transform: translateY(-2px) scale(1.05);
-  opacity: 1;
-  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.3);
+.transaction-history-btn:active {
+  transform: scale(0.95);
 }
 
 .transaction-history-btn.pulse {
@@ -1053,10 +1089,7 @@ export default {
 
 /* Bottom Actions */
 .bottom-actions {
-  background: white;
   padding: 1rem 1.5rem 2rem 1.5rem;
-  border-top: 1px solid #e5e7eb;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
   position: fixed;
   bottom: 0;
   left: 0;
