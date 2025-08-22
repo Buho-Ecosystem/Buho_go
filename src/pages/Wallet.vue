@@ -789,31 +789,23 @@ export default {
     },
 
     async createInvoice() {
-      if (!this.receiveForm.amount || this.receiveForm.amount <= 0) {
-        this.$q.notify({
-          type: 'negative',
-          message: 'Please enter a valid amount',
-          position: 'top'
-        });
-        return;
-      }
+      if (!this.receiveForm.amount) return;
 
       this.isCreatingInvoice = true;
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (!activeWallet) throw new Error('No active wallet');
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        await lightningService.enable();
 
         this.generatedInvoice = await lightningService.createInvoice(
-          parseInt(this.receiveForm.amount),
-          this.receiveForm.description || 'BuhoGO Payment'
+          this.receiveForm.amount,
+          this.receiveForm.description
         );
-        
-        console.log('Generated invoice:', this.generatedInvoice);
-        
       } catch (error) {
         console.error('Failed to create invoice:', error);
         this.$q.notify({
