@@ -102,120 +102,267 @@
     </div>
 
     <!-- Send Dialog -->
-    <q-dialog v-model="showSendDialog" class="payment-dialog">
-      <q-card class="dialog-card">
-        <q-card-section class="dialog-header">
-          <div class="dialog-title">Send Lightning Payment</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
-        </q-card-section>
+    <q-dialog v-model="showSendDialog" class="send-dialog" persistent>
+      <q-card class="send-card" style="width: 100%; max-width: 480px; margin: 0;">
+        <!-- Header -->
+        <div class="send-header">
+          <div class="send-title">
+            <span v-if="sendStep === 'methods'">Send Lightning Payment</span>
+            <span v-else-if="sendStep === 'scan'">Scan QR Code</span>
+            <span v-else-if="sendStep === 'paste'">Processing...</span>
+            <span v-else-if="sendStep === 'manual'">Lightning Address</span>
+            <span v-else-if="sendStep === 'parsing'">Validating Payment</span>
+            <span v-else-if="sendStep === 'confirm'">Confirm Payment</span>
+          </div>
+          <q-btn 
+            flat 
+            round 
+            dense 
+            icon="las la-times" 
+            @click="closeSendDialog"
+            class="close-btn"
+          />
+        </div>
 
-        <q-card-section class="dialog-content">
-          <!-- Payment Input -->
-          <div class="payment-input-section">
-            <q-input
-              v-model="sendForm.input"
-              outlined
-              label="Payment Details"
-              placeholder="Invoice, LNURL, or Lightning Address"
-              type="textarea"
-              rows="3"
-              class="payment-input"
-            />
-            
-            <div class="input-actions">
-              <q-btn
-                flat
-                color="primary"
-                icon="las la-qrcode"
-                label="Scan QR"
-                @click="showQRScanner = true"
-                class="action-btn scan-btn"
-                no-caps
-              />
-              <q-btn
-                flat
-                color="primary"
-                icon="las la-paste"
-                label="Paste"
-                @click="pasteFromClipboard"
-                class="action-btn paste-btn"
-                no-caps
-              />
+        <!-- Content -->
+        <q-card-section style="padding: 0;">
+          <!-- Step 1: Payment Methods -->
+          <div v-if="sendStep === 'methods'" class="payment-methods-screen">
+            <div class="methods-container">
+              <div class="methods-content">
+                <div class="method-header">
+                  <q-icon name="las la-bolt" class="method-header-icon"/>
+                  <div class="method-header-text">
+                    <div class="method-header-title">How do you want to pay?</div>
+                    <div class="method-header-subtitle">Select the easiest option for you</div>
+                  </div>
+                </div>
+                
+                <div class="method-options">
+                  <div class="method-option scan-option" @click="startQRScanner">
+                    <div class="method-icon">
+                      <q-icon name="las la-qrcode" size="32px"/>
+                    </div>
+                    <div class="method-content">
+                      <div class="method-title">Scan QR Code</div>
+                      <div class="method-description">Use your camera to scan a payment QR code</div>
+                    </div>
+                    <q-icon name="las la-chevron-right" class="method-arrow"/>
+                  </div>
+                  
+                  <div class="method-option paste-option" @click="handlePastePayment">
+                    <div class="method-icon">
+                      <q-icon name="las la-clipboard" size="32px"/>
+                    </div>
+                    <div class="method-content">
+                      <div class="method-title">Paste Invoice</div>
+                      <div class="method-description">Paste a Lightning invoice from clipboard</div>
+                    </div>
+                    <q-icon name="las la-chevron-right" class="method-arrow"/>
+                  </div>
+                  
+                  <div class="method-option manual-option" @click="handleManualEntry">
+                    <div class="method-icon">
+                      <q-icon name="las la-at" size="32px"/>
+                    </div>
+                    <div class="method-content">
+                      <div class="method-title">Lightning Address</div>
+                      <div class="method-description">Enter a Lightning address (user@domain.com)</div>
+                    </div>
+                    <q-icon name="las la-chevron-right" class="method-arrow"/>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- Payment Type Indicator -->
-          <div class="payment-type-section" v-if="paymentData">
-            <div class="type-indicator">
-              <q-icon name="las la-bolt" class="type-icon"/>
-              <span class="type-label">{{ getPaymentTypeLabel() }}</span>
-            </div>
-          </div>
-
-          <!-- Amount Input for LNURL/Lightning Address -->
-          <div class="amount-section" v-if="requiresAmount()">
-            <div class="amount-limits" v-if="getAmountLimits()">
-              <q-icon name="las la-info-circle" class="limits-icon"/>
-              <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
-            </div>
-            
-            <q-input
-              v-model="sendForm.amount"
-              outlined
-              label="Amount (sats)"
-              type="number"
-              class="amount-input"
-            />
-            
-            <q-input
-              v-model="sendForm.comment"
-              outlined
-              label="Comment (optional)"
-              :maxlength="paymentData.commentAllowed || 0"
-              :disable="!paymentData.commentAllowed"
-              :hint="paymentData.commentAllowed ? `Max ${paymentData.commentAllowed} characters` : 'Comments not supported'"
-              class="comment-input"
-            />
-          </div>
-
-          <!-- Invoice Details -->
-          <div class="invoice-preview" v-if="paymentData && paymentData.type === 'lightning_invoice'">
-            <div class="invoice-details">
-              <div class="preview-header">
-                <q-icon name="las la-receipt" class="preview-icon"/>
-                <span class="preview-title">Invoice Preview</span>
+          <!-- Step 2: QR Scanner -->
+          <div v-if="sendStep === 'scan'" class="qr-scanner-screen">
+            <div class="scanner-container">
+              <div class="scanner-header">
+                <q-btn 
+                  flat 
+                  round 
+                  dense 
+                  icon="las la-arrow-left" 
+                  @click="sendStep = 'methods'"
+                  class="scanner-back-btn"
+                />
+                <div class="scanner-title">Point camera at QR code</div>
               </div>
               
-              <div class="preview-content">
-                <div class="detail-item">
-                  <span class="detail-label">Amount</span>
-                  <span class="detail-value amount-value">{{ formatBalance(paymentData.amount) }}</span>
+              <div class="qr-video-container">
+                <video ref="qrVideo" class="qr-video" autoplay muted playsinline></video>
+                <div class="scan-overlay">
+                  <div class="scan-frame">
+                    <div class="scan-corner top-left"></div>
+                    <div class="scan-corner top-right"></div>
+                    <div class="scan-corner bottom-left"></div>
+                    <div class="scan-corner bottom-right"></div>
+                  </div>
                 </div>
-                <div class="detail-item" v-if="paymentData.description">
-                  <span class="detail-label">Description</span>
-                  <span class="detail-value">{{ paymentData.description }}</span>
+              </div>
+              
+              <div class="scanner-help">
+                <q-icon name="las la-info-circle" class="help-icon"/>
+                <span>Position the QR code within the frame</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Paste Processing -->
+          <div v-if="sendStep === 'paste'" class="paste-screen">
+            <div class="paste-container">
+              <div class="paste-content">
+                <q-spinner-dots color="primary" size="3rem" class="paste-spinner"/>
+                <div class="paste-title">Reading from clipboard...</div>
+                <div class="paste-subtitle">Processing your payment request</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Manual Entry -->
+          <div v-if="sendStep === 'manual'" class="manual-entry-screen">
+            <div class="manual-container">
+              <div class="manual-header">
+                <q-btn 
+                  flat 
+                  round 
+                  dense 
+                  icon="las la-arrow-left" 
+                  @click="sendStep = 'methods'"
+                  class="manual-back-btn"
+                />
+                <div class="manual-title">Enter Lightning Address</div>
+              </div>
+              
+              <div class="manual-content">
+                <div class="input-section">
+                  <div class="input-label">
+                    <q-icon name="las la-at" class="input-icon"/>
+                    Lightning Address
+                  </div>
+                  <q-input
+                    v-model="lightningAddress"
+                    outlined
+                    placeholder="user@getalby.com"
+                    class="address-input"
+                    @keyup.enter="continueWithManualInput"
+                  />
+                  <div class="input-help">
+                    Enter a Lightning address like an email address
+                  </div>
                 </div>
-                <div class="detail-item" v-if="paymentData.expiry">
-                  <span class="detail-label">Expires</span>
-                  <span class="detail-value">{{ formatExpiry(paymentData.expiry) }}</span>
+                
+                <q-btn
+                  @click="continueWithManualInput"
+                  :disable="!lightningAddress.trim()"
+                  class="continue-btn"
+                  unelevated
+                  no-caps
+                >
+                  Continue
+                </q-btn>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 5: Parsing/Validation -->
+          <div v-if="sendStep === 'parsing'" class="parsing-screen">
+            <div class="parsing-container">
+              <div class="parsing-content">
+                <div class="parsing-animation">
+                  <q-spinner-dots color="primary" size="3rem"/>
+                </div>
+                <div class="parsing-title">Validating Payment</div>
+                <div class="parsing-subtitle">Checking payment details...</div>
+                
+                <div class="parsing-steps">
+                  <div class="parsing-step">
+                    <q-icon name="las la-check-circle" color="positive"/>
+                    <span>Payment format detected</span>
+                  </div>
+                  <div class="parsing-step">
+                    <q-spinner-dots color="primary" size="1rem"/>
+                    <span>Verifying details...</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Send Button -->
-          <q-btn
-            :loading="isSending"
-            :disable="!canSendPayment()"
-            @click="sendPayment"
-            class="send-payment-btn"
-            unelevated
-            no-caps
-          >
-            <q-icon name="las la-paper-plane" class="q-mr-sm"/>
-            <span v-if="!isSending">Send Payment</span>
-            <span v-else>Sending...</span>
-          </q-btn>
+          <!-- Step 6: Payment Confirmation -->
+          <div v-if="sendStep === 'confirm' && parsedPayment" class="payment-confirmation-screen">
+            <div class="confirmation-container">
+              <div class="confirmation-header">
+                <q-btn 
+                  flat 
+                  round 
+                  dense 
+                  icon="las la-arrow-left" 
+                  @click="sendStep = 'methods'"
+                  class="back-btn"
+                />
+                <div class="confirmation-title">
+                  <q-icon name="las la-bolt" class="header-icon"/>
+                  <span class="header-title">Confirm Payment</span>
+                </div>
+              </div>
+              
+              <div class="confirmation-content">
+                <!-- Amount Section -->
+                <div class="amount-section">
+                  <div class="amount-label">You're sending</div>
+                  <div class="amount-display">
+                    <span class="amount-value">{{ formatBalance(parsedPayment.amount) }}</span>
+                    <span class="amount-unit">sats</span>
+                  </div>
+                  <div class="amount-fiat">{{ getFiatValue(parsedPayment.amount) }}</div>
+                </div>
+                
+                <!-- Payment Details -->
+                <div class="payment-details">
+                  <div class="detail-row">
+                    <div class="detail-label">
+                      <q-icon name="las la-user" class="detail-icon"/>
+                      Recipient
+                    </div>
+                    <div class="detail-value">{{ parsedPayment.recipient || 'Lightning Payment' }}</div>
+                  </div>
+                  
+                  <div class="detail-row" v-if="parsedPayment.description">
+                    <div class="detail-label">
+                      <q-icon name="las la-comment" class="detail-icon"/>
+                      Description
+                    </div>
+                    <div class="detail-value">{{ parsedPayment.description }}</div>
+                  </div>
+                  
+                  <div class="detail-row">
+                    <div class="detail-label">
+                      <q-icon name="las la-clock" class="detail-icon"/>
+                      Network Fee
+                    </div>
+                    <div class="detail-value">~1-3 sats</div>
+                  </div>
+                </div>
+                
+                <!-- Slide to Confirm -->
+                <div class="slide-to-confirm">
+                  <div class="slide-track" ref="slideTrack">
+                    <div class="slide-button" ref="slideButton" @touchstart="startSlide" @mousedown="startSlide">
+                      <q-icon name="las la-arrow-right" class="slide-icon"/>
+                    </div>
+                    <div class="slide-text">Slide to confirm payment</div>
+                  </div>
+                </div>
+                
+                <div class="confirmation-note">
+                  Double-check the details before confirming
+                </div>
+              </div>
+            </div>
+          </div>
         </q-card-section>
       </q-card>
     </q-dialog>
@@ -1169,22 +1316,15 @@ export default {
       }
     },
 
-    async handleQRScan(result) {
-      try {
-        this.sendForm.input = result;
-        this.showQRScanner = false;
-        
-        setTimeout(async () => {
-          await this.processPaymentInput();
-        }, 500);
-      } catch (error) {
-        console.error('Error processing QR scan:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: 'Error processing QR code',
-          position: 'top'
-        });
-      }
+    handleQRScan(result) {
+      this.sendForm.input = result.trim();
+      this.showQRScanner = false;
+      this.showSendDialog = false;
+      
+      // Small delay to ensure dialog closes
+      setTimeout(async () => {
+        await this.processPaymentInput();
+      }, 100);
     },
 
     async copyInvoice() {
