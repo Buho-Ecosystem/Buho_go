@@ -406,10 +406,12 @@ export default {
       showReceiveDialog: false,
       showQRScanner: false,
       isSending: false,
+      showPaymentConfirmation: false,
       isCreatingInvoice: false,
       isSwitchingCurrency: false,
       shouldPulse: false,
       paymentData: null,
+      parsedInvoice: null,
       lightningAddress: '',
       sendForm: {
         input: '',
@@ -692,12 +694,15 @@ export default {
 
     async processPaymentInput() {
       this.paymentData = null;
+      this.parsedInvoice = null;
       this.sendForm.amount = '';
       this.sendForm.comment = '';
 
       if (!this.sendForm.input.trim()) return;
 
       try {
+        console.log('🔍 Processing payment input:', this.sendForm.input);
+        
         const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
         if (!validation.valid) {
           throw new Error(validation.error);
@@ -711,8 +716,38 @@ export default {
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
         this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
         
+        console.log('✅ Payment data processed:', this.paymentData);
+        
+        // For Lightning invoices, parse additional details
+        if (this.paymentData.type === 'lightning_invoice') {
+          try {
+            const nwc = new webln.NostrWebLNProvider({
+              nostrWalletConnectUrl: activeWallet.nwcString,
+            });
+            await nwc.enable();
+            
+            // Try to get invoice details
+            const invoiceDetails = await nwc.getInfo();
+            console.log('📋 Invoice details from NWC:', invoiceDetails);
+            
+            // Parse the invoice manually if needed
+            this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
+            console.log('📊 Parsed invoice:', this.parsedInvoice);
+            
+          } catch (error) {
+            console.warn('Could not get detailed invoice info:', error);
+            // Fallback to manual parsing
+            this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
+          }
+        }
+        
         if (this.paymentData.type === 'lightning_invoice' && this.paymentData.amount === 0) {
           this.paymentData.requiresAmount = true;
+        }
+        
+        // Show confirmation modal for invoices
+        if (this.paymentData.type === 'lightning_invoice') {
+          this.showPaymentConfirmation = true;
         }
         
       } catch (error) {
@@ -722,6 +757,60 @@ export default {
           message: error.message,
           position: 'top'
         });
+      }
+    },
+
+    parseInvoiceManually(invoice) {
+      try {
+        // Remove lightning: prefix if present
+        const cleanInvoice = invoice.replace(/^lightning:/i, '');
+        
+        // Extract amount from invoice (basic parsing)
+        let amount = 0;
+        const amountMatch = cleanInvoice.match(/lnbc(\d+)([munp]?)/i);
+        if (amountMatch) {
+          const value = parseInt(amountMatch[1]);
+          const unit = amountMatch[2];
+          
+          switch (unit) {
+            case 'm': // milli-bitcoin
+              amount = value * 100000;
+              break;
+            case 'u': // micro-bitcoin
+              amount = value * 100;
+              break;
+            case 'n': // nano-bitcoin
+              amount = value / 10;
+              break;
+            case 'p': // pico-bitcoin
+              amount = value / 10000;
+              break;
+            default:
+              amount = value * 100000000; // bitcoin
+          }
+        }
+        
+        // Extract description (basic parsing)
+        let description = 'Lightning Payment';
+        
+        // Extract expiry (basic parsing)
+        const now = Math.floor(Date.now() / 1000);
+        const expiry = now + 3600; // Default 1 hour
+        
+        return {
+          amount: Math.floor(amount),
+          description,
+          expiry,
+          invoice: cleanInvoice
+        };
+      } catch (error) {
+        console.error('Error parsing invoice manually:', error);
+        return {
+          amount: 0,
+          description: 'Lightning Payment',
+          expiry: Math.floor(Date.now() / 1000) + 3600,
+          invoice: invoice
+        };
       }
     },
 
@@ -779,10 +868,22 @@ export default {
     async pasteFromClipboard() {
       try {
         const text = await navigator.clipboard.readText();
-        this.sendForm.input = text;
-        await this.processPaymentInput();
+        if (text.trim()) {
+          this.sendForm.input = text.trim();
+          this.showSendDialog = false;
+          
+          // Small delay to ensure dialog closes
+          setTimeout(async () => {
+            await this.processPaymentInput();
+          }, 100);
+        }
       } catch (error) {
         console.error('Failed to paste from clipboard:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Failed to access clipboard',
+          position: 'top'
+        });
       }
     },
 
@@ -1069,9 +1170,14 @@ export default {
     },
 
     handleQRScan(result) {
-      this.sendForm.input = result;
+      this.sendForm.input = result.trim();
       this.showQRScanner = false;
-      this.processPaymentInput();
+      this.showSendDialog = false;
+      
+      // Small delay to ensure dialog closes
+      setTimeout(async () => {
+        await this.processPaymentInput();
+      }, 100);
     },
 
     async copyInvoice() {
