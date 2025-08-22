@@ -968,14 +968,9 @@ export default {
       } finally {
         this.isCreatingInvoice = false;
       }
-    },
-
-    onInvoiceCreated(invoice) {
       // Refresh balance after invoice creation
       this.updateBalance();
       this.$q.notify({
-        type: 'positive',
-        message: 'Invoice created successfully!',
         position: 'top'
       });
     },
