@@ -44,20 +44,25 @@
       <!-- Content -->
       <q-card-section class="receive-content">
         <!-- QR Code Area -->
-        <div class="qr-section">
-          <div class="qr-container" v-if="generatedInvoice">
+        <div class="qr-section" v-if="!generatedInvoice">
+          <!-- Empty state before invoice creation -->
+        </div>
+        
+        <!-- QR Code Display (after invoice creation) -->
+        <div class="qr-display-section" v-if="generatedInvoice">
+          <div class="qr-container" @click="copyInvoice">
             <div class="qr-wrapper">
               <vue-qrcode 
                 :value="generatedInvoice.payment_request" 
-                :options="{ width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } }"
+                :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#ffffff' } }"
                 class="qr-code"
               />
             </div>
           </div>
         </div>
 
-        <!-- Amount Section -->
-        <div class="amount-section">
+        <!-- Amount Section (only show before invoice creation) -->
+        <div class="amount-section" v-if="!generatedInvoice">
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency">
             <span class="currency-label">{{ currentCurrency }}</span>
@@ -82,8 +87,8 @@
           </div>
         </div>
 
-        <!-- Description Section -->
-        <div class="description-section">
+        <!-- Description Section (only show before invoice creation) -->
+        <div class="description-section" v-if="!generatedInvoice">
           <div class="description-label">Description (optional)</div>
           <q-input
             v-model="description"
@@ -98,7 +103,7 @@
       </q-card-section>
 
       <!-- Footer -->
-      <q-card-section class="receive-footer">
+      <q-card-section class="receive-footer" v-if="!generatedInvoice">
         <q-btn
           class="create-invoice-btn"
           :loading="isCreatingInvoice"
@@ -113,33 +118,6 @@
             Creating...
           </template>
         </q-btn>
-      </q-card-section>
-
-      <!-- Invoice Actions (shown after creation) -->
-      <q-card-section v-if="generatedInvoice" class="invoice-actions">
-        <div class="action-buttons">
-          <q-btn
-            flat
-            icon="las la-copy"
-            label="Copy"
-            @click="copyInvoice"
-            class="action-btn"
-          />
-          <q-btn
-            flat
-            icon="las la-share-alt"
-            label="Share"
-            @click="shareInvoice"
-            class="action-btn"
-          />
-          <q-btn
-            flat
-            icon="las la-download"
-            label="Save QR"
-            @click="saveQR"
-            class="action-btn"
-          />
-        </div>
       </q-card-section>
     </q-card>
   </q-dialog>
@@ -353,7 +331,7 @@ export default {
         await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
         this.$q.notify({
           type: 'positive',
-          message: 'Invoice copied to clipboard!',
+          message: 'Lightning invoice copied!',
           position: 'top'
         });
       } catch (error) {
@@ -480,20 +458,48 @@ export default {
   align-items: center;
 }
 
-.qr-container {
+/* QR Display Section (after invoice creation) */
+.qr-display-section {
+  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 2rem 1rem;
+}
+
+.qr-container {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.qr-container:hover {
+  transform: scale(1.02);
+}
+
+.qr-container:active {
+  transform: scale(0.98);
 }
 
 .qr-wrapper {
   background: white;
   border-radius: 16px;
-  padding: 1.5rem;
+  padding: 2rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   border: 1px solid #e5e7eb;
-  max-width: 280px;
+  max-width: 320px;
   width: 100%;
+  position: relative;
+}
+
+.qr-wrapper::after {
+  content: 'Tap to copy';
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  color: #9ca3af;
+  opacity: 0.7;
 }
 
 .qr-code {
@@ -651,14 +657,18 @@ export default {
     padding: 1rem;
   }
   
+  .qr-display-section {
+    padding: 1rem;
+  }
+  
   .qr-section {
     min-height: 200px;
     margin-bottom: 1rem;
   }
   
   .qr-wrapper {
-    padding: 1rem;
-    max-width: 240px;
+    padding: 1.5rem;
+    max-width: 280px;
     border-radius: 12px;
   }
   
