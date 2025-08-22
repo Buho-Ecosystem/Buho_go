@@ -368,12 +368,26 @@ export default {
                 const nwc = new webln.NostrWebLNProvider({
                   nostrWalletConnectUrl: wallet.nwcString,
                 });
-                await nwc.enable();
-                const balance = await nwc.getBalance();
+                
+                await Promise.race([
+                  nwc.enable(),
+                  new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Connection timeout')), 8000)
+                  )
+                ]);
+                
+                const balance = await Promise.race([
+                  nwc.getBalance(),
+                  new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Balance request timeout')), 6000)
+                  )
+                ]);
+                
                 wallet.balance = balance.balance;
               } catch (error) {
                 console.error(`Failed to update balance for wallet ${wallet.id}:`, error);
                 // Keep the existing balance if we can't update it
+                wallet.balance = wallet.balance || 0;
               }
             }
           }

@@ -84,6 +84,18 @@
 
     <!-- Transaction History -->
     <div class="transaction-history">
+      <div v-if="transactionError && !isLoading" class="error-banner q-pa-md">
+        <q-banner dense class="bg-warning text-white">
+          <template v-slot:avatar>
+            <q-icon name="las la-exclamation-triangle"/>
+          </template>
+          {{ transactionError }}
+          <template v-slot:action>
+            <q-btn flat color="white" label="Retry" @click="loadWalletState" size="sm"/>
+          </template>
+        </q-banner>
+      </div>
+      
       <div v-if="isLoading" class="q-pa-md">
         <q-item v-for="i in 3" :key="i" class="transaction-item">
           <q-item-section avatar>
@@ -107,7 +119,14 @@
         </q-item>
       </div>
       <div v-else-if="transactions.length === 0" class="no-transactions">
-        No transactions yet
+        <div class="text-center q-pa-lg">
+          <q-icon name="las la-receipt" size="3rem" color="grey-5" class="q-mb-md"/>
+          <div class="text-h6 text-grey-7 q-mb-sm">No transactions yet</div>
+          <div class="text-caption text-grey-6">
+            {{ transactionError ? 'Unable to load transactions' : 'Your transactions will appear here' }}
+          </div>
+          <q-btn v-if="transactionError" flat color="primary" label="Try Again" @click="loadWalletState" class="q-mt-md"/>
+        </div>
       </div>
       <q-scroll-area v-else class="transaction-scroll-area q-pb-xl">
         <q-list>
@@ -429,6 +448,7 @@ export default {
         denominationCurrency: 'sats'
       },
       transactions: [],
+      transactionError: null,
       showWalletInfo: false,
       showHistory: true,
 
@@ -542,6 +562,7 @@ export default {
     },
     async loadWalletState() {
       this.isLoading = true;
+      this.transactionError = null;
       // Load wallet state from localStorage
       const savedState = localStorage.getItem('buhoGO_wallet_state')
       if (savedState) {
@@ -553,30 +574,109 @@ export default {
           // Get the active wallet from connectedWallets array
           const activeWallet = parsedState.connectedWallets.find(w => w.id === parsedState.activeWalletId)
           if (activeWallet) {
-            const nwc = new webln.NostrWebLNProvider({
-              nostrWalletConnectUrl: activeWallet.nwcString,
-            });
-            await nwc.enable();
-            //  get info
-            const info = await nwc.getInfo();
-            console.log('NWC Info:', info);
-            //  get balance
-            const balance = await nwc.getBalance();
-            console.log('NWC Balance:', balance);
-            this.walletState.balance = balance.balance;
-            //  get all transactions and bind it
-            const transactions = await nwc.listTransactions();
-            console.log('NWC Transactions:', transactions);
-            this.transactions = transactions.transactions.map(tx => ({
-              ...tx,
-              walletId: this.walletState.activeWalletId
-            }));
+            try {
+              const nwc = new webln.NostrWebLNProvider({
+                nostrWalletConnectUrl: activeWallet.nwcString,
+              });
+              
+              // Set a shorter timeout for enable
+              await Promise.race([
+                nwc.enable(),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Connection timeout')), 10000)
+                )
+              ]);
+              
+              // Get wallet info with timeout
+              const info = await Promise.race([
+                nwc.getInfo(),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Info request timeout')), 8000)
+                )
+              ]);
+              console.log('NWC Info:', info);
+              
+              // Get balance with timeout
+              const balance = await Promise.race([
+                nwc.getBalance(),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Balance request timeout')), 8000)
+                )
+              ]);
+              console.log('NWC Balance:', balance);
+              this.walletState.balance = balance.balance;
+              
+              // Get transactions with timeout and pagination
+              await this.loadTransactions(nwc);
+              
+            } catch (error) {
+              console.error('Error loading wallet data:', error);
+              this.transactionError = error.message;
+              
+              // Try to load cached transactions from localStorage
+              const cachedTransactions = localStorage.getItem(`buhoGO_transactions_${activeWallet.id}`);
+              if (cachedTransactions) {
+                try {
+                  this.transactions = JSON.parse(cachedTransactions);
+                  console.log('Loaded cached transactions:', this.transactions.length);
+                } catch (e) {
+                  console.error('Failed to parse cached transactions:', e);
+                }
+              }
+              
+              // Show user-friendly error message
+              this.$q.notify({
+                type: 'warning',
+                message: 'Connection issues detected. Using cached data.',
+                caption: error.message.includes('timeout') ? 'Wallet connection is slow' : 'Please check your connection',
+                position: 'top',
+                timeout: 5000
+              });
+            }
           }
         } catch (e) {
-          console.error('Failed to parse saved wallet state', e)
+          console.error('Failed to parse saved wallet state:', e);
+          this.transactionError = 'Failed to load wallet data';
         }
       }
       this.isLoading = false;
+    },
+    
+    async loadTransactions(nwc, limit = 50, offset = 0) {
+      try {
+        // Try to get transactions with pagination and timeout
+        const transactionsResponse = await Promise.race([
+          nwc.listTransactions({ limit, offset }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Transactions request timeout')), 15000)
+          )
+        ]);
+        
+        console.log('NWC Transactions:', transactionsResponse);
+        
+        if (transactionsResponse && transactionsResponse.transactions) {
+          this.transactions = transactionsResponse.transactions.map(tx => ({
+            ...tx,
+            walletId: this.walletState.activeWalletId,
+            // Ensure we have required fields
+            id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
+            type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
+            description: tx.description || tx.memo || 'Lightning transaction',
+            settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
+          }));
+          
+          // Cache transactions for offline use
+          localStorage.setItem(
+            `buhoGO_transactions_${this.walletState.activeWalletId}`, 
+            JSON.stringify(this.transactions)
+          );
+        } else {
+          throw new Error('Invalid transaction response format');
+        }
+      } catch (error) {
+        console.error('Failed to load transactions:', error);
+        throw error;
+      }
     },
     generateMockTransactions() {
       // Generate mock transactions for demo
@@ -717,35 +817,34 @@ export default {
       return Math.round((amount * 100000000) / exchangeRate)
     },
     async generateInvoice() {
-      // if (!this.amount || isNaN(Number(this.amount))) {
-      //   this.$q.notify({
-      //     type: 'negative',
-      //     message: 'Please enter a valid amount',
-      //     position: 'top'
-      //   })
-      //   return
-      // }
+      if (!this.amount || isNaN(Number(this.amount))) {
+        this.$q.notify({
+          type: 'negative',
+          message: 'Please enter a valid amount',
+          position: 'top'
+        })
+        return
+      }
 
       this.isProcessing = true
 
       try {
-        console.log("hi")
-        console.log(this.amount)
-        console.log(this.walletState)
         // from activeWalletId from this.walletState get the string from connectedWallets array
         let nwcString = this.walletState.connectedWallets.find(w => w.id === this.walletState.activeWalletId).nwcString
-        const request = await new LN(nwcString).requestPayment(this.amount, {
-          description: this.description || "Test Payment"
-        });
-        console.log("After Payment")
-        // console.log(JSON.stringify(request.invoice))
-        // console.log(request.invoice.paymentRequest)
+        
+        const request = await Promise.race([
+          new LN(nwcString).requestPayment(this.amount, {
+            description: this.description || "Lightning Payment"
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Invoice generation timeout')), 15000)
+          )
+        ]);
 
         this.invoice = request.invoice.paymentRequest;
         this.paymentStep = 1;
-        console.log(request)
+        
         request.onPaid(async () => {
-          console.log("Paid")
           this.paymentStep = 2;
           this.$q.notify({
             type: 'positive',
@@ -754,14 +853,14 @@ export default {
           });
 
           // Refresh balance and transactions
-          this.loadWalletState();
+          setTimeout(() => this.loadWalletState(), 2000);
         });
 
       } catch (error) {
         console.error('Error generating invoice:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to generate invoice. Please try again.',
+          message: error.message.includes('timeout') ? 'Request timed out. Please try again.' : 'Failed to generate invoice. Please try again.',
           position: 'top'
         });
       } finally {
@@ -773,13 +872,29 @@ export default {
         this.invoice = result;
         this.showQrScanner = false;
 
+        const activeWallet = this.walletState.connectedWallets.find(w => w.id === this.walletState.activeWalletId);
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
         const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: this.walletState.nwcString,
+          nostrWalletConnectUrl: activeWallet.nwcString,
         });
-        await nwc.enable();
+        
+        await Promise.race([
+          nwc.enable(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Connection timeout')), 10000)
+          )
+        ]);
 
         // Decode the invoice to get details
-        const decodedInvoice = await nwc.decodeInvoice(this.invoice);
+        const decodedInvoice = await Promise.race([
+          nwc.decodeInvoice(this.invoice),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Invoice decode timeout')), 8000)
+          )
+        ]);
 
         this.paymentDetails = {
           amount: decodedInvoice.amount,
@@ -792,7 +907,7 @@ export default {
         console.error('Error decoding invoice:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Invalid invoice. Please try again.',
+          message: error.message.includes('timeout') ? 'Request timed out. Please try again.' : 'Invalid invoice. Please try again.',
           position: 'top'
         });
       }
@@ -810,13 +925,74 @@ export default {
       this.isProcessing = true;
 
       try {
+        const activeWallet = this.walletState.connectedWallets.find(w => w.id === this.walletState.activeWalletId);
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
         const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: this.walletState.nwcString,
+          nostrWalletConnectUrl: activeWallet.nwcString,
         });
-        await nwc.enable();
+        
+        await Promise.race([
+          nwc.enable(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Connection timeout')), 10000)
+          )
+        ]);
 
-        const result = await nwc.sendPayment(this.invoice);
+        // Decode invoice first to get details
+        const decodedInvoice = await Promise.race([
+          nwc.decodeInvoice(this.invoice),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Invoice decode timeout')), 8000)
+          )
+        ]);
 
+        this.paymentDetails = {
+          amount: decodedInvoice.amount,
+          description: decodedInvoice.description || 'Payment',
+          destination: decodedInvoice.destination
+        };
+
+        this.paymentStep = 1;
+      } catch (error) {
+        console.error('Error decoding invoice:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: error.message.includes('timeout') ? 'Request timed out. Please try again.' : 'Invalid invoice. Please try again.',
+          position: 'top'
+        });
+        this.isProcessing = false;
+      }
+    },
+    
+    async confirmPayment() {
+      this.isProcessing = true;
+
+      try {
+        const activeWallet = this.walletState.connectedWallets.find(w => w.id === this.walletState.activeWalletId);
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const nwc = new webln.NostrWebLNProvider({
+          nostrWalletConnectUrl: activeWallet.nwcString,
+        });
+        
+        await Promise.race([
+          nwc.enable(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Connection timeout')), 10000)
+          )
+        ]);
+
+        const result = await Promise.race([
+          nwc.sendPayment(this.invoice),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Payment timeout')), 30000)
+          )
+        ]);
         this.paymentStep = 2;
         this.$q.notify({
           type: 'positive',
@@ -825,50 +1001,17 @@ export default {
         });
 
         // Refresh balance and transactions
-        this.loadWalletState();
+        setTimeout(() => this.loadWalletState(), 2000);
       } catch (error) {
         console.error('Error paying invoice:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to send payment. Please try again.',
+          message: error.message.includes('timeout') ? 'Payment timed out. Please check your wallet.' : 'Failed to send payment. Please try again.',
           position: 'top'
         });
       } finally {
         this.isProcessing = false;
       }
-    },
-    confirmPayment() {
-      this.isProcessing = true
-
-      // Simulate payment processing
-      setTimeout(() => {
-        this.isProcessing = false
-        this.paymentStep = 2
-
-        // Update wallet balance
-        this.walletState.balance -= (this.paymentDetails.amount + 1) // amount + fee
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState))
-
-        // Add to transactions
-        const newTx = {
-          id: `tx-${Date.now()}`,
-          payment_hash: Math.random().toString(36).substring(2, 38),
-          amount: this.paymentDetails.amount,
-          fees_paid: 1,
-          description: this.paymentDetails.description,
-          type: 'outgoing',
-          settled_at: Math.floor(Date.now() / 1000),
-          walletId: this.walletState.activeWalletId
-        }
-
-        this.transactions.unshift(newTx)
-
-        this.$q.notify({
-          type: 'positive',
-          message: 'Payment sent successfully',
-          position: 'top'
-        })
-      }, 2000)
     },
     copyInvoice() {
       // Simulate copy to clipboard
