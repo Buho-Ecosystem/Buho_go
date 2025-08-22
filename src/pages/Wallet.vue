@@ -102,267 +102,120 @@
     </div>
 
     <!-- Send Dialog -->
-    <q-dialog v-model="showSendDialog" class="send-dialog" persistent>
-      <q-card class="send-card" style="width: 100%; max-width: 480px; margin: 0;">
-        <!-- Header -->
-        <div class="send-header">
-          <div class="send-title">
-            <span v-if="sendStep === 'methods'">Send Lightning Payment</span>
-            <span v-else-if="sendStep === 'scan'">Scan QR Code</span>
-            <span v-else-if="sendStep === 'paste'">Processing...</span>
-            <span v-else-if="sendStep === 'manual'">Lightning Address</span>
-            <span v-else-if="sendStep === 'parsing'">Validating Payment</span>
-            <span v-else-if="sendStep === 'confirm'">Confirm Payment</span>
-          </div>
-          <q-btn 
-            flat 
-            round 
-            dense 
-            icon="las la-times" 
-            @click="closeSendDialog"
-            class="close-btn"
-          />
-        </div>
+    <q-dialog v-model="showSendDialog" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Send Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
 
-        <!-- Content -->
-        <q-card-section style="padding: 0;">
-          <!-- Step 1: Payment Methods -->
-          <div v-if="sendStep === 'methods'" class="payment-methods-screen">
-            <div class="methods-container">
-              <div class="methods-content">
-                <div class="method-header">
-                  <q-icon name="las la-bolt" class="method-header-icon"/>
-                  <div class="method-header-text">
-                    <div class="method-header-title">How do you want to pay?</div>
-                    <div class="method-header-subtitle">Select the easiest option for you</div>
-                  </div>
-                </div>
-                
-                <div class="method-options">
-                  <div class="method-option scan-option" @click="startQRScanner">
-                    <div class="method-icon">
-                      <q-icon name="las la-qrcode" size="32px"/>
-                    </div>
-                    <div class="method-content">
-                      <div class="method-title">Scan QR Code</div>
-                      <div class="method-description">Use your camera to scan a payment QR code</div>
-                    </div>
-                    <q-icon name="las la-chevron-right" class="method-arrow"/>
-                  </div>
-                  
-                  <div class="method-option paste-option" @click="handlePastePayment">
-                    <div class="method-icon">
-                      <q-icon name="las la-clipboard" size="32px"/>
-                    </div>
-                    <div class="method-content">
-                      <div class="method-title">Paste Invoice</div>
-                      <div class="method-description">Paste a Lightning invoice from clipboard</div>
-                    </div>
-                    <q-icon name="las la-chevron-right" class="method-arrow"/>
-                  </div>
-                  
-                  <div class="method-option manual-option" @click="handleManualEntry">
-                    <div class="method-icon">
-                      <q-icon name="las la-at" size="32px"/>
-                    </div>
-                    <div class="method-content">
-                      <div class="method-title">Lightning Address</div>
-                      <div class="method-description">Enter a Lightning address (user@domain.com)</div>
-                    </div>
-                    <q-icon name="las la-chevron-right" class="method-arrow"/>
-                  </div>
-                </div>
-              </div>
+        <q-card-section class="dialog-content">
+          <!-- Payment Input -->
+          <div class="payment-input-section">
+            <q-input
+              v-model="sendForm.input"
+              outlined
+              label="Payment Details"
+              placeholder="Invoice, LNURL, or Lightning Address"
+              type="textarea"
+              rows="3"
+              class="payment-input"
+            />
+            
+            <div class="input-actions">
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-qrcode"
+                label="Scan QR"
+                @click="showQRScanner = true"
+                class="action-btn scan-btn"
+                no-caps
+              />
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-paste"
+                label="Paste"
+                @click="pasteFromClipboard"
+                class="action-btn paste-btn"
+                no-caps
+              />
             </div>
           </div>
 
-          <!-- Step 2: QR Scanner -->
-          <div v-if="sendStep === 'scan'" class="qr-scanner-screen">
-            <div class="scanner-container">
-              <div class="scanner-header">
-                <q-btn 
-                  flat 
-                  round 
-                  dense 
-                  icon="las la-arrow-left" 
-                  @click="sendStep = 'methods'"
-                  class="scanner-back-btn"
-                />
-                <div class="scanner-title">Point camera at QR code</div>
+          <!-- Payment Type Indicator -->
+          <div class="payment-type-section" v-if="paymentData">
+            <div class="type-indicator">
+              <q-icon name="las la-bolt" class="type-icon"/>
+              <span class="type-label">{{ getPaymentTypeLabel() }}</span>
+            </div>
+          </div>
+
+          <!-- Amount Input for LNURL/Lightning Address -->
+          <div class="amount-section" v-if="requiresAmount()">
+            <div class="amount-limits" v-if="getAmountLimits()">
+              <q-icon name="las la-info-circle" class="limits-icon"/>
+              <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
+            </div>
+            
+            <q-input
+              v-model="sendForm.amount"
+              outlined
+              label="Amount (sats)"
+              type="number"
+              class="amount-input"
+            />
+            
+            <q-input
+              v-model="sendForm.comment"
+              outlined
+              label="Comment (optional)"
+              :maxlength="paymentData.commentAllowed || 0"
+              :disable="!paymentData.commentAllowed"
+              :hint="paymentData.commentAllowed ? `Max ${paymentData.commentAllowed} characters` : 'Comments not supported'"
+              class="comment-input"
+            />
+          </div>
+
+          <!-- Invoice Details -->
+          <div class="invoice-preview" v-if="paymentData && paymentData.type === 'lightning_invoice'">
+            <div class="invoice-details">
+              <div class="preview-header">
+                <q-icon name="las la-receipt" class="preview-icon"/>
+                <span class="preview-title">Invoice Preview</span>
               </div>
               
-              <div class="qr-video-container">
-                <video ref="qrVideo" class="qr-video" autoplay muted playsinline></video>
-                <div class="scan-overlay">
-                  <div class="scan-frame">
-                    <div class="scan-corner top-left"></div>
-                    <div class="scan-corner top-right"></div>
-                    <div class="scan-corner bottom-left"></div>
-                    <div class="scan-corner bottom-right"></div>
-                  </div>
+              <div class="preview-content">
+                <div class="detail-item">
+                  <span class="detail-label">Amount</span>
+                  <span class="detail-value amount-value">{{ formatBalance(paymentData.amount) }}</span>
                 </div>
-              </div>
-              
-              <div class="scanner-help">
-                <q-icon name="las la-info-circle" class="help-icon"/>
-                <span>Position the QR code within the frame</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 3: Paste Processing -->
-          <div v-if="sendStep === 'paste'" class="paste-screen">
-            <div class="paste-container">
-              <div class="paste-content">
-                <q-spinner-dots color="primary" size="3rem" class="paste-spinner"/>
-                <div class="paste-title">Reading from clipboard...</div>
-                <div class="paste-subtitle">Processing your payment request</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 4: Manual Entry -->
-          <div v-if="sendStep === 'manual'" class="manual-entry-screen">
-            <div class="manual-container">
-              <div class="manual-header">
-                <q-btn 
-                  flat 
-                  round 
-                  dense 
-                  icon="las la-arrow-left" 
-                  @click="sendStep = 'methods'"
-                  class="manual-back-btn"
-                />
-                <div class="manual-title">Enter Lightning Address</div>
-              </div>
-              
-              <div class="manual-content">
-                <div class="input-section">
-                  <div class="input-label">
-                    <q-icon name="las la-at" class="input-icon"/>
-                    Lightning Address
-                  </div>
-                  <q-input
-                    v-model="lightningAddress"
-                    outlined
-                    placeholder="user@getalby.com"
-                    class="address-input"
-                    @keyup.enter="continueWithManualInput"
-                  />
-                  <div class="input-help">
-                    Enter a Lightning address like an email address
-                  </div>
+                <div class="detail-item" v-if="paymentData.description">
+                  <span class="detail-label">Description</span>
+                  <span class="detail-value">{{ paymentData.description }}</span>
                 </div>
-                
-                <q-btn
-                  @click="continueWithManualInput"
-                  :disable="!lightningAddress.trim()"
-                  class="continue-btn"
-                  unelevated
-                  no-caps
-                >
-                  Continue
-                </q-btn>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 5: Parsing/Validation -->
-          <div v-if="sendStep === 'parsing'" class="parsing-screen">
-            <div class="parsing-container">
-              <div class="parsing-content">
-                <div class="parsing-animation">
-                  <q-spinner-dots color="primary" size="3rem"/>
-                </div>
-                <div class="parsing-title">Validating Payment</div>
-                <div class="parsing-subtitle">Checking payment details...</div>
-                
-                <div class="parsing-steps">
-                  <div class="parsing-step">
-                    <q-icon name="las la-check-circle" color="positive"/>
-                    <span>Payment format detected</span>
-                  </div>
-                  <div class="parsing-step">
-                    <q-spinner-dots color="primary" size="1rem"/>
-                    <span>Verifying details...</span>
-                  </div>
+                <div class="detail-item" v-if="paymentData.expiry">
+                  <span class="detail-label">Expires</span>
+                  <span class="detail-value">{{ formatExpiry(paymentData.expiry) }}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Step 6: Payment Confirmation -->
-          <div v-if="sendStep === 'confirm' && parsedPayment" class="payment-confirmation-screen">
-            <div class="confirmation-container">
-              <div class="confirmation-header">
-                <q-btn 
-                  flat 
-                  round 
-                  dense 
-                  icon="las la-arrow-left" 
-                  @click="sendStep = 'methods'"
-                  class="back-btn"
-                />
-                <div class="confirmation-title">
-                  <q-icon name="las la-bolt" class="header-icon"/>
-                  <span class="header-title">Confirm Payment</span>
-                </div>
-              </div>
-              
-              <div class="confirmation-content">
-                <!-- Amount Section -->
-                <div class="amount-section">
-                  <div class="amount-label">You're sending</div>
-                  <div class="amount-display">
-                    <span class="amount-value">{{ formatBalance(parsedPayment.amount) }}</span>
-                    <span class="amount-unit">sats</span>
-                  </div>
-                  <div class="amount-fiat">{{ getFiatValue(parsedPayment.amount) }}</div>
-                </div>
-                
-                <!-- Payment Details -->
-                <div class="payment-details">
-                  <div class="detail-row">
-                    <div class="detail-label">
-                      <q-icon name="las la-user" class="detail-icon"/>
-                      Recipient
-                    </div>
-                    <div class="detail-value">{{ parsedPayment.recipient || 'Lightning Payment' }}</div>
-                  </div>
-                  
-                  <div class="detail-row" v-if="parsedPayment.description">
-                    <div class="detail-label">
-                      <q-icon name="las la-comment" class="detail-icon"/>
-                      Description
-                    </div>
-                    <div class="detail-value">{{ parsedPayment.description }}</div>
-                  </div>
-                  
-                  <div class="detail-row">
-                    <div class="detail-label">
-                      <q-icon name="las la-clock" class="detail-icon"/>
-                      Network Fee
-                    </div>
-                    <div class="detail-value">~1-3 sats</div>
-                  </div>
-                </div>
-                
-                <!-- Slide to Confirm -->
-                <div class="slide-to-confirm">
-                  <div class="slide-track" ref="slideTrack">
-                    <div class="slide-button" ref="slideButton" @touchstart="startSlide" @mousedown="startSlide">
-                      <q-icon name="las la-arrow-right" class="slide-icon"/>
-                    </div>
-                    <div class="slide-text">Slide to confirm payment</div>
-                  </div>
-                </div>
-                
-                <div class="confirmation-note">
-                  Double-check the details before confirming
-                </div>
-              </div>
-            </div>
-          </div>
+          <!-- Send Button -->
+          <q-btn
+            :loading="isSending"
+            :disable="!canSendPayment()"
+            @click="sendPayment"
+            class="send-payment-btn"
+            unelevated
+            no-caps
+          >
+            <q-icon name="las la-paper-plane" class="q-mr-sm"/>
+            <span v-if="!isSending">Send Payment</span>
+            <span v-else>Sending...</span>
+          </q-btn>
         </q-card-section>
       </q-card>
     </q-dialog>
@@ -2130,16 +1983,399 @@ export default {
   border: 1px solid #e5e7eb;
   background: #f8f9fa;
 }
-  z-index: 5000;
-/* Payment Confirmation Dialog */
-.confirmation-card {
+
+/* Payment Methods Screen */
+.payment-methods-screen {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+}
+
+.methods-container {
   width: 100%;
-  width: 100vw;
+  max-width: 400px;
+}
+
+.method-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2rem;
+  text-align: center;
+  justify-content: center;
+}
+
+.method-header-icon {
+  font-size: 2rem;
+  color: #059573;
+  margin-right: 0.75rem;
+}
+
+.method-header-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.method-header-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.method-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.method-option {
+  display: flex;
+  align-items: center;
+  padding: 1.25rem;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.method-option:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.scan-option {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.paste-option {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: white;
+}
+
+.manual-option {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.method-icon {
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+
+.method-content {
+  flex: 1;
+}
+
+.method-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.method-description {
+  font-size: 0.875rem;
+  opacity: 0.9;
+}
+
+/* QR Scanner Screen */
+.qr-scanner-screen {
   height: 100vh;
-  max-width: none;
-  max-height: none;
-  border-radius: 0;
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scanner-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.scanner-header {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.scanner-back-btn {
+  color: #6b7280;
+  margin-right: 1rem;
+}
+
+.scanner-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.qr-video-container {
+  flex: 1;
+  position: relative;
+  background: #000;
+}
+
+.qr-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.scan-frame {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+}
+
+.scan-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #10b981;
+}
+
+.scan-corner.top-left {
+  top: -3px;
+  left: -3px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.scan-corner.top-right {
+  top: -3px;
+  right: -3px;
+  border-left: none;
+  border-bottom: none;
+}
+
+.scan-corner.bottom-left {
+  bottom: -3px;
+  left: -3px;
+  border-right: none;
+  border-top: none;
+}
+
+.scan-corner.bottom-right {
+  bottom: -3px;
+  right: -3px;
+  border-left: none;
+  border-top: none;
+}
+
+.scanner-help {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 0.875rem;
+}
+
+.help-icon {
+  margin-right: 0.5rem;
+  color: #10b981;
+}
+
+/* Paste Screen */
+.paste-screen {
+  height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.paste-container {
+  text-align: center;
+  padding: 2rem;
+}
+
+.paste-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.paste-spinner {
+  margin-bottom: 0.5rem;
+}
+
+.paste-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.paste-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+/* Manual Entry Screen */
+.manual-entry-screen {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.manual-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.manual-header {
+  display: flex;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.manual-back-btn {
+  color: #6b7280;
+  margin-right: 1rem;
+}
+
+.manual-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.manual-content {
+  flex: 1;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.input-section {
+  flex: 1;
+}
+
+.input-label {
+  display: flex;
+  align-items: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.75rem;
+}
+
+.input-icon {
+  margin-right: 0.5rem;
+  color: #3b82f6;
+}
+
+.address-input {
+  margin-bottom: 0.75rem;
+}
+
+.input-help {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 2rem;
+}
+
+.continue-btn {
+  width: 100%;
+  height: 48px;
+  background: linear-gradient(135deg, #059573, #047857);
+  color: white;
+  border-radius: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.continue-btn:hover {
+  background: linear-gradient(135deg, #047857, #065f46);
+  transform: translateY(-1px);
+}
+
+.continue-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Parsing Screen */
+.parsing-screen {
+  height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.parsing-container {
+  text-align: center;
+  padding: 2rem;
+}
+
+.parsing-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.parsing-animation {
+  margin-bottom: 0.5rem;
+}
+
+.parsing-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.parsing-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 1rem;
+}
+
+.parsing-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.parsing-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+/* Payment Confirmation Screen */
+.payment-confirmation-screen {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #059573, #047857);
+  color: white;
 }
 
 .confirmation-header {
@@ -2147,11 +2383,9 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .confirmation-title {
@@ -2177,6 +2411,7 @@ export default {
 }
 
 .confirmation-content {
+  flex: 1;
   padding: 2rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -2187,14 +2422,15 @@ export default {
 .amount-section {
   text-align: center;
   padding: 1.5rem;
-  background: #f8f9fa;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  border: 2px solid #e5e7eb;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .amount-label {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.8);
   margin-bottom: 0.5rem;
   font-weight: 500;
 }
@@ -2210,19 +2446,19 @@ export default {
 .amount-value {
   font-size: 2.5rem;
   font-weight: 800;
-  color: #059573;
+  color: white;
   line-height: 1;
 }
 
 .amount-unit {
   font-size: 1.25rem;
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.8);
   font-weight: 600;
 }
 
 .amount-fiat {
   font-size: 1rem;
-  color: #9ca3af;
+  color: rgba(255, 255, 255, 0.7);
   font-weight: 500;
 }
 
@@ -2238,229 +2474,128 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: #f9fafb;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-.header-content {
+.detail-label {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.8);
   font-weight: 500;
 }
 
 .detail-icon {
   font-size: 16px;
-  color: #9ca3af;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .detail-value {
   font-weight: 600;
   text-align: right;
-.header-icon {
-  color: #059573;
-  font-size: 1.25rem;
-}
-
-.header-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1f2937;
+  color: white;
+  max-width: 60%;
+  word-break: break-all;
 }
 
 /* Slide to Confirm */
-  color: #6b7280;
-  margin-top: 1rem;
+.slide-to-confirm {
+  margin-top: auto;
+  padding: 1rem 0;
 }
 
-  flex: 1;
-  padding: 1rem;
-  overflow-y: auto;
+.slide-track {
   position: relative;
-  width: 100%;
-.step-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 32px;
-  border: 2px solid #e5e7eb;
+  border: 2px solid rgba(255, 255, 255, 0.2);
   display: flex;
-.back-btn {
-  color: #6b7280;
-}
-
-.step-info {
-  flex: 1;
-}
-
-.step-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 0.25rem;
-}
-
-.step-subtitle {
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-/* Payment Methods */
-.payment-methods {
-  justify-content: center;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.method-card {
-  display: flex;
+  align-items: center;
   overflow: hidden;
-  gap: 1rem;
-  padding: 1.25rem;
-  background: white;
-  border: 2px solid #e5e7eb;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
 }
 
-.input-help {
-  font-size: 0.875rem;
-  color: #6b7280;
-  text-align: center;
-  margin-top: -0.5rem;
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
-}
-.continue-btn {
-  height: 48px;
-  border-radius: 12px;
-  font-size: 1rem;
-  font-weight: 500;
-  margin-top: 1rem;
-  width: 48px;
-  height: 48px;
-/* QR Scanner */
-.scan-content {
-  padding: 0;
+.slide-button {
+  position: absolute;
+  left: 4px;
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, #78D53C, #43B65B);
+  border-radius: 50%;
   display: flex;
-  flex-direction: column;
-  height: 100%;
   align-items: center;
   justify-content: center;
-.scan-content .step-header {
-  padding: 1rem;
-  margin-bottom: 0;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  flex-shrink: 0;
-}
-.scanner-container {
-  flex: 1;
-  position: relative;
-  background: #000;
+  cursor: grab;
+  transition: all 0.2s ease;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.qr-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.scan-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-.paste-method .method-icon {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-}
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-}
-.scan-frame {
-  width: 250px;
-  height: 250px;
-  position: relative;
-  border: 2px solid rgba(255, 255, 255, 0.5);
-  border-radius: 12px;
-  flex: 1;
-}
-.scan-corner {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border: 3px solid #10b981;
-  color: #6b7280;
-.method-arrow {
-.scan-corner.top-left {
-  top: -3px;
-  left: -3px;
-  border-right: none;
-  border-bottom: none;
-  border-radius: 12px 0 0 0;
-}
-/* Manual Input */
-.scan-corner.top-right {
-  top: -3px;
-  right: -3px;
-  border-left: none;
-  border-bottom: none;
-  border-radius: 0 12px 0 0;
-  font-size: 1.125rem;
-  height: 56px;
-.scan-corner.bottom-left {
-  bottom: -3px;
-  left: -3px;
-  border-right: none;
-  border-top: none;
-  border-radius: 0 0 0 12px;
+.slide-button:active {
+  cursor: grabbing;
   transform: scale(1.05);
 }
-.scan-corner.bottom-right {
-  bottom: -3px;
-  right: -3px;
-  border-left: none;
-  border-top: none;
-  border-radius: 0 0 12px 0;
+
+.slide-icon {
   color: white;
-}
-/* Responsive Design */
-@media (min-width: 768px) {
-  .send-card {
-    width: 100%;
-    height: auto;
-    max-width: 480px;
-    max-height: 90vh;
-    border-radius: 16px;
-    margin: auto;
-  }
-  
-  .send-header {
-    position: static;
-  }
+  font-size: 24px;
+  transition: transform 0.2s ease;
 }
 
-@media (max-width: 480px) {
-  .send-content {
-    padding: 0.75rem;
-  }
-  
-  .method-card {
-    padding: 1rem;
-  }
-  
-  .method-icon {
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
-  }
-  
-  .step-title {
-    font-size: 1.125rem;
-  }
+.slide-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.slide-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(120, 213, 60, 0.3), rgba(67, 182, 91, 0.3));
+  border-radius: 30px;
+  transition: width 0.2s ease;
+  z-index: 1;
+}
+
+/* Sending State */
+.sending-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.sending-spinner {
+  margin-bottom: 0.5rem;
+}
+
+.sending-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+}
+
+.sending-subtitle {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.sending-animation {
   animation: spin 1s linear infinite;
 }
 
@@ -2609,6 +2744,46 @@ export default {
   .copy-btn,
   .share-btn {
     height: 40px;
+  }
+
+  .payment-dialog {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .payment-methods-screen {
+    padding: 1rem;
+    min-height: 70vh;
+  }
+
+  .methods-container {
+    max-width: none;
+  }
+
+  .method-option {
+    padding: 0.75rem;
+  }
+
+  .method-title {
+    font-size: 1rem;
+  }
+
+  .method-description {
+    font-size: 0.8125rem;
+  }
+
+  .scan-frame {
+    width: 150px;
+    height: 150px;
+  }
+
+  .manual-content,
+  .parsing-container,
+  .paste-container {
+    padding: 1rem;
   }
 }
 </style>
