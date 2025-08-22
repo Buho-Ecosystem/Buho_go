@@ -1,10 +1,4 @@
 <template>
-  <!-- Loading Screen -->
-  <LoadingScreen 
-    :show="showLoadingScreen" 
-    :loading-text="loadingText"
-  />
-  
   <q-page class="settings-page">
     <!-- Header -->
     <div class="settings-header">
@@ -315,13 +309,9 @@
 
 <script>
 import {webln} from "@getalby/sdk";
-import LoadingScreen from '../components/LoadingScreen.vue';
 
 export default {
   name: 'SettingsPage',
-  components: {
-    LoadingScreen
-  },
   data() {
     return {
       walletState: {
@@ -349,8 +339,6 @@ export default {
       hasPin: false,
       currentPin: '',
       newPin: '',
-      showLoadingScreen: true,
-      loadingText: 'Loading settings...'
     }
   },
   computed: {
@@ -362,30 +350,11 @@ export default {
     }
   },
   created() {
-    this.initializeSettings();
+    this.loadWalletState();
+    this.loadPinState();
+    this.checkNotificationPermission();
   },
   methods: {
-    async initializeSettings() {
-      try {
-        this.loadingText = 'Loading wallet state...';
-    this.loadWalletState();
-        
-        this.loadingText = 'Loading security settings...';
-    this.loadPinState();
-        
-        this.loadingText = 'Checking permissions...';
-    this.checkNotificationPermission();
-        
-        // Hide loading screen
-        this.loadingText = 'Ready!';
-        await new Promise(resolve => setTimeout(resolve, 300));
-        this.showLoadingScreen = false;
-      } catch (error) {
-        console.error('Error initializing settings:', error);
-        this.showLoadingScreen = false;
-      }
-    },
-    
     async loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
@@ -393,11 +362,6 @@ export default {
           const parsedState = JSON.parse(savedState);
           this.walletState = parsedState;
           
-          if (this.showLoadingScreen) {
-            this.loadingText = 'Updating wallet balances...';
-          }
-          
-
           for (const wallet of this.walletState.connectedWallets) {
             if (wallet.type === 'nwc' && wallet.nwcString) {
               try {
