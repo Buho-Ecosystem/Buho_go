@@ -106,15 +106,15 @@ export default {
 }
 
 .logo-part-1 {
-  animation: part-fade-in 1.5s ease-out 0.2s both;
+  opacity: 1;
 }
 
 .logo-part-2 {
-  animation: part-fade-in 1.5s ease-out 0.4s both;
+  opacity: 1;
 }
 
 .logo-part-3 {
-  animation: part-fade-in 1.5s ease-out 0.6s both;
+  opacity: 1;
 }
 
 .app-name {
@@ -124,14 +124,12 @@ export default {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 2rem;
-  opacity: 0;
-  animation: text-fade-in 1s ease-out 0.8s both;
+  opacity: 1;
 }
 
 .loading-indicator {
   margin-bottom: 1rem;
-  opacity: 0;
-  animation: indicator-fade-in 0.5s ease-out 1.2s both;
+  opacity: 1;
 }
 
 .loading-dots {
@@ -165,8 +163,7 @@ export default {
   color: #6b7280;
   font-size: 1rem;
   font-weight: 500;
-  opacity: 0;
-  animation: text-fade-in 0.5s ease-out 1.4s both;
+  opacity: 1;
 }
 
 /* Animations */
@@ -178,39 +175,6 @@ export default {
   50% {
     transform: scale(1.05);
     filter: drop-shadow(0 6px 16px rgba(5, 149, 115, 0.3));
-  }
-}
-
-@keyframes part-fade-in {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.9);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes text-fade-in {
-  0% {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes indicator-fade-in {
-  0% {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
