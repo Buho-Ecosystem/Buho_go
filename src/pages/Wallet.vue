@@ -276,41 +276,39 @@
             <!-- Waiting for Payment State -->
             <div class="waiting-state" v-else-if="waitingForPayment">
               <!-- QR Code Section -->
-              <div class="qr-code-section">
+              <div class="qr-code-section compact">
                 <vue-qrcode
                   :value="generatedInvoice.paymentRequest"
-                  :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
+                  :options="{ width: 200, margin: 1, color: { dark: '#000000', light: '#FFFFFF' } }"
                   class="qr-code"
                 />
               </div>
               
-              <!-- Amount Display -->
-              <div class="amount-section">
-                <div class="amount-value">
+              <!-- Compact Info -->
+              <div class="invoice-info-compact">
+                <div class="amount-compact">
                   {{ parseInt(receiveForm.amount).toLocaleString() }} sats
                 </div>
-                <div class="description-text" v-if="receiveForm.description">
+                <div class="description-compact" v-if="receiveForm.description">
                   {{ receiveForm.description }}
                 </div>
-              </div>
-
-              <!-- Waiting Indicator -->
-              <div class="waiting-indicator">
-                <q-spinner-dots color="primary" size="24px"/>
-                <div class="waiting-text">Waiting for payment...</div>
-                <div class="waiting-subtitle">Scan the QR code or share the invoice</div>
+                
+                <!-- Waiting Indicator -->
+                <div class="waiting-indicator-compact">
+                  <q-spinner-dots color="primary" size="18px"/>
+                  <span class="waiting-text-compact">Waiting for payment...</span>
+                </div>
               </div>
               
               <!-- Copy Button -->
               <q-btn
-                outline
+                flat
                 color="primary"
                 icon="las la-copy"
                 label="Copy Invoice"
                 @click="copyInvoice"
-                class="copy-invoice-btn"
+                class="copy-invoice-btn-compact"
                 no-caps
-                unelevated
               />
             </div>
 
@@ -880,13 +878,16 @@ export default {
         console.log('📋 Raw invoice response:', this.generatedInvoice);
         console.log('🔍 Invoice properties:', Object.keys(this.generatedInvoice || {}));
         console.log('💳 Payment request:', this.generatedInvoice?.paymentRequest);
-        console.log('🆔 Payment hash:', this.generatedInvoice?.paymentHash);
+        
+        // Extract payment hash from the payment request (BOLT11 invoice)
+        const paymentHash = this.extractPaymentHashFromInvoice(this.generatedInvoice.paymentRequest);
+        console.log('🆔 Extracted payment hash:', paymentHash);
         
         // Ensure we have the amount for display
         this.generatedInvoice.amount = parseInt(this.receiveForm.amount);
         
         // Store payment hash for tracking
-        this.currentInvoicePaymentHash = this.generatedInvoice.paymentHash;
+        this.currentInvoicePaymentHash = paymentHash;
         this.waitingForPayment = true;
         
         // Start checking for payment
@@ -966,7 +967,8 @@ export default {
           
           // Look for our invoice payment
           const paidTransaction = transactionsResponse.transactions.find(tx => 
-            tx.payment_hash === this.currentInvoicePaymentHash && 
+            (tx.payment_hash === this.currentInvoicePaymentHash || 
+             tx.paymentHash === this.currentInvoicePaymentHash) &&
             tx.type === 'incoming' &&
             (tx.state === 'settled' || tx.settled)
           );
@@ -1035,6 +1037,32 @@ export default {
       this.generatedInvoice = null;
       this.currentInvoicePaymentHash = null;
       this.waitingForPayment = false;
+    },
+
+    extractPaymentHashFromInvoice(paymentRequest) {
+      try {
+        // BOLT11 invoice format: the payment hash is embedded in the invoice
+        // We'll use a simple approach to extract it from the 'p' field
+        const invoice = paymentRequest.toLowerCase();
+        
+        // Find the 'p' field which contains the payment hash (32 bytes = 64 hex chars)
+        const pFieldMatch = invoice.match(/p([a-f0-9]{64})/);
+        if (pFieldMatch) {
+          return pFieldMatch[1];
+        }
+        
+        // Alternative: try to find any 64-character hex string that looks like a hash
+        const hashMatch = invoice.match(/([a-f0-9]{64})/);
+        if (hashMatch) {
+          return hashMatch[1];
+        }
+        
+        console.warn('Could not extract payment hash from invoice');
+        return null;
+      } catch (error) {
+        console.error('Error extracting payment hash:', error);
+        return null;
+      }
     },
 
     handleQRScan(result) {
@@ -1696,47 +1724,65 @@ export default {
   margin-bottom: 1rem;
 }
 
+.qr-code-section.compact {
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
 .qr-code {
   border-radius: 8px;
   overflow: hidden;
 }
 
-/* Amount Section */
-.amount-section {
+/* Compact Invoice Info */
+.invoice-info-compact {
   text-align: center;
-  padding: 1rem;
-  background: rgba(5, 149, 115, 0.05);
-  border-radius: 16px;
-  border: 1px solid rgba(5, 149, 115, 0.1);
-  margin-bottom: 1.5rem;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  margin-bottom: 1rem;
 }
 
-.amount-value {
-  font-size: 1.5rem;
+.amount-compact {
+  font-size: 1.25rem;
   font-weight: 700;
   color: #059573;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
-.description-text {
+.description-compact {
   color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+}
+
+.waiting-indicator-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.waiting-text-compact {
   font-size: 0.875rem;
+  color: #3b82f6;
   font-weight: 500;
 }
 
-/* Copy Button */
-.copy-invoice-btn {
+/* Compact Copy Button */
+.copy-invoice-btn-compact {
   width: 100%;
-  height: 48px;
-  border-radius: 12px;
-  font-weight: 600;
-  font-size: 1rem;
+  height: 40px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.875rem;
   transition: all 0.2s ease;
-  border: 2px solid #059573;
   color: #059573;
+  background: rgba(5, 149, 115, 0.05);
 }
 
-.copy-invoice-btn:hover {
+.copy-invoice-btn-compact:hover {
   background: #059573;
   color: white;
 }
