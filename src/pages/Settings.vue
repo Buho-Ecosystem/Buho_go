@@ -68,31 +68,39 @@
           <div class="coming-soon-badge">Soon</div>
         </div>
 
-        <div class="section-card" @click="showSecurityDialog = true">
-          <div class="card-icon security-icon">
+        <div class="section-card disabled-card">
+          <div class="card-icon security-icon-disabled">
             <q-icon name="las la-shield-alt" size="24px"/>
           </div>
           <div class="card-content">
             <div class="card-title">Security</div>
-            <div class="card-subtitle">PIN protection</div>
+            <div class="card-subtitle">Coming soon</div>
           </div>
-          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"/>
+          <div class="coming-soon-badge">Soon</div>
         </div>
       </div>
     </div>
 
     <!-- Disconnect Button -->
     <div class="disconnect-section">
-      <q-btn
-        outline
-        color="negative"
-        no-caps
-        class="disconnect-btn"
-        @click="confirmDisconnect"
-      >
-        <q-icon name="las la-trash-alt" class="q-mr-sm"/>
-        Disconnect All Wallets
-      </q-btn>
+      <div class="disconnect-container">
+        <div class="disconnect-warning">
+          <q-icon name="las la-exclamation-triangle" class="warning-icon"/>
+          <div class="warning-content">
+            <div class="warning-title">Danger Zone</div>
+            <div class="warning-subtitle">This action cannot be undone</div>
+          </div>
+        </div>
+        <q-btn
+          flat
+          no-caps
+          class="disconnect-btn"
+          @click="confirmDisconnect"
+        >
+          <q-icon name="las la-sign-out-alt" class="disconnect-icon"/>
+          <span class="disconnect-text">Disconnect All Wallets</span>
+        </q-btn>
+      </div>
     </div>
 
     <!-- Currency Dialog -->
@@ -783,6 +791,11 @@ export default {
   color: white;
 }
 
+.security-icon-disabled {
+  background: linear-gradient(135deg, #9CA3AF, #6B7280);
+  color: white;
+}
+
 .card-content {
   flex: 1;
 }
@@ -833,20 +846,78 @@ export default {
   border-top: 1px solid #e5e7eb;
 }
 
+.disconnect-container {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.disconnect-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #FEF3C7;
+  border: 1px solid #F59E0B;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+
+.warning-icon {
+  color: #F59E0B;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.warning-content {
+  flex: 1;
+}
+
+.warning-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #92400E;
+  margin-bottom: 0.125rem;
+}
+
+.warning-subtitle {
+  font-size: 0.75rem;
+  color: #B45309;
+}
+
 .disconnect-btn {
   width: 100%;
-  height: 48px;
+  height: 52px;
   border-radius: 12px;
   font-weight: 500;
-  border-color: #ef4444;
-  color: #ef4444;
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .disconnect-btn:hover {
-  background: #ef4444;
-  color: white;
+  background: #FEE2E2;
+  border-color: #FCA5A5;
   transform: translateY(-1px);
+}
+
+.disconnect-btn:active {
+  background: #DC2626;
+  color: white;
+  border-color: #DC2626;
+}
+
+.disconnect-icon {
+  font-size: 18px;
+}
+
+.disconnect-text {
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
 /* Dialog Styles */
