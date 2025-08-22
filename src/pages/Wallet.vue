@@ -84,6 +84,18 @@
 
     <!-- Transaction History -->
     <div class="transaction-history">
+      <div class="history-header">
+        <h3 class="history-title">Recent Transactions</h3>
+        <q-btn 
+          flat 
+          dense 
+          color="primary" 
+          label="View All" 
+          @click="$router.push('/transaction-history')"
+          class="view-all-btn-header"
+        />
+      </div>
+      
       <div v-if="transactionError && !isLoading" class="error-banner q-pa-md">
         <q-banner dense class="bg-warning text-white">
           <template v-slot:avatar>
@@ -97,7 +109,7 @@
       </div>
       
       <div v-if="isLoading" class="q-pa-md">
-        <q-item v-for="i in 3" :key="i" class="transaction-item">
+        <q-item v-for="i in 4" :key="i" class="transaction-item">
           <q-item-section avatar>
             <q-skeleton type="QAvatar"/>
           </q-item-section>
@@ -131,32 +143,56 @@
       <q-scroll-area v-else class="transaction-scroll-area q-pb-xl">
         <q-list>
           <q-item v-for="tx in transactions" :key="tx.id" clickable v-ripple @click="viewTransaction(tx.id)"
-                  class="transaction-item">
+                  class="transaction-item enhanced-item">
             <q-item-section side>
-              <q-avatar :color="tx.type === 'incoming' ? 'green-1' : 'grey-3'" text-color="grey-9"
-                        class="">
-                <q-icon :name="tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up'"
-                        :color="tx.type === 'incoming' ? 'green-8' : 'grey-7'"/>
+              <q-avatar 
+                :color="getTransactionColor(tx)" 
+                :text-color="getTransactionTextColor(tx)"
+                size="48px"
+                class="transaction-avatar"
+              >
+                <q-icon :name="getTransactionIcon(tx)" size="20px"/>
               </q-avatar>
             </q-item-section>
 
             <q-item-section>
-              <q-item-label>{{ tx.description }}</q-item-label>
-              <q-item-label caption>{{ formatTransactionDate(tx.settled_at) }}</q-item-label>
+              <q-item-label class="transaction-title">
+                {{ tx.description || 'Lightning Transaction' }}
+              </q-item-label>
+              <q-item-label caption class="transaction-subtitle">
+                <div class="transaction-meta">
+                  <span class="transaction-time">{{ formatTransactionTime(tx.settled_at) }}</span>
+                  <span class="transaction-status" :class="getStatusClass(tx)">
+                    {{ getTransactionStatus(tx) }}
+                  </span>
+                </div>
+                <div v-if="tx.senderNpub" class="sender-info">
+                  <q-icon name="las la-bolt" size="12px" class="q-mr-xs"/>
+                  Zap from {{ getSenderName(tx.senderNpub) }}
+                </div>
+              </q-item-label>
             </q-item-section>
 
             <q-item-section side>
-              <q-item-label :class="tx.type === 'incoming' ? 'text-green-8' : 'text-grey-8'" class="text-weight-medium">
-                {{ tx.type === 'incoming' ? '+' : '-' }} {{ formatBalance(tx.amount) }}
+              <q-item-label :class="getAmountClass(tx)" class="transaction-amount">
+                {{ getFormattedAmount(tx) }}
               </q-item-label>
-              <q-icon name="las la-chevron-right" size="xs" color="grey-5"/>
+              <q-item-label caption class="fiat-amount">
+                {{ getFiatAmount(tx) }}
+              </q-item-label>
             </q-item-section>
           </q-item>
         </q-list>
 
-        <div class="fixed fixed-bottom bg-white">
-          <q-btn flat class=" view-all-btn" no-caps label="View All Transactions"
-                 @click="$router.push('/transaction-history')"/>
+        <div class="view-all-container">
+          <q-btn 
+            flat 
+            class="view-all-btn" 
+            no-caps 
+            label="View All Transactions"
+            icon="las la-arrow-right"
+            @click="$router.push('/transaction-history')"
+          />
         </div>
       </q-scroll-area>
 
@@ -1013,6 +1049,59 @@ export default {
         this.isProcessing = false;
       }
     },
+    getTransactionColor(tx) {
+      if (tx.type === 'incoming') return 'green-1';
+      return 'grey-2';
+    },
+    getTransactionTextColor(tx) {
+      if (tx.type === 'incoming') return 'green-8';
+      return 'grey-7';
+    },
+    getTransactionIcon(tx) {
+      if (tx.senderNpub) return 'las la-bolt'; // Zap icon
+      if (tx.type === 'incoming') return 'las la-arrow-down';
+      return 'las la-arrow-up';
+    },
+    getTransactionStatus(tx) {
+      if (tx.settled) return 'Completed';
+      if (tx.pending) return 'Pending';
+      return 'Completed';
+    },
+    getStatusClass(tx) {
+      if (tx.settled) return 'status-completed';
+      if (tx.pending) return 'status-pending';
+      return 'status-completed';
+    },
+    getAmountClass(tx) {
+      return tx.type === 'incoming' ? 'amount-positive' : 'amount-negative';
+    },
+    getFormattedAmount(tx) {
+      const prefix = tx.type === 'incoming' ? '+' : '-';
+      return prefix + this.formatBalance(Math.abs(tx.amount));
+    },
+    getFiatAmount(tx) {
+      const btcAmount = Math.abs(tx.amount) / 100000000;
+      const fiatValue = btcAmount * (this.walletState.exchangeRates?.usd || 65000);
+      return '$' + fiatValue.toFixed(2);
+    },
+    getSenderName(npub) {
+      // Mock implementation - in real app, fetch from nostr
+      return npub.substring(0, 12) + '...';
+    },
+    formatTransactionTime(timestamp) {
+      const date = new Date(timestamp * 1000);
+      const now = new Date();
+      const diffInHours = (now - date) / (1000 * 60 * 60);
+      
+      if (diffInHours < 1) {
+        const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+        return `${diffInMinutes}m ago`;
+      } else if (diffInHours < 24) {
+        return `${Math.floor(diffInHours)}h ago`;
+      } else {
+        return date.toLocaleDateString();
+      }
+    },
     copyInvoice() {
       // Simulate copy to clipboard
       this.$q.notify({
@@ -1201,7 +1290,27 @@ export default {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 400px); /* Adjust based on your layout */
+  height: calc(100vh - 420px);
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1rem 0.5rem;
+  border-bottom: 1px solid rgba(229, 231, 235, 0.3);
+}
+
+.history-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.view-all-btn-header {
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .transaction-scroll-area {
@@ -1220,17 +1329,140 @@ export default {
 }
 
 .transaction-item {
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.3);
+  transition: background-color 0.2s;
 }
 
-.transaction-icon {
-  padding: 0.5rem;
+.transaction-item:hover {
+  background-color: rgba(243, 244, 246, 0.3);
+}
+
+.enhanced-item {
+  padding: 1rem;
+}
+
+.transaction-avatar {
+  margin-right: 0.75rem;
+}
+
+.transaction-title {
+  font-weight: 500;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.transaction-subtitle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.transaction-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.transaction-time {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+.transaction-status {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.125rem 0.5rem;
+  border-radius: 12px;
+}
+
+.status-completed {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.status-pending {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+
+.sender-info {
+  display: flex;
+  align-items: center;
+  color: #6366f1;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.125rem;
+}
+
+.transaction-amount {
+  font-weight: 600;
+  font-size: 1rem;
+  text-align: right;
+}
+
+.amount-positive {
+  color: #10b981;
+}
+
+.amount-negative {
+  color: #6b7280;
+}
+
+.fiat-amount {
+  color: #9ca3af;
+  font-size: 0.75rem;
+  text-align: right;
+  margin-top: 0.125rem;
+}
+
+.view-all-container {
+  padding: 1rem;
+  border-top: 1px solid rgba(229, 231, 235, 0.3);
+  background-color: rgba(248, 249, 250, 0.5);
 }
 
 .view-all-btn {
   width: 100%;
   color: #10b981;
   font-weight: 500;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background-color: rgba(16, 185, 129, 0.05);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.view-all-btn:hover {
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+.error-banner {
+  margin: 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.no-transactions {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.no-transactions .text-h6 {
+  margin-bottom: 0.5rem;
+  color: #1f2937;
+}
+
+.no-transactions .text-caption {
+  margin-bottom: 1rem;
+}
+
+.no-transactions q-btn {
+  width: 100%;
+  max-width: 200px;
 }
 
 .bottom-actions {
