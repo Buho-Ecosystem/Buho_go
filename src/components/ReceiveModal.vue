@@ -15,7 +15,7 @@
             flat 
             round 
             dense 
-            icon="las la-arrow-left" 
+            icon="las la-chevron-left" 
             @click="closeModal"
             class="back-btn"
           />
@@ -33,7 +33,7 @@
               flat 
               round 
               dense 
-              icon="las la-expand-arrows-alt" 
+              icon="las la-expand" 
               @click="toggleFullscreen"
               class="fullscreen-btn"
             />
@@ -43,9 +43,13 @@
 
       <!-- Content -->
       <q-card-section class="receive-content">
-        <!-- QR Code Area -->
-        <div class="qr-section" v-if="!generatedInvoice">
-          <!-- Empty state before invoice creation -->
+        <!-- Amount Icon -->
+        <div class="amount-icon-section" v-if="!generatedInvoice">
+          <div class="amount-icon">
+            <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z" fill="#E5E7EB"/>
+            </svg>
+          </div>
         </div>
         
         <!-- QR Code Display (after invoice creation) -->
@@ -54,7 +58,7 @@
             <div class="qr-wrapper">
               <vue-qrcode 
                 :value="generatedInvoice.payment_request" 
-                :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#ffffff' } }"
+                :options="{ width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } }"
                 class="qr-code"
               />
             </div>
@@ -66,7 +70,7 @@
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency">
             <span class="currency-label">{{ currentCurrency }}</span>
-            <q-icon name="las la-sync-alt" class="toggle-icon"/>
+            <q-icon name="las la-redo-alt" class="toggle-icon"/>
           </div>
 
           <!-- Amount Input -->
@@ -90,15 +94,15 @@
         <!-- Description Section (only show before invoice creation) -->
         <div class="description-section" v-if="!generatedInvoice">
           <div class="description-label">Description (optional)</div>
-          <q-input
-            v-model="description"
-            outlined
-            placeholder="No description"
-            class="description-input"
-            maxlength="100"
-            counter
-            dense
-          />
+          <div class="description-input-container">
+            <input 
+              v-model="description"
+              type="text"
+              placeholder="No description"
+              class="description-input"
+              maxlength="100"
+            />
+          </div>
         </div>
       </q-card-section>
 
@@ -401,12 +405,12 @@ export default {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
+  background: #f8f9fa;
 }
 
 /* Header */
 .receive-header {
-  background: #ffffff;
+  background: #f8f9fa;
   border-bottom: 1px solid #e5e7eb;
   padding: 1rem;
   flex-shrink: 0;
@@ -420,10 +424,11 @@ export default {
 
 .back-btn {
   color: #1f2937;
+  font-size: 1.5rem;
 }
 
 .header-title {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 600;
   color: #1f2937;
   flex: 1;
@@ -438,6 +443,7 @@ export default {
 .address-btn,
 .fullscreen-btn {
   color: #6b7280;
+  font-size: 1.25rem;
 }
 
 /* Content */
@@ -451,13 +457,16 @@ export default {
   min-height: 0;
 }
 
-/* QR Section */
-.qr-section {
+/* Amount Icon Section */
+.amount-icon-section {
   display: flex;
   justify-content: center;
-  margin-bottom: 1rem;
-  min-height: 200px;
+  margin-bottom: 2rem;
   align-items: center;
+}
+
+.amount-icon {
+  opacity: 0.3;
 }
 
 /* QR Display Section (after invoice creation) */
@@ -466,7 +475,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 1rem;
+  padding: 2rem;
 }
 
 .qr-container {
@@ -484,11 +493,11 @@ export default {
 
 .qr-wrapper {
   background: white;
-  border-radius: 16px;
-  padding: 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   border: 1px solid #e5e7eb;
-  max-width: 280px;
+  max-width: 240px;
   width: 100%;
   position: relative;
 }
@@ -496,7 +505,7 @@ export default {
 .qr-wrapper::after {
   content: 'Tap to copy';
   position: absolute;
-  bottom: 0.5rem;
+  bottom: -1.5rem;
   left: 50%;
   transform: translateX(-50%);
   font-size: 0.75rem;
@@ -507,12 +516,12 @@ export default {
 .qr-code {
   width: 100%;
   height: auto;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 
 /* Amount Section */
 .amount-section {
-  margin-bottom: 1rem;
+  margin-bottom: 2rem;
   text-align: center;
   flex: 1;
   display: flex;
@@ -524,56 +533,59 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: #f3f4f6;
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
+  background: #e5e7eb;
+  padding: 0.375rem 0.75rem;
+  border-radius: 16px;
   cursor: pointer;
-  margin-bottom: 0.75rem;
+  margin: 0 auto 1.5rem;
   transition: background-color 0.2s;
+  width: fit-content;
 }
 
 .currency-toggle:hover {
-  background: #e5e7eb;
+  background: #d1d5db;
 }
 
 .currency-label {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: #6b7280;
   text-transform: uppercase;
+  letter-spacing: 0.025em;
 }
 
 .toggle-icon {
   color: #6b7280;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .amount-input-container {
   display: flex;
   justify-content: center;
+  margin-bottom: 1rem;
 }
 
 .amount-display {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .currency-symbol {
-  font-size: 1.75rem;
+  font-size: 2.5rem;
   font-weight: 300;
-  color: #6b7280;
+  color: #9ca3af;
 }
 
 .amount-input {
-  font-size: 2.5rem;
+  font-size: 2.75rem;
   font-weight: 300;
-  color: #1f2937;
+  color: #374151;
   border: none;
   outline: none;
   background: transparent;
   text-align: center;
-  min-width: 150px;
+  min-width: 200px;
 }
 
 .amount-input::placeholder {
@@ -582,45 +594,63 @@ export default {
 
 /* Description Section */
 .description-section {
-  margin-bottom: 1rem;
+  margin-bottom: 2rem;
   flex-shrink: 0;
 }
 
 .description-label {
-  font-size: 1rem;
+  font-size: 0.9375rem;
   color: #6b7280;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.75rem;
   text-align: center;
 }
 
-.description-input {
-  max-width: 400px;
+.description-input-container {
+  max-width: 320px;
   margin: 0 auto;
 }
 
-.description-input :deep(.q-field__control) {
+.description-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
+  background: white;
+  font-size: 0.9375rem;
+  color: #374151;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.description-input:focus {
+  border-color: #9ca3af;
+}
+
+.description-input::placeholder {
+  color: #d1d5db;
 }
 
 /* Footer */
 .receive-footer {
-  padding: 0.75rem 1rem 1rem;
+  padding: 1rem 1.5rem 1.5rem;
   flex-shrink: 0;
 }
 
 .create-invoice-btn {
   width: 100%;
-  height: 48px;
-  background: #1f2937;
+  height: 52px;
+  background: #374151;
   color: white;
-  border-radius: 16px;
-  font-size: 1rem;
-  font-weight: 500;
+  border-radius: 12px;
+  font-size: 1.0625rem;
+  font-weight: 600;
   transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
 }
 
 .create-invoice-btn:hover {
-  background: #374151;
+  background: #4b5563;
   transform: translateY(-1px);
 }
 
@@ -628,86 +658,56 @@ export default {
   background: #d1d5db;
   color: #9ca3af;
   transform: none;
-}
-
-/* Invoice Actions */
-.invoice-actions {
-  background: #f9fafb;
-  border-top: 1px solid #e5e7eb;
-  padding: 1rem;
-  flex-shrink: 0;
-}
-
-.action-buttons {
-  display: flex;
-  justify-content: space-around;
-  gap: 1rem;
-}
-
-.action-btn {
-  flex: 1;
-  height: 48px;
-  border-radius: 12px;
-  color: #6b7280;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.action-btn:hover {
-  background: #f3f4f6;
-  color: #374151;
+  cursor: not-allowed;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
   .receive-content {
-    padding: 0.75rem;
+    padding: 1.5rem 1rem;
   }
   
   .qr-display-section {
-    padding: 0.75rem;
+    padding: 1rem;
   }
   
-  .qr-section {
-    min-height: 160px;
-    margin-bottom: 0.75rem;
+  .amount-icon-section {
+    margin-bottom: 1.5rem;
   }
   
   .qr-wrapper {
-    padding: 1rem;
-    max-width: 240px;
-    border-radius: 12px;
+    padding: 0.75rem;
+    max-width: 200px;
   }
   
   .amount-input {
-    font-size: 2rem;
-    min-width: 120px;
+    font-size: 2.25rem;
+    min-width: 160px;
   }
   
   .currency-symbol {
-    font-size: 1.25rem;
+    font-size: 2rem;
   }
   
   .amount-section {
-    margin-bottom: 0.75rem;
+    margin-bottom: 1.5rem;
   }
   
   .description-section {
-    margin-bottom: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .description-input-container {
+    max-width: 280px;
   }
   
   .receive-footer {
-    padding: 0.5rem 0.75rem 0.75rem;
+    padding: 0.75rem 1rem 1.25rem;
   }
   
   .create-invoice-btn {
-    height: 44px;
-    font-size: 0.9rem;
-  }
-  
-  .action-buttons {
-    flex-direction: column;
-    gap: 0.5rem;
+    height: 48px;
+    font-size: 1rem;
   }
 }
 </style>
