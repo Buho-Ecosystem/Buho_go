@@ -451,7 +451,7 @@ export default {
     },
     
     getFiatAmount() {
-      const btcAmount = Math.abs(tx.amount) / 100000000;
+      const btcAmount = Math.abs(this.transaction.amount) / 100000000;
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
       const fiatValue = btcAmount * rate;
