@@ -350,6 +350,21 @@
       </q-card>
     </q-dialog>
 
+    <!-- QR Scanner Dialog -->
+    <q-dialog v-model="showQRScanner" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Scan Lightning Invoice</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <div class="qr-scanner-container">
+            <qrcode-capture @detect="handleQRScan" />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -1900,12 +1915,35 @@ export default {
     gap: 1rem;
   }
   
-  .input-actions {
-    flex-direction: column;
+  .method-cards {
+    gap: 0.5rem;
   }
   
-  .action-btn {
-    height: 40px;
+  .method-card {
+    padding: 0.75rem 1rem;
+    min-height: 64px;
+  }
+  
+  .method-icon {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .method-title {
+    font-size: 1rem;
+  }
+  
+  .method-subtitle {
+    font-size: 0.8125rem;
+  }
+  
+  .scanner-container {
+    height: 250px;
+  }
+  
+  .scan-frame {
+    width: 160px;
+    height: 160px;
   }
   
   .invoice-amount {
@@ -1925,10 +1963,6 @@ export default {
   .copy-btn,
   .share-btn {
     height: 40px;
-  }
-  
-  .qr-scanner-container {
-    height: 250px;
   }
 }
 </style>
