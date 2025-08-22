@@ -101,118 +101,122 @@
       </div>
     </div>
 
-    <!-- Send Payment Dialog -->
-    <q-dialog v-model="showSendDialog" class="send-dialog" persistent>
-      <q-card class="send-card">
-        <!-- Header -->
-        <div class="send-header">
-          <div class="header-content">
-            <q-icon name="las la-bolt" class="header-icon"/>
-            <span class="header-title">Send Payment</span>
-          </div>
+    <!-- Send Dialog -->
+    <q-dialog v-model="showSendDialog" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Send Lightning Payment</div>
           <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
-        </div>
+        </q-card-section>
 
-        <!-- Step 1: Choose Payment Method -->
-        <div v-if="sendStep === 'method'" class="send-content">
-          <div class="step-header">
-            <div class="step-title">How would you like to pay?</div>
-            <div class="step-subtitle">Choose your preferred payment method</div>
-          </div>
-
-          <div class="payment-methods">
-            <div class="method-card scan-method" @click="startQRScan">
-              <q-icon name="las la-qrcode" class="method-icon"/>
-              <div class="method-content">
-                <div class="method-title">Scan QR</div>
-                <div class="method-desc">Use camera to scan invoice</div>
-              </div>
-              <q-icon name="las la-chevron-right" class="method-arrow"/>
-            </div>
-
-            <div class="method-card paste-method" @click="pasteFromClipboard">
-              <q-icon name="las la-clipboard" class="method-icon"/>
-              <div class="method-content">
-                <div class="method-title">Paste Invoice</div>
-                <div class="method-desc">Paste from clipboard</div>
-              </div>
-              <q-icon name="las la-chevron-right" class="method-arrow"/>
-            </div>
-
-            <div class="method-card manual-method" @click="sendStep = 'manual'">
-              <q-icon name="las la-at" class="method-icon"/>
-              <div class="method-content">
-                <div class="method-title">Lightning Address</div>
-                <div class="method-desc">Enter user@domain.com</div>
-              </div>
-              <q-icon name="las la-chevron-right" class="method-arrow"/>
-            </div>
-          </div>
-        </div>
-
-        <!-- Step 2: Manual Input -->
-        <div v-if="sendStep === 'manual'" class="send-content">
-          <div class="step-header">
-            <q-btn flat round dense icon="las la-arrow-left" @click="sendStep = 'method'" class="back-btn"/>
-            <div class="step-info">
-              <div class="step-title">Lightning Address</div>
-              <div class="step-subtitle">Enter email-like address</div>
-            </div>
-          </div>
-
-          <div class="manual-input">
+        <q-card-section class="dialog-content">
+          <!-- Payment Input -->
+          <div class="payment-input-section">
             <q-input
-              v-model="lightningAddress"
+              v-model="sendForm.input"
               outlined
-              placeholder="user@getalby.com"
-              class="address-input"
-              autofocus
-              @keyup.enter="processLightningAddress"
-            >
-              <template v-slot:prepend>
-                <q-icon name="las la-at" color="primary"/>
-              </template>
-            </q-input>
+              label="Payment Details"
+              placeholder="Invoice, LNURL, or Lightning Address"
+              type="textarea"
+              rows="3"
+              class="payment-input"
+            />
             
-            <div class="input-help">
-              Enter a Lightning address like an email address
-            </div>
-
-            <q-btn
-              class="continue-btn"
-              color="primary"
-              unelevated
-              no-caps
-              :disable="!lightningAddress"
-              @click="processLightningAddress"
-            >
-              Continue
-            </q-btn>
-          </div>
-        </div>
-
-        <!-- Step 3: QR Scanner -->
-        <div v-if="sendStep === 'scan'" class="send-content scan-content">
-          <div class="step-header">
-            <q-btn flat round dense icon="las la-arrow-left" @click="stopQRScan" class="back-btn"/>
-            <div class="step-info">
-              <div class="step-title">Scan QR Code</div>
-              <div class="step-subtitle">Point camera at QR code</div>
+            <div class="input-actions">
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-qrcode"
+                label="Scan QR"
+                @click="showQRScanner = true"
+                class="action-btn scan-btn"
+                no-caps
+              />
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-paste"
+                label="Paste"
+                @click="pasteFromClipboard"
+                class="action-btn paste-btn"
+                no-caps
+              />
             </div>
           </div>
 
-          <div class="scanner-container">
-            <video ref="qrVideo" class="qr-video" autoplay muted playsinline></video>
-            <div class="scan-overlay">
-              <div class="scan-frame">
-                <div class="scan-corner top-left"></div>
-                <div class="scan-corner top-right"></div>
-                <div class="scan-corner bottom-left"></div>
-                <div class="scan-corner bottom-right"></div>
+          <!-- Payment Type Indicator -->
+          <div class="payment-type-section" v-if="paymentData">
+            <div class="type-indicator">
+              <q-icon name="las la-bolt" class="type-icon"/>
+              <span class="type-label">{{ getPaymentTypeLabel() }}</span>
+            </div>
+          </div>
+
+          <!-- Amount Input for LNURL/Lightning Address -->
+          <div class="amount-section" v-if="requiresAmount()">
+            <div class="amount-limits" v-if="getAmountLimits()">
+              <q-icon name="las la-info-circle" class="limits-icon"/>
+              <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
+            </div>
+            
+            <q-input
+              v-model="sendForm.amount"
+              outlined
+              label="Amount (sats)"
+              type="number"
+              class="amount-input"
+            />
+            
+            <q-input
+              v-model="sendForm.comment"
+              outlined
+              label="Comment (optional)"
+              :maxlength="paymentData.commentAllowed || 0"
+              :disable="!paymentData.commentAllowed"
+              :hint="paymentData.commentAllowed ? `Max ${paymentData.commentAllowed} characters` : 'Comments not supported'"
+              class="comment-input"
+            />
+          </div>
+
+          <!-- Invoice Details -->
+          <div class="invoice-preview" v-if="paymentData && paymentData.type === 'lightning_invoice'">
+            <div class="invoice-details">
+              <div class="preview-header">
+                <q-icon name="las la-receipt" class="preview-icon"/>
+                <span class="preview-title">Invoice Preview</span>
+              </div>
+              
+              <div class="preview-content">
+                <div class="detail-item">
+                  <span class="detail-label">Amount</span>
+                  <span class="detail-value amount-value">{{ formatBalance(paymentData.amount) }}</span>
+                </div>
+                <div class="detail-item" v-if="paymentData.description">
+                  <span class="detail-label">Description</span>
+                  <span class="detail-value">{{ paymentData.description }}</span>
+                </div>
+                <div class="detail-item" v-if="paymentData.expiry">
+                  <span class="detail-label">Expires</span>
+                  <span class="detail-value">{{ formatExpiry(paymentData.expiry) }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+
+          <!-- Send Button -->
+          <q-btn
+            :loading="isSending"
+            :disable="!canSendPayment()"
+            @click="sendPayment"
+            class="send-payment-btn"
+            unelevated
+            no-caps
+          >
+            <q-icon name="las la-paper-plane" class="q-mr-sm"/>
+            <span v-if="!isSending">Send Payment</span>
+            <span v-else>Sending...</span>
+          </q-btn>
+        </q-card-section>
       </q-card>
     </q-dialog>
 
