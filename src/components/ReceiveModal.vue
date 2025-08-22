@@ -46,14 +46,13 @@
         <!-- QR Code Area -->
         <div class="qr-section">
           <div class="qr-container" v-if="generatedInvoice">
-            <vue-qrcode 
-              :value="generatedInvoice.payment_request" 
-              :options="{ width: 280, margin: 2, color: { dark: '#1f2937', light: '#ffffff' } }"
-              class="qr-code"
-            />
-          </div>
-          <div class="qr-placeholder" v-else>
-            <q-icon name="las la-qrcode" size="120px" class="placeholder-icon"/>
+            <div class="qr-wrapper">
+              <vue-qrcode 
+                :value="generatedInvoice.payment_request" 
+                :options="{ width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } }"
+                class="qr-code"
+              />
+            </div>
           </div>
         </div>
 
@@ -476,29 +475,31 @@ export default {
 .qr-section {
   display: flex;
   justify-content: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
+  min-height: 240px;
+  align-items: center;
 }
 
 .qr-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.qr-wrapper {
   background: white;
   border-radius: 16px;
-  padding: 1rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e5e7eb;
+  max-width: 280px;
+  width: 100%;
 }
 
-.qr-placeholder {
-  width: 300px;
-  height: 300px;
-  background: #f9fafb;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px dashed #d1d5db;
-}
-
-.placeholder-icon {
-  color: #d1d5db;
+.qr-code {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
 }
 
 /* Amount Section */
@@ -650,10 +651,15 @@ export default {
     padding: 1rem;
   }
   
-  .qr-container,
-  .qr-placeholder {
-    width: 250px;
-    height: 250px;
+  .qr-section {
+    min-height: 200px;
+    margin-bottom: 1rem;
+  }
+  
+  .qr-wrapper {
+    padding: 1rem;
+    max-width: 240px;
+    border-radius: 12px;
   }
   
   .amount-input {
