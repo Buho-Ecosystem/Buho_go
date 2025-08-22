@@ -1393,11 +1393,10 @@ export default {
       if (diffMinutes < 60) return `${diffMinutes} minutes`;
       if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours`;
       return `${Math.floor(diffMinutes / 1440)} days`;
-    },
 
+    }
   }
 }
-</script>
 
 <style scoped>
 .wallet-page {
