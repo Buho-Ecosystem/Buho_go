@@ -283,6 +283,11 @@ export default {
     this.loadNostrProfiles();
   },
   methods: {
+  async created() {
+    await this.loadTransactions();
+    this.loadNostrProfiles();
+  },
+  methods: {
     async loadTransactions() {
       this.isLoading = true;
       try {
@@ -490,10 +495,6 @@ export default {
     },
 
     getSenderDisplayName(npub) {
-      const profile = this.nostrProfiles[npub];
-      return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
-    },
-
       const profile = this.nostrProfiles[npub];
       return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
     },
