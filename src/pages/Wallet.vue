@@ -314,36 +314,36 @@
 
             <!-- Static Invoice Display (fallback) -->
             <div class="static-invoice" v-else>
-            <!-- QR Code Section -->
-            <div class="qr-code-section">
-              <vue-qrcode
-                :value="generatedInvoice.paymentRequest"
-                :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
-                class="qr-code"
+              <!-- QR Code Section -->
+              <div class="qr-code-section">
+                <vue-qrcode
+                  :value="generatedInvoice.paymentRequest"
+                  :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
+                  class="qr-code"
+                />
+              </div>
+              
+              <!-- Amount Display -->
+              <div class="amount-section">
+                <div class="amount-value">
+                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                </div>
+                <div class="description-text" v-if="receiveForm.description">
+                  {{ receiveForm.description }}
+                </div>
+              </div>
+              
+              <!-- Copy Button -->
+              <q-btn
+                outline
+                color="primary"
+                icon="las la-copy"
+                label="Copy"
+                @click="copyInvoice"
+                class="copy-invoice-btn"
+                no-caps
+                unelevated
               />
-            </div>
-            
-            <!-- Amount Display -->
-            <div class="amount-section">
-              <div class="amount-value">
-                {{ parseInt(receiveForm.amount).toLocaleString() }} sats
-              </div>
-              <div class="description-text" v-if="receiveForm.description">
-                {{ receiveForm.description }}
-              </div>
-            </div>
-            
-            <!-- Copy Button -->
-            <q-btn
-              outline
-              color="primary"
-              icon="las la-copy"
-              label="Copy"
-              @click="copyInvoice"
-              class="copy-invoice-btn"
-              no-caps
-              unelevated
-            />
             </div>
           </div>
         </q-card-section>
@@ -1982,8 +1982,9 @@ export default {
   overflow: hidden;
   border: 1px solid #e5e7eb;
   background: #f8f9fa;
-}
   z-index: 5000;
+}
+
 /* Payment Confirmation Dialog */
 .confirmation-card {
   width: 100%;
@@ -2113,6 +2114,10 @@ export default {
 .detail-value {
   font-weight: 600;
   text-align: right;
+  color: #6b7280;
+  margin-top: 1rem;
+}
+
 .header-icon {
   color: #059573;
   font-size: 1.25rem;
@@ -2125,15 +2130,6 @@ export default {
 }
 
 /* Slide to Confirm */
-  color: #6b7280;
-  margin-top: 1rem;
-}
-
-  flex: 1;
-  padding: 1rem;
-  overflow-y: auto;
-  position: relative;
-  width: 100%;
 .step-header {
   display: flex;
   align-items: center;
@@ -2141,6 +2137,8 @@ export default {
   border-radius: 32px;
   border: 2px solid #e5e7eb;
   display: flex;
+}
+
 .back-btn {
   color: #6b7280;
 }
@@ -2187,6 +2185,7 @@ export default {
   margin-top: -0.5rem;
   box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
 }
+
 .continue-btn {
   height: 48px;
   border-radius: 12px;
@@ -2195,6 +2194,8 @@ export default {
   margin-top: 1rem;
   width: 48px;
   height: 48px;
+}
+
 /* QR Scanner */
 .scan-content {
   padding: 0;
@@ -2203,6 +2204,8 @@ export default {
   height: 100%;
   align-items: center;
   justify-content: center;
+}
+
 .scan-content .step-header {
   padding: 1rem;
   margin-bottom: 0;
@@ -2210,6 +2213,7 @@ export default {
   border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
 }
+
 .scanner-container {
   flex: 1;
   position: relative;
@@ -2228,11 +2232,13 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
+}
+
 .paste-method .method-icon {
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
-}
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
 }
+
 .scan-frame {
   width: 250px;
   height: 250px;
@@ -2241,13 +2247,18 @@ export default {
   border-radius: 12px;
   flex: 1;
 }
+
 .scan-corner {
   position: absolute;
   width: 20px;
   height: 20px;
   border: 3px solid #10b981;
   color: #6b7280;
+}
+
 .method-arrow {
+}
+
 .scan-corner.top-left {
   top: -3px;
   left: -3px;
@@ -2255,6 +2266,7 @@ export default {
   border-bottom: none;
   border-radius: 12px 0 0 0;
 }
+
 /* Manual Input */
 .scan-corner.top-right {
   top: -3px;
@@ -2264,6 +2276,8 @@ export default {
   border-radius: 0 12px 0 0;
   font-size: 1.125rem;
   height: 56px;
+}
+
 .scan-corner.bottom-left {
   bottom: -3px;
   left: -3px;
@@ -2272,6 +2286,7 @@ export default {
   border-radius: 0 0 0 12px;
   transform: scale(1.05);
 }
+
 .scan-corner.bottom-right {
   bottom: -3px;
   right: -3px;
@@ -2280,6 +2295,7 @@ export default {
   border-radius: 0 0 12px 0;
   color: white;
 }
+
 /* Responsive Design */
 @media (min-width: 768px) {
   .send-card {
@@ -2314,7 +2330,8 @@ export default {
   .step-title {
     font-size: 1.125rem;
   }
-  animation: spin 1s linear infinite;
+  
+  .animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
