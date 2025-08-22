@@ -92,6 +92,9 @@
             <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
               {{ tx.description }}
             </div>
+            <div class="transaction-description" v-else-if="tx.memo">
+              {{ tx.memo }}
+            </div>
             <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
               <q-avatar size="16px" class="sender-avatar">
                 <img 
@@ -462,7 +465,7 @@ export default {
               ...tx,
               id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
               type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
-              description: tx.description || tx.memo || 'Lightning transaction',
+              description: tx.description || tx.memo || '',
               settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
             }));
 
@@ -1123,7 +1126,7 @@ export default {
 }
 
 .amount-negative {
-  color: #dc2626;
+  color: #6b7280;
 }
 
 .amount-fiat {
