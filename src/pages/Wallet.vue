@@ -80,7 +80,7 @@
       <div class="action-buttons">
         <q-btn
           class="action-btn receive-btn"
-          @click="showReceiveDialog = true"
+          @click="showReceiveModal = true"
           no-caps
           unelevated
           aria-label="Receive payment"
@@ -90,7 +90,7 @@
         </q-btn>
         <q-btn
           class="action-btn send-btn"
-          @click="showSendDialog = true"
+          @click="showSendModal = true"
           no-caps
           unelevated
           aria-label="Send payment"
@@ -158,65 +158,85 @@
               <q-icon name="las la-info-circle" class="limits-icon"/>
               <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
             </div>
-            
-            <q-input
-              v-model="sendForm.amount"
-              outlined
-              label="Amount (sats)"
-              type="number"
-              class="amount-input"
-            />
-            
-            <q-input
-              v-model="sendForm.comment"
-              outlined
-              label="Comment (optional)"
-              :maxlength="paymentData.commentAllowed || 0"
-              :disable="!paymentData.commentAllowed"
-              :hint="paymentData.commentAllowed ? `Max ${paymentData.commentAllowed} characters` : 'Comments not supported'"
-              class="comment-input"
-            />
           </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
 
-          <!-- Invoice Details -->
-          <div class="invoice-preview" v-if="paymentData && paymentData.type === 'lightning_invoice'">
-            <div class="invoice-details">
-              <div class="preview-header">
-                <q-icon name="las la-receipt" class="preview-icon"/>
-                <span class="preview-title">Invoice Preview</span>
+    <!-- Receive Modal -->
+    <ReceiveModal 
+      v-model="showReceiveModal"
+      @invoice-created="onInvoiceCreated"
+    />
+
+    <!-- Send Modal -->
+    <SendModal 
+      v-model="showSendModal"
+      @payment-detected="onPaymentDetected"
+    />
+
+    <!-- Payment Confirmation Dialog -->
+    <q-dialog v-model="showPaymentConfirmation" class="payment-dialog">
+      <q-card class="payment-card">
+        <q-card-section class="payment-header">
+          <div class="payment-title">Confirm Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
+
+        <q-card-section class="payment-content" v-if="pendingPayment">
+          <div class="payment-info">
+            <div class="payment-amount">
+              <div class="amount-display">{{ formatPaymentAmount() }}</div>
+              <div class="amount-fiat">{{ formatPaymentFiat() }}</div>
+            </div>
+            
+            <div class="payment-details">
+              <div class="detail-item" v-if="pendingPayment.description">
+                <span class="detail-label">Description:</span>
+                <span class="detail-value">{{ pendingPayment.description }}</span>
               </div>
-              
-              <div class="preview-content">
-                <div class="detail-item">
-                  <span class="detail-label">Amount</span>
-                  <span class="detail-value amount-value">{{ formatBalance(paymentData.amount) }}</span>
-                </div>
-                <div class="detail-item" v-if="paymentData.description">
-                  <span class="detail-label">Description</span>
-                  <span class="detail-value">{{ paymentData.description }}</span>
-                </div>
-                <div class="detail-item" v-if="paymentData.expiry">
-                  <span class="detail-label">Expires</span>
-                  <span class="detail-value">{{ formatExpiry(paymentData.expiry) }}</span>
-                </div>
+              <div class="detail-item">
+                <span class="detail-label">Type:</span>
+                <span class="detail-value">{{ getPaymentTypeLabel() }}</span>
               </div>
             </div>
-          </div>
 
-          <!-- Send Button -->
-          <q-btn
-            :loading="isSending"
-            :disable="!canSendPayment()"
-            @click="sendPayment"
-            class="send-payment-btn"
-            unelevated
-            no-caps
-          >
-            <q-icon name="las la-paper-plane" class="q-mr-sm"/>
-            <span v-if="!isSending">Send Payment</span>
-            <span v-else>Sending...</span>
-          </q-btn>
+            <!-- Amount input for LNURL/Lightning Address -->
+            <div v-if="needsAmountInput" class="amount-input-section">
+              <q-input
+                v-model="paymentAmount"
+                outlined
+                label="Amount (sats)"
+                type="number"
+                :min="pendingPayment.minSendable ? Math.floor(pendingPayment.minSendable / 1000) : 1"
+                :max="pendingPayment.maxSendable ? Math.floor(pendingPayment.maxSendable / 1000) : 100000000"
+                class="amount-input"
+                :rules="[validatePaymentAmount]"
+              />
+              
+              <q-input
+                v-if="pendingPayment.commentAllowed > 0"
+                v-model="paymentComment"
+                outlined
+                label="Comment (optional)"
+                :maxlength="pendingPayment.commentAllowed"
+                class="comment-input"
+              />
+            </div>
+          </div>
         </q-card-section>
+
+        <q-card-actions align="right" class="payment-actions">
+          <q-btn flat label="Cancel" v-close-popup/>
+          <q-btn 
+            flat 
+            label="Send Payment" 
+            color="primary" 
+            @click="confirmPayment"
+            :loading="isSendingPayment"
+            :disable="!canConfirmPayment"
+          />
+        </q-card-actions>
       </q-card>
     </q-dialog>
 
@@ -236,55 +256,52 @@
               outlined
               label="Amount (sats)"
               type="number"
+              min="1"
               class="amount-input"
               :rules="[val => val > 0 || 'Amount must be greater than 0']"
             />
-
+            
             <q-input
               v-model="receiveForm.description"
               outlined
               label="Description (optional)"
+              placeholder="What is this payment for?"
               class="description-input"
-              maxlength="100"
             />
-
+            
             <q-btn
-              :loading="isCreatingInvoice"
-              @click="createInvoice"
               class="create-invoice-btn"
+              @click="createInvoice"
+              :loading="isCreatingInvoice"
               :disable="!receiveForm.amount || receiveForm.amount <= 0"
-              unelevated
               no-caps
+              unelevated
             >
-              <q-icon name="las la-plus-circle" class="q-mr-sm"/>
-              <span v-if="!isCreatingInvoice">Create Invoice</span>
-              <span v-else>Creating...</span>
+              Create Invoice
             </q-btn>
           </div>
 
-          <!-- Generated Invoice -->
-          <div class="invoice-result" v-if="generatedInvoice">
+          <!-- Invoice Result -->
+          <div class="invoice-result" v-else>
             <!-- Payment Success State -->
-            <div class="payment-success" v-if="!waitingForPayment && generatedInvoice">
-              <div class="success-icon">
-                <q-icon name="las la-check-circle" size="48px" color="positive"/>
-              </div>
+            <div class="payment-success" v-if="invoicePaid">
+              <q-icon name="las la-check-circle" size="64px" color="positive" class="success-icon"/>
               <div class="success-text">Payment Received!</div>
-              <div class="success-amount">{{ parseInt(receiveForm.amount).toLocaleString() }} sats</div>
+              <div class="success-amount">{{ formatBalance(receiveForm.amount) }}</div>
             </div>
 
-            <!-- Waiting for Payment State -->
-            <div class="waiting-state" v-else-if="waitingForPayment">
+            <!-- Compact Invoice Display (waiting for payment) -->
+            <div class="compact-invoice" v-else-if="waitingForPayment">
               <!-- QR Code Section -->
               <div class="qr-code-section compact">
                 <vue-qrcode
                   :value="generatedInvoice.paymentRequest"
-                  :options="{ width: 200, margin: 1, color: { dark: '#000000', light: '#FFFFFF' } }"
+                  :options="{ width: 200, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
                   class="qr-code"
                 />
               </div>
               
-              <!-- Compact Info -->
+              <!-- Invoice Info -->
               <div class="invoice-info-compact">
                 <div class="amount-compact">
                   {{ parseInt(receiveForm.amount).toLocaleString() }} sats
@@ -293,7 +310,6 @@
                   {{ receiveForm.description }}
                 </div>
                 
-                <!-- Waiting Indicator -->
                 <div class="waiting-indicator-compact">
                   <q-spinner-dots color="primary" size="18px"/>
                   <span class="waiting-text-compact">Waiting for payment...</span>
@@ -371,16 +387,16 @@
 <script>
 import { webln } from "@getalby/sdk";
 import { LightningPaymentService } from '../utils/lightning.js';
-import VueQrcode from '@chenfengyuan/vue-qrcode';
-import { QrcodeCapture } from 'vue-qrcode-reader';
 import LoadingScreen from '../components/LoadingScreen.vue';
+import ReceiveModal from '../components/ReceiveModal.vue';
+import SendModal from '../components/SendModal.vue';
 
 export default {
   name: 'WalletPage',
   components: {
-    VueQrcode,
-    QrcodeCapture,
-    LoadingScreen
+    LoadingScreen,
+    ReceiveModal,
+    SendModal
   },
   data() {
     return {
@@ -401,16 +417,12 @@ export default {
         displayMode: 'sats'
       },
       recentTransactions: [],
-      nostrProfiles: {},
-      showSendDialog: false,
-      showReceiveDialog: false,
-      showQRScanner: false,
-      isSending: false,
+      showReceiveModal: false,
+      showSendModal: false,
       showPaymentConfirmation: false,
-      isCreatingInvoice: false,
-      isSwitchingCurrency: false,
-      shouldPulse: false,
-      paymentData: null,
+      pendingPayment: null,
+      paymentAmount: '',
+      paymentComment: '',
       parsedInvoice: null,
       lightningAddress: '',
       sendForm: {
@@ -434,8 +446,17 @@ export default {
     };
   },
   computed: {
-    currentDisplayMode() {
-      return this.walletState.displayMode || 'sats';
+    needsAmountInput() {
+      return this.pendingPayment && 
+             (this.pendingPayment.type === 'lightning_address' || 
+              this.pendingPayment.type === 'lnurl_pay');
+    },
+    canConfirmPayment() {
+      if (!this.pendingPayment) return false;
+      if (this.needsAmountInput) {
+        return this.paymentAmount && this.paymentAmount > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
+      }
+      return true;
     }
   },
   async created() {
@@ -942,158 +963,176 @@ export default {
       this.isCreatingInvoice = true;
       try {
         console.log('🔍 Starting invoice creation...');
-        console.log('📊 Invoice form data:', {
-          amount: this.receiveForm.amount,
-          description: this.receiveForm.description
-        });
-        
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (!activeWallet) {
-          console.error('❌ No active wallet found');
-          throw new Error('No active wallet');
-        }
-        
-        console.log('✅ Active wallet found:', {
-          id: activeWallet.id,
-          name: activeWallet.name,
-          hasNwcString: !!activeWallet.nwcString
-        });
-
-        const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-        
-        console.log('🔌 Attempting to enable NWC connection...');
-        await nwc.enable();
-        console.log('✅ NWC connection enabled successfully');
-
-        const invoiceData = {
-          amount: parseInt(this.receiveForm.amount),
-          description: this.receiveForm.description || 'BuhoGO Payment'
-        };
-        
-        console.log('📝 Invoice data to send:', invoiceData);
-        console.log('⚡ Calling nwc.makeInvoice...');
-        this.generatedInvoice = await nwc.makeInvoice(invoiceData);
-        
-        console.log('📋 Raw invoice response:', this.generatedInvoice);
-        console.log('🔍 Invoice properties:', Object.keys(this.generatedInvoice || {}));
-        console.log('💳 Payment request:', this.generatedInvoice?.paymentRequest);
-        
-        // Extract payment hash from the payment request (BOLT11 invoice)
-        const paymentHash = this.extractPaymentHashFromInvoice(this.generatedInvoice.paymentRequest);
-        console.log('🆔 Extracted payment hash:', paymentHash);
-        
-        // Ensure we have the amount for display
-        this.generatedInvoice.amount = parseInt(this.receiveForm.amount);
-        
-        // Store payment hash for tracking
-        this.currentInvoicePaymentHash = paymentHash;
-        this.waitingForPayment = true;
-        
-        // Start checking for payment
-        this.startPaymentCheck();
-        
-        console.log('✅ Invoice creation completed successfully');
       } catch (error) {
-        console.error('❌ Failed to create invoice:', error);
-        console.error('📊 Error details:', {
-          message: error.message,
-          stack: error.stack,
-          name: error.name
-        });
-        this.$q.notify({
-          type: 'negative',
-          message: error.message,
-          position: 'top'
-        });
+        console.error('Error creating invoice:', error);
       } finally {
         this.isCreatingInvoice = false;
       }
     },
 
-    startPaymentCheck() {
-      console.log('🔍 Starting payment check for invoice:', this.currentInvoicePaymentHash);
-      
-      // Check immediately
-      this.checkInvoiceStatus();
-      
-      // Then check every 3 seconds
-      this.invoiceCheckInterval = setInterval(() => {
-        this.checkInvoiceStatus();
-      }, 3000);
+    onInvoiceCreated(invoice) {
+      // Refresh balance after invoice creation
+      this.updateBalance();
+      this.$q.notify({
+        type: 'positive',
+        message: 'Invoice created successfully!',
+        position: 'top'
+      });
     },
 
-    async checkInvoiceStatus() {
-      if (!this.currentInvoicePaymentHash) return;
-      
+    async onPaymentDetected(paymentData) {
       try {
-        console.log('🔍 Checking invoice status for hash:', this.currentInvoicePaymentHash);
-        
         const activeWallet = this.walletState.connectedWallets.find(
           w => w.id === this.walletState.activeWalletId
         );
 
-        if (!activeWallet) return;
-
-        const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-
-        await nwc.enable();
-        
-        // Get recent transactions
-        console.log('📋 Fetching recent transactions...');
-        const transactionsResponse = await nwc.listTransactions({ 
-          limit: 50, 
-          offset: 0 
-        });
-
-        console.log('📊 Transactions response:', transactionsResponse);
-        
-        if (transactionsResponse && transactionsResponse.transactions) {
-          console.log('🔍 Found', transactionsResponse.transactions.length, 'transactions');
-          
-          // Log all incoming transactions for debugging
-          const incomingTxs = transactionsResponse.transactions.filter(tx => tx.type === 'incoming');
-          console.log('📥 Incoming transactions:', incomingTxs.map(tx => ({
-            id: tx.id,
-            payment_hash: tx.payment_hash,
-            amount: tx.amount,
-            state: tx.state,
-            settled: tx.settled,
-            type: tx.type,
-            description: tx.description
-          })));
-          
-          // Look for our invoice payment
-          const paidTransaction = transactionsResponse.transactions.find(tx => 
-            (tx.payment_hash === this.currentInvoicePaymentHash || 
-             tx.paymentHash === this.currentInvoicePaymentHash) &&
-            tx.type === 'incoming' &&
-            (tx.state === 'settled' || tx.settled)
-          );
-
-          console.log('🎯 Looking for payment_hash:', this.currentInvoicePaymentHash);
-          console.log('💰 Found matching transaction:', paidTransaction);
-          
-          if (paidTransaction) {
-            console.log('🎉 Invoice paid!', paidTransaction);
-            this.handleInvoicePaid(paidTransaction);
-          } else {
-            console.log('⏳ Payment not found yet, continuing to wait...');
-          }
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
         }
+
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        this.pendingPayment = await lightningService.processPaymentInput(paymentData.data);
+        this.showPaymentConfirmation = true;
+
       } catch (error) {
-        console.error('Error checking invoice status:', error);
+        console.error('Error processing payment:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Invalid payment request: ' + error.message,
+          position: 'top'
+        });
       }
     },
 
-    async handleInvoicePaid(transaction) {
-      // Stop checking
+    formatPaymentAmount() {
+      if (!this.pendingPayment) return '';
+      
+      if (this.needsAmountInput) {
+        return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
+      }
+      
+      return this.pendingPayment.amount ? 
+        `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` : 
+        'Variable amount';
+    },
+
+    formatPaymentFiat() {
+      if (!this.pendingPayment) return '';
+      
+      let amountSats = 0;
+      if (this.needsAmountInput) {
+        amountSats = parseInt(this.paymentAmount) || 0;
+      } else {
+        amountSats = this.pendingPayment.amount || 0;
+      }
+      
+      if (amountSats === 0) return '';
+      
+      const btcAmount = amountSats / 100000000;
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
+      const fiatValue = btcAmount * rate;
+      
+      const symbols = {
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        JPY: '¥'
+      };
+      
+      const symbol = symbols[currency] || currency;
+      return symbol + fiatValue.toFixed(2);
+    },
+
+    getPaymentTypeLabel() {
+      if (!this.pendingPayment) return '';
+      
+      switch (this.pendingPayment.type) {
+        case 'lightning_invoice':
+          return 'Lightning Invoice';
+        case 'lightning_address':
+          return 'Lightning Address';
+        case 'lnurl_pay':
+          return 'LNURL Pay';
+        default:
+          return 'Lightning Payment';
+      }
+    },
+
+    validatePaymentAmount(amount) {
+      if (!this.pendingPayment) return 'No payment details';
+      
+      const amountNum = parseInt(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        return 'Amount must be greater than 0';
+      }
+      
+      if (this.pendingPayment.minSendable) {
+        const minSats = Math.floor(this.pendingPayment.minSendable / 1000);
+        if (amountNum < minSats) {
+          return `Minimum amount is ${minSats} sats`;
+        }
+      }
+      
+      if (this.pendingPayment.maxSendable) {
+        const maxSats = Math.floor(this.pendingPayment.maxSendable / 1000);
+        if (amountNum > maxSats) {
+          return `Maximum amount is ${maxSats} sats`;
+        }
+      }
+      
+      return true;
+    },
+
+    async confirmPayment() {
+      if (!this.pendingPayment) return;
+
+      this.isSendingPayment = true;
+      try {
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        
+        const amount = this.needsAmountInput ? parseInt(this.paymentAmount) : this.pendingPayment.amount;
+        const comment = this.paymentComment || null;
+        
+        const result = await lightningService.sendPayment(this.pendingPayment, amount, comment);
+
+        this.$q.notify({
+          type: 'positive',
+          message: 'Payment sent successfully!',
+          position: 'top'
+        });
+
+        // Reset and close
+        this.showPaymentConfirmation = false;
+        this.pendingPayment = null;
+        this.paymentAmount = '';
+        this.paymentComment = '';
+
+        // Refresh balance and transactions
+        await this.updateBalance();
+        await this.loadRecentTransactions();
+
+      } catch (error) {
+        console.error('Error sending payment:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Failed to send payment: ' + error.message,
+          position: 'top'
+        });
+      } finally {
+        this.isSendingPayment = false;
+      }
+    },
+
+    async checkInvoicePayment() {
       if (this.invoiceCheckInterval) {
         clearInterval(this.invoiceCheckInterval);
         this.invoiceCheckInterval = null;
@@ -2283,120 +2322,99 @@ export default {
   height: 56px;
 }
 
-.scan-corner.bottom-left {
-  bottom: -3px;
-  left: -3px;
-  border-right: none;
-  border-top: none;
-  border-radius: 0 0 0 12px;
-  transform: scale(1.05);
+/* Payment Confirmation Dialog */
+.payment-dialog :deep(.q-dialog__inner) {
+  padding: 1rem;
 }
 
-.scan-corner.bottom-right {
-  bottom: -3px;
-  right: -3px;
-  border-left: none;
-  border-top: none;
-  border-radius: 0 0 12px 0;
-  color: white;
+.payment-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 16px;
 }
 
-/* Responsive Design */
-@media (min-width: 768px) {
-  .send-card {
-    width: 100%;
-    height: auto;
-    max-width: 480px;
-    max-height: 90vh;
-    border-radius: 16px;
-    margin: auto;
-  }
-  
-  .send-header {
-    position: static;
-  }
+.payment-header {
+  background: #f8f9fa;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-@media (max-width: 480px) {
-  .send-content {
-    padding: 0.75rem;
-  }
-  
-  .method-card {
-    padding: 1rem;
-  }
-  
-  .method-icon {
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
-  }
-  
-  .step-title {
-    font-size: 1.125rem;
-  }
-  
-  animation: spin 1s linear infinite;
+.payment-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.payment-content {
+  padding: 1.5rem;
 }
 
-/* Mobile Responsive */
-@media (max-width: 480px) {
-  .confirmation-card {
-    margin: 0.5rem;
-    border-radius: 20px;
-  }
-  
-  .confirmation-header {
-    padding: 1rem;
-  }
-  
-  .confirmation-title {
-    font-size: 1.125rem;
-  }
-  
-  .confirmation-content {
-    padding: 1.5rem 1rem;
-    gap: 1.5rem;
-  }
-  
-  .amount-section {
-    padding: 1rem;
-  }
-  
-  .amount-value {
-    font-size: 2rem;
-  }
-  
-  .amount-unit {
-    font-size: 1rem;
-  }
-  
-  .detail-row {
-    padding: 0.75rem;
-  }
-  
-  .detail-value {
-    max-width: 50%;
-    font-size: 0.8125rem;
-  }
-  
-  .slide-track {
-    height: 56px;
-  }
-  
-  .slide-button {
-    width: 48px;
-    height: 48px;
-  }
-  
-  .slide-text {
-    font-size: 0.875rem;
-  }
+.payment-info {
+  text-align: center;
+}
+
+.payment-amount {
+  margin-bottom: 1.5rem;
+}
+
+.amount-display {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.amount-fiat {
+  font-size: 1rem;
+  color: #6b7280;
+}
+
+.payment-details {
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.detail-value {
+  color: #1f2937;
+  word-break: break-all;
+}
+
+.amount-input-section {
+  text-align: left;
+}
+
+.amount-input,
+.comment-input {
+  margin-bottom: 1rem;
+}
+
+.amount-input :deep(.q-field__control),
+.comment-input :deep(.q-field__control) {
+  border-radius: 12px;
+}
+
+.payment-actions {
+  background: #f8f9fa;
+  border-top: 1px solid #e5e7eb;
 }
 
 /* Responsive Design */
@@ -2484,6 +2502,10 @@ export default {
   .copy-btn,
   .share-btn {
     height: 40px;
+  }
+  
+  .amount-display {
+    font-size: 1.5rem;
   }
 }
 </style>
