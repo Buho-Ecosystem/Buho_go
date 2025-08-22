@@ -1,4 +1,10 @@
 <template>
+  <!-- Loading Screen -->
+  <LoadingScreen 
+    :show="showLoadingScreen" 
+    :loading-text="loadingText"
+  />
+  
   <q-page class="wallet-page">
     <!-- Header -->
     <div class="wallet-header">
@@ -339,12 +345,14 @@ import { webln } from "@getalby/sdk";
 import { LightningPaymentService } from '../utils/lightning.js';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { QrcodeCapture } from 'vue-qrcode-reader';
+import LoadingScreen from '../components/LoadingScreen.vue';
 
 export default {
   name: 'WalletPage',
   components: {
     VueQrcode,
-    QrcodeCapture
+    QrcodeCapture,
+    LoadingScreen
   },
   data() {
     return {
@@ -386,7 +394,9 @@ export default {
       },
       generatedInvoice: null,
       refreshInterval: null,
-      pulseInterval: null
+      pulseInterval: null,
+      showLoadingScreen: true,
+      loadingText: 'Loading wallet...'
     };
   },
   computed: {
@@ -395,11 +405,7 @@ export default {
     }
   },
   async created() {
-    await this.loadWalletState();
-    await this.loadTransactions();
-    await this.loadNostrProfiles();
-    this.startPeriodicRefresh();
-    this.startPulseAnimation();
+    this.initializeWallet();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -416,6 +422,33 @@ export default {
     }
   },
   methods: {
+    async initializeWallet() {
+      try {
+        this.loadingText = 'Loading wallet state...';
+    await this.loadWalletState();
+        
+        this.loadingText = 'Fetching transactions...';
+    await this.loadTransactions();
+        
+        this.loadingText = 'Loading profiles...';
+    await this.loadNostrProfiles();
+        
+        this.loadingText = 'Starting services...';
+    this.startPeriodicRefresh();
+    this.startPulseAnimation();
+        
+        // Hide loading screen
+        this.loadingText = 'Ready!';
+        await new Promise(resolve => setTimeout(resolve, 500));
+        this.showLoadingScreen = false;
+      } catch (error) {
+        console.error('Error initializing wallet:', error);
+        this.loadingText = 'Error loading wallet';
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        this.showLoadingScreen = false;
+      }
+    },
+    
     async loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
@@ -439,6 +472,11 @@ export default {
 
       if (activeWallet && activeWallet.nwcString) {
         try {
+          // Show loading for balance updates only if it's a manual refresh
+          if (this.showLoadingScreen) {
+            this.loadingText = 'Updating balance...';
+          }
+          
           const nwc = new webln.NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });

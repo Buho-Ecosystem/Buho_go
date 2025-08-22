@@ -1,4 +1,10 @@
 <template>
+  <!-- Loading Screen -->
+  <LoadingScreen 
+    :show="showLoadingScreen" 
+    :loading-text="loadingText"
+  />
+  
   <q-page class="transaction-history-page">
     <!-- Header -->
     <div class="page-header">
@@ -184,9 +190,13 @@
 
 <script>
 import { webln } from "@getalby/sdk";
+import LoadingScreen from '../components/LoadingScreen.vue';
 
 export default {
   name: 'TransactionHistoryPage',
+  components: {
+    LoadingScreen
+  },
   data() {
     return {
       isLoading: true,
@@ -195,7 +205,9 @@ export default {
       transactions: [],
       walletState: {},
       nostrProfiles: {},
-      expandedGroups: new Set()
+      expandedGroups: new Set(),
+      showLoadingScreen: true,
+      loadingText: 'Loading transactions...'
     }
   },
   computed: {
@@ -280,13 +292,34 @@ export default {
     }
   },
   async created() {
-    await this.loadTransactions();
-    this.loadNostrProfiles();
+    this.initializeTransactionHistory();
   },
   methods: {
+    async initializeTransactionHistory() {
+      try {
+        this.loadingText = 'Loading transaction history...';
+    await this.loadTransactions();
+        
+        this.loadingText = 'Loading profiles...';
+    this.loadNostrProfiles();
+        
+        // Hide loading screen
+        this.loadingText = 'Ready!';
+        await new Promise(resolve => setTimeout(resolve, 300));
+        this.showLoadingScreen = false;
+      } catch (error) {
+        console.error('Error initializing transaction history:', error);
+        this.showLoadingScreen = false;
+      }
+    },
+    
     async loadTransactions() {
       this.isLoading = true;
       try {
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Connecting to wallet...';
+        }
+        
         const savedState = localStorage.getItem('buhoGO_wallet_state');
         if (savedState) {
           this.walletState = JSON.parse(savedState);
@@ -296,6 +329,10 @@ export default {
           );
           
           if (activeWallet) {
+            if (this.showLoadingScreen) {
+              this.loadingText = 'Fetching transactions...';
+            }
+            
             const nwc = new webln.NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
@@ -318,6 +355,10 @@ export default {
               
               // Sort by date (newest first)
               this.transactions.sort((a, b) => b.settled_at - a.settled_at);
+              
+              if (this.showLoadingScreen) {
+                this.loadingText = 'Processing zap transactions...';
+              }
               
               await this.processZapTransactions();
             }
