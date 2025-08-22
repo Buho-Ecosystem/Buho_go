@@ -1055,19 +1055,15 @@ export default {
 .transaction-history-btn {
   width: 48px;
   height: 48px;
-  background: #f3f4f6;
-  color: #9ca3af;
+  background: #f8f9fa;
+  color: #6b7280;
   border-radius: 50%;
-  transition: all 0.3s ease;
+  transition: transform 0.1s ease;
   opacity: 0.6;
 }
 
-.transaction-history-btn:hover {
-  background: #059573;
-  color: white;
-  transform: translateY(-2px) scale(1.05);
-  opacity: 1;
-  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.3);
+.transaction-history-btn:active {
+  transform: scale(0.95);
 }
 
 .transaction-history-btn.pulse {
