@@ -84,13 +84,6 @@
     <!-- Disconnect Button -->
     <div class="disconnect-section">
       <div class="disconnect-container">
-        <div class="disconnect-warning">
-          <q-icon name="las la-exclamation-triangle" class="warning-icon"/>
-          <div class="warning-content">
-            <div class="warning-title">Danger Zone</div>
-            <div class="warning-subtitle">This action cannot be undone</div>
-          </div>
-        </div>
         <q-btn
           flat
           no-caps
@@ -849,39 +842,6 @@ export default {
 .disconnect-container {
   max-width: 400px;
   margin: 0 auto;
-}
-
-.disconnect-warning {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem;
-  background: #FEF3C7;
-  border: 1px solid #F59E0B;
-  border-radius: 12px;
-  margin-bottom: 1rem;
-}
-
-.warning-icon {
-  color: #F59E0B;
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.warning-content {
-  flex: 1;
-}
-
-.warning-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #92400E;
-  margin-bottom: 0.125rem;
-}
-
-.warning-subtitle {
-  font-size: 0.75rem;
-  color: #B45309;
 }
 
 .disconnect-btn {
