@@ -445,16 +445,18 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 2rem 1rem;
+  padding: 1rem;
   overflow-y: auto;
+  justify-content: space-between;
+  min-height: 0;
 }
 
 /* QR Section */
 .qr-section {
   display: flex;
   justify-content: center;
-  margin-bottom: 1.5rem;
-  min-height: 240px;
+  margin-bottom: 1rem;
+  min-height: 200px;
   align-items: center;
 }
 
@@ -464,7 +466,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 2rem 1rem;
+  padding: 1rem;
 }
 
 .qr-container {
@@ -483,10 +485,10 @@ export default {
 .qr-wrapper {
   background: white;
   border-radius: 16px;
-  padding: 2rem;
+  padding: 1.5rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   border: 1px solid #e5e7eb;
-  max-width: 320px;
+  max-width: 280px;
   width: 100%;
   position: relative;
 }
@@ -510,8 +512,12 @@ export default {
 
 /* Amount Section */
 .amount-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
   text-align: center;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .currency-toggle {
@@ -522,7 +528,7 @@ export default {
   padding: 0.5rem 1rem;
   border-radius: 20px;
   cursor: pointer;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   transition: background-color 0.2s;
 }
 
@@ -554,20 +560,20 @@ export default {
 }
 
 .currency-symbol {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 300;
   color: #6b7280;
 }
 
 .amount-input {
-  font-size: 3rem;
+  font-size: 2.5rem;
   font-weight: 300;
   color: #1f2937;
   border: none;
   outline: none;
   background: transparent;
   text-align: center;
-  min-width: 200px;
+  min-width: 150px;
 }
 
 .amount-input::placeholder {
@@ -576,13 +582,14 @@ export default {
 
 /* Description Section */
 .description-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
 }
 
 .description-label {
   font-size: 1rem;
   color: #6b7280;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
   text-align: center;
 }
 
@@ -597,17 +604,17 @@ export default {
 
 /* Footer */
 .receive-footer {
-  padding: 1rem;
+  padding: 0.75rem 1rem 1rem;
   flex-shrink: 0;
 }
 
 .create-invoice-btn {
   width: 100%;
-  height: 56px;
+  height: 48px;
   background: #1f2937;
   color: white;
   border-radius: 16px;
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 500;
   transition: all 0.2s ease;
 }
@@ -654,31 +661,48 @@ export default {
 /* Responsive Design */
 @media (max-width: 480px) {
   .receive-content {
-    padding: 1rem;
+    padding: 0.75rem;
   }
   
   .qr-display-section {
-    padding: 1rem;
+    padding: 0.75rem;
   }
   
   .qr-section {
-    min-height: 200px;
-    margin-bottom: 1rem;
+    min-height: 160px;
+    margin-bottom: 0.75rem;
   }
   
   .qr-wrapper {
-    padding: 1.5rem;
-    max-width: 280px;
+    padding: 1rem;
+    max-width: 240px;
     border-radius: 12px;
   }
   
   .amount-input {
-    font-size: 2.5rem;
-    min-width: 150px;
+    font-size: 2rem;
+    min-width: 120px;
   }
   
   .currency-symbol {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
+  }
+  
+  .amount-section {
+    margin-bottom: 0.75rem;
+  }
+  
+  .description-section {
+    margin-bottom: 0.75rem;
+  }
+  
+  .receive-footer {
+    padding: 0.5rem 0.75rem 0.75rem;
+  }
+  
+  .create-invoice-btn {
+    height: 44px;
+    font-size: 0.9rem;
   }
   
   .action-buttons {
