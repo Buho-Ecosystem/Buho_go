@@ -57,15 +57,15 @@
           <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"/>
         </div>
 
-        <div class="section-card" @click="showNotificationsDialog = true">
+        <div class="section-card disabled-card">
           <div class="card-icon notifications-icon">
             <q-icon name="las la-bell" size="24px"/>
           </div>
           <div class="card-content">
             <div class="card-title">Notifications</div>
-            <div class="card-subtitle">Payment alerts</div>
+            <div class="card-subtitle">Coming soon</div>
           </div>
-          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"/>
+          <div class="coming-soon-badge">Soon</div>
         </div>
 
         <div class="section-card" @click="showSecurityDialog = true">
@@ -801,6 +801,29 @@ export default {
 
 .chevron-icon {
   color: #9ca3af;
+}
+
+/* Coming Soon Badge */
+.coming-soon-badge {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.disabled-card {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.disabled-card:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #f3f4f6;
 }
 
 /* Disconnect Section */
