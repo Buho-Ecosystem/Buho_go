@@ -264,57 +264,60 @@
 
           <!-- Generated Invoice -->
           <div class="invoice-result" v-if="generatedInvoice">
-            <!-- QR Code -->
-            <div class="qr-section">
+            <!-- QR Code Section -->
+            <div class="qr-code-section">
               <vue-qrcode
                 :value="generatedInvoice.payment_request"
-                :options="{ width: 200 }"
+                :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
                 class="qr-code"
               />
             </div>
             
-            <!-- Invoice Info -->
-            <div class="invoice-info">
-              <div class="invoice-amount">
-                {{ formatBalance(generatedInvoice.amount || receiveForm.amount) }}
+            <!-- Amount and Description -->
+            <div class="invoice-details-section">
+              <div class="amount-display">
+                {{ parseInt(receiveForm.amount).toLocaleString() }} sats
               </div>
-              <div class="invoice-description" v-if="receiveForm.description">
+              <div class="description-display" v-if="receiveForm.description">
                 {{ receiveForm.description }}
               </div>
             </div>
             
-            <!-- Invoice String -->
-            <div class="invoice-string">
+            <!-- Lightning Invoice Text -->
+            <div class="invoice-text-section">
+              <div class="invoice-label">Lightning Invoice</div>
               <q-input
                 v-model="generatedInvoice.payment_request"
                 readonly
                 outlined
                 type="textarea"
-                rows="3"
-                class="invoice-text"
-                label="Lightning Invoice"
+                rows="4"
+                class="invoice-text-input"
+                dense
               />
             </div>
             
-            <!-- Action Buttons -->
-            <div class="invoice-actions">
+            <!-- Copy and Share Buttons -->
+            <div class="invoice-action-buttons">
               <q-btn
-                flat
+                outline
                 color="primary"
                 icon="las la-copy"
                 label="Copy"
                 @click="copyInvoice"
-                class="copy-btn"
+                class="invoice-copy-btn"
                 no-caps
+                unelevated
               />
               <q-btn
-                flat
+                outline
                 color="primary"
                 icon="las la-share-alt"
                 label="Share"
                 @click="shareInvoice"
-                class="share-btn"
+                class="invoice-share-btn"
                 no-caps
+                unelevated
               />
             </div>
           </div>
@@ -803,13 +806,21 @@ export default {
 
         if (!activeWallet) throw new Error('No active wallet');
 
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        await lightningService.enable();
+        const nwc = new webln.NostrWebLNProvider({
+          nostrWalletConnectUrl: activeWallet.nwcString,
+        });
+        
+        await nwc.enable();
 
-        this.generatedInvoice = await lightningService.createInvoice(
-          this.receiveForm.amount,
-          this.receiveForm.description
-        );
+        const invoiceData = {
+          amount: parseInt(this.receiveForm.amount),
+          description: this.receiveForm.description || 'BuhoGO Payment'
+        };
+        
+        this.generatedInvoice = await nwc.makeInvoice(invoiceData);
+        
+        // Ensure we have the amount for display
+        this.generatedInvoice.amount = parseInt(this.receiveForm.amount);
       } catch (error) {
         console.error('Failed to create invoice:', error);
         this.$q.notify({
@@ -1395,73 +1406,153 @@ export default {
 .invoice-result {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
   text-align: center;
 }
 
-.qr-section {
+/* QR Code Section */
+.qr-code-section {
   display: flex;
   justify-content: center;
-  padding: 1.5rem;
+  align-items: center;
+  padding: 2rem 1.5rem;
   background: white;
-  border-radius: 16px;
+  border-radius: 20px;
   border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-.invoice-info {
-  padding: 1.5rem;
-  background: #f9fafb;
-  border-radius: 16px;
-  border: 1px solid #e5e7eb;
+.qr-code {
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.invoice-amount {
-  font-size: 2rem;
-  font-weight: 800;
+/* Invoice Details Section */
+.invoice-details-section {
+  padding: 1.25rem;
+  background: rgba(5, 149, 115, 0.05);
+  border-radius: 16px;
+  border: 1px solid rgba(5, 149, 115, 0.1);
+}
+
+.amount-display {
+  font-size: 1.75rem;
+  font-weight: 700;
   color: #059573;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.2;
 }
 
-.invoice-description {
+.description-display {
   color: #6b7280;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 500;
+  line-height: 1.4;
 }
 
-.invoice-string {
-  background: #f8f9fa;
+/* Invoice Text Section */
+.invoice-text-section {
+  background: #f9fafb;
   border-radius: 12px;
-  padding: 1rem;
-}
-
-.invoice-text :deep(.q-field__control) {
-  font-family: monospace;
-  font-size: 0.8rem;
-  background: white;
-}
-
-.invoice-actions {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.copy-btn,
-.share-btn {
-  flex: 1;
-  height: 44px;
-  border-radius: 12px;
-  font-weight: 500;
+  padding: 1.25rem;
   border: 1px solid #e5e7eb;
+}
+
+.invoice-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.75rem;
+  text-align: left;
+}
+
+.invoice-text-input :deep(.q-field__control) {
+  font-family: monospace;
+  font-size: 0.75rem;
+  background: white;
+  border-radius: 8px;
+  line-height: 1.3;
+}
+
+.invoice-text-input :deep(.q-field__native) {
+  padding: 0.75rem;
+  word-break: break-all;
+}
+
+/* Action Buttons */
+.invoice-action-buttons {
+  display: flex;
+  gap: 1rem;
+}
+
+.invoice-copy-btn,
+.invoice-share-btn {
+  flex: 1;
+  height: 48px;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 0.95rem;
   transition: all 0.2s ease;
-}
-
-.copy-btn {
+  border: 2px solid #059573;
   color: #059573;
-  border-color: rgba(5, 149, 115, 0.3);
 }
 
-.copy-btn:hover,
-.copy-btn:focus {
+.invoice-copy-btn:hover {
+  background: #059573;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.25);
+}
+
+.invoice-share-btn {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.invoice-share-btn:hover {
+  background: #3b82f6;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+
+/* Responsive Design for Invoice */
+@media (max-width: 480px) {
+  .qr-code-section {
+    padding: 1.5rem 1rem;
+  }
+  
+  .invoice-details-section {
+    padding: 1rem;
+  }
+  
+  .amount-display {
+    font-size: 1.5rem;
+  }
+  
+  .description-display {
+    font-size: 0.875rem;
+  }
+  
+  .invoice-text-section {
+    padding: 1rem;
+  }
+  
+  .invoice-text-input :deep(.q-field__control) {
+    font-size: 0.7rem;
+  }
+  
+  .invoice-action-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .invoice-copy-btn,
+  .invoice-share-btn {
+    height: 44px;
+    font-size: 0.9rem;
+  }
+}
   background: #059573;
   color: white;
   border-color: #059573;
