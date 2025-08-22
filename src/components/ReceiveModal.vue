@@ -341,6 +341,7 @@ export default {
         const invoice = await nwc.makeInvoice(invoiceRequest);
         
         console.log('✅ Invoice created successfully:', {
+          paymentRequest: invoice.paymentRequest ? 'Present' : 'Missing',
           payment_request: invoice.payment_request ? 'Present' : 'Missing',
           payment_hash: invoice.payment_hash ? 'Present' : 'Missing',
           amount: invoice.amount,
@@ -348,19 +349,20 @@ export default {
           expires_at: invoice.expires_at
         });
 
-        // Validate the invoice has required fields
-        if (!invoice.payment_request) {
+        // Validate the invoice has required fields (check both possible property names)
+        const paymentRequest = invoice.paymentRequest || invoice.payment_request;
+        if (!paymentRequest) {
           console.error('❌ Invoice missing payment_request field:', invoice);
           throw new Error('Invalid invoice: missing payment request');
         }
 
         // Ensure the invoice has the correct structure
         const processedInvoice = {
-          payment_request: invoice.payment_request,
-          payment_hash: invoice.payment_hash,
+          payment_request: paymentRequest,
+          payment_hash: invoice.payment_hash || invoice.paymentHash,
           amount: invoice.amount || this.amountInSats,
           description: invoice.description || this.description || 'BuhoGO Payment',
-          expires_at: invoice.expires_at,
+          expires_at: invoice.expires_at || invoice.expiresAt,
           created_at: Math.floor(Date.now() / 1000)
         };
 
