@@ -563,8 +563,10 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  max-width: 400px;
-  margin: 0 auto;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
 }
 
 .stat-item {
@@ -573,13 +575,14 @@ export default {
 }
 
 .stat-label {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   color: #6b7280;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.125rem;
+  font-weight: 500;
 }
 
 .stat-value {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -593,9 +596,9 @@ export default {
 
 .stat-divider {
   width: 1px;
-  height: 2rem;
+  height: 1.5rem;
   background: #e5e7eb;
-  margin: 0 1rem;
+  margin: 0 0.75rem;
 }
 
 /* Transaction Content */
@@ -849,6 +852,28 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .stats-section {
+    padding: 0.75rem;
+  }
+  
+  .stats-container {
+    padding: 0.75rem;
+    border-radius: 8px;
+  }
+  
+  .stat-label {
+    font-size: 0.6875rem;
+  }
+  
+  .stat-value {
+    font-size: 0.875rem;
+  }
+  
+  .stat-divider {
+    height: 1.25rem;
+    margin: 0 0.5rem;
+  }
+  
   .transaction-item {
     padding: 0.75rem;
   }
