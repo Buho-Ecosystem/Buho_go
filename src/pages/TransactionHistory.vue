@@ -69,18 +69,27 @@
           class="transaction-group"
         >
           <!-- Group Header -->
-          <div class="group-header" @click="toggleGroup(group.date)">
+          <div class="group-header" :class="{ 'recent-group': group.isRecent }" @click="toggleGroup(group.date)">
             <div class="group-info">
               <div class="group-date">{{ group.dateLabel }}</div>
-              <div class="group-summary">{{ group.transactions.length }} transactions</div>
+              <div class="group-summary">
+                {{ group.transactions.length }} transaction{{ group.transactions.length !== 1 ? 's' : '' }}
+                <span v-if="group.isRecent" class="recent-badge">Recent</span>
+              </div>
             </div>
             <div class="group-amount">
               <div class="group-total" :class="group.netAmount >= 0 ? 'positive' : 'negative'">
                 {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
               </div>
-              <q-icon 
+              <q-icon
+                v-if="!group.isRecent"
                 :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'" 
                 class="expand-icon"
+              />
+              <q-icon
+                v-else
+                name="las la-chevron-up"
+                class="expand-icon recent-expanded"
               />
             </div>
           </div>
@@ -189,7 +198,8 @@ export default {
       transactions: [],
       walletState: {},
       nostrProfiles: {},
-      expandedGroups: new Set()
+      expandedGroups: new Set(),
+      autoExpandDays: 7 // Auto-expand last 7 days
     }
   },
   computed: {
@@ -217,28 +227,32 @@ export default {
 
     groupedTransactions() {
       const groups = {};
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       
       this.filteredTransactions.forEach(tx => {
         const date = new Date(tx.settled_at * 1000);
         const dateKey = this.getDateKey(date);
+        const groupKey = this.getGroupKey(date);
         
-        if (!groups[dateKey]) {
-          groups[dateKey] = {
-            date: dateKey,
-            dateLabel: this.getDateLabel(date),
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            date: groupKey,
+            dateLabel: this.getGroupLabel(date),
             transactions: [],
             netAmount: 0,
-            expanded: this.expandedGroups.has(dateKey)
+            expanded: this.expandedGroups.has(groupKey) || date >= sevenDaysAgo,
+            isRecent: date >= sevenDaysAgo
           };
         }
         
-        groups[dateKey].transactions.push(tx);
-        groups[dateKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+        groups[groupKey].transactions.push(tx);
+        groups[groupKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
       });
 
       // Sort groups by date (newest first) and sort transactions within each group
       return Object.values(groups)
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .sort((a, b) => this.sortGroups(a, b))
         .map(group => ({
           ...group,
           transactions: group.transactions.sort((a, b) => b.settled_at - a.settled_at)
@@ -403,6 +417,54 @@ export default {
       return date.toISOString().split('T')[0];
     },
 
+    getGroupKey(date) {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      
+      // Last 7 days: group by day
+      if (date >= sevenDaysAgo) {
+        return date.toISOString().split('T')[0];
+      }
+      // Last 30 days: group by week
+      else if (date >= thirtyDaysAgo) {
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - date.getDay());
+        return `week-${weekStart.toISOString().split('T')[0]}`;
+      }
+      // Older: group by month
+      else {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      }
+    },
+
+    getGroupLabel(date) {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      
+      // Last 7 days: show day labels
+      if (date >= sevenDaysAgo) {
+        return this.getDateLabel(date);
+      }
+      // Last 30 days: show week labels
+      else if (date >= thirtyDaysAgo) {
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - date.getDay());
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        
+        return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+      }
+      // Older: show month/year labels
+      else {
+        return date.toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long' 
+        });
+      }
+    },
+
     getDateLabel(date) {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -419,6 +481,24 @@ export default {
           day: 'numeric' 
         });
       }
+    },
+
+    sortGroups(a, b) {
+      // Extract dates for comparison
+      const getDateFromGroup = (group) => {
+        if (group.date.includes('week-')) {
+          return new Date(group.date.replace('week-', ''));
+        } else if (group.date.includes('-') && group.date.length === 7) {
+          // Month format: YYYY-MM
+          const [year, month] = group.date.split('-');
+          return new Date(parseInt(year), parseInt(month) - 1, 1);
+        } else {
+          // Day format: YYYY-MM-DD
+          return new Date(group.date);
+        }
+      };
+      
+      return getDateFromGroup(b) - getDateFromGroup(a);
     },
 
     toggleGroup(dateKey) {
@@ -632,6 +712,15 @@ export default {
   background: #f3f4f6;
 }
 
+.group-header.recent-group {
+  background: rgba(5, 149, 115, 0.05);
+  border: 1px solid rgba(5, 149, 115, 0.1);
+}
+
+.group-header.recent-group:hover {
+  background: rgba(5, 149, 115, 0.08);
+}
+
 .group-info {
   flex: 1;
 }
@@ -646,6 +735,20 @@ export default {
 .group-summary {
   font-size: 0.875rem;
   color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.recent-badge {
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
 }
 
 .group-amount {
@@ -672,6 +775,10 @@ export default {
   transition: transform 0.2s;
 }
 
+.expand-icon.recent-expanded {
+  color: #059573;
+  opacity: 0.7;
+}
 /* Group Transactions */
 .group-transactions {
   background: white;
