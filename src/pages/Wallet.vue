@@ -912,35 +912,39 @@ export default {
 }
 
 .modern-menu-btn {
-  color: #6b7280;
-  transition: all 0.2s;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  color: #374151;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  position: relative;
 }
 
 .modern-menu-btn:hover {
-  color: #374151;
-  background: #f3f4f6;
-  transform: translateY(-1px);
+  background: #f1f5f9;
+}
+
+.modern-menu-btn:active {
+  transform: scale(0.95);
+  background: #e2e8f0;
 }
 
 .menu-icon {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  width: 18px;
-  height: 14px;
+  gap: 2.5px;
+  width: 16px;
+  height: 12px;
 }
 
 .menu-line {
-  height: 2px;
+  height: 1.5px;
   background: currentColor;
-  border-radius: 1px;
-  transition: all 0.3s ease;
+  border-radius: 0.75px;
+  transition: all 0.2s ease;
 }
 
 .menu-line:nth-child(1) {
@@ -948,7 +952,7 @@ export default {
 }
 
 .menu-line:nth-child(2) {
-  width: 75%;
+  width: 70%;
 }
 
 .menu-line:nth-child(3) {
@@ -956,7 +960,7 @@ export default {
 }
 
 .modern-menu-btn:hover .menu-line:nth-child(1) {
-  width: 75%;
+  width: 85%;
 }
 
 .modern-menu-btn:hover .menu-line:nth-child(2) {
@@ -964,7 +968,7 @@ export default {
 }
 
 .modern-menu-btn:hover .menu-line:nth-child(3) {
-  width: 85%;
+  width: 90%;
 }
 
 /* Main Content */
