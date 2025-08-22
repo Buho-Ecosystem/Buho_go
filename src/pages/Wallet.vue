@@ -1069,6 +1069,7 @@ export default {
   font-weight: 600;
   color: #1f2937;
 }
+}
 .payment-dialog .close-btn {
   color: #6b7280;
 }
