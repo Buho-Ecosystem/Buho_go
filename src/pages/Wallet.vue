@@ -10,10 +10,15 @@
     <div class="wallet-header">
       <div class="header-content">
         <div class="logo-container">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo">
-            <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z" fill="#059573"/>
-            <path d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z" fill="#78D53C"/>
-            <path d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z" fill="#43B65B"/>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo-svg">
+            <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
+                  fill="#059573"/>
+            <path
+              d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
+              fill="#78D53C"/>
+            <path
+              d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
+              fill="#43B65B"/>
           </svg>
           <div class="title">BuhoGO</div>
         </div>
@@ -21,236 +26,359 @@
           flat 
           round 
           dense 
-          icon="las la-cog" 
-          @click="$router.push('/settings')"
-          class="settings-btn"
+          class="modern-menu-btn"
+          @click="$router.push('/settings')" 
+          aria-label="Settings"
+        >
+          <div class="menu-icon">
+            <div class="menu-line"></div>
+            <div class="menu-line"></div>
+            <div class="menu-line"></div>
+          </div>
+        </q-btn>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Balance Display -->
+      <div class="balance-section">
+        <div class="balance-container" @click="toggleCurrency" :class="{ 'switching': isSwitchingCurrency }">
+          <div class="balance-amount">
+            <transition name="balance-fade" mode="out-in">
+              <div :key="currentDisplayMode" class="amount-display">
+                <span class="amount-number">{{ formatMainBalance(walletState.balance) }}</span>
+                <span class="amount-unit">{{ getCurrentUnit() }}</span>
+              </div>
+            </transition>
+          </div>
+          <transition name="secondary-fade" mode="out-in">
+            <div :key="currentDisplayMode" class="balance-secondary">
+              {{ getSecondaryValue(walletState.balance) }}
+            </div>
+          </transition>
+        </div>
+      </div>
+
+      <!-- Transaction History Icon -->
+      <div class="transaction-icon-section">
+        <q-btn
+          flat
+          round
+          size="md"
+          icon="las la-history"
+          @click="$router.push('/transactions')"
+          class="transaction-history-btn"
+          aria-label="Transaction History"
+          :class="{ 'pulse': shouldPulse }"
         />
       </div>
     </div>
 
-    <!-- Balance Card -->
-    <div class="balance-section">
-      <div class="balance-card">
-        <div class="balance-header">
-          <div class="balance-label">Total Balance</div>
-          <div class="currency-toggle" @click="toggleCurrency">
-            <span class="currency-text">{{ walletState.currency }}</span>
-            <q-icon name="las la-redo-alt" class="toggle-icon"/>
-          </div>
-        </div>
-        
-        <div class="balance-amount">
-          <div class="amount-display">{{ formatBalance(walletState.balance) }}</div>
-          <div class="amount-fiat" v-if="walletState.currency === 'sats'">
-            {{ getFiatBalance() }}
-          </div>
-        </div>
-
-        <!-- Wallet Selector -->
-        <div class="wallet-selector" v-if="walletState.connectedWallets.length > 1">
-          <q-select
-            v-model="walletState.activeWalletId"
-            :options="walletOptions"
-            @update:model-value="switchWallet"
-            outlined
-            dense
-            class="wallet-select"
-            option-value="value"
-            option-label="label"
-            emit-value
-            map-options
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Action Buttons -->
-    <div class="action-section">
+    <!-- Bottom Action Buttons -->
+    <div class="bottom-actions">
       <div class="action-buttons">
-        <q-btn
-          class="action-btn send-btn"
-          @click="showSendModal = true"
-          no-caps
-          unelevated
-        >
-          <div class="btn-content">
-            <q-icon name="las la-arrow-up" class="btn-icon"/>
-            <span class="btn-label">Send</span>
-          </div>
-        </q-btn>
-
         <q-btn
           class="action-btn receive-btn"
           @click="showReceiveModal = true"
           no-caps
           unelevated
+          aria-label="Receive payment"
         >
-          <div class="btn-content">
-            <q-icon name="las la-arrow-down" class="btn-icon"/>
-            <span class="btn-label">Receive</span>
-          </div>
+          <q-icon name="las la-arrow-down" size="24px"/>
+          <div class="btn-text">Receive</div>
+        </q-btn>
+        <q-btn
+          class="action-btn send-btn"
+          @click="showSendModal = true"
+          no-caps
+          unelevated
+          aria-label="Send payment"
+        >
+          <q-icon name="las la-arrow-up" size="24px"/>
+          <div class="btn-text">Send</div>
         </q-btn>
       </div>
     </div>
 
-    <!-- Recent Transactions -->
-    <div class="transactions-section">
-      <div class="section-header">
-        <div class="section-title">Recent Activity</div>
-        <q-btn 
-          flat 
-          dense 
-          color="primary" 
-          label="View All" 
-          @click="$router.push('/transactions')"
-          class="view-all-btn"
-        />
-      </div>
+    <!-- Send Dialog -->
+    <q-dialog v-model="showSendDialog" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Send Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
 
-      <!-- Transaction List -->
-      <div class="transaction-list" v-if="recentTransactions.length > 0">
-        <div 
-          v-for="tx in recentTransactions" 
-          :key="tx.id"
-          class="transaction-item"
-          @click="viewTransaction(tx)"
-        >
-          <div class="transaction-icon">
-            <div class="tx-icon-container" :class="getTransactionIconClass(tx)">
-              <q-icon :name="getTransactionIcon(tx)" size="18px"/>
+        <q-card-section class="dialog-content">
+          <!-- Payment Input -->
+          <div class="payment-input-section">
+            <q-input
+              v-model="sendForm.input"
+              outlined
+              label="Payment Details"
+              placeholder="Invoice, LNURL, or Lightning Address"
+              type="textarea"
+              rows="3"
+              class="payment-input"
+            />
+            
+            <div class="input-actions">
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-qrcode"
+                label="Scan QR"
+                @click="showQRScanner = true"
+                class="action-btn scan-btn"
+                no-caps
+              />
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-paste"
+                label="Paste"
+                @click="pasteFromClipboard"
+                class="action-btn paste-btn"
+                no-caps
+              />
             </div>
           </div>
 
-          <div class="transaction-details">
-            <div class="transaction-main">
-              <div class="transaction-type">{{ getTransactionTypeText(tx) }}</div>
-              <div class="transaction-time">{{ formatTransactionTime(tx.settled_at) }}</div>
-            </div>
-            <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
-              {{ tx.description }}
-            </div>
-            <div class="transaction-description" v-else-if="tx.memo">
-              {{ tx.memo }}
-            </div>
-            <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
-              <q-avatar size="14px" class="sender-avatar">
-                <img 
-                  v-if="nostrProfiles[tx.senderNpub].picture" 
-                  :src="nostrProfiles[tx.senderNpub].picture"
-                  :alt="getSenderDisplayName(tx.senderNpub)"
-                />
-                <q-icon v-else name="las la-user" size="8px"/>
-              </q-avatar>
-              <span class="sender-name">{{ getSenderDisplayName(tx.senderNpub) }}</span>
+          <!-- Payment Type Indicator -->
+          <div class="payment-type-section" v-if="paymentData">
+            <div class="type-indicator">
+              <q-icon name="las la-bolt" class="type-icon"/>
+              <span class="type-label">{{ getPaymentTypeLabel() }}</span>
             </div>
           </div>
 
-          <div class="transaction-amount">
-            <div class="amount-sats" :class="getAmountClass(tx)">
-              {{ getFormattedAmount(tx) }}
+          <!-- Amount Input for LNURL/Lightning Address -->
+          <div class="amount-section" v-if="requiresAmount()">
+            <div class="amount-limits" v-if="getAmountLimits()">
+              <q-icon name="las la-info-circle" class="limits-icon"/>
+              <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
             </div>
-            <div class="amount-fiat">{{ getFiatAmount(tx) }}</div>
           </div>
-        </div>
-      </div>
-
-      <!-- Empty State -->
-      <div v-else class="empty-transactions">
-        <div class="empty-icon">
-          <q-icon name="las la-receipt" size="3rem" color="grey-4"/>
-        </div>
-        <div class="empty-text">No transactions yet</div>
-        <div class="empty-subtext">Your transaction history will appear here</div>
-      </div>
-    </div>
-
-    <!-- Send Modal -->
-    <SendModal 
-      v-model="showSendModal" 
-      @payment-detected="handlePaymentDetected"
-    />
+        </q-card-section>
+      </q-card>
+    </q-dialog>
 
     <!-- Receive Modal -->
     <ReceiveModal 
-      v-model="showReceiveModal" 
-      @invoice-created="handleInvoiceCreated"
+      v-model="showReceiveModal"
+      @invoice-created="onInvoiceCreated"
+    />
+
+    <!-- Send Modal -->
+    <SendModal 
+      v-model="showSendModal"
+      @payment-detected="onPaymentDetected"
     />
 
     <!-- Payment Confirmation Dialog -->
-    <q-dialog v-model="showPaymentDialog" class="payment-dialog">
+    <q-dialog v-model="showPaymentConfirmation" class="payment-dialog">
       <q-card class="payment-card">
         <q-card-section class="payment-header">
           <div class="payment-title">Confirm Payment</div>
           <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
-        <q-card-section class="payment-content">
-          <!-- Payment Details -->
-          <div class="payment-details">
-            <div class="detail-item">
-              <div class="detail-label">To</div>
-              <div class="detail-value">{{ getPaymentDestination() }}</div>
+        <q-card-section class="payment-content" v-if="pendingPayment">
+          <div class="payment-info">
+            <div class="payment-amount">
+              <div class="amount-display">{{ formatPaymentAmount() }}</div>
+              <div class="amount-fiat">{{ formatPaymentFiat() }}</div>
             </div>
             
-            <div class="detail-item" v-if="paymentData.amount">
-              <div class="detail-label">Amount</div>
-              <div class="detail-value amount-highlight">
-                {{ formatPaymentAmount() }}
+            <div class="payment-details">
+              <div class="detail-item" v-if="pendingPayment.description">
+                <span class="detail-label">Description:</span>
+                <span class="detail-value">{{ pendingPayment.description }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Type:</span>
+                <span class="detail-value">{{ getPaymentTypeLabel() }}</span>
               </div>
             </div>
-            
-            <div class="detail-item" v-if="paymentData.description">
-              <div class="detail-label">Description</div>
-              <div class="detail-value">{{ paymentData.description }}</div>
-            </div>
-          </div>
 
-          <!-- Amount Input for LNURL/Lightning Address -->
-          <div v-if="needsAmountInput" class="amount-input-section">
-            <div class="amount-label">Enter Amount</div>
-            <div class="amount-input-container">
+            <!-- Amount input for LNURL/Lightning Address -->
+            <div v-if="needsAmountInput" class="amount-input-section">
               <q-input
                 v-model="paymentAmount"
-                type="number"
                 outlined
                 label="Amount (sats)"
-                :min="Math.floor(paymentData.minSendable / 1000)"
-                :max="Math.floor(paymentData.maxSendable / 1000)"
+                type="number"
+                :min="pendingPayment.minSendable ? Math.floor(pendingPayment.minSendable / 1000) : 1"
+                :max="pendingPayment.maxSendable ? Math.floor(pendingPayment.maxSendable / 1000) : 100000000"
                 class="amount-input"
+                :rules="[validatePaymentAmount]"
+              />
+              
+              <q-input
+                v-if="pendingPayment.commentAllowed > 0"
+                v-model="paymentComment"
+                outlined
+                label="Comment (optional)"
+                :maxlength="pendingPayment.commentAllowed"
+                class="comment-input"
               />
             </div>
-            <div class="amount-range">
-              Min: {{ Math.floor(paymentData.minSendable / 1000) }} sats - 
-              Max: {{ Math.floor(paymentData.maxSendable / 1000) }} sats
-            </div>
-          </div>
-
-          <!-- Comment Input -->
-          <div v-if="paymentData.commentAllowed > 0" class="comment-section">
-            <div class="comment-label">Comment (optional)</div>
-            <q-input
-              v-model="paymentComment"
-              outlined
-              type="textarea"
-              :maxlength="paymentData.commentAllowed"
-              :placeholder="`Max ${paymentData.commentAllowed} characters`"
-              class="comment-input"
-            />
           </div>
         </q-card-section>
 
-        <q-card-actions class="payment-actions">
-          <q-btn flat label="Cancel" v-close-popup class="cancel-btn"/>
+        <q-card-actions align="right" class="payment-actions">
+          <q-btn flat label="Cancel" v-close-popup/>
           <q-btn 
-            unelevated 
-            color="primary" 
+            flat 
             label="Send Payment" 
+            color="primary" 
             @click="confirmPayment"
-            :loading="isProcessingPayment"
-            :disable="needsAmountInput && !isValidPaymentAmount"
-            class="confirm-btn"
+            :loading="isSendingPayment"
+            :disable="!canConfirmPayment"
           />
         </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Receive Dialog -->
+    <q-dialog v-model="showReceiveDialog" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Receive Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <!-- Invoice Form -->
+          <div class="invoice-form" v-if="!generatedInvoice">
+            <q-input
+              v-model="receiveForm.amount"
+              outlined
+              label="Amount (sats)"
+              type="number"
+              min="1"
+              class="amount-input"
+              :rules="[val => val > 0 || 'Amount must be greater than 0']"
+            />
+            
+            <q-input
+              v-model="receiveForm.description"
+              outlined
+              label="Description (optional)"
+              placeholder="What is this payment for?"
+              class="description-input"
+            />
+            
+            <q-btn
+              class="create-invoice-btn"
+              @click="createInvoice"
+              :loading="isCreatingInvoice"
+              :disable="!receiveForm.amount || receiveForm.amount <= 0"
+              no-caps
+              unelevated
+            >
+              Create Invoice
+            </q-btn>
+          </div>
+
+          <!-- Invoice Result -->
+          <div class="invoice-result" v-else>
+            <!-- Payment Success State -->
+            <div class="payment-success" v-if="invoicePaid">
+              <q-icon name="las la-check-circle" size="64px" color="positive" class="success-icon"/>
+              <div class="success-text">Payment Received!</div>
+              <div class="success-amount">{{ formatBalance(receiveForm.amount) }}</div>
+            </div>
+
+            <!-- Compact Invoice Display (waiting for payment) -->
+            <div class="compact-invoice" v-else-if="waitingForPayment">
+              <!-- QR Code Section -->
+              <div class="qr-code-section compact">
+                <vue-qrcode
+                  :value="generatedInvoice.paymentRequest"
+                  :options="{ width: 200, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
+                  class="qr-code"
+                />
+              </div>
+              
+              <!-- Invoice Info -->
+              <div class="invoice-info-compact">
+                <div class="amount-compact">
+                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                </div>
+                <div class="description-compact" v-if="receiveForm.description">
+                  {{ receiveForm.description }}
+                </div>
+                
+                <div class="waiting-indicator-compact">
+                  <q-spinner-dots color="primary" size="18px"/>
+                  <span class="waiting-text-compact">Waiting for payment...</span>
+                </div>
+              </div>
+              
+              <!-- Copy Button -->
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-copy"
+                label="Copy Invoice"
+                @click="copyInvoice"
+                class="copy-invoice-btn-compact"
+                no-caps
+              />
+            </div>
+
+            <!-- Static Invoice Display (fallback) -->
+            <div class="static-invoice" v-else>
+              <!-- QR Code Section -->
+              <div class="qr-code-section">
+                <vue-qrcode
+                  :value="generatedInvoice.paymentRequest"
+                  :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
+                  class="qr-code"
+                />
+              </div>
+              
+              <!-- Amount Display -->
+              <div class="amount-section">
+                <div class="amount-value">
+                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                </div>
+                <div class="description-text" v-if="receiveForm.description">
+                  {{ receiveForm.description }}
+                </div>
+              </div>
+              
+              <!-- Copy Button -->
+              <q-btn
+                outline
+                color="primary"
+                icon="las la-copy"
+                label="Copy"
+                @click="copyInvoice"
+                class="copy-invoice-btn"
+                no-caps
+                unelevated
+              />
+            </div>
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- QR Scanner Dialog -->
+    <q-dialog v-model="showQRScanner" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Scan Lightning Invoice</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <div class="qr-scanner-container">
+            <qrcode-capture @detect="handleQRScan" />
+          </div>
+        </q-card-section>
       </q-card>
     </q-dialog>
   </q-page>
@@ -258,22 +386,22 @@
 
 <script>
 import { webln } from "@getalby/sdk";
-import SendModal from '../components/SendModal.vue';
-import ReceiveModal from '../components/ReceiveModal.vue';
+import { LightningPaymentService } from '../utils/lightning.js';
 import LoadingScreen from '../components/LoadingScreen.vue';
-import LightningPaymentService from '../utils/lightning.js';
+import ReceiveModal from '../components/ReceiveModal.vue';
+import SendModal from '../components/SendModal.vue';
 
 export default {
   name: 'WalletPage',
   components: {
-    SendModal,
+    LoadingScreen,
     ReceiveModal,
-    LoadingScreen
+    SendModal
   },
   data() {
     return {
       walletState: {
-        balance: 0,
+        balance: 312,
         connectedWallets: [],
         activeWalletId: null,
         currency: 'sats',
@@ -285,44 +413,79 @@ export default {
           jpy: 9800000
         },
         preferredFiatCurrency: 'USD',
-        denominationCurrency: 'sats'
+        denominationCurrency: 'sats',
+        displayMode: 'sats'
       },
       recentTransactions: [],
-      nostrProfiles: {},
-      showSendModal: false,
       showReceiveModal: false,
-      showPaymentDialog: false,
-      paymentData: null,
+      showSendModal: false,
+      showPaymentConfirmation: false,
+      pendingPayment: null,
       paymentAmount: '',
       paymentComment: '',
-      isProcessingPayment: false,
+      parsedInvoice: null,
+      lightningAddress: '',
+      sendForm: {
+        input: '',
+        amount: '',
+        comment: ''
+      },
+      receiveForm: {
+        amount: '',
+        description: ''
+      },
+      generatedInvoice: null,
+      refreshInterval: null,
+      pulseInterval: null,
+      // Invoice payment tracking
+      currentInvoicePaymentHash: null,
+      invoiceCheckInterval: null,
+      waitingForPayment: false,
       showLoadingScreen: true,
       loadingText: 'Loading wallet...'
-    }
+    };
   },
   computed: {
-    walletOptions() {
-      return this.walletState.connectedWallets.map(wallet => ({
-        label: wallet.name,
-        value: wallet.id
-      }));
-    },
     needsAmountInput() {
-      return this.paymentData && (
-        this.paymentData.type === 'lightning_address' || 
-        this.paymentData.type === 'lnurl_pay'
-      );
+      return this.pendingPayment && 
+             (this.pendingPayment.type === 'lightning_address' || 
+              this.pendingPayment.type === 'lnurl_pay');
     },
-    isValidPaymentAmount() {
-      if (!this.needsAmountInput) return true;
-      const amount = parseInt(this.paymentAmount);
-      const minSats = Math.floor(this.paymentData.minSendable / 1000);
-      const maxSats = Math.floor(this.paymentData.maxSendable / 1000);
-      return amount >= minSats && amount <= maxSats;
+    canConfirmPayment() {
+      if (!this.pendingPayment) return false;
+      if (this.needsAmountInput) {
+        return this.paymentAmount && this.paymentAmount > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
+      }
+      return true;
     }
   },
   async created() {
     this.initializeWallet();
+  },
+  beforeUnmount() {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+    if (this.pulseInterval) {
+      clearInterval(this.pulseInterval);
+    }
+    if (this.invoiceCheckInterval) {
+      clearInterval(this.invoiceCheckInterval);
+    }
+    if (this.qrScanner) {
+      this.qrScanner.destroy();
+    }
+  },
+  watch: {
+    'sendForm.input': {
+      handler: 'processPaymentInput',
+      immediate: false
+    },
+    showReceiveDialog(newVal) {
+      if (!newVal) {
+        this.resetReceiveForm();
+      }
+    }
   },
   methods: {
     async initializeWallet() {
@@ -330,14 +493,15 @@ export default {
         this.loadingText = 'Loading wallet state...';
         await this.loadWalletState();
         
-        this.loadingText = 'Fetching balance...';
-        await this.updateBalance();
-        
-        this.loadingText = 'Loading transactions...';
-        await this.loadRecentTransactions();
+        this.loadingText = 'Fetching transactions...';
+        await this.loadTransactions();
         
         this.loadingText = 'Loading profiles...';
-        this.loadNostrProfiles();
+        await this.loadNostrProfiles();
+        
+        this.loadingText = 'Starting services...';
+        this.startPeriodicRefresh();
+        this.startPulseAnimation();
         
         // Hide loading screen
         this.loadingText = 'Ready!';
@@ -345,109 +509,63 @@ export default {
         this.showLoadingScreen = false;
       } catch (error) {
         console.error('Error initializing wallet:', error);
+        this.loadingText = 'Error loading wallet';
+        await new Promise(resolve => setTimeout(resolve, 1000));
         this.showLoadingScreen = false;
       }
     },
-
+    
     async loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
         try {
-          this.walletState = JSON.parse(savedState);
+          const parsedState = JSON.parse(savedState);
+          this.walletState = { ...this.walletState, ...parsedState };
+          await this.updateWalletBalance();
         } catch (error) {
-          console.error('Failed to parse wallet state:', error);
+          console.error('Failed to load wallet state:', error);
         }
+      } else {
+        // For demo purposes, keep the 312 sats balance
+        this.walletState.balance = 312;
       }
     },
 
-    async updateBalance() {
-      try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
+    async updateWalletBalance() {
+      const activeWallet = this.walletState.connectedWallets.find(
+        w => w.id === this.walletState.activeWalletId
+      );
 
-        if (activeWallet && activeWallet.nwcString) {
-          const nwc = new webln.NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
-
-          await Promise.race([
-            nwc.enable(),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Connection timeout')), 8000)
-            )
-          ]);
-
-          const balance = await Promise.race([
-            nwc.getBalance(),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Balance request timeout')), 6000)
-            )
-          ]);
-
-          this.walletState.balance = balance.balance;
-          activeWallet.balance = balance.balance;
-
-          // Save updated state
-          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-        }
-      } catch (error) {
-        console.error('Failed to update balance:', error);
-      }
-    },
-
-    async loadRecentTransactions() {
-      try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (activeWallet) {
+      if (activeWallet && activeWallet.nwcString) {
+        try {
+          // Show loading for balance updates only if it's a manual refresh
+          if (this.showLoadingScreen) {
+            this.loadingText = 'Updating balance...';
+          }
+          
           const nwc = new webln.NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
 
           await nwc.enable();
-          
-          const transactionsResponse = await nwc.listTransactions({ 
-            limit: 10, 
-            offset: 0 
-          });
+          const balance = await nwc.getBalance();
+          this.walletState.balance = balance.balance;
+          activeWallet.balance = balance.balance;
 
-          if (transactionsResponse && transactionsResponse.transactions) {
-            this.recentTransactions = transactionsResponse.transactions.map(tx => ({
-              ...tx,
-              id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
-              type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
-              description: tx.description || tx.memo || '',
-              settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
-            }));
-
-            // Sort by date (newest first)
-            this.recentTransactions.sort((a, b) => b.settled_at - a.settled_at);
-
-            // Process zap transactions
-            await this.processZapTransactions();
-
-            // Cache transactions
-            localStorage.setItem('buhoGO_cached_transactions', JSON.stringify(this.recentTransactions));
-          }
+          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        } catch (error) {
+          console.error('Failed to update balance:', error);
         }
-      } catch (error) {
-        console.error('Error loading transactions:', error);
       }
     },
 
+    async loadTransactions() {
+      // Mock implementation for demo
+      this.recentTransactions = [];
+    },
+
     async processZapTransactions() {
-      for (const tx of this.recentTransactions) {
-        if (this.isZapTransaction(tx)) {
-          const npub = this.extractNpubFromZap(tx);
-          if (npub) {
-            tx.senderNpub = npub;
-            await this.fetchNostrProfile(npub);
-          }
-        }
-      }
+      // Mock implementation
     },
 
     isZapTransaction(tx) {
@@ -464,28 +582,7 @@ export default {
     },
 
     async fetchNostrProfile(npub) {
-      if (this.nostrProfiles[npub]) return;
-      
-      try {
-        const profile = {
-          name: npub.substring(0, 12) + '...',
-          displayName: this.generateDisplayName(),
-          picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${npub}`,
-          about: 'Lightning Network enthusiast',
-          nip05: '',
-          lud16: `${npub.substring(0, 8)}@getalby.com`
-        };
-        
-        this.nostrProfiles[npub] = profile;
-        this.saveNostrProfiles();
-      } catch (error) {
-        console.error('Error fetching nostr profile:', error);
-      }
-    },
-
-    generateDisplayName() {
-      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry'];
-      return names[Math.floor(Math.random() * names.length)];
+      // Mock implementation
     },
 
     loadNostrProfiles() {
@@ -508,28 +605,99 @@ export default {
       return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
     },
 
-    toggleCurrency() {
-      const currentIndex = this.walletState.currencies.indexOf(this.walletState.currency);
-      const nextIndex = (currentIndex + 1) % this.walletState.currencies.length;
-      this.walletState.currency = this.walletState.currencies[nextIndex];
-      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+    startPeriodicRefresh() {
+      this.refreshInterval = setInterval(async () => {
+        await this.updateWalletBalance();
+        await this.loadTransactions();
+      }, 30000);
     },
 
-    formatBalance(balance) {
-      switch (this.walletState.currency) {
+    startPulseAnimation() {
+      this.pulseInterval = setInterval(() => {
+        this.shouldPulse = true;
+        setTimeout(() => {
+          this.shouldPulse = false;
+        }, 1000);
+      }, 25000);
+    },
+
+    async toggleCurrency() {
+      if (this.isSwitchingCurrency) return;
+      
+      this.isSwitchingCurrency = true;
+      
+      const modes = ['sats', 'fiat', 'btc'];
+      const currentIndex = modes.indexOf(this.currentDisplayMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      
+      this.walletState.displayMode = modes[nextIndex];
+      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+      
+      setTimeout(() => {
+        this.isSwitchingCurrency = false;
+      }, 200);
+    },
+
+    formatMainBalance(balance) {
+      switch (this.currentDisplayMode) {
         case 'btc':
-          return (balance / 100000000).toFixed(8) + ' BTC'
-        case 'usd':
-          const usdValue = (balance / 100000000) * (this.walletState.exchangeRates.usd || 65000)
-          return '$' + usdValue.toFixed(2)
+          const btcAmount = balance / 100000000;
+          // Show in sats if BTC amount is very small (less than 0.001 BTC)
+          if (btcAmount < 0.001) {
+            return balance.toLocaleString();
+          }
+          return btcAmount.toFixed(8);
+        case 'fiat':
+          const btcAmountForFiat = balance / 100000000;
+          const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
+          const fiatValue = btcAmountForFiat * rate;
+          return fiatValue.toFixed(2);
         case 'sats':
         default:
-          return balance.toLocaleString() + ' sats'
+          return balance.toLocaleString();
       }
     },
 
-    getFiatBalance() {
-      const btcAmount = this.walletState.balance / 100000000;
+    getCurrentUnit() {
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          const btcAmount = this.walletState.balance / 100000000;
+          // Show sats unit if BTC amount is very small
+          if (btcAmount < 0.001) {
+            return 'sats';
+          }
+          return 'BTC';
+        case 'fiat':
+          return this.walletState.preferredFiatCurrency || 'USD';
+        case 'sats':
+        default:
+          return 'sats';
+      }
+    },
+
+    getSecondaryValue(balance) {
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          const btcAmountForSecondary = balance / 100000000;
+          // Show fiat value if displaying sats due to small BTC amount
+          if (btcAmountForSecondary < 0.001) {
+            return this.getFiatValue(balance);
+          }
+          return balance.toLocaleString() + ' sats';
+        case 'fiat':
+          return balance.toLocaleString() + ' sats';
+        case 'sats':
+        default:
+          return this.getFiatValue(balance);
+      }
+    },
+
+    formatBalance(balance) {
+      return balance.toLocaleString() + ' sats';
+    },
+
+    getFiatValue(balance) {
+      const btcAmount = balance / 100000000;
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
       const fiatValue = btcAmount * rate;
@@ -545,60 +713,381 @@ export default {
       return symbol + fiatValue.toFixed(2);
     },
 
-    async switchWallet(walletId) {
-      this.walletState.activeWalletId = walletId;
-      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-      await this.updateBalance();
-      await this.loadRecentTransactions();
+    async processPaymentInput() {
+      this.paymentData = null;
+      this.parsedInvoice = null;
+      this.sendForm.amount = '';
+      this.sendForm.comment = '';
+
+      if (!this.sendForm.input.trim()) return;
+
+      try {
+        console.log('🔍 Processing payment input:', this.sendForm.input);
+        
+        const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
+        if (!validation.valid) {
+          throw new Error(validation.error);
+        }
+
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
+        
+        console.log('✅ Payment data processed:', this.paymentData);
+        
+        // For Lightning invoices, parse additional details
+        if (this.paymentData.type === 'lightning_invoice') {
+          try {
+            const nwc = new webln.NostrWebLNProvider({
+              nostrWalletConnectUrl: activeWallet.nwcString,
+            });
+            await nwc.enable();
+            
+            // Try to get invoice details
+            const invoiceDetails = await nwc.getInfo();
+            console.log('📋 Invoice details from NWC:', invoiceDetails);
+            
+            // Parse the invoice manually if needed
+            this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
+            console.log('📊 Parsed invoice:', this.parsedInvoice);
+            
+          } catch (error) {
+            console.warn('Could not get detailed invoice info:', error);
+            // Fallback to manual parsing
+            this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
+          }
+        }
+        
+        if (this.paymentData.type === 'lightning_invoice' && this.paymentData.amount === 0) {
+          this.paymentData.requiresAmount = true;
+        }
+        
+        // Show confirmation modal for invoices
+        if (this.paymentData.type === 'lightning_invoice') {
+          this.showPaymentConfirmation = true;
+        }
+        
+      } catch (error) {
+        console.error('Error processing payment input:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: error.message,
+          position: 'top'
+        });
+      }
     },
 
-    handlePaymentDetected(payment) {
-      this.paymentData = payment;
-      this.paymentAmount = '';
-      this.paymentComment = '';
-      this.showPaymentDialog = true;
+    parseInvoiceManually(invoice) {
+      try {
+        // Remove lightning: prefix if present
+        const cleanInvoice = invoice.replace(/^lightning:/i, '');
+        
+        // Extract amount from invoice (basic parsing)
+        let amount = 0;
+        const amountMatch = cleanInvoice.match(/lnbc(\d+)([munp]?)/i);
+        if (amountMatch) {
+          const value = parseInt(amountMatch[1]);
+          const unit = amountMatch[2];
+          
+          switch (unit) {
+            case 'm': // milli-bitcoin
+              amount = value * 100000;
+              break;
+            case 'u': // micro-bitcoin
+              amount = value * 100;
+              break;
+            case 'n': // nano-bitcoin
+              amount = value / 10;
+              break;
+            case 'p': // pico-bitcoin
+              amount = value / 10000;
+              break;
+            default:
+              amount = value * 100000000; // bitcoin
+          }
+        }
+        
+        // Extract description (basic parsing)
+        let description = 'Lightning Payment';
+        
+        // Extract expiry (basic parsing)
+        const now = Math.floor(Date.now() / 1000);
+        const expiry = now + 3600; // Default 1 hour
+        
+        return {
+          amount: Math.floor(amount),
+          description,
+          expiry,
+          invoice: cleanInvoice
+        };
+      } catch (error) {
+        console.error('Error parsing invoice manually:', error);
+        return {
+          amount: 0,
+          description: 'Lightning Payment',
+          expiry: Math.floor(Date.now() / 1000) + 3600,
+          invoice: invoice
+        };
+      }
     },
 
-    handleInvoiceCreated(invoice) {
+    getActiveWallet() {
+      return this.walletState.connectedWallets.find(
+        w => w.id === this.walletState.activeWalletId
+      );
+    },
+
+    getPaymentTypeLabel() {
+      if (!this.paymentData) return '';
+      
+      const labels = {
+        'lightning_invoice': 'Lightning Invoice',
+        'lnurl_pay': 'LNURL Payment',
+        'lightning_address': 'Lightning Address'
+      };
+      return labels[this.paymentData.type] || 'Lightning Payment';
+    },
+
+    requiresAmount() {
+      if (!this.paymentData) return false;
+      
+      return this.paymentData.type === 'lnurl_pay' || 
+             this.paymentData.type === 'lightning_address' ||
+             (this.paymentData.type === 'lightning_invoice' && this.paymentData.requiresAmount);
+    },
+
+    getAmountLimits() {
+      if (!this.paymentData) return null;
+      
+      return {
+        min: Math.floor(this.paymentData.minSendable / 1000),
+        max: Math.floor(this.paymentData.maxSendable / 1000)
+      };
+    },
+
+    canSendPayment() {
+      if (!this.paymentData) return false;
+      
+      if (this.requiresAmount()) {
+        const amount = parseInt(this.sendForm.amount);
+        if (!amount || amount <= 0) return false;
+        
+        if (this.paymentData.type !== 'lightning_invoice') {
+          const limits = this.getAmountLimits();
+          return amount >= limits.min && amount <= limits.max;
+        }
+        return true;
+      }
+      
+      return true;
+    },
+
+    async pasteFromClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text.trim()) {
+          this.sendForm.input = text.trim();
+          this.showSendDialog = false;
+          
+          // Small delay to ensure dialog closes
+          setTimeout(async () => {
+            await this.processPaymentInput();
+          }, 100);
+        }
+      } catch (error) {
+        console.error('Failed to paste from clipboard:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Failed to access clipboard',
+          position: 'top'
+        });
+      }
+    },
+
+    async sendPayment() {
+      if (!this.canSendPayment()) return;
+
+      this.isSending = true;
+      try {
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+
+        const amount = this.requiresAmount() ? parseInt(this.sendForm.amount) : null;
+        const comment = this.sendForm.comment || null;
+
+        const result = await lightningService.sendPayment(this.paymentData, amount, comment);
+        
+        console.log('Payment result:', result);
+
+        this.$q.notify({
+          type: 'positive',
+          message: 'Payment sent successfully!',
+          position: 'top'
+        });
+
+        this.showSendDialog = false;
+        this.resetSendForm();
+        await this.updateWalletBalance();
+        await this.loadTransactions();
+        
+      } catch (error) {
+        console.error('Payment failed:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: error.message,
+          position: 'top'
+        });
+      } finally {
+        this.isSending = false;
+      }
+    },
+
+    resetSendForm() {
+      this.sendForm.input = '';
+      this.sendForm.amount = '';
+      this.sendForm.comment = '';
+      this.paymentData = null;
+    },
+
+    async createInvoice() {
+      if (!this.receiveForm.amount) return;
+
+      this.isCreatingInvoice = true;
+      try {
+        console.log('🔍 Starting invoice creation...');
+      } catch (error) {
+        console.error('Error creating invoice:', error);
+      } finally {
+        this.isCreatingInvoice = false;
+      }
+    },
+
+    onInvoiceCreated(invoice) {
+      // Refresh balance after invoice creation
+      this.updateBalance();
       this.$q.notify({
         type: 'positive',
         message: 'Invoice created successfully!',
         position: 'top'
       });
-      // Refresh transactions after creating invoice
-      setTimeout(() => {
-        this.loadRecentTransactions();
-      }, 1000);
     },
 
-    getPaymentDestination() {
-      if (!this.paymentData) return '';
-      
-      switch (this.paymentData.type) {
-        case 'lightning_address':
-          return this.paymentData.address;
-        case 'lnurl_pay':
-          return 'LNURL Payment';
-        case 'lightning_invoice':
-          return 'Lightning Invoice';
-        default:
-          return 'Unknown';
+    async onPaymentDetected(paymentData) {
+      try {
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        this.pendingPayment = await lightningService.processPaymentInput(paymentData.data);
+        this.showPaymentConfirmation = true;
+
+      } catch (error) {
+        console.error('Error processing payment:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Invalid payment request: ' + error.message,
+          position: 'top'
+        });
       }
     },
 
     formatPaymentAmount() {
-      if (!this.paymentData) return '';
+      if (!this.pendingPayment) return '';
       
       if (this.needsAmountInput) {
-        return this.paymentAmount ? `${this.paymentAmount} sats` : 'Amount to be entered';
+        return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
       }
       
-      return this.paymentData.amount ? `${this.paymentData.amount} sats` : 'Variable amount';
+      return this.pendingPayment.amount ? 
+        `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` : 
+        'Variable amount';
+    },
+
+    formatPaymentFiat() {
+      if (!this.pendingPayment) return '';
+      
+      let amountSats = 0;
+      if (this.needsAmountInput) {
+        amountSats = parseInt(this.paymentAmount) || 0;
+      } else {
+        amountSats = this.pendingPayment.amount || 0;
+      }
+      
+      if (amountSats === 0) return '';
+      
+      const btcAmount = amountSats / 100000000;
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
+      const fiatValue = btcAmount * rate;
+      
+      const symbols = {
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        JPY: '¥'
+      };
+      
+      const symbol = symbols[currency] || currency;
+      return symbol + fiatValue.toFixed(2);
+    },
+
+    getPaymentTypeLabel() {
+      if (!this.pendingPayment) return '';
+      
+      switch (this.pendingPayment.type) {
+        case 'lightning_invoice':
+          return 'Lightning Invoice';
+        case 'lightning_address':
+          return 'Lightning Address';
+        case 'lnurl_pay':
+          return 'LNURL Pay';
+        default:
+          return 'Lightning Payment';
+      }
+    },
+
+    validatePaymentAmount(amount) {
+      if (!this.pendingPayment) return 'No payment details';
+      
+      const amountNum = parseInt(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        return 'Amount must be greater than 0';
+      }
+      
+      if (this.pendingPayment.minSendable) {
+        const minSats = Math.floor(this.pendingPayment.minSendable / 1000);
+        if (amountNum < minSats) {
+          return `Minimum amount is ${minSats} sats`;
+        }
+      }
+      
+      if (this.pendingPayment.maxSendable) {
+        const maxSats = Math.floor(this.pendingPayment.maxSendable / 1000);
+        if (amountNum > maxSats) {
+          return `Maximum amount is ${maxSats} sats`;
+        }
+      }
+      
+      return true;
     },
 
     async confirmPayment() {
-      this.isProcessingPayment = true;
-      
+      if (!this.pendingPayment) return;
+
+      this.isSendingPayment = true;
       try {
         const activeWallet = this.walletState.connectedWallets.find(
           w => w.id === this.walletState.activeWalletId
@@ -610,129 +1099,187 @@ export default {
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
         
-        const amount = this.needsAmountInput ? parseInt(this.paymentAmount) : null;
+        const amount = this.needsAmountInput ? parseInt(this.paymentAmount) : this.pendingPayment.amount;
         const comment = this.paymentComment || null;
         
-        const result = await lightningService.sendPayment(this.paymentData, amount, comment);
-        
+        const result = await lightningService.sendPayment(this.pendingPayment, amount, comment);
+
         this.$q.notify({
           type: 'positive',
           message: 'Payment sent successfully!',
           position: 'top'
         });
 
-        this.showPaymentDialog = false;
-        
-        // Update balance and transactions
+        // Reset and close
+        this.showPaymentConfirmation = false;
+        this.pendingPayment = null;
+        this.paymentAmount = '';
+        this.paymentComment = '';
+
+        // Refresh balance and transactions
         await this.updateBalance();
         await this.loadRecentTransactions();
-        
+
       } catch (error) {
         console.error('Error sending payment:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Error sending payment: ' + error.message,
+          message: 'Failed to send payment: ' + error.message,
           position: 'top'
         });
       } finally {
-        this.isProcessingPayment = false;
+        this.isSendingPayment = false;
       }
     },
 
-    getTransactionTypeText(tx) {
-      if (tx.senderNpub && this.nostrProfiles[tx.senderNpub]) {
-        return 'Zap Received';
+    async checkInvoicePayment() {
+      if (this.invoiceCheckInterval) {
+        clearInterval(this.invoiceCheckInterval);
+        this.invoiceCheckInterval = null;
       }
-      return tx.type === 'incoming' ? 'Received' : 'Sent';
-    },
-    
-    getTransactionIconClass(tx) {
-      if (tx.senderNpub) return 'tx-icon-zap';
-      return tx.type === 'incoming' ? 'tx-icon-received' : 'tx-icon-sent';
-    },
-    
-    getTransactionIcon(tx) {
-      if (tx.senderNpub) return 'las la-bolt';
-      return tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
-    },
-    
-    getAmountClass(tx) {
-      return tx.type === 'incoming' ? 'amount-positive' : 'amount-negative';
-    },
-    
-    getFormattedAmount(tx) {
-      const prefix = tx.type === 'incoming' ? '+' : '-';
-      return prefix + ' ' + Math.abs(tx.amount).toLocaleString() + ' sats';
-    },
-    
-    getFiatAmount(tx) {
-      const btcAmount = Math.abs(tx.amount) / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
-      
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
-      
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
+
+      this.waitingForPayment = false;
+
+      // Show success notification
+      this.$q.notify({
+        type: 'positive',
+        message: `🎉 Payment received! ${parseInt(this.receiveForm.amount).toLocaleString()} sats`,
+        position: 'top',
+        timeout: 4000,
+        actions: [
+          { 
+            label: 'View', 
+            color: 'white', 
+            handler: () => {
+              this.$router.push(`/transaction/${transaction.id || transaction.payment_hash}`);
+            }
+          }
+        ]
+      });
+
+      // Update wallet balance and transactions
+      await this.updateWalletBalance();
+      await this.loadTransactions();
+
+      // Close dialog after a short delay to show success state
+      setTimeout(() => {
+        this.showReceiveDialog = false;
+      }, 2000);
     },
 
-    formatTransactionTime(timestamp) {
-      const date = new Date(timestamp * 1000);
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-      const txDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    resetReceiveForm() {
+      // Clear interval
+      if (this.invoiceCheckInterval) {
+        clearInterval(this.invoiceCheckInterval);
+        this.invoiceCheckInterval = null;
+      }
+
+      // Reset form data
+      this.receiveForm.amount = '';
+      this.receiveForm.description = '';
+      this.generatedInvoice = null;
+      this.currentInvoicePaymentHash = null;
+      this.waitingForPayment = false;
+    },
+
+    extractPaymentHashFromInvoice(paymentRequest) {
+      try {
+        // BOLT11 invoice format: the payment hash is embedded in the invoice
+        // We'll use a simple approach to extract it from the 'p' field
+        const invoice = paymentRequest.toLowerCase();
+        
+        // Find the 'p' field which contains the payment hash (32 bytes = 64 hex chars)
+        const pFieldMatch = invoice.match(/p([a-f0-9]{64})/);
+        if (pFieldMatch) {
+          return pFieldMatch[1];
+        }
+        
+        // Alternative: try to find any 64-character hex string that looks like a hash
+        const hashMatch = invoice.match(/([a-f0-9]{64})/);
+        if (hashMatch) {
+          return hashMatch[1];
+        }
+        
+        console.warn('Could not extract payment hash from invoice');
+        return null;
+      } catch (error) {
+        console.error('Error extracting payment hash:', error);
+        return null;
+      }
+    },
+
+    handleQRScan(result) {
+      this.sendForm.input = result.trim();
+      this.showQRScanner = false;
+      this.showSendDialog = false;
       
-      if (txDate.getTime() === today.getTime()) {
-        return date.toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit',
-          hour12: true 
+      // Small delay to ensure dialog closes
+      setTimeout(async () => {
+        await this.processPaymentInput();
+      }, 100);
+    },
+
+    async copyInvoice() {
+      try {
+        await navigator.clipboard.writeText(this.generatedInvoice.paymentRequest);
+        this.$q.notify({
+          type: 'positive',
+          message: 'Invoice copied!',
+          position: 'top'
         });
-      } else if (txDate.getTime() === yesterday.getTime()) {
-        return 'Yesterday';
+      } catch (error) {
+        console.error('Failed to copy invoice:', error);
+      }
+    },
+
+    async shareInvoice() {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'Lightning Invoice',
+            text: `Payment request for ${this.formatBalance(this.receiveForm.amount)}`,
+            url: `lightning:${this.generatedInvoice.payment_request}`
+          });
+        } catch (error) {
+          console.error('Failed to share invoice:', error);
+        }
       } else {
-        return date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric'
-        });
+        this.copyInvoice();
       }
     },
-    
-    viewTransaction(tx) {
-      this.$router.push(`/transaction/${tx.id}`);
+
+    formatExpiry(expiry) {
+      const expiryDate = new Date(expiry * 1000);
+      const now = new Date();
+      const diffMinutes = Math.floor((expiryDate - now) / (1000 * 60));
+      
+      if (diffMinutes < 0) return 'Expired';
+      if (diffMinutes < 60) return `${diffMinutes} minutes`;
+      if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours`;
+      return `${Math.floor(diffMinutes / 1440)} days`;
     }
   }
-}
+};
 </script>
 
 <style scoped>
 .wallet-page {
   background: #f8f9fa;
   min-height: 100vh;
-  padding-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Header */
 .wallet-header {
-  background: white;
   padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  flex-shrink: 0;
 }
 
 .header-content {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
 }
 
 .logo-container {
@@ -741,7 +1288,7 @@ export default {
   gap: 0.5rem;
 }
 
-.logo {
+.logo-svg {
   filter: drop-shadow(0 2px 4px rgba(5, 149, 115, 0.15));
 }
 
@@ -753,340 +1300,1036 @@ export default {
   -webkit-text-fill-color: transparent;
 }
 
-.settings-btn {
-  color: #6b7280;
+.modern-menu-btn {
+  color: #374151;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  position: relative;
+}
+
+.modern-menu-btn:hover {
+  background: #f1f5f9;
+}
+
+.modern-menu-btn:active {
+  transform: scale(0.95);
+  background: #e2e8f0;
+}
+
+.menu-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5px;
+  width: 16px;
+  height: 12px;
+}
+
+.menu-line {
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 0.75px;
   transition: all 0.2s ease;
 }
 
-.settings-btn:hover {
-  color: #374151;
-  background: #f3f4f6;
+.menu-line:nth-child(1) {
+  width: 100%;
+}
+
+.menu-line:nth-child(2) {
+  width: 70%;
+}
+
+.menu-line:nth-child(3) {
+  width: 100%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(1) {
+  width: 85%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(2) {
+  width: 100%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(3) {
+  width: 90%;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 1rem 8rem 1rem;
 }
 
 /* Balance Section */
 .balance-section {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.balance-container {
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 16px;
   padding: 1rem;
 }
 
-.balance-card {
-  background: white;
-  border-radius: 20px;
-  padding: 2rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(229, 231, 235, 0.5);
-  text-align: center;
-}
-
-.balance-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
-
-.balance-label {
-  font-size: 0.875rem;
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.currency-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: #f3f4f6;
-  padding: 0.375rem 0.75rem;
-  border-radius: 16px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.currency-toggle:hover {
-  background: #e5e7eb;
-}
-
-.currency-text {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-}
-
-.toggle-icon {
-  color: #6b7280;
-  font-size: 12px;
+.balance-container:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
 }
 
 .balance-amount {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .amount-display {
-  font-size: 3rem;
-  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.amount-number {
+  font-size: 4rem;
+  font-weight: 800;
   color: #1f2937;
-  margin-bottom: 0.5rem;
   line-height: 1;
 }
 
-.amount-fiat {
-  font-size: 1.125rem;
+.amount-unit {
+  font-size: 1.5rem;
   color: #6b7280;
+  font-weight: 600;
 }
 
-.wallet-selector {
-  max-width: 300px;
-  margin: 0 auto;
+.balance-secondary {
+  font-size: 1.25rem;
+  color: #9ca3af;
+  font-weight: 400;
 }
 
-.wallet-select {
+/* Balance Transitions */
+.balance-fade-enter-active,
+.balance-fade-leave-active,
+.secondary-fade-enter-active,
+.secondary-fade-leave-active {
+  transition: all 0.2s ease;
+}
+
+.balance-fade-enter-from,
+.balance-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+}
+
+.secondary-fade-enter-from,
+.secondary-fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* Transaction History Button */
+.transaction-icon-section {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+
+.transaction-history-btn {
+  width: 48px;
+  height: 48px;
   background: #f8f9fa;
-  border-radius: 12px;
+  color: #6b7280;
+  border-radius: 50%;
+  transition: transform 0.1s ease;
+  opacity: 0.6;
 }
 
-/* Action Section */
-.action-section {
-  padding: 0 1rem 1rem;
+.transaction-history-btn:active {
+  transform: scale(0.95);
+}
+
+.transaction-history-btn.pulse {
+  animation: subtle-pulse 1s ease-out;
+}
+
+@keyframes subtle-pulse {
+  0% { 
+    opacity: 0.6; 
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.8; 
+    transform: scale(1.02);
+  }
+  100% { 
+    opacity: 0.6; 
+    transform: scale(1);
+  }
+}
+
+/* Bottom Actions */
+.bottom-actions {
+  padding: 1rem 1.5rem 2rem 1.5rem;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
 }
 
 .action-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: 1rem;
+  max-width: 400px;
+  margin: 0 auto;
 }
 
 .action-btn {
-  height: 60px;
+  flex: 1;
+  height: 72px;
   border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
   font-weight: 600;
   transition: all 0.2s ease;
-  border: none;
+  position: relative;
+  overflow: hidden;
+  min-height: 72px;
+  min-width: 120px;
 }
 
-.send-btn {
-  background: #374151;
-  color: white;
-}
-
-.send-btn:hover {
-  background: #4b5563;
+.action-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(55, 65, 81, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.action-btn:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .receive-btn {
-  background: #059573;
+  background: linear-gradient(135deg, #059573, #43B65B);
   color: white;
 }
 
 .receive-btn:hover {
-  background: #047857;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.3);
+  background: linear-gradient(135deg, #047857, #059573);
 }
 
-.btn-content {
+.send-btn {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+}
+
+.send-btn:hover {
+  background: linear-gradient(135deg, #2563EB, #1D4ED8);
+}
+
+.btn-text {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Dialog Styles */
+.payment-dialog .dialog-card {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.payment-dialog .dialog-header {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.payment-dialog .dialog-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.payment-dialog .close-btn {
+  color: #6b7280;
+}
+
+.payment-dialog .dialog-content {
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Payment Input Section */
+.payment-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.payment-input {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.875rem;
+}
+
+.input-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.action-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  font-weight: 500;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.scan-btn {
+  color: #059573;
+  border-color: #059573;
+  background: rgba(5, 149, 115, 0.05);
+}
+
+.scan-btn:hover {
+  background: rgba(5, 149, 115, 0.1);
+  border-color: #047857;
+  color: #047857;
+  transform: translateY(-1px);
+}
+
+.scan-btn:active {
+  background: #059573;
+  color: white;
+  border-color: #059573;
+  transform: translateY(0);
+}
+
+.paste-btn {
+  color: #3b82f6;
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.paste-btn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: #2563eb;
+  color: #2563eb;
+  transform: translateY(-1px);
+}
+
+.paste-btn:active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+  transform: translateY(0);
+}
+
+/* Payment Type Section */
+.payment-type-section {
+  background: rgba(5, 149, 115, 0.05);
+  border: 1px solid rgba(5, 149, 115, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.type-indicator {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.btn-icon {
-  font-size: 1.5rem;
-}
-
-.btn-label {
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-/* Transactions Section */
-.transactions-section {
-  padding: 0 1rem;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.section-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.view-all-btn {
-  font-size: 0.875rem;
-  font-weight: 500;
+.type-icon {
   color: #059573;
-  text-transform: none;
+  font-weight: 500;
 }
 
-.transaction-list {
-  background: white;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #e5e7eb;
+.type-label {
+  color: #059573;
+  font-weight: 500;
 }
 
-.transaction-item {
-  display: flex;
-  align-items: center;
-  padding: 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.transaction-item:hover {
+/* Amount Section */
+.amount-section {
   background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
-.transaction-item:last-child {
-  border-bottom: none;
-}
-
-.transaction-icon {
-  margin-right: 1rem;
-}
-
-.tx-icon-container {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+.amount-limits {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.tx-icon-received {
-  background: #059573;
-}
-
-.tx-icon-sent {
-  background: #6b7280;
-}
-
-.tx-icon-zap {
-  background: #059573;
-}
-
-.transaction-details {
-  flex: 1;
-  min-width: 0;
-}
-
-.transaction-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.25rem;
-}
-
-.transaction-type {
-  font-weight: 500;
-  color: #1f2937;
-  font-size: 0.95rem;
-}
-
-.transaction-time {
+  gap: 0.5rem;
+  font-size: 0.875rem;
   color: #6b7280;
-  font-size: 0.8rem;
-}
-
-.transaction-description {
-  color: #6b7280;
-  font-size: 0.8rem;
-  margin-bottom: 0.25rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
-}
-
-.nostr-info {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: #059573;
-  font-size: 0.7rem;
-  font-weight: 500;
-}
-
-.sender-avatar {
-  border: 1px solid rgba(5, 149, 115, 0.3);
-}
-
-.sender-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100px;
-}
-
-.transaction-amount {
-  text-align: right;
-  min-width: 90px;
-}
-
-.amount-sats {
-  font-weight: 600;
-  font-size: 0.95rem;
-  margin-bottom: 0.25rem;
-}
-
-.amount-positive {
-  color: #059573;
-}
-
-.amount-negative {
-  color: #dc2626;
-}
-
-.amount-fiat {
-  color: #6b7280;
-  font-size: 0.8rem;
-}
-
-/* Empty State */
-.empty-transactions {
-  text-align: center;
-  padding: 3rem 2rem;
   background: white;
-  border-radius: 16px;
+  padding: 0.75rem;
+  border-radius: 8px;
   border: 1px solid #e5e7eb;
 }
 
-.empty-icon {
+.limits-icon {
+  color: #3b82f6;
+  font-size: 16px;
+}
+
+/* Invoice Preview */
+.invoice-preview {
+  background: #f8f9fa;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.invoice-details {
+  padding: 1.5rem;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 1rem;
 }
 
-.empty-text {
-  font-size: 1.125rem;
+.preview-icon {
+  color: #059573;
   font-weight: 600;
+}
+
+.preview-title {
   color: #1f2937;
+  font-weight: 600;
+}
+
+.preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.detail-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: #1f2937;
+  font-weight: 500;
+  text-align: right;
+}
+
+.amount-value {
+  color: #059573;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* Send Payment Button */
+.send-payment-btn {
+  width: 100%;
+  height: 52px;
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.send-payment-btn:hover {
+  background: linear-gradient(135deg, #047857, #059573);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.3);
+}
+
+/* Invoice Form */
+.invoice-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.create-invoice-btn {
+  width: 100%;
+  height: 52px;
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.create-invoice-btn:hover {
+  background: linear-gradient(135deg, #047857, #059573);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.3);
+}
+
+/* Invoice Result */
+.invoice-result {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+/* Payment Success State */
+.payment-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 1rem;
+  background: rgba(34, 197, 94, 0.05);
+  border: 2px solid rgba(34, 197, 94, 0.2);
+  border-radius: 16px;
+  text-align: center;
+}
+
+.success-icon {
   margin-bottom: 0.5rem;
 }
 
-.empty-subtext {
-  color: #6b7280;
-  font-size: 0.875rem;
+.success-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #059669;
+  margin-bottom: 0.5rem;
 }
 
-/* Payment Dialog */
+.success-amount {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #059573;
+}
+
+/* Waiting State */
+.waiting-state {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+.waiting-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+
+.waiting-text {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.waiting-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* Static Invoice (fallback) */
+.static-invoice {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+/* QR Code Section */
+.qr-code-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 1rem;
+}
+
+.qr-code-section.compact {
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.qr-code {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Compact Invoice Info */
+.invoice-info-compact {
+  text-align: center;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+
+.amount-compact {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #059573;
+  margin-bottom: 0.25rem;
+}
+
+.description-compact {
+  color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+}
+
+.waiting-indicator-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.waiting-text-compact {
+  font-size: 0.875rem;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+/* Compact Copy Button */
+.copy-invoice-btn-compact {
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  color: #059573;
+  background: rgba(5, 149, 115, 0.05);
+}
+
+.copy-invoice-btn-compact:hover {
+  background: #059573;
+  color: white;
+}
+
+/* Responsive Design for Invoice */
+@media (max-width: 480px) {
+  .qr-code-section {
+    padding: 1rem;
+  }
+  
+  .amount-section {
+    padding: 1rem;
+  }
+  
+  .amount-value {
+    font-size: 1.25rem;
+  }
+  
+  .copy-invoice-btn {
+    height: 44px;
+    font-size: 0.875rem;
+  }
+  
+  .payment-success {
+    padding: 1.5rem 1rem;
+  }
+  
+  .success-text {
+    font-size: 1.25rem;
+  }
+  
+  .success-amount {
+    font-size: 1.125rem;
+  }
+  
+  .waiting-indicator {
+    padding: 1rem;
+  }
+  
+  .waiting-text {
+    font-size: 1rem;
+  }
+}
+
+.copy-btn:hover,
+.copy-btn:focus {
+  background: #059573;
+  color: white;
+  border-color: #059573;
+}
+
+.share-btn {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.share-btn:hover,
+.share-btn:focus {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+/* QR Scanner */
+.qr-scanner-container {
+  height: 300px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  background: #f8f9fa;
+  z-index: 5000;
+}
+
+/* Payment Confirmation Dialog */
+.confirmation-card {
+  width: 100%;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+.confirmation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.confirmation-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.title-icon {
+  font-size: 24px;
+  color: #78D53C;
+}
+
+.confirmation-header .close-btn {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.confirmation-header .close-btn:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.confirmation-content {
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Amount Section */
+.amount-section {
+  text-align: center;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 16px;
+  border: 2px solid #e5e7eb;
+}
+
+.amount-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.amount-display {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.amount-value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #059573;
+  line-height: 1;
+}
+
+.amount-unit {
+  font-size: 1.25rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.amount-fiat {
+  font-size: 1rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+/* Payment Details */
+.payment-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.detail-icon {
+  font-size: 16px;
+  color: #9ca3af;
+}
+
+.detail-value {
+  font-weight: 600;
+  text-align: right;
+  color: #6b7280;
+  margin-top: 1rem;
+}
+
+.header-icon {
+  color: #059573;
+  font-size: 1.25rem;
+}
+
+.header-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* Slide to Confirm */
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-radius: 32px;
+  border: 2px solid #e5e7eb;
+  display: flex;
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+  position: relative;
+  width: 100%;
+}
+
+.back-btn {
+  color: #6b7280;
+}
+
+.step-info {
+  flex: 1;
+}
+
+.step-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.step-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+/* Payment Methods */
+.payment-methods {
+  justify-content: center;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.method-card {
+  display: flex;
+  overflow: hidden;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.input-help {
+  font-size: 0.875rem;
+  color: #6b7280;
+  text-align: center;
+  margin-top: -0.5rem;
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
+}
+
+.continue-btn {
+  height: 48px;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 500;
+  margin-top: 1rem;
+  width: 48px;
+  height: 48px;
+}
+
+/* QR Scanner */
+.scan-content {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.scan-content .step-header {
+  padding: 1rem;
+  margin-bottom: 0;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.scanner-container {
+  flex: 1;
+  position: relative;
+  background: #000;
+}
+
+.qr-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.paste-method .method-icon {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.scan-frame {
+  width: 250px;
+  height: 250px;
+  position: relative;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  flex: 1;
+}
+
+.scan-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #10b981;
+  color: #6b7280;
+}
+
+.method-arrow {
+}
+
+.scan-corner.top-left {
+  top: -3px;
+  left: -3px;
+  border-right: none;
+  border-bottom: none;
+  border-radius: 12px 0 0 0;
+}
+
+/* Manual Input */
+.scan-corner.top-right {
+  top: -3px;
+  right: -3px;
+  border-left: none;
+  border-bottom: none;
+  border-radius: 0 12px 0 0;
+  font-size: 1.125rem;
+  height: 56px;
+}
+
+/* Payment Confirmation Dialog */
 .payment-dialog :deep(.q-dialog__inner) {
   padding: 1rem;
 }
 
 .payment-card {
   width: 100%;
-  max-width: 500px;
+  max-width: 400px;
   border-radius: 16px;
 }
 
@@ -1104,24 +2347,41 @@ export default {
   color: #1f2937;
 }
 
-.close-btn {
-  color: #6b7280;
-}
-
 .payment-content {
   padding: 1.5rem;
 }
 
+.payment-info {
+  text-align: center;
+}
+
+.payment-amount {
+  margin-bottom: 1.5rem;
+}
+
+.amount-display {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.amount-fiat {
+  font-size: 1rem;
+  color: #6b7280;
+}
+
 .payment-details {
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 1rem;
   margin-bottom: 1.5rem;
 }
 
 .detail-item {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1rem;
-  gap: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .detail-item:last-child {
@@ -1131,80 +2391,36 @@ export default {
 .detail-label {
   font-weight: 500;
   color: #6b7280;
-  min-width: 80px;
 }
 
 .detail-value {
   color: #1f2937;
   word-break: break-all;
-  text-align: right;
-  flex: 1;
-}
-
-.amount-highlight {
-  font-weight: 600;
-  color: #059573;
-  font-size: 1.125rem;
 }
 
 .amount-input-section {
-  margin-bottom: 1.5rem;
+  text-align: left;
 }
 
-.amount-label {
-  font-weight: 500;
-  color: #1f2937;
-  margin-bottom: 0.75rem;
+.amount-input,
+.comment-input {
+  margin-bottom: 1rem;
 }
 
-.amount-input {
-  margin-bottom: 0.5rem;
-}
-
-.amount-range {
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-.comment-section {
-  margin-bottom: 1.5rem;
-}
-
-.comment-label {
-  font-weight: 500;
-  color: #1f2937;
-  margin-bottom: 0.75rem;
+.amount-input :deep(.q-field__control),
+.comment-input :deep(.q-field__control) {
+  border-radius: 12px;
 }
 
 .payment-actions {
   background: #f8f9fa;
   border-top: 1px solid #e5e7eb;
-  justify-content: flex-end;
-  gap: 0.75rem;
-}
-
-.cancel-btn {
-  color: #6b7280;
-}
-
-.confirm-btn {
-  background: #059573;
-  color: white;
-  font-weight: 500;
-}
-
-.confirm-btn:hover {
-  background: #047857;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .balance-card {
-    padding: 1.5rem;
-  }
-  
-  .amount-display {
-    font-size: 2.5rem;
+  .bottom-actions {
+    padding: 0.75rem 1rem 1.5rem 1rem;
   }
   
   .action-buttons {
@@ -1212,33 +2428,84 @@ export default {
   }
   
   .action-btn {
-    height: 56px;
+    height: 68px;
+    min-height: 68px;
+    min-width: 100px;
   }
   
-  .btn-icon {
+  .main-content {
+    padding: 1.5rem 1rem 7rem 1rem;
+  }
+  
+  .amount-number {
+    font-size: 3rem;
+  }
+  
+  .amount-unit {
     font-size: 1.25rem;
   }
   
-  .transaction-item {
-    padding: 0.75rem;
-  }
-  
-  .transaction-description {
-    max-width: 150px;
-  }
-  
-  .payment-content {
+  .payment-dialog .dialog-header,
+  .payment-dialog .dialog-content {
     padding: 1rem;
   }
   
-  .detail-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
+  .payment-dialog .dialog-content {
+    gap: 1rem;
   }
   
-  .detail-value {
-    text-align: left;
+  .method-cards {
+    gap: 0.5rem;
+  }
+  
+  .method-card {
+    padding: 0.75rem 1rem;
+    min-height: 64px;
+  }
+  
+  .method-icon {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .method-title {
+    font-size: 1rem;
+  }
+  
+  .method-subtitle {
+    font-size: 0.8125rem;
+  }
+  
+  .scanner-container {
+    height: 250px;
+  }
+  
+  .scan-frame {
+    width: 160px;
+    height: 160px;
+  }
+  
+  .invoice-amount {
+    font-size: 1.5rem;
+  }
+  
+  .send-payment-btn,
+  .create-invoice-btn {
+    height: 48px;
+    font-size: 0.9rem;
+  }
+  
+  .invoice-actions {
+    flex-direction: column;
+  }
+  
+  .copy-btn,
+  .share-btn {
+    height: 40px;
+  }
+  
+  .amount-display {
+    font-size: 1.5rem;
   }
 }
 </style>
