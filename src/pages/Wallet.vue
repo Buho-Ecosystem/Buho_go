@@ -880,13 +880,13 @@ export default {
         console.log('📋 Raw invoice response:', this.generatedInvoice);
         console.log('🔍 Invoice properties:', Object.keys(this.generatedInvoice || {}));
         console.log('💳 Payment request:', this.generatedInvoice?.paymentRequest);
-        console.log('🆔 Payment hash:', this.generatedInvoice?.payment_hash);
+        console.log('🆔 Payment hash:', this.generatedInvoice?.paymentHash);
         
         // Ensure we have the amount for display
         this.generatedInvoice.amount = parseInt(this.receiveForm.amount);
         
         // Store payment hash for tracking
-        this.currentInvoicePaymentHash = this.generatedInvoice.payment_hash;
+        this.currentInvoicePaymentHash = this.generatedInvoice.paymentHash;
         this.waitingForPayment = true;
         
         // Start checking for payment
@@ -926,6 +926,8 @@ export default {
       if (!this.currentInvoicePaymentHash) return;
       
       try {
+        console.log('🔍 Checking invoice status for hash:', this.currentInvoicePaymentHash);
+        
         const activeWallet = this.walletState.connectedWallets.find(
           w => w.id === this.walletState.activeWalletId
         );
@@ -939,12 +941,29 @@ export default {
         await nwc.enable();
         
         // Get recent transactions
+        console.log('📋 Fetching recent transactions...');
         const transactionsResponse = await nwc.listTransactions({ 
           limit: 50, 
           offset: 0 
         });
 
+        console.log('📊 Transactions response:', transactionsResponse);
+        
         if (transactionsResponse && transactionsResponse.transactions) {
+          console.log('🔍 Found', transactionsResponse.transactions.length, 'transactions');
+          
+          // Log all incoming transactions for debugging
+          const incomingTxs = transactionsResponse.transactions.filter(tx => tx.type === 'incoming');
+          console.log('📥 Incoming transactions:', incomingTxs.map(tx => ({
+            id: tx.id,
+            payment_hash: tx.payment_hash,
+            amount: tx.amount,
+            state: tx.state,
+            settled: tx.settled,
+            type: tx.type,
+            description: tx.description
+          })));
+          
           // Look for our invoice payment
           const paidTransaction = transactionsResponse.transactions.find(tx => 
             tx.payment_hash === this.currentInvoicePaymentHash && 
@@ -952,9 +971,14 @@ export default {
             (tx.state === 'settled' || tx.settled)
           );
 
+          console.log('🎯 Looking for payment_hash:', this.currentInvoicePaymentHash);
+          console.log('💰 Found matching transaction:', paidTransaction);
+          
           if (paidTransaction) {
             console.log('🎉 Invoice paid!', paidTransaction);
             this.handleInvoicePaid(paidTransaction);
+          } else {
+            console.log('⏳ Payment not found yet, continuing to wait...');
           }
         }
       } catch (error) {
