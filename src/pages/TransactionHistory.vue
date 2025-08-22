@@ -69,12 +69,18 @@
           class="transaction-group"
         >
           <!-- Group Header -->
-          <div class="group-header" :class="{ 'recent-group': group.isRecent }" @click="toggleGroup(group.date)">
+          <div class="group-header" 
+               :class="{ 
+                 'today-group': group.isToday,
+                 'yesterday-group': group.isYesterday,
+                 'recent-group': group.isRecent,
+                 'non-collapsible': group.date === 'today' || group.date === 'yesterday'
+               }" 
+               @click="toggleGroup(group.date)">
             <div class="group-info">
               <div class="group-date">{{ group.dateLabel }}</div>
               <div class="group-summary">
                 {{ group.transactions.length }} transaction{{ group.transactions.length !== 1 ? 's' : '' }}
-                <span v-if="group.isRecent" class="recent-badge">Recent</span>
               </div>
             </div>
             <div class="group-amount">
@@ -82,14 +88,9 @@
                 {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
               </div>
               <q-icon
-                v-if="!group.isRecent"
+                v-if="group.date !== 'today' && group.date !== 'yesterday'"
                 :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'" 
                 class="expand-icon"
-              />
-              <q-icon
-                v-else
-                name="las la-chevron-up"
-                class="expand-icon recent-expanded"
               />
             </div>
           </div>
@@ -206,7 +207,7 @@ export default {
     filteredTransactions() {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
       return this.transactions.filter(tx => {
@@ -216,7 +217,7 @@ export default {
           case 'today':
             return txDate >= today;
           case 'week':
-            return txDate >= weekAgo;
+            return txDate >= sevenDaysAgo;
           case 'month':
             return txDate >= monthAgo;
           default:
@@ -228,21 +229,24 @@ export default {
     groupedTransactions() {
       const groups = {};
       const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       
       this.filteredTransactions.forEach(tx => {
         const date = new Date(tx.settled_at * 1000);
-        const dateKey = this.getDateKey(date);
         const groupKey = this.getGroupKey(date);
         
         if (!groups[groupKey]) {
           groups[groupKey] = {
             date: groupKey,
-            dateLabel: this.getGroupLabel(date),
+            dateLabel: this.getGroupLabel(date, now),
             transactions: [],
             netAmount: 0,
-            expanded: this.expandedGroups.has(groupKey) || date >= sevenDaysAgo,
-            isRecent: date >= sevenDaysAgo
+            expanded: this.shouldAutoExpand(date, today, yesterday, sevenDaysAgo, groupKey),
+            isToday: date >= today,
+            isYesterday: date >= yesterday && date < today,
+            isRecent: date >= sevenDaysAgo && date < yesterday
           };
         }
         
@@ -250,7 +254,6 @@ export default {
         groups[groupKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
       });
 
-      // Sort groups by date (newest first) and sort transactions within each group
       return Object.values(groups)
         .sort((a, b) => this.sortGroups(a, b))
         .map(group => ({
@@ -368,6 +371,17 @@ export default {
       return npubMatch ? npubMatch[0] : null;
     },
     
+    shouldAutoExpand(date, today, yesterday, sevenDaysAgo, groupKey) {
+      // Always expand Today and Yesterday
+      if (date >= yesterday) return true;
+      
+      // Check if user manually expanded this group
+      if (this.expandedGroups.has(groupKey)) return true;
+      
+      // Don't auto-expand older groups
+      return false;
+    },
+    
     async fetchNostrProfile(npub) {
       if (this.nostrProfiles[npub]) return;
       
@@ -408,77 +422,51 @@ export default {
       localStorage.setItem('buhoGO_nostr_profiles', JSON.stringify(this.nostrProfiles));
     },
     
-    getSenderDisplayName(npub) {
-      const profile = this.nostrProfiles[npub];
-      return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
-    },
-
-    getDateKey(date) {
-      return date.toISOString().split('T')[0];
-    },
-
     getGroupKey(date) {
       const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       
+      // Today and Yesterday: individual groups
+      if (date >= today) {
+        return 'today';
+      } else if (date >= yesterday) {
+        return 'yesterday';
+      }
       // Last 7 days: group by day
-      if (date >= sevenDaysAgo) {
+      else if (date >= sevenDaysAgo) {
         return date.toISOString().split('T')[0];
       }
-      // Last 30 days: group by week
-      else if (date >= thirtyDaysAgo) {
-        const weekStart = new Date(date);
-        weekStart.setDate(date.getDate() - date.getDay());
-        return `week-${weekStart.toISOString().split('T')[0]}`;
-      }
-      // Older: group by month
+      // Older: group by month/year
       else {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       }
     },
 
-    getGroupLabel(date) {
-      const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      
-      // Last 7 days: show day labels
-      if (date >= sevenDaysAgo) {
-        return this.getDateLabel(date);
-      }
-      // Last 30 days: show week labels
-      else if (date >= thirtyDaysAgo) {
-        const weekStart = new Date(date);
-        weekStart.setDate(date.getDate() - date.getDay());
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        
-        return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-      }
-      // Older: show month/year labels
-      else {
-        return date.toLocaleDateString('en-US', { 
-          year: 'numeric', 
-          month: 'long' 
-        });
-      }
-    },
-
-    getDateLabel(date) {
-      const now = new Date();
+    getGroupLabel(date, now) {
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       
       if (date >= today) {
         return 'Today';
       } else if (date >= yesterday) {
         return 'Yesterday';
-      } else {
+      }
+      // Last 7 days: show weekday
+      else if (date >= sevenDaysAgo) {
         return date.toLocaleDateString('en-US', { 
           weekday: 'long', 
           month: 'short', 
           day: 'numeric' 
+        });
+      }
+      // Older: show month/year
+      else {
+        return date.toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long' 
         });
       }
     },
@@ -501,7 +489,14 @@ export default {
       return getDateFromGroup(b) - getDateFromGroup(a);
     },
 
+      const profile = this.nostrProfiles[npub];
+      return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
+    },
+
     toggleGroup(dateKey) {
+      // Don't allow collapsing Today or Yesterday
+      if (dateKey === 'today' || dateKey === 'yesterday') return;
+      
       if (this.expandedGroups.has(dateKey)) {
         this.expandedGroups.delete(dateKey);
       } else {
@@ -715,9 +710,30 @@ export default {
 .group-header.recent-group {
   background: rgba(5, 149, 115, 0.05);
   border: 1px solid rgba(5, 149, 115, 0.1);
+  cursor: pointer;
 }
 
 .group-header.recent-group:hover {
+  background: rgba(5, 149, 115, 0.08);
+}
+
+.group-header.today-group {
+  background: rgba(5, 149, 115, 0.08);
+  border: 1px solid rgba(5, 149, 115, 0.15);
+  cursor: default;
+}
+
+.group-header.yesterday-group {
+  background: rgba(5, 149, 115, 0.05);
+  border: 1px solid rgba(5, 149, 115, 0.1);
+  cursor: default;
+}
+
+.group-header.non-collapsible {
+  cursor: default;
+}
+
+.group-header.non-collapsible:hover {
   background: rgba(5, 149, 115, 0.08);
 }
 
@@ -738,17 +754,6 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.recent-badge {
-  background: linear-gradient(135deg, #059573, #43B65B);
-  color: white;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  padding: 0.125rem 0.5rem;
-  border-radius: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
 }
 
 .group-amount {
@@ -773,11 +778,6 @@ export default {
 .expand-icon {
   color: #6b7280;
   transition: transform 0.2s;
-}
-
-.expand-icon.recent-expanded {
-  color: #059573;
-  opacity: 0.7;
 }
 /* Group Transactions */
 .group-transactions {
