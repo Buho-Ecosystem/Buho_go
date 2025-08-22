@@ -112,35 +112,75 @@
         <q-card-section class="dialog-content">
           <!-- Payment Input -->
           <div class="payment-input-section">
-            <q-input
-              v-model="sendForm.input"
-              outlined
-              label="Payment Details"
-              placeholder="Invoice, LNURL, or Lightning Address"
-              type="textarea"
-              rows="3"
-              class="payment-input"
-            />
+            <!-- Step Indicator -->
+            <div class="step-indicator">
+              <div class="step-header">
+                <q-icon name="las la-bolt" class="lightning-icon"/>
+                <span class="step-title">Send Lightning Payment</span>
+              </div>
+              <div class="step-subtitle">Choose how you want to pay</div>
+            </div>
+
+            <!-- Payment Methods -->
+            <div class="payment-methods">
+              <div class="method-card scan-method" @click="showQRScanner = true">
+                <div class="method-icon">
+                  <q-icon name="las la-qrcode" size="32px"/>
+                </div>
+                <div class="method-content">
+                  <div class="method-title">Scan QR Code</div>
+                  <div class="method-description">Point your camera at a Lightning QR code</div>
+                </div>
+                <q-icon name="las la-chevron-right" class="method-arrow"/>
+              </div>
+
+              <div class="method-card paste-method" @click="showManualInput = true">
+                <div class="method-icon">
+                  <q-icon name="las la-edit" size="32px"/>
+                </div>
+                <div class="method-content">
+                  <div class="method-title">Enter Manually</div>
+                  <div class="method-description">Paste invoice, address, or LNURL</div>
+                </div>
+                <q-icon name="las la-chevron-right" class="method-arrow"/>
+              </div>
+            </div>
+
+            <!-- Manual Input (shown when user clicks "Enter Manually") -->
+            <div class="manual-input-section" v-if="showManualInput">
+              <div class="input-header">
+                <q-btn 
+                  flat 
+                  dense 
+                  icon="las la-arrow-left" 
+                  @click="showManualInput = false"
+                  class="back-to-methods"
+                />
+                <span class="input-title">Enter Payment Details</span>
+              </div>
+              
+              <q-input
+                v-model="sendForm.input"
+                outlined
+                label="Payment Details"
+                placeholder="Paste Lightning invoice, address, or LNURL here..."
+                type="textarea"
+                rows="3"
+                class="payment-input"
+                hint="Examples: lnbc..., user@domain.com, or lnurl..."
+              />
             
-            <div class="input-actions">
-              <q-btn
-                flat
-                color="primary"
-                icon="las la-qrcode"
-                label="Scan QR"
-                @click="showQRScanner = true"
-                class="action-btn scan-btn"
-                no-caps
-              />
-              <q-btn
-                flat
-                color="primary"
-                icon="las la-paste"
-                label="Paste"
-                @click="pasteFromClipboard"
-                class="action-btn paste-btn"
-                no-caps
-              />
+              <div class="input-actions">
+                <q-btn
+                  flat
+                  color="primary"
+                  icon="las la-paste"
+                  label="Paste from Clipboard"
+                  @click="pasteFromClipboard"
+                  class="paste-btn"
+                  no-caps
+                />
+              </div>
             </div>
           </div>
 
@@ -405,6 +445,7 @@ export default {
       showSendDialog: false,
       showReceiveDialog: false,
       showQRScanner: false,
+      showManualInput: false,
       isSending: false,
       isCreatingInvoice: false,
       isSwitchingCurrency: false,
@@ -830,6 +871,7 @@ export default {
       this.sendForm.amount = '';
       this.sendForm.comment = '';
       this.paymentData = null;
+      this.showManualInput = false;
     },
 
     async createInvoice() {
@@ -1434,46 +1476,226 @@ export default {
 .payment-input-section {
   display: flex;
   flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Step Indicator */
+.step-indicator {
+  text-align: center;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.05), rgba(120, 213, 60, 0.05));
+  border-radius: 16px;
+  border: 1px solid rgba(5, 149, 115, 0.1);
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.lightning-icon {
+  color: #059573;
+  font-size: 24px;
+}
+
+.step-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.step-subtitle {
+  color: #6b7280;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Payment Methods */
+.payment-methods {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
+}
+
+.method-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: white;
+  border: 2px solid #f3f4f6;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.method-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent, rgba(255, 255, 255, 0.1));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.method-card:hover {
+  border-color: #059573;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.15);
+}
+
+.method-card:hover::before {
+  opacity: 1;
+}
+
+.method-card:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.scan-method {
+  background: linear-gradient(135deg, #f0fdf4, #f7fee7);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.scan-method:hover {
+  border-color: #22c55e;
+  box-shadow: 0 8px 24px rgba(34, 197, 94, 0.15);
+}
+
+.paste-method {
+  background: linear-gradient(135deg, #eff6ff, #f0f9ff);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.paste-method:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+}
+
+.method-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.scan-method .method-icon {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: white;
+}
+
+.paste-method .method-icon {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.method-content {
+  flex: 1;
+}
+
+.method-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.method-description {
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.method-arrow {
+  color: #9ca3af;
+  font-size: 20px;
+  transition: all 0.2s ease;
+}
+
+.method-card:hover .method-arrow {
+  color: #059573;
+  transform: translateX(4px);
+}
+
+/* Manual Input Section */
+.manual-input-section {
+  background: #f8f9fa;
+  border-radius: 16px;
+  padding: 1.5rem;
+  border: 1px solid #e5e7eb;
+}
+
+.input-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.back-to-methods {
+  color: #6b7280;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.back-to-methods:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.input-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
 }
 
 .payment-input {
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
   font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.payment-input :deep(.q-field__control) {
+  border-radius: 12px;
+}
+
+.payment-input :deep(.q-field__hint) {
+  color: #6b7280;
+  font-size: 0.75rem;
+  margin-top: 0.5rem;
 }
 
 .input-actions {
   display: flex;
-  gap: 0.75rem;
-}
-
-.action-btn {
-  flex: 1;
-  height: 44px;
-  border-radius: 12px;
-  font-weight: 500;
-  border: 1px solid #e5e7eb;
-  transition: all 0.2s ease;
-}
-
-.scan-btn {
-  color: #059573;
-  border-color: #059573;
-}
-
-.scan-btn:hover {
-  background: #059573;
-  color: white;
+  justify-content: center;
 }
 
 .paste-btn {
-  color: #3b82f6;
-  border-color: #3b82f6;
+  height: 44px;
+  padding: 0 1.5rem;
+  border-radius: 12px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  transition: all 0.2s ease;
 }
 
 .paste-btn:hover {
-  background: #3b82f6;
-  color: white;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 /* Payment Type Section */
@@ -1857,6 +2079,35 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .step-indicator {
+    padding: 0.75rem;
+  }
+  
+  .step-title {
+    font-size: 1.125rem;
+  }
+  
+  .method-card {
+    padding: 1rem;
+  }
+  
+  .method-icon {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .method-title {
+    font-size: 1rem;
+  }
+  
+  .method-description {
+    font-size: 0.8125rem;
+  }
+  
+  .manual-input-section {
+    padding: 1rem;
+  }
+  
   .bottom-actions {
     padding: 0.75rem 1rem 1.5rem 1rem;
   }
