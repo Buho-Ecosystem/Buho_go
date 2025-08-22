@@ -350,21 +350,6 @@
       </q-card>
     </q-dialog>
 
-    <!-- QR Scanner Dialog -->
-    <q-dialog v-model="showQRScanner" class="payment-dialog">
-      <q-card class="dialog-card">
-        <q-card-section class="dialog-header">
-          <div class="dialog-title">Scan Lightning Invoice</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <div class="qr-scanner-container">
-            <qrcode-capture @detect="handleQRScan" />
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
   </q-page>
 </template>
 
