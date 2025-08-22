@@ -774,29 +774,60 @@ export default {
 
       this.isCreatingInvoice = true;
       try {
+        console.log('🔍 Starting invoice creation...');
+        console.log('📊 Invoice form data:', {
+          amount: this.receiveForm.amount,
+          description: this.receiveForm.description
+        });
+        
         const activeWallet = this.walletState.connectedWallets.find(
           w => w.id === this.walletState.activeWalletId
         );
 
-        if (!activeWallet) throw new Error('No active wallet');
+        if (!activeWallet) {
+          console.error('❌ No active wallet found');
+          throw new Error('No active wallet');
+        }
+        
+        console.log('✅ Active wallet found:', {
+          id: activeWallet.id,
+          name: activeWallet.name,
+          hasNwcString: !!activeWallet.nwcString
+        });
 
         const nwc = new webln.NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         
+        console.log('🔌 Attempting to enable NWC connection...');
         await nwc.enable();
+        console.log('✅ NWC connection enabled successfully');
 
         const invoiceData = {
           amount: parseInt(this.receiveForm.amount),
           description: this.receiveForm.description || 'BuhoGO Payment'
         };
         
+        console.log('📝 Invoice data to send:', invoiceData);
+        console.log('⚡ Calling nwc.makeInvoice...');
         this.generatedInvoice = await nwc.makeInvoice(invoiceData);
+        
+        console.log('📋 Raw invoice response:', this.generatedInvoice);
+        console.log('🔍 Invoice properties:', Object.keys(this.generatedInvoice || {}));
+        console.log('💳 Payment request:', this.generatedInvoice?.payment_request);
+        console.log('🆔 Payment hash:', this.generatedInvoice?.payment_hash);
         
         // Ensure we have the amount for display
         this.generatedInvoice.amount = parseInt(this.receiveForm.amount);
+        
+        console.log('✅ Invoice creation completed successfully');
       } catch (error) {
-        console.error('Failed to create invoice:', error);
+        console.error('❌ Failed to create invoice:', error);
+        console.error('📊 Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
         this.$q.notify({
           type: 'negative',
           message: error.message,
