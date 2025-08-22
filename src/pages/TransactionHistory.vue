@@ -21,51 +21,115 @@
       />
     </div>
 
+    <!-- Filter Tabs -->
+    <div class="filter-section">
+      <q-tabs
+        v-model="activeFilter"
+        dense
+        class="filter-tabs"
+        indicator-color="primary"
+        active-color="primary"
+        align="justify"
+      >
+        <q-tab name="all" label="All" />
+        <q-tab name="today" label="Today" />
+        <q-tab name="week" label="Week" />
+        <q-tab name="month" label="Month" />
+      </q-tabs>
+    </div>
+
+    <!-- Summary Stats (when filtered) -->
+    <div class="stats-section" v-if="activeFilter !== 'all' && filteredTransactions.length > 0">
+      <div class="stats-container">
+        <div class="stat-item">
+          <div class="stat-label">Received</div>
+          <div class="stat-value positive">+{{ formatAmount(totalReceived) }}</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-label">Sent</div>
+          <div class="stat-value negative">-{{ formatAmount(totalSent) }}</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-label">Net</div>
+          <div class="stat-value" :class="netAmount >= 0 ? 'positive' : 'negative'">
+            {{ netAmount >= 0 ? '+' : '' }}{{ formatAmount(netAmount) }}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Transaction List -->
-    <q-scroll-area class="transaction-content" v-if="!isLoading && transactions.length > 0">
-      <div class="transaction-list">
+    <q-scroll-area class="transaction-content" v-if="!isLoading && groupedTransactions.length > 0">
+      <div class="transaction-groups">
         <div 
-          v-for="tx in transactions" 
-          :key="tx.id"
-          class="transaction-item"
-          @click="viewTransaction(tx)"
+          v-for="group in groupedTransactions" 
+          :key="group.date"
+          class="transaction-group"
         >
-          <div class="transaction-icon">
-            <q-avatar
-              :color="getTransactionIconColor(tx)"
-              size="40px"
-            >
-              <q-icon :name="getTransactionIcon(tx)" size="20px" color="white"/>
-            </q-avatar>
-          </div>
-
-          <div class="transaction-details">
-            <div class="transaction-main">
-              <div class="transaction-type">{{ getTransactionTypeText(tx) }}</div>
-              <div class="transaction-time">{{ formatTransactionTime(tx.settled_at) }}</div>
+          <!-- Group Header -->
+          <div class="group-header" @click="toggleGroup(group.date)">
+            <div class="group-info">
+              <div class="group-date">{{ group.dateLabel }}</div>
+              <div class="group-summary">{{ group.transactions.length }} transactions</div>
             </div>
-            <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
-              {{ tx.description }}
-            </div>
-            <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
-              <q-avatar size="16px" class="sender-avatar">
-                <img 
-                  v-if="nostrProfiles[tx.senderNpub].picture" 
-                  :src="nostrProfiles[tx.senderNpub].picture"
-                  :alt="getSenderDisplayName(tx.senderNpub)"
-                />
-                <q-icon v-else name="las la-user" size="10px"/>
-              </q-avatar>
-              <span class="sender-name">{{ getSenderDisplayName(tx.senderNpub) }}</span>
+            <div class="group-amount">
+              <div class="group-total" :class="group.netAmount >= 0 ? 'positive' : 'negative'">
+                {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
+              </div>
+              <q-icon 
+                :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'" 
+                class="expand-icon"
+              />
             </div>
           </div>
 
-          <div class="transaction-amount">
-            <div class="amount-sats" :class="getAmountClass(tx)">
-              {{ getFormattedAmount(tx) }}
+          <!-- Group Transactions -->
+          <q-slide-transition>
+            <div v-show="group.expanded" class="group-transactions">
+              <div 
+                v-for="tx in group.transactions" 
+                :key="tx.id"
+                class="transaction-item"
+                @click="viewTransaction(tx)"
+              >
+                <div class="transaction-icon">
+                  <div class="tx-icon-container" :class="getTransactionIconClass(tx)">
+                    <q-icon :name="getTransactionIcon(tx)" size="18px"/>
+                  </div>
+                </div>
+
+                <div class="transaction-details">
+                  <div class="transaction-main">
+                    <div class="transaction-type">{{ getTransactionTypeText(tx) }}</div>
+                    <div class="transaction-time">{{ formatTime(tx.settled_at) }}</div>
+                  </div>
+                  <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
+                    {{ tx.description }}
+                  </div>
+                  <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
+                    <q-avatar size="14px" class="sender-avatar">
+                      <img 
+                        v-if="nostrProfiles[tx.senderNpub].picture" 
+                        :src="nostrProfiles[tx.senderNpub].picture"
+                        :alt="getSenderDisplayName(tx.senderNpub)"
+                      />
+                      <q-icon v-else name="las la-user" size="8px"/>
+                    </q-avatar>
+                    <span class="sender-name">{{ getSenderDisplayName(tx.senderNpub) }}</span>
+                  </div>
+                </div>
+
+                <div class="transaction-amount">
+                  <div class="amount-sats" :class="getAmountClass(tx)">
+                    {{ getFormattedAmount(tx) }}
+                  </div>
+                  <div class="amount-fiat">{{ getFiatAmount(tx) }}</div>
+                </div>
+              </div>
             </div>
-            <div class="amount-fiat">{{ getFiatAmount(tx) }}</div>
-          </div>
+          </q-slide-transition>
         </div>
       </div>
     </q-scroll-area>
@@ -77,12 +141,14 @@
     </div>
 
     <!-- Empty State -->
-    <div v-if="!isLoading && transactions.length === 0" class="empty-state">
+    <div v-if="!isLoading && filteredTransactions.length === 0" class="empty-state">
       <div class="empty-icon">
         <q-icon name="las la-receipt" size="4rem" color="grey-4"/>
       </div>
       <div class="empty-title">No transactions found</div>
-      <div class="empty-subtitle">Your transactions will appear here</div>
+      <div class="empty-subtitle">
+        {{ activeFilter === 'all' ? 'Your transactions will appear here' : `No transactions for ${activeFilter}` }}
+      </div>
       <q-btn 
         outline 
         color="primary" 
@@ -92,6 +158,18 @@
         class="refresh-btn"
       />
     </div>
+
+    <!-- Floating Refresh Button -->
+    <q-page-sticky position="bottom-right" :offset="[18, 18]">
+      <q-btn
+        fab
+        icon="las la-sync-alt"
+        color="primary"
+        @click="refreshTransactions"
+        :loading="isRefreshing"
+        class="refresh-fab"
+      />
+    </q-page-sticky>
   </q-page>
 </template>
 
@@ -103,9 +181,81 @@ export default {
   data() {
     return {
       isLoading: true,
+      isRefreshing: false,
+      activeFilter: 'all',
       transactions: [],
       walletState: {},
-      nostrProfiles: {}
+      nostrProfiles: {},
+      expandedGroups: new Set()
+    }
+  },
+  computed: {
+    filteredTransactions() {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      return this.transactions.filter(tx => {
+        const txDate = new Date(tx.settled_at * 1000);
+        
+        switch (this.activeFilter) {
+          case 'today':
+            return txDate >= today;
+          case 'week':
+            return txDate >= weekAgo;
+          case 'month':
+            return txDate >= monthAgo;
+          default:
+            return true;
+        }
+      });
+    },
+
+    groupedTransactions() {
+      const groups = {};
+      
+      this.filteredTransactions.forEach(tx => {
+        const date = new Date(tx.settled_at * 1000);
+        const dateKey = this.getDateKey(date);
+        
+        if (!groups[dateKey]) {
+          groups[dateKey] = {
+            date: dateKey,
+            dateLabel: this.getDateLabel(date),
+            transactions: [],
+            netAmount: 0,
+            expanded: this.expandedGroups.has(dateKey)
+          };
+        }
+        
+        groups[dateKey].transactions.push(tx);
+        groups[dateKey].netAmount += tx.amount;
+      });
+
+      // Sort groups by date (newest first) and sort transactions within each group
+      return Object.values(groups)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .map(group => ({
+          ...group,
+          transactions: group.transactions.sort((a, b) => b.settled_at - a.settled_at)
+        }));
+    },
+
+    totalReceived() {
+      return this.filteredTransactions
+        .filter(tx => tx.type === 'incoming')
+        .reduce((sum, tx) => sum + tx.amount, 0);
+    },
+
+    totalSent() {
+      return Math.abs(this.filteredTransactions
+        .filter(tx => tx.type === 'outgoing')
+        .reduce((sum, tx) => sum + tx.amount, 0));
+    },
+
+    netAmount() {
+      return this.totalReceived - this.totalSent;
     }
   },
   async created() {
@@ -132,7 +282,7 @@ export default {
             await nwc.enable();
             
             const transactionsResponse = await nwc.listTransactions({ 
-              limit: 200, 
+              limit: 500, 
               offset: 0 
             });
             
@@ -144,6 +294,9 @@ export default {
                 description: tx.description || tx.memo || 'Lightning transaction',
                 settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
               }));
+              
+              // Sort by date (newest first)
+              this.transactions.sort((a, b) => b.settled_at - a.settled_at);
               
               await this.processZapTransactions();
             }
@@ -159,6 +312,18 @@ export default {
       } finally {
         this.isLoading = false;
       }
+    },
+
+    async refreshTransactions() {
+      this.isRefreshing = true;
+      await this.loadTransactions();
+      this.isRefreshing = false;
+      
+      this.$q.notify({
+        type: 'positive',
+        message: 'Transactions refreshed',
+        position: 'top'
+      });
     },
     
     async processZapTransactions() {
@@ -190,7 +355,6 @@ export default {
       if (this.nostrProfiles[npub]) return;
       
       try {
-        // Enhanced mock implementation with better profile data
         const profile = {
           name: npub.substring(0, 12) + '...',
           displayName: this.generateDisplayName(),
@@ -232,6 +396,42 @@ export default {
       return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
     },
 
+    getDateKey(date) {
+      return date.toISOString().split('T')[0];
+    },
+
+    getDateLabel(date) {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      
+      if (date >= today) {
+        return 'Today';
+      } else if (date >= yesterday) {
+        return 'Yesterday';
+      } else {
+        return date.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          month: 'short', 
+          day: 'numeric' 
+        });
+      }
+    },
+
+    toggleGroup(dateKey) {
+      if (this.expandedGroups.has(dateKey)) {
+        this.expandedGroups.delete(dateKey);
+      } else {
+        this.expandedGroups.add(dateKey);
+      }
+      
+      // Update the expanded state in grouped transactions
+      const group = this.groupedTransactions.find(g => g.date === dateKey);
+      if (group) {
+        group.expanded = this.expandedGroups.has(dateKey);
+      }
+    },
+
     getTransactionTypeText(tx) {
       if (tx.senderNpub && this.nostrProfiles[tx.senderNpub]) {
         return 'Received';
@@ -239,9 +439,9 @@ export default {
       return tx.type === 'incoming' ? 'Received' : 'Sent';
     },
     
-    getTransactionIconColor(tx) {
-      if (tx.senderNpub) return '#8b5cf6'; // Purple for zaps
-      return tx.type === 'incoming' ? '#10b981' : '#f97316'; // Green for received, orange for sent
+    getTransactionIconClass(tx) {
+      if (tx.senderNpub) return 'tx-icon-zap';
+      return tx.type === 'incoming' ? 'tx-icon-received' : 'tx-icon-sent';
     },
     
     getTransactionIcon(tx) {
@@ -257,32 +457,24 @@ export default {
       const prefix = tx.type === 'incoming' ? '+' : '-';
       return prefix + ' ' + Math.abs(tx.amount).toLocaleString() + ' sats';
     },
+
+    formatAmount(amount) {
+      return Math.abs(amount).toLocaleString() + ' sats';
+    },
     
     getFiatAmount(tx) {
       const btcAmount = Math.abs(tx.amount) / 100000000;
       const fiatValue = btcAmount * (this.walletState.exchangeRates?.usd || 65000);
       return '$' + fiatValue.toFixed(2);
     },
-    
-    formatTransactionTime(timestamp) {
-      const date = new Date(timestamp * 1000);
-      const now = new Date();
-      const diffInHours = (now - date) / (1000 * 60 * 60);
-      const diffInDays = Math.floor(diffInHours / 24);
-      const diffInMonths = Math.floor(diffInDays / 30);
 
-      if (diffInHours < 1) {
-        const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-        return `${diffInMinutes} minutes ago`;
-      } else if (diffInHours < 24) {
-        return `${Math.floor(diffInHours)} hours ago`;
-      } else if (diffInDays < 30) {
-        return `${diffInDays} days ago`;
-      } else if (diffInMonths === 1) {
-        return 'a month ago';
-      } else {
-        return `${diffInMonths} months ago`;
-      }
+    formatTime(timestamp) {
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false
+      });
     },
     
     viewTransaction(tx) {
@@ -322,15 +514,144 @@ export default {
   color: #1f2937;
 }
 
+/* Filter Section */
+.filter-section {
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.filter-tabs {
+  padding: 0 1rem;
+}
+
+.filter-tabs :deep(.q-tab) {
+  font-weight: 500;
+  text-transform: none;
+}
+
+/* Stats Section */
+.stats-section {
+  background: white;
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.stats-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.stat-item {
+  text-align: center;
+  flex: 1;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.stat-value {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.stat-value.positive {
+  color: #10b981;
+}
+
+.stat-value.negative {
+  color: #ef4444;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 2rem;
+  background: #e5e7eb;
+  margin: 0 1rem;
+}
+
 /* Transaction Content */
 .transaction-content {
-  height: calc(100vh - 80px);
+  height: calc(100vh - 200px);
   background: white;
 }
 
-.transaction-list {
+.transaction-groups {
+  padding: 0.5rem;
+}
+
+.transaction-group {
+  margin-bottom: 1rem;
+}
+
+/* Group Header */
+.group-header {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 0.5rem;
+}
+
+.group-header:hover {
+  background: #f3f4f6;
+}
+
+.group-info {
+  flex: 1;
+}
+
+.group-date {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.group-summary {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.group-amount {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.group-total {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.group-total.positive {
+  color: #10b981;
+}
+
+.group-total.negative {
+  color: #ef4444;
+}
+
+.expand-icon {
+  color: #6b7280;
+  transition: transform 0.2s;
+}
+
+/* Group Transactions */
+.group-transactions {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
 }
 
 .transaction-item {
@@ -354,6 +675,28 @@ export default {
   margin-right: 1rem;
 }
 
+.tx-icon-container {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.tx-icon-received {
+  background: #10b981;
+}
+
+.tx-icon-sent {
+  background: #f97316;
+}
+
+.tx-icon-zap {
+  background: #8b5cf6;
+}
+
 .transaction-details {
   flex: 1;
   min-width: 0;
@@ -369,17 +712,17 @@ export default {
 .transaction-type {
   font-weight: 500;
   color: #1f2937;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
 .transaction-time {
   color: #6b7280;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
 }
 
 .transaction-description {
   color: #6b7280;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   margin-bottom: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -389,9 +732,9 @@ export default {
 .nostr-info {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   color: #8b5cf6;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 500;
 }
 
@@ -403,17 +746,17 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 120px;
+  max-width: 100px;
 }
 
 .transaction-amount {
   text-align: right;
-  min-width: 100px;
+  min-width: 90px;
 }
 
 .amount-sats {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.95rem;
   margin-bottom: 0.25rem;
 }
 
@@ -427,7 +770,7 @@ export default {
 
 .amount-fiat {
   color: #9ca3af;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
 }
 
 /* Loading and Empty States */
@@ -470,6 +813,11 @@ export default {
   border-radius: 8px;
 }
 
+/* Floating Action Button */
+.refresh-fab {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
 /* Responsive Design */
 @media (max-width: 480px) {
   .transaction-item {
@@ -482,8 +830,24 @@ export default {
     gap: 0.25rem;
   }
   
-  .transaction-time {
-    font-size: 0.75rem;
+  .stats-container {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .stat-divider {
+    width: 100%;
+    height: 1px;
+    margin: 0;
+  }
+  
+  .group-header {
+    padding: 0.75rem;
+  }
+  
+  .tx-icon-container {
+    width: 32px;
+    height: 32px;
   }
 }
 </style>

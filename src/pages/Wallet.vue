@@ -58,7 +58,7 @@
     <!-- Recent Transactions -->
     <div class="transactions-section" v-if="recentTransactions.length > 0">
       <div class="section-header">
-        <h3 class="section-title">Recent Transactions</h3>
+        <h3 class="section-title">Recent Activity</h3>
         <q-btn
           flat
           no-caps
@@ -67,6 +67,7 @@
           class="view-all-btn"
         >
           View All
+          <q-icon name="las la-chevron-right" size="16px" class="q-ml-xs"/>
         </q-btn>
       </div>
 
@@ -78,19 +79,29 @@
           @click="viewTransactionDetail(tx)"
         >
           <div class="transaction-icon">
-            <q-avatar
-              :color="getTransactionIconColor(tx)"
-              size="40px"
-            >
-              <q-icon :name="getTransactionIcon(tx)" size="20px" color="white"/>
-            </q-avatar>
+            <div class="tx-icon-container" :class="getTransactionIconClass(tx)">
+              <q-icon :name="getTransactionIcon(tx)" size="20px"/>
+            </div>
           </div>
 
           <div class="transaction-info">
-            <div class="transaction-type">{{ getTransactionTypeText(tx) }}</div>
-            <div class="transaction-time">{{ formatTransactionTime(tx.settled_at) }}</div>
+            <div class="transaction-main">
+              <div class="transaction-type">{{ getTransactionTypeText(tx) }}</div>
+              <div class="transaction-time">{{ formatTransactionTime(tx.settled_at) }}</div>
+            </div>
             <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
               {{ tx.description }}
+            </div>
+            <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
+              <q-avatar size="16px" class="sender-avatar">
+                <img 
+                  v-if="nostrProfiles[tx.senderNpub].picture" 
+                  :src="nostrProfiles[tx.senderNpub].picture"
+                  :alt="getSenderDisplayName(tx.senderNpub)"
+                />
+                <q-icon v-else name="las la-user" size="10px"/>
+              </q-avatar>
+              <span class="sender-name">{{ getSenderDisplayName(tx.senderNpub) }}</span>
             </div>
           </div>
 
@@ -107,7 +118,9 @@
     <!-- Empty State -->
     <div class="empty-transactions" v-else>
       <div class="empty-content">
-        <q-icon name="las la-receipt" size="3rem" color="grey-4"/>
+        <div class="empty-icon">
+          <q-icon name="las la-receipt" size="3rem" color="grey-4"/>
+        </div>
         <div class="empty-title">No transactions yet</div>
         <div class="empty-subtitle">Your transaction history will appear here</div>
       </div>
@@ -369,6 +382,9 @@ export default {
               settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
             }));
 
+            // Sort by date (newest first)
+            this.recentTransactions.sort((a, b) => b.settled_at - a.settled_at);
+
             await this.processZapTransactions();
           }
         } catch (error) {
@@ -406,7 +422,6 @@ export default {
       if (this.nostrProfiles[npub]) return;
 
       try {
-        // Mock implementation - replace with actual nostr client
         const profile = {
           name: npub.substring(0, 12) + '...',
           displayName: 'Nostr User',
@@ -446,7 +461,7 @@ export default {
       this.refreshInterval = setInterval(async () => {
         await this.updateWalletBalance();
         await this.loadTransactions();
-      }, 30000); // Refresh every 30 seconds
+      }, 30000);
     },
 
     formatMainBalance(balance) {
@@ -470,9 +485,9 @@ export default {
       return tx.type === 'incoming' ? 'Received' : 'Sent';
     },
 
-    getTransactionIconColor(tx) {
-      if (tx.senderNpub) return '#8b5cf6'; // Purple for zaps
-      return tx.type === 'incoming' ? '#10b981' : '#f97316'; // Green for received, orange for sent
+    getTransactionIconClass(tx) {
+      if (tx.senderNpub) return 'tx-icon-zap';
+      return tx.type === 'incoming' ? 'tx-icon-received' : 'tx-icon-sent';
     },
 
     getTransactionIcon(tx) {
@@ -804,9 +819,38 @@ export default {
   margin-right: 1rem;
 }
 
+.tx-icon-container {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.tx-icon-received {
+  background: #10b981;
+}
+
+.tx-icon-sent {
+  background: #f97316;
+}
+
+.tx-icon-zap {
+  background: #8b5cf6;
+}
+
 .transaction-info {
   flex: 1;
   min-width: 0;
+}
+
+.transaction-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
 }
 
 .transaction-type {
@@ -828,6 +872,27 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-bottom: 0.25rem;
+}
+
+.nostr-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #8b5cf6;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.sender-avatar {
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.sender-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
 }
 
 .transaction-amount {
@@ -870,11 +935,15 @@ export default {
   margin: 0 auto;
 }
 
+.empty-icon {
+  margin-bottom: 1rem;
+}
+
 .empty-title {
   font-size: 1.125rem;
   font-weight: 600;
   color: #1f2937;
-  margin: 1rem 0 0.5rem;
+  margin: 0 0 0.5rem;
 }
 
 .empty-subtitle {
@@ -991,6 +1060,12 @@ export default {
   
   .transaction-item {
     padding: 0.75rem 0.25rem;
+  }
+  
+  .transaction-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
   }
 }
 </style>

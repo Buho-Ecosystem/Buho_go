@@ -45,12 +45,9 @@
       <!-- Status Section -->
       <div class="status-section">
         <div class="status-icon">
-          <q-avatar 
-            :color="getTransactionIconColor()" 
-            size="80px"
-          >
-            <q-icon :name="getTransactionIcon()" size="40px" color="white"/>
-          </q-avatar>
+          <div class="tx-status-container" :class="getTransactionIconClass()">
+            <q-icon :name="getTransactionIcon()" size="48px"/>
+          </div>
         </div>
         <div class="status-info">
           <div class="transaction-type">{{ getTransactionTypeLabel() }}</div>
@@ -406,9 +403,9 @@ export default {
       return this.transaction.type === 'incoming' ? 'Payment Received' : 'Payment Sent';
     },
     
-    getTransactionIconColor() {
-      if (this.transaction.senderNpub) return '#8b5cf6'; // Purple for zaps
-      return this.transaction.type === 'incoming' ? '#10b981' : '#f97316'; // Green for received, orange for sent
+    getTransactionIconClass() {
+      if (this.transaction.senderNpub) return 'tx-status-zap';
+      return this.transaction.type === 'incoming' ? 'tx-status-received' : 'tx-status-sent';
     },
     
     getTransactionIcon() {
@@ -613,6 +610,28 @@ export default {
 
 .status-icon {
   margin-bottom: 1rem;
+}
+
+.tx-status-container {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.tx-status-received {
+  background: #10b981;
+}
+
+.tx-status-sent {
+  background: #f97316;
+}
+
+.tx-status-zap {
+  background: #8b5cf6;
 }
 
 .transaction-type {
@@ -925,6 +944,11 @@ export default {
   .raw-text {
     font-size: 0.6875rem;
     padding: 0.75rem;
+  }
+  
+  .tx-status-container {
+    width: 64px;
+    height: 64px;
   }
 }
 </style>
