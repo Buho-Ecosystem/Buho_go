@@ -1097,33 +1097,41 @@ export default {
   gap: 0.75rem;
 }
 
-.action-btn {
+.input-actions .action-btn {
   flex: 1;
   height: 44px;
   border-radius: 12px;
   font-weight: 500;
-  border: 1px solid #e5e7eb;
+  border: 2px solid transparent;
   transition: all 0.2s ease;
+  background: #f8f9fa;
+  color: #374151;
 }
 
-.scan-btn {
+.input-actions .scan-btn {
   color: #059573;
+  border-color: rgba(5, 149, 115, 0.2);
+  background: rgba(5, 149, 115, 0.05);
+}
+
+.input-actions .scan-btn:hover {
   border-color: #059573;
+  background: rgba(5, 149, 115, 0.1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
 }
 
-.scan-btn:hover {
-  background: #059573;
-  color: white;
-}
-
-.paste-btn {
+.input-actions .paste-btn {
   color: #3b82f6;
-  border-color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.2);
+  background: rgba(59, 130, 246, 0.05);
 }
 
-.paste-btn:hover {
-  background: #3b82f6;
-  color: white;
+.input-actions .paste-btn:hover {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
 }
 
 /* Payment Type Section */
