@@ -1146,15 +1146,13 @@ export default {
 
 /* Bottom Actions */
 .bottom-actions {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  margin-top: auto;
   background: var(--color-surface-50);
   padding: var(--spacing-lg);
   border-top: 1px solid var(--color-ink-100);
   box-shadow: var(--shadow-strong);
-  backdrop-filter: blur(20px);
+  flex-shrink: 0;
 }
 
 .action-buttons {
