@@ -108,6 +108,9 @@
                   <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
                     {{ tx.description }}
                   </div>
+                  <div class="transaction-description" v-else-if="tx.memo">
+                    {{ tx.memo }}
+                  </div>
                   <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
                     <q-avatar size="14px" class="sender-avatar">
                       <img 
@@ -230,7 +233,7 @@ export default {
         }
         
         groups[dateKey].transactions.push(tx);
-        groups[dateKey].netAmount += tx.amount;
+        groups[dateKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
       });
 
       // Sort groups by date (newest first) and sort transactions within each group
@@ -245,13 +248,13 @@ export default {
     totalReceived() {
       return this.filteredTransactions
         .filter(tx => tx.type === 'incoming')
-        .reduce((sum, tx) => sum + tx.amount, 0);
+        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
     },
 
     totalSent() {
-      return Math.abs(this.filteredTransactions
+      return this.filteredTransactions
         .filter(tx => tx.type === 'outgoing')
-        .reduce((sum, tx) => sum + tx.amount, 0));
+        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
     },
 
     netAmount() {
@@ -291,7 +294,7 @@ export default {
                 ...tx,
                 id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
                 type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
-                description: tx.description || tx.memo || 'Lightning transaction',
+                description: tx.description || tx.memo || '',
                 settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
               }));
               

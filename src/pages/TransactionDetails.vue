@@ -105,9 +105,9 @@
           <div class="section-title">Details</div>
           
           <div class="info-grid">
-            <div class="info-item" v-if="transaction.description && transaction.description !== 'Lightning transaction'">
+            <div class="info-item" v-if="getTransactionDescription()">
               <div class="info-label">Description</div>
-              <div class="info-value">{{ transaction.description }}</div>
+              <div class="info-value">{{ getTransactionDescription() }}</div>
             </div>
             
             <div class="info-item">
@@ -345,7 +345,7 @@ export default {
               // Enhance transaction data
               this.transaction.id = this.transaction.id || this.transaction.payment_hash || txId;
               this.transaction.type = this.transaction.type || (this.transaction.amount > 0 ? 'incoming' : 'outgoing');
-              this.transaction.description = this.transaction.description || this.transaction.memo || 'Lightning transaction';
+              this.transaction.description = this.transaction.description || this.transaction.memo || '';
               this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || Math.floor(Date.now() / 1000);
               
               // Check if it's a zap transaction
@@ -443,6 +443,16 @@ export default {
     
     getAmountClass() {
       return this.transaction.type === 'incoming' ? 'amount-positive' : 'amount-negative';
+    },
+    
+    getTransactionDescription() {
+      if (this.transaction.description && this.transaction.description.trim() !== '') {
+        return this.transaction.description;
+      }
+      if (this.transaction.memo && this.transaction.memo.trim() !== '') {
+        return this.transaction.memo;
+      }
+      return null;
     },
     
     getFormattedAmount() {
