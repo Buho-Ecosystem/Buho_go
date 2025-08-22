@@ -23,7 +23,7 @@
           icon="las la-bars" 
           @click="$router.push('/settings')" 
           class="settings-btn"
-          :aria-label="$t('settings')"
+          aria-label="Settings"
         />
       </div>
     </div>
