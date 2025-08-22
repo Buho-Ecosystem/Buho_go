@@ -307,7 +307,7 @@ export default {
 .title {
   font-size: 1.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #059573, #78D53C);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin: 0;
@@ -329,18 +329,18 @@ export default {
 }
 
 .card-header {
-  background: rgba(16, 185, 129, 0.05);
+  background: rgba(5, 149, 115, 0.05);
   border-bottom: 1px solid rgba(229, 231, 235, 0.5);
   text-align: center;
 }
 
 .card-header.dark-header {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(5, 149, 115, 0.1);
   border-bottom: 1px solid rgba(50, 50, 50, 0.5);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #059573, #047857);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -354,7 +354,7 @@ export default {
 .nwc-logo-bg {
   width: 100px;
   height: 100px;
-  background-color: rgba(16, 185, 129, 0.1);
+  background-color: rgba(5, 149, 115, 0.1);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -382,18 +382,18 @@ export default {
 }
 
 .connect-btn {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #059573, #047857);
   color: white;
   border-radius: 0.75rem;
   padding: 0.75rem;
   font-weight: 500;
-  box-shadow: 0 2px 0 0 rgba(22, 101, 52, 0.6);
+  box-shadow: 0 2px 0 0 rgba(4, 120, 87, 0.6);
   transition: all 0.2s ease;
 }
 
 .connect-btn:hover {
-  background: linear-gradient(135deg, #0d9668, #047857);
-  box-shadow: 0 3px 0 0 rgba(22, 101, 52, 0.7);
+  background: linear-gradient(135deg, #047857, #065f46);
+  box-shadow: 0 3px 0 0 rgba(4, 120, 87, 0.7);
 }
 
 .qr-scanner-container {
@@ -437,12 +437,12 @@ export default {
 }
 
 .dialog-header {
-  background: rgba(16, 185, 129, 0.05);
+  background: rgba(5, 149, 115, 0.05);
   border-bottom: 1px solid rgba(229, 231, 235, 0.5);
 }
 
 .dialog-header.dark-dialog-header {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(5, 149, 115, 0.1);
   border-bottom: 1px solid rgba(50, 50, 50, 0.5);
 }
 

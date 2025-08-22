@@ -1,0 +1,2170 @@
+================================================
+FILE: src/index.ts
+================================================
+export * from "./bolt11";
+export * from "./lnurl";
+export * from "./podcasting2";
+export * from "./l402";
+export * from "./fiat";
+
+
+
+================================================
+FILE: src/bolt11/index.ts
+================================================
+export * from "./types";
+export * from "./utils";
+export * from "./Invoice";
+
+
+
+================================================
+FILE: src/bolt11/Invoice.test.ts
+================================================
+import { Invoice } from "./Invoice";
+import fetchMock from "jest-fetch-mock";
+
+const paymentRequestWithoutMemo =
+  "lnbc10n1pj4xmazpp5ns890al37jpreen4rlpl6fsw2hlp9n9hm0ts4dvwvcxq8atf4v6qhp50kncf9zk35xg4lxewt4974ry6mudygsztsz8qn3ar8pn3mtpe50scqzzsxqyz5vqsp5k508kdmvfpuac6lvn9wumr9x4mcpnh2t6jyp5kkxcjhueq4xjxqq9qyyssq0m88mwgknhkqfsa9u8e9dp8v93xlm0lqggslzj8mpsnx3mdzm8z5k9ns7g299pfm9zwm4crs00a364cmpraxr54jw5cf2qx9vycucggqz2ggul";
+
+const paymentRequestWithoutExpiry =
+  "lnbc1u1pjc65cpsp5s0ug8ef4ftz7shgcrg9u32p26yfnss2jvn8lf5ef3dnfs3whj04qpp5u4rd3pf5nuj683ycqs95yxhhxtf0ydt36prvq9ntq54mhqvxax8qdqdg9kxy7fq2ph4xcqzysrzjqtypret4hcklglvtfrdt85l3exc0dctdp4qttmtcy5es3lpt6utsmlnye9rpnzdxcgqqqqqqqqqqqqqqyg9qxpqysgqafjchml7d6zfp7u7mjtcasxzp5pglvpejelazshdfgnzdqw030upmtul2luhqdjvkdcf483u5l5ratu8dk0ffr38ypx9aqk57d7vwfcq3xutqa";
+
+const paymentRequestWithMemo =
+  "lnbc10u1pj4t6w0pp54wm83znxp8xly6qzuff2z7u6585rnlcw9uduf2haa42qcz09f5wqdq023jhxapqd4jk6mccqzzsxqyz5vqsp5mlvjs8nktpz98s5dcrhsuelrz94kl2vjukvu789yzkewast6m00q9qyyssqupynqdv7e5y8nlul0trva5t97g7v3gwx7akhu2dvu4pn66eu2pr5zkcnegp8myz3wrpj9ht06pwyfn4dvpmnr96ejq6ygex43ymaffqq3gud4d";
+
+const signetPaymentRequest =
+  "lntbs758310n1pnryklfpp59hmrqxpmanfm4sh4afnqs80yas294hvscr2lv0scp4hza7gpyf5sdyzgd5xzmnwv4kzqvpwxqcnqvpsxqcrqgr5dusryvpjxsknqdedxvc9gv338g6nyw35xyhrzd3ntgszscfnxdjrgvryvsukzd3n893njvf5x5mnvctzx9nrsv3hv9jrgvty9ycqzzsxqrrsssp5pq5nl5xw9hf4k7xl8d635kd60kgdm0jnwe3tvu7dp8zrfedcyzes9qyyssq8qcl3h6ptahwtc8k7q9qrz8v3r0fhp779wuhykxkmn0x6qegl4x4jga2ykcwf5vu89slhzka0w4n7a9n26qcxgzhg4mdymky8smdvvqpw9t93a";
+
+const zeroAmountPaymentRequest =
+  "lnbc1pn42dukpp5wzqdjf8cv7pxa3rpa5vur8804ud0ckt24jctkq6qlr7w25kuc2fsdp82pshjgr5dusyymrfde4jq4mpd3kx2apq24ek2uscqzpuxqr8pqsp5nkrvgqj37ztv2luy6sfg0fgsr4p4rrqw3s3z5g63f8fsxh86u0hq9p4gqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqysgqu68rgn4k22zlgzuylamdv6zaczf4rwwrrzlhvw672m8cphctk8shsamruj5ymh04jssy6x09fx99ahrsm7z4w840psu2u3nhtfjw50qpf8qku8";
+
+describe("Invoice", () => {
+  test("decode invoice without description", () => {
+    const decodedInvoice = new Invoice({ pr: paymentRequestWithoutMemo });
+    expect(decodedInvoice.paymentHash).toBe(
+      "9c0e57f7f1f4823ce6751fc3fd260e55fe12ccb7dbd70ab58e660c03f569ab34",
+    );
+    expect(decodedInvoice.satoshi).toBe(1);
+    expect(decodedInvoice.expiry).toBe(86400);
+    expect(decodedInvoice.timestamp).toBe(1699966882);
+    expect(decodedInvoice.createdDate.toISOString()).toBe(
+      "2023-11-14T13:01:22.000Z",
+    );
+    expect(decodedInvoice.expiryDate!.toISOString()).toBe(
+      "2023-11-15T13:01:22.000Z",
+    );
+    expect(decodedInvoice.description).toBeNull();
+    expect(decodedInvoice.hasExpired()).toBe(true);
+  });
+
+  test("decode invoice without expiry", () => {
+    const decodedInvoice = new Invoice({ pr: paymentRequestWithoutExpiry });
+    expect(decodedInvoice.expiryDate).toBeUndefined();
+    expect(decodedInvoice.hasExpired()).toBe(false);
+  });
+
+  test("decode invoice with description", () => {
+    const decodedInvoice = new Invoice({ pr: paymentRequestWithMemo });
+    expect(decodedInvoice.description).toBe("Test memo");
+  });
+
+  test("decode invoice with zero amount", () => {
+    const decodedInvoice = new Invoice({ pr: zeroAmountPaymentRequest });
+    expect(decodedInvoice.satoshi).toBe(0);
+  });
+
+  test("decode signet invoice", () => {
+    const decodedInvoice = new Invoice({ pr: signetPaymentRequest });
+    expect(decodedInvoice.satoshi).toBe(75831);
+  });
+
+  test("did not expire", () => {
+    const decodedInvoice = new Invoice({ pr: paymentRequestWithoutMemo });
+    decodedInvoice.expiryDate = new Date(Date.now() + 1000);
+    expect(decodedInvoice.hasExpired()).toBe(false);
+  });
+
+  test("verify catches exception", async () => {
+    const invoice = new Invoice({ pr: paymentRequestWithoutMemo });
+    invoice.verify = "https://example.com/verify";
+
+    fetchMock.mockIf(/.*/, (_) => {
+      throw new Error("Something went wrong");
+    });
+
+    const result = await invoice.verifyPayment();
+    expect(result).toBe(false);
+  });
+
+  test("verify settled payment", async () => {
+    const invoice = new Invoice({ pr: paymentRequestWithoutMemo });
+    invoice.verify = "https://example.com/verify";
+    const preimage = "dummy preimage";
+
+    fetchMock.mockIf(/.*/, (_) => {
+      return Promise.resolve(
+        JSON.stringify({
+          settled: true,
+          preimage,
+        }),
+      );
+    });
+
+    const result = await invoice.verifyPayment();
+    expect(result).toBe(true);
+    expect(invoice.preimage).toBe(preimage);
+  });
+
+  test("verify on unsettled payment", async () => {
+    const invoice = new Invoice({ pr: paymentRequestWithoutMemo });
+    invoice.verify = "https://example.com/verify";
+
+    fetchMock.mockIf(/.*/, (_) => {
+      return Promise.resolve(
+        JSON.stringify({
+          settled: false,
+        }),
+      );
+    });
+
+    const result = await invoice.verifyPayment();
+    expect(result).toBe(false);
+    expect(invoice.preimage).toBe(null);
+  });
+
+  test("validate preimage", async () => {
+    const invoice = new Invoice({
+      pr: "lntbs1u1pn495zkdqqnp4qvm5zrv3xj48gy00qxa4njj9kkwc948ul053pxe7v5phulpkkjmvzpp507kr6wlmy9mp0zclumet2w4edxlwpc9sz044v5890569kzycwxjqsp5pusvsaaczett7tmlhulaqa5gnqk74xzxyfmdxrhfjjs82587dm5s9qyysgqcqpcxqyz5vqrzjqv4wssly6lgh0u236qs6eqzykp3ka3etrn3lln09cpr53ke9z74s8apyqqqqqqqpj5qqqqqqqqqqqqqq2qrzjq03slkn33pafzmh42j9y6q4sdlsy42s63h57ysf5eel3888hn46hnapyqqqqqqqq5sqqqqlgqqqq86qqjqrk3pm9hs43rvr7ljfa7vx74s6xxwnzcg6ju8sue69sxlftd9ksuk0k0g0uz3ju9dwmhva2hu4rpl8hezllfy944y5trl5kzk7e4n2pcpjqs23j",
+    });
+
+    const validResult = await invoice.validatePreimage(
+      "a7b9eab23a1d8442733f78bdfd408349d3dc29f75afb5b037f44ec7ee3835615",
+    );
+    expect(validResult).toBe(true);
+
+    const invalidResult = await invoice.validatePreimage(
+      "b7b9eab23a1d8442733f78bdfd408349d3dc29f75afb5b037f44ec7ee3835615",
+    );
+    expect(invalidResult).toBe(false);
+  });
+});
+
+
+
+================================================
+FILE: src/bolt11/Invoice.ts
+================================================
+import { InvoiceArgs, SuccessAction } from "./types";
+import { sha256 } from "@noble/hashes/sha256";
+import { bytesToHex } from "@noble/hashes/utils";
+import { decodeInvoice, fromHexString } from "./utils";
+
+export class Invoice {
+  paymentRequest: string;
+  paymentHash: string;
+  preimage: string | null;
+  verify: string | null;
+  satoshi: number;
+  expiry: number | undefined; // expiry in seconds (not a timestamp)
+  timestamp: number; // created date in seconds
+  createdDate: Date;
+  expiryDate: Date | undefined;
+  description: string | null;
+  successAction: SuccessAction | null;
+
+  constructor(args: InvoiceArgs) {
+    this.paymentRequest = args.pr;
+    if (!this.paymentRequest) {
+      throw new Error("Invalid payment request");
+    }
+    const decodedInvoice = decodeInvoice(this.paymentRequest);
+    if (!decodedInvoice) {
+      throw new Error("Failed to decode payment request");
+    }
+    this.paymentHash = decodedInvoice.paymentHash;
+    this.satoshi = decodedInvoice.satoshi;
+    this.timestamp = decodedInvoice.timestamp;
+    this.expiry = decodedInvoice.expiry;
+    this.createdDate = new Date(this.timestamp * 1000);
+    this.expiryDate = this.expiry
+      ? new Date((this.timestamp + this.expiry) * 1000)
+      : undefined;
+    this.description = decodedInvoice.description ?? null;
+    this.verify = args.verify ?? null;
+    this.preimage = args.preimage ?? null;
+    this.successAction = args.successAction ?? null;
+  }
+
+  async isPaid(): Promise<boolean> {
+    if (this.preimage) return this.validatePreimage(this.preimage);
+    else if (this.verify) {
+      return await this.verifyPayment();
+    } else {
+      throw new Error("Could not verify payment");
+    }
+  }
+
+  validatePreimage(preimage: string): boolean {
+    if (!preimage || !this.paymentHash) return false;
+
+    try {
+      const preimageHash = bytesToHex(sha256(fromHexString(preimage)));
+      return this.paymentHash === preimageHash;
+    } catch {
+      return false;
+    }
+  }
+
+  async verifyPayment(): Promise<boolean> {
+    try {
+      if (!this.verify) {
+        throw new Error("LNURL verify not available");
+      }
+      const response = await fetch(this.verify);
+      if (!response.ok) {
+        throw new Error(
+          `Verification request failed: ${response.status} ${response.statusText}`,
+        );
+      }
+      const json = await response.json();
+      if (json.preimage) {
+        this.preimage = json.preimage;
+      }
+
+      return json.settled;
+    } catch (error) {
+      console.error("Failed to check LNURL-verify", error);
+      return false;
+    }
+  }
+
+  hasExpired() {
+    const { expiryDate } = this;
+    if (expiryDate) {
+      return expiryDate.getTime() < Date.now();
+    }
+    return false;
+  }
+}
+
+
+
+================================================
+FILE: src/bolt11/types.ts
+================================================
+export type InvoiceArgs = {
+  pr: string;
+  verify?: string;
+  preimage?: string;
+  successAction?: SuccessAction;
+};
+
+export type SuccessAction =
+  | {
+      tag: "message";
+      message: string;
+    }
+  | {
+      tag: "url";
+      description: string;
+      url: string;
+    }; // LUD-09
+
+
+
+================================================
+FILE: src/bolt11/utils.ts
+================================================
+import { decode } from "light-bolt11-decoder";
+
+// from https://stackoverflow.com/a/50868276
+export const fromHexString = (hexString: string) =>
+  Uint8Array.from(
+    hexString.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)),
+  );
+
+type DecodedInvoice = {
+  paymentHash: string;
+  satoshi: number;
+  timestamp: number;
+  expiry: number | undefined;
+  description: string | undefined;
+};
+
+export const decodeInvoice = (
+  paymentRequest: string,
+): DecodedInvoice | null => {
+  if (!paymentRequest) return null;
+
+  try {
+    const decoded = decode(paymentRequest);
+    if (!decoded || !decoded.sections) return null;
+
+    const hashTag = decoded.sections.find(
+      (value) => value.name === "payment_hash",
+    );
+
+    if (hashTag?.name !== "payment_hash" || !hashTag.value) return null;
+
+    const paymentHash = hashTag.value;
+
+    let satoshi = 0;
+
+    const amountTag = decoded.sections.find((value) => value.name === "amount");
+
+    if (amountTag?.name === "amount" && amountTag.value) {
+      satoshi = parseInt(amountTag.value) / 1000; // millisats
+    }
+
+    const timestampTag = decoded.sections.find(
+      (value) => value.name === "timestamp",
+    );
+
+    if (timestampTag?.name !== "timestamp" || !timestampTag.value) return null;
+
+    const timestamp = timestampTag.value;
+
+    let expiry: number | undefined;
+    const expiryTag = decoded.sections.find((value) => value.name === "expiry");
+
+    if (expiryTag?.name === "expiry") {
+      expiry = expiryTag.value;
+    }
+
+    const descriptionTag = decoded.sections.find(
+      (value) => value.name === "description",
+    );
+
+    const description =
+      descriptionTag?.name === "description"
+        ? descriptionTag?.value
+        : undefined;
+
+    return {
+      paymentHash,
+      satoshi,
+      timestamp,
+      expiry,
+      description,
+    };
+  } catch {
+    return null;
+  }
+};
+
+
+
+================================================
+FILE: src/fiat/fiat.test.ts
+================================================
+import fetchMock from "jest-fetch-mock";
+import {
+  getFiatBtcRate,
+  getFiatValue,
+  getSatoshiValue,
+  getFormattedFiatValue,
+} from "./fiat";
+
+const mockedRateResponse = {
+  code: "USD",
+  symbol: "$",
+  rate: "100000.00",
+  rate_float: 100000,
+  rate_cents: 10000000,
+  USD: {
+    code: "USD",
+    symbol: "$",
+    rate: "100000.00",
+    rate_float: 100000,
+    rate_cents: 10000000,
+  },
+};
+
+const satsInBtc = 100_000_000;
+const rate = mockedRateResponse.rate_float;
+
+beforeEach(() => {
+  fetchMock.resetMocks();
+});
+
+describe("getFiatBtcRate", () => {
+  it("returns BTC to fiat rate", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockedRateResponse));
+    const result = await getFiatBtcRate("usd");
+    expect(result).toBe(rate / satsInBtc);
+  });
+
+  it("throws on non-ok response", async () => {
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ status: 404, error: "Not Found" }),
+      { status: 404 },
+    );
+
+    await expect(getFiatBtcRate("non_existent")).rejects.toThrow(
+      "Failed to fetch rate: 404 Not Found",
+    );
+  });
+});
+
+describe("getFiatValue", () => {
+  it("converts sats to fiat", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockedRateResponse));
+    const result = await getFiatValue({ satoshi: 1000, currency: "USD" });
+    expect(result).toBe(1000 * (rate / satsInBtc));
+  });
+});
+
+describe("getSatoshiValue", () => {
+  it("converts fiat to sats", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockedRateResponse));
+    const result = await getSatoshiValue({ amount: 1, currency: "USD" });
+    expect(result).toBe(Math.floor(1 / (rate / satsInBtc)));
+  });
+});
+
+describe("getFormattedFiatValue", () => {
+  it("returns formatted fiat value", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockedRateResponse));
+    const result = await getFormattedFiatValue({
+      satoshi: 1000,
+      currency: "USD",
+      locale: "en-US",
+    });
+    expect(result).toBe(
+      (1000 * (rate / satsInBtc)).toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+      }),
+    );
+  });
+
+  it("defaults to 'en' locale if not provided", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockedRateResponse));
+    const result = await getFormattedFiatValue({
+      satoshi: 1000,
+      currency: "USD",
+      locale: "",
+    });
+    expect(result).toBe(
+      (1000 * (rate / satsInBtc)).toLocaleString("en", {
+        style: "currency",
+        currency: "USD",
+      }),
+    );
+  });
+});
+
+
+
+================================================
+FILE: src/fiat/fiat.ts
+================================================
+const numSatsInBtc = 100_000_000;
+
+export const getFiatBtcRate = async (currency: string): Promise<number> => {
+  const url =
+    "https://getalby.com/api/rates/" + currency.toLowerCase() + ".json";
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch rate: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const data = await response.json();
+
+  return data.rate_float / numSatsInBtc;
+};
+
+export const getFiatValue = async ({
+  satoshi,
+  currency,
+}: {
+  satoshi: number | string;
+  currency: string;
+}) => {
+  const rate = await getFiatBtcRate(currency);
+
+  return Number(satoshi) * rate;
+};
+
+export const getSatoshiValue = async ({
+  amount,
+  currency,
+}: {
+  amount: number | string;
+  currency: string;
+}) => {
+  const rate = await getFiatBtcRate(currency);
+
+  return Math.floor(Number(amount) / rate);
+};
+
+export const getFormattedFiatValue = async ({
+  satoshi,
+  currency,
+  locale,
+}: {
+  satoshi: number | string;
+  currency: string;
+  locale: string;
+}) => {
+  if (!locale) {
+    locale = "en";
+  }
+  const fiatValue = await getFiatValue({ satoshi, currency });
+  return fiatValue.toLocaleString(locale, {
+    style: "currency",
+    currency,
+  });
+};
+
+
+
+================================================
+FILE: src/fiat/index.ts
+================================================
+export * from "./fiat";
+
+
+
+================================================
+FILE: src/l402/index.ts
+================================================
+export * from "./l402";
+export * from "./utils";
+
+
+
+================================================
+FILE: src/l402/l402.test.ts
+================================================
+import { parseL402 } from "./utils";
+
+const BASE64_MAC =
+  "AgEEbHNhdAJCAAAClGOZrh7C569Yc7UMk8merfnMdIviyXr1qscW7VgpChNl21LkZ8Jex5QiPp+E1VaabeJDuWmlrh/j583axFpNAAIXc2VydmljZXM9cmFuZG9tbnVtYmVyOjAAAiZyYW5kb21udW1iZXJfY2FwYWJpbGl0aZVzPWFkZCxzdWJ0cmFjdAAABiAvFpzXGyc+8d/I9nMKKvAYP8w7kUlhuxS0eFN2sqmqHQ==";
+const HEX_MAC =
+  "jkse4mpp5q22x8xdwrmpw0t6cww6sey7fn6klnnr5303vj7h44tr3dm2c9y9qdq8f4f5z4qcqzzsxqyz5vqsp5mmhp6cx4xxysc8x";
+const HEX_INVOICE =
+  "lnbc100n1pjkse4mpp5q22x8xdwrmpw0t6cww6sey7fn6klnnr5303vj7h44tr3dm2c9y9qdq8f4f5z4qcqzzsxqyz5vqsp5mmhp6cx4xxysc8xvxaj984eue9pm83lxgezmk3umx6wxr9rrq2ns9qyyssqmmrrwthves6z3d85nafj2ds4z20qju2vpaatep8uwrvxz0xs4kznm99m7f6pmkzax09k2k9saldy34z0p0l8gm0zm5xsmg2g667pnlqp7a0qdz";
+
+describe("parseL402", () => {
+  test("should correctly parse L402 string", () => {
+    const testString = `L402 macaroon="${BASE64_MAC}", invoice="${HEX_INVOICE}"`;
+    const result = parseL402(testString);
+    expect(result).toEqual({ macaroon: BASE64_MAC, invoice: HEX_INVOICE });
+  });
+
+  test("should correctly parse LSAT string", () => {
+    const testString = `LSAT macaroon="${BASE64_MAC}", invoice="${HEX_INVOICE}"`;
+    const result = parseL402(testString);
+    expect(result).toEqual({ macaroon: BASE64_MAC, invoice: HEX_INVOICE });
+  });
+
+  test("should correctly handle unquoted values", () => {
+    const testString = `L402 macaroon=${BASE64_MAC}, invoice=${HEX_INVOICE}`;
+    const result = parseL402(testString);
+    expect(result).toEqual({ macaroon: BASE64_MAC, invoice: HEX_INVOICE });
+  });
+
+  test("should correctly handle single-quoted values", () => {
+    const testString = `LSAT macaroon='${BASE64_MAC}', invoice='${HEX_INVOICE}'`;
+    const result = parseL402(testString);
+    expect(result).toEqual({ macaroon: BASE64_MAC, invoice: HEX_INVOICE });
+  });
+
+  test("should correctly handle hexadecimal macaroon values", () => {
+    const testString = `LSAT macaroon='${HEX_MAC}', invoice='${HEX_INVOICE}'`;
+    const result = parseL402(testString);
+    expect(result).toEqual({ macaroon: HEX_MAC, invoice: HEX_INVOICE });
+  });
+});
+
+
+
+================================================
+FILE: src/l402/l402.ts
+================================================
+import { KVStorage, MemoryStorage, parseL402 } from "./utils";
+import { WebLNProvider } from "@webbtc/webln-types";
+
+const memoryStorage = new MemoryStorage();
+
+const HEADER_KEY = "L402"; // we have to update this to L402 at some point
+
+export const fetchWithL402 = async (
+  url: string,
+  fetchArgs: RequestInit,
+  options: {
+    headerKey?: string;
+    webln?: WebLNProvider;
+    store?: KVStorage;
+  },
+) => {
+  if (!options) {
+    options = {};
+  }
+  const headerKey = options.headerKey || HEADER_KEY;
+  const webln: WebLNProvider = options.webln || globalThis.webln;
+  if (!webln) {
+    throw new Error("WebLN is missing");
+  }
+  const store = options.store || memoryStorage;
+  if (!fetchArgs) {
+    fetchArgs = {};
+  }
+  fetchArgs.cache = "no-store";
+  fetchArgs.mode = "cors";
+  if (!fetchArgs.headers) {
+    fetchArgs.headers = {};
+  }
+  const cachedL402Data = store.getItem(url);
+  if (cachedL402Data) {
+    const data = JSON.parse(cachedL402Data);
+    fetchArgs.headers["Authorization"] =
+      `${headerKey} ${data.token}:${data.preimage}`;
+    return await fetch(url, fetchArgs);
+  }
+
+  fetchArgs.headers["Accept-Authenticate"] = headerKey;
+  const initResp = await fetch(url, fetchArgs);
+  const header = initResp.headers.get("www-authenticate");
+  if (!header) {
+    return initResp;
+  }
+
+  const details = parseL402(header);
+  const token = details.token || details.macaroon;
+  const inv = details.invoice;
+
+  await webln.enable();
+  const invResp = await webln.sendPayment(inv);
+
+  store.setItem(
+    url,
+    JSON.stringify({
+      token: token,
+      preimage: invResp.preimage,
+    }),
+  );
+
+  fetchArgs.headers["Authorization"] =
+    `${headerKey} ${token}:${invResp.preimage}`;
+  return await fetch(url, fetchArgs);
+};
+
+
+
+================================================
+FILE: src/l402/utils.ts
+================================================
+export interface KVStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export class MemoryStorage implements KVStorage {
+  storage;
+
+  constructor(initial?: Record<string, unknown>) {
+    this.storage = initial || {};
+  }
+
+  getItem(key: string) {
+    return this.storage[key];
+  }
+
+  setItem(key: string, value: unknown) {
+    this.storage[key] = value;
+  }
+}
+
+export class NoStorage implements KVStorage {
+  constructor(initial?: unknown) {}
+
+  getItem(key: string) {
+    return null;
+  }
+
+  setItem(key: string, value: unknown) {}
+}
+
+export const parseL402 = (input: string): Record<string, string> => {
+  // Remove the L402 and LSAT identifiers
+  const string = input.replace("L402", "").replace("LSAT", "").trim();
+
+  // Initialize an object to store the key-value pairs
+  const keyValuePairs = {};
+
+  // Regular expression to match key and (quoted or unquoted) value
+  const regex = /(\w+)=("([^"]*)"|'([^']*)'|([^,]*))/g;
+  let match;
+
+  // Use regex to find all key-value pairs
+  while ((match = regex.exec(string)) !== null) {
+    // Key is always match[1]
+    // Value is either match[3] (double-quoted), match[4] (single-quoted), or match[5] (unquoted)
+    keyValuePairs[match[1]] = match[3] || match[4] || match[5];
+  }
+
+  return keyValuePairs;
+};
+
+
+
+================================================
+FILE: src/lnurl/index.ts
+================================================
+export * from "./types";
+export * from "./utils";
+export * from "./LightningAddress";
+
+
+
+================================================
+FILE: src/lnurl/LightningAddress.test.ts
+================================================
+import { WebLNProvider } from "@webbtc/webln-types";
+import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools";
+import fetchMock from "jest-fetch-mock";
+import { LightningAddress, DEFAULT_PROXY } from "./LightningAddress";
+import { Event, NostrProvider } from "./types";
+import { isValidAmount, isUrl, parseLnUrlPayResponse } from "./utils";
+
+const dummyWebLN: WebLNProvider = {
+  enable: () => Promise.resolve(),
+  getInfo: () =>
+    Promise.resolve({
+      methods: [],
+      node: {
+        alias: "dummy",
+        pubkey: "dummy",
+      },
+      supports: ["lightning"],
+      version: "1.0.0",
+    }),
+  keysend: () =>
+    Promise.resolve({
+      preimage: "dummy",
+    }),
+  lnurl: () =>
+    Promise.resolve({
+      status: "OK",
+    }),
+  makeInvoice: () =>
+    Promise.resolve({
+      paymentRequest: "lnbc...",
+    }),
+  request: () => Promise.resolve({}),
+  sendPayment: () =>
+    Promise.resolve({
+      preimage: "dummy",
+    }),
+  signMessage: () =>
+    Promise.resolve({
+      message: "test",
+      signature: "TODO",
+    }),
+  verifyMessage: () => Promise.resolve(),
+};
+
+const nostrPrivateKey = generateSecretKey();
+const nostrPublicKey = getPublicKey(nostrPrivateKey);
+
+const nostrProvider: NostrProvider = {
+  getPublicKey: () => Promise.resolve(nostrPublicKey),
+  signEvent: (event: Event) => {
+    return Promise.resolve(finalizeEvent(event, nostrPrivateKey));
+  },
+};
+
+// TODO: refactor tests to set their own mocks rather than using conditionals and loops
+fetchMock.mockIf(/.*/, (req) => {
+  if (
+    req.url.startsWith(
+      "https://api.getalby.com/lnurl/generate-invoice?ln=hello%40getalby.com&amount=1000",
+    )
+  ) {
+    return Promise.resolve(
+      JSON.stringify({
+        invoice: {
+          pr: "lnbc10u1pjk6mhgpp5zj5mn43uz96y94vevla98990gtkm0fa5jysvfl2wx6q2lllkyd9shp56x0knvgt833500x88k786uqc7nqpa563vgzt5e9c7srg4h8vqf2qcqzzsxqyz5vqsp5h8crvhl0etrgc3jfwwqypmckvp5szw8a8mhnzw0xk6ru5anyak6q9qyyssq0dcsf56fhdwjd4adwlljetpkhdanckgxgwx49fu49h9hxjj0haq9tg867x6acudjraxvwuuq033004jy8fwx98hd69c9z3az2qhv3wsq6wwe8p",
+          routes: [],
+          status: "OK",
+          successAction: {
+            message: "Thanks, sats received!",
+            tag: "message",
+          },
+          verify:
+            "https://getalby.com/lnurlp/hello/verify/bAJyn6sqHgWhStciroY4yy8t",
+        },
+      }),
+    );
+  } else if (
+    req.url.startsWith("https://getalby.com/lnurlp/hello/callback?amount=1000")
+  ) {
+    return Promise.resolve(
+      JSON.stringify({
+        pr: "lnbc10n1pjk6m6spp57n44qespk3z2hjfc6wxmyqjy8aprdz5k6jflu9q5gw6wqm3y0ssqhp50kncf9zk35xg4lxewt4974ry6mudygsztsz8qn3ar8pn3mtpe50scqzzsxqyz5vqsp5creygvh0cmhjnqsvq7c9k5w9fpe4yy0sw025msv7ut09krp9g5ds9qyyssqlpl0539nx0rhmtltzzaeznnt967msvnuqe7k9mhld8xvs032ysy5697hsene3xat2ujxahfe63c6ces82jd2hcv2dmuynkf2p7cttuqpm6qdfm",
+        routes: [],
+        status: "OK",
+        successAction: {
+          message: "Thanks, sats received!",
+          tag: "message",
+        },
+        verify:
+          "https://getalby.com/lnurlp/hello/verify/7wMPUUqFfaUaM6sG6GwFFSTq",
+      }),
+    );
+  } else if (req.url.endsWith("ln=hello%40getalby.com")) {
+    return Promise.resolve(
+      JSON.stringify({
+        lnurlp: {
+          allowsNostr: true,
+          callback: "https://getalby.com/lnurlp/hello/callback",
+          commentAllowed: 255,
+          maxSendable: 11000000000,
+          metadata:
+            '[["text/identifier","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+          minSendable: 1000,
+          nostrPubkey:
+            "79f00d3f5a19ec806189fcab03c1be4ff81d18ee4f653c88fac41fe03570f432",
+          payerData: {
+            email: {
+              mandatory: false,
+            },
+            name: {
+              mandatory: false,
+            },
+            pubkey: {
+              mandatory: false,
+            },
+          },
+          status: "OK",
+          tag: "payRequest",
+        },
+        keysend: {
+          customData: [
+            {
+              customKey: "696969",
+              customValue: "017rsl75kNnSke4mMHYE",
+            },
+          ],
+          pubkey:
+            "030a58b8653d32b99200a2334cfe913e51dc7d155aa0116c176657a4f1722677a3",
+          status: "OK",
+          tag: "keysend",
+        },
+        nostr: {
+          names: {
+            hello:
+              "4657dfe8965be8980a93072bcfb5e59a65124406db0f819215ee78ba47934b3e",
+          },
+        },
+      }),
+    );
+  } else if (req.url.indexOf("ln=wintertree4%40getalby.com") > -1) {
+    return Promise.resolve(
+      JSON.stringify({
+        lnurlp: {
+          allowsNostr: true,
+          callback: "https://getalby.com/lnurlp/hello/callback",
+          commentAllowed: 255,
+          maxSendable: 11000000000,
+          metadata:
+            '[["text/identifier","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+          minSendable: 1000,
+          nostrPubkey:
+            "79f00d3f5a19ec806189fcab03c1be4ff81d18ee4f653c88fac41fe03570f432",
+          payerData: {
+            email: {
+              mandatory: false,
+            },
+            name: {
+              mandatory: false,
+            },
+            pubkey: {
+              mandatory: false,
+            },
+          },
+          status: "OK",
+          tag: "payRequest",
+        },
+        keysend: {
+          customData: [
+            {
+              customKey: "696969",
+              customValue: "017rsl75kNnSke4mMHYE",
+            },
+          ],
+          pubkey:
+            "030a58b8653d32b99200a2334cfe913e51dc7d155aa0116c176657a4f1722677a3",
+          status: "OK",
+          tag: "keysend",
+        },
+        nostr: null,
+      }),
+    );
+  } else if (req.url.indexOf("ln=hrf%40btcpay.hrf.org") > -1) {
+    return Promise.resolve(
+      JSON.stringify({
+        lnurlp: {
+          callback:
+            "https://btcpay.hrf.org/BTC/UILNURL/pay/i/CTx9XVtkW5QuYvMXhDPsfP",
+          commentAllowed: 0,
+          maxSendable: 612000000000,
+          metadata:
+            '[["text/plain","Paid to Donate to HRF v2  (Order ID: )"],["text/identifier","hrf@btcpay.hrf.org"]]',
+          minSendable: 1000,
+          tag: "payRequest",
+        },
+        keysend: null,
+        nostr: null,
+      }),
+    );
+  } else if (req.url.indexOf("ln=hellononexistentaddress%40getalby.com") > -1) {
+    return Promise.resolve(
+      JSON.stringify({
+        lnurlp: null,
+        keysend: null,
+        nostr: null,
+      }),
+    );
+  } else if (
+    req.url.endsWith("lnurlp/hello") ||
+    req.url.endsWith("lnurlp/wintertree4")
+  ) {
+    return Promise.resolve(
+      JSON.stringify({
+        allowsNostr: true,
+        callback: "https://getalby.com/lnurlp/hello/callback",
+        commentAllowed: 255,
+        maxSendable: 11000000000,
+        metadata:
+          '[["text/identifier","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+        minSendable: 1000,
+        nostrPubkey:
+          "79f00d3f5a19ec806189fcab03c1be4ff81d18ee4f653c88fac41fe03570f432",
+        payerData: {
+          email: {
+            mandatory: false,
+          },
+          name: {
+            mandatory: false,
+          },
+          pubkey: {
+            mandatory: false,
+          },
+        },
+        status: "OK",
+        tag: "payRequest",
+      }),
+    );
+  } else if (req.url === "https://btcpay.hrf.org/.well-known/lnurlp/hrf") {
+    return Promise.resolve(
+      JSON.stringify({
+        callback:
+          "https://btcpay.hrf.org/BTC/UILNURL/pay/i/8NTBF2qoCHBNSF49hqot4j",
+        metadata:
+          '[["text/plain","Paid to Donate to HRF v2  (Order ID: )"],["text/identifier","hrf@btcpay.hrf.org"]]',
+        tag: "payRequest",
+        minSendable: 1000,
+        maxSendable: 612000000000,
+        commentAllowed: 0,
+      }),
+    );
+  } else if (req.url.endsWith("/hellononexistentaddress")) {
+    return Promise.resolve({
+      status: 404,
+    });
+  } else if (
+    req.url.endsWith("keysend/hello") ||
+    req.url.endsWith("keysend/hrf") ||
+    req.url.endsWith("keysend/wintertree4")
+  ) {
+    return Promise.resolve(
+      JSON.stringify({
+        customData: [
+          {
+            customKey: "696969",
+            customValue: "017rsl75kNnSke4mMHYE",
+          },
+        ],
+        pubkey:
+          "030a58b8653d32b99200a2334cfe913e51dc7d155aa0116c176657a4f1722677a3",
+        status: "OK",
+        tag: "keysend",
+      }),
+    );
+  } else if (req.url.endsWith("nostr.json?name=hello")) {
+    return Promise.resolve(
+      JSON.stringify({
+        names: {
+          hello:
+            "4657dfe8965be8980a93072bcfb5e59a65124406db0f819215ee78ba47934b3e",
+        },
+      }),
+    );
+  } else if (
+    req.url.endsWith("nostr.json?name=hellononexistentaddress") ||
+    req.url.endsWith("nostr.json?name=wintertree4") ||
+    req.url.endsWith("nostr.json?name=hrf")
+  ) {
+    return Promise.resolve({
+      status: 404,
+    });
+  }
+  throw new Error("Unmocked request: " + req.url);
+});
+
+for (const proxy of [DEFAULT_PROXY, false] as const) {
+  describe("with proxy: " + proxy, () => {
+    describe("requestInvoice", () => {
+      it("throws error when fetch hasn't been called", async () => {
+        const ln = new LightningAddress("hello@getalby.com", { proxy });
+        await expect(
+          ln.requestInvoice({
+            satoshi: 1,
+          }),
+        ).rejects.toThrow(
+          "No lnurlpData available. Please call fetch() first.",
+        );
+      });
+
+      it("generates an invoice", async () => {
+        const ln = new LightningAddress("hello@getalby.com", { proxy });
+        await ln.fetch();
+        const invoice = await ln.requestInvoice({ satoshi: 1 });
+        expect(invoice.paymentRequest).toContain("lnbc");
+        expect(invoice.successAction?.tag).toContain("message");
+      });
+    });
+
+    describe("boost", () => {
+      it("throws error when fetch hasn't been called", async () => {
+        const ln = new LightningAddress("hello@getalby.com", {
+          proxy,
+          webln: dummyWebLN,
+        });
+        await expect(
+          ln.boost({
+            action: "boost",
+            value_msat: 21000,
+            value_msat_total: 21000,
+            app_name: "Podcastr",
+            app_version: "v2.1",
+            feedId: "21",
+            podcast: "random podcast",
+            episode: "1",
+            ts: 2121,
+            name: "Satoshi",
+            sender_name: "Alby",
+          }),
+        ).rejects.toThrow(
+          "No keysendData available. Please call fetch() first.",
+        );
+      });
+
+      it("successful boost returns preimage", async () => {
+        const ln = new LightningAddress("hello@getalby.com", {
+          proxy,
+          webln: dummyWebLN,
+        });
+        await ln.fetch();
+        const result = await ln.boost({
+          action: "boost",
+          value_msat: 21000,
+          value_msat_total: 21000,
+          app_name: "Podcastr",
+          app_version: "v2.1",
+          feedId: "21",
+          podcast: "random podcast",
+          episode: "1",
+          ts: 2121,
+          name: "Satoshi",
+          sender_name: "Alby",
+        });
+        expect(result.preimage).toBe("dummy"); // from dummyWebLN
+      });
+    });
+
+    describe("zap", () => {
+      it("throws error when fetch hasn't been called", async () => {
+        const ln = new LightningAddress("hello@getalby.com", {
+          proxy,
+          webln: dummyWebLN,
+        });
+        await expect(
+          ln.zap(
+            {
+              satoshi: 1000,
+              comment: "Awesome post",
+              relays: ["wss://relay.damus.io"],
+              e: "44e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
+            },
+            {
+              nostr: nostrProvider,
+            },
+          ),
+        ).rejects.toThrow(
+          "No lnurlpData available. Please call fetch() first.",
+        );
+      });
+
+      it("successful zap returns preimage", async () => {
+        const ln = new LightningAddress("hello@getalby.com", {
+          proxy,
+          webln: dummyWebLN,
+        });
+        await ln.fetch();
+        const result = await ln.zap(
+          {
+            satoshi: 1000,
+            comment: "Awesome post",
+            relays: ["wss://relay.damus.io"],
+            e: "44e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
+          },
+          {
+            nostr: nostrProvider,
+          },
+        );
+        expect(result.preimage).toBe("dummy"); // from dummyWebLN
+      });
+    });
+
+    describe("fetch", () => {
+      it("retrieves lnurlp data for lightning address without keysend or nostr", async () => {
+        const ln = new LightningAddress("hrf@btcpay.hrf.org", { proxy });
+        await ln.fetch();
+        expect(ln.lnurlpData?.max).toBe(612000000000);
+      });
+
+      it("retrieves lnurlp data", async () => {
+        const ln = new LightningAddress("hello@getalby.com", { proxy });
+        await ln.fetch();
+        expect(ln.lnurlpData?.max).toBe(11000000000);
+      });
+
+      it("retrieves keysend data", async () => {
+        const ln = new LightningAddress("hello@getalby.com", { proxy });
+        await ln.fetch();
+        expect(ln.keysendData?.destination).toBe(
+          "030a58b8653d32b99200a2334cfe913e51dc7d155aa0116c176657a4f1722677a3",
+        );
+      });
+
+      it("retrieves nostr data", async () => {
+        const ln = new LightningAddress("hello@getalby.com", { proxy });
+        await ln.fetch();
+        expect(ln.nostrData?.names.hello).toEqual(
+          "4657dfe8965be8980a93072bcfb5e59a65124406db0f819215ee78ba47934b3e",
+        );
+      });
+
+      it("can fetch existing lightning address without nostr configuration", async () => {
+        const ln = new LightningAddress("wintertree4@getalby.com", { proxy });
+        await ln.fetch();
+        expect(ln.nostrData).toBeUndefined();
+      });
+
+      it("does not throw error when requesting non-existing lightning address", async () => {
+        const ln = new LightningAddress("hellononexistentaddress@getalby.com", {
+          proxy,
+        });
+        await ln.fetch();
+        expect(ln.lnurlpData).toBeUndefined();
+        expect(ln.keysendData).toBeUndefined();
+        expect(ln.nostrData).toBeUndefined();
+      });
+    });
+  });
+}
+
+describe("isValidAmount", () => {
+  test("amount must be in range", () => {
+    expect(isValidAmount({ amount: 0, min: 1, max: 2 })).toBe(false);
+    expect(isValidAmount({ amount: 3, min: 1, max: 2 })).toBe(false);
+    expect(isValidAmount({ amount: 0, min: 1, max: 1 })).toBe(false);
+    expect(isValidAmount({ amount: 2, min: 1, max: 1 })).toBe(false);
+    expect(isValidAmount({ amount: 1, min: 1, max: 2 })).toBe(true);
+    expect(isValidAmount({ amount: 2, min: 1, max: 2 })).toBe(true);
+    expect(isValidAmount({ amount: 1, min: 1, max: 1 })).toBe(true);
+    expect(isValidAmount({ amount: 1, min: 0, max: 2 })).toBe(true);
+  });
+});
+
+describe("isUrl", () => {
+  test("url must be a valid http URL", () => {
+    expect(
+      isUrl(
+        "lnurl1dp68gurn8ghj7em9w3skccne9e3k7mf0d3h82unvwqhksetvd3hj7cmpd3kxyctrdvlkzmt0w4h8g0f3xqcrqvpssx932j",
+      ),
+    ).toBe(false);
+    expect(
+      isUrl("https://getalby.com/lnurlp/hello/callback?amount=100000"),
+    ).toBe(true);
+  });
+});
+
+describe("parseLnUrlPayResponse", () => {
+  test("min/max must be in millisats", async () => {
+    const response = {
+      status: "OK",
+      tag: "payRequest",
+      commentAllowed: 255,
+      callback: "https://getalby.com/lnurlp/hello/callback",
+      metadata:
+        '[["text/identifier","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+      minSendable: 1000,
+      maxSendable: 11000000000,
+      payerData: { name: { mandatory: false }, email: { mandatory: false } },
+      nostrPubkey:
+        "79f00d3f5a19ec806189fcab03c1be4ff81d18ee4f653c88fac41fe03570f432",
+      allowsNostr: true,
+    };
+    const parsed = await parseLnUrlPayResponse(response);
+    expect(parsed.min).toBe(1000);
+    expect(parsed.max).toBe(11000000000);
+  });
+  test("fixed amount", async () => {
+    const response = {
+      status: "OK",
+      tag: "payRequest",
+      callback: "https://getalby.com/lnurlp/hello/callback",
+      metadata:
+        '[["text/identifier","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+      minSendable: 1000,
+      maxSendable: 1000,
+    };
+    const parsed = await parseLnUrlPayResponse(response);
+    expect(parsed.fixed).toBe(true);
+  });
+  test("exception on invalid callback URL", async () => {
+    const response = {
+      status: "OK",
+      tag: "payRequest",
+      callback: "//getalby.com/lnurlp/hello/callback",
+      metadata:
+        '[["text/identifier","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+      minSendable: 1000,
+      maxSendable: 11000000000,
+    };
+    expect(parseLnUrlPayResponse(response)).rejects.toThrow(
+      "Callback must be a valid url",
+    );
+  });
+  test("identifier must be set", async () => {
+    const response = {
+      status: "OK",
+      tag: "payRequest",
+      callback: "https://getalby.com/lnurlp/hello/callback",
+      metadata:
+        '[["text/identifier","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+      minSendable: 1000,
+      maxSendable: 11000000000,
+    };
+    const parsed = await parseLnUrlPayResponse(response);
+    expect(parsed.identifier).toBe("hello@getalby.com");
+    expect(parsed.email).toBe("");
+  });
+  test("email must be set", async () => {
+    const response = {
+      status: "OK",
+      tag: "payRequest",
+      callback: "https://getalby.com/lnurlp/hello/callback",
+      metadata:
+        '[["text/email","hello@getalby.com"],["text/plain","Sats for Alby"]]',
+      minSendable: 1000,
+      maxSendable: 11000000000,
+    };
+    const parsed = await parseLnUrlPayResponse(response);
+    expect(parsed.identifier).toBe("");
+    expect(parsed.email).toBe("hello@getalby.com");
+  });
+  // TODO: add more tests
+});
+
+
+
+================================================
+FILE: src/lnurl/LightningAddress.ts
+================================================
+import { SendPaymentResponse, WebLNProvider } from "@webbtc/webln-types";
+import { Invoice, InvoiceArgs } from "../bolt11";
+import { Boost, sendBoostagram } from "../podcasting2";
+import {
+  KeysendResponse,
+  LnUrlPayResponse,
+  LnUrlRawData,
+  NostrResponse,
+  RequestInvoiceArgs,
+  ZapArgs,
+  ZapOptions,
+  KeySendRawData,
+} from "./types";
+import {
+  generateZapEvent,
+  parseKeysendResponse,
+  parseNostrResponse,
+  isUrl,
+  isValidAmount,
+  parseLnUrlPayResponse,
+} from "./utils";
+
+export const LN_ADDRESS_REGEX =
+  /^((?:[^<>()[\]\\.,;:\s@"]+(?:\.[^<>()[\]\\.,;:\s@"]+)*)|(?:".+"))@((?:\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(?:(?:[a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+
+export const DEFAULT_PROXY = "https://api.getalby.com/lnurl";
+
+type LightningAddressOptions = {
+  proxy?: string | false;
+  webln?: WebLNProvider;
+};
+
+export class LightningAddress {
+  address: string;
+  options: LightningAddressOptions;
+  username: string | undefined;
+  domain: string | undefined;
+  pubkey: string | undefined;
+  lnurlpData: LnUrlPayResponse | undefined;
+  keysendData: KeysendResponse | undefined;
+  nostrData: NostrResponse | undefined;
+  nostrPubkey: string | undefined;
+  nostrRelays: string[] | undefined;
+  webln: WebLNProvider | undefined;
+
+  constructor(address: string, options?: LightningAddressOptions) {
+    this.address = address;
+    this.options = { proxy: DEFAULT_PROXY };
+    this.options = Object.assign(this.options, options);
+    this.parse();
+    this.webln = this.options.webln;
+  }
+
+  parse() {
+    const result = LN_ADDRESS_REGEX.exec(this.address.toLowerCase());
+    if (result) {
+      this.username = result[1];
+      this.domain = result[2];
+    }
+  }
+
+  getWebLN() {
+    return this.webln || globalThis.webln;
+  }
+
+  async fetch() {
+    if (this.options.proxy) {
+      return this.fetchWithProxy();
+    } else {
+      return this.fetchWithoutProxy();
+    }
+  }
+
+  async fetchWithProxy() {
+    const response = await fetch(
+      `${this.options.proxy}/lightning-address-details?${new URLSearchParams({
+        ln: this.address,
+      }).toString()}`,
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch lnurl info: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const json = await response.json();
+
+    await this.parseLnUrlPayResponse(json.lnurlp);
+    this.parseKeysendResponse(json.keysend);
+    this.parseNostrResponse(json.nostr);
+  }
+
+  async fetchWithoutProxy() {
+    if (!this.domain || !this.username) {
+      return;
+    }
+
+    await Promise.all([
+      this.fetchLnurlData(),
+      this.fetchKeysendData(),
+      this.fetchNostrData(),
+    ]);
+  }
+
+  async fetchLnurlData() {
+    const lnurlResult = await fetch(this.lnurlpUrl());
+    if (lnurlResult.ok) {
+      const lnurlData = await lnurlResult.json();
+      await this.parseLnUrlPayResponse(lnurlData);
+    }
+  }
+
+  async fetchKeysendData() {
+    const keysendResult = await fetch(this.keysendUrl());
+    if (keysendResult.ok) {
+      const keysendData = await keysendResult.json();
+      this.parseKeysendResponse(keysendData);
+    }
+  }
+
+  async fetchNostrData() {
+    const nostrResult = await fetch(this.nostrUrl());
+    if (nostrResult.ok) {
+      const nostrData = await nostrResult.json();
+      this.parseNostrResponse(nostrData);
+    }
+  }
+
+  lnurlpUrl() {
+    return `https://${this.domain}/.well-known/lnurlp/${this.username}`;
+  }
+
+  keysendUrl() {
+    return `https://${this.domain}/.well-known/keysend/${this.username}`;
+  }
+
+  nostrUrl() {
+    return `https://${this.domain}/.well-known/nostr.json?name=${this.username}`;
+  }
+
+  async generateInvoice(params: Record<string, string>): Promise<Invoice> {
+    let data;
+    if (this.options.proxy) {
+      const invoiceResponse = await fetch(
+        `${this.options.proxy}/generate-invoice?${new URLSearchParams({
+          ln: this.address,
+          ...params,
+        }).toString()}`,
+      );
+      if (!invoiceResponse.ok) {
+        throw new Error(
+          `Failed to generate invoice: ${invoiceResponse.status} ${invoiceResponse.statusText}`,
+        );
+      }
+      const json = await invoiceResponse.json();
+      data = json.invoice;
+    } else {
+      if (!this.lnurlpData) {
+        throw new Error("No lnurlpData available. Please call fetch() first.");
+      }
+      if (!this.lnurlpData.callback || !isUrl(this.lnurlpData.callback))
+        throw new Error("Valid callback does not exist in lnurlpData");
+      const callbackUrl = new URL(this.lnurlpData.callback);
+      callbackUrl.search = new URLSearchParams(params).toString();
+      const invoiceResponse = await fetch(callbackUrl.toString());
+      if (!invoiceResponse.ok) {
+        throw new Error(
+          `Failed to generate invoice: ${invoiceResponse.status} ${invoiceResponse.statusText}`,
+        );
+      }
+      data = await invoiceResponse.json();
+    }
+
+    const paymentRequest = data && data.pr && data.pr.toString();
+    if (!paymentRequest) throw new Error("Invalid pay service invoice");
+
+    const invoiceArgs: InvoiceArgs = { pr: paymentRequest };
+    if (data && data.verify) invoiceArgs.verify = data.verify.toString();
+    if (data && data.successAction && typeof data.successAction === "object") {
+      const { tag, message, description, url } = data.successAction;
+      if (tag === "message") {
+        invoiceArgs.successAction = { tag, message };
+      } else if (tag === "url") {
+        invoiceArgs.successAction = { tag, description, url };
+      }
+    }
+
+    return new Invoice(invoiceArgs);
+  }
+
+  async requestInvoice(args: RequestInvoiceArgs): Promise<Invoice> {
+    if (!this.lnurlpData) {
+      throw new Error("No lnurlpData available. Please call fetch() first.");
+    }
+    const msat = args.satoshi * 1000;
+    const { commentAllowed, min, max } = this.lnurlpData;
+
+    if (!isValidAmount({ amount: msat, min, max }))
+      throw new Error("Invalid amount");
+    if (
+      args.comment &&
+      commentAllowed &&
+      commentAllowed > 0 &&
+      args.comment.length > commentAllowed
+    )
+      throw new Error(
+        `The comment length must be ${commentAllowed} characters or fewer`,
+      );
+
+    const invoiceParams: {
+      amount: string;
+      comment?: string;
+      payerdata?: string;
+    } = { amount: msat.toString() };
+    if (args.comment) invoiceParams.comment = args.comment;
+    if (args.payerdata)
+      invoiceParams.payerdata = JSON.stringify(args.payerdata);
+
+    return this.generateInvoice(invoiceParams);
+  }
+
+  async boost(boost: Boost, amount: number = 0) {
+    if (!this.keysendData) {
+      throw new Error("No keysendData available. Please call fetch() first.");
+    }
+    const { destination, customKey, customValue } = this.keysendData;
+    const webln = this.getWebLN();
+    if (!webln) {
+      throw new Error("WebLN not available");
+    }
+    return sendBoostagram(
+      {
+        destination,
+        customKey,
+        customValue,
+        amount,
+        boost,
+      },
+      { webln },
+    );
+  }
+
+  async zapInvoice(
+    { satoshi, comment, relays, e }: ZapArgs,
+    options: ZapOptions = {},
+  ): Promise<Invoice> {
+    if (!this.lnurlpData) {
+      throw new Error("No lnurlpData available. Please call fetch() first.");
+    }
+    if (!this.nostrPubkey) {
+      throw new Error("Nostr Pubkey is missing");
+    }
+    const p = this.nostrPubkey;
+    const msat = satoshi * 1000;
+    const { allowsNostr, min, max } = this.lnurlpData;
+
+    if (!isValidAmount({ amount: msat, min, max }))
+      throw new Error("Invalid amount");
+    if (!allowsNostr) throw new Error("Your provider does not support zaps");
+
+    const event = await generateZapEvent(
+      {
+        satoshi: msat,
+        comment,
+        p,
+        e,
+        relays,
+      },
+      options,
+    );
+    const zapParams: { amount: string; nostr: string } = {
+      amount: msat.toString(),
+      nostr: JSON.stringify(event),
+    };
+
+    const invoice = await this.generateInvoice(zapParams);
+    return invoice;
+  }
+
+  async zap(
+    args: ZapArgs,
+    options: ZapOptions = {},
+  ): Promise<SendPaymentResponse> {
+    const invoice = this.zapInvoice(args, options);
+    const webln = this.getWebLN();
+    if (!webln) {
+      throw new Error("WebLN not available");
+    }
+    await webln.enable();
+    const response = webln.sendPayment((await invoice).paymentRequest);
+    return response;
+  }
+
+  private async parseLnUrlPayResponse(lnurlpData: LnUrlRawData | undefined) {
+    if (lnurlpData) {
+      this.lnurlpData = await parseLnUrlPayResponse(lnurlpData);
+    }
+  }
+
+  private parseKeysendResponse(keysendData: KeySendRawData | undefined) {
+    if (keysendData) {
+      this.keysendData = parseKeysendResponse(keysendData);
+    }
+  }
+
+  private parseNostrResponse(nostrData: NostrResponse | undefined) {
+    if (nostrData) {
+      [this.nostrData, this.nostrPubkey, this.nostrRelays] = parseNostrResponse(
+        nostrData,
+        this.username,
+      );
+    }
+  }
+}
+
+
+
+================================================
+FILE: src/lnurl/types.ts
+================================================
+export type LnUrlRawData = {
+  tag: string;
+  callback: string;
+  minSendable: number;
+  maxSendable: number;
+  metadata: string;
+  payerData?: LUD18ServicePayerData;
+  commentAllowed?: number;
+  allowsNostr?: boolean;
+};
+
+export type LnUrlPayResponse = {
+  callback: string;
+  fixed: boolean;
+  min: number;
+  max: number;
+  domain?: string;
+  metadata: Array<Array<string>>;
+  metadataHash: string;
+  identifier: string;
+  email: string;
+  description: string;
+  image: string;
+  commentAllowed?: number;
+  rawData: LnUrlRawData;
+  allowsNostr: boolean;
+  payerData?: LUD18ServicePayerData;
+};
+
+export type LUD18ServicePayerData = Partial<{
+  name: { mandatory: boolean };
+  pubkey: { mandatory: boolean };
+  identifier: { mandatory: boolean };
+  email: { mandatory: boolean };
+  auth: {
+    mandatory: boolean;
+    k1: string;
+  };
+}> &
+  Record<string, unknown>;
+
+export type LUD18PayerData = Partial<{
+  name?: string;
+  pubkey?: string;
+  identifier?: string;
+  email?: string;
+  auth?: {
+    key: string;
+    sig: string;
+  };
+}> &
+  Record<string, unknown>;
+
+export type NostrResponse = {
+  names: Record<string, string>;
+  relays: Record<string, string[]>;
+};
+
+export type Event = {
+  id?: string;
+  kind: number;
+  pubkey?: string;
+  content: string;
+  tags: string[][];
+  created_at: number;
+  sig?: string;
+};
+
+export type ZapArgs = {
+  satoshi: number;
+  comment?: string;
+  relays: string[];
+  p?: string;
+  e?: string; // note you are zapping, optional
+};
+
+export type NostrProvider = {
+  getPublicKey(): Promise<string>;
+  signEvent(
+    event: Event & {
+      pubkey: string;
+      id: string;
+    },
+  ): Promise<Event>;
+};
+
+export type ZapOptions = {
+  nostr?: NostrProvider;
+};
+
+export type RequestInvoiceArgs = {
+  satoshi: number;
+  comment?: string;
+  payerdata?: LUD18PayerData;
+};
+
+export type KeysendResponse = {
+  customKey: string;
+  customValue: string;
+  destination: string;
+};
+
+export type KeySendRawData = {
+  tag: string;
+  status: string;
+  customData?: { customKey?: string; customValue?: string }[];
+  pubkey: string;
+};
+
+
+
+================================================
+FILE: src/lnurl/utils.ts
+================================================
+import {
+  KeySendRawData,
+  KeysendResponse,
+  Event,
+  NostrResponse,
+  ZapArgs,
+  ZapOptions,
+  LUD18ServicePayerData,
+  LnUrlPayResponse,
+  LnUrlRawData,
+} from "./types";
+import { sha256 } from "@noble/hashes/sha256";
+import { bytesToHex } from "@noble/hashes/utils";
+
+const TAG_KEYSEND = "keysend";
+
+export const parseKeysendResponse = (data: KeySendRawData): KeysendResponse => {
+  if (data.tag !== TAG_KEYSEND) throw new Error("Invalid keysend params");
+  if (data.status !== "OK") throw new Error("Keysend status not OK");
+  if (!data.pubkey) throw new Error("Pubkey does not exist");
+
+  const destination = data.pubkey;
+  let customKey, customValue;
+
+  if (data.customData && data.customData[0]) {
+    customKey = data.customData[0].customKey;
+    customValue = data.customData[0].customValue;
+  }
+
+  return {
+    destination,
+    customKey,
+    customValue,
+  };
+};
+
+export async function generateZapEvent(
+  { satoshi, comment, p, e, relays }: ZapArgs,
+  options: ZapOptions = {},
+): Promise<Event> {
+  const nostr = options.nostr || globalThis.nostr;
+  if (!nostr) {
+    throw new Error("nostr option or window.nostr is not available");
+  }
+
+  const nostrTags = [
+    ["relays", ...relays],
+    ["amount", satoshi.toString()],
+  ];
+  if (p) {
+    nostrTags.push(["p", p]);
+  }
+  if (e) {
+    nostrTags.push(["e", e]);
+  }
+
+  const pubkey = await nostr.getPublicKey();
+
+  const nostrEvent: Event = {
+    pubkey,
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 9734,
+    tags: nostrTags,
+    content: comment ?? "",
+  };
+
+  nostrEvent.id = getEventHash(nostrEvent);
+  return await nostr.signEvent(nostrEvent);
+}
+
+export function validateEvent(event: Event): boolean {
+  if (typeof event.content !== "string") return false;
+  if (typeof event.created_at !== "number") return false;
+  // ignore these checks because if the pubkey is not set we add it to the event. same for the ID.
+  // if (typeof event.pubkey !== "string") return false;
+  // if (!event.pubkey.match(/^[a-f0-9]{64}$/)) return false;
+
+  if (!Array.isArray(event.tags)) return false;
+  for (let i = 0; i < event.tags.length; i++) {
+    const tag = event.tags[i];
+    if (!Array.isArray(tag)) return false;
+    for (let j = 0; j < tag.length; j++) {
+      if (typeof tag[j] === "object") return false;
+    }
+  }
+
+  return true;
+}
+
+export function serializeEvent(evt: Event): string {
+  if (!validateEvent(evt))
+    throw new Error("can't serialize event with wrong or missing properties");
+
+  return JSON.stringify([
+    0,
+    evt.pubkey,
+    evt.created_at,
+    evt.kind,
+    evt.tags,
+    evt.content,
+  ]);
+}
+
+export function getEventHash(event: Event): string {
+  return bytesToHex(sha256(serializeEvent(event)));
+}
+
+export function parseNostrResponse(
+  nostrData: NostrResponse,
+  username: string | undefined,
+) {
+  let nostrPubkey: string | undefined;
+  let nostrRelays: string[] | undefined;
+  if (username && nostrData) {
+    nostrPubkey = nostrData.names?.[username];
+    nostrRelays = nostrPubkey ? nostrData.relays?.[nostrPubkey] : undefined;
+  }
+
+  return [nostrData, nostrPubkey, nostrRelays] as const;
+}
+
+const URL_REGEX =
+  /((([A-Za-z]{3,9}:(?:\/\/)?)(?:[-;:&=+$,\w]+@)?[A-Za-z0-9.-]+|(?:www.|[-;:&=+$,\w]+@)[A-Za-z0-9.-]+)((?:\/[+~%/.\w-_]*)?\??(?:[-+=&;%@.\w_]*)#?(?:[\w]*))?)/;
+
+export const isUrl = (url: string | null): url is string => {
+  if (!url) return false;
+  return URL_REGEX.test(url);
+};
+
+export const isValidAmount = ({
+  amount,
+  min,
+  max,
+}: {
+  amount: number;
+  min: number;
+  max: number;
+}): boolean => {
+  return amount > 0 && amount >= min && amount <= max;
+};
+
+const TAG_PAY_REQUEST = "payRequest";
+
+// From: https://github.com/dolcalmi/lnurl-pay/blob/main/src/request-pay-service-params.ts
+export const parseLnUrlPayResponse = async (
+  data: LnUrlRawData,
+): Promise<LnUrlPayResponse> => {
+  if (data.tag !== TAG_PAY_REQUEST)
+    throw new Error("Invalid pay service params");
+
+  const callback = (data.callback + "").trim();
+  if (!isUrl(callback)) throw new Error("Callback must be a valid url");
+
+  const min = Math.ceil(Number(data.minSendable || 0));
+  const max = Math.floor(Number(data.maxSendable));
+  if (!(min && max) || min > max) throw new Error("Invalid pay service params");
+
+  let metadata: Array<Array<string>>;
+  let metadataHash: string;
+  try {
+    metadata = JSON.parse(data.metadata + "");
+    metadataHash = bytesToHex(sha256(data.metadata + ""));
+  } catch {
+    metadata = [];
+    metadataHash = bytesToHex(sha256("[]"));
+  }
+
+  let email = "";
+  let image = "";
+  let description = "";
+  let identifier = "";
+  for (let i = 0; i < metadata.length; i++) {
+    const [k, v] = metadata[i];
+    switch (k) {
+      case "text/plain":
+        description = v;
+        break;
+      case "text/identifier":
+        identifier = v;
+        break;
+      case "text/email":
+        email = v;
+        break;
+      case "image/png;base64":
+      case "image/jpeg;base64":
+        image = "data:" + k + "," + v;
+        break;
+    }
+  }
+  const payerData = data.payerData as LUD18ServicePayerData | undefined;
+
+  let domain: string | undefined;
+  try {
+    domain = new URL(callback).hostname;
+  } catch {
+    // fail silently and let domain remain undefined if callback is not a valid URL
+  }
+
+  return {
+    callback,
+    fixed: min === max,
+    min,
+    max,
+    domain,
+    metadata,
+    metadataHash,
+    identifier,
+    email,
+    description,
+    image,
+    payerData,
+    commentAllowed: Number(data.commentAllowed) || 0,
+    rawData: data,
+    allowsNostr: data.allowsNostr || false,
+  };
+};
+
+
+
+================================================
+FILE: src/podcasting2/boostagrams.ts
+================================================
+import { WebLNProvider } from "@webbtc/webln-types";
+import { BoostArguments, BoostOptions, WeblnBoostParams } from "./types";
+
+export const sendBoostagram = async (
+  args: BoostArguments,
+  options?: BoostOptions,
+) => {
+  const { boost } = args;
+  if (!options) {
+    options = {};
+  }
+  const webln: WebLNProvider = options.webln || globalThis.webln;
+
+  if (!webln) {
+    throw new Error("WebLN not available");
+  }
+  if (!webln.keysend) {
+    throw new Error("Keysend not available in current WebLN provider");
+  }
+
+  const amount = args.amount || Math.floor(boost.value_msat / 1000);
+
+  const weblnParams: WeblnBoostParams = {
+    destination: args.destination,
+    amount: amount,
+    customRecords: {
+      "7629169": JSON.stringify(boost),
+    },
+  };
+  if (args.customKey && args.customValue) {
+    weblnParams.customRecords[args.customKey] = args.customValue;
+  }
+  await webln.enable();
+  const response = await webln.keysend(weblnParams);
+  return response;
+};
+
+
+
+================================================
+FILE: src/podcasting2/index.ts
+================================================
+export * from "./types";
+export * from "./boostagrams";
+
+
+
+================================================
+FILE: src/podcasting2/types.ts
+================================================
+export type BoostOptions = {
+  webln?: unknown;
+};
+
+export type BoostArguments = {
+  destination: string;
+  customKey?: string;
+  customValue?: string;
+  amount?: number;
+  boost: Boost;
+};
+
+export type WeblnBoostParams = {
+  destination: string;
+  amount: number;
+  customRecords: Record<string, string>;
+};
+
+export type Boost = {
+  action: string;
+  value_msat: number;
+  value_msat_total: number;
+  app_name: string;
+  app_version: string;
+  feedId: string;
+  podcast: string;
+  episode: string;
+  ts: number;
+  name: string;
+  sender_name: string;
+};
+
+
+================================================
+FILE: examples/l402.js
+================================================
+import { fetchWithL402 } from "@getalby/lightning-tools/l402";
+import { NostrWebLNProvider } from "@getalby/sdk";
+import "websocket-polyfill";
+
+const url = "https://lsat-weather-api.getalby.repl.co/kigali";
+
+const nostrWalletConnectUrl = process.env.NWC_URL;
+
+if (!nostrWalletConnectUrl) {
+  throw new Error("Please set a NWC_URL env variable");
+}
+
+const nostrWeblnProvider = new NostrWebLNProvider({
+  nostrWalletConnectUrl,
+});
+nostrWeblnProvider.on("sendPayment", (response) => {
+  console.info(`payment response:`, response);
+});
+
+fetchWithL402(url, {}, { webln: nostrWeblnProvider })
+  .then((response) => response.json())
+  .then((data) => {
+    console.info(data);
+    nostrWeblnProvider.close();
+  });
+
+
+
+================================================
+FILE: examples/request-invoice.js
+================================================
+import { LightningAddress } from "@getalby/lightning-tools/lnurl";
+
+const ln = new LightningAddress("hello@getalby.com");
+
+await ln.fetch();
+// request an invoice for 1000 satoshis
+// this returns a new `Invoice` class that can also be used to validate the payment
+const invoice = await ln.requestInvoice({ satoshi: 1000 });
+
+console.info(invoice.paymentRequest); // print the payment request
+console.info(invoice.paymentHash); // print the payment hash
+
+
+
+================================================
+FILE: examples/zaps-nwc.js
+================================================
+import { LightningAddress } from "@getalby/lightning-tools/lnurl";
+import { NostrWebLNProvider } from "@getalby/sdk";
+import "websocket-polyfill";
+import { finalizeEvent, getPublicKey } from "nostr-tools";
+import { hexToBytes } from "@noble/hashes/utils";
+
+// your private key is required to sign zap request events
+const nostrPrivateKey = process.env.NOSTR_PRIVATE_KEY;
+// NWC url will be used to pay the zap invoice.
+// It can be created in advanced at nwc.getalby.com,
+// or use webln.NostrWebLNProvider.withNewSecret() to generate a new one
+const nostrWalletConnectUrl = process.env.NWC_URL;
+
+if (!nostrPrivateKey || !nostrWalletConnectUrl) {
+  throw new Error("Please set .env variables");
+}
+
+(async () => {
+  const nostrWeblnProvider = new NostrWebLNProvider({
+    nostrWalletConnectUrl,
+  });
+  // or use nostrWeblnProvider.initNWC(); to get a new NWC url
+  const nostrProvider = {
+    getPublicKey: () =>
+      Promise.resolve(getPublicKey(hexToBytes(nostrPrivateKey))),
+    signEvent: (event) =>
+      Promise.resolve(finalizeEvent(event, hexToBytes(nostrPrivateKey))),
+  };
+
+  const ln = new LightningAddress("hello@getalby.com", {
+    webln: nostrWeblnProvider,
+  });
+  await ln.fetch();
+
+  if (!ln.nostrPubkey) {
+    throw new Error("No nostr pubkey available"); // seems the lightning address is no NIP05 address
+  }
+
+  const zapArgs = {
+    satoshi: 1000,
+    comment: "Awesome post",
+    relays: ["wss://relay.damus.io"],
+    e: "44e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245",
+  };
+
+  const response = await ln.zap(zapArgs, { nostr: nostrProvider }); // generates a zap invoice
+  console.info("Preimage", response.preimage); // print the preimage
+  nostrWeblnProvider.close();
+})();
+
+
+
+================================================
+FILE: examples/zaps.js
+================================================
+import { LightningAddress } from "@getalby/lightning-tools/lnurl";
+
+(async () => {
+  const ln = new LightningAddress("hello@getalby.com");
+  await ln.fetch();
+
+  if (!ln.nostrPubkey) {
+    alert("No nostr pubkey available"); // seems the lightning address is no NIP05 address
+  }
+
+  const zapArgs = {
+    satoshi: 1000,
+    comment: "Awesome post",
+    relays: ["wss://relay.damus.io"],
+    e: "44e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245", // optional, omit to zap profile directly
+  };
+
+  if (window.webln) {
+    // zap in one go with WebLN (https://www.webln.guide) (easiest for web apps)
+    const response = await ln.zap(zapArgs); // signs zap request event, generates invoice and pays it
+    console.info(response.preimage); // print the preimage
+  } else {
+    // or manually (create an invoice and give it to the user to pay)
+    const invoice = await ln.zapInvoice(zapArgs); // generates a zap invoice
+    console.info(invoice.paymentRequest); // print the payment request
+    await invoice.isPaid(); // check the payment status as described above
+  }
+})();
+
+
+
+

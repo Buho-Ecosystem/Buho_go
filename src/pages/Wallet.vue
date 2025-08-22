@@ -1,392 +1,332 @@
 <template>
-  <q-page class="wallet-dashboard-page">
+  <q-page class="wallet-page">
     <!-- Header -->
-    <q-toolbar class="">
-      <div class="logo-container">
-        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="32" viewBox="0 0 30 32" fill="none">
-          <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                fill="#059573"/>
-          <path
-            d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-            fill="#78D53C"/>
-          <path
-            d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-            fill="#43B65B"/>
-        </svg>
-        <div class="title">BuhoGO</div>
+    <div class="wallet-header">
+      <div class="header-content">
+        <div class="logo-container">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo-svg">
+            <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
+                  fill="#059573"/>
+            <path
+              d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
+              fill="#78D53C"/>
+            <path
+              d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
+              fill="#43B65B"/>
+          </svg>
+          <div class="title">BuhoGO</div>
+        </div>
+        <q-btn 
+          flat 
+          round 
+          dense 
+          class="modern-menu-btn"
+          @click="$router.push('/settings')" 
+          aria-label="Settings"
+        >
+          <div class="menu-icon">
+            <div class="menu-line"></div>
+            <div class="menu-line"></div>
+            <div class="menu-line"></div>
+          </div>
+        </q-btn>
       </div>
-      <q-space/>
-      <q-btn round flat icon="las la-cog" class="settings-btn" @click="$router.push('/settings')"/>
-    </q-toolbar>
-
-    <!-- Wallet Card -->
-    <div class="wallet-card-container">
-      <q-card class="wallet-card">
-        <q-card-section class="wallet-card-content">
-          <div class="wallet-info">
-            <p class="text-caption text-white text-opacity-80">Current Balance</p>
-            <h2 class="balance">
-              <q-skeleton v-if="isLoading" type="text" width="150px"/>
-              <template v-else>{{ formatBalance(walletState.balance) }}</template>
-            </h2>
-          </div>
-          <p class="wallet-name">
-            <q-skeleton v-if="isLoading" type="text" width="100px"/>
-            <template v-else>{{ activeWallet?.name || 'Your Wallet' }}</template>
-          </p>
-
-          <div class="wallet-actions">
-            <q-btn flat round dense color="white" icon="las la-ellipsis-h" @click="showWalletInfo = !showWalletInfo"/>
-          </div>
-
-          <!-- Wallet Info Popup -->
-          <div class="wallet-info-popup" v-if="showWalletInfo">
-            <div class="q-mt-sm row">
-              <div class="col-12">
-                <div class="text-subtitle2 text-white">Wallet Details
-                  <q-btn flat round dense color="white" class="float-right" icon="las la-times" size="sm"
-                         @click="showWalletInfo = false"/>
-                </div>
-              </div>
-            </div>
-
-            <div class="wallet-info-content q-mt-sm">
-              <q-item dense class="wallet-info-item">
-                <q-item-section class="text-caption text-white text-opacity-70">Status:</q-item-section>
-                <div class="wallet-status">
-                  <q-skeleton v-if="isLoading" type="text" width="60px"/>
-                  <template v-else>
-                    <q-icon name="las la-check-circle" size="xs" color="green-4" v-if="isActiveWallet"/>
-                    <q-icon name="las la-circle" size="xs" color="grey-5" v-else/>
-                    <span :class="isActiveWallet ? 'text-green-4' : 'text-grey-5'">
-                      {{ isActiveWallet ? 'Active' : 'Inactive' }}
-                    </span>
-                  </template>
-                </div>
-              </q-item>
-
-              <div class="wallet-info-item">
-                <span class="text-caption text-white text-opacity-70">Connected Since:</span>
-                <span class="text-caption text-white">
-                  <q-skeleton v-if="isLoading" type="text" width="80px"/>
-                  <template v-else>{{ formatDate() }}</template>
-                </span>
-              </div>
-            </div>
-
-            <div class="wallet-info-footer" v-if="!isActiveWallet">
-              <q-btn class="activate-btn" label="Activate This Wallet" @click="activateWallet"/>
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
     </div>
 
-    <!-- Transaction History -->
-    <div class="transaction-history">
-      <div v-if="isLoading" class="q-pa-md">
-        <q-item v-for="i in 3" :key="i" class="transaction-item">
-          <q-item-section avatar>
-            <q-skeleton type="QAvatar"/>
-          </q-item-section>
-
-          <q-item-section>
-            <q-item-label>
-              <q-skeleton type="text"/>
-            </q-item-label>
-            <q-item-label caption>
-              <q-skeleton type="text" width="65%"/>
-            </q-item-label>
-          </q-item-section>
-
-          <q-item-section side>
-            <q-item-label>
-              <q-skeleton type="text" width="80px"/>
-            </q-item-label>
-          </q-item-section>
-        </q-item>
-      </div>
-      <div v-else-if="transactions.length === 0" class="no-transactions">
-        No transactions yet
-      </div>
-      <q-scroll-area v-else class="transaction-scroll-area q-pb-xl">
-        <q-list>
-          <q-item v-for="tx in transactions" :key="tx.id" clickable v-ripple @click="viewTransaction(tx.id)"
-                  class="transaction-item">
-            <q-item-section side>
-              <q-avatar :color="tx.type === 'incoming' ? 'green-1' : 'grey-3'" text-color="grey-9"
-                        class="">
-                <q-icon :name="tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up'"
-                        :color="tx.type === 'incoming' ? 'green-8' : 'grey-7'"/>
-              </q-avatar>
-            </q-item-section>
-
-            <q-item-section>
-              <q-item-label>{{ tx.description }}</q-item-label>
-              <q-item-label caption>{{ formatTransactionDate(tx.settled_at) }}</q-item-label>
-            </q-item-section>
-
-            <q-item-section side>
-              <q-item-label :class="tx.type === 'incoming' ? 'text-green-8' : 'text-grey-8'" class="text-weight-medium">
-                {{ tx.type === 'incoming' ? '+' : '-' }} {{ formatBalance(tx.amount) }}
-              </q-item-label>
-              <q-icon name="las la-chevron-right" size="xs" color="grey-5"/>
-            </q-item-section>
-          </q-item>
-        </q-list>
-
-        <div class="fixed fixed-bottom bg-white">
-          <q-btn flat class=" view-all-btn" no-caps label="View All Transactions"
-                 @click="$router.push('/transaction-history')"/>
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Balance Display -->
+      <div class="balance-section">
+        <div class="balance-container" @click="toggleCurrency" :class="{ 'switching': isSwitchingCurrency }">
+          <div class="balance-amount">
+            <transition name="balance-fade" mode="out-in">
+              <div :key="currentDisplayMode" class="amount-display">
+                <span class="amount-number">{{ formatMainBalance(walletState.balance) }}</span>
+                <span class="amount-unit">{{ getCurrentUnit() }}</span>
+              </div>
+            </transition>
+          </div>
+          <transition name="secondary-fade" mode="out-in">
+            <div :key="currentDisplayMode" class="balance-secondary">
+              {{ getSecondaryValue(walletState.balance) }}
+            </div>
+          </transition>
         </div>
-      </q-scroll-area>
+      </div>
 
+      <!-- Transaction History Icon -->
+      <div class="transaction-icon-section">
+        <q-btn
+          flat
+          round
+          size="md"
+          icon="las la-history"
+          @click="$router.push('/transactions')"
+          class="transaction-history-btn"
+          aria-label="Transaction History"
+          :class="{ 'pulse': shouldPulse }"
+        />
+      </div>
     </div>
 
     <!-- Bottom Action Buttons -->
     <div class="bottom-actions">
-      <q-btn class="action-btn receive-btn" no-caps @click="openPaymentSheet('receive')">
-        <div class="btn-content">
-          <div class="icon-container">
-            <div class="icon-glow"></div>
-            <div class="icon-bg">
-              <q-icon name="las la-arrow-down" size="md"/>
-            </div>
-          </div>
-          <span>Receive</span>
-        </div>
-      </q-btn>
-
-      <q-btn class="action-btn send-btn" no-caps @click="openPaymentSheet('send')">
-        <div class="btn-content">
-          <div class="icon-container">
-            <div class="icon-glow"></div>
-            <div class="icon-bg">
-              <q-icon name="las la-arrow-up" size="md"/>
-            </div>
-          </div>
-          <span>Send</span>
-        </div>
-      </q-btn>
+      <div class="action-buttons">
+        <q-btn
+          class="action-btn receive-btn"
+          @click="showReceiveDialog = true"
+          no-caps
+          unelevated
+          aria-label="Receive payment"
+        >
+          <q-icon name="las la-arrow-down" size="24px"/>
+          <div class="btn-text">Receive</div>
+        </q-btn>
+        <q-btn
+          class="action-btn send-btn"
+          @click="showSendDialog = true"
+          no-caps
+          unelevated
+          aria-label="Send payment"
+        >
+          <q-icon name="las la-arrow-up" size="24px"/>
+          <div class="btn-text">Send</div>
+        </q-btn>
+      </div>
     </div>
 
-    <!-- Payment Dialogs -->
-    <!-- Receive Payment Dialog -->
-    <q-dialog v-model="paymentSheetOpen" v-if="paymentMode === 'receive'">
-      <q-card class="payment-dialog">
+    <!-- Send Dialog -->
+    <q-dialog v-model="showSendDialog" class="payment-dialog">
+      <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">{{ paymentSheetTitle }}</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Send Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div v-if="paymentStep === 0" class="payment-step">
-            <div class="form-group">
-              <div class="form-label-row">
-                <label>Amount</label>
-                <q-btn flat dense size="sm" class="currency-toggle" @click="toggleCurrency">
-                  {{ currencySymbol }} {{ walletState.denominationCurrency.toUpperCase() }}
-                </q-btn>
-              </div>
-              <q-input
-                v-model.number="amount"
-                type="number"
-                dense
-                outlined
-                :prefix="currencySymbol"
-                placeholder="Enter amount"
+          <!-- Payment Input -->
+          <div class="payment-input-section">
+            <q-input
+              v-model="sendForm.input"
+              outlined
+              label="Payment Details"
+              placeholder="Invoice, LNURL, or Lightning Address"
+              type="textarea"
+              rows="3"
+              class="payment-input"
+            />
+            
+            <div class="input-actions">
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-qrcode"
+                label="Scan QR"
+                @click="showQRScanner = true"
+                class="action-btn scan-btn"
+                no-caps
               />
-              <p v-if="amount && !isNaN(Number(amount))" class="fiat-conversion">
-                ≈ {{ fiatSymbol }}{{ getFiatAmount() }} {{ walletState.preferredFiatCurrency }}
-              </p>
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-paste"
+                label="Paste"
+                @click="pasteFromClipboard"
+                class="action-btn paste-btn"
+                no-caps
+              />
             </div>
+          </div>
 
-            <div class="form-group">
-              <label>Description (optional)</label>
-              <q-input
-                v-model="description"
-                outlined
-                dense
-                placeholder="What's this payment for?"
-              />
+          <!-- Payment Type Indicator -->
+          <div class="payment-type-section" v-if="paymentData">
+            <div class="type-indicator">
+              <q-icon name="las la-bolt" class="type-icon"/>
+              <span class="type-label">{{ getPaymentTypeLabel() }}</span>
             </div>
+          </div>
+
+          <!-- Amount Input for LNURL/Lightning Address -->
+          <div class="amount-section" v-if="requiresAmount()">
+            <div class="amount-limits" v-if="getAmountLimits()">
+              <q-icon name="las la-info-circle" class="limits-icon"/>
+              <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
+            </div>
+            
+            <q-input
+              v-model="sendForm.amount"
+              outlined
+              label="Amount (sats)"
+              type="number"
+              class="amount-input"
+            />
+            
+            <q-input
+              v-model="sendForm.comment"
+              outlined
+              label="Comment (optional)"
+              :maxlength="paymentData.commentAllowed || 0"
+              :disable="!paymentData.commentAllowed"
+              :hint="paymentData.commentAllowed ? `Max ${paymentData.commentAllowed} characters` : 'Comments not supported'"
+              class="comment-input"
+            />
+          </div>
+
+          <!-- Invoice Details -->
+          <div class="invoice-preview" v-if="paymentData && paymentData.type === 'lightning_invoice'">
+            <div class="invoice-details">
+              <div class="preview-header">
+                <q-icon name="las la-receipt" class="preview-icon"/>
+                <span class="preview-title">Invoice Preview</span>
+              </div>
+              
+              <div class="preview-content">
+                <div class="detail-item">
+                  <span class="detail-label">Amount</span>
+                  <span class="detail-value amount-value">{{ formatBalance(paymentData.amount) }}</span>
+                </div>
+                <div class="detail-item" v-if="paymentData.description">
+                  <span class="detail-label">Description</span>
+                  <span class="detail-value">{{ paymentData.description }}</span>
+                </div>
+                <div class="detail-item" v-if="paymentData.expiry">
+                  <span class="detail-label">Expires</span>
+                  <span class="detail-value">{{ formatExpiry(paymentData.expiry) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Send Button -->
+          <q-btn
+            :loading="isSending"
+            :disable="!canSendPayment()"
+            @click="sendPayment"
+            class="send-payment-btn"
+            unelevated
+            no-caps
+          >
+            <q-icon name="las la-paper-plane" class="q-mr-sm"/>
+            <span v-if="!isSending">Send Payment</span>
+            <span v-else>Sending...</span>
+          </q-btn>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Receive Dialog -->
+    <q-dialog v-model="showReceiveDialog" class="payment-dialog">
+      <q-card class="dialog-card">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title">Receive Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <!-- Invoice Form -->
+          <div class="invoice-form" v-if="!generatedInvoice">
+            <q-input
+              v-model="receiveForm.amount"
+              outlined
+              label="Amount (sats)"
+              type="number"
+              class="amount-input"
+              :rules="[val => val > 0 || 'Amount must be greater than 0']"
+            />
+
+            <q-input
+              v-model="receiveForm.description"
+              outlined
+              label="Description (optional)"
+              class="description-input"
+              maxlength="100"
+            />
 
             <q-btn
-              class="generate-btn"
-              :loading="isProcessing"
-              @click="generateInvoice"
+              :loading="isCreatingInvoice"
+              @click="createInvoice"
+              class="create-invoice-btn"
+              :disable="!receiveForm.amount || receiveForm.amount <= 0"
+              unelevated
               no-caps
             >
-              <span v-if="!isProcessing">Generate Invoice</span>
-              <template v-slot:loading>
-                <q-spinner-dots class="q-mr-sm"/>
-                Generating...
-              </template>
+              <q-icon name="las la-plus-circle" class="q-mr-sm"/>
+              <span v-if="!isCreatingInvoice">Create Invoice</span>
+              <span v-else>Creating...</span>
             </q-btn>
           </div>
 
-          <div v-if="paymentStep === 1" class="payment-step">
-            <div class="invoice-amount">
-              <div class="text-h4 text-weight-bold">{{ formatBalance(Number(amount)) }}</div>
-              <div class="text-grey-7">{{ fiatSymbol }}{{ getFiatAmount() }} {{
-                  walletState.preferredFiatCurrency
-                }}
+          <!-- Generated Invoice -->
+          <div class="invoice-result" v-if="generatedInvoice">
+            <!-- QR Code -->
+            <div class="qr-section">
+              <vue-qrcode
+                :value="generatedInvoice.payment_request"
+                :options="{ width: 200 }"
+                class="qr-code"
+              />
+            </div>
+            
+            <!-- Invoice Info -->
+            <div class="invoice-info">
+              <div class="invoice-amount">
+                {{ formatBalance(generatedInvoice.amount || receiveForm.amount) }}
               </div>
-              <div class="waiting-payment">
-                <q-spinner-dots color="primary" size="1em"/>
-                Waiting for payment...
+              <div class="invoice-description" v-if="receiveForm.description">
+                {{ receiveForm.description }}
               </div>
             </div>
-
-            <div class="qr-container">
-              <div class="qr-code">
-                <vue-qrcode
-                  :value="invoice"
-                  :options="{
-                    width: 300,
-                    color: {
-                      dark: $q.dark.isActive ? '#8AFF1C' : '#22c55e',
-                      light: '#0000'
-                    }
-                  }"
-                  class="full-width"
-                />
-              </div>
+            
+            <!-- Invoice String -->
+            <div class="invoice-string">
+              <q-input
+                v-model="generatedInvoice.payment_request"
+                readonly
+                outlined
+                type="textarea"
+                rows="3"
+                class="invoice-text"
+                label="Lightning Invoice"
+              />
             </div>
-
+            
+            <!-- Action Buttons -->
             <div class="invoice-actions">
-              <q-btn outline class="invoice-action-btn" icon="las la-share-alt" label="Share" @click="shareInvoice"/>
-              <q-btn outline class="invoice-action-btn" icon="las la-copy" label="Copy" @click="copyInvoice"/>
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-copy"
+                label="Copy"
+                @click="copyInvoice"
+                class="copy-btn"
+                no-caps
+              />
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-share-alt"
+                label="Share"
+                @click="shareInvoice"
+                class="share-btn"
+                no-caps
+              />
             </div>
-          </div>
-
-          <div v-if="paymentStep === 2" class="payment-step success-step">
-            <div class="success-icon">
-              <q-icon name="las la-bolt" size="48px" color="green-8"/>
-            </div>
-
-            <div class="success-message">
-              <h3 class="text-h5 text-green-8 text-weight-bold">Payment Received!</h3>
-              <p class="text-grey-7">Payment was successfully received.</p>
-
-              <div class="text-h5 text-weight-bold q-mb-xs">
-                {{ formatBalance(Number(amount)) }}
-              </div>
-              <div class="text-caption text-grey-7">
-                {{ fiatSymbol }}{{ getFiatAmount() }} {{ walletState.preferredFiatCurrency }}
-              </div>
-            </div>
-
-            <q-btn class="success-btn" label="Done" v-close-popup/>
           </div>
         </q-card-section>
       </q-card>
     </q-dialog>
 
-    <!-- Send Payment Dialog -->
-    <q-dialog v-model="paymentSheetOpen" v-if="paymentMode === 'send'">
-      <q-card class="payment-dialog">
+    <!-- QR Scanner Dialog -->
+    <q-dialog v-model="showQRScanner" class="payment-dialog">
+      <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">{{ paymentSheetTitle }}</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Scan Lightning Invoice</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div v-if="paymentStep === 0 && !showQrScanner" class="payment-step">
-            <div class="form-group">
-              <div class="form-label-row">
-                <label>Lightning Invoice</label>
-                <q-btn flat dense size="sm" class="currency-toggle" @click="toggleCurrency">
-                  {{ currencySymbol }} {{ walletState.denominationCurrency.toUpperCase() }}
-                </q-btn>
-              </div>
-              <q-input
-                v-model="invoice"
-                outlined
-                placeholder="Paste invoice here"
-              />
-              <p class="text-caption text-grey-7">Paste a Lightning invoice or scan a QR code</p>
-            </div>
-
-            <div class="invoice-actions">
-              <q-btn outline class="invoice-action-btn" icon="las la-qrcode" label="Scan QR"
-                     @click="showQrScanner = true"/>
-              <q-btn class="primary-btn" label="Continue" :disabled="!invoice" @click="payInvoice"/>
-            </div>
-          </div>
-
-          <div v-if="showQrScanner" class="payment-step">
-            <div class="qr-scanner-container">
-              <qrcode-capture
-                @detect="handleScanInvoice"
-                style="border-radius: 8px !important;"
-                :capture="null"
-              />
-            </div>
-
-            <q-btn outline class="full-width q-mt-md" label="Cancel Scan" @click="showQrScanner = false"/>
-          </div>
-
-          <div v-if="paymentStep === 1" class="payment-step">
-            <div class="invoice-amount">
-              <div class="text-h4 text-weight-bold">{{ formatBalance(paymentDetails.amount) }}</div>
-              <div class="text-grey-7">{{ fiatSymbol }}{{ getFiatAmount(paymentDetails.amount) }}
-                {{ walletState.preferredFiatCurrency }}
-              </div>
-            </div>
-
-            <div class="payment-details">
-              <div class="payment-detail-item">
-                <span class="text-grey-7">Description</span>
-                <span>{{ paymentDetails.description }}</span>
-              </div>
-
-              <div class="payment-detail-item">
-                <span class="text-grey-7">Destination</span>
-                <span class="text-caption">{{ paymentDetails.destination }}</span>
-              </div>
-
-              <div class="payment-detail-item">
-                <span class="text-grey-7">Fee Estimate</span>
-                <span>~1 sat</span>
-              </div>
-            </div>
-
-            <q-btn
-              class="pay-btn"
-              :loading="isProcessing"
-              @click="confirmPayment"
-            >
-              <template v-if="!isProcessing">
-                <q-icon name="las la-bolt" class="q-mr-sm"/>
-                Pay Now
-              </template>
-              <template v-slot:loading>
-                <q-spinner-dots/>
-                Processing...
-              </template>
-            </q-btn>
-          </div>
-
-          <div v-if="paymentStep === 2" class="payment-step success-step">
-            <div class="success-icon">
-              <q-icon name="las la-bolt" size="48px" color="green-8"/>
-            </div>
-
-            <div class="success-message">
-              <h3 class="text-h5 text-green-8 text-weight-bold">Payment Sent!</h3>
-              <p class="text-grey-7">Your payment was successful.</p>
-
-              <div class="text-h5 text-weight-bold q-mb-xs">
-                {{ formatBalance(paymentDetails.amount) }}
-              </div>
-              <div class="text-caption text-grey-7">
-                {{ fiatSymbol }}{{ getFiatAmount(paymentDetails.amount) }}
-                {{ walletState.preferredFiatCurrency }}
-              </div>
-            </div>
-
-            <q-btn class="success-btn" label="Done" v-close-popup/>
+          <div class="qr-scanner-container">
+            <qrcode-capture @detect="handleQRScan" />
           </div>
         </q-card-section>
       </q-card>
@@ -395,515 +335,524 @@
 </template>
 
 <script>
-import {webln, LN} from "@getalby/sdk";
+import { webln } from "@getalby/sdk";
+import { LightningPaymentService } from '../utils/lightning.js';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
-import {QrcodeStream, QrcodeDropZone, QrcodeCapture} from 'vue-qrcode-reader'
+import { QrcodeCapture } from 'vue-qrcode-reader';
 
 export default {
-  name: 'WalletDashboardPage',
+  name: 'WalletPage',
   components: {
     VueQrcode,
-    QrcodeStream,
-    QrcodeDropZone,
-    QrcodeCapture,
+    QrcodeCapture
   },
   data() {
     return {
-      isLoading: true,
       walletState: {
-        balance: 0,
+        balance: 312,
         connectedWallets: [],
         activeWalletId: null,
         currency: 'sats',
-        currencies: ['sats', 'btc', 'usd', 'eur', 'gbp', 'jpy', 'cad', 'chf', 'aud'],
+        currencies: ['sats', 'btc', 'usd'],
         exchangeRates: {
           usd: 65000,
           eur: 60000,
           gbp: 52000,
-          jpy: 9800000,
-          cad: 0,
-          chf: 0,
-          aud: 0
+          jpy: 9800000
         },
         preferredFiatCurrency: 'USD',
-        denominationCurrency: 'sats'
+        denominationCurrency: 'sats',
+        displayMode: 'sats'
       },
-      transactions: [],
-      showWalletInfo: false,
-      showHistory: true,
-
-      // Payment sheet
-      paymentSheetOpen: false,
-      paymentMode: 'receive',
-      paymentStep: 0,
-      amount: null,
-      description: '',
-      invoice: '',
-      isProcessing: false,
-      showQrScanner: false,
-
-      // Payment details for send mode
-      paymentDetails: {
-        amount: 0,
-        description: '',
-        destination: ''
-      }
-    }
+      recentTransactions: [],
+      nostrProfiles: {},
+      showSendDialog: false,
+      showReceiveDialog: false,
+      showQRScanner: false,
+      isSending: false,
+      isCreatingInvoice: false,
+      isSwitchingCurrency: false,
+      shouldPulse: false,
+      paymentData: null,
+      lightningAddress: '',
+      sendForm: {
+        input: '',
+        amount: '',
+        comment: ''
+      },
+      receiveForm: {
+        amount: '',
+        description: ''
+      },
+      generatedInvoice: null,
+      refreshInterval: null,
+      pulseInterval: null
+    };
   },
   computed: {
-    activeWallet() {
-      return this.walletState.connectedWallets.find(w => w.id === this.walletState.activeWalletId) || null
-    },
-    isActiveWallet() {
-      return this.activeWallet !== null
-    },
-    paymentSheetTitle() {
-      if (this.paymentMode === 'receive') {
-        if (this.paymentStep === 0) return 'Receive Payment'
-        if (this.paymentStep === 1) return 'Lightning Invoice'
-        return 'Payment Received'
-      } else {
-        if (this.showQrScanner) return 'Scan QR Code'
-        if (this.paymentStep === 0) return 'Send Payment'
-        if (this.paymentStep === 1) return 'Confirm Payment'
-        return 'Payment Sent'
-      }
-    },
-    currencySymbol() {
-      return this.getCurrencySymbol(this.walletState.denominationCurrency)
-    },
-    fiatSymbol() {
-      return this.getCurrencySymbol(this.walletState.preferredFiatCurrency)
+    currentDisplayMode() {
+      return this.walletState.displayMode || 'sats';
     }
   },
-  created() {
-    this.loadWalletState();
-    this.loadFiatPrices();
-    this.startFiatPriceInterval();
+  async created() {
+    await this.loadWalletState();
+    await this.loadTransactions();
+    await this.loadNostrProfiles();
+    this.startPeriodicRefresh();
+    this.startPulseAnimation();
+  },
+  beforeUnmount() {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+    if (this.pulseInterval) {
+      clearInterval(this.pulseInterval);
+    }
+  },
+  watch: {
+    'sendForm.input': {
+      handler: 'processPaymentInput',
+      immediate: false
+    }
   },
   methods: {
-    async fetchAndStoreFiatPrices() {
-      try {
-        const response = await fetch('https://mempool.space/api/v1/prices');
-        const data = await response.json();
-        localStorage.setItem('buhoGO_fiat_prices', JSON.stringify(data));
-        this.walletState.exchangeRates = {
-          usd: data.USD,
-          eur: data.EUR,
-          gbp: data.GBP,
-          jpy: data.JPY,
-          cad: data.CAD,
-          chf: data.CHF,
-          aud: data.AUD
-        };
-        // Optionally persist wallet state
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-      } catch (e) {
-        console.error('Failed to fetch fiat prices', e);
-      }
-    },
-    loadFiatPrices() {
-      const prices = localStorage.getItem('buhoGO_fiat_prices');
-      if (prices) {
-        const data = JSON.parse(prices);
-        this.walletState.exchangeRates = {
-          usd: data.USD,
-          eur: data.EUR,
-          gbp: data.GBP,
-          jpy: data.JPY,
-          cad: data.CAD,
-          chf: data.CHF,
-          aud: data.AUD
-        };
-      }
-    },
-    startFiatPriceInterval() {
-      this.fetchAndStoreFiatPrices();
-      setInterval(() => {
-        this.fetchAndStoreFiatPrices();
-      }, 5 * 60 * 1000);
-    },
-    // Fetch historical fiat price for a transaction (for tx details)
-    async fetchHistoricalFiatAmount(tx, currency = this.walletState.preferredFiatCurrency) {
-      try {
-        const url = `https://mempool.space/api/v1/historical-price?currency=${currency}&timestamp=${tx.settled_at}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        const priceObj = data.prices && data.prices.length > 0 ? data.prices[0] : null;
-        if (priceObj && priceObj[currency]) {
-          const btcAmount = tx.amount / 100000000;
-          const fiatAmount = btcAmount * priceObj[currency];
-          return fiatAmount.toFixed(2);
-        }
-      } catch (e) {
-        console.error('Failed to fetch historical price', e);
-      }
-      return null;
-    },
     async loadWalletState() {
-      this.isLoading = true;
-      // Load wallet state from localStorage
-      const savedState = localStorage.getItem('buhoGO_wallet_state')
+      const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
         try {
-          const parsedState = JSON.parse(savedState)
-          console.log('Loaded wallet state:', parsedState) // Debugging line
-          this.walletState = parsedState
-
-          // Get the active wallet from connectedWallets array
-          const activeWallet = parsedState.connectedWallets.find(w => w.id === parsedState.activeWalletId)
-          if (activeWallet) {
-            const nwc = new webln.NostrWebLNProvider({
-              nostrWalletConnectUrl: activeWallet.nwcString,
-            });
-            await nwc.enable();
-            //  get info
-            const info = await nwc.getInfo();
-            console.log('NWC Info:', info);
-            //  get balance
-            const balance = await nwc.getBalance();
-            console.log('NWC Balance:', balance);
-            this.walletState.balance = balance.balance;
-            //  get all transactions and bind it
-            const transactions = await nwc.listTransactions();
-            console.log('NWC Transactions:', transactions);
-            this.transactions = transactions.transactions.map(tx => ({
-              ...tx,
-              walletId: this.walletState.activeWalletId
-            }));
-          }
-        } catch (e) {
-          console.error('Failed to parse saved wallet state', e)
+          const parsedState = JSON.parse(savedState);
+          this.walletState = { ...this.walletState, ...parsedState };
+          await this.updateWalletBalance();
+        } catch (error) {
+          console.error('Failed to load wallet state:', error);
         }
-      }
-      this.isLoading = false;
-    },
-    generateMockTransactions() {
-      // Generate mock transactions for demo
-      const types = ['incoming', 'outgoing']
-      const descriptions = [
-        'Coffee payment',
-        'Donation received',
-        'Lunch with friends',
-        'Online purchase',
-        'Podcast support'
-      ]
-
-      const transactions = []
-
-      for (let i = 0; i < 5; i++) {
-        const type = types[Math.floor(Math.random() * types.length)]
-        const description = descriptions[Math.floor(Math.random() * descriptions.length)]
-        const amount = Math.floor(Math.random() * 500000) + 10000
-        const daysAgo = Math.floor(Math.random() * 30) + 1
-
-        transactions.push({
-          id: `tx-${i}`,
-          payment_hash: `hash-${i}-${Math.random().toString(36).substring(2, 10)}`,
-          amount,
-          fees_paid: type === 'outgoing' ? Math.floor(amount * 0.01) : 0,
-          description,
-          type,
-          settled_at: Math.floor(Date.now() / 1000) - daysAgo * 86400,
-          walletId: this.walletState.activeWalletId
-        })
-      }
-
-      this.transactions = transactions.sort((a, b) => b.settled_at - a.settled_at)
-    },
-    formatBalance(amount) {
-      switch (this.walletState.currency) {
-        case 'btc':
-          return (amount / 100000000).toFixed(8) + ' BTC'
-        case 'usd':
-          const usdValue = (amount / 100000000) * (this.walletState.exchangeRates.usd || 65000)
-          return '$' + usdValue.toFixed(2)
-        case 'sats':
-        default:
-          return amount.toLocaleString() + ' sats'
+      } else {
+        // For demo purposes, keep the 312 sats balance
+        this.walletState.balance = 312;
       }
     },
-    formatTransactionDate(timestamp) {
-      return new Date(timestamp * 1000).toLocaleDateString()
-    },
-    formatDate() {
-      // Mock date - in a real app, this would be stored in the wallet data
-      const mockDate = new Date()
-      mockDate.setMonth(mockDate.getMonth() - 2) // Set to 2 months ago
-      return mockDate.toLocaleDateString()
-    },
-    activateWallet() {
-      // In a real app, this would switch the active wallet
-      this.showWalletInfo = false
 
-      this.$q.notify({
-        type: 'positive',
-        message: 'Wallet activated successfully',
-        position: 'top'
-      })
-    },
-    viewTransaction(txId) {
-      // Navigate to transaction detail page
-      this.$router.push(`/transaction/${txId}`)
-    },
-    openPaymentSheet(mode) {
-      this.paymentMode = mode
-      this.paymentStep = 0
-      this.amount = ''
-      this.description = ''
-      this.invoice = ''
-      this.showQrScanner = false
-      this.paymentSheetOpen = true
-    },
-    toggleCurrency() {
-      // Toggle between sats and the preferred fiat currency
-      const newDenomination = this.walletState.denominationCurrency === 'sats'
-        ? this.walletState.preferredFiatCurrency.toLowerCase()
-        : 'sats';
-      this.walletState.denominationCurrency = newDenomination;
-      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-      this.$q.notify({
-        message: `Currency changed to ${newDenomination.toUpperCase()}`,
-        position: 'top'
-      });
-    },
-    getCurrencySymbol(currency) {
-      switch (currency.toUpperCase()) {
-        case 'USD':
-          return '$'
-        case 'EUR':
-          return '€'
-        case 'GBP':
-          return '£'
-        case 'JPY':
-          return '¥'
-        case 'BTC':
-          return '₿'
-        case 'SATS':
-          return '⚡'
-        default:
-          return ''
-      }
-    },
-    getFiatAmount(customAmount) {
-      const amountToConvert = customAmount || Number(this.amount) || this.paymentDetails.amount
+    async updateWalletBalance() {
+      const activeWallet = this.walletState.connectedWallets.find(
+        w => w.id === this.walletState.activeWalletId
+      );
 
-      // Convert to BTC first
-      let btcAmount = amountToConvert / 100000000
-
-      // If current denomination is not sats, convert from fiat to BTC
-      if (this.walletState.denominationCurrency !== 'sats' && !customAmount) {
-        const exchangeRate = this.walletState.exchangeRates[this.walletState.denominationCurrency] ||
-          this.walletState.exchangeRates.usd
-        btcAmount = Number(this.amount) / exchangeRate
-      }
-
-      // Convert BTC to preferred fiat
-      const fiatValue = btcAmount * (
-        this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] ||
-        this.walletState.exchangeRates.usd
-      )
-
-      return fiatValue.toFixed(2)
-    },
-    convertToSats(amount, fromCurrency) {
-      const currency = fromCurrency.toLowerCase()
-      if (currency === 'sats') return amount
-      if (currency === 'btc') return amount * 100000000
-
-      // Convert from fiat to sats
-      const exchangeRate = this.walletState.exchangeRates[currency] || this.walletState.exchangeRates.usd
-
-      return Math.round((amount * 100000000) / exchangeRate)
-    },
-    async generateInvoice() {
-      // if (!this.amount || isNaN(Number(this.amount))) {
-      //   this.$q.notify({
-      //     type: 'negative',
-      //     message: 'Please enter a valid amount',
-      //     position: 'top'
-      //   })
-      //   return
-      // }
-
-      this.isProcessing = true
-
-      try {
-        console.log("hi")
-        console.log(this.amount)
-        console.log(this.walletState)
-        // from activeWalletId from this.walletState get the string from connectedWallets array
-        let nwcString = this.walletState.connectedWallets.find(w => w.id === this.walletState.activeWalletId).nwcString
-        const request = await new LN(nwcString).requestPayment(this.amount, {
-          description: this.description || "Test Payment"
-        });
-        console.log("After Payment")
-        // console.log(JSON.stringify(request.invoice))
-        // console.log(request.invoice.paymentRequest)
-
-        this.invoice = request.invoice.paymentRequest;
-        this.paymentStep = 1;
-        console.log(request)
-        request.onPaid(async () => {
-          console.log("Paid")
-          this.paymentStep = 2;
-          this.$q.notify({
-            type: 'positive',
-            message: `Payment received: ${this.formatBalance(Number(this.amount))}`,
-            position: 'top'
+      if (activeWallet && activeWallet.nwcString) {
+        try {
+          const nwc = new webln.NostrWebLNProvider({
+            nostrWalletConnectUrl: activeWallet.nwcString,
           });
 
-          // Refresh balance and transactions
-          this.loadWalletState();
-        });
+          await nwc.enable();
+          const balance = await nwc.getBalance();
+          this.walletState.balance = balance.balance;
+          activeWallet.balance = balance.balance;
 
-      } catch (error) {
-        console.error('Error generating invoice:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: 'Failed to generate invoice. Please try again.',
-          position: 'top'
-        });
-      } finally {
-        this.isProcessing = false;
+          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        } catch (error) {
+          console.error('Failed to update balance:', error);
+        }
       }
     },
-    async handleScanInvoice(result) {
+
+    async loadTransactions() {
+      // Mock implementation for demo
+      this.recentTransactions = [];
+    },
+
+    async processZapTransactions() {
+      // Mock implementation
+    },
+
+    isZapTransaction(tx) {
+      return tx.description && (
+        tx.description.toLowerCase().includes('zap') ||
+        tx.description.includes('⚡') ||
+        tx.type === 'incoming' && tx.description.match(/npub1[a-zA-Z0-9]{58}/)
+      );
+    },
+
+    extractNpubFromZap(tx) {
+      const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
+      return npubMatch ? npubMatch[0] : null;
+    },
+
+    async fetchNostrProfile(npub) {
+      // Mock implementation
+    },
+
+    loadNostrProfiles() {
+      const saved = localStorage.getItem('buhoGO_nostr_profiles');
+      if (saved) {
+        try {
+          this.nostrProfiles = JSON.parse(saved);
+        } catch (error) {
+          console.error('Error loading nostr profiles:', error);
+        }
+      }
+    },
+
+    saveNostrProfiles() {
+      localStorage.setItem('buhoGO_nostr_profiles', JSON.stringify(this.nostrProfiles));
+    },
+
+    getSenderDisplayName(npub) {
+      const profile = this.nostrProfiles[npub];
+      return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
+    },
+
+    startPeriodicRefresh() {
+      this.refreshInterval = setInterval(async () => {
+        await this.updateWalletBalance();
+        await this.loadTransactions();
+      }, 30000);
+    },
+
+    startPulseAnimation() {
+      this.pulseInterval = setInterval(() => {
+        this.shouldPulse = true;
+        setTimeout(() => {
+          this.shouldPulse = false;
+        }, 1000);
+      }, 25000);
+    },
+
+    async toggleCurrency() {
+      if (this.isSwitchingCurrency) return;
+      
+      this.isSwitchingCurrency = true;
+      
+      const modes = ['sats', 'fiat', 'btc'];
+      const currentIndex = modes.indexOf(this.currentDisplayMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      
+      this.walletState.displayMode = modes[nextIndex];
+      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+      
+      setTimeout(() => {
+        this.isSwitchingCurrency = false;
+      }, 200);
+    },
+
+    formatMainBalance(balance) {
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          const btcAmount = balance / 100000000;
+          // Show in sats if BTC amount is very small (less than 0.001 BTC)
+          if (btcAmount < 0.001) {
+            return balance.toLocaleString();
+          }
+          return btcAmount.toFixed(8);
+        case 'fiat':
+          const btcAmountForFiat = balance / 100000000;
+          const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
+          const fiatValue = btcAmountForFiat * rate;
+          return fiatValue.toFixed(2);
+        case 'sats':
+        default:
+          return balance.toLocaleString();
+      }
+    },
+
+    getCurrentUnit() {
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          const btcAmount = this.walletState.balance / 100000000;
+          // Show sats unit if BTC amount is very small
+          if (btcAmount < 0.001) {
+            return 'sats';
+          }
+          return 'BTC';
+        case 'fiat':
+          return this.walletState.preferredFiatCurrency || 'USD';
+        case 'sats':
+        default:
+          return 'sats';
+      }
+    },
+
+    getSecondaryValue(balance) {
+      switch (this.currentDisplayMode) {
+        case 'btc':
+          const btcAmountForSecondary = balance / 100000000;
+          // Show fiat value if displaying sats due to small BTC amount
+          if (btcAmountForSecondary < 0.001) {
+            return this.getFiatValue(balance);
+          }
+          return balance.toLocaleString() + ' sats';
+        case 'fiat':
+          return balance.toLocaleString() + ' sats';
+        case 'sats':
+        default:
+          return this.getFiatValue(balance);
+      }
+    },
+
+    formatBalance(balance) {
+      return balance.toLocaleString() + ' sats';
+    },
+
+    getFiatValue(balance) {
+      const btcAmount = balance / 100000000;
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
+      const fiatValue = btcAmount * rate;
+      
+      const symbols = {
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        JPY: '¥'
+      };
+      
+      const symbol = symbols[currency] || currency;
+      return symbol + fiatValue.toFixed(2);
+    },
+
+    async processPaymentInput() {
+      this.paymentData = null;
+      this.sendForm.amount = '';
+      this.sendForm.comment = '';
+
+      if (!this.sendForm.input.trim()) return;
+
       try {
-        this.invoice = result;
-        this.showQrScanner = false;
+        const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
+        if (!validation.valid) {
+          throw new Error(validation.error);
+        }
 
-        const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: this.walletState.nwcString,
-        });
-        await nwc.enable();
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
 
-        // Decode the invoice to get details
-        const decodedInvoice = await nwc.decodeInvoice(this.invoice);
-
-        this.paymentDetails = {
-          amount: decodedInvoice.amount,
-          description: decodedInvoice.description || 'Payment',
-          destination: decodedInvoice.destination
-        };
-
-        this.paymentStep = 1;
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
+        
+        if (this.paymentData.type === 'lightning_invoice' && this.paymentData.amount === 0) {
+          this.paymentData.requiresAmount = true;
+        }
+        
       } catch (error) {
-        console.error('Error decoding invoice:', error);
+        console.error('Error processing payment input:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Invalid invoice. Please try again.',
+          message: error.message,
           position: 'top'
         });
       }
     },
-    async payInvoice() {
-      if (!this.invoice) {
-        this.$q.notify({
-          type: 'negative',
-          message: 'Please enter a valid invoice',
-          position: 'top'
-        });
-        return;
+
+    getActiveWallet() {
+      return this.walletState.connectedWallets.find(
+        w => w.id === this.walletState.activeWalletId
+      );
+    },
+
+    getPaymentTypeLabel() {
+      if (!this.paymentData) return '';
+      
+      const labels = {
+        'lightning_invoice': 'Lightning Invoice',
+        'lnurl_pay': 'LNURL Payment',
+        'lightning_address': 'Lightning Address'
+      };
+      return labels[this.paymentData.type] || 'Lightning Payment';
+    },
+
+    requiresAmount() {
+      if (!this.paymentData) return false;
+      
+      return this.paymentData.type === 'lnurl_pay' || 
+             this.paymentData.type === 'lightning_address' ||
+             (this.paymentData.type === 'lightning_invoice' && this.paymentData.requiresAmount);
+    },
+
+    getAmountLimits() {
+      if (!this.paymentData) return null;
+      
+      return {
+        min: Math.floor(this.paymentData.minSendable / 1000),
+        max: Math.floor(this.paymentData.maxSendable / 1000)
+      };
+    },
+
+    canSendPayment() {
+      if (!this.paymentData) return false;
+      
+      if (this.requiresAmount()) {
+        const amount = parseInt(this.sendForm.amount);
+        if (!amount || amount <= 0) return false;
+        
+        if (this.paymentData.type !== 'lightning_invoice') {
+          const limits = this.getAmountLimits();
+          return amount >= limits.min && amount <= limits.max;
+        }
+        return true;
       }
+      
+      return true;
+    },
 
-      this.isProcessing = true;
-
+    async pasteFromClipboard() {
       try {
-        const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: this.walletState.nwcString,
-        });
-        await nwc.enable();
+        const text = await navigator.clipboard.readText();
+        this.sendForm.input = text;
+        await this.processPaymentInput();
+      } catch (error) {
+        console.error('Failed to paste from clipboard:', error);
+      }
+    },
 
-        const result = await nwc.sendPayment(this.invoice);
+    async sendPayment() {
+      if (!this.canSendPayment()) return;
 
-        this.paymentStep = 2;
+      this.isSending = true;
+      try {
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+
+        const amount = this.requiresAmount() ? parseInt(this.sendForm.amount) : null;
+        const comment = this.sendForm.comment || null;
+
+        const result = await lightningService.sendPayment(this.paymentData, amount, comment);
+        
+        console.log('Payment result:', result);
+
         this.$q.notify({
           type: 'positive',
           message: 'Payment sent successfully!',
           position: 'top'
         });
 
-        // Refresh balance and transactions
-        this.loadWalletState();
+        this.showSendDialog = false;
+        this.resetSendForm();
+        await this.updateWalletBalance();
+        await this.loadTransactions();
+        
       } catch (error) {
-        console.error('Error paying invoice:', error);
+        console.error('Payment failed:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to send payment. Please try again.',
+          message: error.message,
           position: 'top'
         });
       } finally {
-        this.isProcessing = false;
+        this.isSending = false;
       }
     },
-    confirmPayment() {
-      this.isProcessing = true
 
-      // Simulate payment processing
-      setTimeout(() => {
-        this.isProcessing = false
-        this.paymentStep = 2
+    resetSendForm() {
+      this.sendForm.input = '';
+      this.sendForm.amount = '';
+      this.sendForm.comment = '';
+      this.paymentData = null;
+    },
 
-        // Update wallet balance
-        this.walletState.balance -= (this.paymentDetails.amount + 1) // amount + fee
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState))
+    async createInvoice() {
+      if (!this.receiveForm.amount) return;
 
-        // Add to transactions
-        const newTx = {
-          id: `tx-${Date.now()}`,
-          payment_hash: Math.random().toString(36).substring(2, 38),
-          amount: this.paymentDetails.amount,
-          fees_paid: 1,
-          description: this.paymentDetails.description,
-          type: 'outgoing',
-          settled_at: Math.floor(Date.now() / 1000),
-          walletId: this.walletState.activeWalletId
-        }
+      this.isCreatingInvoice = true;
+      try {
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
 
-        this.transactions.unshift(newTx)
+        if (!activeWallet) throw new Error('No active wallet');
 
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        await lightningService.enable();
+
+        this.generatedInvoice = await lightningService.createInvoice(
+          this.receiveForm.amount,
+          this.receiveForm.description
+        );
+      } catch (error) {
+        console.error('Failed to create invoice:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: error.message,
+          position: 'top'
+        });
+      } finally {
+        this.isCreatingInvoice = false;
+      }
+    },
+
+    handleQRScan(result) {
+      this.sendForm.input = result;
+      this.showQRScanner = false;
+      this.processPaymentInput();
+    },
+
+    async copyInvoice() {
+      try {
+        await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
         this.$q.notify({
           type: 'positive',
-          message: 'Payment sent successfully',
+          message: 'Invoice copied!',
           position: 'top'
-        })
-      }, 2000)
+        });
+      } catch (error) {
+        console.error('Failed to copy invoice:', error);
+      }
     },
-    copyInvoice() {
-      // Simulate copy to clipboard
-      this.$q.notify({
-        type: 'positive',
-        message: 'Invoice copied to clipboard',
-        position: 'top'
-      })
+
+    async shareInvoice() {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'Lightning Invoice',
+            text: `Payment request for ${this.formatBalance(this.receiveForm.amount)}`,
+            url: `lightning:${this.generatedInvoice.payment_request}`
+          });
+        } catch (error) {
+          console.error('Failed to share invoice:', error);
+        }
+      } else {
+        this.copyInvoice();
+      }
     },
-    shareInvoice() {
-      // Simulate share functionality
-      this.$q.notify({
-        type: 'positive',
-        message: 'Invoice shared',
-        position: 'top'
-      })
+
+    formatExpiry(expiry) {
+      const expiryDate = new Date(expiry * 1000);
+      const now = new Date();
+      const diffMinutes = Math.floor((expiryDate - now) / (1000 * 60));
+      
+      if (diffMinutes < 0) return 'Expired';
+      if (diffMinutes < 60) return `${diffMinutes} minutes`;
+      if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours`;
+      return `${Math.floor(diffMinutes / 1440)} days`;
     }
   }
-}
+};
 </script>
 
 <style scoped>
-.wallet-dashboard-page {
+.wallet-page {
+  background: #f8f9fa;
   min-height: 100vh;
-  background-color: #f8f9fa;
-  padding-bottom: 100px;
+  display: flex;
+  flex-direction: column;
 }
 
-.header {
+/* Header */
+.wallet-header {
+  background: white;
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.header-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  background-color: white;
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
 }
 
 .logo-container {
@@ -912,453 +861,666 @@ export default {
   gap: 0.5rem;
 }
 
-.logo {
-  width: 32px;
-  height: 32px;
+.logo-svg {
+  filter: drop-shadow(0 2px 4px rgba(5, 149, 115, 0.15));
 }
 
 .title {
   font-size: 1.25rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #059573, #78D53C);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin: 0;
 }
 
-.settings-btn {
-  background-color: rgba(243, 244, 246, 0.8);
-  color: #10b981;
-  border: 1px solid rgba(229, 231, 235, 0.5);
-}
-
-.wallet-card-container {
-  padding-left: 1rem;
-  padding-right: 1rem;
-  padding-top: 10px;
-  margin-bottom: 1rem;
-}
-
-.wallet-card {
-  height: 170px;
-  border-radius: 16px;
-  overflow: hidden;
-  position: relative;
-  background: linear-gradient(135deg, #10b981, #059669);
-}
-
-.wallet-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='currentColor' fill-opacity='0.1' fill-rule='evenodd'/%3E%3C/svg%3E");
-  opacity: 0.5;
-}
-
-.wallet-card-content {
-  position: relative;
-  z-index: 1;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-.wallet-info {
-  margin-bottom: 1rem;
-}
-
-.balance {
-  font-size: 2rem;
-  font-weight: 700;
-  color: white;
-  margin: 0.25rem 0;
-}
-
-.wallet-name {
-  font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.wallet-actions {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-}
-
-.wallet-info-popup {
-  position: absolute;
-  inset: 0;
-  background-color: rgba(17, 24, 39, 0.95);
-  backdrop-filter: blur(4px);
-  border-radius: 16px;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
-  padding-top: 6px;
-  display: flex;
-  flex-direction: column;
-  z-index: 10;
-}
-
-.wallet-info-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
-
-.wallet-info-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.wallet-info-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background-color: rgba(255, 255, 255, 0.05);
-  padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
-}
-
-.wallet-status {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.wallet-info-footer {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.activate-btn {
-  width: 100%;
-  background: linear-gradient(to right, #10b981, #059669);
-  color: white;
-  border-radius: 0.75rem;
-  padding: 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.transaction-history {
-  margin: 1rem;
-  background-color: white;
-  border-radius: 0.75rem;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 400px); /* Adjust based on your layout */
-}
-
-.transaction-scroll-area {
-  flex: 1;
-  height: 100%;
-}
-
-.no-transactions {
-  padding: 2rem;
-  text-align: center;
+.modern-menu-btn {
   color: #6b7280;
-  flex: 1;
+  transition: all 0.2s;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.transaction-item {
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+.modern-menu-btn:hover {
+  color: #374151;
+  background: #f3f4f6;
+  transform: translateY(-1px);
 }
 
-.transaction-icon {
-  padding: 0.5rem;
+.menu-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 18px;
+  height: 14px;
 }
 
-.view-all-btn {
+.menu-line {
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  transition: all 0.3s ease;
+}
+
+.menu-line:nth-child(1) {
   width: 100%;
-  color: #10b981;
-  font-weight: 500;
 }
 
+.menu-line:nth-child(2) {
+  width: 75%;
+}
+
+.menu-line:nth-child(3) {
+  width: 100%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(1) {
+  width: 75%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(2) {
+  width: 100%;
+}
+
+.modern-menu-btn:hover .menu-line:nth-child(3) {
+  width: 85%;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 1rem 8rem 1rem;
+}
+
+/* Balance Section */
+.balance-section {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.balance-container {
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 16px;
+  padding: 1rem;
+}
+
+.balance-container:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
+}
+
+.balance-amount {
+  margin-bottom: 1rem;
+}
+
+.amount-display {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.amount-number {
+  font-size: 4rem;
+  font-weight: 800;
+  color: #1f2937;
+  line-height: 1;
+}
+
+.amount-unit {
+  font-size: 1.5rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.balance-secondary {
+  font-size: 1.25rem;
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+/* Balance Transitions */
+.balance-fade-enter-active,
+.balance-fade-leave-active,
+.secondary-fade-enter-active,
+.secondary-fade-leave-active {
+  transition: all 0.2s ease;
+}
+
+.balance-fade-enter-from,
+.balance-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+}
+
+.secondary-fade-enter-from,
+.secondary-fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* Transaction History Button */
+.transaction-icon-section {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+
+.transaction-history-btn {
+  width: 48px;
+  height: 48px;
+  background: #f3f4f6;
+  color: #9ca3af;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  opacity: 0.6;
+}
+
+.transaction-history-btn:hover {
+  background: #059573;
+  color: white;
+  transform: translateY(-2px) scale(1.05);
+  opacity: 1;
+  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.3);
+}
+
+.transaction-history-btn.pulse {
+  animation: subtle-pulse 1s ease-out;
+}
+
+@keyframes subtle-pulse {
+  0% { 
+    opacity: 0.6; 
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.8; 
+    transform: scale(1.02);
+  }
+  100% { 
+    opacity: 0.6; 
+    transform: scale(1);
+  }
+}
+
+/* Bottom Actions */
 .bottom-actions {
+  background: white;
+  padding: 1rem 1.5rem 2rem 1.5rem;
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  z-index: 50;
+}
+
+.action-buttons {
+  display: flex;
   gap: 1rem;
-  padding: 1rem;
-  background-color: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
-  border-top: 1px solid rgba(229, 231, 235, 0.5);
-  z-index: 10;
-  max-width: 500px;
+  max-width: 400px;
   margin: 0 auto;
 }
 
 .action-btn {
-  padding: 1rem 0;
-  border-radius: 0.75rem;
-  color: white;
-  position: relative;
-  overflow: hidden;
-}
-
-.receive-btn {
-  background: linear-gradient(to bottom right, #10b981, #059669);
-  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2), 0 2px 4px -1px rgba(16, 185, 129, 0.1);
-}
-
-.send-btn {
-  background: linear-gradient(to bottom right, #10b981, #047857);
-  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2), 0 2px 4px -1px rgba(16, 185, 129, 0.1);
-}
-
-.btn-content {
+  flex: 1;
+  height: 72px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.25rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
   position: relative;
-  z-index: 1;
+  overflow: hidden;
+  min-height: 72px;
+  min-width: 120px;
 }
 
-.icon-container {
-  position: relative;
-  width: 3rem;
-  height: 3rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 0.25rem;
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
-.icon-glow {
-  position: absolute;
-  inset: 0;
-  background-color: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  filter: blur(8px);
-  transform: scale(0.75);
-  transition: transform 0.2s;
+.action-btn:active {
+  transform: translateY(0) scale(0.98);
 }
 
-.action-btn:hover .icon-glow {
-  transform: scale(0.9);
+.receive-btn {
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
 }
 
-.icon-bg {
-  position: relative;
-  background-color: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  padding: 0.75rem;
+.receive-btn:hover {
+  background: linear-gradient(135deg, #047857, #059573);
 }
 
-.action-btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-  opacity: 0.1;
+.send-btn {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+}
+
+.send-btn:hover {
+  background: linear-gradient(135deg, #2563EB, #1D4ED8);
+}
+
+.btn-text {
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 /* Dialog Styles */
-.payment-dialog {
+.payment-dialog .dialog-card {
   width: 100%;
-  max-width: 500px;
-  border-radius: 1rem;
+  max-width: 480px;
+  border-radius: 20px;
   overflow: hidden;
 }
 
-.dialog-header {
+.payment-dialog .dialog-header {
+  background: #f8f9fa;
+  padding: 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.dialog-content {
-  padding: 1rem;
-  max-height: 80vh;
-  overflow-y: auto;
+.payment-dialog .dialog-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
 }
 
-.payment-step {
+.payment-dialog .close-btn {
+  color: #6b7280;
+}
+
+.payment-dialog .dialog-content {
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 }
 
-.form-group {
+/* Payment Input Section */
+.payment-input-section {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 1rem;
 }
 
-.form-label-row {
+.payment-input {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.875rem;
+}
+
+.input-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  gap: 0.75rem;
 }
 
-.currency-toggle {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.5rem;
-  background-color: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-
-.fiat-conversion {
-  text-align: right;
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin-top: 0.25rem;
-}
-
-.generate-btn, .pay-btn {
-  background: linear-gradient(to right, #10b981, #059669);
-  color: white;
-  border-radius: 0.75rem;
-  padding: 0.75rem;
+.action-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
   font-weight: 500;
-  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2), 0 2px 4px -1px rgba(16, 185, 129, 0.1);
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
 }
 
-.invoice-amount {
-  text-align: center;
-  margin-bottom: 1.5rem;
+.scan-btn {
+  color: #059573;
+  border-color: #059573;
 }
 
-.waiting-payment {
+.scan-btn:hover {
+  background: #059573;
+  color: white;
+}
+
+.paste-btn {
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.paste-btn:hover {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Payment Type Section */
+.payment-type-section {
+  background: rgba(5, 149, 115, 0.05);
+  border: 1px solid rgba(5, 149, 115, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.type-indicator {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+}
+
+.type-icon {
+  color: #059573;
+  font-weight: 500;
+}
+
+.type-label {
+  color: #059573;
+  font-weight: 500;
+}
+
+/* Amount Section */
+.amount-section {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.amount-limits {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.875rem;
   color: #6b7280;
-}
-
-.qr-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 1.5rem;
-}
-
-.qr-code {
-  background-color: white;
-  padding: 1rem;
-  border-radius: 0.75rem;
-  border: 2px solid rgba(16, 185, 129, 0.2);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.qr-scanner-container {
-  height: 300px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #f3f4f6;
+  background: white;
+  padding: 0.75rem;
   border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.limits-icon {
+  color: #3b82f6;
+  font-size: 16px;
+}
+
+/* Invoice Preview */
+.invoice-preview {
+  background: #f8f9fa;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
   overflow: hidden;
 }
 
-.qr-code {
-  background-color: white;
-  padding: 1rem;
-  border-radius: 0.75rem;
-  border: 2px solid rgba(16, 185, 129, 0.2);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+.invoice-details {
+  padding: 1.5rem;
+}
+
+.preview-header {
   display: flex;
-  justify-content: center;
   align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
-.invoice-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+.preview-icon {
+  color: #059573;
+  font-weight: 600;
 }
 
-.invoice-action-btn {
-  border-radius: 0.75rem;
-  border-color: rgba(16, 185, 129, 0.3);
-  color: #10b981;
+.preview-title {
+  color: #1f2937;
+  font-weight: 600;
 }
 
-.primary-btn {
-  background-color: #10b981;
-  color: white;
-  border-radius: 0.75rem;
-}
-
-.payment-details {
+.preview-content {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
-.payment-detail-item {
+.detail-item {
   display: flex;
   justify-content: space-between;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+  align-items: center;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
 }
 
-.success-step {
-  align-items: center;
+.detail-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: #1f2937;
+  font-weight: 500;
+  text-align: right;
+}
+
+.amount-value {
+  color: #059573;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* Send Payment Button */
+.send-payment-btn {
+  width: 100%;
+  height: 52px;
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.send-payment-btn:hover {
+  background: linear-gradient(135deg, #047857, #059573);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.3);
+}
+
+/* Invoice Form */
+.invoice-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.create-invoice-btn {
+  width: 100%;
+  height: 52px;
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.create-invoice-btn:hover {
+  background: linear-gradient(135deg, #047857, #059573);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.3);
+}
+
+/* Invoice Result */
+.invoice-result {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
   text-align: center;
 }
 
-.success-icon {
-  position: relative;
-  width: 5rem;
-  height: 5rem;
+.qr-section {
   display: flex;
-  align-items: center;
   justify-content: center;
-  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
 }
 
-.success-icon::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-color: rgba(16, 185, 129, 0.1);
-  border-radius: 50%;
-  filter: blur(1rem);
+.invoice-info {
+  padding: 1.5rem;
+  background: #f9fafb;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
 }
 
-.success-icon::after {
-  content: "";
-  position: absolute;
-  inset: 0.5rem;
-  background-color: rgba(16, 185, 129, 0.2);
-  border-radius: 50%;
+.invoice-amount {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #059573;
+  margin-bottom: 0.75rem;
 }
 
-.success-message {
-  margin-bottom: 1.5rem;
-}
-
-.success-btn {
-  background: linear-gradient(to right, #10b981, #059669);
-  color: white;
-  border-radius: 0.75rem;
-  padding: 0.75rem 2rem;
+.invoice-description {
+  color: #6b7280;
+  font-size: 1rem;
   font-weight: 500;
+}
+
+.invoice-string {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.invoice-text :deep(.q-field__control) {
+  font-family: monospace;
+  font-size: 0.8rem;
+  background: white;
+}
+
+.invoice-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.copy-btn,
+.share-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  font-weight: 500;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.copy-btn {
+  color: #059573;
+  border-color: rgba(5, 149, 115, 0.3);
+}
+
+.copy-btn:hover,
+.copy-btn:focus {
+  background: #059573;
+  color: white;
+  border-color: #059573;
+}
+
+.share-btn {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.share-btn:hover,
+.share-btn:focus {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+/* QR Scanner */
+.qr-scanner-container {
+  height: 300px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  background: #f8f9fa;
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+  .bottom-actions {
+    padding: 0.75rem 1rem 1.5rem 1rem;
+  }
+  
+  .action-buttons {
+    gap: 0.75rem;
+  }
+  
+  .action-btn {
+    height: 68px;
+    min-height: 68px;
+    min-width: 100px;
+  }
+  
+  .main-content {
+    padding: 1.5rem 1rem 7rem 1rem;
+  }
+  
+  .amount-number {
+    font-size: 3rem;
+  }
+  
+  .amount-unit {
+    font-size: 1.25rem;
+  }
+  
+  .payment-dialog .dialog-header,
+  .payment-dialog .dialog-content {
+    padding: 1rem;
+  }
+  
+  .payment-dialog .dialog-content {
+    gap: 1rem;
+  }
+  
+  .input-actions {
+    flex-direction: column;
+  }
+  
+  .action-btn {
+    height: 40px;
+  }
+  
+  .invoice-amount {
+    font-size: 1.5rem;
+  }
+  
+  .send-payment-btn,
+  .create-invoice-btn {
+    height: 48px;
+    font-size: 0.9rem;
+  }
+  
+  .invoice-actions {
+    flex-direction: column;
+  }
+  
+  .copy-btn,
+  .share-btn {
+    height: 40px;
+  }
+  
+  .qr-scanner-container {
+    height: 250px;
+  }
 }
 </style>
