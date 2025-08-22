@@ -42,57 +42,42 @@
 
     <!-- Transaction Details -->
     <div v-else-if="transaction" class="transaction-content">
-      <!-- Status Card -->
-      <q-card class="status-card" :class="getStatusCardClass()">
-        <q-card-section class="status-section">
-          <div class="status-icon">
-            <q-avatar 
-              :color="getTransactionColor()" 
-              :text-color="getTransactionTextColor()"
-              size="64px"
-            >
-              <q-icon :name="getTransactionIcon()" size="32px"/>
-            </q-avatar>
+      <!-- Status Section -->
+      <div class="status-section">
+        <div class="status-icon">
+          <q-avatar 
+            :color="getTransactionIconColor()" 
+            size="80px"
+          >
+            <q-icon :name="getTransactionIcon()" size="40px" color="white"/>
+          </q-avatar>
+        </div>
+        <div class="status-info">
+          <div class="transaction-type">{{ getTransactionTypeLabel() }}</div>
+          <div class="transaction-status" :class="getStatusClass()">
+            <q-icon :name="getStatusIcon()" class="q-mr-xs"/>
+            {{ getTransactionStatus() }}
           </div>
-          <div class="status-info">
-            <div class="transaction-type">{{ getTransactionTypeLabel() }}</div>
-            <div class="transaction-status" :class="getStatusClass()">
-              <q-icon :name="getStatusIcon()" class="q-mr-xs"/>
-              {{ getTransactionStatus() }}
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
+        </div>
+      </div>
 
-      <!-- Amount Card -->
-      <q-card class="amount-card">
-        <q-card-section class="amount-section">
-          <div class="amount-display">
-            <div class="amount-value" :class="getAmountClass()">
-              {{ getFormattedAmount() }}
-            </div>
-            <div class="amount-fiat">{{ getFiatAmount() }}</div>
+      <!-- Amount Section -->
+      <div class="amount-section">
+        <div class="amount-display">
+          <div class="amount-value" :class="getAmountClass()">
+            {{ getFormattedAmount() }}
           </div>
-          <div class="amount-breakdown" v-if="showDeveloperMode && transaction.fees">
-            <div class="breakdown-item">
-              <span class="breakdown-label">Base Amount:</span>
-              <span class="breakdown-value">{{ formatSats(transaction.amount - (transaction.fees || 0)) }}</span>
-            </div>
-            <div class="breakdown-item">
-              <span class="breakdown-label">Fees:</span>
-              <span class="breakdown-value">{{ formatSats(transaction.fees || 0) }}</span>
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
+          <div class="amount-fiat">{{ getFiatAmount() }}</div>
+        </div>
+      </div>
 
-      <!-- Nostr Profile Card (for zaps) -->
-      <q-card 
+      <!-- Nostr Profile Section (for zaps) -->
+      <div 
         v-if="transaction.senderNpub && nostrProfile" 
-        class="profile-card"
+        class="profile-section"
         @click="viewNostrProfile"
       >
-        <q-card-section class="profile-section">
+        <div class="profile-card">
           <div class="profile-avatar">
             <q-avatar size="48px">
               <img 
@@ -114,12 +99,12 @@
             </div>
           </div>
           <q-icon name="las la-external-link-alt" class="external-icon"/>
-        </q-card-section>
-      </q-card>
+        </div>
+      </div>
 
       <!-- Transaction Info -->
-      <q-card class="info-card">
-        <q-card-section class="info-section">
+      <div class="info-section">
+        <div class="info-card">
           <div class="section-title">Transaction Information</div>
           
           <div class="info-grid">
@@ -149,13 +134,13 @@
               </div>
             </div>
           </div>
-        </q-card-section>
-      </q-card>
+        </div>
+      </div>
 
       <!-- Developer Details -->
       <q-slide-transition>
-        <q-card v-show="showDeveloperMode" class="developer-card">
-          <q-card-section class="developer-section">
+        <div v-show="showDeveloperMode" class="developer-section">
+          <div class="developer-card">
             <div class="section-title">
               <q-icon name="las la-code" class="q-mr-sm"/>
               Developer Details
@@ -192,41 +177,36 @@
             </div>
             
             <!-- Raw Invoice -->
-            <div class="raw-invoice" v-if="transaction.payment_request">
+            <div class="raw-section" v-if="transaction.payment_request">
               <div class="dev-label">Raw Invoice</div>
-              <q-input
-                v-model="transaction.payment_request"
-                type="textarea"
-                readonly
-                outlined
-                rows="4"
-                class="invoice-input"
-              />
-              <q-btn
-                flat
-                dense
-                icon="las la-copy"
-                label="Copy Invoice"
-                @click="copyToClipboard(transaction.payment_request)"
-                class="copy-invoice-btn"
-              />
+              <div class="raw-content">
+                <pre class="raw-text">{{ transaction.payment_request }}</pre>
+                <q-btn
+                  flat
+                  dense
+                  icon="las la-copy"
+                  @click="copyToClipboard(transaction.payment_request)"
+                  class="copy-btn"
+                />
+              </div>
             </div>
             
             <!-- Raw JSON -->
-            <div class="raw-json">
+            <div class="raw-section">
               <div class="dev-label">Raw JSON</div>
-              <pre class="json-display">{{ JSON.stringify(transaction, null, 2) }}</pre>
-              <q-btn
-                flat
-                dense
-                icon="las la-copy"
-                label="Copy JSON"
-                @click="copyToClipboard(JSON.stringify(transaction, null, 2))"
-                class="copy-json-btn"
-              />
+              <div class="raw-content">
+                <pre class="raw-text">{{ JSON.stringify(transaction, null, 2) }}</pre>
+                <q-btn
+                  flat
+                  dense
+                  icon="las la-copy"
+                  @click="copyToClipboard(JSON.stringify(transaction, null, 2))"
+                  class="copy-btn"
+                />
+              </div>
             </div>
-          </q-card-section>
-        </q-card>
+          </div>
+        </div>
       </q-slide-transition>
 
       <!-- Action Buttons -->
@@ -400,9 +380,10 @@ export default {
           this.nostrProfile = {
             name: npub.substring(0, 12) + '...',
             displayName: 'Nostr User',
-            picture: `https://api.dicebear.com/7.x/identicon/svg?seed=${npub}`,
+            picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${npub}`,
             about: 'Lightning Network enthusiast',
-            nip05: ''
+            nip05: '',
+            lud16: `${npub.substring(0, 8)}@getalby.com`
           };
         }
       } catch (error) {
@@ -425,14 +406,9 @@ export default {
       return this.transaction.type === 'incoming' ? 'Payment Received' : 'Payment Sent';
     },
     
-    getTransactionColor() {
-      if (this.transaction.senderNpub) return 'purple-1';
-      return this.transaction.type === 'incoming' ? 'green-1' : 'grey-2';
-    },
-    
-    getTransactionTextColor() {
-      if (this.transaction.senderNpub) return 'purple-8';
-      return this.transaction.type === 'incoming' ? 'green-8' : 'grey-7';
+    getTransactionIconColor() {
+      if (this.transaction.senderNpub) return '#8b5cf6'; // Purple for zaps
+      return this.transaction.type === 'incoming' ? '#10b981' : '#f97316'; // Green for received, orange for sent
     },
     
     getTransactionIcon() {
@@ -458,28 +434,19 @@ export default {
       return 'status-completed';
     },
     
-    getStatusCardClass() {
-      if (this.transaction.senderNpub) return 'zap-card';
-      return this.transaction.type === 'incoming' ? 'incoming-card' : 'outgoing-card';
-    },
-    
     getAmountClass() {
       return this.transaction.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
     
     getFormattedAmount() {
       const prefix = this.transaction.type === 'incoming' ? '+' : '-';
-      return prefix + Math.abs(this.transaction.amount).toLocaleString() + ' sats';
+      return prefix + ' ' + Math.abs(this.transaction.amount).toLocaleString() + ' sats';
     },
     
     getFiatAmount() {
       const btcAmount = Math.abs(this.transaction.amount) / 100000000;
       const fiatValue = btcAmount * (this.walletState.exchangeRates?.usd || 65000);
       return '$' + fiatValue.toFixed(2);
-    },
-    
-    formatSats(amount) {
-      return Math.abs(amount).toLocaleString() + ' sats';
     },
     
     formatDateTime(timestamp) {
@@ -500,7 +467,7 @@ export default {
     
     formatHash(hash) {
       if (!hash) return 'N/A';
-      return hash.substring(0, 8) + '...' + hash.substring(hash.length - 8);
+      return hash.substring(0, 12) + '...' + hash.substring(hash.length - 12);
     },
     
     async copyToClipboard(text) {
@@ -572,7 +539,7 @@ export default {
 
 <style scoped>
 .transaction-details-page {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: #f8f9fa;
   min-height: 100vh;
 }
 
@@ -583,7 +550,7 @@ export default {
   justify-content: space-between;
   padding: 1rem;
   background: white;
-  border-bottom: 1px solid rgba(229, 231, 235, 0.3);
+  border-bottom: 1px solid #e5e7eb;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -619,6 +586,7 @@ export default {
   justify-content: center;
   height: 60vh;
   text-align: center;
+  background: white;
 }
 
 .loading-text {
@@ -629,47 +597,26 @@ export default {
 
 /* Transaction Content */
 .transaction-content {
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  background: white;
+  min-height: calc(100vh - 80px);
 }
 
-/* Status Card */
-.status-card {
-  border-radius: 16px;
-  overflow: hidden;
-  border: 2px solid transparent;
-}
-
-.incoming-card {
-  border-color: #10b981;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(16, 185, 129, 0.02));
-}
-
-.outgoing-card {
-  border-color: #6b7280;
-  background: linear-gradient(135deg, rgba(107, 114, 128, 0.05), rgba(107, 114, 128, 0.02));
-}
-
-.zap-card {
-  border-color: #8b5cf6;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(139, 92, 246, 0.02));
-}
-
+/* Status Section */
 .status-section {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  padding: 1.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #f3f4f6;
 }
 
-.status-info {
-  flex: 1;
+.status-icon {
+  margin-bottom: 1rem;
 }
 
 .transaction-type {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
   color: #1f2937;
   margin-bottom: 0.5rem;
@@ -678,7 +625,9 @@ export default {
 .transaction-status {
   display: flex;
   align-items: center;
+  justify-content: center;
   font-weight: 500;
+  font-size: 1rem;
 }
 
 .status-completed {
@@ -689,16 +638,11 @@ export default {
   color: #f59e0b;
 }
 
-/* Amount Card */
-.amount-card {
-  border-radius: 16px;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
+/* Amount Section */
 .amount-section {
+  padding: 2rem 1rem;
   text-align: center;
-  padding: 2rem 1.5rem;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .amount-value {
@@ -716,55 +660,29 @@ export default {
 }
 
 .amount-fiat {
-  font-size: 1.125rem;
-  color: #6b7280;
-  margin-bottom: 1rem;
-}
-
-.amount-breakdown {
-  background: rgba(243, 244, 246, 0.5);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-top: 1rem;
-}
-
-.breakdown-item {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.breakdown-item:last-child {
-  margin-bottom: 0;
-}
-
-.breakdown-label {
+  font-size: 1.25rem;
   color: #6b7280;
 }
 
-.breakdown-value {
-  font-weight: 500;
-  color: #1f2937;
-}
-
-/* Profile Card */
-.profile-card {
-  border-radius: 16px;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.profile-card:hover {
-  transform: translateY(-2px);
-}
-
+/* Profile Section */
 .profile-section {
+  padding: 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+}
+
+.profile-card {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1.5rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  transition: background-color 0.2s;
+}
+
+.profile-card:hover {
+  background: #f3f4f6;
 }
 
 .profile-info {
@@ -799,16 +717,15 @@ export default {
   color: #9ca3af;
 }
 
-/* Info Card */
-.info-card,
-.developer-card {
-  border-radius: 16px;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+/* Info Section */
+.info-section {
+  padding: 1rem;
+  border-bottom: 1px solid #f3f4f6;
 }
 
-.info-section,
-.developer-section {
+.info-card {
+  background: #f8f9fa;
+  border-radius: 12px;
   padding: 1.5rem;
 }
 
@@ -821,29 +738,25 @@ export default {
   align-items: center;
 }
 
-.info-grid,
-.developer-grid {
+.info-grid {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.info-item,
-.dev-item {
+.info-item {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
 
-.info-label,
-.dev-label {
+.info-label {
   font-size: 0.875rem;
   font-weight: 500;
   color: #6b7280;
 }
 
-.info-value,
-.dev-value {
+.info-value {
   font-size: 1rem;
   color: #1f2937;
   word-break: break-all;
@@ -854,48 +767,93 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem;
-  background: rgba(243, 244, 246, 0.5);
+  padding: 0.75rem;
+  background: white;
   border-radius: 8px;
   transition: background-color 0.2s;
+  border: 1px solid #e5e7eb;
 }
 
 .hash-value:hover {
-  background: rgba(243, 244, 246, 0.8);
+  background: #f9fafb;
 }
 
 .copy-icon {
   color: #6b7280;
   opacity: 0.7;
+  flex-shrink: 0;
 }
 
-/* Developer Details */
+/* Developer Section */
+.developer-section {
+  padding: 1rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
 .developer-card {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 1.5rem;
   border: 2px dashed #d1d5db;
 }
 
-.raw-invoice,
-.raw-json {
-  margin-top: 1rem;
+.developer-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
-.invoice-input {
-  margin: 0.5rem 0;
+.dev-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-.json-display {
-  background: #f8f9fa;
+.dev-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.dev-value {
+  font-size: 1rem;
+  color: #1f2937;
+  word-break: break-all;
+}
+
+.raw-section {
+  margin-bottom: 1.5rem;
+}
+
+.raw-section:last-child {
+  margin-bottom: 0;
+}
+
+.raw-content {
+  position: relative;
+  background: white;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  padding: 1rem;
-  font-size: 0.875rem;
-  overflow-x: auto;
-  margin: 0.5rem 0;
+  margin-top: 0.5rem;
 }
 
-.copy-invoice-btn,
-.copy-json-btn {
-  margin-top: 0.5rem;
+.raw-text {
+  padding: 1rem;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
 }
 
 /* Action Buttons */
@@ -903,7 +861,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  margin-top: 1rem;
+  padding: 1rem;
 }
 
 .action-btn {
@@ -921,6 +879,7 @@ export default {
   height: 60vh;
   text-align: center;
   padding: 2rem;
+  background: white;
 }
 
 .error-title {
@@ -942,69 +901,30 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .transaction-content {
-    padding: 0.75rem;
-  }
-  
   .amount-value {
     font-size: 2rem;
   }
   
+  .transaction-type {
+    font-size: 1.25rem;
+  }
+  
   .status-section,
+  .amount-section,
   .profile-section,
   .info-section,
   .developer-section {
+    padding: 1rem 0.75rem;
+  }
+  
+  .info-card,
+  .developer-card {
     padding: 1rem;
   }
   
-  .amount-section {
-    padding: 1.5rem 1rem;
-  }
-  
-  .action-buttons {
-    gap: 0.5rem;
-  }
-}
-
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .transaction-details-page {
-    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-  }
-  
-  .page-header,
-  .amount-card,
-  .profile-card,
-  .info-card,
-  .developer-card {
-    background: #374151;
-    border-color: rgba(75, 85, 99, 0.3);
-  }
-  
-  .header-title,
-  .transaction-type,
-  .profile-name,
-  .section-title,
-  .info-value,
-  .dev-value {
-    color: #f9fafb;
-  }
-  
-  .amount-fiat,
-  .profile-about,
-  .info-label,
-  .dev-label {
-    color: #d1d5db;
-  }
-  
-  .hash-value {
-    background: rgba(55, 65, 81, 0.5);
-  }
-  
-  .json-display {
-    background: #1f2937;
-    border-color: #374151;
-    color: #f9fafb;
+  .raw-text {
+    font-size: 0.6875rem;
+    padding: 0.75rem;
   }
 }
 </style>
