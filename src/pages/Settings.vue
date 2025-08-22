@@ -927,7 +927,7 @@ export default {
 .settings-header .title {
   font-size: 1.25rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #059573, #047857);
+  background: linear-gradient(135deg, #059573, #78D53C);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin: 0;
