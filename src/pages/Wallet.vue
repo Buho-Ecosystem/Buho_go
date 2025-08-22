@@ -91,134 +91,141 @@
     </div>
 
     <!-- Send Dialog -->
-    <q-dialog v-model="showSendDialog" class="send-dialog">
+    <q-dialog v-model="showSendDialog" class="payment-dialog">
       <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">Send Lightning Payment</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Send Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="send-form">
-            <div class="input-section">
-              <q-input
-                v-model="sendForm.input"
-                outlined
-                label="Payment Input"
-                placeholder="Invoice, LNURL, or Lightning Address"
-                type="textarea"
-                rows="3"
-                class="q-mb-md payment-input"
+          <!-- Payment Input -->
+          <div class="payment-input-section">
+            <q-input
+              v-model="sendForm.input"
+              outlined
+              label="Payment Details"
+              placeholder="Invoice, LNURL, or Lightning Address"
+              type="textarea"
+              rows="3"
+              class="payment-input"
+            />
+            
+            <div class="input-actions">
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-qrcode"
+                label="Scan QR"
+                @click="showQRScanner = true"
+                class="action-btn scan-btn"
+                no-caps
               />
-              
-              <div class="input-actions">
-                <q-btn
-                  flat
-                  dense
-                  color="primary"
-                  icon="las la-qrcode"
-                  label="Scan QR"
-                  @click="showQRScanner = true"
-                  class="scan-btn"
-                />
-                <q-btn
-                  flat
-                  dense
-                  color="primary"
-                  icon="las la-paste"
-                  label="Paste"
-                  @click="pasteFromClipboard"
-                  class="paste-btn"
-                />
-              </div>
+              <q-btn
+                flat
+                color="primary"
+                icon="las la-paste"
+                label="Paste"
+                @click="pasteFromClipboard"
+                class="action-btn paste-btn"
+                no-caps
+              />
             </div>
+          </div>
 
-            <!-- Payment Type Indicator -->
-            <div class="payment-type" v-if="paymentData">
-              <div class="type-indicator">
-                <q-icon name="las la-bolt" class="q-mr-xs"/>
-                {{ getPaymentTypeLabel() }}
-              </div>
+          <!-- Payment Type Indicator -->
+          <div class="payment-type-section" v-if="paymentData">
+            <div class="type-indicator">
+              <q-icon name="las la-bolt" class="type-icon"/>
+              <span class="type-label">{{ getPaymentTypeLabel() }}</span>
             </div>
+          </div>
 
-            <!-- Amount Input for LNURL/Lightning Address -->
-            <div class="amount-section" v-if="requiresAmount()">
-              <div class="amount-limits" v-if="getAmountLimits()">
-                Amount limits: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats
-              </div>
-              <q-input
-                v-model="sendForm.amount"
-                outlined
-                label="Amount (sats)"
-                type="number"
-                class="q-mb-md amount-input"
-              />
-              
-              <q-input
-                v-model="sendForm.comment"
-                outlined
-                label="Comment (optional)"
-                class="q-mb-md"
-                :maxlength="paymentData.commentAllowed || 0"
-                :disable="!paymentData.commentAllowed"
-                :hint="paymentData.commentAllowed ? `Max ${paymentData.commentAllowed} characters` : 'Comments not supported'"
-              />
+          <!-- Amount Input for LNURL/Lightning Address -->
+          <div class="amount-section" v-if="requiresAmount()">
+            <div class="amount-limits" v-if="getAmountLimits()">
+              <q-icon name="las la-info-circle" class="limits-icon"/>
+              <span>Amount: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
             </div>
+            
+            <q-input
+              v-model="sendForm.amount"
+              outlined
+              label="Amount (sats)"
+              type="number"
+              class="amount-input"
+            />
+            
+            <q-input
+              v-model="sendForm.comment"
+              outlined
+              label="Comment (optional)"
+              :maxlength="paymentData.commentAllowed || 0"
+              :disable="!paymentData.commentAllowed"
+              :hint="paymentData.commentAllowed ? `Max ${paymentData.commentAllowed} characters` : 'Comments not supported'"
+              class="comment-input"
+            />
           </div>
 
           <!-- Invoice Details -->
-          <div class="invoice-details-section" v-if="paymentData && paymentData.type === 'lightning_invoice'">
+          <div class="invoice-preview" v-if="paymentData && paymentData.type === 'lightning_invoice'">
             <div class="invoice-details">
-              <div class="details-header">
-                <q-icon name="las la-receipt" class="q-mr-sm"/>
-                Invoice Details
+              <div class="preview-header">
+                <q-icon name="las la-receipt" class="preview-icon"/>
+                <span class="preview-title">Invoice Preview</span>
               </div>
-              <div class="detail-row">
-                <span class="detail-label">Amount:</span>
-                <span class="detail-value">{{ formatBalance(paymentData.amount) }}</span>
-              </div>
-              <div class="detail-row" v-if="paymentData.description">
-                <span class="detail-label">Description:</span>
-                <span class="detail-value">{{ paymentData.description }}</span>
-              </div>
-              <div class="detail-row" v-if="paymentData.expiry">
-                <span class="detail-label">Expires:</span>
-                <span class="detail-value">{{ formatExpiry(paymentData.expiry) }}</span>
+              
+              <div class="preview-content">
+                <div class="detail-item">
+                  <span class="detail-label">Amount</span>
+                  <span class="detail-value amount-value">{{ formatBalance(paymentData.amount) }}</span>
+                </div>
+                <div class="detail-item" v-if="paymentData.description">
+                  <span class="detail-label">Description</span>
+                  <span class="detail-value">{{ paymentData.description }}</span>
+                </div>
+                <div class="detail-item" v-if="paymentData.expiry">
+                  <span class="detail-label">Expires</span>
+                  <span class="detail-value">{{ formatExpiry(paymentData.expiry) }}</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Payment Actions -->
-          <div class="payment-actions">
-            <q-btn
-              color="primary"
-              label="Send Payment"
-              :loading="isSending"
-              :disable="!canSendPayment()"
-              @click="sendPayment"
-              class="full-width send-payment-btn"
-            />
-          </div>
+          <!-- Send Button -->
+          <q-btn
+            :loading="isSending"
+            :disable="!canSendPayment()"
+            @click="sendPayment"
+            class="send-payment-btn"
+            unelevated
+            no-caps
+          >
+            <q-icon name="las la-paper-plane" class="q-mr-sm"/>
+            <span v-if="!isSending">Send Payment</span>
+            <span v-else>Sending...</span>
+          </q-btn>
         </q-card-section>
       </q-card>
     </q-dialog>
 
     <!-- Receive Dialog -->
-    <q-dialog v-model="showReceiveDialog" class="receive-dialog">
+    <q-dialog v-model="showReceiveDialog" class="payment-dialog">
       <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">Receive Lightning Payment</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Receive Lightning Payment</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="invoice-form">
+          <!-- Invoice Form -->
+          <div class="invoice-form" v-if="!generatedInvoice">
             <q-input
               v-model="receiveForm.amount"
               outlined
               label="Amount (sats)"
               type="number"
-              class="q-mb-md amount-input"
+              class="amount-input"
               :rules="[val => val > 0 || 'Amount must be greater than 0']"
             />
 
@@ -226,56 +233,77 @@
               v-model="receiveForm.description"
               outlined
               label="Description (optional)"
-              class="q-mb-md"
+              class="description-input"
               maxlength="100"
             />
 
             <q-btn
-              color="primary"
-              label="Create Invoice"
               :loading="isCreatingInvoice"
               @click="createInvoice"
-              class="full-width create-invoice-btn"
+              class="create-invoice-btn"
               :disable="!receiveForm.amount || receiveForm.amount <= 0"
-            />
+              unelevated
+              no-caps
+            >
+              <q-icon name="las la-plus-circle" class="q-mr-sm"/>
+              <span v-if="!isCreatingInvoice">Create Invoice</span>
+              <span v-else>Creating...</span>
+            </q-btn>
           </div>
 
+          <!-- Generated Invoice -->
           <div class="invoice-result" v-if="generatedInvoice">
-            <div class="qr-code-container">
+            <!-- QR Code -->
+            <div class="qr-section">
               <vue-qrcode
                 :value="generatedInvoice.payment_request"
                 :options="{ width: 200 }"
                 class="qr-code"
               />
             </div>
-            <div class="invoice-details">
-              <div class="invoice-amount">{{ formatBalance(generatedInvoice.amount || receiveForm.amount) }}</div>
-              <div class="invoice-description" v-if="receiveForm.description">{{ receiveForm.description }}</div>
+            
+            <!-- Invoice Info -->
+            <div class="invoice-info">
+              <div class="invoice-amount">
+                {{ formatBalance(generatedInvoice.amount || receiveForm.amount) }}
+              </div>
+              <div class="invoice-description" v-if="receiveForm.description">
+                {{ receiveForm.description }}
+              </div>
             </div>
-            <q-input
-              v-model="generatedInvoice.payment_request"
-              readonly
-              outlined
-              type="textarea"
-              rows="3"
-              class="invoice-text"
-            />
+            
+            <!-- Invoice String -->
+            <div class="invoice-string">
+              <q-input
+                v-model="generatedInvoice.payment_request"
+                readonly
+                outlined
+                type="textarea"
+                rows="3"
+                class="invoice-text"
+                label="Lightning Invoice"
+              />
+            </div>
+            
+            <!-- Action Buttons -->
             <div class="invoice-actions">
               <q-btn
-                outline
+                flat
                 color="primary"
-                label="Copy Invoice"
                 icon="las la-copy"
+                label="Copy"
                 @click="copyInvoice"
                 class="copy-btn"
+                no-caps
               />
               <q-btn
                 flat
                 color="primary"
-                label="Share"
                 icon="las la-share-alt"
+                label="Share"
                 @click="shareInvoice"
                 class="share-btn"
+                no-caps
               />
             </div>
           </div>
@@ -284,11 +312,11 @@
     </q-dialog>
 
     <!-- QR Scanner Dialog -->
-    <q-dialog v-model="showQRScanner" class="qr-scanner-dialog">
+    <q-dialog v-model="showQRScanner" class="payment-dialog">
       <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">Scan Lightning Invoice</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Scan Lightning Invoice</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
@@ -1020,232 +1048,378 @@ export default {
 }
 
 /* Dialog Styles */
-.dialog-card {
+.payment-dialog .dialog-card {
   width: 100%;
-  max-width: 500px;
-  border-radius: 16px;
+  max-width: 480px;
+  border-radius: 20px;
+  overflow: hidden;
 }
 
-.dialog-header {
+.payment-dialog .dialog-header {
+  background: #f8f9fa;
+  padding: 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
   border-bottom: 1px solid #e5e7eb;
 }
 
-.dialog-content {
-  padding: 1rem;
+.payment-dialog .dialog-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+.payment-dialog .close-btn {
+  color: #6b7280;
 }
 
-/* Send Form */
-.send-form {
+.payment-dialog .dialog-content {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Payment Input Section */
+.payment-input-section {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
+.payment-input {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.875rem;
+}
+
 .input-actions {
   display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
+  gap: 0.75rem;
 }
 
-.scan-btn,
-.paste-btn {
+.action-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  font-weight: 500;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.scan-btn {
   color: #059573;
+  border-color: #059573;
 }
 
-.payment-type {
-  margin-bottom: 1rem;
+.scan-btn:hover {
+  background: #059573;
+  color: white;
+}
+
+.paste-btn {
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.paste-btn:hover {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Payment Type Section */
+.payment-type-section {
+  background: rgba(5, 149, 115, 0.05);
+  border: 1px solid rgba(5, 149, 115, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
 }
 
 .type-indicator {
   display: flex;
   align-items: center;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  background: rgba(5, 149, 115, 0.1);
+  gap: 0.5rem;
+}
+
+.type-icon {
   color: #059573;
-}
-
-.amount-section {
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-.amount-limits {
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin-bottom: 1rem;
-}
-
-/* Invoice Details */
-.invoice-details-section {
-  margin-bottom: 1rem;
-}
-
-.invoice-details {
-  background: #f9fafb;
-  border-radius: 8px;
-  padding: 1rem;
-}
-
-.details-header {
-  display: flex;
-  align-items: center;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 1rem;
-}
-
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.detail-row:last-child {
-  margin-bottom: 0;
-}
-
-.detail-label {
   font-weight: 500;
-  color: #6b7280;
 }
 
-.detail-value {
-  font-weight: 600;
-  color: #1f2937;
+.type-label {
+  color: #059573;
+  font-weight: 500;
 }
 
-.send-payment-btn {
-  background: linear-gradient(135deg, #059573, #43B65B);
+/* Amount Section */
+.amount-section {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 1rem;
-  font-weight: 600;
-}
-
-/* Receive Form */
-.invoice-form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.create-invoice-btn {
-  background: linear-gradient(135deg, #059573, #43B65B);
+.amount-limits {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+  background: white;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.limits-icon {
+  color: #3b82f6;
+  font-size: 16px;
+}
+
+/* Invoice Preview */
+.invoice-preview {
+  background: #f8f9fa;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
-  padding: 1rem;
+  overflow: hidden;
+}
+
+.invoice-details {
+  padding: 1.5rem;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.preview-icon {
+  color: #059573;
   font-weight: 600;
 }
 
-/* Invoice Result */
-.invoice-result {
-  margin-top: 1rem;
-  text-align: center;
+.preview-title {
+  color: #1f2937;
+  font-weight: 600;
 }
 
-.qr-code-container {
-  margin-bottom: 1rem;
-  padding: 1rem;
+.preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
   background: white;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
 }
 
-.invoice-details {
-  margin-bottom: 1rem;
-  padding: 1rem;
+.detail-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: #1f2937;
+  font-weight: 500;
+  text-align: right;
+}
+
+.amount-value {
+  color: #059573;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* Send Payment Button */
+.send-payment-btn {
+  width: 100%;
+  height: 52px;
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.send-payment-btn:hover {
+  background: linear-gradient(135deg, #047857, #059573);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.3);
+}
+
+/* Invoice Form */
+.invoice-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.create-invoice-btn {
+  width: 100%;
+  height: 52px;
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.create-invoice-btn:hover {
+  background: linear-gradient(135deg, #047857, #059573);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(5, 149, 115, 0.3);
+}
+
+/* Invoice Result */
+.invoice-result {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  text-align: center;
+}
+
+.qr-section {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.invoice-info {
+  padding: 1.5rem;
   background: #f9fafb;
-  border-radius: 8px;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
 }
 
 .invoice-amount {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 2rem;
+  font-weight: 800;
   color: #059573;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .invoice-description {
   color: #6b7280;
-  font-size: 0.875rem;
+  font-size: 1rem;
+  font-weight: 500;
 }
 
-.invoice-text {
-  margin-bottom: 1rem;
+.invoice-string {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.invoice-text :deep(.q-field__control) {
   font-family: monospace;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
+  background: white;
 }
 
 .invoice-actions {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .copy-btn,
 .share-btn {
   flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  font-weight: 500;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.copy-btn {
   color: #059573;
-  border-color: #059573;
+  border-color: rgba(5, 149, 115, 0.3);
 }
 
 .copy-btn:hover,
-.share-btn:hover {
+.copy-btn:focus {
   background: #059573;
   color: white;
+  border-color: #059573;
+}
+
+.share-btn {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.share-btn:hover,
+.share-btn:focus {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
 }
 
 /* QR Scanner */
 .qr-scanner-container {
   height: 300px;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
-  border: 2px solid #e5e7eb;
+  border: 1px solid #e5e7eb;
+  background: #f8f9fa;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .main-content {
+  .payment-dialog .dialog-header,
+  .payment-dialog .dialog-content {
     padding: 1rem;
   }
   
-  .amount-number {
-    font-size: 3rem;
+  .payment-dialog .dialog-content {
+    gap: 1rem;
   }
   
-  .amount-unit {
-    font-size: 1.25rem;
-  }
-  
-  .balance-secondary {
-    font-size: 1rem;
-  }
-  
-  .transaction-history-btn {
-    width: 44px;
-    height: 44px;
-  }
-  
-  .bottom-actions {
-    padding: 1rem;
-  }
-  
-  .action-buttons {
-    gap: 0.75rem;
+  .input-actions {
+    flex-direction: column;
   }
   
   .action-btn {
-    height: 56px;
+    height: 40px;
   }
   
-  .btn-text {
-    font-size: 0.8rem;
+  .invoice-amount {
+    font-size: 1.5rem;
+  }
+  
+  .send-payment-btn,
+  .create-invoice-btn {
+    height: 48px;
+    font-size: 0.9rem;
+  }
+  
+  .invoice-actions {
+    flex-direction: column;
+  }
+  
+  .copy-btn,
+  .share-btn {
+    height: 40px;
+  }
+  
+  .qr-scanner-container {
+    height: 250px;
   }
 }
 </style>

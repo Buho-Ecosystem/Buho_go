@@ -1,172 +1,169 @@
 <template>
-  <q-page>
+  <q-page class="settings-page">
     <!-- Header -->
-    <q-toolbar class="settings-header">
-      <q-btn flat round dense icon="las la-arrow-left" class="q-mr-sm" @click="$router.back()"/>
-      <div class="logo-container">
-        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="32" viewBox="0 0 30 32" fill="none">
-          <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                fill="#059573"/>
-          <path
-            d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-            fill="#78D53C"/>
-          <path
-            d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-            fill="#43B65B"/>
-        </svg>
-        <div class="title">BuhoGO</div>
+    <div class="settings-header">
+      <q-btn 
+        flat 
+        round 
+        dense 
+        icon="las la-arrow-left" 
+        @click="$router.back()"
+        class="back-btn"
+      />
+      <div class="header-content">
+        <div class="logo-container">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo">
+            <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z" fill="#059573"/>
+            <path d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z" fill="#78D53C"/>
+            <path d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z" fill="#43B65B"/>
+          </svg>
+          <div class="title">BuhoGO</div>
+        </div>
       </div>
-      <q-space/>
-    </q-toolbar>
+      <div class="header-spacer"></div>
+    </div>
 
     <!-- Settings Content -->
     <div class="settings-content">
-      <!-- Wallet Management Card -->
-      <q-card class="settings-card no-shadow" bordered @click="handleWalletClick">
-        <q-card-section class="settings-card-content">
-          <div class="settings-item">
-            <div class="settings-item-icon wallet-icon">
-              <q-icon name="las la-wallet"/>
-            </div>
-            <div class="settings-item-text">
-              <div class="settings-item-title">Manage Wallets</div>
-              <div class="settings-item-subtitle">
-                {{ walletState.connectedWallets.length }}
-                {{ walletState.connectedWallets.length === 1 ? 'wallet' : 'wallets' }} connected
-              </div>
+      <!-- Wallet Management -->
+      <div class="settings-section">
+        <div class="section-card" @click="handleWalletClick">
+          <div class="card-icon wallet-icon">
+            <q-icon name="las la-wallet" size="24px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title">Manage Wallets</div>
+            <div class="card-subtitle">
+              {{ walletState.connectedWallets.length }} 
+              {{ walletState.connectedWallets.length === 1 ? 'wallet' : 'wallets' }} connected
             </div>
           </div>
-          <q-icon name="las la-chevron-right" size="xs" class="settings-item-arrow"/>
-        </q-card-section>
-      </q-card>
+          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"/>
+        </div>
+      </div>
 
-      <!-- Preferences Section -->
+      <!-- Preferences -->
       <div class="settings-section">
-        <h3 class="settings-section-title">Preferences</h3>
+        <div class="section-title">Preferences</div>
+        
+        <div class="section-card" @click="showCurrencyDialog = true">
+          <div class="card-icon currency-icon">
+            <q-icon name="las la-dollar-sign" size="24px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title">Currency</div>
+            <div class="card-subtitle">{{ walletState.preferredFiatCurrency }}</div>
+          </div>
+          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"/>
+        </div>
 
-        <!-- Currency Settings -->
-        <q-card class="settings-card no-shadow" bordered @click="showCurrencyDialog = true">
-          <q-card-section class="settings-card-content">
-            <div class="settings-item">
-              <div class="settings-item-icon currency-icon">
-                <q-icon name="las la-dollar-sign"/>
-              </div>
-              <div class="settings-item-text">
-                <div class="settings-item-title">Currency</div>
-                <div class="settings-item-subtitle">{{ walletState.preferredFiatCurrency }}</div>
-              </div>
-            </div>
-            <q-icon name="las la-chevron-right" size="xs" class="settings-item-arrow"/>
-          </q-card-section>
-        </q-card>
+        <div class="section-card" @click="showNotificationsDialog = true">
+          <div class="card-icon notifications-icon">
+            <q-icon name="las la-bell" size="24px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title">Notifications</div>
+            <div class="card-subtitle">Payment alerts</div>
+          </div>
+          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"/>
+        </div>
 
-        <!-- Notifications Settings -->
-        <q-card class="settings-card no-shadow" bordered @click="showNotificationsDialog = true">
-          <q-card-section class="settings-card-content">
-            <div class="settings-item">
-              <div class="settings-item-icon notifications-icon">
-                <q-icon name="las la-bell"/>
-              </div>
-              <div class="settings-item-text">
-                <div class="settings-item-title">Notifications</div>
-                <div class="settings-item-subtitle">Payment alerts</div>
-              </div>
-            </div>
-            <q-icon name="las la-chevron-right" size="xs" class="settings-item-arrow"/>
-          </q-card-section>
-        </q-card>
-
-        <!-- Security Settings -->
-        <q-card class="settings-card no-shadow" bordered @click="showSecurityDialog = true">
-          <q-card-section class="settings-card-content">
-            <div class="settings-item">
-              <div class="settings-item-icon security-icon">
-                <q-icon name="las la-shield-alt"/>
-              </div>
-              <div class="settings-item-text">
-                <div class="settings-item-title">Security</div>
-                <div class="settings-item-subtitle">PIN protection</div>
-              </div>
-            </div>
-            <q-icon name="las la-chevron-right" size="xs" class="settings-item-arrow"/>
-          </q-card-section>
-        </q-card>
+        <div class="section-card" @click="showSecurityDialog = true">
+          <div class="card-icon security-icon">
+            <q-icon name="las la-shield-alt" size="24px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title">Security</div>
+            <div class="card-subtitle">PIN protection</div>
+          </div>
+          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"/>
+        </div>
       </div>
     </div>
 
     <!-- Disconnect Button -->
-    <div class="disconnect-container">
-      <q-btn outline color="negative" no-caps class="disconnect-btn" @click="confirmDisconnect">
-        <q-icon name="las la-trash-alt" class="q-mr-xs"/>
+    <div class="disconnect-section">
+      <q-btn
+        outline
+        color="negative"
+        no-caps
+        class="disconnect-btn"
+        @click="confirmDisconnect"
+      >
+        <q-icon name="las la-trash-alt" class="q-mr-sm"/>
         Disconnect All Wallets
       </q-btn>
     </div>
 
-    <!-- Settings Dialogs -->
     <!-- Currency Dialog -->
-    <q-dialog v-model="showCurrencyDialog">
-      <q-card class="settings-dialog">
+    <q-dialog v-model="showCurrencyDialog" class="settings-dialog">
+      <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">Currency Settings</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Currency Settings</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="currency-options">
-            <q-item
+          <div class="currency-list">
+            <div 
               v-for="currency in ['USD', 'EUR', 'GBP', 'JPY']"
               :key="currency"
-              clickable
-              v-ripple
-              :active="walletState.preferredFiatCurrency === currency"
-              @click="setPreferredCurrency(currency)"
               class="currency-item"
+              :class="{ active: walletState.preferredFiatCurrency === currency }"
+              @click="setPreferredCurrency(currency)"
             >
-              <q-item-section>
-                <q-item-label>{{ currency }}</q-item-label>
-                <q-item-label caption>{{ getCurrencySymbol(currency) }}1 =
-                  {{ walletState.exchangeRates[currency.toLowerCase()] }} sats
-                </q-item-label>
-              </q-item-section>
-              <q-item-section side>
-                <q-icon name="las la-check" v-if="walletState.preferredFiatCurrency === currency"/>
-              </q-item-section>
-            </q-item>
+              <div class="currency-info">
+                <div class="currency-code">{{ currency }}</div>
+                <div class="currency-rate">
+                  {{ getCurrencySymbol(currency) }}1 = {{ walletState.exchangeRates[currency.toLowerCase()] }} sats
+                </div>
+              </div>
+              <q-icon 
+                name="las la-check" 
+                v-if="walletState.preferredFiatCurrency === currency"
+                class="check-icon"
+              />
+            </div>
           </div>
         </q-card-section>
       </q-card>
     </q-dialog>
 
     <!-- Notifications Dialog -->
-    <q-dialog v-model="showNotificationsDialog">
-      <q-card class="settings-dialog">
+    <q-dialog v-model="showNotificationsDialog" class="settings-dialog">
+      <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">Notification Settings</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Notification Settings</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="notification-options">
-            <q-item>
-              <q-item-section>
-                <q-item-label>Payment Notifications</q-item-label>
-                <q-item-label caption>Receive alerts for incoming and outgoing payments</q-item-label>
-              </q-item-section>
-              <q-item-section side>
-                <q-toggle v-model="notificationsEnabled" @update:model-value="handleNotificationsToggle"/>
-              </q-item-section>
-            </q-item>
+          <div class="notification-item">
+            <div class="notification-info">
+              <div class="notification-title">Payment Notifications</div>
+              <div class="notification-subtitle">Receive alerts for incoming and outgoing payments</div>
+            </div>
+            <q-toggle 
+              v-model="notificationsEnabled" 
+              @update:model-value="handleNotificationsToggle"
+              color="primary"
+            />
+          </div>
 
-            <div v-if="!hasNotificationPermission" class="permission-warning q-mt-md">
-              <q-banner dense class="bg-warning text-white">
-                <template v-slot:avatar>
-                  <q-icon name="las la-exclamation-triangle"/>
-                </template>
-                Notifications are disabled. Please enable them in your browser settings.
-                <template v-slot:action>
-                  <q-btn flat color="white" label="Enable" @click="requestNotificationPermission"/>
-                </template>
-              </q-banner>
+          <div v-if="!hasNotificationPermission" class="permission-warning">
+            <div class="warning-content">
+              <q-icon name="las la-exclamation-triangle" class="warning-icon"/>
+              <div class="warning-text">
+                <div class="warning-title">Notifications Disabled</div>
+                <div class="warning-subtitle">Enable notifications in your browser settings</div>
+              </div>
+              <q-btn 
+                flat 
+                color="primary" 
+                label="Enable" 
+                @click="requestNotificationPermission"
+                class="enable-btn"
+              />
             </div>
           </div>
         </q-card-section>
@@ -174,130 +171,133 @@
     </q-dialog>
 
     <!-- Security Dialog -->
-    <q-dialog v-model="showSecurityDialog">
-      <q-card class="settings-dialog">
+    <q-dialog v-model="showSecurityDialog" class="settings-dialog">
+      <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">Security Settings</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Security Settings</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="security-options">
-            <q-item>
-              <q-item-section>
-                <q-item-label>PIN Protection</q-item-label>
-                <q-item-label caption>Require PIN for transactions</q-item-label>
-              </q-item-section>
-              <q-item-section side>
-                <q-toggle v-model="pinEnabled" @update:model-value="handlePinToggle"/>
-              </q-item-section>
-            </q-item>
-
-            <!-- PIN Setup/Change Form -->
-            <div v-if="pinEnabled" class="pin-form q-mt-md">
-              <q-input
-                v-if="!hasPin"
-                v-model="newPin"
-                type="password"
-                label="Set PIN"
-                :rules="[val => val.length >= 4 || 'PIN must be at least 4 digits']"
-                mask="####"
-                class="q-mb-sm"
-              />
-              <q-input
-                v-else
-                v-model="currentPin"
-                type="password"
-                label="Current PIN"
-                :rules="[val => val.length >= 4 || 'PIN must be at least 4 digits']"
-                mask="####"
-                class="q-mb-sm"
-              />
-              <q-input
-                v-if="hasPin"
-                v-model="newPin"
-                type="password"
-                label="New PIN"
-                :rules="[val => val.length >= 4 || 'PIN must be at least 4 digits']"
-                mask="####"
-                class="q-mb-sm"
-              />
-              <q-btn
-                color="primary"
-                label="Save PIN"
-                class="full-width"
-                :disable="!isPinValid"
-                @click="savePin"
-              />
+          <div class="security-item">
+            <div class="security-info">
+              <div class="security-title">PIN Protection</div>
+              <div class="security-subtitle">Require PIN for transactions</div>
             </div>
+            <q-toggle 
+              v-model="pinEnabled" 
+              @update:model-value="handlePinToggle"
+              color="primary"
+            />
+          </div>
+
+          <div v-if="pinEnabled" class="pin-form">
+            <q-input
+              v-if="!hasPin"
+              v-model="newPin"
+              type="password"
+              label="Set PIN"
+              outlined
+              :rules="[val => val.length >= 4 || 'PIN must be at least 4 digits']"
+              mask="####"
+              class="pin-input"
+            />
+            <q-input
+              v-else
+              v-model="currentPin"
+              type="password"
+              label="Current PIN"
+              outlined
+              :rules="[val => val.length >= 4 || 'PIN must be at least 4 digits']"
+              mask="####"
+              class="pin-input"
+            />
+            <q-input
+              v-if="hasPin"
+              v-model="newPin"
+              type="password"
+              label="New PIN"
+              outlined
+              :rules="[val => val.length >= 4 || 'PIN must be at least 4 digits']"
+              mask="####"
+              class="pin-input"
+            />
+            <q-btn
+              color="primary"
+              label="Save PIN"
+              class="save-pin-btn"
+              :disable="!isPinValid"
+              @click="savePin"
+              unelevated
+            />
           </div>
         </q-card-section>
       </q-card>
     </q-dialog>
 
     <!-- Wallets Dialog -->
-    <q-dialog v-model="showWalletsSheet">
-      <q-card class="settings-dialog">
+    <q-dialog v-model="showWalletsSheet" class="settings-dialog">
+      <q-card class="dialog-card">
         <q-card-section class="dialog-header">
-          <div class="text-h6">Manage Wallets</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup/>
+          <div class="dialog-title">Manage Wallets</div>
+          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
         </q-card-section>
 
         <q-card-section class="dialog-content">
           <div class="wallets-list">
-            <template v-if="walletState.connectedWallets.length === 0">
-              <div class="no-wallets">No wallets connected yet</div>
-            </template>
+            <div v-if="walletState.connectedWallets.length === 0" class="no-wallets">
+              <q-icon name="las la-wallet" size="48px" class="no-wallets-icon"/>
+              <div class="no-wallets-text">No wallets connected yet</div>
+            </div>
 
-            <template v-else>
-              <q-card
-                v-for="wallet in walletState.connectedWallets"
-                :key="wallet.id"
-                class="wallet-card no-shadow"
-                bordered
-              >
-                <q-card-section class="wallet-card-content">
-                  <div class="wallet-info">
-                    <div class="wallet-icon">
-                      <q-icon name="las la-wallet"/>
-                    </div>
-                    <div class="wallet-details">
-                      <div class="wallet-name">
-                        <q-input
-                          v-model="wallet.name"
-                          dense
-                          borderless
-                          @blur="updateWalletName(wallet)"
-                          class="wallet-name-input"
-                        />
-                      </div>
-                      <div class="wallet-balance">{{ formatBalance(wallet.balance) }}</div>
-                    </div>
-                  </div>
-                  <div class="wallet-actions">
-                    <q-btn
-                      flat
-                      dense
-                      :color="walletState.activeWalletId === wallet.id ? 'primary' : 'grey'"
-                      :icon="walletState.activeWalletId === wallet.id ? 'las la-check-circle' : 'las la-circle'"
-                      @click="switchActiveWallet(wallet.id)"
-                      class="q-mr-sm"
-                    />
-                    <q-btn
-                      flat
-                      dense
-                      color="negative"
-                      icon="las la-trash-alt"
-                      @click="confirmDeleteWallet(wallet.id)"
-                    />
-                  </div>
-                </q-card-section>
-              </q-card>
-            </template>
+            <div 
+              v-for="wallet in walletState.connectedWallets"
+              :key="wallet.id"
+              class="wallet-item"
+            >
+              <div class="wallet-icon">
+                <q-icon name="las la-wallet" size="24px"/>
+              </div>
+              <div class="wallet-info">
+                <q-input
+                  v-model="wallet.name"
+                  dense
+                  borderless
+                  @blur="updateWalletName(wallet)"
+                  class="wallet-name-input"
+                />
+                <div class="wallet-balance">{{ formatBalance(wallet.balance) }}</div>
+              </div>
+              <div class="wallet-actions">
+                <q-btn
+                  flat
+                  dense
+                  :color="walletState.activeWalletId === wallet.id ? 'primary' : 'grey'"
+                  :icon="walletState.activeWalletId === wallet.id ? 'las la-check-circle' : 'las la-circle'"
+                  @click="switchActiveWallet(wallet.id)"
+                  class="active-btn"
+                />
+                <q-btn
+                  flat
+                  dense
+                  color="negative"
+                  icon="las la-trash-alt"
+                  @click="confirmDeleteWallet(wallet.id)"
+                  class="delete-btn"
+                />
+              </div>
+            </div>
           </div>
 
-          <q-btn class="connect-wallet-btn" outline no-caps @click="connectNewWallet">
-            <q-icon name="las la-plus" class="q-mr-xs"/>
+          <q-btn 
+            class="connect-wallet-btn" 
+            outline 
+            color="primary"
+            no-caps 
+            @click="connectNewWallet"
+            unelevated
+          >
+            <q-icon name="las la-plus" class="q-mr-sm"/>
             Connect a Wallet
           </q-btn>
         </q-card-section>
@@ -361,7 +361,6 @@ export default {
           const parsedState = JSON.parse(savedState);
           this.walletState = parsedState;
 
-          // Update balances for all connected wallets
           for (const wallet of this.walletState.connectedWallets) {
             if (wallet.type === 'nwc' && wallet.nwcString) {
               try {
@@ -386,17 +385,14 @@ export default {
                 wallet.balance = balance.balance;
               } catch (error) {
                 console.error(`Failed to update balance for wallet ${wallet.id}:`, error);
-                // Keep the existing balance if we can't update it
                 wallet.balance = wallet.balance || 0;
               }
             }
           }
 
-          // Save the updated state
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
         } catch (error) {
           console.error('Failed to load wallet state:', error);
-          // Reset to default state if there's an error
           this.walletState = {
             balance: 0,
             connectedWallets: [],
@@ -415,11 +411,13 @@ export default {
         }
       }
     },
+
     setPreferredCurrency(currency) {
       this.walletState.preferredFiatCurrency = currency;
       this.showCurrencyDialog = false;
       localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
     },
+
     getCurrencySymbol(currency) {
       const symbols = {
         USD: '$',
@@ -429,8 +427,8 @@ export default {
       }
       return symbols[currency] || currency
     },
+
     formatBalance(balance) {
-      console.log(this.walletState)
       switch (this.walletState.currency) {
         case 'btc':
           return (balance / 100000000).toFixed(8) + ' BTC'
@@ -442,13 +440,11 @@ export default {
           return balance.toLocaleString() + ' sats'
       }
     },
-    viewWalletDetails(walletId) {
-      // Implement wallet details view logic
-      console.log('Viewing wallet details:', walletId)
-    },
+
     connectNewWallet() {
       this.$router.push('/');
     },
+
     async confirmDisconnect() {
       this.$q.dialog({
         title: 'Disconnect Wallets',
@@ -457,10 +453,8 @@ export default {
         persistent: true
       }).onOk(async () => {
         try {
-          // Clear localStorage
           localStorage.removeItem('buhoGO_wallet_state');
 
-          // Reset wallet state
           this.walletState = {
             balance: 0,
             connectedWallets: [],
@@ -483,7 +477,6 @@ export default {
             position: 'top'
           });
 
-          // Navigate to home page
           this.$router.push('/');
         } catch (error) {
           console.error('Error disconnecting wallets:', error);
@@ -495,22 +488,21 @@ export default {
         }
       });
     },
+
     handleWalletClick() {
-      console.log('Wallet management clicked');
       this.showWalletsSheet = true;
     },
+
     updateWalletName(wallet) {
-      // Save the updated wallet state
       localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
     },
+
     switchActiveWallet(walletId) {
       this.walletState.activeWalletId = walletId;
-      // Save the updated wallet state
       localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-      // Refresh the wallet state to update balances
       this.loadWalletState();
     },
+
     confirmDeleteWallet(walletId) {
       this.$q.dialog({
         title: 'Delete Wallet',
@@ -518,17 +510,14 @@ export default {
         cancel: true,
         persistent: true
       }).onOk(() => {
-        // Remove the wallet from the list
         this.walletState.connectedWallets = this.walletState.connectedWallets.filter(
           wallet => wallet.id !== walletId
         );
 
-        // If the deleted wallet was active, set a new active wallet
         if (this.walletState.activeWalletId === walletId) {
           this.walletState.activeWalletId = this.walletState.connectedWallets[0]?.id || null;
         }
 
-        // Save the updated wallet state
         localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
         this.$q.notify({
@@ -538,6 +527,7 @@ export default {
         });
       });
     },
+
     loadPinState() {
       const pinState = localStorage.getItem('buhoGO_pin_state');
       if (pinState) {
@@ -546,6 +536,7 @@ export default {
         this.hasPin = !!pin;
       }
     },
+
     handlePinToggle(enabled) {
       if (enabled && !this.hasPin) {
         this.newPin = '';
@@ -565,9 +556,9 @@ export default {
         });
       }
     },
+
     savePin() {
       if (!this.hasPin) {
-        // Setting PIN for the first time
         localStorage.setItem('buhoGO_pin_state', JSON.stringify({
           enabled: true,
           pin: this.newPin
@@ -580,7 +571,6 @@ export default {
           position: 'top'
         });
       } else {
-        // Changing existing PIN
         const pinState = JSON.parse(localStorage.getItem('buhoGO_pin_state'));
         if (pinState.pin !== this.currentPin) {
           this.$q.notify({
@@ -604,19 +594,14 @@ export default {
         });
       }
     },
-    verifyPin(pin) {
-      const pinState = localStorage.getItem('buhoGO_pin_state');
-      if (!pinState) return false;
 
-      const { pin: savedPin } = JSON.parse(pinState);
-      return pin === savedPin;
-    },
     async checkNotificationPermission() {
       if ('Notification' in window) {
         this.hasNotificationPermission = Notification.permission === 'granted';
         this.notificationsEnabled = this.hasNotificationPermission;
       }
     },
+
     async requestNotificationPermission() {
       try {
         const permission = await Notification.requestPermission();
@@ -624,7 +609,6 @@ export default {
         this.notificationsEnabled = this.hasNotificationPermission;
 
         if (this.hasNotificationPermission) {
-          // Register service worker for notifications
           if ('serviceWorker' in navigator) {
             try {
               const registration = await navigator.serviceWorker.register('/service-worker.js');
@@ -643,6 +627,7 @@ export default {
         });
       }
     },
+
     handleNotificationsToggle(enabled) {
       if (enabled && !this.hasNotificationPermission) {
         this.requestNotificationPermission();
@@ -654,7 +639,6 @@ export default {
           persistent: true
         }).onOk(() => {
           this.notificationsEnabled = false;
-          // You might want to unregister the service worker here
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(registrations => {
               registrations.forEach(registration => {
@@ -666,270 +650,497 @@ export default {
           this.notificationsEnabled = true;
         });
       }
-    },
-    // Helper method to send notifications
-    async sendNotification(title, body, url = '/') {
-      if (!this.notificationsEnabled || !this.hasNotificationPermission) return;
-
-      try {
-        const registration = await navigator.serviceWorker.getRegistration();
-        if (registration) {
-          registration.showNotification(title, {
-            body,
-            icon: '/icons/icon-192x192.png',
-            badge: '/icons/badge-72x72.png',
-            vibrate: [100, 50, 100],
-            data: { url }
-          });
-        }
-      } catch (error) {
-        console.error('Error sending notification:', error);
-      }
     }
   }
 }
 </script>
 
 <style scoped>
-/* Dialog Styles */
-.settings-dialog {
-  width: 100%;
-  max-width: 500px;
-  border-radius: 1rem;
-  overflow: hidden;
-}
-
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
-}
-
-.dialog-content {
-  padding: 1rem;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.currency-options,
-.notification-options,
-.security-options {
+.settings-page {
+  background: #f8f9fa;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
 
-.currency-item {
-  border-radius: 0.5rem;
-  margin-bottom: 0.5rem;
-  border: 1px solid rgba(229, 231, 235, 0.5);
-}
-
-.currency-item.active {
-  background-color: rgba(16, 185, 129, 0.05);
-  border-color: rgba(16, 185, 129, 0.3);
-}
-
-/* Settings Content Styles */
-.settings-content {
+/* Header */
+.settings-header {
+  background: white;
   padding: 1rem;
-  padding-top: 0.5rem;
-  padding-bottom: 5rem; /* Add padding to prevent content from being hidden behind fixed button */
-}
-
-.settings-section {
-  margin-top: 2rem;
-}
-
-.settings-section-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-  color: #1f2937;
-}
-
-.settings-card {
-  margin-bottom: 1rem;
-  border-radius: 0.75rem;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.settings-card:hover {
-  transform: translateY(-2px);
-}
-
-.settings-card-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-}
-
-.settings-item {
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
   align-items: center;
   gap: 1rem;
 }
 
-.settings-item-icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.5rem;
+.back-btn {
+  color: #6b7280;
+  transition: all 0.2s ease;
+}
+
+.back-btn:hover {
+  color: #374151;
+  background: #f3f4f6;
+}
+
+.header-content {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logo {
+  filter: drop-shadow(0 2px 4px rgba(5, 149, 115, 0.15));
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #059573, #78D53C);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-spacer {
+  width: 40px;
+}
+
+/* Content */
+.settings-content {
+  flex: 1;
+  padding: 1rem;
+  padding-bottom: 6rem;
+}
+
+.settings-section {
+  margin-bottom: 2rem;
+}
+
+.section-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 1rem;
+  padding-left: 0.5rem;
+}
+
+.section-card {
+  background: white;
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid #f3f4f6;
+}
+
+.section-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border-color: #e5e7eb;
+}
+
+.section-card:active {
+  transform: translateY(0);
+}
+
+.card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(5, 149, 115, 0.1);
-  color: #059573;
+  flex-shrink: 0;
 }
 
-.settings-item-text {
+.wallet-icon {
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+}
+
+.currency-icon {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+}
+
+.notifications-icon {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+}
+
+.security-icon {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+  color: white;
+}
+
+.card-content {
   flex: 1;
 }
 
-.settings-item-title {
-  font-weight: 500;
+.card-title {
+  font-size: 1rem;
+  font-weight: 600;
   color: #1f2937;
+  margin-bottom: 0.25rem;
 }
 
-.settings-item-subtitle {
+.card-subtitle {
   font-size: 0.875rem;
   color: #6b7280;
 }
 
-.settings-item-arrow {
+.chevron-icon {
   color: #9ca3af;
 }
 
-/* Disconnect Button Styles */
-.disconnect-container {
+/* Disconnect Section */
+.disconnect-section {
+  background: white;
   padding: 1rem;
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: white;
-  border-top: 1px solid rgba(229, 231, 235, 0.5);
-  z-index: 1000;
+  border-top: 1px solid #e5e7eb;
 }
 
 .disconnect-btn {
   width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  font-weight: 500;
+  border-color: #ef4444;
+  color: #ef4444;
+  transition: all 0.2s ease;
 }
 
-/* Wallet List Styles */
-.wallets-list {
+.disconnect-btn:hover {
+  background: #ef4444;
+  color: white;
+  transform: translateY(-1px);
+}
+
+/* Dialog Styles */
+.dialog-card {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.dialog-header {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dialog-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-btn {
+  color: #6b7280;
+}
+
+.dialog-content {
+  padding: 1.5rem;
+}
+
+/* Currency Dialog */
+.currency-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.currency-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-radius: 12px;
+  border: 2px solid #f3f4f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.currency-item:hover {
+  border-color: #e5e7eb;
+  background: #f9fafb;
+}
+
+.currency-item.active {
+  border-color: #059573;
+  background: rgba(5, 149, 115, 0.05);
+}
+
+.currency-info {
+  flex: 1;
+}
+
+.currency-code {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.currency-rate {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.check-icon {
+  color: #059573;
+  font-size: 20px;
+}
+
+/* Notification Dialog */
+.notification-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.notification-info {
+  flex: 1;
+}
+
+.notification-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.notification-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.permission-warning {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.warning-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.warning-icon {
+  color: #f59e0b;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.warning-text {
+  flex: 1;
+}
+
+.warning-title {
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 0.25rem;
+}
+
+.warning-subtitle {
+  font-size: 0.875rem;
+  color: #b45309;
+}
+
+.enable-btn {
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+/* Security Dialog */
+.security-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.security-info {
+  flex: 1;
+}
+
+.security-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.security-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.pin-form {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.pin-input {
+  margin-bottom: 0.5rem;
+}
+
+.save-pin-btn {
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  height: 48px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+/* Wallets Dialog */
+.wallets-list {
   margin-bottom: 1.5rem;
 }
 
 .no-wallets {
   text-align: center;
   padding: 2rem;
-  color: #6b7280;
+  color: #9ca3af;
 }
 
-.wallet-card {
-  border-radius: 0.75rem;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.2s;
+.no-wallets-icon {
+  margin-bottom: 1rem;
+  opacity: 0.5;
 }
 
-.wallet-card:hover {
-  transform: translateY(-2px);
+.no-wallets-text {
+  font-size: 1rem;
+  font-weight: 500;
 }
 
-.wallet-card-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-}
-
-.wallet-info {
+.wallet-item {
   display: flex;
   align-items: center;
   gap: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  margin-bottom: 0.75rem;
+  border: 1px solid #e5e7eb;
 }
 
 .wallet-icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.5rem;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #059573, #43B65B);
+  color: white;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(5, 149, 115, 0.1);
-  color: #059573;
+  flex-shrink: 0;
 }
 
-.wallet-details {
+.wallet-info {
   flex: 1;
 }
 
-.wallet-name {
-  font-weight: 500;
-  color: #1f2937;
-}
-
-.wallet-balance {
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-.wallet-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .wallet-name-input {
-  font-weight: 500;
+  font-weight: 600;
   color: #1f2937;
 }
 
 .wallet-name-input :deep(.q-field__control) {
   min-height: 0;
+  padding: 0;
 }
 
 .wallet-name-input :deep(.q-field__native) {
   padding: 0;
+  font-size: 1rem;
+}
+
+.wallet-balance {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.wallet-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.active-btn,
+.delete-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
 }
 
 .connect-wallet-btn {
   width: 100%;
-  margin-top: 1rem;
+  height: 48px;
+  border-radius: 12px;
+  font-weight: 500;
+  border-color: #059573;
+  color: #059573;
+  transition: all 0.2s ease;
 }
 
-.settings-header {
-  padding: 0.5rem 1rem;
-  background-color: white;
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+.connect-wallet-btn:hover {
+  background: #059573;
+  color: white;
+  transform: translateY(-1px);
 }
 
-.settings-header .logo-container {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.settings-header .logo {
-  width: 24px;
-  height: 24px;
-}
-
-.settings-header .title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #059573, #78D53C);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin: 0;
+/* Responsive Design */
+@media (max-width: 480px) {
+  .settings-content {
+    padding: 0.75rem;
+    padding-bottom: 5rem;
+  }
+  
+  .section-card {
+    padding: 0.75rem;
+  }
+  
+  .card-icon {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .dialog-header,
+  .dialog-content {
+    padding: 1rem;
+  }
+  
+  .currency-item,
+  .wallet-item {
+    padding: 0.75rem;
+  }
+  
+  .pin-form {
+    padding: 1rem;
+  }
 }
 </style>
