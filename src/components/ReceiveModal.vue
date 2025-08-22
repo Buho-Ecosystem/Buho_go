@@ -15,7 +15,7 @@
             flat 
             round 
             dense 
-            icon="las la-chevron-left" 
+            icon="las la-arrow-left" 
             @click="closeModal"
             class="back-btn"
           />
