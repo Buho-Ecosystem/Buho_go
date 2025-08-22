@@ -23,14 +23,6 @@
         >
           <q-tooltip>{{ showDeveloperMode ? 'Hide' : 'Show' }} Developer Details</q-tooltip>
         </q-btn>
-        <q-btn 
-          flat 
-          round 
-          dense 
-          icon="las la-share-alt" 
-          @click="shareTransaction"
-          class="share-btn"
-        />
       </div>
     </div>
 
@@ -516,18 +508,6 @@ export default {
       }
     },
     
-    shareTransaction() {
-      if (navigator.share) {
-        navigator.share({
-          title: 'Lightning Transaction',
-          text: `Transaction: ${this.getFormattedAmount()}`,
-          url: window.location.href
-        });
-      } else {
-        this.copyToClipboard(window.location.href);
-      }
-    },
-    
     viewNostrProfile() {
       if (this.transaction.senderNpub) {
         // Open nostr profile in new tab (replace with actual nostr client URL)
@@ -602,7 +582,7 @@ export default {
 }
 
 .dev-toggle,
-.share-btn {
+.dev-toggle {
   color: #6b7280;
 }
 
