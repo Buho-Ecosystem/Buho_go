@@ -539,9 +539,9 @@ export default {
           }
           return btcAmount.toFixed(8);
         case 'fiat':
-          const btcAmount = balance / 100000000;
+          const btcAmountForFiat = balance / 100000000;
           const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
-          const fiatValue = btcAmount * rate;
+          const fiatValue = btcAmountForFiat * rate;
           return fiatValue.toFixed(2);
         case 'sats':
         default:
@@ -569,9 +569,9 @@ export default {
     getSecondaryValue(balance) {
       switch (this.currentDisplayMode) {
         case 'btc':
-          const btcAmount = balance / 100000000;
+          const btcAmountForSecondary = balance / 100000000;
           // Show fiat value if displaying sats due to small BTC amount
-          if (btcAmount < 0.001) {
+          if (btcAmountForSecondary < 0.001) {
             return this.getFiatValue(balance);
           }
           return balance.toLocaleString() + ' sats';
