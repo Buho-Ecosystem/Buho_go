@@ -267,7 +267,7 @@
             <!-- QR Code Section -->
             <div class="qr-code-section">
               <vue-qrcode
-                :value="generatedInvoice.payment_request"
+                :value="generatedInvoice.paymentRequest"
                 :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
                 class="qr-code"
               />
@@ -814,7 +814,7 @@ export default {
         
         console.log('📋 Raw invoice response:', this.generatedInvoice);
         console.log('🔍 Invoice properties:', Object.keys(this.generatedInvoice || {}));
-        console.log('💳 Payment request:', this.generatedInvoice?.payment_request);
+        console.log('💳 Payment request:', this.generatedInvoice?.paymentRequest);
         console.log('🆔 Payment hash:', this.generatedInvoice?.payment_hash);
         
         // Ensure we have the amount for display
@@ -846,7 +846,7 @@ export default {
 
     async copyInvoice() {
       try {
-        await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
+        await navigator.clipboard.writeText(this.generatedInvoice.paymentRequest);
         this.$q.notify({
           type: 'positive',
           message: 'Invoice copied!',
