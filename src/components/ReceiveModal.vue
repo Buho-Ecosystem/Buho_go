@@ -320,9 +320,6 @@ export default {
         // Store the invoice to show QR code
         this.generatedInvoice = invoice;
 
-        // Emit event to parent component
-        this.$emit('invoice-created', invoice);
-
         this.$q.notify({
           type: 'positive',
           message: 'Invoice created successfully!',
