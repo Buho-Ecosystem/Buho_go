@@ -102,33 +102,17 @@
       <!-- Transaction Info -->
       <div class="info-section">
         <div class="info-card">
-          <div class="section-title">Transaction Information</div>
+          <div class="section-title">Details</div>
           
           <div class="info-grid">
-            <div class="info-item">
+            <div class="info-item" v-if="transaction.description && transaction.description !== 'Lightning transaction'">
               <div class="info-label">Description</div>
-              <div class="info-value">{{ transaction.description || 'No description' }}</div>
+              <div class="info-value">{{ transaction.description }}</div>
             </div>
             
             <div class="info-item">
-              <div class="info-label">Date & Time</div>
+              <div class="info-label">Date</div>
               <div class="info-value">{{ formatDateTime(transaction.settled_at) }}</div>
-            </div>
-            
-            <div class="info-item" v-if="transaction.preimage">
-              <div class="info-label">Preimage</div>
-              <div class="info-value hash-value" @click="copyToClipboard(transaction.preimage)">
-                {{ formatHash(transaction.preimage) }}
-                <q-icon name="las la-copy" class="copy-icon"/>
-              </div>
-            </div>
-            
-            <div class="info-item">
-              <div class="info-label">Payment Hash</div>
-              <div class="info-value hash-value" @click="copyToClipboard(transaction.payment_hash)">
-                {{ formatHash(transaction.payment_hash) }}
-                <q-icon name="las la-copy" class="copy-icon"/>
-              </div>
             </div>
           </div>
         </div>
@@ -152,9 +136,35 @@
                 </div>
               </div>
               
+              <div class="dev-item" v-if="transaction.payment_hash">
+                <div class="dev-label">Payment Hash</div>
+                <div class="dev-value hash-value" @click="copyToClipboard(transaction.payment_hash)">
+                  {{ transaction.payment_hash }}
+                  <q-icon name="las la-copy" class="copy-icon"/>
+                </div>
+              </div>
+              
+              <div class="dev-item" v-if="transaction.preimage">
+                <div class="dev-label">Preimage</div>
+                <div class="dev-value hash-value" @click="copyToClipboard(transaction.preimage)">
+                  {{ transaction.preimage }}
+                  <q-icon name="las la-copy" class="copy-icon"/>
+                </div>
+              </div>
+              
               <div class="dev-item" v-if="transaction.type">
                 <div class="dev-label">Type</div>
                 <div class="dev-value">{{ transaction.type }}</div>
+              </div>
+              
+              <div class="dev-item" v-if="transaction.state">
+                <div class="dev-label">State</div>
+                <div class="dev-value">{{ transaction.state }}</div>
+              </div>
+              
+              <div class="dev-item" v-if="transaction.fee">
+                <div class="dev-label">Fee</div>
+                <div class="dev-value">{{ transaction.fee }} sats</div>
               </div>
               
               <div class="dev-item" v-if="transaction.created_at">
@@ -441,9 +451,20 @@ export default {
     },
     
     getFiatAmount() {
-      const btcAmount = Math.abs(this.transaction.amount) / 100000000;
-      const fiatValue = btcAmount * (this.walletState.exchangeRates?.usd || 65000);
-      return '$' + fiatValue.toFixed(2);
+      const btcAmount = Math.abs(tx.amount) / 100000000;
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
+      const fiatValue = btcAmount * rate;
+      
+      const symbols = {
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        JPY: '¥'
+      };
+      
+      const symbol = symbols[currency] || currency;
+      return symbol + fiatValue.toFixed(2);
     },
     
     formatDateTime(timestamp) {
@@ -623,15 +644,15 @@ export default {
 }
 
 .tx-status-received {
-  background: #10b981;
+  background: #059573;
 }
 
 .tx-status-sent {
-  background: #f97316;
+  background: #6b7280;
 }
 
 .tx-status-zap {
-  background: #8b5cf6;
+  background: #059573;
 }
 
 .transaction-type {
@@ -650,11 +671,11 @@ export default {
 }
 
 .status-completed {
-  color: #10b981;
+  color: #059573;
 }
 
 .status-pending {
-  color: #f59e0b;
+  color: #78716c;
 }
 
 /* Amount Section */
@@ -671,7 +692,7 @@ export default {
 }
 
 .amount-positive {
-  color: #10b981;
+  color: #059573;
 }
 
 .amount-negative {
@@ -718,13 +739,13 @@ export default {
 .profile-meta {
   display: flex;
   align-items: center;
-  color: #8b5cf6;
+  color: #059573;
   font-weight: 500;
   margin-bottom: 0.5rem;
 }
 
 .zap-icon {
-  color: #fbbf24;
+  color: #78D53C;
 }
 
 .profile-about {
@@ -743,7 +764,7 @@ export default {
 }
 
 .info-card {
-  background: #f8f9fa;
+  background: #f9fafb;
   border-radius: 12px;
   padding: 1.5rem;
 }
@@ -810,7 +831,7 @@ export default {
 }
 
 .developer-card {
-  background: #f8f9fa;
+  background: #f9fafb;
   border-radius: 12px;
   padding: 1.5rem;
   border: 2px dashed #d1d5db;

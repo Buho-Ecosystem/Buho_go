@@ -782,8 +782,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  background-color: rgba(5, 149, 115, 0.1);
+  color: #059573;
 }
 
 .settings-item-text {
@@ -865,8 +865,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  background-color: rgba(5, 149, 115, 0.1);
+  color: #059573;
 }
 
 .wallet-details {
@@ -927,7 +927,7 @@ export default {
 .settings-header .title {
   font-size: 1.25rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #059573, #047857);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin: 0;

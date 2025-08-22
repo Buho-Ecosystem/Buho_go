@@ -464,8 +464,19 @@ export default {
     
     getFiatAmount(tx) {
       const btcAmount = Math.abs(tx.amount) / 100000000;
-      const fiatValue = btcAmount * (this.walletState.exchangeRates?.usd || 65000);
-      return '$' + fiatValue.toFixed(2);
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
+      const fiatValue = btcAmount * rate;
+      
+      const symbols = {
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        JPY: '¥'
+      };
+      
+      const symbol = symbols[currency] || currency;
+      return symbol + fiatValue.toFixed(2);
     },
 
     formatTime(timestamp) {
@@ -561,11 +572,11 @@ export default {
 }
 
 .stat-value.positive {
-  color: #10b981;
+  color: #059573;
 }
 
 .stat-value.negative {
-  color: #ef4444;
+  color: #6b7280;
 }
 
 .stat-divider {
@@ -634,11 +645,11 @@ export default {
 }
 
 .group-total.positive {
-  color: #10b981;
+  color: #059573;
 }
 
 .group-total.negative {
-  color: #ef4444;
+  color: #6b7280;
 }
 
 .expand-icon {
@@ -686,15 +697,15 @@ export default {
 }
 
 .tx-icon-received {
-  background: #10b981;
+  background: #059573;
 }
 
 .tx-icon-sent {
-  background: #f97316;
+  background: #6b7280;
 }
 
 .tx-icon-zap {
-  background: #8b5cf6;
+  background: #059573;
 }
 
 .transaction-details {
@@ -733,13 +744,13 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  color: #8b5cf6;
+  color: #059573;
   font-size: 0.7rem;
   font-weight: 500;
 }
 
 .sender-avatar {
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  border: 1px solid rgba(5, 149, 115, 0.3);
 }
 
 .sender-name {
@@ -761,7 +772,7 @@ export default {
 }
 
 .amount-positive {
-  color: #10b981;
+  color: #059573;
 }
 
 .amount-negative {
@@ -769,7 +780,7 @@ export default {
 }
 
 .amount-fiat {
-  color: #9ca3af;
+  color: #6b7280;
   font-size: 0.8rem;
 }
 
