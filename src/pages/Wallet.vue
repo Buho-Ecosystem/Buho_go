@@ -881,9 +881,7 @@ export default {
 
 /* Header */
 .wallet-header {
-  background: white;
   padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
 }
 
@@ -1091,10 +1089,7 @@ export default {
 
 /* Bottom Actions */
 .bottom-actions {
-  background: white;
   padding: 1rem 1.5rem 2rem 1.5rem;
-  border-top: 1px solid #e5e7eb;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
   position: fixed;
   bottom: 0;
   left: 0;
