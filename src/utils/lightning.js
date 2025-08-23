@@ -1,5 +1,6 @@
 import { webln } from "@getalby/sdk";
-import { LightningAddress, lnurl } from "@getalby/lightning-tools";
+import { LightningAddress } from "@getalby/lightning-tools";
+import lnurl from "@getalby/lightning-tools/dist/lnurl";
 
 export class LightningPaymentService {
   constructor(nwcString) {
