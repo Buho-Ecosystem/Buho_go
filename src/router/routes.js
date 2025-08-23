@@ -3,12 +3,11 @@ const routes = [
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
     children: [
-      // Main routes
-      {path: '', component: () => import('pages/IndexPage.vue')},
-      {path: 'wallet', component: () => import('pages/Wallet.vue')},
-      {path: 'settings', component: () => import('pages/Settings.vue')},
-      {path: 'transaction/:id', component: () => import('pages/TransactionDetails.vue')},
-
+      { path: '', component: () => import('pages/IndexPage.vue') },
+      { path: '/wallet', component: () => import('pages/Wallet.vue') },
+      { path: '/settings', component: () => import('pages/Settings.vue') },
+      { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
+      { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') }
     ]
   },
 
