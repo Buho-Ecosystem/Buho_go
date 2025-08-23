@@ -703,173 +703,6 @@ export default {
       return balance.toLocaleString() + ' sats';
     },
 
-    formatSats(amount) {
-      return Math.abs(amount).toLocaleString() + ' sats';
-    },
-
-    getFiatAmount(amount) {
-      const btcAmount = Math.abs(amount) / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
-      
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
-      
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
-    },
-
-    getPaymentDescription() {
-      if (this.pendingPayment?.description) {
-        return this.pendingPayment.description;
-      }
-      return null;
-    },
-
-    getPaymentTypeLabel() {
-      switch (this.pendingPayment?.type) {
-        case 'lightning_invoice':
-          return 'Lightning Invoice';
-        case 'lightning_address':
-          return 'Lightning Address';
-        case 'lnurl_pay':
-          return 'LNURL Payment';
-        default:
-          return 'Lightning Payment';
-      }
-    },
-
-    getPaymentRecipient() {
-      if (this.pendingPayment?.type === 'lightning_address') {
-        return this.pendingPayment.address;
-      }
-      if (this.pendingPayment?.destination) {
-        return this.pendingPayment.destination.substring(0, 20) + '...';
-      }
-      return null;
-    },
-
-    startSlide(event) {
-      if (this.slideConfirmed || this.isProcessingPayment) return;
-      
-      this.isSliding = true;
-      const startX = event.type === 'mousedown' ? event.clientX : event.touches[0].clientX;
-      const slideTrack = event.target.parentElement;
-      const trackWidth = slideTrack.offsetWidth - 60; // Button width
-      
-      const handleMove = (moveEvent) => {
-        if (!this.isSliding) return;
-        
-        const currentX = moveEvent.type === 'mousemove' ? moveEvent.clientX : moveEvent.touches[0].clientX;
-        const deltaX = currentX - startX;
-        
-        this.slidePosition = Math.max(0, Math.min(deltaX, trackWidth));
-        this.slideProgress = (this.slidePosition / trackWidth) * 100;
-        
-        // Confirm when 80% slid
-        if (this.slideProgress >= 80 && !this.slideConfirmed) {
-          this.slideConfirmed = true;
-          this.slidePosition = trackWidth;
-          this.slideProgress = 100;
-          this.isSliding = false;
-          
-          // Execute payment after short delay
-          setTimeout(() => {
-            this.executePayment();
-          }, 500);
-        }
-      };
-      
-      const handleEnd = () => {
-        if (!this.slideConfirmed) {
-          // Snap back if not confirmed
-          this.slidePosition = 0;
-          this.slideProgress = 0;
-        }
-        this.isSliding = false;
-        document.removeEventListener('mousemove', handleMove);
-        document.removeEventListener('mouseup', handleEnd);
-        document.removeEventListener('touchmove', handleMove);
-        document.removeEventListener('touchend', handleEnd);
-      };
-      
-      document.addEventListener('mousemove', handleMove);
-      document.addEventListener('mouseup', handleEnd);
-      document.addEventListener('touchmove', handleMove);
-      document.addEventListener('touchend', handleEnd);
-      
-      event.preventDefault();
-    },
-
-    async executePayment() {
-      if (this.isProcessingPayment) return;
-      
-      this.isProcessingPayment = true;
-      
-      try {
-        const lightningService = new LightningPaymentService(this.activeWallet.nwcString);
-        
-        let amount = null;
-        if (this.pendingPayment.type === 'lightning_address' || this.pendingPayment.type === 'lnurl_pay') {
-          amount = parseInt(this.paymentAmount);
-          if (!amount || amount <= 0) {
-            throw new Error('Please enter a valid amount');
-          }
-        }
-        
-        const result = await lightningService.sendPayment(
-          this.pendingPayment,
-          amount,
-          this.paymentComment
-        );
-        
-        console.log('✅ Payment successful:', result);
-        
-        this.$q.notify({
-          type: 'positive',
-          message: 'Payment sent successfully!',
-          position: 'top'
-        });
-        
-        // Reset and close dialog
-        this.resetPaymentDialog();
-        this.showPaymentDialog = false;
-        
-        // Refresh wallet data
-        await this.loadWalletData();
-        
-      } catch (error) {
-        console.error('❌ Payment failed:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: 'Payment failed: ' + error.message,
-          position: 'top'
-        });
-        
-        // Reset slide state on error
-        this.slideConfirmed = false;
-        this.slidePosition = 0;
-        this.slideProgress = 0;
-      } finally {
-        this.isProcessingPayment = false;
-      }
-    },
-
-    resetPaymentDialog() {
-      this.pendingPayment = null;
-      this.paymentAmount = '';
-      this.paymentComment = '';
-      this.slidePosition = 0;
-      this.slideProgress = 0;
-      this.slideConfirmed = false;
-      this.isSliding = false;
-    },
-
     getFiatValue(balance) {
       const btcAmount = balance / 100000000;
       const currency = this.walletState.preferredFiatCurrency || 'USD';
@@ -1013,6 +846,17 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       );
+    },
+
+    getPaymentTypeLabel() {
+      if (!this.paymentData) return '';
+      
+      const labels = {
+        'lightning_invoice': 'Lightning Invoice',
+        'lnurl_pay': 'LNURL Payment',
+        'lightning_address': 'Lightning Address'
+      };
+      return labels[this.paymentData.type] || 'Lightning Payment';
     },
 
     requiresAmount() {
@@ -1200,6 +1044,21 @@ export default {
       
       const symbol = symbols[currency] || currency;
       return symbol + fiatValue.toFixed(2);
+    },
+
+    getPaymentTypeLabel() {
+      if (!this.pendingPayment) return '';
+      
+      switch (this.pendingPayment.type) {
+        case 'lightning_invoice':
+          return 'Lightning Invoice';
+        case 'lightning_address':
+          return 'Lightning Address';
+        case 'lnurl_pay':
+          return 'LNURL Pay';
+        default:
+          return 'Lightning Payment';
+      }
     },
 
     validatePaymentAmount(amount) {
@@ -2167,6 +2026,219 @@ export default {
   z-index: 5000;
 }
 
+/* Payment Dialog Styles */
+.payment-dialog :deep(.q-dialog__inner) {
+  padding: 1rem;
+}
+
+.payment-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 16px;
+}
+
+.payment-header {
+  background: #f8f9fa;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.payment-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-btn {
+  color: #6b7280;
+}
+
+.payment-content {
+  padding: 1.5rem;
+}
+
+/* Amount Section */
+.payment-amount-section {
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.fixed-amount-display .amount-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+}
+
+.fixed-amount-display .amount-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.fixed-amount-display .amount-fiat {
+  font-size: 1rem;
+  color: #6b7280;
+}
+
+.variable-amount-display .amount-label {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 1rem;
+}
+
+.amount-input-container {
+  max-width: 200px;
+  margin: 0 auto;
+}
+
+.amount-range {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+}
+
+.unknown-amount-display .amount-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+}
+
+.unknown-amount-display .amount-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+/* Payment Details */
+.payment-details-section {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.detail-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: #1f2937;
+  text-align: right;
+  word-break: break-all;
+  max-width: 200px;
+}
+
+/* Comment Section */
+.comment-section {
+  margin-bottom: 1rem;
+}
+
+/* Slide to Confirm */
+.slide-confirm-section {
+  padding: 1rem 1.5rem 1.5rem;
+  background: #f8f9fa;
+}
+
+.slide-container {
+  position: relative;
+  height: 60px;
+  border-radius: 30px;
+  background: #e5e7eb;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.slide-container.confirmed {
+  background: #059573;
+}
+
+.slide-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slide-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #059573, #047857);
+  border-radius: 30px;
+  transition: width 0.1s ease;
+}
+
+.slide-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  z-index: 1;
+  transition: color 0.3s ease;
+}
+
+.slide-text.confirmed-text {
+  color: white;
+  display: flex;
+  align-items: center;
+}
+
+.slide-button {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 50px;
+  height: 50px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 2;
+}
+
+.slide-button:active {
+  cursor: grabbing;
+}
+
+.slide-button.confirmed {
+  background: #059573;
+  color: white;
+}
+
+.slide-button .q-icon {
+  font-size: 1.25rem;
+  color: #6b7280;
+}
+
+.slide-button.confirmed .q-icon {
+  color: white;
+}
+
 /* Payment Confirmation Dialog */
 .confirmation-card {
   width: 100%;
@@ -2649,6 +2721,22 @@ export default {
   
   .amount-display {
     font-size: 1.5rem;
+  }
+  
+  .payment-content {
+    padding: 1rem;
+  }
+  
+  .fixed-amount-display .amount-value {
+    font-size: 1.75rem;
+  }
+  
+  .detail-value {
+    max-width: 150px;
+  }
+  
+  .slide-confirm-section {
+    padding: 1rem;
   }
 }
 </style>
