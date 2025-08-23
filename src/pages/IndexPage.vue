@@ -285,12 +285,12 @@ export default {
 <style scoped>
 .wallet-connect-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f8f9fa 0%, #e8f5f3 50%, #e0f7fa 100%);
+  background: #f5f5f5;
   padding: 1rem;
 }
 
 .wallet-connect-page.bg-dark {
-  background: linear-gradient(135deg, #121212 0%, #1a2e2a 50%, #1a2e2e 100%);
+  background: #1a1a1a;
   color: #e0e0e0;
 }
 
@@ -351,31 +351,30 @@ export default {
 .connect-card {
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(5, 149, 115, 0.15);
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(5, 149, 115, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   transform: translateY(0);
   transition: all 0.3s ease;
 }
 
 .connect-card.dark-card {
-  background: rgba(30, 30, 30, 0.95);
-  border: 1px solid rgba(5, 149, 115, 0.2);
+  background: #2a2a2a;
+  border: 1px solid #404040;
   color: #e0e0e0;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .card-header {
-  background: linear-gradient(135deg, rgba(5, 149, 115, 0.08), rgba(6, 182, 212, 0.05));
-  border-bottom: 1px solid rgba(5, 149, 115, 0.1);
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
   text-align: center;
   padding: 1.5rem 1rem 1rem;
 }
 
 .card-header.dark-header {
-  background: linear-gradient(135deg, rgba(5, 149, 115, 0.15), rgba(6, 182, 212, 0.1));
-  border-bottom: 1px solid rgba(5, 149, 115, 0.2);
+  background: #2a2a2a;
+  border-bottom: 1px solid #404040;
 }
 
 .gradient-text {
