@@ -423,7 +423,6 @@ export default {
       pendingPayment: null,
       paymentAmount: '',
       paymentComment: '',
-      paymentComment: '',
       slidePosition: 0,
       slideConfirmed: false,
       isSliding: false,
@@ -449,10 +448,6 @@ export default {
       currentInvoicePaymentHash: null,
       invoiceCheckInterval: null,
       waitingForPayment: false,
-      slidePosition: 0,
-      slideProgress: 0,
-      slideConfirmed: false,
-      isSliding: false,
       showLoadingScreen: true,
       loadingText: 'Loading wallet...'
     };
@@ -708,6 +703,173 @@ export default {
       return balance.toLocaleString() + ' sats';
     },
 
+    formatSats(amount) {
+      return Math.abs(amount).toLocaleString() + ' sats';
+    },
+
+    getFiatAmount(amount) {
+      const btcAmount = Math.abs(amount) / 100000000;
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
+      const fiatValue = btcAmount * rate;
+      
+      const symbols = {
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        JPY: '¥'
+      };
+      
+      const symbol = symbols[currency] || currency;
+      return symbol + fiatValue.toFixed(2);
+    },
+
+    getPaymentDescription() {
+      if (this.pendingPayment?.description) {
+        return this.pendingPayment.description;
+      }
+      return null;
+    },
+
+    getPaymentTypeLabel() {
+      switch (this.pendingPayment?.type) {
+        case 'lightning_invoice':
+          return 'Lightning Invoice';
+        case 'lightning_address':
+          return 'Lightning Address';
+        case 'lnurl_pay':
+          return 'LNURL Payment';
+        default:
+          return 'Lightning Payment';
+      }
+    },
+
+    getPaymentRecipient() {
+      if (this.pendingPayment?.type === 'lightning_address') {
+        return this.pendingPayment.address;
+      }
+      if (this.pendingPayment?.destination) {
+        return this.pendingPayment.destination.substring(0, 20) + '...';
+      }
+      return null;
+    },
+
+    startSlide(event) {
+      if (this.slideConfirmed || this.isProcessingPayment) return;
+      
+      this.isSliding = true;
+      const startX = event.type === 'mousedown' ? event.clientX : event.touches[0].clientX;
+      const slideTrack = event.target.parentElement;
+      const trackWidth = slideTrack.offsetWidth - 60; // Button width
+      
+      const handleMove = (moveEvent) => {
+        if (!this.isSliding) return;
+        
+        const currentX = moveEvent.type === 'mousemove' ? moveEvent.clientX : moveEvent.touches[0].clientX;
+        const deltaX = currentX - startX;
+        
+        this.slidePosition = Math.max(0, Math.min(deltaX, trackWidth));
+        this.slideProgress = (this.slidePosition / trackWidth) * 100;
+        
+        // Confirm when 80% slid
+        if (this.slideProgress >= 80 && !this.slideConfirmed) {
+          this.slideConfirmed = true;
+          this.slidePosition = trackWidth;
+          this.slideProgress = 100;
+          this.isSliding = false;
+          
+          // Execute payment after short delay
+          setTimeout(() => {
+            this.executePayment();
+          }, 500);
+        }
+      };
+      
+      const handleEnd = () => {
+        if (!this.slideConfirmed) {
+          // Snap back if not confirmed
+          this.slidePosition = 0;
+          this.slideProgress = 0;
+        }
+        this.isSliding = false;
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseup', handleEnd);
+        document.removeEventListener('touchmove', handleMove);
+        document.removeEventListener('touchend', handleEnd);
+      };
+      
+      document.addEventListener('mousemove', handleMove);
+      document.addEventListener('mouseup', handleEnd);
+      document.addEventListener('touchmove', handleMove);
+      document.addEventListener('touchend', handleEnd);
+      
+      event.preventDefault();
+    },
+
+    async executePayment() {
+      if (this.isProcessingPayment) return;
+      
+      this.isProcessingPayment = true;
+      
+      try {
+        const lightningService = new LightningPaymentService(this.activeWallet.nwcString);
+        
+        let amount = null;
+        if (this.pendingPayment.type === 'lightning_address' || this.pendingPayment.type === 'lnurl_pay') {
+          amount = parseInt(this.paymentAmount);
+          if (!amount || amount <= 0) {
+            throw new Error('Please enter a valid amount');
+          }
+        }
+        
+        const result = await lightningService.sendPayment(
+          this.pendingPayment,
+          amount,
+          this.paymentComment
+        );
+        
+        console.log('✅ Payment successful:', result);
+        
+        this.$q.notify({
+          type: 'positive',
+          message: 'Payment sent successfully!',
+          position: 'top'
+        });
+        
+        // Reset and close dialog
+        this.resetPaymentDialog();
+        this.showPaymentDialog = false;
+        
+        // Refresh wallet data
+        await this.loadWalletData();
+        
+      } catch (error) {
+        console.error('❌ Payment failed:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Payment failed: ' + error.message,
+          position: 'top'
+        });
+        
+        // Reset slide state on error
+        this.slideConfirmed = false;
+        this.slidePosition = 0;
+        this.slideProgress = 0;
+      } finally {
+        this.isProcessingPayment = false;
+      }
+    },
+
+    resetPaymentDialog() {
+      this.pendingPayment = null;
+      this.paymentAmount = '';
+      this.paymentComment = '';
+      this.slidePosition = 0;
+      this.slideProgress = 0;
+      this.slideConfirmed = false;
+      this.isSliding = false;
+    },
+
     getFiatValue(balance) {
       const btcAmount = balance / 100000000;
       const currency = this.walletState.preferredFiatCurrency || 'USD';
@@ -851,17 +1013,6 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       );
-    },
-
-    getPaymentTypeLabel() {
-      if (!this.paymentData) return '';
-      
-      const labels = {
-        'lightning_invoice': 'Lightning Invoice',
-        'lnurl_pay': 'LNURL Payment',
-        'lightning_address': 'Lightning Address'
-      };
-      return labels[this.paymentData.type] || 'Lightning Payment';
     },
 
     requiresAmount() {
@@ -1049,21 +1200,6 @@ export default {
       
       const symbol = symbols[currency] || currency;
       return symbol + fiatValue.toFixed(2);
-    },
-
-    getPaymentTypeLabel() {
-      if (!this.pendingPayment) return '';
-      
-      switch (this.pendingPayment.type) {
-        case 'lightning_invoice':
-          return 'Lightning Invoice';
-        case 'lightning_address':
-          return 'Lightning Address';
-        case 'lnurl_pay':
-          return 'LNURL Pay';
-        default:
-          return 'Lightning Payment';
-      }
     },
 
     validatePaymentAmount(amount) {
