@@ -61,13 +61,15 @@
             
             <q-btn
               unelevated
-              color="primary"
-              icon="las la-qrcode"
-              label="Scan QR"
-              @click="showScanner = true"
               class="scan-qr-btn-inline"
+              @click="showScanner = true"
               no-caps
-            />
+            >
+              <div class="scan-btn-content">
+                <q-icon name="las la-qrcode" class="scan-icon"/>
+                <span class="scan-label">Scan QR</span>
+              </div>
+            </q-btn>
           </div>
         </q-card-section>
 
@@ -521,22 +523,68 @@ export default {
 
 .scan-qr-btn-inline {
   flex: 1; /* 33% of space */
-  background: linear-gradient(135deg, #059573, #06b6d4);
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
   color: white;
   border-radius: 12px;
   font-weight: 500;
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
   transition: all 0.2s ease;
   height: 52px;
   min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.scan-qr-btn-inline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.scan-qr-btn-inline:hover::before {
+  opacity: 1;
 }
 
 .scan-qr-btn-inline:hover {
-  background: linear-gradient(135deg, #047857, #0891b2);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.4);
+  background: linear-gradient(135deg, #2563eb, #0891b2);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
   transform: translateY(-1px);
 }
 
+.scan-qr-btn-inline:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.scan-btn-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  position: relative;
+  z-index: 1;
+}
+
+.scan-icon {
+  font-size: 20px;
+  color: white;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.scan-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
 .card-footer {
   background: linear-gradient(135deg, rgba(248, 249, 250, 0.8), rgba(232, 245, 243, 0.6));
   padding: 1rem;
@@ -757,7 +805,18 @@ export default {
   .connect-btn-inline,
   .scan-qr-btn-inline {
     height: 48px;
-    font-size: 0.9375rem;
+  }
+  
+  .scan-btn-content {
+    gap: 0.125rem;
+  }
+  
+  .scan-icon {
+    font-size: 18px;
+  }
+  
+  .scan-label {
+    font-size: 0.6875rem;
   }
   
   .connect-btn-inline {
