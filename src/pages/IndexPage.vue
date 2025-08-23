@@ -286,18 +286,19 @@ export default {
 <style scoped>
 .wallet-connect-page {
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e8f5f3 50%, #e0f7fa 100%);
   padding: 1rem;
 }
 
 .wallet-connect-page.bg-dark {
-  background-color: #121212;
+  background: linear-gradient(135deg, #121212 0%, #1a2e2a 50%, #1a2e2e 100%);
   color: #e0e0e0;
 }
 
 .container {
   width: 100%;
   max-width: 500px;
+  margin: 0 auto;
 }
 
 .header {
@@ -351,27 +352,31 @@ export default {
 .connect-card {
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 32px rgba(5, 149, 115, 0.15);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(229, 231, 235, 0.5);
+  border: 1px solid rgba(5, 149, 115, 0.1);
+  transform: translateY(0);
+  transition: all 0.3s ease;
 }
 
 .connect-card.dark-card {
-  background: rgba(30, 30, 30, 0.9);
-  border: 1px solid rgba(50, 50, 50, 0.5);
+  background: rgba(30, 30, 30, 0.95);
+  border: 1px solid rgba(5, 149, 115, 0.2);
   color: #e0e0e0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .card-header {
-  background: rgba(5, 149, 115, 0.05);
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.08), rgba(6, 182, 212, 0.05));
+  border-bottom: 1px solid rgba(5, 149, 115, 0.1);
   text-align: center;
+  padding: 1.5rem 1rem 1rem;
 }
 
 .card-header.dark-header {
-  background: rgba(5, 149, 115, 0.1);
-  border-bottom: 1px solid rgba(50, 50, 50, 0.5);
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.15), rgba(6, 182, 212, 0.1));
+  border-bottom: 1px solid rgba(5, 149, 115, 0.2);
 }
 
 .gradient-text {
@@ -383,67 +388,156 @@ export default {
 .nwc-logo-container {
   display: flex;
   justify-content: center;
-  margin: 1.5rem 0;
+  margin: 2rem 0 1.5rem;
 }
 
 .nwc-logo-bg {
   width: 100px;
   height: 100px;
-  background-color: rgba(5, 149, 115, 0.1);
+  background: linear-gradient(135deg, #059573, #06b6d4, #0891b2);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.nwc-logo-bg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent);
+  border-radius: 50%;
 }
 
 .nwc-logo {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  position: relative;
+  z-index: 1;
 }
 
 .nwc-logo.dark-logo {
-  filter: invert(1);
+  filter: brightness(1.2) contrast(1.1);
+}
+
+/* Enhanced Typography */
+.welcome-title {
+  font-weight: 700;
+  color: #1f2937;
+  font-size: 1.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.welcome-subtitle {
+  font-size: 1rem;
+  line-height: 1.5;
+  margin-bottom: 2rem;
+  max-width: 320px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Enhanced Input Styling */
+.q-input {
+  margin-bottom: 1.5rem;
+}
+
+.q-input :deep(.q-field__control) {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.1);
+  border: 2px solid rgba(5, 149, 115, 0.1);
+  transition: all 0.3s ease;
+}
+
+.q-input :deep(.q-field__control):hover {
+  border-color: rgba(5, 149, 115, 0.2);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
+}
+
+.q-input :deep(.q-field__control.q-field--focused) {
+  border-color: #059573;
+  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.25);
+}
+
+.q-input :deep(.q-field__native) {
+  font-size: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+/* Enhanced Scan QR Button */
+.scan-qr-btn {
+  background: linear-gradient(135deg, #059573, #06b6d4);
+  color: white;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
+  transition: all 0.2s ease;
+}
+
+.scan-qr-btn:hover {
+  background: linear-gradient(135deg, #047857, #0891b2);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.4);
+  transform: translateY(-1px);
 }
 
 .card-footer {
-  background: rgba(243, 244, 246, 0.5);
+  background: linear-gradient(135deg, rgba(248, 249, 250, 0.8), rgba(232, 245, 243, 0.6));
   padding: 1rem;
+  border-top: 1px solid rgba(5, 149, 115, 0.1);
 }
 
 .card-footer.dark-footer {
-  background: rgba(40, 40, 40, 0.5);
+  background: linear-gradient(135deg, rgba(40, 40, 40, 0.8), rgba(26, 46, 42, 0.6));
+  border-top: 1px solid rgba(5, 149, 115, 0.2);
 }
 
 .connect-btn {
   background: linear-gradient(135deg, #059573, #047857);
   color: white;
-  border-radius: 0.75rem;
-  padding: 0.75rem;
-  font-weight: 500;
-  box-shadow: 0 2px 0 0 rgba(4, 120, 87, 0.6);
-  transition: all 0.2s ease;
+  border-radius: 12px;
+  padding: 1rem;
+  font-weight: 600;
+  font-size: 1.0625rem;
+  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.4);
+  transition: all 0.3s ease;
+  height: 56px;
 }
 
 .connect-btn:hover {
-  background: linear-gradient(135deg, #047857, #065f46);
-  box-shadow: 0 3px 0 0 rgba(4, 120, 87, 0.7);
+  background: linear-gradient(135deg, #047857, #06b6d4);
+  box-shadow: 0 6px 20px rgba(5, 149, 115, 0.5);
+  transform: translateY(-2px);
+}
+
+.connect-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
 }
 
 .qr-scanner-container {
-  height: 300px;
+  height: 280px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #f3f4f6;
-  border-radius: 8px;
+  background: linear-gradient(135deg, #f8f9fa, #e8f5f3);
+  border-radius: 12px;
   overflow: hidden;
   position: relative;
+  border: 2px solid rgba(5, 149, 115, 0.1);
 }
 
 .qr-scanner-container.dark-scanner {
-  background-color: #2a2a2a;
+  background: linear-gradient(135deg, #2a2a2a, #1a2e2a);
+  border-color: rgba(5, 149, 115, 0.2);
 }
 
 .scan-overlay {
@@ -452,36 +546,188 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.8), rgba(6, 182, 212, 0.7));
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 1;
+  backdrop-filter: blur(4px);
 }
 
 .scan-overlay p {
   font-size: 0.875rem;
   margin: 0;
+  font-weight: 500;
 }
 
+/* Enhanced Scanner Styling */
+.scanner-title {
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.scanner-subtitle {
+  line-height: 1.5;
+  max-width: 280px;
+  margin: 0 auto;
+}
+
+/* Enhanced Dialog Styling */
 .name-dialog {
   width: 100%;
   max-width: 400px;
   border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(5, 149, 115, 0.2);
+  border: 1px solid rgba(5, 149, 115, 0.1);
 }
 
 .dialog-header {
-  background: rgba(5, 149, 115, 0.05);
-  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.08), rgba(6, 182, 212, 0.05));
+  border-bottom: 1px solid rgba(5, 149, 115, 0.1);
+  padding: 1.5rem;
 }
 
 .dialog-header.dark-dialog-header {
-  background: rgba(5, 149, 115, 0.1);
-  border-bottom: 1px solid rgba(50, 50, 50, 0.5);
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.15), rgba(6, 182, 212, 0.1));
+  border-bottom: 1px solid rgba(5, 149, 115, 0.2);
+}
+
+.dialog-title {
+  font-weight: 700;
+  color: #1f2937;
 }
 
 .dialog-content {
-  padding: 20px;
+  padding: 1.5rem;
+}
+
+.wallet-name-input :deep(.q-field__control) {
+  border-radius: 12px;
+  border: 2px solid rgba(5, 149, 115, 0.1);
+  transition: all 0.3s ease;
+}
+
+.wallet-name-input :deep(.q-field__control):hover {
+  border-color: rgba(5, 149, 115, 0.2);
+}
+
+.wallet-name-input :deep(.q-field__control.q-field--focused) {
+  border-color: #059573;
+  box-shadow: 0 0 0 3px rgba(5, 149, 115, 0.1);
+}
+
+.input-hint {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+/* Enhanced Action Buttons */
+.cancel-btn {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.continue-btn {
+  background: linear-gradient(135deg, #059573, #06b6d4);
+  color: white;
+  font-weight: 600;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
+  transition: all 0.2s ease;
+}
+
+.continue-btn:hover {
+  background: linear-gradient(135deg, #047857, #0891b2);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.4);
+  transform: translateY(-1px);
+}
+
+.continue-btn:disabled {
+  background: #d1d5db;
+  color: #9ca3af;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 480px) {
+  .wallet-connect-page {
+    padding: 0.75rem;
+  }
+  
+  .container {
+    max-width: 100%;
+  }
+  
+  .connect-card {
+    border-radius: 12px;
+  }
+  
+  .card-header {
+    padding: 1.25rem 1rem 0.75rem;
+  }
+  
+  .nwc-logo-container {
+    margin: 1.5rem 0 1rem;
+  }
+  
+  .nwc-logo-bg {
+    width: 80px;
+    height: 80px;
+    padding: 1.25rem;
+  }
+  
+  .welcome-title {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .welcome-subtitle {
+    font-size: 0.9375rem;
+    margin-bottom: 1.5rem;
+    max-width: 280px;
+  }
+  
+  .q-input :deep(.q-field__native) {
+    font-size: 0.9375rem;
+    padding: 0.625rem 0.875rem;
+  }
+  
+  .connect-btn {
+    height: 52px;
+    font-size: 1rem;
+    padding: 0.875rem;
+  }
+  
+  .qr-scanner-container {
+    height: 250px;
+    border-radius: 10px;
+  }
+  
+  .scanner-title {
+    font-size: 1.125rem;
+  }
+  
+  .scanner-subtitle {
+    font-size: 0.875rem;
+    max-width: 240px;
+  }
+  
+  .name-dialog {
+    max-width: 350px;
+    margin: 1rem;
+  }
+  
+  .dialog-header,
+  .dialog-content {
+    padding: 1.25rem;
+  }
+  
+  .input-hint {
+    font-size: 0.8125rem;
+  }
 }
 </style>
