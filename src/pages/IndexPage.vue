@@ -44,34 +44,33 @@
             :dark="$q.dark.isActive"
           />
 
-          <div class="text-right">
+          <div class="button-row">
+            <q-btn
+              class="connect-btn-inline"
+              :loading="isConnecting"
+              @click="connectWallet"
+              no-caps
+              unelevated
+            >
+              <span v-if="!isConnecting">Connect Wallet</span>
+              <template v-slot:loading>
+                <q-spinner-dots class="q-mr-sm"/>
+                Connecting...
+              </template>
+            </q-btn>
+            
             <q-btn
               unelevated
-              dense
               color="primary"
               icon="las la-qrcode"
               label="Scan QR"
               @click="showScanner = true"
-              class="scan-qr-btn"
+              class="scan-qr-btn-inline"
+              no-caps
             />
           </div>
         </q-card-section>
 
-        <q-card-section class="card-footer" :class="{ 'dark-footer': $q.dark.isActive }">
-          <q-btn
-            class="full-width connect-btn"
-            :loading="isConnecting"
-            @click="connectWallet"
-            no-caps
-            unelevated
-          >
-            <span v-if="!isConnecting">Connect Wallet</span>
-            <template v-slot:loading>
-              <q-spinner-dots class="q-mr-sm"/>
-              Connecting...
-            </template>
-          </q-btn>
-        </q-card-section>
       </q-card>
 
       <q-card class="connect-card" :class="{ 'dark-card': $q.dark.isActive }" v-else>
@@ -489,6 +488,55 @@ export default {
   transform: translateY(-1px);
 }
 
+/* Button Row Layout */
+.button-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.connect-btn-inline {
+  flex: 2; /* 66% of space */
+  background: linear-gradient(135deg, #059573, #047857);
+  color: white;
+  border-radius: 12px;
+  padding: 0.875rem 1rem;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.4);
+  transition: all 0.3s ease;
+  height: 52px;
+}
+
+.connect-btn-inline:hover {
+  background: linear-gradient(135deg, #047857, #06b6d4);
+  box-shadow: 0 6px 20px rgba(5, 149, 115, 0.5);
+  transform: translateY(-2px);
+}
+
+.connect-btn-inline:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
+}
+
+.scan-qr-btn-inline {
+  flex: 1; /* 33% of space */
+  background: linear-gradient(135deg, #059573, #06b6d4);
+  color: white;
+  border-radius: 12px;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
+  transition: all 0.2s ease;
+  height: 52px;
+  min-width: 0;
+}
+
+.scan-qr-btn-inline:hover {
+  background: linear-gradient(135deg, #047857, #0891b2);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.4);
+  transform: translateY(-1px);
+}
+
 .card-footer {
   background: linear-gradient(135deg, rgba(248, 249, 250, 0.8), rgba(232, 245, 243, 0.6));
   padding: 1rem;
@@ -700,6 +748,20 @@ export default {
     height: 52px;
     font-size: 1rem;
     padding: 0.875rem;
+  }
+  
+  .button-row {
+    gap: 0.5rem;
+  }
+  
+  .connect-btn-inline,
+  .scan-qr-btn-inline {
+    height: 48px;
+    font-size: 0.9375rem;
+  }
+  
+  .connect-btn-inline {
+    padding: 0.75rem 0.875rem;
   }
   
   .qr-scanner-container {
