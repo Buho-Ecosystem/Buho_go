@@ -135,6 +135,8 @@
 import {webln} from "@getalby/sdk";
 import {QrcodeStream, QrcodeDropZone, QrcodeCapture} from 'vue-qrcode-reader'
 import LoadingScreen from '../components/LoadingScreen.vue'
+import { useWalletStore } from '../stores/wallet'
+import { mapActions } from 'pinia'
 
 export default {
   name: 'WalletConnectPage',
@@ -161,23 +163,25 @@ export default {
     this.initializeApp();
   },
   methods: {
+    ...mapActions(useWalletStore, ['addWallet']),
+
     async initializeApp() {
       this.loadingText = 'Checking wallet state...';
       
       // Simulate some loading time for better UX
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-    // Check for existing wallet state
-    const existingState = localStorage.getItem('buhoGO_wallet_state');
-    if (existingState) {
-      const walletInfo = JSON.parse(existingState);
-      if (walletInfo.activeWalletId) {
-        this.loadingText = 'Loading wallet...';
-        await new Promise(resolve => setTimeout(resolve, 800));
-        this.$router.push('/wallet');
-        return;
+      // Check for existing wallet state
+      const existingState = localStorage.getItem('buhoGO_wallet_store');
+      if (existingState) {
+        const walletInfo = JSON.parse(existingState);
+        if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
+          this.loadingText = 'Loading wallet...';
+          await new Promise(resolve => setTimeout(resolve, 800));
+          this.$router.push('/wallet');
+          return;
+        }
       }
-    }
       
       // Hide loading screen after initialization
       this.loadingText = 'Ready!';
@@ -201,58 +205,16 @@ export default {
       this.showNameDialog = false
 
       try {
-        // Test the connection
-        const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: this.nwcString,
-        });
-        
         this.loadingText = 'Verifying connection...';
 
-        await nwc.enable();
-        const info = await nwc.getInfo();
-        const balance = await nwc.getBalance();
 
-        // Get existing wallet state or create new one
-        const existingState = localStorage.getItem('buhoGO_wallet_state');
-        let walletInfo = {
-          balance: 0,
-          connectedWallets: [],
-          activeWalletId: null,
-          currency: 'sats',
-          currencies: ['sats', 'btc', 'usd'],
-          exchangeRates: {
-            usd: 65000,
-            eur: 60000,
-            gbp: 52000,
-            jpy: 9800000
-          },
-          preferredFiatCurrency: 'USD',
-          denominationCurrency: 'sats'
-        };
 
-        if (existingState) {
-          walletInfo = JSON.parse(existingState);
-        }
 
-        // Generate a unique ID for the new wallet
-        const walletId = 'wallet-' + Date.now();
-
-        // Add new wallet to the list
-        walletInfo.connectedWallets.push({
-          id: walletId,
+        // Add wallet using Pinia store
+        await this.addWallet({
           name: this.walletName,
-          type: 'nwc',
-          nwcString: this.nwcString,
-          balance: balance.balance
-        });
-
-        // Set as active wallet if it's the first one
-        if (!walletInfo.activeWalletId) {
-          walletInfo.activeWalletId = walletId;
-        }
-
-        // Save updated wallet state
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(walletInfo))
+          nwcUrl: this.nwcString
+        })
 
         // Reset wallet name
         this.walletName = ''
