@@ -1,5 +1,5 @@
 import { webln } from "@getalby/sdk";
-import { LightningAddress } from "@getalby/lightning-tools";
+import { LightningAddress, lnurl } from "@getalby/lightning-tools";
 
 export class LightningPaymentService {
   constructor(nwcString) {
@@ -67,8 +67,8 @@ export class LightningPaymentService {
       return {
         type: 'lightning_address',
         address: address,
-        minSendable: ln.minSendable || 1000, // 1 sat minimum
-        maxSendable: ln.maxSendable || 100000000000, // 100M sats maximum
+        minSendable: ln.minSendable || 1000,
+        maxSendable: ln.maxSendable || 100000000000,
         commentAllowed: ln.commentAllowed || 0,
         callback: ln.callback,
         metadata: ln.metadata,
@@ -81,19 +81,14 @@ export class LightningPaymentService {
 
   async handleLNURL(lnurl) {
     try {
-      // Decode LNURL if it's bech32 encoded
-      let url = lnurl;
-      if (lnurl.toLowerCase().startsWith('lnurl')) {
-        // For bech32 LNURL decoding, we'd need a bech32 library
-        // For now, assume it's already a URL or handle the common case
-        url = lnurl.replace(/^lightning:/i, '');
-      }
+      // Clean the LNURL string
+      const cleanLnurl = lnurlString.replace(/^lightning:/i, '');
       
+      // Decode LNURL using the lightning-tools library
+      const { url } = lnurl.decode(cleanLnurl);
+      
+      // Fetch the LNURL data
       const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
       const data = await response.json();
       
       if (data.status === 'ERROR') {
@@ -114,6 +109,7 @@ export class LightningPaymentService {
       
       throw new Error('Unsupported LNURL type. Only LNURL-pay is supported.');
     } catch (error) {
+      console.error('LNURL processing error:', error);
       throw new Error(`Invalid LNURL: ${error.message}`);
     }
   }
@@ -188,38 +184,57 @@ export class LightningPaymentService {
             throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
           }
           
-          // Build callback URL
-          const callbackUrl = new URL(paymentData.callback);
-          callbackUrl.searchParams.set('amount', amountMsat.toString());
-          
-          if (comment && paymentData.commentAllowed > 0) {
-            const trimmedComment = comment.substring(0, paymentData.commentAllowed);
-            callbackUrl.searchParams.set('comment', trimmedComment);
+          // Handle Lightning Address payments
+          if (paymentData.type === 'lightning_address') {
+            const ln = new LightningAddress(paymentData.address);
+            await ln.fetch();
+            
+            const invoice = await ln.requestInvoice({
+              satoshi: amount,
+              comment: comment && paymentData.commentAllowed > 0 ? comment.substring(0, paymentData.commentAllowed) : undefined
+            });
+            
+            return await this.nwc.sendPayment(invoice.paymentRequest);
           }
           
-          // Get invoice from callback
-          const callbackResponse = await fetch(callbackUrl.toString());
-          if (!callbackResponse.ok) {
-            throw new Error(`Callback request failed: ${callbackResponse.statusText}`);
+          // Handle LNURL-pay
+          if (paymentData.type === 'lnurl_pay') {
+            // Build callback URL
+            const callbackUrl = new URL(paymentData.callback);
+            callbackUrl.searchParams.set('amount', amountMsat.toString());
+            
+            if (comment && paymentData.commentAllowed > 0) {
+              const trimmedComment = comment.substring(0, paymentData.commentAllowed);
+              callbackUrl.searchParams.set('comment', trimmedComment);
+            }
+            
+            // Get invoice from callback
+            const callbackResponse = await fetch(callbackUrl.toString());
+            if (!callbackResponse.ok) {
+              throw new Error(`Callback request failed: ${callbackResponse.statusText}`);
+            }
+            
+            const callbackData = await callbackResponse.json();
+            
+            if (callbackData.status === 'ERROR') {
+              throw new Error(callbackData.reason || 'Payment request failed');
+            }
+            
+            if (!callbackData.pr) {
+              throw new Error('No payment request received from callback');
+            }
+            
+            // Pay the invoice
+            return await this.nwc.sendPayment(callbackData.pr);
           }
           
-          const callbackData = await callbackResponse.json();
-          
-          if (callbackData.status === 'ERROR') {
-            throw new Error(callbackData.reason || 'Payment request failed');
-          }
-          
-          if (!callbackData.pr) {
-            throw new Error('No payment request received from callback');
-          }
-          
-          // Pay the invoice
-          return await this.nwc.sendPayment(callbackData.pr);
+          break;
           
         default:
           throw new Error('Unsupported payment type');
       }
     } catch (error) {
+      console.error('Payment error:', error);
       throw new Error(`Payment failed: ${error.message}`);
     }
   }
