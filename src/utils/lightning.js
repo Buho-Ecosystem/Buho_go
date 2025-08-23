@@ -1,6 +1,6 @@
 import { webln } from "@getalby/sdk";
 import { LightningAddress } from "@getalby/lightning-tools";
-import { lnurl } from "@getalby/lightning-tools";
+import lnurlDecoder from "@getalby/lightning-tools";
 
 export class LightningPaymentService {
   constructor(nwcString) {
@@ -80,13 +80,13 @@ export class LightningPaymentService {
     }
   }
 
-  async handleLNURL(lnurl) {
+  async handleLNURL(lnurlInput) {
     try {
       // Clean the LNURL string
-      const cleanLnurl = lnurlString.replace(/^lightning:/i, '');
+      const cleanLnurl = lnurlInput.replace(/^lightning:/i, '');
       
       // Decode LNURL using the lightning-tools library
-      const { url } = lnurl.decode(cleanLnurl);
+      const { url } = lnurlDecoder.decode(cleanLnurl);
       
       // Fetch the LNURL data
       const response = await fetch(url);
