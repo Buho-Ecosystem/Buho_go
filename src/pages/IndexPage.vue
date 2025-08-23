@@ -181,14 +181,14 @@ export default {
     ...mapActions(useWalletStore, ['addWallet']),
 
     async initializeApp() {
-      this.loadingText = 'Checking wallet state...';
-      
-      // Simulate some loading time for better UX
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       // Check for existing wallet state
       const existingState = localStorage.getItem('buhoGO_wallet_store');
       if (existingState) {
+        this.loadingText = 'Checking wallet state...';
+        
+        // Show loading screen only when wallet exists
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         const walletInfo = JSON.parse(existingState);
         if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
           this.loadingText = 'Loading wallet...';
@@ -198,9 +198,7 @@ export default {
         }
       }
       
-      // Hide loading screen after initialization
-      this.loadingText = 'Ready!';
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // No wallet found, hide loading screen immediately
       this.showLoadingScreen = false;
     },
     
