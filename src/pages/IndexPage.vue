@@ -31,26 +31,28 @@
                 alt="NWC Logo" class="nwc-logo" :class="{ 'dark-logo': !$q.dark.isActive }">
             </div>
           </div>
-          <div class="text-h6 text-center q-mb-sm">Connect with Nostr Wallet Connect</div>
-          <div class="text-center q-mb-lg" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">Enter your NWC string
-            or scan a QR code to connect your wallet</div>
+          <div class="text-h6 text-center q-mb-sm welcome-title">Connect Your Wallet</div>
+          <div class="text-center q-mb-lg welcome-subtitle" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
+            Enter your wallet's connection link or scan a QR code to get started
+          </div>
 
           <q-input
             v-model="nwcString"
             outlined
-            placeholder="Enter NWC string"
+            placeholder="Paste your wallet connection link here"
             class="q-mb-md"
             :dark="$q.dark.isActive"
           />
 
           <div class="text-right">
             <q-btn
-              flat
+              unelevated
               dense
               color="primary"
               icon="las la-qrcode"
               label="Scan QR"
               @click="showScanner = true"
+              class="scan-qr-btn"
             />
           </div>
         </q-card-section>
@@ -61,6 +63,7 @@
             :loading="isConnecting"
             @click="connectWallet"
             no-caps
+            unelevated
           >
             <span v-if="!isConnecting">Connect Wallet</span>
             <template v-slot:loading>
@@ -73,9 +76,10 @@
 
       <q-card class="connect-card" :class="{ 'dark-card': $q.dark.isActive }" v-else>
         <q-card-section class="card-header" :class="{ 'dark-header': $q.dark.isActive }">
-          <h2 class="text-h5 text-weight-bold">Scan NWC QR Code</h2>
-          <p class="text-subtitle2" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">Scan a Nostr Wallet
-            Connect QR code to connect your wallet</p>
+          <h2 class="text-h5 text-weight-bold scanner-title">Scan QR Code</h2>
+          <p class="text-subtitle2 scanner-subtitle" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
+            Point your camera at the QR code from your wallet app
+          </p>
         </q-card-section>
 
         <q-card-section class="q-pt-none">
@@ -94,10 +98,11 @@
 
         <q-card-section class="card-footer" :class="{ 'dark-footer': $q.dark.isActive }">
           <q-btn
-            outline
+            unelevated
             class="full-width"
             label="Cancel"
             @click="showScanner = false"
+            color="grey-6"
           />
         </q-card-section>
       </q-card>
@@ -106,7 +111,7 @@
       <q-dialog v-model="showNameDialog">
         <q-card class="name-dialog" :dark="$q.dark.isActive">
           <q-card-section class="dialog-header" :class="{ 'dark-dialog-header': $q.dark.isActive }">
-            <div class="text-h6">Name Your Wallet</div>
+            <div class="text-h6 dialog-title">Name Your Wallet</div>
           </q-card-section>
 
           <q-card-section class="dialog-content">
@@ -114,16 +119,27 @@
               v-model="walletName"
               outlined
               label="Wallet Name"
-              placeholder="Enter a name for your wallet"
+              placeholder="My Lightning Wallet"
               :rules="[val => !!val || 'Wallet name is required']"
               autofocus
               :dark="$q.dark.isActive"
+              class="wallet-name-input"
             />
+            <div class="input-hint">
+              Choose a name to easily identify this wallet
+            </div>
           </q-card-section>
 
           <q-card-actions align="right">
-            <q-btn flat label="Cancel" color="primary" v-close-popup/>
-            <q-btn flat label="Continue" color="primary" @click="proceedWithConnection" :disable="!walletName"/>
+            <q-btn flat label="Cancel" color="grey-7" v-close-popup class="cancel-btn"/>
+            <q-btn 
+              unelevated 
+              label="Continue" 
+              color="primary" 
+              @click="proceedWithConnection" 
+              :disable="!walletName"
+              class="continue-btn"
+            />
           </q-card-actions>
         </q-card>
       </q-dialog>
