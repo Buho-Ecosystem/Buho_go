@@ -993,7 +993,13 @@ export default {
         }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        this.pendingPayment = await lightningService.processPaymentInput(paymentData.data);
+        // Store the payment data with proper structure
+        this.pendingPayment = {
+          ...await lightningService.processPaymentInput(paymentData.data),
+          // Ensure we have the raw payment string for display
+          rawPaymentString: paymentData.data
+        };
+        
         this.showPaymentConfirmation = true;
 
       } catch (error) {
