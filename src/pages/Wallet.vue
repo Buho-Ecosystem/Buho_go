@@ -423,6 +423,13 @@ export default {
       pendingPayment: null,
       paymentAmount: '',
       paymentComment: '',
+      slidePosition: 0,
+      slideConfirmed: false,
+      isSliding: false,
+      slideStartX: 0,
+      maxSlideDistance: 0,
+      paymentAmount: '',
+      paymentComment: '',
       parsedInvoice: null,
       lightningAddress: '',
       sendForm: {
@@ -2019,6 +2026,219 @@ export default {
   z-index: 5000;
 }
 
+/* Payment Dialog Styles */
+.payment-dialog :deep(.q-dialog__inner) {
+  padding: 1rem;
+}
+
+.payment-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 16px;
+}
+
+.payment-header {
+  background: #f8f9fa;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.payment-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-btn {
+  color: #6b7280;
+}
+
+.payment-content {
+  padding: 1.5rem;
+}
+
+/* Amount Section */
+.payment-amount-section {
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.fixed-amount-display .amount-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+}
+
+.fixed-amount-display .amount-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.fixed-amount-display .amount-fiat {
+  font-size: 1rem;
+  color: #6b7280;
+}
+
+.variable-amount-display .amount-label {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 1rem;
+}
+
+.amount-input-container {
+  max-width: 200px;
+  margin: 0 auto;
+}
+
+.amount-range {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+}
+
+.unknown-amount-display .amount-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+}
+
+.unknown-amount-display .amount-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+/* Payment Details */
+.payment-details-section {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.detail-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: #1f2937;
+  text-align: right;
+  word-break: break-all;
+  max-width: 200px;
+}
+
+/* Comment Section */
+.comment-section {
+  margin-bottom: 1rem;
+}
+
+/* Slide to Confirm */
+.slide-confirm-section {
+  padding: 1rem 1.5rem 1.5rem;
+  background: #f8f9fa;
+}
+
+.slide-container {
+  position: relative;
+  height: 60px;
+  border-radius: 30px;
+  background: #e5e7eb;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.slide-container.confirmed {
+  background: #059573;
+}
+
+.slide-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slide-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #059573, #047857);
+  border-radius: 30px;
+  transition: width 0.1s ease;
+}
+
+.slide-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  z-index: 1;
+  transition: color 0.3s ease;
+}
+
+.slide-text.confirmed-text {
+  color: white;
+  display: flex;
+  align-items: center;
+}
+
+.slide-button {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 50px;
+  height: 50px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 2;
+}
+
+.slide-button:active {
+  cursor: grabbing;
+}
+
+.slide-button.confirmed {
+  background: #059573;
+  color: white;
+}
+
+.slide-button .q-icon {
+  font-size: 1.25rem;
+  color: #6b7280;
+}
+
+.slide-button.confirmed .q-icon {
+  color: white;
+}
+
 /* Payment Confirmation Dialog */
 .confirmation-card {
   width: 100%;
@@ -2501,6 +2721,22 @@ export default {
   
   .amount-display {
     font-size: 1.5rem;
+  }
+  
+  .payment-content {
+    padding: 1rem;
+  }
+  
+  .fixed-amount-display .amount-value {
+    font-size: 1.75rem;
+  }
+  
+  .detail-value {
+    max-width: 150px;
+  }
+  
+  .slide-confirm-section {
+    padding: 1rem;
   }
 }
 </style>
