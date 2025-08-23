@@ -423,6 +423,7 @@ export default {
       pendingPayment: null,
       paymentAmount: '',
       paymentComment: '',
+      paymentComment: '',
       slidePosition: 0,
       slideConfirmed: false,
       isSliding: false,
@@ -448,6 +449,10 @@ export default {
       currentInvoicePaymentHash: null,
       invoiceCheckInterval: null,
       waitingForPayment: false,
+      slidePosition: 0,
+      slideProgress: 0,
+      slideConfirmed: false,
+      isSliding: false,
       showLoadingScreen: true,
       loadingText: 'Loading wallet...'
     };
@@ -993,13 +998,7 @@ export default {
         }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        // Store the payment data with proper structure
-        this.pendingPayment = {
-          ...await lightningService.processPaymentInput(paymentData.data),
-          // Ensure we have the raw payment string for display
-          rawPaymentString: paymentData.data
-        };
-        
+        this.pendingPayment = await lightningService.processPaymentInput(paymentData.data);
         this.showPaymentConfirmation = true;
 
       } catch (error) {
