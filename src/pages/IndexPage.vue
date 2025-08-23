@@ -67,7 +67,7 @@
             >
               <div class="scan-btn-content">
                 <q-icon name="las la-qrcode" class="scan-icon"/>
-                <span class="scan-label">Scan QR</span>
+                <span class="scan-label">Scan</span>
               </div>
             </q-btn>
           </div>
