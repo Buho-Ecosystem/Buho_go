@@ -58,6 +58,16 @@
         </div>
 
         <div class="section-card disabled-card">
+          <div class="card-icon address-book-icon-disabled">
+            <q-icon name="las la-address-book" size="24px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title">Address Book</div>
+            <div class="card-subtitle">Save Lightning Addresses</div>
+          </div>
+          <div class="coming-soon-badge">Coming Soon</div>
+        </div>
+        <div class="section-card disabled-card">
           <div class="card-icon notifications-icon">
             <q-icon name="las la-bell" size="24px"/>
           </div>
@@ -1116,6 +1126,10 @@ export default {
   color: white;
 }
 
+.address-book-icon-disabled {
+  background: linear-gradient(135deg, #9CA3AF, #6B7280);
+  color: white;
+}
 .card-content {
   flex: 1;
 }
