@@ -65,10 +65,8 @@
               @click="showScanner = true"
               no-caps
             >
-              <div class="scan-btn-content">
-                <q-icon name="las la-qrcode" class="scan-icon"/>
-                <span class="scan-label">Scan</span>
-              </div>
+              <q-icon name="las la-qrcode" class="q-mr-sm"/>
+              Scan QR
             </q-btn>
           </div>
         </q-card-section>
@@ -562,29 +560,6 @@ export default {
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
 }
 
-.scan-btn-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  position: relative;
-  z-index: 1;
-}
-
-.scan-icon {
-  font-size: 20px;
-  color: white;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-}
-
-.scan-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: white;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-}
 .card-footer {
   background: linear-gradient(135deg, rgba(248, 249, 250, 0.8), rgba(232, 245, 243, 0.6));
   padding: 1rem;
@@ -805,18 +780,6 @@ export default {
   .connect-btn-inline,
   .scan-qr-btn-inline {
     height: 48px;
-  }
-  
-  .scan-btn-content {
-    gap: 0.125rem;
-  }
-  
-  .scan-icon {
-    font-size: 18px;
-  }
-  
-  .scan-label {
-    font-size: 0.6875rem;
   }
   
   .connect-btn-inline {
