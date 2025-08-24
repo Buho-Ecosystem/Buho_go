@@ -1,10 +1,10 @@
 <template>
   <!-- Loading Screen -->
-  <LoadingScreen 
-    :show="showLoadingScreen" 
+  <LoadingScreen
+    :show="showLoadingScreen"
     :loading-text="loadingText"
   />
-  
+
   <q-page class="wallet-page">
     <!-- Header -->
     <div class="wallet-header">
@@ -22,12 +22,12 @@
           </svg>
           <div class="title">BuhoGO</div>
         </div>
-        <q-btn 
-          flat 
-          round 
-          dense 
+        <q-btn
+          flat
+          round
+          dense
           class="modern-menu-btn"
-          @click="$router.push('/settings')" 
+          @click="$router.push('/settings')"
           aria-label="Settings"
         >
           <div class="menu-icon">
@@ -121,7 +121,7 @@
               rows="3"
               class="payment-input"
             />
-            
+
             <div class="input-actions">
               <q-btn
                 flat
@@ -164,13 +164,13 @@
     </q-dialog>
 
     <!-- Receive Modal -->
-    <ReceiveModal 
+    <ReceiveModal
       v-model="showReceiveModal"
       @invoice-created="onInvoiceCreated"
     />
 
     <!-- Send Modal -->
-    <SendModal 
+    <SendModal
       v-model="showSendModal"
       @payment-detected="onPaymentDetected"
     />
@@ -189,7 +189,7 @@
               <div class="amount-display">{{ formatPaymentAmount() }}</div>
               <div class="amount-fiat">{{ formatPaymentFiat() }}</div>
             </div>
-            
+
             <div class="payment-details">
               <div class="detail-item" v-if="pendingPayment.description">
                 <span class="detail-label">Description:</span>
@@ -213,7 +213,7 @@
                 class="amount-input"
                 :rules="[validatePaymentAmount]"
               />
-              
+
               <q-input
                 v-if="pendingPayment.commentAllowed > 0"
                 v-model="paymentComment"
@@ -228,10 +228,10 @@
 
         <q-card-actions align="right" class="payment-actions">
           <q-btn flat label="Cancel" v-close-popup/>
-          <q-btn 
-            flat 
-            label="Send Payment" 
-            color="primary" 
+          <q-btn
+            flat
+            label="Send Payment"
+            color="primary"
             @click="confirmPayment"
             :loading="isSendingPayment"
             :disable="!canConfirmPayment"
@@ -260,7 +260,7 @@
               class="amount-input"
               :rules="[val => val > 0 || 'Amount must be greater than 0']"
             />
-            
+
             <q-input
               v-model="receiveForm.description"
               outlined
@@ -268,7 +268,7 @@
               placeholder="What is this payment for?"
               class="description-input"
             />
-            
+
             <q-btn
               class="create-invoice-btn"
               @click="createInvoice"
@@ -300,7 +300,7 @@
                   class="qr-code"
                 />
               </div>
-              
+
               <!-- Invoice Info -->
               <div class="invoice-info-compact">
                 <div class="amount-compact">
@@ -309,13 +309,13 @@
                 <div class="description-compact" v-if="receiveForm.description">
                   {{ receiveForm.description }}
                 </div>
-                
+
                 <div class="waiting-indicator-compact">
                   <q-spinner-dots color="primary" size="18px"/>
                   <span class="waiting-text-compact">Waiting for payment...</span>
                 </div>
               </div>
-              
+
               <!-- Copy Button -->
               <q-btn
                 flat
@@ -338,7 +338,7 @@
                   class="qr-code"
                 />
               </div>
-              
+
               <!-- Amount Display -->
               <div class="amount-section">
                 <div class="amount-value">
@@ -348,7 +348,7 @@
                   {{ receiveForm.description }}
                 </div>
               </div>
-              
+
               <!-- Copy Button -->
               <q-btn
                 outline
@@ -454,8 +454,8 @@ export default {
   },
   computed: {
     needsAmountInput() {
-      return this.pendingPayment && 
-             (this.pendingPayment.type === 'lightning_address' || 
+      return this.pendingPayment &&
+             (this.pendingPayment.type === 'lightning_address' ||
               this.pendingPayment.type === 'lnurl_pay');
     },
     canConfirmPayment() {
@@ -499,17 +499,17 @@ export default {
       try {
         this.loadingText = 'Loading wallet state...';
         await this.loadWalletState();
-        
+
         this.loadingText = 'Fetching transactions...';
         await this.loadTransactions();
-        
+
         this.loadingText = 'Loading profiles...';
         await this.loadNostrProfiles();
-        
+
         this.loadingText = 'Starting services...';
         this.startPeriodicRefresh();
         this.startPulseAnimation();
-        
+
         // Hide loading screen
         this.loadingText = 'Ready!';
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -521,7 +521,7 @@ export default {
         this.showLoadingScreen = false;
       }
     },
-    
+
     async loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
@@ -549,7 +549,7 @@ export default {
           if (this.showLoadingScreen) {
             this.loadingText = 'Updating balance...';
           }
-          
+
           const nwc = new webln.NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
@@ -630,16 +630,16 @@ export default {
 
     async toggleCurrency() {
       if (this.isSwitchingCurrency) return;
-      
+
       this.isSwitchingCurrency = true;
-      
+
       const modes = ['sats', 'fiat', 'btc'];
       const currentIndex = modes.indexOf(this.currentDisplayMode);
       const nextIndex = (currentIndex + 1) % modes.length;
-      
+
       this.walletState.displayMode = modes[nextIndex];
       localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-      
+
       setTimeout(() => {
         this.isSwitchingCurrency = false;
       }, 200);
@@ -708,14 +708,14 @@ export default {
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
       const fiatValue = btcAmount * rate;
-      
+
       const symbols = {
         USD: '$',
         EUR: '€',
         GBP: '£',
         JPY: '¥'
       };
-      
+
       const symbol = symbols[currency] || currency;
       return symbol + fiatValue.toFixed(2);
     },
@@ -730,7 +730,7 @@ export default {
 
       try {
         console.log('🔍 Processing payment input:', this.sendForm.input);
-        
+
         const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
         if (!validation.valid) {
           throw new Error(validation.error);
@@ -743,9 +743,9 @@ export default {
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
         this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
-        
+
         console.log('✅ Payment data processed:', this.paymentData);
-        
+
         // For Lightning invoices, parse additional details
         if (this.paymentData.type === 'lightning_invoice') {
           try {
@@ -753,31 +753,31 @@ export default {
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
             await nwc.enable();
-            
+
             // Try to get invoice details
             const invoiceDetails = await nwc.getInfo();
             console.log('📋 Invoice details from NWC:', invoiceDetails);
-            
+
             // Parse the invoice manually if needed
             this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
             console.log('📊 Parsed invoice:', this.parsedInvoice);
-            
+
           } catch (error) {
             console.warn('Could not get detailed invoice info:', error);
             // Fallback to manual parsing
             this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
           }
         }
-        
+
         if (this.paymentData.type === 'lightning_invoice' && this.paymentData.amount === 0) {
           this.paymentData.requiresAmount = true;
         }
-        
+
         // Show confirmation modal for invoices
         if (this.paymentData.type === 'lightning_invoice') {
           this.showPaymentConfirmation = true;
         }
-        
+
       } catch (error) {
         console.error('Error processing payment input:', error);
         this.$q.notify({
@@ -792,14 +792,14 @@ export default {
       try {
         // Remove lightning: prefix if present
         const cleanInvoice = invoice.replace(/^lightning:/i, '');
-        
+
         // Extract amount from invoice (basic parsing)
         let amount = 0;
         const amountMatch = cleanInvoice.match(/lnbc(\d+)([munp]?)/i);
         if (amountMatch) {
           const value = parseInt(amountMatch[1]);
           const unit = amountMatch[2];
-          
+
           switch (unit) {
             case 'm': // milli-bitcoin
               amount = value * 100000;
@@ -817,14 +817,14 @@ export default {
               amount = value * 100000000; // bitcoin
           }
         }
-        
+
         // Extract description (basic parsing)
         let description = 'Lightning Payment';
-        
+
         // Extract expiry (basic parsing)
         const now = Math.floor(Date.now() / 1000);
         const expiry = now + 3600; // Default 1 hour
-        
+
         return {
           amount: Math.floor(amount),
           description,
@@ -850,7 +850,7 @@ export default {
 
     getPaymentTypeLabel() {
       if (!this.paymentData) return '';
-      
+
       const labels = {
         'lightning_invoice': 'Lightning Invoice',
         'lnurl_pay': 'LNURL Payment',
@@ -861,15 +861,15 @@ export default {
 
     requiresAmount() {
       if (!this.paymentData) return false;
-      
-      return this.paymentData.type === 'lnurl_pay' || 
+
+      return this.paymentData.type === 'lnurl_pay' ||
              this.paymentData.type === 'lightning_address' ||
              (this.paymentData.type === 'lightning_invoice' && this.paymentData.requiresAmount);
     },
 
     getAmountLimits() {
       if (!this.paymentData) return null;
-      
+
       return {
         min: Math.floor(this.paymentData.minSendable / 1000),
         max: Math.floor(this.paymentData.maxSendable / 1000)
@@ -878,18 +878,18 @@ export default {
 
     canSendPayment() {
       if (!this.paymentData) return false;
-      
+
       if (this.requiresAmount()) {
         const amount = parseInt(this.sendForm.amount);
         if (!amount || amount <= 0) return false;
-        
+
         if (this.paymentData.type !== 'lightning_invoice') {
           const limits = this.getAmountLimits();
           return amount >= limits.min && amount <= limits.max;
         }
         return true;
       }
-      
+
       return true;
     },
 
@@ -899,7 +899,7 @@ export default {
         if (text.trim()) {
           this.sendForm.input = text.trim();
           this.showSendDialog = false;
-          
+
           // Small delay to ensure dialog closes
           setTimeout(async () => {
             await this.processPaymentInput();
@@ -931,7 +931,7 @@ export default {
         const comment = this.sendForm.comment || null;
 
         const result = await lightningService.sendPayment(this.paymentData, amount, comment);
-        
+
         console.log('Payment result:', result);
 
         this.$q.notify({
@@ -944,7 +944,7 @@ export default {
         this.resetSendForm();
         await this.updateWalletBalance();
         await this.loadTransactions();
-        
+
       } catch (error) {
         console.error('Payment failed:', error);
         this.$q.notify({
@@ -1008,47 +1008,47 @@ export default {
 
     formatPaymentAmount() {
       if (!this.pendingPayment) return '';
-      
+
       if (this.needsAmountInput) {
         return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
       }
-      
-      return this.pendingPayment.amount ? 
-        `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` : 
+
+      return this.pendingPayment.amount ?
+        `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` :
         'Variable amount';
     },
 
     formatPaymentFiat() {
       if (!this.pendingPayment) return '';
-      
+
       let amountSats = 0;
       if (this.needsAmountInput) {
         amountSats = parseInt(this.paymentAmount) || 0;
       } else {
         amountSats = this.pendingPayment.amount || 0;
       }
-      
+
       if (amountSats === 0) return '';
-      
+
       const btcAmount = amountSats / 100000000;
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
       const fiatValue = btcAmount * rate;
-      
+
       const symbols = {
         USD: '$',
         EUR: '€',
         GBP: '£',
         JPY: '¥'
       };
-      
+
       const symbol = symbols[currency] || currency;
       return symbol + fiatValue.toFixed(2);
     },
 
     getPaymentTypeLabel() {
       if (!this.pendingPayment) return '';
-      
+
       switch (this.pendingPayment.type) {
         case 'lightning_invoice':
           return 'Lightning Invoice';
@@ -1063,26 +1063,26 @@ export default {
 
     validatePaymentAmount(amount) {
       if (!this.pendingPayment) return 'No payment details';
-      
+
       const amountNum = parseInt(amount);
       if (isNaN(amountNum) || amountNum <= 0) {
         return 'Amount must be greater than 0';
       }
-      
+
       if (this.pendingPayment.minSendable) {
         const minSats = Math.floor(this.pendingPayment.minSendable / 1000);
         if (amountNum < minSats) {
           return `Minimum amount is ${minSats} sats`;
         }
       }
-      
+
       if (this.pendingPayment.maxSendable) {
         const maxSats = Math.floor(this.pendingPayment.maxSendable / 1000);
         if (amountNum > maxSats) {
           return `Maximum amount is ${maxSats} sats`;
         }
       }
-      
+
       return true;
     },
 
@@ -1100,10 +1100,10 @@ export default {
         }
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        
+
         const amount = this.needsAmountInput ? parseInt(this.paymentAmount) : this.pendingPayment.amount;
         const comment = this.paymentComment || null;
-        
+
         const result = await lightningService.sendPayment(this.pendingPayment, amount, comment);
 
         this.$q.notify({
@@ -1149,9 +1149,9 @@ export default {
         position: 'top',
         timeout: 4000,
         actions: [
-          { 
-            label: 'View', 
-            color: 'white', 
+          {
+            label: 'View',
+            color: 'white',
             handler: () => {
               this.$router.push(`/transaction/${transaction.id || transaction.payment_hash}`);
             }
@@ -1189,19 +1189,19 @@ export default {
         // BOLT11 invoice format: the payment hash is embedded in the invoice
         // We'll use a simple approach to extract it from the 'p' field
         const invoice = paymentRequest.toLowerCase();
-        
+
         // Find the 'p' field which contains the payment hash (32 bytes = 64 hex chars)
         const pFieldMatch = invoice.match(/p([a-f0-9]{64})/);
         if (pFieldMatch) {
           return pFieldMatch[1];
         }
-        
+
         // Alternative: try to find any 64-character hex string that looks like a hash
         const hashMatch = invoice.match(/([a-f0-9]{64})/);
         if (hashMatch) {
           return hashMatch[1];
         }
-        
+
         console.warn('Could not extract payment hash from invoice');
         return null;
       } catch (error) {
@@ -1214,7 +1214,7 @@ export default {
       this.sendForm.input = result.trim();
       this.showQRScanner = false;
       this.showSendDialog = false;
-      
+
       // Small delay to ensure dialog closes
       setTimeout(async () => {
         await this.processPaymentInput();
@@ -1254,7 +1254,7 @@ export default {
       const expiryDate = new Date(expiry * 1000);
       const now = new Date();
       const diffMinutes = Math.floor((expiryDate - now) / (1000 * 60));
-      
+
       if (diffMinutes < 0) return 'Expired';
       if (diffMinutes < 60) return `${diffMinutes} minutes`;
       if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours`;
@@ -1405,10 +1405,10 @@ export default {
   padding: 1rem;
 }
 
-.balance-container:hover {
-  background: rgba(255, 255, 255, 0.5);
-  transform: translateY(-2px);
-}
+/*.balance-container:hover {*/
+/*  background: rgba(255, 255, 255, 0.5);*/
+/*  transform: translateY(-2px);*/
+/*}*/
 
 .balance-amount {
   margin-bottom: 1rem;
@@ -1486,16 +1486,16 @@ export default {
 }
 
 @keyframes subtle-pulse {
-  0% { 
-    opacity: 0.6; 
+  0% {
+    opacity: 0.6;
     transform: scale(1);
   }
-  50% { 
-    opacity: 0.8; 
+  50% {
+    opacity: 0.8;
     transform: scale(1.02);
   }
-  100% { 
-    opacity: 0.6; 
+  100% {
+    opacity: 0.6;
     transform: scale(1);
   }
 }
@@ -1982,36 +1982,36 @@ export default {
   .qr-code-section {
     padding: 1rem;
   }
-  
+
   .amount-section {
     padding: 1rem;
   }
-  
+
   .amount-value {
     font-size: 1.25rem;
   }
-  
+
   .copy-invoice-btn {
     height: 44px;
     font-size: 0.875rem;
   }
-  
+
   .payment-success {
     padding: 1.5rem 1rem;
   }
-  
+
   .success-text {
     font-size: 1.25rem;
   }
-  
+
   .success-amount {
     font-size: 1.125rem;
   }
-  
+
   .waiting-indicator {
     padding: 1rem;
   }
-  
+
   .waiting-text {
     font-size: 1rem;
   }
@@ -2657,104 +2657,104 @@ export default {
   .bottom-actions {
     padding: 0.75rem 1rem 1.5rem 1rem;
   }
-  
+
   .action-buttons {
     gap: 0.75rem;
   }
-  
+
   .action-btn {
     height: 68px;
     min-height: 68px;
     min-width: 100px;
   }
-  
+
   .main-content {
     padding: 1.5rem 1rem 7rem 1rem;
   }
-  
+
   .amount-number {
     font-size: 3rem;
   }
-  
+
   .amount-unit {
     font-size: 1.25rem;
   }
-  
+
   .payment-dialog .dialog-header,
   .payment-dialog .dialog-content {
     padding: 1rem;
   }
-  
+
   .payment-dialog .dialog-content {
     gap: 1rem;
   }
-  
+
   .method-cards {
     gap: 0.5rem;
   }
-  
+
   .method-card {
     padding: 0.75rem 1rem;
     min-height: 64px;
   }
-  
+
   .method-icon {
     width: 48px;
     height: 48px;
   }
-  
+
   .method-title {
     font-size: 1rem;
   }
-  
+
   .method-subtitle {
     font-size: 0.8125rem;
   }
-  
+
   .scanner-container {
     height: 250px;
   }
-  
+
   .scan-frame {
     width: 160px;
     height: 160px;
   }
-  
+
   .invoice-amount {
     font-size: 1.5rem;
   }
-  
+
   .send-payment-btn,
   .create-invoice-btn {
     height: 48px;
     font-size: 0.9rem;
   }
-  
+
   .invoice-actions {
     flex-direction: column;
   }
-  
+
   .copy-btn,
   .share-btn {
     height: 40px;
   }
-  
+
   .amount-display {
     font-size: 1.5rem;
   }
-  
+
   .payment-content {
     padding: 1rem;
   }
-  
+
   .fixed-amount-display .amount-value {
     font-size: 1.75rem;
   }
-  
+
   .detail-value {
     max-width: 150px;
   }
-  
+
   .slide-confirm-section {
     padding: 1rem;
   }
