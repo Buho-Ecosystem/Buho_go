@@ -1,25 +1,27 @@
 <template>
-  <q-dialog 
-    v-model="show" 
-    persistent 
-    maximized 
-    transition-show="slide-up" 
+  <q-dialog
+    v-model="show"
+    persistent
+    maximized
+    transition-show="slide-up"
     transition-hide="slide-down"
     class="send-modal"
   >
-    <q-card class="send-card">
+    <q-card class="send-card" :class="$q.dark.isActive ? 'send-card-dark' : 'send-card-light'">
       <!-- Header -->
       <q-card-section class="send-header">
         <div class="header-content">
-          <q-btn 
-            flat 
-            round 
-            dense 
-            icon="las la-arrow-left" 
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-arrow-left"
             @click="closeModal"
             class="back-btn"
           />
-          <div class="header-title">Send</div>
+          <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+            {{ $t('Send') }}
+          </div>
           <div class="header-spacer"></div>
         </div>
       </q-card-section>
@@ -33,24 +35,24 @@
           class="camera-view"
           :constraints="cameraConstraints"
         />
-        
+
         <!-- Processing Overlay -->
         <div v-if="isProcessing" class="processing-overlay">
-          <q-spinner-dots color="white" size="3rem"/>
-          <div class="processing-text">Processing payment...</div>
+          <q-spinner-dots color="#15DE72" size="3rem"/>
+          <div class="processing-text">{{ $t('Processing payment...') }}</div>
         </div>
 
         <!-- Camera Error -->
         <div v-if="cameraError" class="camera-error">
           <q-icon name="las la-camera-retro" size="4rem" color="grey-4"/>
-          <div class="error-title">Camera Access Required</div>
+          <div class="error-title">{{ $t('Camera Access Required') }}</div>
           <div class="error-subtitle">{{ cameraError }}</div>
           <q-btn
-            outline
-            color="primary"
-            label="Retry"
-            @click="initializeCamera"
             class="retry-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :label="$t('Retry')"
+            @click="initializeCamera"
+            no-caps
           />
         </div>
 
@@ -69,33 +71,36 @@
           <q-btn
             flat
             class="action-btn"
+            :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
             @click="showManualInput"
           >
             <div class="btn-content">
               <q-icon name="las la-keyboard" size="24px" class="btn-icon"/>
-              <span class="btn-label">Manual</span>
+              <span class="btn-label">{{ $t('Manual') }}</span>
             </div>
           </q-btn>
 
           <q-btn
             flat
             class="action-btn"
+            :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
             @click="pasteFromClipboard"
           >
             <div class="btn-content">
               <q-icon name="las la-clipboard" size="24px" class="btn-icon"/>
-              <span class="btn-label">Paste</span>
+              <span class="btn-label">{{ $t('Paste') }}</span>
             </div>
           </q-btn>
 
           <q-btn
             flat
             class="action-btn"
+            :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
             @click="importFromFile"
           >
             <div class="btn-content">
               <q-icon name="las la-image" size="24px" class="btn-icon"/>
-              <span class="btn-label">Import</span>
+              <span class="btn-label">{{ $t('Import') }}</span>
             </div>
           </q-btn>
         </div>
@@ -104,45 +109,48 @@
 
     <!-- Manual Input Dialog -->
     <q-dialog v-model="showManualDialog" class="manual-dialog">
-      <q-card class="manual-card">
+      <q-card class="manual-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="manual-header">
-          <div class="manual-title">Enter Payment Details</div>
-          <q-btn flat round dense icon="las la-times" v-close-popup class="close-btn"/>
+          <div class="manual-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Enter Payment Details') }}
+          </div>
+          <q-btn flat round dense icon="las la-times" v-close-popup
+                 class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
         </q-card-section>
 
         <q-card-section class="manual-content">
           <q-input
             v-model="manualInput"
             outlined
-            label="Lightning Invoice, Address, or LNURL"
-            placeholder="lnbc... or user@domain.com or lnurl..."
+            :label="$t('Lightning Invoice, Address, or LNURL')"
+            :placeholder="$t('lnbc... or user@domain.com or lnurl...')"
             class="manual-input"
             autofocus
             :rules="[validatePaymentInput]"
           />
-          
+
           <div class="input-help">
             <div class="help-item">
               <q-icon name="las la-bolt" class="help-icon"/>
-              <span>Lightning Invoice (lnbc...)</span>
+              <span>{{ $t('Lightning Invoice (lnbc...)') }}</span>
             </div>
             <div class="help-item">
               <q-icon name="las la-at" class="help-icon"/>
-              <span>Lightning Address (user@domain.com)</span>
+              <span>{{ $t('Lightning Address (user@domain.com)') }}</span>
             </div>
             <div class="help-item">
               <q-icon name="las la-link" class="help-icon"/>
-              <span>LNURL (lnurl...)</span>
+              <span>{{ $t('LNURL (lnurl...)') }}</span>
             </div>
           </div>
         </q-card-section>
 
         <q-card-actions align="right" class="manual-actions">
-          <q-btn flat label="Cancel" v-close-popup/>
-          <q-btn 
-            flat 
-            label="Continue" 
-            color="primary" 
+          <q-btn flat :label="$t('Cancel')" v-close-popup/>
+          <q-btn
+            flat
+            :label="$t('Continue')"
+            color="primary"
             @click="processManualInput"
             :disable="!isValidManualInput"
           />
@@ -153,8 +161,9 @@
 </template>
 
 <script>
-import { QrcodeStream } from 'vue-qrcode-reader';
-import LightningPaymentService from '../utils/lightning.js';
+import {QrcodeStream} from 'vue-qrcode-reader';
+// Assuming you have this service
+// import LightningPaymentService from '../utils/lightning.js';
 
 export default {
   name: 'SendModal',
@@ -177,8 +186,8 @@ export default {
       manualInput: '',
       cameraConstraints: {
         facingMode: 'environment',
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        width: {ideal: 1280},
+        height: {ideal: 720}
       }
     }
   },
@@ -209,10 +218,9 @@ export default {
     async initializeCamera() {
       this.cameraError = null;
       try {
-        // Check if camera permission is available
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stream.getTracks().forEach(track => track.stop()); // Stop the test stream
-        
+        const stream = await navigator.mediaDevices.getUserMedia({video: true});
+        stream.getTracks().forEach(track => track.stop());
+
         this.showCamera = true;
       } catch (error) {
         console.error('Camera initialization error:', error);
@@ -222,13 +230,13 @@ export default {
 
     handleCameraError(error) {
       if (error.name === 'NotAllowedError') {
-        this.cameraError = 'Camera permission denied. Please allow camera access and try again.';
+        this.cameraError = this.$t('Camera permission denied. Please allow camera access and try again.');
       } else if (error.name === 'NotFoundError') {
-        this.cameraError = 'No camera found on this device.';
+        this.cameraError = this.$t('No camera found on this device.');
       } else if (error.name === 'NotSupportedError') {
-        this.cameraError = 'Camera not supported in this browser.';
+        this.cameraError = this.$t('Camera not supported in this browser.');
       } else {
-        this.cameraError = 'Failed to access camera. Please try again.';
+        this.cameraError = this.$t('Failed to access camera. Please try again.');
       }
     },
 
@@ -244,7 +252,7 @@ export default {
         console.error('QR processing error:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Invalid QR code: ' + error.message,
+          message: this.$t('Invalid QR code: ') + error.message,
           position: 'top'
         });
         this.isProcessing = false;
@@ -258,16 +266,15 @@ export default {
 
     async processPaymentData(paymentData) {
       try {
-        const validation = LightningPaymentService.validatePaymentInput(paymentData);
-        
-        if (!validation.valid) {
-          throw new Error(validation.error);
+        // Basic validation - you can replace this with your Lightning service
+        if (!paymentData || paymentData.trim().length === 0) {
+          throw new Error(this.$t('Invalid payment data'));
         }
 
         // Emit the detected payment data to parent component
         this.$emit('payment-detected', {
           data: paymentData,
-          type: validation.type
+          type: this.determinePaymentType(paymentData)
         });
 
         this.closeModal();
@@ -275,6 +282,27 @@ export default {
       } catch (error) {
         throw error;
       }
+    },
+
+    determinePaymentType(data) {
+      const trimmed = data.trim().toLowerCase();
+      if (trimmed.startsWith('lnbc')) return 'invoice';
+      if (trimmed.includes('@') && trimmed.includes('.')) return 'lightning_address';
+      if (trimmed.startsWith('lnurl')) return 'lnurl';
+      return 'unknown';
+    },
+
+    validatePaymentInput(input) {
+      if (!input || input.trim().length === 0) {
+        return this.$t('Please enter a payment request');
+      }
+
+      const trimmed = input.trim().toLowerCase();
+      const isValid = trimmed.startsWith('lnbc') ||
+        (trimmed.includes('@') && trimmed.includes('.')) ||
+        trimmed.startsWith('lnurl');
+
+      return isValid ? true : this.$t('Invalid payment format');
     },
 
     showManualInput() {
@@ -290,7 +318,7 @@ export default {
         } else {
           this.$q.notify({
             type: 'info',
-            message: 'Clipboard is empty',
+            message: this.$t('Clipboard is empty'),
             position: 'top'
           });
         }
@@ -298,14 +326,13 @@ export default {
         console.error('Clipboard error:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to read clipboard',
+          message: this.$t('Failed to read clipboard'),
           position: 'top'
         });
       }
     },
 
     importFromFile() {
-      // Create file input for QR code image import
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
@@ -313,31 +340,21 @@ export default {
         const file = event.target.files[0];
         if (file) {
           try {
-            // This would require a QR code reader library for images
             this.$q.notify({
               type: 'info',
-              message: 'QR code import from images coming soon!',
+              message: this.$t('QR code import from images coming soon!'),
               position: 'top'
             });
           } catch (error) {
             this.$q.notify({
               type: 'negative',
-              message: 'Failed to read QR code from image',
+              message: this.$t('Failed to read QR code from image'),
               position: 'top'
             });
           }
         }
       };
       input.click();
-    },
-
-    validatePaymentInput(input) {
-      if (!input || input.trim().length === 0) {
-        return 'Please enter a payment request';
-      }
-
-      const validation = LightningPaymentService.validatePaymentInput(input.trim());
-      return validation.valid ? true : validation.error;
     },
 
     async processManualInput() {
@@ -382,13 +399,20 @@ export default {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #000000;
-  color: white;
+}
+
+.send-card-dark {
+  background: #0C0C0C;
+  color: #FFF;
+}
+
+.send-card-light {
+  background: #FFF;
+  color: #212121;
 }
 
 /* Header */
 .send-header {
-  background: rgba(0, 0, 0, 0.8);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem;
   flex-shrink: 0;
@@ -403,13 +427,10 @@ export default {
 }
 
 .back-btn {
-  color: white;
+  color: inherit;
 }
 
 .header-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: white;
   flex: 1;
   text-align: center;
 }
@@ -423,6 +444,7 @@ export default {
   flex: 1;
   position: relative;
   overflow: hidden;
+  background: #000;
 }
 
 .camera-view {
@@ -447,7 +469,9 @@ export default {
 
 .processing-text {
   color: white;
-  font-size: 1.125rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 500;
   margin-top: 1rem;
 }
 
@@ -467,7 +491,8 @@ export default {
 }
 
 .error-title {
-  font-size: 1.25rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 20px;
   font-weight: 600;
   color: white;
   margin: 1rem 0 0.5rem;
@@ -475,14 +500,14 @@ export default {
 
 .error-subtitle {
   color: #9ca3af;
-  font-size: 0.875rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
   margin-bottom: 1.5rem;
   line-height: 1.5;
 }
 
 .retry-btn {
-  border-color: #059573;
-  color: #059573;
+  border-radius: 24px;
 }
 
 /* Scanning Frame */
@@ -500,7 +525,7 @@ export default {
   position: absolute;
   width: 30px;
   height: 30px;
-  border: 3px solid #059573;
+  border: 3px solid #15DE72;
 }
 
 .frame-corner.top-left {
@@ -533,7 +558,6 @@ export default {
 
 /* Bottom Actions */
 .send-actions {
-  background: rgba(0, 0, 0, 0.9);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem;
   flex-shrink: 0;
@@ -549,13 +573,26 @@ export default {
   flex: 1;
   height: 80px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
   transition: all 0.2s ease;
 }
 
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+.action-btn-dark {
+  background: rgba(42, 52, 42, 0.5);
+  color: white;
+}
+
+.action-btn-light {
+  background: rgba(0, 0, 0, 0.05);
+  color: #212121;
+}
+
+.action-btn-dark:hover {
+  background: rgba(42, 52, 42, 0.8);
+  transform: translateY(-2px);
+}
+
+.action-btn-light:hover {
+  background: rgba(0, 0, 0, 0.1);
   transform: translateY(-2px);
 }
 
@@ -567,13 +604,13 @@ export default {
 }
 
 .btn-icon {
-  color: #9ca3af;
+  color: #15DE72;
 }
 
 .btn-label {
-  font-size: 0.875rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
   font-weight: 500;
-  color: white;
 }
 
 /* Manual Input Dialog */
@@ -584,21 +621,18 @@ export default {
 .manual-card {
   width: 100%;
   max-width: 500px;
-  border-radius: 16px;
+  border-radius: 24px;
 }
 
 .manual-header {
-  background: #f8f9fa;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .manual-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1f2937;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .close-btn {
@@ -628,18 +662,18 @@ export default {
   align-items: center;
   gap: 0.75rem;
   color: #6b7280;
-  font-size: 0.875rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
 }
 
 .help-icon {
-  color: #059573;
+  color: #15DE72;
   font-size: 16px;
   width: 16px;
 }
 
 .manual-actions {
-  background: #f8f9fa;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid;
 }
 
 /* Responsive Design */
@@ -648,19 +682,19 @@ export default {
     width: 200px;
     height: 200px;
   }
-  
+
   .action-buttons {
     gap: 0.5rem;
   }
-  
+
   .action-btn {
     height: 70px;
   }
-  
+
   .btn-label {
-    font-size: 0.75rem;
+    font-size: 12px;
   }
-  
+
   .manual-content {
     padding: 1rem;
   }

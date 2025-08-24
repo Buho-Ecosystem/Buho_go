@@ -1,0 +1,27 @@
+$dark: #0C0C0C;
+
+$indigo: #253C5B;
+$light-blue: #A5C1E1;
+$grey: #D1D5DB;
+$white: #FFFFFF;
+
+$black: #212121;
+$blue-grey: #6B7280;
+
+$grey-1: #E5E7EB;
+$blue: #3B82F6;
+
+$positive: #5ca866;
+$info: #4b99c7;
+$warning: #AFF24B;
+$negative: #d45d5d;
+
+
+@font-face {
+  font-family: 'Inter', sans-serif;
+  src: url("../fonts/Inter.ttf");
+}
+
+* {
+  font-family: 'Inter', sans-serif;
+}

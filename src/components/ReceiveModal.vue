@@ -1,33 +1,37 @@
 <template>
-  <q-dialog 
-    v-model="show" 
-    persistent 
-    maximized 
-    transition-show="slide-up" 
+  <q-dialog
+    v-model="show"
+    persistent
+    maximized
+    transition-show="slide-up"
     transition-hide="slide-down"
     class="receive-modal"
   >
-    <q-card class="receive-card">
+    <q-card class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <!-- Header -->
-      <q-card-section class="receive-header">
+      <q-card-section class="receive-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
         <div class="header-content">
-          <q-btn 
-            flat 
-            round 
-            dense 
-            icon="las la-arrow-left" 
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-arrow-left"
             @click="closeModal"
             class="back-btn"
+            :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
           />
-          <div class="header-title">Receive</div>
+          <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+            {{ $t('Receive') }}
+          </div>
           <div class="header-actions">
-            <q-btn 
-              flat 
-              round 
-              dense 
-              icon="las la-at" 
+            <q-btn
+              flat
+              round
+              dense
+              icon="las la-at"
               @click="showLightningAddress"
               class="address-btn"
+              :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
             />
           </div>
         </div>
@@ -39,28 +43,33 @@
         <div class="amount-icon-section" v-if="!generatedInvoice">
           <div class="amount-icon">
             <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z" fill="#E5E7EB"/>
+              <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"
+                    :fill="$q.dark.isActive ? '#2A342A' : '#E5E7EB'"/>
             </svg>
           </div>
         </div>
-        
-        <!-- QR Code Display (after invoice creation) -->
+
+        <!-- QR Code Display -->
         <div class="qr-display-section" v-if="generatedInvoice">
           <div class="qr-container" @click="copyInvoice">
-            <div class="qr-wrapper">
-              <vue-qrcode 
-                :value="generatedInvoice.payment_request" 
+            <div class="qr-wrapper" :class="$q.dark.isActive ? 'qr-wrapper-dark' : 'qr-wrapper-light'">
+              <vue-qrcode
+                :value="generatedInvoice.payment_request"
                 :options="{ width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } }"
                 class="qr-code"
               />
             </div>
+            <div class="qr-hint" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'">
+              {{ $t('Tap to copy') }}
+            </div>
           </div>
         </div>
 
-        <!-- Amount Section (only show before invoice creation) -->
+        <!-- Amount Section -->
         <div class="amount-section" v-if="!generatedInvoice">
           <!-- Currency Toggle -->
-          <div class="currency-toggle" @click="toggleCurrency">
+          <div class="currency-toggle" @click="toggleCurrency"
+               :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
             <span class="currency-label">{{ currentCurrency }}</span>
             <q-icon name="las la-redo-alt" class="toggle-icon"/>
           </div>
@@ -68,8 +77,9 @@
           <!-- Amount Input -->
           <div class="amount-input-container">
             <div class="amount-display">
-              <span class="currency-symbol">{{ getCurrencySymbol() }}</span>
-              <input 
+              <span class="currency-symbol"
+                    :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">{{ getCurrencySymbol() }}</span>
+              <input
                 v-model="displayAmount"
                 @input="onAmountChange"
                 @focus="onAmountFocus"
@@ -77,21 +87,25 @@
                 type="text"
                 inputmode="decimal"
                 class="amount-input"
+                :class="$q.dark.isActive ? 'amount-input-dark' : 'amount-input-light'"
                 :placeholder="getAmountPlaceholder()"
               />
             </div>
           </div>
         </div>
 
-        <!-- Description Section (only show before invoice creation) -->
+        <!-- Description Section -->
         <div class="description-section" v-if="!generatedInvoice">
-          <div class="description-label">Description (optional)</div>
+          <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Description (optional)') }}
+          </div>
           <div class="description-input-container">
-            <input 
+            <input
               v-model="description"
               type="text"
-              placeholder="No description"
+              :placeholder="$t('No description')"
               class="description-input"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
               maxlength="100"
             />
           </div>
@@ -102,16 +116,17 @@
       <q-card-section class="receive-footer" v-if="!generatedInvoice">
         <q-btn
           class="create-invoice-btn"
+          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           :loading="isCreatingInvoice"
           @click="createInvoice"
           :disable="!isValidAmount"
           no-caps
           unelevated
         >
-          <span v-if="!isCreatingInvoice">Create Invoice</span>
+          <span v-if="!isCreatingInvoice">{{ $t('Create Invoice') }}</span>
           <template v-slot:loading>
             <q-spinner-dots class="q-mr-sm"/>
-            Creating...
+            {{ $t('Creating...') }}
           </template>
         </q-btn>
       </q-card-section>
@@ -121,7 +136,7 @@
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
-import { webln } from "@getalby/sdk";
+import {webln} from "@getalby/sdk";
 
 export default {
   name: 'ReceiveModal',
@@ -169,6 +184,7 @@ export default {
     }
   },
   methods: {
+    // ... (keeping all existing methods from the original component)
     loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
       if (savedState) {
@@ -214,24 +230,6 @@ export default {
       }
     },
 
-    getCurrencyLabel() {
-      switch (this.currentCurrency) {
-        case 'sats':
-          return 'sats';
-        case 'btc':
-          return '₿';
-        case 'usd':
-          return '$';
-        case 'eur':
-          return '€';
-        case 'gbp':
-          return '£';
-        case 'jpy':
-          return '¥';
-        default:
-          return '$';
-      }
-    },
     getAmountPlaceholder() {
       switch (this.currentCurrency) {
         case 'sats':
@@ -258,7 +256,7 @@ export default {
 
     convertAmount() {
       const amount = parseFloat(this.displayAmount) || 0;
-      
+
       switch (this.currentCurrency) {
         case 'sats':
           this.amountInSats = Math.floor(amount);
@@ -296,67 +294,35 @@ export default {
     async createInvoice() {
       if (!this.isValidAmount) return;
 
-      console.log('🚀 Starting invoice creation process');
-      console.log('📊 Invoice details:', {
-        amountInSats: this.amountInSats,
-        description: this.description,
-        currentCurrency: this.currentCurrency,
-        displayAmount: this.displayAmount
-      });
-
       this.isCreatingInvoice = true;
       try {
-        console.log('🔍 Looking for active wallet...');
         const activeWallet = this.walletState.connectedWallets?.find(
           w => w.id === this.walletState.activeWalletId
         );
 
         if (!activeWallet) {
-          console.error('❌ No active wallet found');
           throw new Error('No active wallet found');
         }
 
-        console.log('✅ Active wallet found:', {
-          id: activeWallet.id,
-          name: activeWallet.name,
-          type: activeWallet.type
-        });
-
-        console.log('🔌 Creating NWC connection...');
         const nwc = new webln.NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
 
-        console.log('🔓 Enabling NWC connection...');
         await nwc.enable();
-        console.log('✅ NWC connection enabled successfully');
 
         const invoiceRequest = {
           amount: this.amountInSats,
           description: this.description || 'BuhoGO Payment',
-          expiry: 3600 // 1 hour expiry
+          expiry: 3600
         };
 
-        console.log('📝 Creating invoice with request:', invoiceRequest);
         const invoice = await nwc.makeInvoice(invoiceRequest);
-        
-        console.log('✅ Invoice created successfully:', {
-          paymentRequest: invoice.paymentRequest ? 'Present' : 'Missing',
-          payment_request: invoice.payment_request ? 'Present' : 'Missing',
-          payment_hash: invoice.payment_hash ? 'Present' : 'Missing',
-          amount: invoice.amount,
-          description: invoice.description,
-          expires_at: invoice.expires_at
-        });
 
-        // Validate the invoice has required fields (check both possible property names)
         const paymentRequest = invoice.paymentRequest || invoice.payment_request;
         if (!paymentRequest) {
-          console.error('❌ Invoice missing payment_request field:', invoice);
           throw new Error('Invalid invoice: missing payment request');
         }
 
-        // Ensure the invoice has the correct structure
         const processedInvoice = {
           payment_request: paymentRequest,
           payment_hash: invoice.payment_hash || invoice.paymentHash,
@@ -366,43 +332,27 @@ export default {
           created_at: Math.floor(Date.now() / 1000)
         };
 
-        console.log('📦 Processed invoice:', processedInvoice);
-
-        // Store the invoice to show QR code
         this.generatedInvoice = processedInvoice;
-        
-        console.log('💾 Invoice stored in component state');
-
-        // Emit to parent component
         this.$emit('invoice-created', processedInvoice);
-        console.log('📡 Invoice-created event emitted to parent');
+
         this.$q.notify({
           type: 'positive',
-          message: 'Invoice created successfully!',
+          message: this.$t('Invoice created successfully!'),
           position: 'top'
         });
-        
-        console.log('🎉 Invoice creation process completed successfully');
 
       } catch (error) {
-        console.error('❌ Error creating invoice:', {
-          message: error.message,
-          stack: error.stack,
-          error: error
-        });
-        
+        console.error('Error creating invoice:', error);
+
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to create invoice: ' + error.message,
+          message: this.$t('Failed to create invoice: ') + error.message,
           position: 'top'
         });
-        
-        // Reset the generated invoice on error
+
         this.generatedInvoice = null;
-        console.log('🔄 Reset generatedInvoice due to error');
       } finally {
         this.isCreatingInvoice = false;
-        console.log('🏁 Invoice creation process finished, loading state reset');
       }
     },
 
@@ -413,50 +363,23 @@ export default {
         await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
         this.$q.notify({
           type: 'positive',
-          message: 'Lightning invoice copied!',
+          message: this.$t('Lightning invoice copied!'),
           position: 'top'
         });
       } catch (error) {
         console.error('Failed to copy invoice:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to copy invoice',
+          message: this.$t('Failed to copy invoice'),
           position: 'top'
         });
       }
     },
 
-    async shareInvoice() {
-      if (!this.generatedInvoice) return;
-
-      try {
-        if (navigator.share) {
-          await navigator.share({
-            title: 'Lightning Invoice',
-            text: 'Pay this Lightning invoice',
-            url: `lightning:${this.generatedInvoice.payment_request}`
-          });
-        } else {
-          await this.copyInvoice();
-        }
-      } catch (error) {
-        console.error('Failed to share invoice:', error);
-      }
-    },
-
-    saveQR() {
-      // Implementation for saving QR code as image
-      this.$q.notify({
-        type: 'info',
-        message: 'QR code save feature coming soon!',
-        position: 'top'
-      });
-    },
-
     showLightningAddress() {
       this.$q.notify({
         type: 'info',
-        message: 'Lightning address feature coming soon!',
+        message: this.$t('Lightning address feature coming soon!'),
         position: 'top'
       });
     }
@@ -474,15 +397,21 @@ export default {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f8f9fa;
 }
 
 /* Header */
 .receive-header {
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid;
   padding: 0.75rem 1rem;
   flex-shrink: 0;
+}
+
+.header-dark {
+  border-bottom-color: #2A342A;
+}
+
+.header-light {
+  border-bottom-color: #E5E7EB;
 }
 
 .header-content {
@@ -492,25 +421,21 @@ export default {
   height: 44px;
 }
 
-.back-btn {
-  color: #1f2937;
-  font-size: 1.25rem;
-  width: 40px;
-  height: 40px;
+.back-btn-dark {
+  color: #FFF;
+}
+
+.back-btn-light {
+  color: #212121;
 }
 
 .header-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1f2937;
   flex: 1;
   text-align: center;
   margin: 0 1rem;
 }
 
 .address-btn {
-  color: #6b7280;
-  font-size: 1rem;
   width: 40px;
   height: 40px;
 }
@@ -538,10 +463,11 @@ export default {
   opacity: 0.3;
 }
 
-/* QR Display Section (after invoice creation) */
+/* QR Display Section */
 .qr-display-section {
   flex: 1;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 2rem;
@@ -550,6 +476,9 @@ export default {
 .qr-container {
   cursor: pointer;
   transition: transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .qr-container:hover {
@@ -560,32 +489,38 @@ export default {
   transform: scale(0.98);
 }
 
-.qr-wrapper {
-  background: white;
-  border-radius: 12px;
+.qr-wrapper-dark {
+  background: #FFF;
+  border-radius: 16px;
+  border: 1px solid #2A342A;
   padding: 1rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   max-width: 240px;
   width: 100%;
-  position: relative;
 }
 
-.qr-wrapper::after {
-  content: 'Tap to copy';
-  position: absolute;
-  bottom: -1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.75rem;
-  color: #9ca3af;
+.qr-wrapper-light {
+  background: #FFF;
+  border-radius: 16px;
+  border: 1px solid #E5E7EB;
+  padding: 1rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  max-width: 240px;
+  width: 100%;
+}
+
+.qr-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 1rem;
   opacity: 0.7;
 }
 
 .qr-code {
   width: 100%;
   height: auto;
-  border-radius: 4px;
+  border-radius: 8px;
 }
 
 /* Amount Section */
@@ -598,11 +533,11 @@ export default {
   justify-content: center;
 }
 
-.currency-toggle {
+.currency-toggle-dark {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: #e5e7eb;
+  background: #2A342A;
   padding: 0.375rem 0.75rem;
   border-radius: 16px;
   cursor: pointer;
@@ -611,20 +546,38 @@ export default {
   width: fit-content;
 }
 
-.currency-toggle:hover {
-  background: #d1d5db;
+.currency-toggle-light {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #E5E7EB;
+  padding: 0.375rem 0.75rem;
+  border-radius: 16px;
+  cursor: pointer;
+  margin: 0 auto 1.5rem;
+  transition: background-color 0.2s;
+  width: fit-content;
+}
+
+.currency-toggle-dark:hover {
+  background: #1F231F;
+}
+
+.currency-toggle-light:hover {
+  background: #D1D5DB;
 }
 
 .currency-label {
-  font-size: 0.8125rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
   font-weight: 500;
-  color: #6b7280;
+  color: #B0B0B0;
   text-transform: uppercase;
   letter-spacing: 0.025em;
 }
 
 .toggle-icon {
-  color: #6b7280;
+  color: #B0B0B0;
   font-size: 12px;
 }
 
@@ -641,15 +594,15 @@ export default {
 }
 
 .currency-symbol {
+  font-family: Fustat, 'Inter', sans-serif;
   font-size: 2.5rem;
   font-weight: 300;
-  color: #9ca3af;
 }
 
 .amount-input {
+  font-family: Fustat, 'Inter', sans-serif;
   font-size: 2.75rem;
   font-weight: 300;
-  color: #374151;
   border: none;
   outline: none;
   background: transparent;
@@ -657,8 +610,16 @@ export default {
   min-width: 200px;
 }
 
+.amount-input-dark {
+  color: #FFF;
+}
+
+.amount-input-light {
+  color: #374151;
+}
+
 .amount-input::placeholder {
-  color: #d1d5db;
+  color: #B0B0B0;
 }
 
 /* Description Section */
@@ -668,10 +629,14 @@ export default {
 }
 
 .description-label {
-  font-size: 0.9375rem;
-  color: #6b7280;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
   margin-bottom: 0.75rem;
   text-align: center;
+}
+
+.view_title_dark {
+  color: #B0B0B0;
 }
 
 .description-input-container {
@@ -682,21 +647,20 @@ export default {
 .description-input {
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: white;
-  font-size: 0.9375rem;
-  color: #374151;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
 }
 
 .description-input:focus {
-  border-color: #9ca3af;
+  border-color: #15DE72;
 }
 
 .description-input::placeholder {
-  color: #d1d5db;
+  color: #B0B0B0;
 }
 
 /* Footer */
@@ -708,26 +672,13 @@ export default {
 .create-invoice-btn {
   width: 100%;
   height: 52px;
-  background: #374151;
-  color: white;
-  border-radius: 12px;
-  font-size: 1.0625rem;
-  font-weight: 600;
+  border-radius: 24px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
   transition: all 0.2s ease;
   border: none;
   cursor: pointer;
-}
-
-.create-invoice-btn:hover {
-  background: #4b5563;
-  transform: translateY(-1px);
-}
-
-.create-invoice-btn:disabled {
-  background: #d1d5db;
-  color: #9ca3af;
-  transform: none;
-  cursor: not-allowed;
 }
 
 /* Responsive Design */
@@ -735,48 +686,48 @@ export default {
   .receive-content {
     padding: 1.5rem 1rem;
   }
-  
+
   .qr-display-section {
     padding: 1rem;
   }
-  
+
   .amount-icon-section {
     margin-bottom: 1.5rem;
   }
-  
-  .qr-wrapper {
+
+  .qr-wrapper-dark,
+  .qr-wrapper-light {
     padding: 0.75rem;
     max-width: 200px;
   }
-  
+
   .amount-input {
     font-size: 2.25rem;
     min-width: 160px;
   }
-  
+
   .currency-symbol {
     font-size: 2rem;
   }
-  
+
   .amount-section {
     margin-bottom: 1.5rem;
   }
-  
+
   .description-section {
     margin-bottom: 1.5rem;
   }
-  
+
   .description-input-container {
     max-width: 280px;
   }
-  
+
   .receive-footer {
     padding: 0.75rem 1rem 1.25rem;
   }
-  
+
   .create-invoice-btn {
     height: 48px;
-    font-size: 1rem;
   }
 }
 </style>

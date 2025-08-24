@@ -1,26 +1,32 @@
 <template>
   <!-- Loading Screen -->
-  <LoadingScreen 
-    :show="showLoadingScreen" 
+  <LoadingScreen
+    :show="showLoadingScreen"
     :loading-text="loadingText"
   />
-  
-  <q-page class="wallet-connect-page flex flex-center" :class="{ 'bg-dark': $q.dark.isActive }">
+
+  <q-page class="wallet-connect-page flex flex-center" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
     <div class="container">
 
-      <q-card class="connect-card" :class="{ 'dark-card': $q.dark.isActive }" v-if="!showScanner">
-        <q-card-section class="card-header text-center" :class="{ 'dark-header': $q.dark.isActive }">
-          <svg xmlns="http://www.w3.org/2000/svg" width="30" height="32" viewBox="0 0 30 32" fill="none">
-            <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                  fill="#059573"/>
-            <path
-              d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-              fill="#78D53C"/>
-            <path
-              d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-              fill="#43B65B"/>
-          </svg>
-          <span class="title q-pl-md">BuhoGO</span>
+      <q-card
+        class="connect-card"
+        :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+        v-if="!showScanner"
+      >
+        <q-card-section class="card-header">
+          <div class="header-logo">
+            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="32" viewBox="0 0 30 32" fill="none">
+              <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
+                    fill="#059573"/>
+              <path
+                d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
+                fill="#15DE72"/>
+              <path
+                d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
+                fill="#43B65B"/>
+            </svg>
+            <span class="app-title">BuhoGO</span>
+          </div>
         </q-card-section>
 
         <q-card-section class="q-pt-none">
@@ -28,116 +34,174 @@
             <div class="nwc-logo-bg">
               <img
                 src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/nwc-logo%282%29-SauOakNKbFy43ZsU4o8BRAXRgPrbcJ.png"
-                alt="NWC Logo" class="nwc-logo" :class="{ 'dark-logo': !$q.dark.isActive }">
+                alt="NWC Logo"
+                class="nwc-logo"
+              >
             </div>
           </div>
-          <div class="text-h6 text-center q-mb-sm welcome-title">Connect Your Wallet</div>
-          <div class="text-center q-mb-lg welcome-subtitle" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
-            Enter your wallet's connection link or scan a QR code to get started
+
+          <div class="welcome-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+            {{ $t('Connect Your Wallet') }}
+          </div>
+
+          <div class="welcome-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Enter your wallet\'s connection link or scan a QR code to get started') }}
           </div>
 
           <q-input
             v-model="nwcString"
-            outlined
-            placeholder="Paste your wallet connection link here"
+            :placeholder="$t('Paste your wallet connection link here')"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            input-class="q-px-md"
+            borderless
+            dense
             class="q-mb-md"
-            :dark="$q.dark.isActive"
           />
 
           <div class="button-row">
             <q-btn
               class="connect-btn-inline"
+              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
               :loading="isConnecting"
               @click="connectWallet"
               no-caps
               unelevated
             >
-              <span v-if="!isConnecting">Connect Wallet</span>
+              <span v-if="!isConnecting">{{ $t('Connect Wallet') }}</span>
               <template v-slot:loading>
                 <q-spinner-dots class="q-mr-sm"/>
-                Connecting...
+                {{ $t('Connecting...') }}
               </template>
             </q-btn>
-            
+
             <q-btn
               unelevated
               class="scan-qr-btn-inline"
+              :class="$q.dark.isActive ? 'btn_dark' : 'btn_light'"
               @click="showScanner = true"
               no-caps
             >
               <q-icon name="las la-qrcode" class="q-mr-sm"/>
-              Scan QR
+              {{ $t('Scan QR') }}
             </q-btn>
           </div>
         </q-card-section>
 
       </q-card>
 
-      <q-card class="connect-card" :class="{ 'dark-card': $q.dark.isActive }" v-else>
-        <q-card-section class="card-header" :class="{ 'dark-header': $q.dark.isActive }">
-          <h2 class="text-h5 text-weight-bold scanner-title">Scan QR Code</h2>
-          <p class="text-subtitle2 scanner-subtitle" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
-            Point your camera at the QR code from your wallet app
-          </p>
+      <q-card
+        class="connect-card"
+        :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+        v-else
+      >
+        <q-card-section class="card-header">
+          <div class="scanner-header">
+            <q-btn
+              flat
+              round
+              dense
+              icon="las la-arrow-left"
+              @click="showScanner = false"
+              class="back-btn"
+              :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
+            />
+            <div class="scanner-title-container">
+              <div class="scanner-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+                {{ $t('Scan QR Code') }}
+              </div>
+              <div class="scanner-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+                {{ $t('Point your camera at the QR code from your wallet app') }}
+              </div>
+            </div>
+            <div class="header-spacer"></div>
+          </div>
         </q-card-section>
 
         <q-card-section class="q-pt-none">
-          <div class="qr-scanner-container" :class="{ 'dark-scanner': $q.dark.isActive }">
+          <div class="qr-scanner-container" :class="$q.dark.isActive ? 'scanner-dark' : 'scanner-light'">
             <qrcode-capture
               @detect="handleNWCScan"
-              style="border-radius: 8px !important;"
+              style="border-radius: 16px !important;"
               :capture="null"
             />
             <div v-if="isScanning" class="scan-overlay">
-              <q-spinner-dots color="primary" size="2em"/>
-              <p class="text-white q-mt-sm">Scanning NWC QR code...</p>
+              <q-spinner-dots color="#15DE72" size="2em"/>
+              <p class="scan-overlay-text">{{ $t('Scanning NWC QR code...') }}</p>
+            </div>
+
+            <!-- Scanning Frame -->
+            <div class="scanning-frame">
+              <div class="frame-corner top-left"></div>
+              <div class="frame-corner top-right"></div>
+              <div class="frame-corner bottom-left"></div>
+              <div class="frame-corner bottom-right"></div>
             </div>
           </div>
         </q-card-section>
 
-        <q-card-section class="card-footer" :class="{ 'dark-footer': $q.dark.isActive }">
+        <q-card-section class="card-footer">
           <q-btn
             unelevated
-            class="full-width"
-            label="Cancel"
+            class="full-width cancel-btn"
+            :class="$q.dark.isActive ? 'more_btn_dark' : 'more_btn_light'"
+            :label="$t('Cancel')"
             @click="showScanner = false"
-            color="grey-6"
+            no-caps
           />
         </q-card-section>
       </q-card>
 
       <!-- Add Wallet Name Dialog -->
-      <q-dialog v-model="showNameDialog">
-        <q-card class="name-dialog" :dark="$q.dark.isActive">
-          <q-card-section class="dialog-header" :class="{ 'dark-dialog-header': $q.dark.isActive }">
-            <div class="text-h6 dialog-title">Name Your Wallet</div>
+      <q-dialog v-model="showNameDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+        <q-card class="name-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+          <q-card-section class="dialog-header">
+            <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+              {{ $t('Name Your Wallet') }}
+            </div>
+            <q-btn
+              flat
+              round
+              dense
+              icon="close"
+              v-close-popup
+              class="close-btn"
+              :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+            />
           </q-card-section>
 
           <q-card-section class="dialog-content">
             <q-input
               v-model="walletName"
-              outlined
-              label="Wallet Name"
-              placeholder="My Lightning Wallet"
-              :rules="[val => !!val || 'Wallet name is required']"
+              :placeholder="$t('My Lightning Wallet')"
+              :rules="[val => !!val || $t('Wallet name is required')]"
               autofocus
-              :dark="$q.dark.isActive"
-              class="wallet-name-input"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              borderless
+              input-class="q-px-md"
+              dense
+              hide-bottom-space
             />
-            <div class="input-hint">
-              Choose a name to easily identify this wallet
+            <div class="input-hint" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Choose a name to easily identify this wallet') }}
             </div>
           </q-card-section>
 
-          <q-card-actions align="right">
-            <q-btn flat label="Cancel" color="grey-7" v-close-popup class="cancel-btn"/>
-            <q-btn 
-              unelevated 
-              label="Continue" 
-              color="primary" 
-              @click="proceedWithConnection" 
+          <q-card-actions align="right" class="dialog-actions">
+            <q-btn
+              flat
+              :label="$t('Cancel')"
+              v-close-popup
+              class="cancel-action-btn"
+              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+            />
+            <q-btn
+              unelevated
+              :label="$t('Continue')"
+              @click="proceedWithConnection"
               :disable="!walletName"
-              class="continue-btn"
+              class="continue-action-btn"
+              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+              no-caps
             />
           </q-card-actions>
         </q-card>
@@ -150,8 +214,8 @@
 import {webln} from "@getalby/sdk";
 import {QrcodeStream, QrcodeDropZone, QrcodeCapture} from 'vue-qrcode-reader'
 import LoadingScreen from '../components/LoadingScreen.vue'
-import { useWalletStore } from '../stores/wallet'
-import { mapActions } from 'pinia'
+import {useWalletStore} from '../stores/wallet'
+import {mapActions} from 'pinia'
 
 export default {
   name: 'WalletConnectPage',
@@ -185,10 +249,9 @@ export default {
       const existingState = localStorage.getItem('buhoGO_wallet_store');
       if (existingState) {
         this.loadingText = 'Checking wallet state...';
-        
-        // Show loading screen only when wallet exists
+
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         const walletInfo = JSON.parse(existingState);
         if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
           this.loadingText = 'Loading wallet...';
@@ -197,51 +260,44 @@ export default {
           return;
         }
       }
-      
-      // No wallet found, hide loading screen immediately
+
       this.showLoadingScreen = false;
     },
-    
+
     async connectWallet() {
       if (!this.nwcString.trim()) return
 
-      // Show name dialog first
       this.showNameDialog = true
     },
+
     async proceedWithConnection() {
       if (!this.walletName.trim()) return
 
       this.showLoadingScreen = true;
       this.loadingText = 'Connecting to wallet...';
-      
+
       this.isConnecting = true
       this.showNameDialog = false
 
       try {
         this.loadingText = 'Verifying connection...';
 
-
-
-
-        // Add wallet using Pinia store
         await this.addWallet({
           name: this.walletName,
           nwcUrl: this.nwcString
         })
 
-        // Reset wallet name
         this.walletName = ''
 
         this.loadingText = 'Loading wallet interface...';
         await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Navigate to wallet dashboard
+
         this.$router.push('/wallet')
       } catch (error) {
         console.error('Error connecting wallet:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to connect wallet: ' + error.message,
+          message: this.$t('Failed to connect wallet: ') + error.message,
           position: 'top'
         });
       } finally {
@@ -249,17 +305,16 @@ export default {
         this.showLoadingScreen = false;
       }
     },
+
     async handleNWCScan(result) {
       this.isScanning = true;
       this.scanError = null;
 
       try {
-        // Check if the scanned QR code is an NWC connection string
         if (!result.startsWith('nostr+walletconnect://')) {
-          throw new Error('Invalid NWC QR code format');
+          throw new Error(this.$t('Invalid NWC QR code format'));
         }
 
-        // Set the NWC string and connect
         this.nwcString = result;
         this.showScanner = false;
         await this.connectWallet();
@@ -269,7 +324,7 @@ export default {
         this.scanError = error.message;
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to scan QR code: ' + error.message,
+          message: this.$t('Failed to scan QR code: ') + error.message,
           position: 'top'
         });
       } finally {
@@ -283,13 +338,17 @@ export default {
 <style scoped>
 .wallet-connect-page {
   min-height: 100vh;
-  background: #f5f5f5;
   padding: 1rem;
 }
 
-.wallet-connect-page.bg-dark {
-  background: #1a1a1a;
-  color: #e0e0e0;
+.bg-dark {
+  background: #0C0C0C;
+  color: #FFF;
+}
+
+.bg-light {
+  background: #F8F8F8;
+  color: #212121;
 }
 
 .container {
@@ -298,89 +357,78 @@ export default {
   margin: 0 auto;
 }
 
-.header {
+/* Header Styling */
+.card-header {
+  padding: 1.5rem 1rem 1rem;
+  text-align: center;
+}
+
+.header-logo {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
 }
 
-.logo-container {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.logo {
-  width: 32px;
-  height: 32px;
-}
-
-.title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #059573, #10b981, #34d399, #06b6d4, #0891b2, #0284c7);
-  background-size: 400% 400%;
-  animation: gradientShift 6s ease-in-out infinite;
+.app-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 100%;
+  background: linear-gradient(90deg, #059573 0%, #15DE72 50%, #78D53C 100%);
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease-in-out infinite;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin: 0;
 }
 
 @keyframes gradientShift {
-  0% {
-    background-position: 0% 0%;
-  }
-  25% {
-    background-position: 100% 0%;
+  0%, 100% {
+    background-position: 0% 50%;
   }
   50% {
-    background-position: 100% 100%;
-  }
-  75% {
-    background-position: 0% 100%;
-  }
-  100% {
-    background-position: 0% 0%;
+    background-position: 100% 50%;
   }
 }
 
-.connect-card {
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  transform: translateY(0);
-  transition: all 0.3s ease;
+/* Scanner Header */
+.scanner-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  text-align: left;
 }
 
-.connect-card.dark-card {
-  background: #2a2a2a;
-  border: 1px solid #404040;
-  color: #e0e0e0;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+.back-btn-dark {
+  color: #FFF;
 }
 
-.card-header {
-  background: #ffffff;
-  border-bottom: 1px solid #e5e7eb;
-  text-align: center;
-  padding: 1.5rem 1rem 1rem;
+.back-btn-light {
+  color: #212121;
 }
 
-.card-header.dark-header {
-  background: #2a2a2a;
-  border-bottom: 1px solid #404040;
+.scanner-title-container {
+  flex: 1;
 }
 
-.gradient-text {
-  background: linear-gradient(135deg, #059573, #047857);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.scanner-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  margin-bottom: 0.5rem;
 }
 
+.scanner-subtitle {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.header-spacer {
+  width: 40px;
+}
+
+/* NWC Logo */
 .nwc-logo-container {
   display: flex;
   justify-content: center;
@@ -390,13 +438,13 @@ export default {
 .nwc-logo-bg {
   width: 100px;
   height: 100px;
-  background: linear-gradient(135deg, #059573, #06b6d4, #0891b2);
+  background: linear-gradient(135deg, #059573, #15DE72, #78D53C);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.3);
+  box-shadow: 0 4px 16px rgba(21, 222, 114, 0.3);
   position: relative;
   overflow: hidden;
 }
@@ -418,74 +466,44 @@ export default {
   object-fit: contain;
   position: relative;
   z-index: 1;
+  filter: brightness(1.1) contrast(1.1);
 }
 
-.nwc-logo.dark-logo {
-  filter: brightness(1.2) contrast(1.1);
-}
-
-/* Enhanced Typography */
+/* Typography */
 .welcome-title {
-  font-weight: 700;
-  color: #1f2937;
-  font-size: 1.375rem;
+  text-align: center;
   margin-bottom: 0.75rem;
 }
 
 .welcome-subtitle {
-  font-size: 1rem;
-  line-height: 1.5;
+  text-align: center;
   margin-bottom: 2rem;
   max-width: 320px;
   margin-left: auto;
   margin-right: auto;
 }
 
-/* Enhanced Input Styling */
-.q-input {
+.view_title_dark {
+  color: #B0B0B0;
+}
+
+/* Input Styling */
+.nwc-input {
   margin-bottom: 1.5rem;
 }
 
-.q-input :deep(.q-field__control) {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.1);
-  border: 2px solid rgba(5, 149, 115, 0.1);
-  transition: all 0.3s ease;
-}
-
-.q-input :deep(.q-field__control):hover {
-  border-color: rgba(5, 149, 115, 0.2);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15);
-}
-
-.q-input :deep(.q-field__control.q-field--focused) {
-  border-color: #059573;
-  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.25);
-}
-
-.q-input :deep(.q-field__native) {
-  font-size: 1rem;
+.nwc-input :deep(.q-field__control) {
+  border-radius: 20px;
   padding: 0.75rem 1rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
 }
 
-/* Enhanced Scan QR Button */
-.scan-qr-btn {
-  background: linear-gradient(135deg, #059573, #06b6d4);
-  color: white;
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
-  font-weight: 500;
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
-  transition: all 0.2s ease;
+.nwc-input :deep(.q-field__native) {
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
-.scan-qr-btn:hover {
-  background: linear-gradient(135deg, #047857, #0891b2);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.4);
-  transform: translateY(-1px);
-}
-
-/* Button Row Layout */
+/* Button Styling */
 .button-row {
   display: flex;
   gap: 0.75rem;
@@ -493,119 +511,44 @@ export default {
 }
 
 .connect-btn-inline {
-  flex: 2; /* 66% of space */
-  background: linear-gradient(135deg, #059573, #047857);
-  color: white;
-  border-radius: 12px;
-  padding: 0.875rem 1rem;
-  font-weight: 600;
-  font-size: 1rem;
-  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.4);
-  transition: all 0.3s ease;
+  flex: 2;
   height: 52px;
-}
-
-.connect-btn-inline:hover {
-  background: linear-gradient(135deg, #047857, #06b6d4);
-  box-shadow: 0 6px 20px rgba(5, 149, 115, 0.5);
-  transform: translateY(-2px);
-}
-
-.connect-btn-inline:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
+  border-radius: 24px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .scan-qr-btn-inline {
-  flex: 1; /* 33% of space */
-  background: linear-gradient(135deg, #3b82f6, #06b6d4);
-  color: white;
-  border-radius: 12px;
-  font-weight: 500;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-  transition: all 0.2s ease;
+  flex: 1;
   height: 52px;
+  border-radius: 20px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
   min-width: 0;
-  position: relative;
-  overflow: hidden;
 }
 
-.scan-qr-btn-inline::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.scan-qr-btn-inline:hover::before {
-  opacity: 1;
-}
-
-.scan-qr-btn-inline:hover {
-  background: linear-gradient(135deg, #2563eb, #0891b2);
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
-  transform: translateY(-1px);
-}
-
-.scan-qr-btn-inline:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
-
-.card-footer {
-  background: linear-gradient(135deg, rgba(248, 249, 250, 0.8), rgba(232, 245, 243, 0.6));
-  padding: 1rem;
-  border-top: 1px solid rgba(5, 149, 115, 0.1);
-}
-
-.card-footer.dark-footer {
-  background: linear-gradient(135deg, rgba(40, 40, 40, 0.8), rgba(26, 46, 42, 0.6));
-  border-top: 1px solid rgba(5, 149, 115, 0.2);
-}
-
-.connect-btn {
-  background: linear-gradient(135deg, #059573, #047857);
-  color: white;
-  border-radius: 12px;
-  padding: 1rem;
-  font-weight: 600;
-  font-size: 1.0625rem;
-  box-shadow: 0 4px 16px rgba(5, 149, 115, 0.4);
-  transition: all 0.3s ease;
-  height: 56px;
-}
-
-.connect-btn:hover {
-  background: linear-gradient(135deg, #047857, #06b6d4);
-  box-shadow: 0 6px 20px rgba(5, 149, 115, 0.5);
-  transform: translateY(-2px);
-}
-
-.connect-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
-}
-
+/* QR Scanner */
 .qr-scanner-container {
   height: 280px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #f8f9fa, #e8f5f3);
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
   position: relative;
-  border: 2px solid rgba(5, 149, 115, 0.1);
+  border: 2px solid;
 }
 
-.qr-scanner-container.dark-scanner {
-  background: linear-gradient(135deg, #2a2a2a, #1a2e2a);
-  border-color: rgba(5, 149, 115, 0.2);
+.scanner-dark {
+  background: #171717;
+  border-color: #2A342A;
+}
+
+.scanner-light {
+  background: #F8F9FA;
+  border-color: #E5E7EB;
 }
 
 .scan-overlay {
@@ -614,201 +557,231 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, rgba(5, 149, 115, 0.8), rgba(6, 182, 212, 0.7));
+  background: rgba(12, 12, 12, 0.8);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  z-index: 10;
   backdrop-filter: blur(4px);
 }
 
-.scan-overlay p {
-  font-size: 0.875rem;
-  margin: 0;
+.scan-overlay-text {
+  color: white;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0.5rem 0 0;
+}
+
+/* Scanning Frame */
+.scanning-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 200px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.frame-corner {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border: 3px solid #15DE72;
+}
+
+.frame-corner.top-left {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+
+.frame-corner.top-right {
+  top: 0;
+  right: 0;
+  border-left: none;
+  border-bottom: none;
+}
+
+.frame-corner.bottom-left {
+  bottom: 0;
+  left: 0;
+  border-right: none;
+  border-top: none;
+}
+
+.frame-corner.bottom-right {
+  bottom: 0;
+  right: 0;
+  border-left: none;
+  border-top: none;
+}
+
+/* Footer */
+.card-footer {
+  padding: 1rem;
+}
+
+.cancel-btn {
+  height: 48px;
+  border-radius: 12px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
   font-weight: 500;
 }
 
-/* Enhanced Scanner Styling */
-.scanner-title {
-  color: #1f2937;
-  margin-bottom: 0.5rem;
-}
-
-.scanner-subtitle {
-  line-height: 1.5;
-  max-width: 280px;
-  margin: 0 auto;
-}
-
-/* Enhanced Dialog Styling */
+/* Dialog Styling */
 .name-dialog {
   width: 100%;
   max-width: 400px;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(5, 149, 115, 0.2);
-  border: 1px solid rgba(5, 149, 115, 0.1);
+  border-radius: 24px;
 }
 
 .dialog-header {
-  background: linear-gradient(135deg, rgba(5, 149, 115, 0.08), rgba(6, 182, 212, 0.05));
-  border-bottom: 1px solid rgba(5, 149, 115, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 1.5rem;
+  border-bottom: 1px solid;
 }
 
-.dialog-header.dark-dialog-header {
-  background: linear-gradient(135deg, rgba(5, 149, 115, 0.15), rgba(6, 182, 212, 0.1));
-  border-bottom: 1px solid rgba(5, 149, 115, 0.2);
+.dialog-header {
+  border-bottom-color: #2A342A;
 }
 
-.dialog-title {
-  font-weight: 700;
-  color: #1f2937;
+.close-btn {
+  width: 32px;
+  height: 32px;
 }
 
 .dialog-content {
   padding: 1.5rem;
 }
 
+.wallet-name-input {
+  margin-bottom: 1rem;
+}
+
 .wallet-name-input :deep(.q-field__control) {
-  border-radius: 12px;
-  border: 2px solid rgba(5, 149, 115, 0.1);
-  transition: all 0.3s ease;
-}
-
-.wallet-name-input :deep(.q-field__control):hover {
-  border-color: rgba(5, 149, 115, 0.2);
-}
-
-.wallet-name-input :deep(.q-field__control.q-field--focused) {
-  border-color: #059573;
-  box-shadow: 0 0 0 3px rgba(5, 149, 115, 0.1);
+  border-radius: 20px;
+  padding: 0.75rem 1rem;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .input-hint {
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin-top: 0.5rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
   text-align: center;
+  margin-top: 0.5rem;
 }
 
-/* Enhanced Action Buttons */
-.cancel-btn {
-  color: #6b7280;
+.dialog-actions {
+  padding: 1rem 1.5rem 1.5rem;
+  gap: 0.75rem;
+}
+
+.cancel-action-btn {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
   font-weight: 500;
 }
 
-.continue-btn {
-  background: linear-gradient(135deg, #059573, #06b6d4);
-  color: white;
-  font-weight: 600;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(5, 149, 115, 0.3);
-  transition: all 0.2s ease;
+.continue-action-btn {
+  height: 40px;
+  border-radius: 24px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  padding: 0 1.5rem;
 }
 
-.continue-btn:hover {
-  background: linear-gradient(135deg, #047857, #0891b2);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.4);
-  transform: translateY(-1px);
-}
-
-.continue-btn:disabled {
-  background: #d1d5db;
-  color: #9ca3af;
-  box-shadow: none;
-  transform: none;
-}
-
-/* Mobile Optimizations */
+/* Responsive Design */
 @media (max-width: 480px) {
   .wallet-connect-page {
     padding: 0.75rem;
   }
-  
+
   .container {
     max-width: 100%;
   }
-  
-  .connect-card {
-    border-radius: 12px;
-  }
-  
+
   .card-header {
     padding: 1.25rem 1rem 0.75rem;
   }
-  
-  .nwc-logo-container {
-    margin: 1.5rem 0 1rem;
-  }
-  
+
   .nwc-logo-bg {
     width: 80px;
     height: 80px;
     padding: 1.25rem;
   }
-  
+
   .welcome-title {
-    font-size: 1.25rem;
+    font-size: 20px;
     margin-bottom: 0.5rem;
   }
-  
+
   .welcome-subtitle {
-    font-size: 0.9375rem;
+    font-size: 12px;
     margin-bottom: 1.5rem;
     max-width: 280px;
   }
-  
-  .q-input :deep(.q-field__native) {
-    font-size: 0.9375rem;
-    padding: 0.625rem 0.875rem;
-  }
-  
-  .connect-btn {
-    height: 52px;
-    font-size: 1rem;
-    padding: 0.875rem;
-  }
-  
+
   .button-row {
     gap: 0.5rem;
   }
-  
+
   .connect-btn-inline,
   .scan-qr-btn-inline {
     height: 48px;
+    font-size: 13px;
   }
-  
-  .connect-btn-inline {
-    padding: 0.75rem 0.875rem;
-  }
-  
+
   .qr-scanner-container {
     height: 250px;
-    border-radius: 10px;
   }
-  
+
+  .scanning-frame {
+    width: 180px;
+    height: 180px;
+  }
+
+  .frame-corner {
+    width: 25px;
+    height: 25px;
+  }
+
+  .scanner-header {
+    align-items: center;
+  }
+
   .scanner-title {
-    font-size: 1.125rem;
+    font-size: 18px;
   }
-  
+
   .scanner-subtitle {
-    font-size: 0.875rem;
-    max-width: 240px;
+    font-size: 11px;
   }
-  
+
   .name-dialog {
     max-width: 350px;
     margin: 1rem;
   }
-  
+
   .dialog-header,
   .dialog-content {
     padding: 1.25rem;
   }
-  
+
+  .dialog-actions {
+    padding: 1rem 1.25rem 1.25rem;
+  }
+
   .input-hint {
-    font-size: 0.8125rem;
+    font-size: 11px;
   }
 }
 </style>
