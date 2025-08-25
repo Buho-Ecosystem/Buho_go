@@ -298,14 +298,16 @@
               </div>
 
               <div class="wallet-info">
+
+                <q-input
+                  v-model="wallet.name"
+                  dense
+                  out
+                  borderless
+                  input-class="q-px-md q-mb-sm"
+                  :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+                />
                 <div class="wallet-name-container">
-                  <q-input
-                    v-model="wallet.name"
-                    dense
-                    out
-                    borderless
-                    :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-                  />
                   <div class="wallet-badges">
                     <div v-if="wallet.isDefault" class="default-badge">{{ $t('Default') }}</div>
                     <div v-if="wallet.id === activeWalletId" class="active-badge">{{ $t('Active') }}</div>
