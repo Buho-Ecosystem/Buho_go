@@ -47,19 +47,21 @@
     </div>
 
     <!-- Filter Tabs -->
-    <div class="filter-section" :class="$q.dark.isActive ? 'filter_section_dark' : 'filter_section_light'">
+    <div class="filter-section">
       <q-tabs
         v-model="activeFilter"
         dense
         :class="$q.dark.isActive ? 'filter_tabs_dark' : 'filter_tabs_light'"
         indicator-color="transparent"
         align="justify"
+        class="q-ma-sm"
       >
         <q-tab
           v-for="tab in filterTabs"
           :key="tab.name"
           :name="tab.name"
           no-caps
+          class="q-mx-sm"
           :label="$t(tab.label)"
           :class="activeFilter === tab.name ? ($q.dark.isActive ? 'tab_active_dark' : 'tab_active_light') : ($q.dark.isActive ? 'tab_inactive_dark' : 'tab_inactive_light')"
         />
@@ -75,7 +77,12 @@
               $t('Received')
             }}
           </div>
-          <div class="stat-value positive">+{{ formatAmount(totalReceived) }}</div>
+          <div class="stat-value positive">
+            +{{ formatAmount(totalReceived) }}
+            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
+              +{{ getFiatAmountForStats(totalReceived) }}
+            </div>
+          </div>
         </div>
         <div class="stat-divider" :class="$q.dark.isActive ? 'stat_divider_dark' : 'stat_divider_light'"></div>
         <div class="stat-item">
@@ -83,7 +90,12 @@
               $t('Sent')
             }}
           </div>
-          <div class="stat-value negative">-{{ formatAmount(totalSent) }}</div>
+          <div class="stat-value negative">
+            -{{ formatAmount(totalSent) }}
+            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
+              -{{ getFiatAmountForStats(totalSent) }}
+            </div>
+          </div>
         </div>
         <div class="stat-divider" :class="$q.dark.isActive ? 'stat_divider_dark' : 'stat_divider_light'"></div>
         <div class="stat-item">
@@ -93,6 +105,9 @@
           </div>
           <div class="stat-value" :class="netAmount >= 0 ? 'positive' : 'negative'">
             {{ netAmount >= 0 ? '+' : '' }}{{ formatAmount(netAmount) }}
+            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
+              {{ netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(netAmount) }}
+            </div>
           </div>
         </div>
       </div>
@@ -129,6 +144,9 @@
               <div class="group-total"
                    :class="[group.netAmount >= 0 ? 'positive' : 'negative', $q.dark.isActive ? 'group_total_dark' : 'group_total_light']">
                 {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
+                <div class="group-fiat" :class="$q.dark.isActive ? 'group_fiat_dark' : 'group_fiat_light'">
+                  {{ group.netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(group.netAmount) }}
+                </div>
               </div>
               <q-icon
                 :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'"
@@ -253,6 +271,7 @@
 <script>
 import {webln} from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
+import {fiatRatesService} from '../utils/fiatRates.js';
 
 export default {
   name: 'TransactionHistoryPage',
@@ -275,7 +294,9 @@ export default {
         {name: 'today', label: 'Today'},
         {name: 'week', label: 'Week'},
         {name: 'month', label: 'Month'}
-      ]
+      ],
+      fiatRates: {},
+      loadingFiatRates: true
     }
   },
   computed: {
@@ -359,6 +380,16 @@ export default {
   },
   async created() {
     this.initializeTransactionHistory();
+    this.loadFiatRates();
+  },
+
+  watch: {
+    'fiatRates': {
+      handler() {
+        this.$forceUpdate();
+      },
+      deep: true
+    }
   },
   methods: {
     async initializeTransactionHistory() {
@@ -567,21 +598,70 @@ export default {
       return Math.abs(amount).toLocaleString() + ' sats';
     },
 
+    async loadFiatRates() {
+      try {
+        this.loadingFiatRates = true;
+        await fiatRatesService.ensureRatesLoaded();
+        this.fiatRates = fiatRatesService.getRates();
+      } catch (error) {
+        console.error('Error loading fiat rates:', error);
+      } finally {
+        this.loadingFiatRates = false;
+      }
+    },
+
     getFiatAmount(tx) {
-      const btcAmount = Math.abs(tx.amount) / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
+      if (this.loadingFiatRates) {
+        return '...';
+      }
 
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(tx.amount), currency);
 
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
+        const symbols = {
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          CAD: 'C$',
+          CHF: 'CHF',
+          AUD: 'A$',
+          JPY: '¥'
+        };
+
+        const symbol = symbols[currency] || currency;
+        return symbol + fiatValue.toFixed(2);
+      } catch (error) {
+        console.error('Error converting to fiat:', error);
+        return '--';
+      }
+    },
+
+    getFiatAmountForStats(amount) {
+      if (this.loadingFiatRates) {
+        return '...';
+      }
+
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(amount), currency);
+
+        const symbols = {
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          CAD: 'C$',
+          CHF: 'CHF',
+          AUD: 'A$',
+          JPY: '¥'
+        };
+
+        const symbol = symbols[currency] || currency;
+        return symbol + fiatValue.toFixed(2);
+      } catch (error) {
+        console.error('Error converting to fiat:', error);
+        return '--';
+      }
     },
 
     formatTime(timestamp) {
@@ -807,6 +887,21 @@ export default {
   color: #FF4B4B;
 }
 
+.stat-fiat {
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-top: 0.125rem;
+  opacity: 0.8;
+}
+
+.stat_fiat_dark {
+  color: #B0B0B0;
+}
+
+.stat_fiat_light {
+  color: #6B7280;
+}
+
 .stat_divider_dark {
   width: 1px;
   height: 24px;
@@ -927,6 +1022,21 @@ export default {
   font-size: 1rem;
   font-weight: 600;
   font-family: Fustat, sans-serif;
+}
+
+.group-fiat {
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-top: 0.125rem;
+  opacity: 0.8;
+}
+
+.group_fiat_dark {
+  color: #B0B0B0;
+}
+
+.group_fiat_light {
+  color: #6B7280;
 }
 
 .expand_icon_dark {

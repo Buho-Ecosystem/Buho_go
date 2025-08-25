@@ -274,6 +274,7 @@
 <script>
 import {webln} from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
+import {fiatRatesService} from '../utils/fiatRates.js';
 
 export default {
   name: 'TransactionDetailsPage',
@@ -288,11 +289,23 @@ export default {
       nostrProfile: null,
       walletState: {},
       showLoadingScreen: true,
-      loadingText: 'Loading transaction details...'
+      loadingText: 'Loading transaction details...',
+      fiatRates: {},
+      loadingFiatRates: true
     }
   },
   async created() {
     this.initializeTransactionDetails();
+    this.loadFiatRates();
+  },
+
+  watch: {
+    'fiatRates': {
+      handler() {
+        this.$forceUpdate();
+      },
+      deep: true
+    }
   },
   methods: {
     async initializeTransactionDetails() {
@@ -505,21 +518,43 @@ export default {
       return prefix + ' ' + Math.abs(this.transaction.amount).toLocaleString() + ' sats';
     },
 
+    async loadFiatRates() {
+      try {
+        this.loadingFiatRates = true;
+        await fiatRatesService.ensureRatesLoaded();
+        this.fiatRates = fiatRatesService.getRates();
+      } catch (error) {
+        console.error('Error loading fiat rates:', error);
+      } finally {
+        this.loadingFiatRates = false;
+      }
+    },
+
     getFiatAmount() {
-      const btcAmount = Math.abs(this.transaction.amount) / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
+      if (this.loadingFiatRates || !this.transaction) {
+        return '...';
+      }
 
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(this.transaction.amount), currency);
 
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
+        const symbols = {
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          CAD: 'C$',
+          CHF: 'CHF',
+          AUD: 'A$',
+          JPY: '¥'
+        };
+
+        const symbol = symbols[currency] || currency;
+        return symbol + fiatValue.toFixed(2);
+      } catch (error) {
+        console.error('Error converting to fiat:', error);
+        return '--';
+      }
     },
 
     formatDateTime(timestamp) {

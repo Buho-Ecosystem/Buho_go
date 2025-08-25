@@ -111,6 +111,26 @@
           <div class="coming-soon-badge">{{ $t('Coming Soon') }}</div>
         </div>
 
+        <div
+          class="section-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="showMempoolDialog = true"
+        >
+          <div class="card-icon mempool-icon">
+            <q-icon name="las la-server" size="24px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+              {{ $t('Mempool API') }}
+            </div>
+            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ customMempoolUrl ? $t('Custom URL') : $t('Default (mempool.space)') }}
+            </div>
+          </div>
+          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        </div>
+
         <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <div class="card-icon security-icon-disabled">
             <q-icon name="las la-shield-alt" size="24px"/>
@@ -282,10 +302,9 @@
                   <q-input
                     v-model="wallet.name"
                     dense
+                    out
                     borderless
-                    @blur="updateWalletName(wallet.id, wallet.name)"
-                    class="wallet-name-input"
-                    :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'"
+                    :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
                   />
                   <div class="wallet-badges">
                     <div v-if="wallet.isDefault" class="default-badge">{{ $t('Default') }}</div>
@@ -383,29 +402,42 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <q-input
-            v-model="newWalletName"
-            outlined
-            :label="$t('Wallet Name')"
-            :placeholder="$t('Enter a name for your wallet')"
-            class="wallet-name-input"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            :rules="[val => !!val || $t('Wallet name is required')]"
-            borderless
-            dense
-          />
 
-          <q-input
-            v-model="newWalletNwc"
-            outlined
-            :label="$t('NWC Connection String')"
-            :placeholder="$t('nostr+walletconnect://...')"
-            class="nwc-input"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            :rules="[validateNwcString]"
-            borderless
-            dense
-          />
+          <q-item dense style="padding: 0px">
+            <q-item-section>
+              <q-item-label>{{ $t('Wallet Name') }}</q-item-label>
+              <q-item-label class="q-mt-sm">
+                <q-input
+                  v-model="newWalletName"
+                  :placeholder="$t('Enter a name for your wallet')"
+                  :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+                  :rules="[val => !!val || $t('Wallet name is required')]"
+                  borderless
+                  input-class="q-px-md"
+                  hide-bottom-space
+                  dense
+                />
+              </q-item-label>
+            </q-item-section>
+          </q-item>
+
+          <q-item style="padding: 0px" class="q-mt-sm">
+            <q-item-section>
+              <q-item-label>{{ $t('NWC Connection String') }}</q-item-label>
+              <q-item-label class="q-mt-sm">
+                <q-input
+                  v-model="newWalletNwc"
+                  :placeholder="$t('nostr+walletconnect://...')"
+                  :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+                  :rules="[validateNwcString]"
+                  hide-bottom-space
+                  input-class="q-px-md"
+                  borderless
+                  dense
+                />
+              </q-item-label>
+            </q-item-section>
+          </q-item>
 
           <div class="input-help">
             <q-icon name="las la-info-circle" class="help-icon"/>
@@ -435,12 +467,96 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Mempool API Dialog -->
+    <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Mempool API Settings') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            v-close-popup
+            class="close-btn"
+            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+          />
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <div class="mempool-info" :class="$q.dark.isActive ? 'info-dark' : 'info-light'">
+            <q-icon name="las la-info-circle" class="info-icon"/>
+            <div class="info-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Configure a custom Mempool API URL for enhanced privacy or to use your own instance.') }}
+            </div>
+          </div>
+
+          <q-input
+            v-model="tempMempoolUrl"
+            :placeholder="$t('https://your-mempool-instance.com/api/v1')"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            borderless
+            input-class="q-px-md"
+            class="q-mb-sm"
+            dense
+            clearable
+          />
+
+          <div class="url-examples" :class="$q.dark.isActive ? 'examples-dark' : 'examples-light'">
+            <div class="example-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+              {{ $t('Examples:') }}
+            </div>
+            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.space/api/v1'">
+              <span class="example-url">https://mempool.space/api/v1</span>
+              <span class="example-desc">{{ $t('(Default)') }}</span>
+            </div>
+            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.emzy.de/api/v1'">
+              <span class="example-url">https://mempool.emzy.de/api/v1</span>
+              <span class="example-desc">{{ $t('(Alternative)') }}</span>
+            </div>
+          </div>
+
+          <div class="rate-status" v-if="fiatRateAge !== null"
+               :class="$q.dark.isActive ? 'status-dark' : 'status-light'">
+            <q-icon :name="fiatRatesStale ? 'las la-exclamation-triangle' : 'las la-check-circle'"
+                    :class="fiatRatesStale ? 'text-orange' : 'text-green'"/>
+            <span :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Last updated') }}: {{ fiatRateAge }} {{ $t('minutes ago') }}
+            </span>
+          </div>
+        </q-card-section>
+
+        <q-card-actions align="right" class="dialog-actions">
+          <q-btn
+            flat
+            :label="$t('Reset to Default')"
+            @click="resetMempoolUrl"
+            no-caps
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            flat
+            :label="$t('Test & Save')"
+            @click="saveMempoolUrl"
+            :loading="isTestingUrl"
+            :disable="!isMempoolUrlValid"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script>
 import {useWalletStore} from '../stores/wallet'
 import {mapState, mapActions} from 'pinia'
+import {fiatRatesService} from '../utils/fiatRates.js'
 
 export default {
   name: 'SettingsPage',
@@ -451,6 +567,7 @@ export default {
       showCurrencyDialog: false,
       showNotificationsDialog: false,
       showSecurityDialog: false,
+      showMempoolDialog: false,
 
       // New wallet form
       newWalletName: '',
@@ -465,6 +582,13 @@ export default {
       hasPin: false,
       currentPin: '',
       newPin: '',
+
+      // Mempool API settings
+      customMempoolUrl: null,
+      tempMempoolUrl: '',
+      isTestingUrl: false,
+      fiatRateAge: null,
+      fiatRatesStale: false,
     }
   },
   computed: {
@@ -491,12 +615,37 @@ export default {
         return this.newPin.length >= 4;
       }
       return this.currentPin.length >= 4 && this.newPin.length >= 4;
+    },
+
+    isMempoolUrlValid() {
+      if (!this.tempMempoolUrl.trim()) return true; // Empty is valid (will use default)
+      try {
+        const url = new URL(this.tempMempoolUrl);
+        return url.protocol === 'https:' || url.protocol === 'http:';
+      } catch {
+        return false;
+      }
     }
   },
   created() {
     this.initializeStore();
     this.loadPinState();
     this.checkNotificationPermission();
+    this.loadMempoolSettings();
+    this.updateFiatRateStatus();
+  },
+
+  mounted() {
+    // Update fiat rate status every minute
+    this.fiatRateInterval = setInterval(() => {
+      this.updateFiatRateStatus();
+    }, 60000);
+  },
+
+  beforeUnmount() {
+    if (this.fiatRateInterval) {
+      clearInterval(this.fiatRateInterval);
+    }
   },
   methods: {
     ...mapActions(useWalletStore, [
@@ -792,6 +941,71 @@ export default {
           this.notificationsEnabled = true;
         });
       }
+    },
+
+    loadMempoolSettings() {
+      this.customMempoolUrl = fiatRatesService.customApiUrl;
+      this.tempMempoolUrl = this.customMempoolUrl || '';
+    },
+
+    resetMempoolUrl() {
+      this.tempMempoolUrl = '';
+    },
+
+    async saveMempoolUrl() {
+      this.isTestingUrl = true;
+
+      try {
+        const urlToTest = this.tempMempoolUrl.trim() || null;
+
+        if (urlToTest) {
+          // Test the URL by making a request
+          const testUrl = urlToTest.endsWith('/') ? urlToTest + 'prices' : urlToTest + '/prices';
+          const response = await fetch(testUrl);
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+          if (!data || !data.USD) {
+            throw new Error('Invalid response format');
+          }
+        }
+
+        // Save the URL
+        fiatRatesService.setCustomApiUrl(urlToTest);
+        this.customMempoolUrl = urlToTest;
+
+        // Force refresh rates
+        await fiatRatesService.fetchLatestRates();
+        this.updateFiatRateStatus();
+
+        this.showMempoolDialog = false;
+
+        this.$q.notify({
+          type: 'positive',
+          message: urlToTest ?
+            this.$t('Custom Mempool API URL saved and tested successfully!') :
+            this.$t('Reset to default Mempool API successfully!'),
+          position: 'top'
+        });
+
+      } catch (error) {
+        console.error('Error testing Mempool URL:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to connect to Mempool API: ') + error.message,
+          position: 'top'
+        });
+      } finally {
+        this.isTestingUrl = false;
+      }
+    },
+
+    updateFiatRateStatus() {
+      this.fiatRateAge = fiatRatesService.getRateAge();
+      this.fiatRatesStale = fiatRatesService.areRatesStale();
     }
   }
 }
@@ -952,6 +1166,11 @@ export default {
 
 .currency-icon {
   background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+}
+
+.mempool-icon {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
   color: white;
 }
 
@@ -1143,6 +1362,7 @@ export default {
 
 .currency-item.active {
   border-color: #15DE72;
+  border-width: 1px;
   background: rgba(21, 222, 114, 0.1);
 }
 
@@ -1260,6 +1480,7 @@ export default {
 
 .wallet-item.active-wallet {
   border-color: #15DE72;
+  border-width: 1px;
   background: rgba(21, 222, 114, 0.05);
 }
 
@@ -1488,5 +1709,126 @@ export default {
   .dialog-actions {
     padding: 1rem 1.25rem 1.25rem;
   }
+}
+
+/* Mempool Dialog Styles */
+.mempool-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.info-dark {
+  background: #1A1A2E;
+  border: 1px solid #2A342A;
+}
+
+.info-light {
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+}
+
+.info-icon {
+  color: #3B82F6;
+  font-size: 20px;
+  margin-top: 0.125rem;
+  flex-shrink: 0;
+}
+
+.info-text {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mempool-input {
+  margin-bottom: 1.5rem;
+}
+
+.mempool-input :deep(.q-field__control) {
+  border-radius: 20px;
+  padding: 0.75rem 1rem;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.url-examples {
+  margin-bottom: 1.5rem;
+}
+
+.examples-dark {
+  background: #171717;
+  border: 1px solid #2A342A;
+}
+
+.examples-light {
+  background: #F8F9FA;
+  border: 1px solid #E5E7EB;
+}
+
+.url-examples {
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.example-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.example-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 0.5rem;
+}
+
+.example-item:last-child {
+  margin-bottom: 0;
+}
+
+.example-item:hover {
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.example-url {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  color: #15DE72;
+}
+
+.example-desc {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.rate-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+}
+
+.status-dark {
+  background: #1A1A1A;
+}
+
+.status-light {
+  background: #F3F4F6;
+}
+
+.rate-status span {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
 }
 </style>

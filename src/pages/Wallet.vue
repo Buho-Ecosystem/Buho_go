@@ -8,18 +8,19 @@
   <q-page :class="$q.dark.isActive ? 'wallet-page-dark' : 'wallet-page-light'">
     <!-- Header -->
     <q-toolbar>
+
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none"
+           class="logo-svg">
+        <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
+              fill="#059573"/>
+        <path
+          d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
+          fill="#78D53C"/>
+        <path
+          d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
+          fill="#43B65B"/>
+      </svg>
       <q-toolbar-title>
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none"
-             class="logo-svg">
-          <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                fill="#059573"/>
-          <path
-            d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-            fill="#78D53C"/>
-          <path
-            d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-            fill="#43B65B"/>
-        </svg>
         <div class="title" :class="$q.dark.isActive ? 'title-dark' : 'title-light'">BuhoGO</div>
       </q-toolbar-title>
       <q-space/>
@@ -65,7 +66,8 @@
           <transition name="secondary-fade" mode="out-in">
             <div :key="currentDisplayMode" class="balance-secondary"
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
-              {{ getSecondaryValue(walletState.balance) }}
+              <span v-if="secondaryValue">{{ secondaryValue }}</span>
+              <span v-else class="loading-secondary">{{ $t('Loading...') }}</span>
             </div>
           </transition>
         </div>
@@ -210,7 +212,9 @@
                 {{ formatPaymentAmount() }}
               </div>
               <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-                {{ formatPaymentFiat() }}
+                <span v-if="paymentFiatValue">{{ paymentFiatValue }}</span>
+                <span v-else-if="pendingPayment && (pendingPayment.amount > 0 || paymentAmount)"
+                      class="loading-fiat">{{ $t('Loading...') }}</span>
               </div>
             </div>
 
@@ -443,6 +447,7 @@
 <script>
 import {webln} from "@getalby/sdk";
 import {LightningPaymentService} from '../utils/lightning.js';
+import {fiatRatesService} from '../utils/fiatRates.js';
 import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
@@ -462,12 +467,8 @@ export default {
         activeWalletId: null,
         currency: 'sats',
         currencies: ['sats', 'btc', 'usd'],
-        exchangeRates: {
-          usd: 65000,
-          eur: 60000,
-          gbp: 52000,
-          jpy: 9800000
-        },
+        exchangeRates: {},
+        lastRateUpdate: null,
         preferredFiatCurrency: 'USD',
         denominationCurrency: 'sats',
         displayMode: 'sats'
@@ -512,7 +513,10 @@ export default {
       paymentData: null,
       isCreatingInvoice: false,
       invoicePaid: false,
-      isSendingPayment: false
+      isSendingPayment: false,
+      fiatRatesLoaded: false,
+      secondaryValue: '',
+      paymentFiatValue: ''
     };
   },
   computed: {
@@ -555,6 +559,27 @@ export default {
       if (!newVal) {
         this.resetReceiveForm();
       }
+    },
+
+    'walletState.balance': {
+      handler: 'updateSecondaryValue',
+      immediate: true
+    },
+
+    currentDisplayMode: {
+      handler: 'updateSecondaryValue',
+      immediate: true
+    },
+
+    pendingPayment: {
+      handler: 'updatePaymentFiatValue',
+      immediate: true,
+      deep: true
+    },
+
+    paymentAmount: {
+      handler: 'updatePaymentFiatValue',
+      immediate: true
     }
   },
   methods: {
@@ -563,6 +588,9 @@ export default {
       try {
         this.loadingText = 'Loading wallet state...';
         await this.loadWalletState();
+
+        this.loadingText = 'Loading fiat rates...';
+        await this.loadFiatRates();
 
         this.loadingText = 'Fetching transactions...';
         await this.loadTransactions();
@@ -646,7 +674,44 @@ export default {
       this.refreshInterval = setInterval(async () => {
         await this.updateWalletBalance();
         await this.loadTransactions();
+        await this.loadFiatRates();
       }, 30000);
+    },
+
+    async loadFiatRates() {
+      try {
+        const rates = await fiatRatesService.getRates();
+        this.walletState.exchangeRates = {
+          usd: rates.USD || 100000,
+          eur: rates.EUR || 85000,
+          gbp: rates.GBP || 75000,
+          cad: rates.CAD || 135000,
+          chf: rates.CHF || 90000,
+          aud: rates.AUD || 150000,
+          jpy: rates.JPY || 15000000
+        };
+        this.walletState.lastRateUpdate = new Date();
+        this.fiatRatesLoaded = true;
+
+        // Save updated state
+        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+        console.log('✅ Fiat rates loaded:', this.walletState.exchangeRates);
+      } catch (error) {
+        console.error('❌ Error loading fiat rates:', error);
+        // Keep existing rates or use fallbacks
+        if (!this.fiatRatesLoaded) {
+          this.walletState.exchangeRates = {
+            usd: 100000,
+            eur: 85000,
+            gbp: 75000,
+            cad: 135000,
+            chf: 90000,
+            aud: 150000,
+            jpy: 15000000
+          };
+        }
+      }
     },
 
     startPulseAnimation() {
@@ -711,19 +776,19 @@ export default {
       }
     },
 
-    getSecondaryValue(balance) {
+    async getSecondaryValue(balance) {
       switch (this.currentDisplayMode) {
         case 'btc':
           const btcAmountForSecondary = balance / 100000000;
           if (btcAmountForSecondary < 0.001) {
-            return this.getFiatValue(balance);
+            return await this.getFiatValue(balance);
           }
           return balance.toLocaleString() + ' sats';
         case 'fiat':
           return balance.toLocaleString() + ' sats';
         case 'sats':
         default:
-          return this.getFiatValue(balance);
+          return await this.getFiatValue(balance);
       }
     },
 
@@ -731,24 +796,35 @@ export default {
       return balance.toLocaleString() + ' sats';
     },
 
-    getFiatValue(balance) {
-      const btcAmount = balance / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
+    async getFiatValue(balance) {
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatAmount = await fiatRatesService.convertSatsToFiat(balance, currency);
+        return fiatRatesService.formatFiatAmount(fiatAmount, currency);
+      } catch (error) {
+        console.error('Error getting fiat value:', error);
+        // Fallback to stored rates
+        const btcAmount = balance / 100000000;
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 100000;
+        const fiatValue = btcAmount * rate;
 
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
+        const symbols = {
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          CAD: 'C$',
+          CHF: 'CHF ',
+          AUD: 'A$',
+          JPY: '¥'
+        };
 
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
+        const symbol = symbols[currency] || currency;
+        return currency === 'JPY' ? symbol + Math.round(fiatValue).toLocaleString() : symbol + fiatValue.toFixed(2);
+      }
     },
 
-    // ... (keep all other existing methods)
+    // Payment processing methods
 
     async processPaymentInput() {
       this.paymentData = null;
@@ -901,45 +977,57 @@ export default {
     async pasteFromClipboard() {
       try {
         const text = await navigator.clipboard.readText();
-        if (text.trim()) {
-          this.sendForm.input = text.trim();
-          this.showSendDialog = false;
-
-          setTimeout(async () => {
-            await this.processPaymentInput();
-          }, 100);
-        }
+        this.sendForm.input = text;
       } catch (error) {
-        console.error('Failed to paste from clipboard:', error);
+        console.error('Failed to read clipboard:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to access clipboard',
+          message: 'Failed to read clipboard',
           position: 'top'
         });
       }
     },
 
     async onPaymentDetected(paymentData) {
+      console.log('Payment detected:', paymentData);
+      this.pendingPayment = paymentData;
+      this.showPaymentConfirmation = true;
+    },
+
+    async checkInvoiceStatus() {
+      if (!this.currentInvoicePaymentHash || this.invoicePaid) return;
+
       try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) return;
+
+        const nwc = new webln.NostrWebLNProvider({
+          nostrWalletConnectUrl: activeWallet.nwcString,
+        });
+        await nwc.enable();
+
+        const transactions = await nwc.getTransactions();
+        const paidInvoice = transactions.find(tx =>
+          tx.type === 'incoming' &&
+          tx.payment_hash === this.currentInvoicePaymentHash
         );
 
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
+        if (paidInvoice) {
+          console.log('✅ Invoice paid!', paidInvoice);
+          this.invoicePaid = true;
+          this.waitingForPayment = false;
+          this.stopInvoiceMonitoring();
+
+          await this.updateWalletBalance();
+
+          this.$q.notify({
+            type: 'positive',
+            message: 'Payment received!',
+            position: 'top'
+          });
         }
-
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        this.pendingPayment = await lightningService.processPaymentInput(paymentData.data);
-        this.showPaymentConfirmation = true;
-
       } catch (error) {
-        console.error('Error processing payment:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: 'Invalid payment request: ' + error.message,
-          position: 'top'
-        });
+        console.error('Error checking invoice status:', error);
       }
     },
 
@@ -955,32 +1043,23 @@ export default {
         'Variable amount';
     },
 
-    formatPaymentFiat() {
+    async formatPaymentFiat() {
       if (!this.pendingPayment) return '';
 
-      let amountSats = 0;
-      if (this.needsAmountInput) {
-        amountSats = parseInt(this.paymentAmount) || 0;
-      } else {
-        amountSats = this.pendingPayment.amount || 0;
+      const amount = this.needsAmountInput ?
+        parseInt(this.paymentAmount) || 0 :
+        this.pendingPayment.amount || 0;
+
+      if (amount === 0) return '';
+
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
+        return '≈ ' + fiatRatesService.formatFiatAmount(fiatAmount, currency);
+      } catch (error) {
+        console.error('Error formatting payment fiat:', error);
+        return '';
       }
-
-      if (amountSats === 0) return '';
-
-      const btcAmount = amountSats / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
-
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
-
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
     },
 
     validatePaymentAmount(amount) {
@@ -1009,24 +1088,54 @@ export default {
     },
 
     async confirmPayment() {
-      if (!this.pendingPayment) return;
+      if (!this.canConfirmPayment) return;
 
       this.isSendingPayment = true;
-      try {
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
 
+      try {
+        const activeWallet = this.getActiveWallet();
         if (!activeWallet) {
           throw new Error('No active wallet found');
         }
 
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        const nwc = new webln.NostrWebLNProvider({
+          nostrWalletConnectUrl: activeWallet.nwcString,
+        });
+        await nwc.enable();
 
-        const amount = this.needsAmountInput ? parseInt(this.paymentAmount) : this.pendingPayment.amount;
-        const comment = this.paymentComment || null;
+        let paymentRequest;
 
-        const result = await lightningService.sendPayment(this.pendingPayment, amount, comment);
+        if (this.pendingPayment.type === 'lightning_invoice') {
+          paymentRequest = this.pendingPayment.invoice || this.sendForm.input;
+        } else if (this.pendingPayment.type === 'lnurl_pay' || this.pendingPayment.type === 'lightning_address') {
+          const lightningService = new LightningPaymentService(activeWallet.nwcString);
+          const amount = parseInt(this.paymentAmount);
+          const comment = this.paymentComment || '';
+
+          const invoiceResponse = await lightningService.requestInvoiceFromLNURL(
+            this.pendingPayment,
+            amount,
+            comment
+          );
+
+          if (!invoiceResponse.success) {
+            throw new Error(invoiceResponse.error || 'Failed to get invoice from LNURL');
+          }
+
+          paymentRequest = invoiceResponse.invoice;
+        }
+
+        console.log('🚀 Sending payment:', paymentRequest);
+        const result = await nwc.sendPayment(paymentRequest);
+        console.log('✅ Payment sent:', result);
+
+        this.showPaymentConfirmation = false;
+        this.pendingPayment = null;
+        this.paymentAmount = '';
+        this.paymentComment = '';
+        this.sendForm.input = '';
+
+        await this.updateWalletBalance();
 
         this.$q.notify({
           type: 'positive',
@@ -1034,19 +1143,11 @@ export default {
           position: 'top'
         });
 
-        this.showPaymentConfirmation = false;
-        this.pendingPayment = null;
-        this.paymentAmount = '';
-        this.paymentComment = '';
-
-        await this.updateWalletBalance();
-        await this.loadTransactions();
-
       } catch (error) {
-        console.error('Error sending payment:', error);
+        console.error('❌ Payment failed:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to send payment: ' + error.message,
+          message: 'Payment failed: ' + error.message,
           position: 'top'
         });
       } finally {
@@ -1055,58 +1156,114 @@ export default {
     },
 
     async createInvoice() {
-      if (!this.receiveForm.amount) return;
+      if (!this.receiveForm.amount || this.receiveForm.amount <= 0) return;
 
       this.isCreatingInvoice = true;
+
       try {
-        console.log('🔍 Starting invoice creation...');
-        // Add your invoice creation logic here
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const nwc = new webln.NostrWebLNProvider({
+          nostrWalletConnectUrl: activeWallet.nwcString,
+        });
+        await nwc.enable();
+
+        const invoiceData = {
+          amount: parseInt(this.receiveForm.amount),
+          description: this.receiveForm.description || 'BuhoGO Payment'
+        };
+
+        console.log('🧾 Creating invoice:', invoiceData);
+        const invoice = await nwc.makeInvoice(invoiceData);
+        console.log('✅ Invoice created:', invoice);
+
+        this.generatedInvoice = invoice;
+        this.currentInvoicePaymentHash = invoice.paymentHash;
+        this.waitingForPayment = true;
+        this.startInvoiceMonitoring();
+
       } catch (error) {
-        console.error('Error creating invoice:', error);
+        console.error('❌ Failed to create invoice:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Failed to create invoice: ' + error.message,
+          position: 'top'
+        });
       } finally {
         this.isCreatingInvoice = false;
       }
     },
 
-    onInvoiceCreated(invoice) {
-      this.generatedInvoice = invoice;
-      this.waitingForPayment = true;
+    async updateSecondaryValue() {
+      if (this.walletState.balance !== undefined) {
+        this.secondaryValue = await this.getSecondaryValue(this.walletState.balance);
+      }
     },
 
-    resetReceiveForm() {
+    async updatePaymentFiatValue() {
+      this.paymentFiatValue = await this.formatPaymentFiat();
+    },
+
+    startInvoiceMonitoring() {
+      if (this.invoiceCheckInterval) {
+        clearInterval(this.invoiceCheckInterval);
+      }
+
+      this.invoiceCheckInterval = setInterval(async () => {
+        await this.checkInvoiceStatus();
+      }, 2000);
+    },
+
+    stopInvoiceMonitoring() {
       if (this.invoiceCheckInterval) {
         clearInterval(this.invoiceCheckInterval);
         this.invoiceCheckInterval = null;
       }
+    },
 
+    onInvoiceCreated(invoice) {
+      console.log('Invoice created:', invoice);
+      this.generatedInvoice = invoice;
+      this.currentInvoicePaymentHash = invoice.paymentHash;
+      this.waitingForPayment = true;
+      this.startInvoiceMonitoring();
+    },
+
+    resetReceiveForm() {
       this.receiveForm.amount = '';
       this.receiveForm.description = '';
       this.generatedInvoice = null;
-      this.currentInvoicePaymentHash = null;
       this.waitingForPayment = false;
       this.invoicePaid = false;
+      this.currentInvoicePaymentHash = null;
+      this.stopInvoiceMonitoring();
     },
 
-    handleQRScan(result) {
-      this.sendForm.input = result.trim();
+    async handleQRScan(result) {
       this.showQRScanner = false;
-      this.showSendDialog = false;
-
-      setTimeout(async () => {
-        await this.processPaymentInput();
-      }, 100);
+      this.sendForm.input = result;
     },
 
     async copyInvoice() {
+      if (!this.generatedInvoice) return;
+
       try {
         await navigator.clipboard.writeText(this.generatedInvoice.paymentRequest);
         this.$q.notify({
           type: 'positive',
-          message: 'Invoice copied!',
+          message: 'Invoice copied to clipboard!',
           position: 'top'
         });
       } catch (error) {
         console.error('Failed to copy invoice:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: 'Failed to copy invoice',
+          position: 'top'
+        });
       }
     }
   }
@@ -1157,6 +1314,8 @@ export default {
   background: linear-gradient(135deg, #059573, #10b981, #34d399, #06b6d4, #0891b2, #0284c7);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
+  -moz-background-clip: text;
   background-size: 400% 400%;
   animation: gradientShift 6s ease-in-out infinite;
 }
