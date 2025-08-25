@@ -81,6 +81,26 @@
                   :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
         </div>
 
+        <div
+          class="section-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="showLanguageDialog = true"
+        >
+          <div class="card-icon language-icon">
+            <q-icon name="las la-language" size="24px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+              {{ $t('Language') }}
+            </div>
+            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ getCurrentLanguageLabel() }}
+            </div>
+          </div>
+          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        </div>
+
         <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <div class="card-icon address-book-icon-disabled">
             <q-icon name="las la-address-book" size="24px"/>
@@ -163,6 +183,56 @@
         </q-btn>
       </div>
     </div>
+
+    <!-- Language Dialog -->
+    <q-dialog v-model="showLanguageDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Language Settings') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            v-close-popup
+            class="close-btn"
+            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+          />
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <div class="language-list">
+            <div
+              v-for="language in localeOptions"
+              :key="language.value"
+              class="language-item"
+              :class="{
+                'active': $i18n.locale === language.value,
+                'language-item-dark': $q.dark.isActive,
+                'language-item-light': !$q.dark.isActive
+              }"
+              @click="setLanguage(language.value)"
+            >
+              <div class="language-info">
+                <div class="language-name" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ language.label }}
+                </div>
+                <div class="language-code" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ language.value }}
+                </div>
+              </div>
+              <q-icon
+                name="las la-check"
+                v-if="$i18n.locale === language.value"
+                class="check-icon"
+              />
+            </div>
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
 
     <!-- Currency Dialog -->
     <q-dialog v-model="showCurrencyDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
@@ -567,6 +637,7 @@ export default {
       showWalletsDialog: false,
       showAddWalletDialog: false,
       showCurrencyDialog: false,
+      showLanguageDialog: false,
       showNotificationsDialog: false,
       showSecurityDialog: false,
       showMempoolDialog: false,
@@ -591,6 +662,13 @@ export default {
       isTestingUrl: false,
       fiatRateAge: null,
       fiatRatesStale: false,
+
+      // Language options
+      localeOptions: [
+        { value: 'en-US', label: 'English' },
+        { value: 'de', label: 'Deutsch' },
+        { value: 'es', label: 'Español' }
+      ],
     }
   },
   computed: {
@@ -635,6 +713,7 @@ export default {
     this.checkNotificationPermission();
     this.loadMempoolSettings();
     this.updateFiatRateStatus();
+    this.loadLanguagePreference();
   },
 
   mounted() {
@@ -1008,6 +1087,31 @@ export default {
     updateFiatRateStatus() {
       this.fiatRateAge = fiatRatesService.getRateAge();
       this.fiatRatesStale = fiatRatesService.areRatesStale();
+    },
+
+    getCurrentLanguageLabel() {
+      const currentLang = this.localeOptions.find(lang => lang.value === this.$i18n.locale)
+      return currentLang ? currentLang.label : 'English'
+    },
+
+    setLanguage(languageCode) {
+      this.$i18n.locale = languageCode
+      // Save to localStorage for persistence
+      localStorage.setItem('buhoGO_language', languageCode)
+      this.showLanguageDialog = false
+      
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Language changed successfully'),
+        position: 'top'
+      })
+    },
+
+    loadLanguagePreference() {
+      const savedLanguage = localStorage.getItem('buhoGO_language')
+      if (savedLanguage && this.localeOptions.find(lang => lang.value === savedLanguage)) {
+        this.$i18n.locale = savedLanguage
+      }
     }
   }
 }
@@ -1168,6 +1272,11 @@ export default {
 
 .currency-icon {
   background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+}
+
+.language-icon {
+  background: linear-gradient(135deg, #10B981, #059669);
   color: white;
 }
 
@@ -1385,6 +1494,62 @@ export default {
 .check-icon {
   color: #15DE72;
   font-size: 20px;
+}
+
+/* Language Dialog */
+.language-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.language-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-radius: 16px;
+  border: 2px solid;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.language-item-dark {
+  border-color: #2A342A;
+}
+
+.language-item-light {
+  border-color: #F3F4F6;
+}
+
+.language-item-dark:hover {
+  border-color: #15DE72;
+  background: rgba(21, 222, 114, 0.05);
+}
+
+.language-item-light:hover {
+  border-color: #15DE72;
+  background: rgba(21, 222, 114, 0.05);
+}
+
+.language-item.active {
+  border-color: #15DE72;
+  border-width: 1px;
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.language-info {
+  flex: 1;
+}
+
+.language-name {
+  font-family: Fustat, 'Inter', sans-serif;
+  margin-bottom: 0.25rem;
+}
+
+.language-code {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
 }
 
 /* Wallet Statistics */
