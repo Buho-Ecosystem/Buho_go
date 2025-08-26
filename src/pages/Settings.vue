@@ -24,17 +24,10 @@
       </q-btn>
       <div class="header-content">
         <div class="logo-container">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo">
-            <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                  fill="#059573"/>
-            <path
-              d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-              fill="#15DE72"/>
-            <path
-              d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-              fill="#43B65B"/>
-          </svg>
-          <div class="app-title">BuhoGO</div>
+
+      <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+        {{ $t('Settings') }}
+      </div>
         </div>
       </div>
       <div class="header-spacer"></div>
@@ -176,11 +169,9 @@
           </div>
           <div class="coming-soon-badge">{{ $t('Coming Soon') }}</div>
         </div>
-      </div>
-    </div>
 
     <!-- Disconnect Button -->
-    <div class="disconnect-section" :class="$q.dark.isActive ? 'footer-dark' : 'footer-light'">
+    <div class="" :class="$q.dark.isActive ? 'footer-dark' : 'footer-light'">
       <div class="disconnect-container">
         <q-btn
           flat
@@ -192,6 +183,9 @@
           <q-icon name="las la-sign-out-alt" class="disconnect-icon"/>
           <span class="disconnect-text">{{ $t('Disconnect All Wallets') }}</span>
         </q-btn>
+      </div>
+    </div>
+
       </div>
     </div>
 
@@ -1247,7 +1241,7 @@ export default {
 .settings-content {
   flex: 1;
   padding: 1rem;
-  padding-bottom: 6rem;
+  /*padding-bottom: 6rem;*/
 }
 
 .settings-section {
@@ -1869,7 +1863,7 @@ export default {
 @media (max-width: 480px) {
   .settings-content {
     padding: 0.75rem;
-    padding-bottom: 5rem;
+    /*padding-bottom: 5rem;*/
   }
 
   .section-card {

@@ -144,7 +144,7 @@
               <div class="group-total"
                    :class="[group.netAmount >= 0 ? 'positive' : 'negative', $q.dark.isActive ? 'group_total_dark' : 'group_total_light']">
                 {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
-                <div class="group-fiat" :class="$q.dark.isActive ? 'group_fiat_dark' : 'group_fiat_light'">
+                <div class="group-fiat text-right" :class="$q.dark.isActive ? 'group_fiat_dark' : 'group_fiat_light'">
                   {{ group.netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(group.netAmount) }}
                 </div>
               </div>
