@@ -5,19 +5,19 @@
   "start_url": "/",
   "icons": [
     {
-      "src": "icons/icon-128x128.png",
+      "src": "buho_logo.svg",
       "sizes": "128x128",
-      "type": "image/png"
+      "type": "image/svg"
     },
     {
-      "src": "icons/icon-192x192.png",
+      "src": "buho_logo.svg",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/svg"
     },
     {
-      "src": "icons/icon-512x512.png",
+      "src": "buho_logo.svg",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/svg"
     }
   ],
   "display": "standalone",
