@@ -1,35 +1,31 @@
 import { defineStore } from 'pinia'
 import { webln } from "@getalby/sdk"
+import { fiatRatesService } from '../utils/fiatRates.js'
 
 export const useWalletStore = defineStore('wallet', {
   state: () => ({
     // Wallet connections
     wallets: [],
     activeWalletId: null,
-    
+
     // Connection states
     connectionStates: {},
-    
+
     // Balances and info
     balances: {},
     walletInfos: {},
-    
+
     // UI preferences
     preferredFiatCurrency: 'USD',
     denominationCurrency: 'sats',
-    
-    // Exchange rates
-    exchangeRates: {
-      usd: 65000,
-      eur: 60000,
-      gbp: 52000,
-      jpy: 9800000
-    },
-    
+
+    // Exchange rates (will be populated from fiatRatesService)
+    exchangeRates: {},
+
     // Loading states
     isLoading: false,
     isConnecting: false,
-    
+
     // Error handling
     lastError: null
   }),
@@ -38,33 +34,33 @@ export const useWalletStore = defineStore('wallet', {
     activeWallet: (state) => {
       return state.wallets.find(wallet => wallet.id === state.activeWalletId)
     },
-    
+
     activeBalance: (state) => {
       return state.balances[state.activeWalletId] || 0
     },
-    
+
     totalBalance: (state) => {
       return Object.values(state.balances).reduce((sum, balance) => sum + balance, 0)
     },
-    
+
     connectedWallets: (state) => {
       return state.wallets.filter(wallet => state.connectionStates[wallet.id]?.connected)
     },
-    
+
     defaultWallet: (state) => {
       return state.wallets.find(wallet => wallet.isDefault)
     },
-    
+
     sortedWallets: (state) => {
       return [...state.wallets].sort((a, b) => {
         // Active wallet first
         if (a.id === state.activeWalletId) return -1
         if (b.id === state.activeWalletId) return 1
-        
+
         // Default wallet second
         if (a.isDefault) return -1
         if (b.isDefault) return 1
-        
+
         // Then by last used
         return (b.lastUsed || 0) - (a.lastUsed || 0)
       })
@@ -80,10 +76,13 @@ export const useWalletStore = defineStore('wallet', {
           const parsed = JSON.parse(savedState)
           this.$patch(parsed)
         }
-        
+
         // Validate and clean up any invalid wallets
         await this.validateWallets()
-        
+
+        // Load exchange rates from fiat rates service
+        await this.loadExchangeRates()
+
         // Auto-connect to active wallet if exists
         if (this.activeWalletId) {
           await this.connectWallet(this.activeWalletId)
@@ -104,7 +103,7 @@ export const useWalletStore = defineStore('wallet', {
         const nwc = new webln.NostrWebLNProvider({
           nostrWalletConnectUrl: walletData.nwcUrl,
         })
-        
+
         await nwc.enable()
         const info = await nwc.getInfo()
         const balance = await nwc.getBalance()
@@ -127,14 +126,14 @@ export const useWalletStore = defineStore('wallet', {
 
         // Add to wallets array
         this.wallets.push(wallet)
-        
+
         // Set connection state
         this.connectionStates[wallet.id] = {
           connected: true,
           lastConnected: Date.now(),
           nwcInstance: nwc
         }
-        
+
         // Store balance and info
         this.balances[wallet.id] = balance.balance
         this.walletInfos[wallet.id] = info
@@ -162,7 +161,7 @@ export const useWalletStore = defineStore('wallet', {
         if (walletIndex === -1) return
 
         const wallet = this.wallets[walletIndex]
-        
+
         // Disconnect if connected
         if (this.connectionStates[walletId]?.connected) {
           await this.disconnectWallet(walletId)
@@ -207,7 +206,7 @@ export const useWalletStore = defineStore('wallet', {
         this.wallets.forEach(w => w.isActive = false)
         wallet.isActive = true
         wallet.lastUsed = Date.now()
-        
+
         this.activeWalletId = walletId
 
         // Ensure wallet is connected
@@ -233,7 +232,7 @@ export const useWalletStore = defineStore('wallet', {
         })
 
         await nwc.enable()
-        
+
         // Update connection state
         this.connectionStates[walletId] = {
           connected: true,
@@ -243,7 +242,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Refresh balance and info
         await this.refreshWalletData(walletId)
-        
+
         return nwc
       } catch (error) {
         this.connectionStates[walletId] = {
@@ -272,7 +271,7 @@ export const useWalletStore = defineStore('wallet', {
         }
 
         const nwc = this.connectionStates[walletId].nwcInstance
-        
+
         // Fetch balance and info in parallel
         const [balance, info] = await Promise.all([
           nwc.getBalance(),
@@ -303,12 +302,12 @@ export const useWalletStore = defineStore('wallet', {
     async refreshAllWallets() {
       this.isLoading = true
       try {
-        const refreshPromises = this.wallets.map(wallet => 
+        const refreshPromises = this.wallets.map(wallet =>
           this.refreshWalletData(wallet.id).catch(error => {
             console.error(`Failed to refresh wallet ${wallet.id}:`, error)
           })
         )
-        
+
         await Promise.allSettled(refreshPromises)
       } finally {
         this.isLoading = false
@@ -349,7 +348,7 @@ export const useWalletStore = defineStore('wallet', {
     // Validate all wallets (remove invalid ones)
     async validateWallets() {
       const validWallets = []
-      
+
       for (const wallet of this.wallets) {
         try {
           // Quick validation of NWC URL format
@@ -360,9 +359,9 @@ export const useWalletStore = defineStore('wallet', {
           console.warn(`Removing invalid wallet ${wallet.id}:`, error)
         }
       }
-      
+
       this.wallets = validWallets
-      
+
       // Ensure active wallet is still valid
       if (this.activeWalletId && !this.wallets.find(w => w.id === this.activeWalletId)) {
         this.activeWalletId = this.wallets.length > 0 ? this.wallets[0].id : null
@@ -374,14 +373,42 @@ export const useWalletStore = defineStore('wallet', {
       for (const walletId of Object.keys(this.connectionStates)) {
         await this.disconnectWallet(walletId)
       }
-      
+
       this.wallets = []
       this.activeWalletId = null
       this.connectionStates = {}
       this.balances = {}
       this.walletInfos = {}
-      
+
       await this.persistState()
+    },
+
+    // Load exchange rates from fiat rates service
+    async loadExchangeRates() {
+      try {
+        const rates = await fiatRatesService.getRates()
+        // Convert to lowercase keys to match existing format
+        this.exchangeRates = {
+          usd: rates.USD || 0,
+          eur: rates.EUR || 0,
+          gbp: rates.GBP || 0,
+          jpy: rates.JPY || 0,
+          chf: rates.CHF || 0,
+        }
+        await this.persistState()
+      } catch (error) {
+        console.error('Error loading exchange rates:', error)
+        // Keep existing rates or use fallback
+        if (Object.keys(this.exchangeRates).length === 0) {
+          this.exchangeRates = {
+            usd: 65000,
+            eur: 60000,
+            gbp: 52000,
+            jpy: 9800000,
+            chf: 62000
+          }
+        }
+      }
     },
 
     // Update exchange rates
@@ -407,9 +434,9 @@ export const useWalletStore = defineStore('wallet', {
           denominationCurrency: this.denominationCurrency,
           exchangeRates: this.exchangeRates
         }
-        
+
         localStorage.setItem('buhoGO_wallet_store', JSON.stringify(stateToSave))
-        
+
         // Also maintain backward compatibility with old format
         const legacyState = {
           balance: this.activeBalance,
@@ -427,7 +454,7 @@ export const useWalletStore = defineStore('wallet', {
           preferredFiatCurrency: this.preferredFiatCurrency,
           denominationCurrency: this.denominationCurrency
         }
-        
+
         localStorage.setItem('buhoGO_wallet_state', JSON.stringify(legacyState))
       } catch (error) {
         console.error('Error persisting wallet state:', error)

@@ -341,3 +341,31 @@
     font-weight: 600;
     line-height: 100%; /* 14px */
 }
+.back_btn_dark,
+.close_btn_dark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+  color: #F6F6F6;
+}
+
+.back_btn_light,
+.close_btn_light {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+  color: #6B7280;
+}
+
+.back_btn_dark:hover,
+.close_btn_dark:hover {
+  background: #2A342A;
+}

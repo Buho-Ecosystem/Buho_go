@@ -6,11 +6,22 @@
         flat
         round
         dense
-        icon="las la-arrow-left"
         @click="$router.back()"
         class="back-btn"
-        :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
-      />
+        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+      >
+        <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
+             fill="none">
+          <path
+            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
+            fill="white"/>
+        </svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path
+            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
+            fill="#6D6D6D"/>
+        </svg>
+      </q-btn>
       <div class="header-content">
         <div class="logo-container">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="26" viewBox="0 0 30 32" fill="none" class="logo">
@@ -64,7 +75,7 @@
         <div
           class="section-card"
           :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="showCurrencyDialog = true"
+          @click="openCurrencyDialog"
         >
           <div class="card-icon currency-icon">
             <q-icon name="las la-dollar-sign" size="24px"/>
@@ -255,7 +266,7 @@
         <q-card-section class="dialog-content">
           <div class="currency-list">
             <div
-              v-for="currency in ['USD', 'EUR', 'GBP', 'JPY']"
+              v-for="currency in ['USD', 'EUR', 'GBP', 'JPY', 'CHF']"
               :key="currency"
               class="currency-item"
               :class="{
@@ -721,11 +732,19 @@ export default {
     this.fiatRateInterval = setInterval(() => {
       this.updateFiatRateStatus();
     }, 60000);
+
+    // Refresh exchange rates every 5 minutes
+    this.exchangeRateInterval = setInterval(() => {
+      this.loadExchangeRates();
+    }, 300000); // 5 minutes
   },
 
   beforeUnmount() {
     if (this.fiatRateInterval) {
       clearInterval(this.fiatRateInterval);
+    }
+    if (this.exchangeRateInterval) {
+      clearInterval(this.exchangeRateInterval);
     }
   },
   methods: {
@@ -738,11 +757,18 @@ export default {
       'switchActiveWallet',
       'connectWallet',
       'disconnectAll',
-      'updateCurrencyPreferences'
+      'updateCurrencyPreferences',
+      'loadExchangeRates'
     ]),
 
     async initializeStore() {
       await this.initialize()
+    },
+
+    async openCurrencyDialog() {
+      // Refresh exchange rates before showing dialog
+      await this.loadExchangeRates()
+      this.showCurrencyDialog = true
     },
 
     setPreferredCurrency(currency) {
@@ -755,7 +781,8 @@ export default {
         USD: '$',
         EUR: '€',
         GBP: '£',
-        JPY: '¥'
+        JPY: '¥',
+        CHF: 'CHF'
       }
       return symbols[currency] || currency
     },
@@ -1099,7 +1126,7 @@ export default {
       // Save to localStorage for persistence
       localStorage.setItem('buhoGO_language', languageCode)
       this.showLanguageDialog = false
-      
+
       this.$q.notify({
         type: 'positive',
         message: this.$t('Language changed successfully'),

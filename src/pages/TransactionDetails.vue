@@ -170,7 +170,7 @@
                 <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">
                   {{ $t('Transaction ID') }}
                 </div>
-                <div class="dev-value hash-value" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
+                <div class="dev-value hash-value ellipsis" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
                      @click="copyToClipboard(transaction.id)">
                   {{ transaction.id }}
                   <q-icon name="las la-copy" class="copy-icon"/>
@@ -181,7 +181,7 @@
                 <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">
                   {{ $t('Payment Hash') }}
                 </div>
-                <div class="dev-value hash-value" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
+                <div class="dev-value hash-value ellipsis" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
                      @click="copyToClipboard(transaction.payment_hash)">
                   {{ transaction.payment_hash }}
                   <q-icon name="las la-copy" class="copy-icon"/>
@@ -192,7 +192,7 @@
                 <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">
                   {{ $t('Preimage') }}
                 </div>
-                <div class="dev-value hash-value" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
+                <div class="dev-value hash-value ellipsis" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
                      @click="copyToClipboard(transaction.preimage)">
                   {{ transaction.preimage }}
                   <q-icon name="las la-copy" class="copy-icon"/>
