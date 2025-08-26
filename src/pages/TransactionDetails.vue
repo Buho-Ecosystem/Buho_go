@@ -1,55 +1,77 @@
 <template>
   <!-- Loading Screen -->
-  <LoadingScreen 
-    :show="showLoadingScreen" 
+  <LoadingScreen
+    :show="showLoadingScreen"
     :loading-text="loadingText"
   />
-  
-  <q-page class="transaction-details-page">
+
+  <q-page :class="$q.dark.isActive ? 'transaction-details-page-dark' : 'transaction-details-page-light'">
     <!-- Header -->
-    <div class="page-header">
-      <q-btn 
-        flat 
-        round 
-        dense 
-        icon="las la-arrow-left" 
-        @click="$router.back()" 
-        class="back-btn"
-      />
-      <div class="header-title">Transaction Details</div>
+    <div class="page-header" :class="$q.dark.isActive ? 'page_header_dark' : 'page_header_light'">
+      <q-btn
+        flat
+        round
+        dense
+        @click="$router.back()"
+        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+      >
+        <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
+             fill="none">
+          <path
+            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
+            fill="white"/>
+        </svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path
+            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 5.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
+            fill="#6D6D6D"/>
+        </svg>
+      </q-btn>
+      <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+        {{ $t('Transaction Details') }}
+      </div>
       <div class="header-actions">
-        <q-btn 
-          flat 
-          round 
-          dense 
-          icon="las la-code" 
+        <q-btn
+          flat
+          round
+          dense
           @click="toggleDeveloperMode"
-          :color="showDeveloperMode ? 'primary' : 'grey-7'"
-          class="dev-toggle"
+          :class="[$q.dark.isActive ? 'dev_toggle_dark' : 'dev_toggle_light', { 'dev-active': showDeveloperMode }]"
         >
-          <q-tooltip>{{ showDeveloperMode ? 'Hide' : 'Show' }} Developer Details</q-tooltip>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M5.24101 9.40703C5.31848 9.48514 5.41065 9.54713 5.5122 9.58944C5.61375 9.63175 5.72267 9.65353 5.83268 9.65353C5.94269 9.65353 6.05161 9.63175 6.15316 9.58944C6.25471 9.54713 6.34687 9.48514 6.42434 9.40703L9.16601 6.66536L9.16601 14.9987C9.16601 15.2197 9.25381 15.4317 9.41009 15.588C9.56637 15.7442 9.77833 15.832 9.99934 15.832C10.2204 15.832 10.4323 15.7442 10.5886 15.588C10.7449 15.4317 10.8327 15.2197 10.8327 14.9987L10.8327 6.66536L13.5743 9.40703C13.6518 9.48514 13.744 9.54713 13.8455 9.58944C13.9471 9.63175 14.056 9.65353 14.166 9.65353C14.276 9.65353 14.3849 9.63175 14.4865 9.58944C14.588 9.54713 14.6802 9.48514 14.7577 9.40703C14.9129 9.25089 15 9.03968 15 8.81953C15 8.59938 14.9129 8.38817 14.7577 8.23203L11.1743 4.65703C10.8632 4.34404 10.4407 4.16722 9.99934 4.16536C9.56092 4.16942 9.14176 4.34607 8.83268 4.65703L5.24934 8.23203C5.09302 8.38706 5.0044 8.59765 5.00284 8.81781C5.00128 9.03797 5.0869 9.2498 5.24101 9.40703Z"
+              :fill="$q.dark.isActive ? (showDeveloperMode ? '#15DE72' : '#B0B0B0') : (showDeveloperMode ? '#15DE72' : '#6D6D6D')"/>
+          </svg>
+          <q-tooltip>{{ showDeveloperMode ? $t('Hide') : $t('Show') }} {{ $t('Developer Details') }}</q-tooltip>
         </q-btn>
       </div>
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="loading-container">
-      <q-spinner-dots color="primary" size="3rem"/>
-      <div class="loading-text">Loading transaction details...</div>
+    <div v-if="loading" class="loading-container"
+         :class="$q.dark.isActive ? 'loading_container_dark' : 'loading_container_light'">
+      <q-spinner-dots :color="$q.dark.isActive ? '#15DE72' : '#059573'" size="3rem"/>
+      <div class="loading-text" :class="$q.dark.isActive ? 'loading_text_dark' : 'loading_text_light'">
+        {{ $t('Loading transaction details...') }}
+      </div>
     </div>
 
     <!-- Transaction Details -->
     <div v-else-if="transaction" class="transaction-content">
       <!-- Status Section -->
-      <div class="status-section">
+      <div class="status-section" :class="$q.dark.isActive ? 'status_section_dark' : 'status_section_light'">
         <div class="status-icon">
           <div class="tx-status-container" :class="getTransactionIconClass()">
             <q-icon :name="getTransactionIcon()" size="48px"/>
           </div>
         </div>
         <div class="status-info">
-          <div class="transaction-type">{{ getTransactionTypeLabel() }}</div>
-          <div class="transaction-status" :class="getStatusClass()">
+          <div class="transaction-type" :class="$q.dark.isActive ? 'transaction_type_dark' : 'transaction_type_light'">
+            {{ getTransactionTypeLabel() }}
+          </div>
+          <div class="transaction-status"
+               :class="[getStatusClass(), $q.dark.isActive ? 'transaction_status_dark' : 'transaction_status_light']">
             <q-icon :name="getStatusIcon()" class="q-mr-xs"/>
             {{ getTransactionStatus() }}
           </div>
@@ -57,26 +79,29 @@
       </div>
 
       <!-- Amount Section -->
-      <div class="amount-section">
+      <div class="amount-section" :class="$q.dark.isActive ? 'amount_section_dark' : 'amount_section_light'">
         <div class="amount-display">
-          <div class="amount-value" :class="getAmountClass()">
+          <div class="amount-value"
+               :class="[getAmountClass(), $q.dark.isActive ? 'amount_value_dark' : 'amount_value_light']">
             {{ getFormattedAmount() }}
           </div>
-          <div class="amount-fiat">{{ getFiatAmount() }}</div>
+          <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+            {{ getFiatAmount() }}
+          </div>
         </div>
       </div>
 
-      <!-- Nostr Profile Section (for zaps) -->
-      <div 
-        v-if="transaction.senderNpub && nostrProfile" 
+      <!-- Nostr Profile Section -->
+      <div
+        v-if="transaction.senderNpub && nostrProfile"
         class="profile-section"
         @click="viewNostrProfile"
       >
-        <div class="profile-card">
+        <div class="profile-card" :class="$q.dark.isActive ? 'profile_card_dark' : 'profile_card_light'">
           <div class="profile-avatar">
             <q-avatar size="48px">
-              <img 
-                v-if="nostrProfile.picture" 
+              <img
+                v-if="nostrProfile.picture"
                 :src="nostrProfile.picture"
                 :alt="nostrProfile.displayName || nostrProfile.name"
               />
@@ -84,33 +109,48 @@
             </q-avatar>
           </div>
           <div class="profile-info">
-            <div class="profile-name">{{ nostrProfile.displayName || nostrProfile.name }}</div>
-            <div class="profile-meta">
-              <q-icon name="las la-bolt" class="zap-icon q-mr-xs"/>
-              Zap Transaction
+            <div class="profile-name" :class="$q.dark.isActive ? 'profile_name_dark' : 'profile_name_light'">
+              {{ nostrProfile.displayName || nostrProfile.name }}
             </div>
-            <div class="profile-about" v-if="nostrProfile.about">
+            <div class="profile-meta" :class="$q.dark.isActive ? 'profile_meta_dark' : 'profile_meta_light'">
+              <q-icon name="las la-bolt" class="zap-icon q-mr-xs"/>
+              {{ $t('Zap Transaction') }}
+            </div>
+            <div class="profile-about" v-if="nostrProfile.about"
+                 :class="$q.dark.isActive ? 'profile_about_dark' : 'profile_about_light'">
               {{ nostrProfile.about }}
             </div>
           </div>
-          <q-icon name="las la-external-link-alt" class="external-icon"/>
+          <q-icon name="las la-external-link-alt"
+                  :class="$q.dark.isActive ? 'external_icon_dark' : 'external_icon_light'"/>
         </div>
       </div>
 
       <!-- Transaction Info -->
       <div class="info-section">
-        <div class="info-card">
-          <div class="section-title">Details</div>
-          
+        <div class="info-card" :class="$q.dark.isActive ? 'info_card_dark' : 'info_card_light'">
+          <div class="section-title" :class="$q.dark.isActive ? 'section_title_dark' : 'section_title_light'">
+            {{ $t('Details') }}
+          </div>
+
           <div class="info-grid">
             <div class="info-item" v-if="getTransactionDescription()">
-              <div class="info-label">Description</div>
-              <div class="info-value">{{ getTransactionDescription() }}</div>
+              <div class="info-label" :class="$q.dark.isActive ? 'info_label_dark' : 'info_label_light'">
+                {{ $t('Description') }}
+              </div>
+              <div class="info-value" :class="$q.dark.isActive ? 'info_value_dark' : 'info_value_light'">
+                {{ getTransactionDescription() }}
+              </div>
             </div>
-            
+
             <div class="info-item">
-              <div class="info-label">Date</div>
-              <div class="info-value">{{ formatDateTime(transaction.settled_at) }}</div>
+              <div class="info-label" :class="$q.dark.isActive ? 'info_label_dark' : 'info_label_light'">{{
+                  $t('Date')
+                }}
+              </div>
+              <div class="info-value" :class="$q.dark.isActive ? 'info_value_dark' : 'info_value_light'">
+                {{ formatDateTime(transaction.settled_at) }}
+              </div>
             </div>
           </div>
         </div>
@@ -119,122 +159,122 @@
       <!-- Developer Details -->
       <q-slide-transition>
         <div v-show="showDeveloperMode" class="developer-section">
-          <div class="developer-card">
-            <div class="section-title">
+          <div class="developer-card" :class="$q.dark.isActive ? 'developer_card_dark' : 'developer_card_light'">
+            <div class="section-title" :class="$q.dark.isActive ? 'section_title_dark' : 'section_title_light'">
               <q-icon name="las la-code" class="q-mr-sm"/>
-              Developer Details
+              {{ $t('Developer Details') }}
             </div>
-            
+
             <div class="developer-grid">
               <div class="dev-item" v-if="transaction.id">
-                <div class="dev-label">Transaction ID</div>
-                <div class="dev-value hash-value" @click="copyToClipboard(transaction.id)">
+                <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">
+                  {{ $t('Transaction ID') }}
+                </div>
+                <div class="dev-value hash-value ellipsis" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
+                     @click="copyToClipboard(transaction.id)">
                   {{ transaction.id }}
                   <q-icon name="las la-copy" class="copy-icon"/>
                 </div>
               </div>
-              
+
               <div class="dev-item" v-if="transaction.payment_hash">
-                <div class="dev-label">Payment Hash</div>
-                <div class="dev-value hash-value" @click="copyToClipboard(transaction.payment_hash)">
+                <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">
+                  {{ $t('Payment Hash') }}
+                </div>
+                <div class="dev-value hash-value ellipsis" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
+                     @click="copyToClipboard(transaction.payment_hash)">
                   {{ transaction.payment_hash }}
                   <q-icon name="las la-copy" class="copy-icon"/>
                 </div>
               </div>
-              
+
               <div class="dev-item" v-if="transaction.preimage">
-                <div class="dev-label">Preimage</div>
-                <div class="dev-value hash-value" @click="copyToClipboard(transaction.preimage)">
+                <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">
+                  {{ $t('Preimage') }}
+                </div>
+                <div class="dev-value hash-value ellipsis" :class="$q.dark.isActive ? 'hash_value_dark' : 'hash_value_light'"
+                     @click="copyToClipboard(transaction.preimage)">
                   {{ transaction.preimage }}
                   <q-icon name="las la-copy" class="copy-icon"/>
                 </div>
               </div>
-              
-              <div class="dev-item" v-if="transaction.type">
-                <div class="dev-label">Type</div>
-                <div class="dev-value">{{ transaction.type }}</div>
-              </div>
-              
-              <div class="dev-item" v-if="transaction.state">
-                <div class="dev-label">State</div>
-                <div class="dev-value">{{ transaction.state }}</div>
-              </div>
-              
+
               <div class="dev-item" v-if="transaction.fee">
-                <div class="dev-label">Fee</div>
-                <div class="dev-value">{{ transaction.fee }} sats</div>
-              </div>
-              
-              <div class="dev-item" v-if="transaction.created_at">
-                <div class="dev-label">Created At</div>
-                <div class="dev-value">{{ formatTimestamp(transaction.created_at) }}</div>
-              </div>
-              
-              <div class="dev-item" v-if="transaction.settled_at">
-                <div class="dev-label">Settled At</div>
-                <div class="dev-value">{{ formatTimestamp(transaction.settled_at) }}</div>
-              </div>
-              
-              <div class="dev-item" v-if="transaction.expires_at">
-                <div class="dev-label">Expires At</div>
-                <div class="dev-value">{{ formatTimestamp(transaction.expires_at) }}</div>
+                <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">{{
+                    $t('Fee')
+                  }}
+                </div>
+                <div class="dev-value" :class="$q.dark.isActive ? 'dev_value_dark' : 'dev_value_light'">
+                  {{ transaction.fee }} sats
+                </div>
               </div>
             </div>
-            
+
             <!-- Raw Invoice -->
             <div class="raw-section" v-if="transaction.payment_request">
-              <div class="dev-label">Raw Invoice</div>
-              <div class="raw-content">
-                <pre class="raw-text">{{ transaction.payment_request }}</pre>
+              <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">
+                {{ $t('Raw Invoice') }}
+              </div>
+              <div class="raw-content" :class="$q.dark.isActive ? 'raw_content_dark' : 'raw_content_light'">
+                <pre class="raw-text" :class="$q.dark.isActive ? 'raw_text_dark' : 'raw_text_light'">{{
+                    transaction.payment_request
+                  }}</pre>
                 <q-btn
                   flat
                   dense
                   icon="las la-copy"
                   @click="copyToClipboard(transaction.payment_request)"
-                  class="copy-btn"
+                  :class="$q.dark.isActive ? 'copy_btn_dark' : 'copy_btn_light'"
                 />
               </div>
             </div>
-            
+
             <!-- Raw JSON -->
             <div class="raw-section">
-              <div class="dev-label">Raw JSON</div>
-              <div class="raw-content">
-                <pre class="raw-text">{{ JSON.stringify(transaction, null, 2) }}</pre>
+              <div class="dev-label" :class="$q.dark.isActive ? 'dev_label_dark' : 'dev_label_light'">{{
+                  $t('Raw JSON')
+                }}
+              </div>
+              <div class="raw-content" :class="$q.dark.isActive ? 'raw_content_dark' : 'raw_content_light'">
+                <pre class="raw-text" :class="$q.dark.isActive ? 'raw_text_dark' : 'raw_text_light'">{{
+                    JSON.stringify(transaction, null, 2)
+                  }}</pre>
                 <q-btn
                   flat
                   dense
                   icon="las la-copy"
                   @click="copyToClipboard(JSON.stringify(transaction, null, 2))"
-                  class="copy-btn"
+                  :class="$q.dark.isActive ? 'copy_btn_dark' : 'copy_btn_light'"
                 />
               </div>
             </div>
           </div>
         </div>
       </q-slide-transition>
-
     </div>
 
     <!-- Error State -->
-    <div v-else class="error-state">
-      <q-icon name="las la-exclamation-triangle" size="4rem" color="negative"/>
-      <div class="error-title">Transaction Not Found</div>
-      <div class="error-subtitle">The requested transaction could not be found or loaded.</div>
+    <div v-else class="error-state" :class="$q.dark.isActive ? 'error_state_dark' : 'error_state_light'">
+      <q-icon name="las la-exclamation-triangle" size="4rem" :color="$q.dark.isActive ? '#FF4B4B' : '#DC2626'"/>
+      <div class="error-title" :class="$q.dark.isActive ? 'error_title_dark' : 'error_title_light'">
+        {{ $t('Transaction Not Found') }}
+      </div>
+      <div class="error-subtitle" :class="$q.dark.isActive ? 'error_subtitle_dark' : 'error_subtitle_light'">
+        {{ $t('The requested transaction could not be found or loaded.') }}
+      </div>
       <q-btn
-        outline
-        color="primary"
-        label="Go Back"
+        :label="$t('Go Back')"
         @click="$router.back()"
-        class="error-btn"
+        :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
       />
     </div>
   </q-page>
 </template>
 
 <script>
-import { webln } from "@getalby/sdk";
+import {webln} from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
+import {fiatRatesService} from '../utils/fiatRates.js';
 
 export default {
   name: 'TransactionDetailsPage',
@@ -249,22 +289,33 @@ export default {
       nostrProfile: null,
       walletState: {},
       showLoadingScreen: true,
-      loadingText: 'Loading transaction details...'
+      loadingText: 'Loading transaction details...',
+      fiatRates: {},
+      loadingFiatRates: true
     }
   },
   async created() {
     this.initializeTransactionDetails();
+    this.loadFiatRates();
+  },
+
+  watch: {
+    'fiatRates': {
+      handler() {
+        this.$forceUpdate();
+      },
+      deep: true
+    }
   },
   methods: {
     async initializeTransactionDetails() {
       try {
         this.loadingText = 'Loading transaction details...';
-    await this.loadTransactionDetails();
-        
+        await this.loadTransactionDetails();
+
         this.loadingText = 'Loading preferences...';
-    this.loadDeveloperModePreference();
-        
-        // Hide loading screen
+        this.loadDeveloperModePreference();
+
         this.loadingText = 'Ready!';
         await new Promise(resolve => setTimeout(resolve, 300));
         this.showLoadingScreen = false;
@@ -273,29 +324,29 @@ export default {
         this.showLoadingScreen = false;
       }
     },
-    
+
     async loadTransactionDetails() {
       this.loading = true;
       try {
         if (this.showLoadingScreen) {
           this.loadingText = 'Finding transaction...';
         }
-        
+
         const txId = this.$route.params.id;
-        
+
         // Load wallet state
         const savedState = localStorage.getItem('buhoGO_wallet_state');
         if (savedState) {
           this.walletState = JSON.parse(savedState);
         }
-        
+
         // Try to find transaction in local storage first
         const cachedTransactions = localStorage.getItem('buhoGO_cached_transactions');
         if (cachedTransactions) {
           const transactions = JSON.parse(cachedTransactions);
           this.transaction = transactions.find(tx => tx.id === txId);
         }
-        
+
         // If not found locally, fetch from wallet
         if (!this.transaction) {
           if (this.showLoadingScreen) {
@@ -303,7 +354,7 @@ export default {
           }
           await this.fetchTransactionFromWallet(txId);
         }
-        
+
         // Load nostr profile if it's a zap
         if (this.transaction && this.transaction.senderNpub) {
           if (this.showLoadingScreen) {
@@ -311,7 +362,7 @@ export default {
           }
           await this.loadNostrProfile(this.transaction.senderNpub);
         }
-        
+
       } catch (error) {
         console.error('Error loading transaction details:', error);
         this.$q.notify({
@@ -323,43 +374,41 @@ export default {
         this.loading = false;
       }
     },
-    
+
     async fetchTransactionFromWallet(txId) {
       const activeWallet = this.walletState.connectedWallets?.find(
         w => w.id === this.walletState.activeWalletId
       );
-      
+
       if (activeWallet) {
         try {
           if (this.showLoadingScreen) {
             this.loadingText = 'Connecting to wallet...';
           }
-          
+
           const nwc = new webln.NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
-          
+
           await nwc.enable();
-          
+
           if (this.showLoadingScreen) {
             this.loadingText = 'Fetching transaction data...';
           }
-          
-          const transactionsResponse = await nwc.listTransactions({ limit: 100 });
-          
+
+          const transactionsResponse = await nwc.listTransactions({limit: 100});
+
           if (transactionsResponse && transactionsResponse.transactions) {
-            this.transaction = transactionsResponse.transactions.find(tx => 
+            this.transaction = transactionsResponse.transactions.find(tx =>
               tx.id === txId || tx.payment_hash === txId
             );
-            
+
             if (this.transaction) {
-              // Enhance transaction data
               this.transaction.id = this.transaction.id || this.transaction.payment_hash || txId;
               this.transaction.type = this.transaction.type || (this.transaction.amount > 0 ? 'incoming' : 'outgoing');
               this.transaction.description = this.transaction.description || this.transaction.memo || '';
               this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || Math.floor(Date.now() / 1000);
-              
-              // Check if it's a zap transaction
+
               if (this.isZapTransaction(this.transaction)) {
                 this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);
               }
@@ -370,7 +419,7 @@ export default {
         }
       }
     },
-    
+
     isZapTransaction(tx) {
       return tx.description && (
         tx.description.toLowerCase().includes('zap') ||
@@ -378,22 +427,20 @@ export default {
         tx.type === 'incoming' && tx.description.match(/npub1[a-zA-Z0-9]{58}/)
       );
     },
-    
+
     extractNpubFromZap(tx) {
       const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
       return npubMatch ? npubMatch[0] : null;
     },
-    
+
     async loadNostrProfile(npub) {
       try {
-        // Load from cache first
         const cachedProfiles = localStorage.getItem('buhoGO_nostr_profiles');
         if (cachedProfiles) {
           const profiles = JSON.parse(cachedProfiles);
           this.nostrProfile = profiles[npub];
         }
-        
-        // If not cached, create a mock profile (replace with actual nostr client)
+
         if (!this.nostrProfile) {
           this.nostrProfile = {
             name: npub.substring(0, 12) + '...',
@@ -408,54 +455,54 @@ export default {
         console.error('Error loading nostr profile:', error);
       }
     },
-    
+
     loadDeveloperModePreference() {
       const saved = localStorage.getItem('buhoGO_developer_mode');
       this.showDeveloperMode = saved === 'true';
     },
-    
+
     toggleDeveloperMode() {
       this.showDeveloperMode = !this.showDeveloperMode;
       localStorage.setItem('buhoGO_developer_mode', this.showDeveloperMode.toString());
     },
-    
+
     getTransactionTypeLabel() {
-      if (this.transaction.senderNpub) return 'Zap Received';
-      return this.transaction.type === 'incoming' ? 'Payment Received' : 'Payment Sent';
+      if (this.transaction.senderNpub) return this.$t('Zap Received');
+      return this.transaction.type === 'incoming' ? this.$t('Payment Received') : this.$t('Payment Sent');
     },
-    
+
     getTransactionIconClass() {
       if (this.transaction.senderNpub) return 'tx-status-zap';
       return this.transaction.type === 'incoming' ? 'tx-status-received' : 'tx-status-sent';
     },
-    
+
     getTransactionIcon() {
       if (this.transaction.senderNpub) return 'las la-bolt';
       return this.transaction.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
     },
-    
+
     getTransactionStatus() {
-      if (this.transaction.settled) return 'Completed';
-      if (this.transaction.pending) return 'Pending';
-      return 'Completed';
+      if (this.transaction.settled) return this.$t('Completed');
+      if (this.transaction.pending) return this.$t('Pending');
+      return this.$t('Completed');
     },
-    
+
     getStatusIcon() {
       if (this.transaction.settled) return 'las la-check-circle';
       if (this.transaction.pending) return 'las la-clock';
       return 'las la-check-circle';
     },
-    
+
     getStatusClass() {
       if (this.transaction.settled) return 'status-completed';
       if (this.transaction.pending) return 'status-pending';
       return 'status-completed';
     },
-    
+
     getAmountClass() {
       return this.transaction.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
-    
+
     getTransactionDescription() {
       if (this.transaction.description && this.transaction.description.trim() !== '') {
         return this.transaction.description;
@@ -465,129 +512,185 @@ export default {
       }
       return null;
     },
-    
+
     getFormattedAmount() {
       const prefix = this.transaction.type === 'incoming' ? '+' : '-';
       return prefix + ' ' + Math.abs(this.transaction.amount).toLocaleString() + ' sats';
     },
-    
-    getFiatAmount() {
-      const btcAmount = Math.abs(this.transaction.amount) / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
-      
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
-      
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
+
+    async loadFiatRates() {
+      try {
+        this.loadingFiatRates = true;
+        await fiatRatesService.ensureRatesLoaded();
+        this.fiatRates = fiatRatesService.getRates();
+      } catch (error) {
+        console.error('Error loading fiat rates:', error);
+      } finally {
+        this.loadingFiatRates = false;
+      }
     },
-    
+
+    getFiatAmount() {
+      if (this.loadingFiatRates || !this.transaction) {
+        return '...';
+      }
+
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(this.transaction.amount), currency);
+
+        const symbols = {
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          CAD: 'C$',
+          CHF: 'CHF',
+          AUD: 'A$',
+          JPY: '¥'
+        };
+
+        const symbol = symbols[currency] || currency;
+        return symbol + fiatValue.toFixed(2);
+      } catch (error) {
+        console.error('Error converting to fiat:', error);
+        return '--';
+      }
+    },
+
     formatDateTime(timestamp) {
       const date = new Date(timestamp * 1000);
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
       const txDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      
-      // Check if it's today, yesterday, or older
+
       if (txDate.getTime() === today.getTime()) {
-        return `Today at ${date.toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
+        return `${this.$t('Today at')} ${date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
           minute: '2-digit',
-          hour12: true 
+          hour12: true
         })}`;
       } else if (txDate.getTime() === yesterday.getTime()) {
-        return `Yesterday at ${date.toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
+        return `${this.$t('Yesterday at')} ${date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
           minute: '2-digit',
-          hour12: true 
+          hour12: true
         })}`;
       } else {
-        // For older dates, show friendly format
         return date.toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
           year: 'numeric'
-        }) + ` at ${date.toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
+        }) + ` ${this.$t('at')} ${date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
           minute: '2-digit',
-          hour12: true 
+          hour12: true
         })}`;
       }
     },
-    
+
     formatTimestamp(timestamp) {
       return new Date(timestamp * 1000).toISOString();
     },
-    
-    formatHash(hash) {
-      if (!hash) return 'N/A';
-      return hash.substring(0, 12) + '...' + hash.substring(hash.length - 12);
-    },
-    
+
     async copyToClipboard(text) {
       try {
         await navigator.clipboard.writeText(text);
         this.$q.notify({
           type: 'positive',
-          message: 'Copied to clipboard!',
+          message: this.$t('Copied to clipboard!'),
           position: 'top'
         });
       } catch (error) {
         console.error('Failed to copy to clipboard:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to copy to clipboard',
+          message: this.$t('Failed to copy to clipboard'),
           position: 'top'
         });
       }
     },
-    
+
     viewNostrProfile() {
       if (this.transaction.senderNpub) {
-        // Open nostr profile in new tab (replace with actual nostr client URL)
         const nostrUrl = `https://snort.social/p/${this.transaction.senderNpub}`;
         window.open(nostrUrl, '_blank');
       }
-    },
-    
+    }
   }
 }
 </script>
 
 <style scoped>
-.transaction-details-page {
-  background: #f8f9fa;
+/* Base Page Styles */
+.transaction-details-page-dark {
+  background: #171717;
   min-height: 100vh;
+  font-family: Fustat, sans-serif;
 }
 
-/* Header */
-.page-header {
+.transaction-details-page-light {
+  background: #F6F6F6;
+  min-height: 100vh;
+  font-family: Fustat, sans-serif;
+}
+
+/* Header Styles */
+.page_header_dark {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
+  background: #0C0C0C;
+  border-bottom: 1px solid #2A342A;
   position: sticky;
   top: 0;
   z-index: 100;
 }
 
-.back-btn {
-  color: #6b7280;
+.page_header_light {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: white;
+  border-bottom: 1px solid #E5E7EB;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
-.header-title {
+.back_btn_dark,
+.back_btn_light {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+}
+
+.back_btn_dark:hover {
+  background: #2A342A;
+}
+
+.back_btn_light:hover {
+  background: #f1f5f9;
+}
+
+.main_page_title_dark {
+  color: #F6F6F6;
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  flex: 1;
+  text-align: center;
+}
+
+.main_page_title_light {
+  color: #212121;
+  font-size: 1.25rem;
+  font-weight: 600;
   flex: 1;
   text-align: center;
 }
@@ -597,13 +700,45 @@ export default {
   gap: 0.5rem;
 }
 
-.dev-toggle,
-.dev-toggle {
-  color: #6b7280;
+.dev_toggle_dark,
+.dev_toggle_light {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
 }
 
-/* Loading State */
-.loading-container {
+.dev_toggle_dark:hover {
+  background: #2A342A;
+}
+
+.dev_toggle_light:hover {
+  background: #f1f5f9;
+}
+
+.dev_toggle_dark.dev-active {
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.dev_toggle_light.dev-active {
+  background: rgba(5, 149, 115, 0.1);
+}
+
+/* Loading States */
+.loading_container_dark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  text-align: center;
+  background: #0C0C0C;
+}
+
+.loading_container_light {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -613,26 +748,42 @@ export default {
   background: white;
 }
 
-.loading-text {
+.loading_text_dark {
   margin-top: 1rem;
-  color: #6b7280;
+  color: #B0B0B0;
+  font-size: 1rem;
+}
+
+.loading_text_light {
+  margin-top: 1rem;
+  color: #6B7280;
   font-size: 1rem;
 }
 
 /* Transaction Content */
 .transaction-content {
-  background: white;
   min-height: calc(100vh - 80px);
 }
 
 /* Status Section */
-.status-section {
+.status_section_dark {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 2rem 1rem;
   text-align: center;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid #2A342A;
+  background: #0C0C0C;
+}
+
+.status_section_light {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #E5E7EB;
+  background: white;
 }
 
 .status-icon {
@@ -650,25 +801,40 @@ export default {
 }
 
 .tx-status-received {
-  background: #059573;
+  background: linear-gradient(135deg, #15DE72, #059573);
 }
 
 .tx-status-sent {
-  background: #6b7280;
+  background: linear-gradient(135deg, #6B7280, #4B5563);
 }
 
 .tx-status-zap {
-  background: #059573;
+  background: linear-gradient(135deg, #15DE72, #43B65B);
 }
 
-.transaction-type {
+.transaction_type_dark {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #F6F6F6;
   margin-bottom: 0.5rem;
 }
 
-.transaction-status {
+.transaction_type_light {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #212121;
+  margin-bottom: 0.5rem;
+}
+
+.transaction_status_dark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+.transaction_status_light {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -677,7 +843,7 @@ export default {
 }
 
 .status-completed {
-  color: #059573;
+  color: #15DE72;
 }
 
 .status-pending {
@@ -685,64 +851,113 @@ export default {
 }
 
 /* Amount Section */
-.amount-section {
+.amount_section_dark {
   padding: 2rem 1rem;
   text-align: center;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid #2A342A;
+  background: #0C0C0C;
 }
 
-.amount-value {
+.amount_section_light {
+  padding: 2rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #E5E7EB;
+  background: white;
+}
+
+.amount_value_dark {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.amount_value_light {
   font-size: 2.5rem;
   font-weight: 700;
   margin-bottom: 0.5rem;
 }
 
 .amount-positive {
-  color: #059573;
+  color: #15DE72;
 }
 
 .amount-negative {
-  color: #dc2626;
+  color: #FF4B4B;
 }
 
-.amount-fiat {
+.amount_fiat_dark {
   font-size: 1.25rem;
-  color: #6b7280;
+  color: #B0B0B0;
+}
+
+.amount_fiat_light {
+  font-size: 1.25rem;
+  color: #6B7280;
 }
 
 /* Profile Section */
 .profile-section {
   padding: 1rem;
-  border-bottom: 1px solid #f3f4f6;
   cursor: pointer;
 }
 
-.profile-card {
+.profile_card_dark {
   display: flex;
   align-items: center;
   gap: 1rem;
   padding: 1rem;
-  background: #f8f9fa;
+  background: #171717;
+  border: 1px solid #2A342A;
   border-radius: 12px;
   transition: background-color 0.2s;
 }
 
-.profile-card:hover {
-  background: #f3f4f6;
+.profile_card_light {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #F6F6F6;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  transition: background-color 0.2s;
+}
+
+.profile_card_dark:hover {
+  background: #2A342A;
+}
+
+.profile_card_light:hover {
+  background: #F3F4F6;
 }
 
 .profile-info {
   flex: 1;
 }
 
-.profile-name {
+.profile_name_dark {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #F6F6F6;
   margin-bottom: 0.25rem;
 }
 
-.profile-meta {
+.profile_name_light {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #212121;
+  margin-bottom: 0.25rem;
+}
+
+.profile_meta_dark {
+  display: flex;
+  align-items: center;
+  color: #15DE72;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.profile_meta_light {
   display: flex;
   align-items: center;
   color: #059573;
@@ -754,31 +969,56 @@ export default {
   color: #78D53C;
 }
 
-.profile-about {
-  color: #6b7280;
+.profile_about_dark {
+  color: #B0B0B0;
   font-size: 0.875rem;
 }
 
-.external-icon {
-  color: #9ca3af;
+.profile_about_light {
+  color: #6B7280;
+  font-size: 0.875rem;
+}
+
+.external_icon_dark {
+  color: #B0B0B0;
+}
+
+.external_icon_light {
+  color: #9CA3AF;
 }
 
 /* Info Section */
 .info-section {
   padding: 1rem;
-  border-bottom: 1px solid #f3f4f6;
 }
 
-.info-card {
-  background: #f9fafb;
+.info_card_dark {
+  background: #171717;
+  border: 1px solid #2A342A;
   border-radius: 12px;
   padding: 1.5rem;
 }
 
-.section-title {
+.info_card_light {
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.section_title_dark {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #F6F6F6;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.section_title_light {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #212121;
   margin-bottom: 1rem;
   display: flex;
   align-items: center;
@@ -796,51 +1036,47 @@ export default {
   gap: 0.25rem;
 }
 
-.info-label {
+.info_label_dark {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #6b7280;
+  color: #B0B0B0;
 }
 
-.info-value {
+.info_label_light {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6B7280;
+}
+
+.info_value_dark {
   font-size: 1rem;
-  color: #1f2937;
+  color: #F6F6F6;
   word-break: break-all;
 }
 
-.hash-value {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: white;
-  border-radius: 8px;
-  transition: background-color 0.2s;
-  border: 1px solid #e5e7eb;
-}
-
-.hash-value:hover {
-  background: #f9fafb;
-}
-
-.copy-icon {
-  color: #6b7280;
-  opacity: 0.7;
-  flex-shrink: 0;
+.info_value_light {
+  font-size: 1rem;
+  color: #212121;
+  word-break: break-all;
 }
 
 /* Developer Section */
 .developer-section {
   padding: 1rem;
-  border-bottom: 1px solid #f3f4f6;
 }
 
-.developer-card {
-  background: #f9fafb;
+.developer_card_dark {
+  background: #171717;
+  border: 2px dashed #2A342A;
   border-radius: 12px;
   padding: 1.5rem;
-  border: 2px dashed #d1d5db;
+}
+
+.developer_card_light {
+  background: #F9FAFB;
+  border: 2px dashed #D1D5DB;
+  border-radius: 12px;
+  padding: 1.5rem;
 }
 
 .developer-grid {
@@ -856,16 +1092,66 @@ export default {
   gap: 0.25rem;
 }
 
-.dev-label {
+.dev_label_dark {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #6b7280;
+  color: #B0B0B0;
 }
 
-.dev-value {
+.dev_label_light {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6B7280;
+}
+
+.dev_value_dark {
   font-size: 1rem;
-  color: #1f2937;
+  color: #F6F6F6;
   word-break: break-all;
+}
+
+.dev_value_light {
+  font-size: 1rem;
+  color: #212121;
+  word-break: break-all;
+}
+
+.hash_value_dark {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #0C0C0C;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+  border: 1px solid #2A342A;
+}
+
+.hash_value_light {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+  border: 1px solid #E5E7EB;
+}
+
+.hash_value_dark:hover {
+  background: #2A342A;
+}
+
+.hash_value_light:hover {
+  background: #F9FAFB;
+}
+
+.copy-icon {
+  color: #6B7280;
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 
 .raw-section {
@@ -876,34 +1162,75 @@ export default {
   margin-bottom: 0;
 }
 
-.raw-content {
+.raw_content_dark {
   position: relative;
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: #0C0C0C;
+  border: 1px solid #2A342A;
   border-radius: 8px;
   margin-top: 0.5rem;
 }
 
-.raw-text {
+.raw_content_light {
+  position: relative;
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+}
+
+.raw_text_dark {
   padding: 1rem;
   font-size: 0.75rem;
   overflow-x: auto;
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
+  color: #F6F6F6;
 }
 
-.copy-btn {
+.raw_text_light {
+  padding: 1rem;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #212121;
+}
+
+.copy_btn_dark {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: #2A342A;
+  border: 1px solid #2A342A;
+  border-radius: 4px;
+  color: #F6F6F6;
+}
+
+.copy_btn_light {
   position: absolute;
   top: 0.5rem;
   right: 0.5rem;
   background: white;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #E5E7EB;
   border-radius: 4px;
+  color: #212121;
 }
 
 /* Error State */
-.error-state {
+.error_state_dark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  text-align: center;
+  padding: 2rem;
+  background: #0C0C0C;
+}
+
+.error_state_light {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -914,51 +1241,86 @@ export default {
   background: white;
 }
 
-.error-title {
+.error_title_dark {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #F6F6F6;
   margin: 1rem 0 0.5rem;
 }
 
-.error-subtitle {
-  color: #6b7280;
+.error_title_light {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #212121;
+  margin: 1rem 0 0.5rem;
+}
+
+.error_subtitle_dark {
+  color: #B0B0B0;
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
 }
 
-.error-btn {
-  border-radius: 8px;
+.error_subtitle_light {
+  color: #6B7280;
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Primary Action Buttons */
+.dialog_add_btn_dark {
+  border-radius: 24px !important;
+  background: linear-gradient(135deg, #15DE72, #059573) !important;
+  color: #FFF !important;
+  font-weight: 600 !important;
+  box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;
+  font-family: Fustat, sans-serif !important;
+}
+
+.dialog_add_btn_light {
+  border-radius: 24px !important;
+  background: linear-gradient(135deg, #15DE72, #059573) !important;
+  color: #FFF !important;
+  font-weight: 600 !important;
+  box-shadow: 0px 4px 8px 0px rgba(159, 159, 159, 0.25) !important;
+  font-family: Fustat, sans-serif !important;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .amount-value {
+  .amount_value_dark,
+  .amount_value_light {
     font-size: 2rem;
   }
-  
-  .transaction-type {
+
+  .transaction_type_dark,
+  .transaction_type_light {
     font-size: 1.25rem;
   }
-  
-  .status-section,
-  .amount-section,
+
+  .status_section_dark,
+  .status_section_light,
+  .amount_section_dark,
+  .amount_section_light,
   .profile-section,
   .info-section,
   .developer-section {
     padding: 1rem 0.75rem;
   }
-  
-  .info-card,
-  .developer-card {
+
+  .info_card_dark,
+  .info_card_light,
+  .developer_card_dark,
+  .developer_card_light {
     padding: 1rem;
   }
-  
-  .raw-text {
+
+  .raw_text_dark,
+  .raw_text_light {
     font-size: 0.6875rem;
     padding: 0.75rem;
   }
-  
+
   .tx-status-container {
     width: 64px;
     height: 64px;

@@ -1,7 +1,11 @@
 <template>
   <div class="wallet-switcher">
     <!-- Current Wallet Display -->
-    <div class="current-wallet" @click="showSwitcher = true">
+    <div
+      class="current-wallet"
+      :class="$q.dark.isActive ? 'current-wallet-dark' : 'current-wallet-light'"
+      @click="showSwitcher = true"
+    >
       <div class="wallet-info">
         <div class="wallet-avatar">
           <div class="avatar-bg" :class="getWalletAvatarClass(activeWallet)">
@@ -11,26 +15,40 @@
           <div v-else class="connection-indicator disconnected"></div>
         </div>
         <div class="wallet-details">
-          <div class="wallet-name">{{ activeWallet?.name || 'No Wallet' }}</div>
-          <div class="wallet-balance">{{ formatBalance(balances[activeWallet?.id] || 0) }}</div>
+          <div class="wallet-name" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+            {{ activeWallet?.name || $t('No Wallet') }}
+          </div>
+          <div class="wallet-balance" :class="$q.dark.isActive ? 'balance-text-dark' : 'balance-text-light'">
+            {{ formatBalance(balances[activeWallet?.id] || 0) }}
+          </div>
         </div>
       </div>
-      <q-icon name="las la-chevron-down" class="expand-icon" :class="{ 'rotated': showSwitcher }"/>
+      <q-icon
+        name="las la-chevron-down"
+        class="expand-icon"
+        :class="{
+          'rotated': showSwitcher,
+          'expand-icon-dark': $q.dark.isActive,
+          'expand-icon-light': !$q.dark.isActive
+        }"
+      />
     </div>
 
     <!-- Wallet Switcher Dropdown -->
     <q-slide-transition>
       <div v-show="showSwitcher" class="switcher-dropdown">
-        <div class="dropdown-content">
+        <div class="dropdown-content" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <!-- Wallet List -->
           <div class="wallet-list">
-            <div 
-              v-for="wallet in sortedWallets" 
+            <div
+              v-for="wallet in sortedWallets"
               :key="wallet.id"
               class="wallet-option"
-              :class="{ 
+              :class="{
                 'active': wallet.id === activeWalletId,
-                'disconnected': !connectionStates[wallet.id]?.connected 
+                'disconnected': !connectionStates[wallet.id]?.connected,
+                'wallet-option-dark': $q.dark.isActive,
+                'wallet-option-light': !$q.dark.isActive
               }"
               @click="handleWalletSwitch(wallet.id)"
             >
@@ -38,35 +56,37 @@
                 <div class="avatar-bg" :class="getWalletAvatarClass(wallet)">
                   <q-icon name="las la-wallet" size="16px"/>
                 </div>
-                <div 
-                  v-if="connectionStates[wallet.id]?.connected" 
+                <div
+                  v-if="connectionStates[wallet.id]?.connected"
                   class="connection-indicator connected"
                 ></div>
-                <div 
-                  v-else 
+                <div
+                  v-else
                   class="connection-indicator disconnected"
                 ></div>
               </div>
-              
+
               <div class="option-details">
-                <div class="option-name">
+                <div class="option-name" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
                   {{ wallet.name }}
-                  <q-icon 
-                    v-if="wallet.isDefault" 
-                    name="las la-star" 
+                  <q-icon
+                    v-if="wallet.isDefault"
+                    name="las la-star"
                     class="default-icon"
                   />
                 </div>
-                <div class="option-balance">{{ formatBalance(balances[wallet.id] || 0) }}</div>
+                <div class="option-balance" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ formatBalance(balances[wallet.id] || 0) }}
+                </div>
                 <div v-if="connectionStates[wallet.id]?.error" class="option-error">
-                  Connection failed
+                  {{ $t('Connection failed') }}
                 </div>
               </div>
-              
+
               <div class="option-actions">
-                <q-icon 
-                  v-if="wallet.id === activeWalletId" 
-                  name="las la-check" 
+                <q-icon
+                  v-if="wallet.id === activeWalletId"
+                  name="las la-check"
                   class="active-icon"
                 />
                 <q-btn
@@ -77,6 +97,7 @@
                   icon="las la-sync-alt"
                   @click.stop="reconnectWallet(wallet.id)"
                   class="reconnect-btn"
+                  :class="$q.dark.isActive ? 'reconnect-btn-dark' : 'reconnect-btn-light'"
                   size="sm"
                 />
               </div>
@@ -84,25 +105,27 @@
           </div>
 
           <!-- Actions -->
-          <div class="switcher-actions">
+          <div class="switcher-actions" :class="$q.dark.isActive ? 'actions-dark' : 'actions-light'">
             <q-btn
               flat
               no-caps
               class="action-btn add-wallet-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="$emit('add-wallet')"
             >
               <q-icon name="las la-plus" class="q-mr-sm"/>
-              Add Wallet
+              {{ $t('Add Wallet') }}
             </q-btn>
-            
+
             <q-btn
               flat
               no-caps
               class="action-btn manage-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="$emit('manage-wallets')"
             >
               <q-icon name="las la-cog" class="q-mr-sm"/>
-              Manage
+              {{ $t('Manage') }}
             </q-btn>
           </div>
         </div>
@@ -110,17 +133,17 @@
     </q-slide-transition>
 
     <!-- Click Outside Overlay -->
-    <div 
-      v-if="showSwitcher" 
-      class="switcher-overlay" 
+    <div
+      v-if="showSwitcher"
+      class="switcher-overlay"
       @click="showSwitcher = false"
     ></div>
   </div>
 </template>
 
 <script>
-import { useWalletStore } from '../stores/wallet'
-import { mapState, mapActions } from 'pinia'
+import {useWalletStore} from '../stores/wallet'
+import {mapState, mapActions} from 'pinia'
 
 export default {
   name: 'WalletSwitcher',
@@ -134,7 +157,7 @@ export default {
   computed: {
     ...mapState(useWalletStore, [
       'wallets',
-      'activeWalletId', 
+      'activeWalletId',
       'activeWallet',
       'balances',
       'connectionStates',
@@ -160,16 +183,16 @@ export default {
       try {
         await this.switchActiveWallet(walletId)
         this.showSwitcher = false
-        
+
         this.$q.notify({
           type: 'positive',
-          message: `Switched to ${this.wallets.find(w => w.id === walletId)?.name}`,
+          message: this.$t('Switched to {name}', {name: this.wallets.find(w => w.id === walletId)?.name}),
           position: 'top'
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to switch wallet: ' + error.message,
+          message: this.$t('Failed to switch wallet: ') + error.message,
           position: 'top'
         })
       }
@@ -177,20 +200,20 @@ export default {
 
     async reconnectWallet(walletId) {
       if (this.isReconnecting[walletId]) return
-      
+
       this.isReconnecting[walletId] = true
-      
+
       try {
         await this.connectWallet(walletId)
         this.$q.notify({
           type: 'positive',
-          message: 'Wallet reconnected successfully',
+          message: this.$t('Wallet reconnected successfully'),
           position: 'top'
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to reconnect: ' + error.message,
+          message: this.$t('Failed to reconnect: ') + error.message,
           position: 'top'
         })
       } finally {
@@ -200,7 +223,7 @@ export default {
 
     getWalletAvatarClass(wallet) {
       if (!wallet) return 'avatar-default'
-      
+
       // Generate consistent color based on wallet ID
       const colors = ['avatar-green', 'avatar-blue', 'avatar-purple', 'avatar-orange', 'avatar-red']
       const index = wallet.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
@@ -235,19 +258,34 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background: white;
-  border-radius: 12px;
+  border-radius: 24px;
   cursor: pointer;
   transition: all 0.2s ease;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid;
 }
 
-.current-wallet:hover {
-  background: #f9fafb;
-  border-color: #d1d5db;
+.current-wallet-dark {
+  background: #0C0C0C;
+  border-color: #2A342A;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.current-wallet-light {
+  background: #FFF;
+  border-color: #E5E7EB;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.current-wallet-dark:hover {
+  background: #171717;
+  border-color: #15DE72;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.current-wallet-light:hover {
+  background: #F9FAFB;
+  border-color: #15DE72;
+  transform: translateY(-1px);
 }
 
 .wallet-info {
@@ -264,19 +302,36 @@ export default {
 .avatar-bg {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
 }
 
-.avatar-default { background: #6b7280; }
-.avatar-green { background: linear-gradient(135deg, #059573, #047857); }
-.avatar-blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.avatar-purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-.avatar-orange { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.avatar-red { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.avatar-default {
+  background: #6B7280;
+}
+
+.avatar-green {
+  background: linear-gradient(135deg, #059573, #15DE72);
+}
+
+.avatar-blue {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+}
+
+.avatar-purple {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+}
+
+.avatar-orange {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+}
+
+.avatar-red {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+}
 
 .connection-indicator {
   position: absolute;
@@ -285,15 +340,17 @@ export default {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid white;
+  border: 2px solid;
 }
 
 .connection-indicator.connected {
-  background: #10b981;
+  background: #15DE72;
+  border-color: #FFF;
 }
 
 .connection-indicator.disconnected {
-  background: #ef4444;
+  background: #EF4444;
+  border-color: #FFF;
 }
 
 .wallet-details {
@@ -302,25 +359,44 @@ export default {
 }
 
 .wallet-name {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 0.125rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 100%;
+  letter-spacing: -0.28px;
+  margin-bottom: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wallet-balance {
-  font-size: 0.875rem;
-  color: #6b7280;
-  font-weight: 500;
+.balance-text-dark {
+  color: var(--Shark-300, #B0B0B0);
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 100%;
+}
+
+.balance-text-light {
+  color: var(--Shark-600, #5D5D5D);
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 100%;
 }
 
 .expand-icon {
-  color: #9ca3af;
   transition: transform 0.2s ease;
   font-size: 16px;
+}
+
+.expand-icon-dark {
+  color: #B0B0B0;
+}
+
+.expand-icon-light {
+  color: #6B7280;
 }
 
 .expand-icon.rotated {
@@ -338,10 +414,7 @@ export default {
 }
 
 .dropdown-content {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  border: 1px solid #e5e7eb;
+  border-radius: 24px;
   overflow: hidden;
 }
 
@@ -358,20 +431,32 @@ export default {
   padding: 0.75rem 1rem;
   cursor: pointer;
   transition: background-color 0.2s ease;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid;
+}
+
+.wallet-option-dark {
+  border-bottom-color: #2A342A;
+}
+
+.wallet-option-light {
+  border-bottom-color: #F3F4F6;
 }
 
 .wallet-option:last-child {
   border-bottom: none;
 }
 
-.wallet-option:hover {
-  background: #f9fafb;
+.wallet-option-dark:hover {
+  background: #171717;
+}
+
+.wallet-option-light:hover {
+  background: #F9FAFB;
 }
 
 .wallet-option.active {
-  background: rgba(5, 149, 115, 0.05);
-  border-left: 3px solid #059573;
+  background: rgba(21, 222, 114, 0.1);
+  border-left: 3px solid #15DE72;
 }
 
 .wallet-option.disconnected {
@@ -386,7 +471,7 @@ export default {
 .option-avatar .avatar-bg {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .option-avatar .connection-indicator {
@@ -402,10 +487,12 @@ export default {
 }
 
 .option-name {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 0.125rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 100%;
+  letter-spacing: -0.28px;
+  margin-bottom: 0.25rem;
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -415,20 +502,22 @@ export default {
 }
 
 .default-icon {
-  color: #f59e0b;
+  color: #F59E0B;
   font-size: 12px;
   flex-shrink: 0;
 }
 
 .option-balance {
-  font-size: 0.8125rem;
-  color: #6b7280;
-  font-weight: 500;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 100%;
 }
 
 .option-error {
-  font-size: 0.75rem;
-  color: #ef4444;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 10px;
+  color: #EF4444;
   font-weight: 500;
 }
 
@@ -439,46 +528,83 @@ export default {
 }
 
 .active-icon {
-  color: #059573;
+  color: #15DE72;
   font-size: 18px;
 }
 
 .reconnect-btn {
-  color: #6b7280;
   width: 28px;
   height: 28px;
 }
 
-.reconnect-btn:hover {
-  color: #059573;
-  background: rgba(5, 149, 115, 0.1);
+.reconnect-btn-dark {
+  color: #B0B0B0;
+}
+
+.reconnect-btn-light {
+  color: #6B7280;
+}
+
+.reconnect-btn-dark:hover {
+  color: #15DE72;
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.reconnect-btn-light:hover {
+  color: #15DE72;
+  background: rgba(21, 222, 114, 0.1);
 }
 
 /* Switcher Actions */
 .switcher-actions {
-  background: #f8f9fa;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid;
   padding: 0.75rem;
   display: flex;
   gap: 0.5rem;
 }
 
+.actions-dark {
+  background: #171717;
+  border-top-color: #2A342A;
+}
+
+.actions-light {
+  background: #F8F9FA;
+  border-top-color: #E5E7EB;
+}
+
 .action-btn {
   flex: 1;
   height: 40px;
-  border-radius: 8px;
+  border-radius: 12px;
+  font-family: Fustat, 'Inter', sans-serif;
   font-weight: 500;
-  color: #6b7280;
+  font-size: 12px;
   transition: all 0.2s ease;
 }
 
+.action-btn-dark {
+  color: #B0B0B0;
+}
+
+.action-btn-light {
+  color: #6B7280;
+}
+
 .add-wallet-btn:hover {
-  background: rgba(5, 149, 115, 0.1);
-  color: #059573;
+  background: rgba(21, 222, 114, 0.1);
+  color: #15DE72;
 }
 
 .manage-btn:hover {
   background: rgba(107, 114, 128, 0.1);
+}
+
+.manage-btn.action-btn-dark:hover {
+  color: #FFF;
+}
+
+.manage-btn.action-btn-light:hover {
   color: #374151;
 }
 
@@ -498,39 +624,40 @@ export default {
   .current-wallet {
     padding: 0.625rem 0.875rem;
   }
-  
+
   .wallet-avatar .avatar-bg {
     width: 32px;
     height: 32px;
   }
-  
+
   .wallet-name {
-    font-size: 0.9375rem;
+    font-size: 13px;
   }
-  
-  .wallet-balance {
-    font-size: 0.8125rem;
+
+  .balance-text-dark,
+  .balance-text-light {
+    font-size: 11px;
   }
-  
+
   .wallet-option {
     padding: 0.625rem 0.875rem;
   }
-  
+
   .option-name {
-    font-size: 0.875rem;
+    font-size: 13px;
   }
-  
+
   .option-balance {
-    font-size: 0.75rem;
+    font-size: 11px;
   }
-  
+
   .switcher-actions {
     padding: 0.625rem;
   }
-  
+
   .action-btn {
     height: 36px;
-    font-size: 0.875rem;
+    font-size: 11px;
   }
 }
 
@@ -547,7 +674,7 @@ export default {
   right: 0;
   bottom: 0;
   background: rgba(255, 255, 255, 0.8);
-  border-radius: 8px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1,30 +1,49 @@
 <template>
   <!-- Loading Screen -->
-  <LoadingScreen 
-    :show="showLoadingScreen" 
+  <LoadingScreen
+    :show="showLoadingScreen"
     :loading-text="loadingText"
   />
-  
-  <q-page class="transaction-history-page">
+
+  <q-page :class="$q.dark.isActive ? 'transaction-history-page-dark' : 'transaction-history-page-light'">
     <!-- Header -->
-    <div class="page-header">
-      <q-btn 
-        flat 
-        round 
-        dense 
-        icon="las la-arrow-left" 
-        @click="$router.back()" 
-        class="back-btn"
-      />
-      <div class="header-title">Transactions</div>
-      <q-btn 
-        flat 
-        round 
-        dense 
-        icon="las la-times" 
+    <div class="" :class="$q.dark.isActive ? 'page_header_dark' : 'page_header_light'">
+      <q-btn
+        flat
+        round
+        dense
+        no-caps
+        @click="$router.back()"
+        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+      >
+        <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
+             fill="none">
+          <path
+            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
+            fill="white"/>
+        </svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path
+            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
+            fill="#6D6D6D"/>
+        </svg>
+      </q-btn>
+      <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+        {{ $t('Transactions') }}
+      </div>
+      <q-btn
+        flat
+        round
+        no-caps
+        dense
         @click="$router.push('/wallet')"
-        class="close-btn"
-      />
+        :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M15 5L5 15M5 5L15 15" :stroke="$q.dark.isActive ? 'white' : '#6D6D6D'" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </q-btn>
     </div>
 
     <!-- Filter Tabs -->
@@ -32,78 +51,119 @@
       <q-tabs
         v-model="activeFilter"
         dense
-        class="filter-tabs"
-        indicator-color="primary"
-        active-color="primary"
+        :class="$q.dark.isActive ? 'filter_tabs_dark' : 'filter_tabs_light'"
+        indicator-color="transparent"
         align="justify"
+        class="q-ma-sm"
       >
-        <q-tab name="all" label="All" />
-        <q-tab name="today" label="Today" />
-        <q-tab name="week" label="Week" />
-        <q-tab name="month" label="Month" />
+        <q-tab
+          v-for="tab in filterTabs"
+          :key="tab.name"
+          :name="tab.name"
+          no-caps
+          class="q-mx-sm"
+          :label="$t(tab.label)"
+          :class="activeFilter === tab.name ? ($q.dark.isActive ? 'tab_active_dark' : 'tab_active_light') : ($q.dark.isActive ? 'tab_inactive_dark' : 'tab_inactive_light')"
+        />
       </q-tabs>
     </div>
 
-    <!-- Summary Stats (when filtered) -->
-    <div class="stats-section" v-if="activeFilter !== 'all' && filteredTransactions.length > 0">
-      <div class="stats-container">
+    <!-- Summary Stats -->
+    <div class="stats-section" v-if="activeFilter !== 'all' && filteredTransactions.length > 0"
+         :class="$q.dark.isActive ? 'stats_section_dark' : 'stats_section_light'">
+      <div class="stats-container" :class="$q.dark.isActive ? 'stats_container_dark' : 'stats_container_light'">
         <div class="stat-item">
-          <div class="stat-label">Received</div>
-          <div class="stat-value positive">+{{ formatAmount(totalReceived) }}</div>
+          <div class="stat-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{
+              $t('Received')
+            }}
+          </div>
+          <div class="stat-value positive">
+            +{{ formatAmount(totalReceived) }}
+            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
+              +{{ getFiatAmountForStats(totalReceived) }}
+            </div>
+          </div>
         </div>
-        <div class="stat-divider"></div>
+        <div class="stat-divider" :class="$q.dark.isActive ? 'stat_divider_dark' : 'stat_divider_light'"></div>
         <div class="stat-item">
-          <div class="stat-label">Sent</div>
-          <div class="stat-value negative">-{{ formatAmount(totalSent) }}</div>
+          <div class="stat-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{
+              $t('Sent')
+            }}
+          </div>
+          <div class="stat-value negative">
+            -{{ formatAmount(totalSent) }}
+            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
+              -{{ getFiatAmountForStats(totalSent) }}
+            </div>
+          </div>
         </div>
-        <div class="stat-divider"></div>
+        <div class="stat-divider" :class="$q.dark.isActive ? 'stat_divider_dark' : 'stat_divider_light'"></div>
         <div class="stat-item">
-          <div class="stat-label">Net</div>
+          <div class="stat-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{
+              $t('Net')
+            }}
+          </div>
           <div class="stat-value" :class="netAmount >= 0 ? 'positive' : 'negative'">
             {{ netAmount >= 0 ? '+' : '' }}{{ formatAmount(netAmount) }}
+            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
+              {{ netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(netAmount) }}
+            </div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Transaction List -->
-    <q-scroll-area class="transaction-content" v-if="!isLoading && filteredTransactions.length > 0">
+    <q-scroll-area
+      class="transaction-content"
+      :class="$q.dark.isActive ? 'transaction_content_dark' : 'transaction_content_light'"
+      v-if="!isLoading && filteredTransactions.length > 0"
+    >
       <div class="transaction-groups">
-        <div 
-          v-for="group in groupedTransactions" 
+        <div
+          v-for="group in groupedTransactions"
           :key="group.date"
           class="transaction-group"
         >
           <!-- Group Header -->
-          <div 
+          <div
             v-if="!group.isFlat"
-            class="group-header" 
+            class="group-header"
+            :class="$q.dark.isActive ? 'group_header_dark' : 'group_header_light'"
             @click="toggleGroup(group.date)"
           >
             <div class="group-info">
-              <div class="group-date">{{ group.dateLabel }}</div>
-              <div class="group-summary">
-                {{ group.transactions.length }} transaction{{ group.transactions.length !== 1 ? 's' : '' }}
+              <div class="group-date" :class="$q.dark.isActive ? 'group_date_dark' : 'group_date_light'">
+                {{ group.dateLabel }}
+              </div>
+              <div class="group-summary" :class="$q.dark.isActive ? 'group_summary_dark' : 'group_summary_light'">
+                {{ group.transactions.length }} {{ $t('transaction') }}{{ group.transactions.length !== 1 ? 's' : '' }}
               </div>
             </div>
             <div class="group-amount">
-              <div class="group-total" :class="group.netAmount >= 0 ? 'positive' : 'negative'">
+              <div class="group-total"
+                   :class="[group.netAmount >= 0 ? 'positive' : 'negative', $q.dark.isActive ? 'group_total_dark' : 'group_total_light']">
                 {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
+                <div class="group-fiat text-right" :class="$q.dark.isActive ? 'group_fiat_dark' : 'group_fiat_light'">
+                  {{ group.netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(group.netAmount) }}
+                </div>
               </div>
               <q-icon
-                :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'" 
-                class="expand-icon"
+                :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'"
+                :class="$q.dark.isActive ? 'expand_icon_dark' : 'expand_icon_light'"
               />
             </div>
           </div>
 
           <!-- Group Transactions -->
           <q-slide-transition>
-            <div v-show="group.expanded || group.isFlat" class="group-transactions" :class="{ 'flat-list': group.isFlat }">
-              <div 
-                v-for="tx in group.transactions" 
+            <div v-show="group.expanded || group.isFlat" class="group-transactions"
+                 :class="[{ 'flat-list': group.isFlat }, $q.dark.isActive ? 'group_transactions_dark' : 'group_transactions_light']">
+              <div
+                v-for="tx in group.transactions"
                 :key="tx.id"
                 class="transaction-item"
+                :class="$q.dark.isActive ? 'transaction_item_dark' : 'transaction_item_light'"
                 @click="viewTransaction(tx)"
               >
                 <div class="transaction-icon">
@@ -114,19 +174,30 @@
 
                 <div class="transaction-details">
                   <div class="transaction-main">
-                    <div class="transaction-type">{{ getTransactionTypeText(tx) }}</div>
-                    <div class="transaction-time">{{ formatTime(tx.settled_at) }}</div>
+                    <div class="transaction-type"
+                         :class="$q.dark.isActive ? 'transaction_type_dark' : 'transaction_type_light'">
+                      {{ getTransactionTypeText(tx) }}
+                    </div>
+                    <div class="transaction-time"
+                         :class="$q.dark.isActive ? 'transaction_time_dark' : 'transaction_time_light'">
+                      {{ formatTime(tx.settled_at) }}
+                    </div>
                   </div>
-                  <div class="transaction-description" v-if="tx.description && tx.description !== 'Lightning transaction'">
+                  <div class="transaction-description"
+                       :class="$q.dark.isActive ? 'transaction_description_dark' : 'transaction_description_light'"
+                       v-if="tx.description && tx.description !== 'Lightning transaction'">
                     {{ tx.description }}
                   </div>
-                  <div class="transaction-description" v-else-if="tx.memo">
+                  <div class="transaction-description"
+                       :class="$q.dark.isActive ? 'transaction_description_dark' : 'transaction_description_light'"
+                       v-else-if="tx.memo">
                     {{ tx.memo }}
                   </div>
-                  <div class="nostr-info" v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
+                  <div class="nostr-info" :class="$q.dark.isActive ? 'nostr_info_dark' : 'nostr_info_light'"
+                       v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
                     <q-avatar size="14px" class="sender-avatar">
-                      <img 
-                        v-if="nostrProfiles[tx.senderNpub].picture" 
+                      <img
+                        v-if="nostrProfiles[tx.senderNpub].picture"
                         :src="nostrProfiles[tx.senderNpub].picture"
                         :alt="getSenderDisplayName(tx.senderNpub)"
                       />
@@ -137,10 +208,13 @@
                 </div>
 
                 <div class="transaction-amount">
-                  <div class="amount-sats" :class="getAmountClass(tx)">
+                  <div class="amount-sats"
+                       :class="[getAmountClass(tx), $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
                     {{ getFormattedAmount(tx) }}
                   </div>
-                  <div class="amount-fiat">{{ getFiatAmount(tx) }}</div>
+                  <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+                    {{ getFiatAmount(tx) }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -150,27 +224,34 @@
     </q-scroll-area>
 
     <!-- Loading State -->
-    <div v-if="isLoading" class="loading-state">
-      <q-spinner-dots color="primary" size="3rem"/>
-      <div class="loading-text">Loading transactions...</div>
+    <div v-if="isLoading" class="loading-state"
+         :class="$q.dark.isActive ? 'loading_state_dark' : 'loading_state_light'">
+      <q-spinner-dots :color="$q.dark.isActive ? '#15DE72' : '#059573'" size="3rem"/>
+      <div class="loading-text" :class="$q.dark.isActive ? 'loading_text_dark' : 'loading_text_light'">
+        {{ $t('Loading transactions...') }}
+      </div>
     </div>
 
     <!-- Empty State -->
-    <div v-if="!isLoading && filteredTransactions.length === 0" class="empty-state">
+    <div v-if="!isLoading && filteredTransactions.length === 0" class=" full-height"
+         :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
       <div class="empty-icon">
-        <q-icon name="las la-receipt" size="4rem" color="grey-4"/>
+        <q-icon name="las la-receipt" size="4rem" :color="$q.dark.isActive ? '#B0B0B0' : '#D1D5DB'"/>
       </div>
-      <div class="empty-title">No transactions found</div>
-      <div class="empty-subtitle">
-        {{ activeFilter === 'all' ? 'Your transactions will appear here' : `No transactions for ${activeFilter}` }}
+      <div class="empty-title" :class="$q.dark.isActive ? 'empty_title_dark' : 'empty_title_light'">
+        {{ $t('No transactions found') }}
       </div>
-      <q-btn 
-        outline 
-        color="primary" 
-        label="Refresh" 
+      <div class="empty-subtitle" :class="$q.dark.isActive ? 'empty_subtitle_dark' : 'empty_subtitle_light'">
+        {{
+          activeFilter === 'all' ? $t('Your transactions will appear here') : $t('No transactions for') + ' ' + $t(activeFilter)
+        }}
+      </div>
+      <q-btn
+        :label="$t('Refresh')"
         icon="las la-sync-alt"
         @click="loadTransactions"
-        class="refresh-btn"
+        :class="$q.dark.isActive ? 'btn_dark' : 'btn_light'"
+        no-caps
       />
     </div>
 
@@ -179,18 +260,18 @@
       <q-btn
         fab
         icon="las la-sync-alt"
-        color="primary"
         @click="refreshTransactions"
         :loading="isRefreshing"
-        class="refresh-fab"
+        :class="$q.dark.isActive ? 'refresh_fab_dark' : 'refresh_fab_light'"
       />
     </q-page-sticky>
   </q-page>
 </template>
 
 <script>
-import { webln } from "@getalby/sdk";
+import {webln} from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
+import {fiatRatesService} from '../utils/fiatRates.js';
 
 export default {
   name: 'TransactionHistoryPage',
@@ -207,7 +288,15 @@ export default {
       nostrProfiles: {},
       expandedGroups: new Set(),
       showLoadingScreen: true,
-      loadingText: 'Loading transactions...'
+      loadingText: 'Loading transactions...',
+      filterTabs: [
+        {name: 'all', label: 'All'},
+        {name: 'today', label: 'Today'},
+        {name: 'week', label: 'Week'},
+        {name: 'month', label: 'Month'}
+      ],
+      fiatRates: {},
+      loadingFiatRates: true
     }
   },
   computed: {
@@ -219,7 +308,7 @@ export default {
 
       return this.transactions.filter(tx => {
         const txDate = new Date(tx.settled_at * 1000);
-        
+
         switch (this.activeFilter) {
           case 'today':
             return txDate >= today;
@@ -234,24 +323,23 @@ export default {
     },
 
     groupedTransactions() {
-      // For 'all' tab, group by month only
       if (this.activeFilter === 'all') {
         const groups = {};
-        
+
         this.filteredTransactions.forEach(tx => {
           const date = new Date(tx.settled_at * 1000);
           const groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          
+
           if (!groups[groupKey]) {
             groups[groupKey] = {
               date: groupKey,
-              dateLabel: date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' }),
+              dateLabel: date.toLocaleDateString('en-US', {year: 'numeric', month: 'long'}),
               transactions: [],
               netAmount: 0,
               expanded: this.expandedGroups.has(groupKey)
             };
           }
-          
+
           groups[groupKey].transactions.push(tx);
           groups[groupKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
         });
@@ -263,8 +351,7 @@ export default {
             transactions: group.transactions.sort((a, b) => b.settled_at - a.settled_at)
           }));
       }
-      
-      // For other tabs (today, week, month), show flat list without grouping
+
       return [{
         date: 'flat',
         dateLabel: '',
@@ -293,17 +380,26 @@ export default {
   },
   async created() {
     this.initializeTransactionHistory();
+    this.loadFiatRates();
+  },
+
+  watch: {
+    'fiatRates': {
+      handler() {
+        this.$forceUpdate();
+      },
+      deep: true
+    }
   },
   methods: {
     async initializeTransactionHistory() {
       try {
         this.loadingText = 'Loading transaction history...';
-    await this.loadTransactions();
-        
+        await this.loadTransactions();
+
         this.loadingText = 'Loading profiles...';
-    this.loadNostrProfiles();
-        
-        // Hide loading screen
+        this.loadNostrProfiles();
+
         this.loadingText = 'Ready!';
         await new Promise(resolve => setTimeout(resolve, 300));
         this.showLoadingScreen = false;
@@ -312,38 +408,38 @@ export default {
         this.showLoadingScreen = false;
       }
     },
-    
+
     async loadTransactions() {
       this.isLoading = true;
       try {
         if (this.showLoadingScreen) {
           this.loadingText = 'Connecting to wallet...';
         }
-        
+
         const savedState = localStorage.getItem('buhoGO_wallet_state');
         if (savedState) {
           this.walletState = JSON.parse(savedState);
-          
+
           const activeWallet = this.walletState.connectedWallets.find(
             w => w.id === this.walletState.activeWalletId
           );
-          
+
           if (activeWallet) {
             if (this.showLoadingScreen) {
               this.loadingText = 'Fetching transactions...';
             }
-            
+
             const nwc = new webln.NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
-            
+
             await nwc.enable();
-            
-            const transactionsResponse = await nwc.listTransactions({ 
-              limit: 500, 
-              offset: 0 
+
+            const transactionsResponse = await nwc.listTransactions({
+              limit: 500,
+              offset: 0
             });
-            
+
             if (transactionsResponse && transactionsResponse.transactions) {
               this.transactions = transactionsResponse.transactions.map(tx => ({
                 ...tx,
@@ -352,14 +448,13 @@ export default {
                 description: tx.description || tx.memo || '',
                 settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
               }));
-              
-              // Sort by date (newest first)
+
               this.transactions.sort((a, b) => b.settled_at - a.settled_at);
-              
+
               if (this.showLoadingScreen) {
                 this.loadingText = 'Processing zap transactions...';
               }
-              
+
               await this.processZapTransactions();
             }
           }
@@ -368,7 +463,7 @@ export default {
         console.error('Error loading transactions:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to load transaction history',
+          message: this.$t('Failed to load transaction history'),
           position: 'top'
         });
       } finally {
@@ -380,14 +475,14 @@ export default {
       this.isRefreshing = true;
       await this.loadTransactions();
       this.isRefreshing = false;
-      
+
       this.$q.notify({
         type: 'positive',
-        message: 'Transactions refreshed',
+        message: this.$t('Transactions refreshed'),
         position: 'top'
       });
     },
-    
+
     async processZapTransactions() {
       for (const tx of this.transactions) {
         if (this.isZapTransaction(tx)) {
@@ -412,10 +507,10 @@ export default {
       const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
       return npubMatch ? npubMatch[0] : null;
     },
-    
+
     async fetchNostrProfile(npub) {
       if (this.nostrProfiles[npub]) return;
-      
+
       try {
         const profile = {
           name: npub.substring(0, 12) + '...',
@@ -425,7 +520,7 @@ export default {
           nip05: '',
           lud16: `${npub.substring(0, 8)}@getalby.com`
         };
-        
+
         this.nostrProfiles[npub] = profile;
         this.saveNostrProfiles();
       } catch (error) {
@@ -459,16 +554,14 @@ export default {
     },
 
     toggleGroup(dateKey) {
-      // Don't toggle flat lists
       if (dateKey === 'flat') return;
-      
+
       if (this.expandedGroups.has(dateKey)) {
         this.expandedGroups.delete(dateKey);
       } else {
         this.expandedGroups.add(dateKey);
       }
-      
-      // Update the expanded state in grouped transactions
+
       const group = this.groupedTransactions.find(g => g.date === dateKey);
       if (group) {
         group.expanded = this.expandedGroups.has(dateKey);
@@ -477,25 +570,25 @@ export default {
 
     getTransactionTypeText(tx) {
       if (tx.senderNpub && this.nostrProfiles[tx.senderNpub]) {
-        return 'Received';
+        return this.$t('Received');
       }
-      return tx.type === 'incoming' ? 'Received' : 'Sent';
+      return tx.type === 'incoming' ? this.$t('Received') : this.$t('Sent');
     },
-    
+
     getTransactionIconClass(tx) {
       if (tx.senderNpub) return 'tx-icon-zap';
       return tx.type === 'incoming' ? 'tx-icon-received' : 'tx-icon-sent';
     },
-    
+
     getTransactionIcon(tx) {
       if (tx.senderNpub) return 'las la-bolt';
       return tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
     },
-    
+
     getAmountClass(tx) {
       return tx.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
-    
+
     getFormattedAmount(tx) {
       const prefix = tx.type === 'incoming' ? '+' : '-';
       return prefix + ' ' + Math.abs(tx.amount).toLocaleString() + ' sats';
@@ -504,33 +597,82 @@ export default {
     formatAmount(amount) {
       return Math.abs(amount).toLocaleString() + ' sats';
     },
-    
+
+    async loadFiatRates() {
+      try {
+        this.loadingFiatRates = true;
+        await fiatRatesService.ensureRatesLoaded();
+        this.fiatRates = fiatRatesService.getRates();
+      } catch (error) {
+        console.error('Error loading fiat rates:', error);
+      } finally {
+        this.loadingFiatRates = false;
+      }
+    },
+
     getFiatAmount(tx) {
-      const btcAmount = Math.abs(tx.amount) / 100000000;
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates?.[currency.toLowerCase()] || 65000;
-      const fiatValue = btcAmount * rate;
-      
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥'
-      };
-      
-      const symbol = symbols[currency] || currency;
-      return symbol + fiatValue.toFixed(2);
+      if (this.loadingFiatRates) {
+        return '...';
+      }
+
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(tx.amount), currency);
+
+        const symbols = {
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          CAD: 'C$',
+          CHF: 'CHF',
+          AUD: 'A$',
+          JPY: '¥'
+        };
+
+        const symbol = symbols[currency] || currency;
+        return symbol + fiatValue.toFixed(2);
+      } catch (error) {
+        console.error('Error converting to fiat:', error);
+        return '--';
+      }
+    },
+
+    getFiatAmountForStats(amount) {
+      if (this.loadingFiatRates) {
+        return '...';
+      }
+
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(amount), currency);
+
+        const symbols = {
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          CAD: 'C$',
+          CHF: 'CHF',
+          AUD: 'A$',
+          JPY: '¥'
+        };
+
+        const symbol = symbols[currency] || currency;
+        return symbol + fiatValue.toFixed(2);
+      } catch (error) {
+        console.error('Error converting to fiat:', error);
+        return '--';
+      }
     },
 
     formatTime(timestamp) {
       const date = new Date(timestamp * 1000);
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
         minute: '2-digit',
         hour12: false
       });
     },
-    
+
     viewTransaction(tx) {
       this.$router.push(`/transaction/${tx.id}`);
     }
@@ -539,72 +681,166 @@ export default {
 </script>
 
 <style scoped>
-.transaction-history-page {
-  background: #f8f9fa;
+/* Base Page Styles */
+.transaction-history-page-dark {
+  background: #171717;
   min-height: 100vh;
+  font-family: Fustat, sans-serif;
 }
 
-/* Header */
-.page-header {
+.transaction-history-page-light {
+  background: #F6F6F6;
+  min-height: 100vh;
+  font-family: Fustat, sans-serif;
+}
+
+/* Header Styles */
+.page_header_dark {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
+  background: #0C0C0C;
+  border-bottom: 1px solid #2A342A;
   position: sticky;
   top: 0;
   z-index: 100;
 }
 
-.back-btn,
-.close-btn {
-  color: #6b7280;
+.page_header_light {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: white;
+  border-bottom: 1px solid #E5E7EB;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
-.header-title {
+.back_btn_dark,
+.close_btn_dark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+  color: #F6F6F6;
+}
+
+.back_btn_light,
+.close_btn_light {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+  color: #6B7280;
+}
+
+.back_btn_dark:hover,
+.close_btn_dark:hover {
+  background: #2A342A;
+}
+
+.back_btn_light:hover,
+.close_btn_light:hover {
+  background: #F1F5F9;
+}
+
+.main_page_title_dark {
+  color: #F6F6F6;
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  font-family: Fustat, sans-serif;
+}
+
+.main_page_title_light {
+  color: #212121;
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-family: Fustat, sans-serif;
 }
 
 /* Filter Section */
-.filter-section {
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
+.filter_section_dark {
+  background: #0C0C0C;
+  border-bottom: 1px solid #2A342A;
 }
 
-.filter-tabs {
+.filter_section_light {
+  background: white;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.filter_tabs_dark,
+.filter_tabs_light {
   padding: 0 1rem;
 }
 
-.filter-tabs :deep(.q-tab) {
-  font-weight: 500;
-  text-transform: none;
-  color: #6b7280;
+.tab_active_dark {
+  background: rgba(21, 222, 114, 0.1) !important;
+  color: #15DE72 !important;
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  font-family: Fustat, sans-serif !important;
 }
 
-.filter-tabs :deep(.q-tab--active) {
-  color: #059573;
+.tab_active_light {
+  background: rgba(5, 149, 115, 0.1) !important;
+  color: #059573 !important;
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  font-family: Fustat, sans-serif !important;
 }
 
-.filter-tabs :deep(.q-indicator) {
-  background: #059573;
+.tab_inactive_dark {
+  color: #B0B0B0 !important;
+  font-weight: 500 !important;
+  font-family: Fustat, sans-serif !important;
+}
+
+.tab_inactive_light {
+  color: #6B7280 !important;
+  font-weight: 500 !important;
+  font-family: Fustat, sans-serif !important;
 }
 
 /* Stats Section */
-.stats-section {
-  background: #f8f9fa;
+.stats_section_dark {
+  background: #171717;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #2A342A;
 }
 
-.stats-container {
+.stats_section_light {
+  background: #F6F6F6;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.stats_container_dark {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0C0C0C;
+  border: 1px solid #2A342A;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+}
+
+.stats_container_light {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: white;
-  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
   padding: 0.75rem 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
@@ -616,35 +852,77 @@ export default {
   min-width: 0;
 }
 
-.stat-label {
+.stat_label_dark {
   font-size: 0.6875rem;
-  color: #6b7280;
+  color: #B0B0B0;
   margin-bottom: 0.25rem;
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.025em;
+  font-family: Fustat, sans-serif;
+}
+
+.stat_label_light {
+  font-size: 0.6875rem;
+  color: #6B7280;
+  margin-bottom: 0.25rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-family: Fustat, sans-serif;
 }
 
 .stat-value {
   font-size: 0.875rem;
   font-weight: 700;
   white-space: nowrap;
+  font-family: Fustat, sans-serif;
 }
 
 .stat-value.positive {
-  color: #059573;
+  color: #15DE72;
 }
 
 .stat-value.negative {
-  color: #dc2626;
+  color: #FF4B4B;
 }
 
-/* Remove dividers for cleaner mobile look */
+.stat-fiat {
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-top: 0.125rem;
+  opacity: 0.8;
+}
+
+.stat_fiat_dark {
+  color: #B0B0B0;
+}
+
+.stat_fiat_light {
+  color: #6B7280;
+}
+
+.stat_divider_dark {
+  width: 1px;
+  height: 24px;
+  background: #2A342A;
+}
+
+.stat_divider_light {
+  width: 1px;
+  height: 24px;
+  background: #E5E7EB;
+}
 
 /* Transaction Content */
-.transaction-content {
+.transaction_content_dark {
   height: calc(100vh - 200px);
-  background: white;
+  background: #171717;
+}
+
+.transaction_content_light {
+  height: calc(100vh - 200px);
+  background: #F6F6F6;
 }
 
 .transaction-groups {
@@ -656,39 +934,76 @@ export default {
 }
 
 /* Group Header */
-.group-header {
+.group_header_dark {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: #f8f9fa;
+  background: #0C0C0C;
+  border: 1px solid #2A342A;
   border-radius: 12px;
   cursor: pointer;
   transition: background-color 0.2s;
   margin-bottom: 0.5rem;
 }
 
-.group-header:hover {
-  background: #f3f4f6;
+.group_header_light {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 0.5rem;
+}
+
+.group_header_dark:hover {
+  background: #2A342A;
+}
+
+.group_header_light:hover {
+  background: #F3F4F6;
 }
 
 .group-info {
   flex: 1;
 }
 
-.group-date {
+.group_date_dark {
   font-size: 1rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #F6F6F6;
   margin-bottom: 0.25rem;
+  font-family: Fustat, sans-serif;
 }
 
-.group-summary {
+.group_date_light {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #212121;
+  margin-bottom: 0.25rem;
+  font-family: Fustat, sans-serif;
+}
+
+.group_summary_dark {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: #B0B0B0;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  font-family: Fustat, sans-serif;
+}
+
+.group_summary_light {
+  font-size: 0.875rem;
+  color: #6B7280;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: Fustat, sans-serif;
 }
 
 .group-amount {
@@ -697,50 +1012,92 @@ export default {
   gap: 0.5rem;
 }
 
-.group-total {
+.group_total_dark {
   font-size: 1rem;
   font-weight: 600;
+  font-family: Fustat, sans-serif;
 }
 
-.group-total.positive {
-  color: #059573;
+.group_total_light {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: Fustat, sans-serif;
 }
 
-.group-total.negative {
-  color: #dc2626;
+.group-fiat {
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-top: 0.125rem;
+  opacity: 0.8;
 }
 
-.expand-icon {
-  color: #6b7280;
+.group_fiat_dark {
+  color: #B0B0B0;
+}
+
+.group_fiat_light {
+  color: #6B7280;
+}
+
+.expand_icon_dark {
+  color: #B0B0B0;
   transition: transform 0.2s;
 }
+
+.expand_icon_light {
+  color: #6B7280;
+  transition: transform 0.2s;
+}
+
 /* Group Transactions */
-.group-transactions {
-  background: white;
+.group_transactions_dark {
+  background: #0C0C0C;
+  border: 1px solid #2A342A;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+}
+
+.group_transactions_light {
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .flat-list {
-  border: none;
-  border-radius: 0;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
 }
 
-.transaction-item {
+.transaction_item_dark {
   display: flex;
   align-items: center;
   padding: 1rem;
   cursor: pointer;
   transition: background-color 0.2s;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid #2A342A;
 }
 
-.transaction-item:hover {
-  background: #f9fafb;
+.transaction_item_light {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-bottom: 1px solid #F3F4F6;
 }
 
-.transaction-item:last-child {
+.transaction_item_dark:hover {
+  background: #171717;
+}
+
+.transaction_item_light:hover {
+  background: #F9FAFB;
+}
+
+.transaction_item_dark:last-child,
+.transaction_item_light:last-child {
   border-bottom: none;
 }
 
@@ -759,15 +1116,15 @@ export default {
 }
 
 .tx-icon-received {
-  background: #059573;
+  background: linear-gradient(135deg, #15DE72, #059573);
 }
 
 .tx-icon-sent {
-  background: #6b7280;
+  background: linear-gradient(135deg, #6B7280, #4B5563);
 }
 
 .tx-icon-zap {
-  background: #059573;
+  background: linear-gradient(135deg, #15DE72, #43B65B);
 }
 
 .transaction-details {
@@ -782,19 +1139,34 @@ export default {
   margin-bottom: 0.25rem;
 }
 
-.transaction-type {
+.transaction_type_dark {
   font-weight: 500;
-  color: #1f2937;
+  color: #F6F6F6;
   font-size: 0.95rem;
+  font-family: Fustat, sans-serif;
 }
 
-.transaction-time {
-  color: #6b7280;
+.transaction_type_light {
+  font-weight: 500;
+  color: #212121;
+  font-size: 0.95rem;
+  font-family: Fustat, sans-serif;
+}
+
+.transaction_time_dark {
+  color: #B0B0B0;
   font-size: 0.8rem;
+  font-family: Fustat, sans-serif;
 }
 
-.transaction-description {
-  color: #6b7280;
+.transaction_time_light {
+  color: #6B7280;
+  font-size: 0.8rem;
+  font-family: Fustat, sans-serif;
+}
+
+.transaction_description_dark {
+  color: #B0B0B0;
   font-size: 0.8rem;
   margin-bottom: 0.25rem;
   overflow: hidden;
@@ -802,19 +1174,43 @@ export default {
   white-space: nowrap;
   max-width: 200px;
   display: block;
+  font-family: Fustat, sans-serif;
 }
 
-.nostr-info {
+.transaction_description_light {
+  color: #6B7280;
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  display: block;
+  font-family: Fustat, sans-serif;
+}
+
+.nostr_info_dark {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #15DE72;
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-family: Fustat, sans-serif;
+}
+
+.nostr_info_light {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   color: #059573;
   font-size: 0.7rem;
   font-weight: 500;
+  font-family: Fustat, sans-serif;
 }
 
 .sender-avatar {
-  border: 1px solid rgba(5, 149, 115, 0.3);
+  border: 1px solid rgba(21, 222, 114, 0.3);
 }
 
 .sender-name {
@@ -829,28 +1225,55 @@ export default {
   min-width: 90px;
 }
 
-.amount-sats {
+.amount_sats_dark {
   font-weight: 600;
   font-size: 0.95rem;
   margin-bottom: 0.25rem;
+  font-family: Fustat, sans-serif;
+}
+
+.amount_sats_light {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+  font-family: Fustat, sans-serif;
 }
 
 .amount-positive {
-  color: #059573;
+  color: #15DE72;
 }
 
 .amount-negative {
-  color: #dc2626;
+  color: #FF4B4B;
 }
 
-.amount-fiat {
-  color: #6b7280;
+.amount_fiat_dark {
+  color: #B0B0B0;
   font-size: 0.8rem;
+  font-family: Fustat, sans-serif;
+}
+
+.amount_fiat_light {
+  color: #6B7280;
+  font-size: 0.8rem;
+  font-family: Fustat, sans-serif;
 }
 
 /* Loading and Empty States */
-.loading-state,
-.empty-state {
+.loading_state_dark,
+.empty_state_dark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  text-align: center;
+  padding: 2rem;
+  background: #0C0C0C;
+}
+
+.loading_state_light,
+.empty_state_light {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -861,92 +1284,150 @@ export default {
   background: white;
 }
 
-.loading-text {
+.loading_text_dark {
   margin-top: 1rem;
-  color: #6b7280;
+  color: #B0B0B0;
   font-size: 1rem;
+  font-family: Fustat, sans-serif;
+}
+
+.loading_text_light {
+  margin-top: 1rem;
+  color: #6B7280;
+  font-size: 1rem;
+  font-family: Fustat, sans-serif;
 }
 
 .empty-icon {
   margin-bottom: 1rem;
 }
 
-.empty-title {
+.empty_title_dark {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #F6F6F6;
   margin-bottom: 0.5rem;
+  font-family: Fustat, sans-serif;
 }
 
-.empty-subtitle {
-  color: #6b7280;
+.empty_title_light {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #212121;
+  margin-bottom: 0.5rem;
+  font-family: Fustat, sans-serif;
+}
+
+.empty_subtitle_dark {
+  color: #B0B0B0;
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
+  font-family: Fustat, sans-serif;
 }
 
-.refresh-btn {
-  border-radius: 8px;
+.empty_subtitle_light {
+  color: #6B7280;
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+  font-family: Fustat, sans-serif;
+}
+
+/* Secondary Buttons */
+.btn_dark {
+  border-radius: 20px !important;
+  border: 1px solid #2A382A !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #FFF !important;
+  font-family: Fustat, sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+.btn_light {
+  border-radius: 20px !important;
+  border: 1px solid #E8E8E8 !important;
+  background: #F6F6F6 !important;
+  color: #212121 !important;
+  font-family: Fustat, sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
 }
 
 /* Floating Action Button */
-.refresh-fab {
-  background: linear-gradient(135deg, #059573, #047857);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3);
+.refresh_fab_dark {
+  background: linear-gradient(135deg, #15DE72, #059573) !important;
+  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.3) !important;
 }
 
-.refresh-fab:hover {
-  background: linear-gradient(135deg, #047857, #065f46);
-  box-shadow: 0 6px 16px rgba(5, 149, 115, 0.4);
+.refresh_fab_light {
+  background: linear-gradient(135deg, #15DE72, #059573) !important;
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3) !important;
+}
+
+.refresh_fab_dark:hover {
+  background: linear-gradient(135deg, #059573, #047857) !important;
+  box-shadow: 0 6px 16px rgba(21, 222, 114, 0.4) !important;
+}
+
+.refresh_fab_light:hover {
+  background: linear-gradient(135deg, #059573, #047857) !important;
+  box-shadow: 0 6px 16px rgba(5, 149, 115, 0.4) !important;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .transaction-description {
+  .transaction_description_dark,
+  .transaction_description_light {
     max-width: 150px;
     font-size: 0.75rem;
   }
-  
+
   .transaction-details {
     max-width: calc(100% - 140px);
   }
-  
+
   .transaction-amount {
     min-width: 100px;
     flex-shrink: 0;
   }
-  
-  .stats-section {
+
+  .stats_section_dark,
+  .stats_section_light {
     padding: 0.75rem;
   }
-  
-  .stats-container {
+
+  .stats_container_dark,
+  .stats_container_light {
     padding: 0.5rem 0.75rem;
     border-radius: 6px;
   }
-  
-  .stat-label {
+
+  .stat_label_dark,
+  .stat_label_light {
     font-size: 0.625rem;
     margin-bottom: 0.125rem;
   }
-  
+
   .stat-value {
     font-size: 0.8125rem;
   }
-  
-  .transaction-item {
+
+  .transaction_item_dark,
+  .transaction_item_light {
     padding: 0.75rem;
   }
-  
+
   .transaction-main {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.25rem;
   }
-  
-  .group-header {
+
+  .group_header_dark,
+  .group_header_light {
     padding: 0.75rem;
   }
-  
+
   .tx-icon-container {
     width: 32px;
     height: 32px;
