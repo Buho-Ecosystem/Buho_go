@@ -803,12 +803,14 @@ export default {
   color: #B0B0B0 !important;
   font-weight: 500 !important;
   font-family: Fustat, sans-serif !important;
+  border-radius: 12px !important;
 }
 
 .tab_inactive_light {
   color: #6B7280 !important;
   font-weight: 500 !important;
   font-family: Fustat, sans-serif !important;
+  border-radius: 12px !important;
 }
 
 /* Stats Section */
