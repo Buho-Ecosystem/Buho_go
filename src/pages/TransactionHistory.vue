@@ -859,7 +859,7 @@ export default {
   color: #B0B0B0;
   margin-bottom: 0.25rem;
   font-weight: 400;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.025em;
   font-family: Fustat, sans-serif;
 }
@@ -869,7 +869,7 @@ export default {
   color: #6B7280;
   margin-bottom: 0.25rem;
   font-weight: 400;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.025em;
   font-family: Fustat, sans-serif;
 }

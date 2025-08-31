@@ -1344,7 +1344,7 @@ export default {
   font-weight: 600;
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.025em;
 }
 
@@ -1609,7 +1609,7 @@ export default {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 10px;
   font-weight: 500;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.025em;
 }
 
@@ -1763,7 +1763,7 @@ export default {
   font-weight: 600;
   padding: 0.125rem 0.375rem;
   border-radius: 6px;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.025em;
 }
 

@@ -581,7 +581,7 @@ export default {
   font-size: 13px;
   font-weight: 500;
   color: #B0B0B0;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.025em;
 }
 
