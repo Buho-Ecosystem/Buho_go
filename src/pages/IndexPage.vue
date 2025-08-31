@@ -78,7 +78,7 @@
               unelevated
               class="scan-qr-btn-inline"
               :class="$q.dark.isActive ? 'btn_dark' : 'btn_light'"
-              @click="showScanner = true"
+              @click="openScanner"
               no-caps
             >
               <q-icon name="las la-qrcode" class="q-mr-sm"/>
@@ -101,7 +101,7 @@
               round
               dense
               icon="las la-arrow-left"
-              @click="showScanner = false"
+              @click="closeScanner"
               class="back-btn"
               :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
             />
@@ -119,18 +119,42 @@
 
         <q-card-section class="q-pt-none">
           <div class="qr-scanner-container" :class="$q.dark.isActive ? 'scanner-dark' : 'scanner-light'">
-            <qrcode-capture
+            <qrcode-stream
+              v-if="!cameraError"
               @detect="handleNWCScan"
+              @error="onCameraError"
+              @camera-on="onCameraReady"
+              @camera-off="onCameraOff"
               style="border-radius: 16px !important;"
-              :capture="null"
             />
+            
+            <!-- Camera Error State -->
+            <div v-if="cameraError" class="camera-error">
+              <q-icon name="las la-camera" size="3em" color="grey-5"/>
+              <p class="error-text">{{ cameraErrorMessage }}</p>
+              <q-btn
+                unelevated
+                :label="$t('Try Again')"
+                @click="retryCamera"
+                class="retry-btn"
+                :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+                no-caps
+              />
+            </div>
+
+            <!-- Loading State -->
+            <div v-if="cameraLoading && !cameraError" class="camera-loading">
+              <q-spinner-dots color="#15DE72" size="2em"/>
+              <p class="loading-text">{{ $t('Starting camera...') }}</p>
+            </div>
+
             <div v-if="isScanning" class="scan-overlay">
               <q-spinner-dots color="#15DE72" size="2em"/>
               <p class="scan-overlay-text">{{ $t('Scanning NWC QR code...') }}</p>
             </div>
 
             <!-- Scanning Frame -->
-            <div class="scanning-frame">
+            <div v-if="!cameraError && !cameraLoading" class="scanning-frame">
               <div class="frame-corner top-left"></div>
               <div class="frame-corner top-right"></div>
               <div class="frame-corner bottom-left"></div>
@@ -145,7 +169,7 @@
             class="full-width cancel-btn"
             :class="$q.dark.isActive ? 'more_btn_dark' : 'more_btn_light'"
             :label="$t('Cancel')"
-            @click="showScanner = false"
+            @click="closeScanner"
             no-caps
           />
         </q-card-section>
@@ -235,7 +259,10 @@ export default {
       showNameDialog: false,
       walletName: '',
       showLoadingScreen: true,
-      loadingText: 'Initializing BuhoGO...'
+      loadingText: 'Initializing BuhoGO...',
+      cameraError: false,
+      cameraErrorMessage: '',
+      cameraLoading: true
     }
   },
   mounted() {
@@ -262,6 +289,22 @@ export default {
       }
 
       this.showLoadingScreen = false;
+    },
+
+    openScanner() {
+      this.showScanner = true;
+      this.cameraError = false;
+      this.cameraLoading = true;
+      this.cameraErrorMessage = '';
+      this.isScanning = false;
+    },
+
+    closeScanner() {
+      this.showScanner = false;
+      this.cameraError = false;
+      this.cameraLoading = true;
+      this.cameraErrorMessage = '';
+      this.isScanning = false;
     },
 
     async connectWallet() {
@@ -330,6 +373,40 @@ export default {
       } finally {
         this.isScanning = false;
       }
+    },
+
+    onCameraError(error) {
+      console.error('Camera error:', error);
+      this.cameraError = true;
+      this.cameraLoading = false;
+      
+      if (error.name === 'NotAllowedError') {
+        this.cameraErrorMessage = this.$t('Camera access denied. Please allow camera permissions and try again.');
+      } else if (error.name === 'NotFoundError') {
+        this.cameraErrorMessage = this.$t('No camera found on this device.');
+      } else if (error.name === 'NotSupportedError') {
+        this.cameraErrorMessage = this.$t('Camera not supported on this device.');
+      } else if (error.name === 'NotReadableError') {
+        this.cameraErrorMessage = this.$t('Camera is already in use by another application.');
+      } else {
+        this.cameraErrorMessage = this.$t('Unable to access camera. Please check your permissions.');
+      }
+    },
+
+    onCameraReady() {
+      this.cameraError = false;
+      this.cameraLoading = false;
+      this.cameraErrorMessage = '';
+    },
+
+    onCameraOff() {
+      this.cameraLoading = true;
+    },
+
+    retryCamera() {
+      this.cameraError = false;
+      this.cameraLoading = true;
+      this.cameraErrorMessage = '';
     }
   }
 }
@@ -539,6 +616,37 @@ export default {
   overflow: hidden;
   position: relative;
   border: 2px solid;
+}
+
+.camera-error,
+.camera-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  text-align: center;
+  padding: 2rem;
+}
+
+.error-text,
+.loading-text {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  margin: 1rem 0;
+  color: #666;
+  line-height: 1.4;
+}
+
+.retry-btn {
+  height: 40px;
+  border-radius: 20px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 1.5rem;
+  margin-top: 0.5rem;
 }
 
 .scanner-dark {

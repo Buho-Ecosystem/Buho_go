@@ -20,7 +20,7 @@
         flat
         round
         dense
-        class="float-right"
+        class="float-right q-mr-sm"
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="$router.push('/settings')"
         aria-label="Settings"
@@ -30,13 +30,14 @@
       <q-btn
         flat
         round
-        dense
         class="float-right"
         :class="$q.dark.isActive ? 'dark-mode-btn-dark' : 'dark-mode-btn-light'"
         @click="$q.dark.toggle()"
+        padding="sm sm"
+        style="border-radius: 12px"
         aria-label="Toggle Dark Mode"
+        :icon="$q.dark.isActive ? 'las la-sun' : 'las la-moon'"
       >
-        <q-icon :name="$q.dark.isActive ? 'las la-sun' : 'las la-moon'" size="24px"/>
       </q-btn>
     </q-toolbar>
     <!-- Main Content -->

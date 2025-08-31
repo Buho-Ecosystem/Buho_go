@@ -174,6 +174,7 @@
 
 <script>
 import {QrcodeStream} from 'vue-qrcode-reader';
+import QrScanner from 'qr-scanner';
 // Assuming you have this service
 // import LightningPaymentService from '../utils/lightning.js';
 
@@ -345,25 +346,53 @@ export default {
       }
     },
 
-    importFromFile() {
+    async importFromFile() {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
       input.onchange = async (event) => {
         const file = event.target.files[0];
         if (file) {
+          this.isProcessing = true;
           try {
+            // Show loading notification
             this.$q.notify({
               type: 'info',
-              message: this.$t('QR code import from images coming soon!'),
-              position: 'bottom'
+              message: this.$t('Reading QR code from image...'),
+              position: 'bottom',
+              timeout: 2000
             });
+
+            // Decode QR code from image file
+            const qrResult = await QrScanner.scanImage(file, {
+              returnDetailedScanResult: true,
+              highlightScanRegion: false,
+              highlightCodeOutline: false
+            });
+
+            if (qrResult && qrResult.data) {
+              // Process the decoded QR data using existing logic
+              await this.processPaymentData(qrResult.data);
+            } else {
+              throw new Error(this.$t('No QR code found in image'));
+            }
+
           } catch (error) {
+            console.error('QR decode error:', error);
+            let errorMessage = this.$t('Failed to read QR code from image');
+            
+            if (error.message.includes('No QR code found')) {
+              errorMessage = this.$t('No QR code detected in the selected image');
+            } else if (error.message.includes('Invalid')) {
+              errorMessage = this.$t('Invalid QR code format in image');
+            }
+
             this.$q.notify({
               type: 'negative',
-              message: this.$t('Failed to read QR code from image'),
+              message: errorMessage,
               position: 'bottom'
             });
+            this.isProcessing = false;
           }
         }
       };
