@@ -190,7 +190,7 @@
 
     <!-- Payment Confirmation Dialog -->
     <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
-      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px;">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{ $t('Confirm Payment') }}</div>
           <q-btn flat round dense icon="las la-times" v-close-popup
@@ -255,12 +255,13 @@
 
         <q-card-actions align="right" class="payment-actions"
                         :class="$q.dark.isActive ? 'payment_actions_dark' : 'payment_actions_light'">
-          <q-btn flat :label="$t('Cancel')" v-close-popup
+          <q-btn flat :label="$t('Cancel')" v-close-popup no-caps
                  :class="$q.dark.isActive ? 'cancel_btn_dark' : 'cancel_btn_light'"/>
           <q-btn
             flat
             :label="$t('Send Payment')"
             color="primary"
+            no-caps
             @click="confirmPayment"
             :loading="isSendingPayment"
             :disable="!canConfirmPayment"
@@ -515,7 +516,7 @@ export default {
     needsAmountInput() {
       return this.pendingPayment &&
         (this.pendingPayment.type === 'lightning_address' ||
-          this.pendingPayment.type === 'lnurl_pay');
+          this.pendingPayment.type === 'lnurl');
     },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
@@ -1090,35 +1091,25 @@ export default {
           throw new Error('No active wallet found');
         }
 
-        const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-        await nwc.enable();
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
 
-        let paymentRequest;
-
-        if (this.pendingPayment.type === 'lightning_invoice') {
-          paymentRequest = this.pendingPayment.invoice || this.sendForm.input;
-        } else if (this.pendingPayment.type === 'lnurl_pay' || this.pendingPayment.type === 'lightning_address') {
-          const lightningService = new LightningPaymentService(activeWallet.nwcString);
-          const amount = parseInt(this.paymentAmount);
-          const comment = this.paymentComment || '';
-
-          const invoiceResponse = await lightningService.requestInvoiceFromLNURL(
-            this.pendingPayment,
-            amount,
-            comment
-          );
-
-          if (!invoiceResponse.success) {
-            throw new Error(invoiceResponse.error || 'Failed to get invoice from LNURL');
-          }
-
-          paymentRequest = invoiceResponse.invoice;
+        // Get amount from paymentAmount for LNURL/Lightning Address, or from pendingPayment for invoices
+        let amount = null;
+        if (this.paymentAmount) {
+          amount = parseInt(this.paymentAmount);
+        } else if (this.pendingPayment && this.pendingPayment.amount) {
+          amount = this.pendingPayment.amount;
+        } else if (this.sendForm.input && !isNaN(this.sendForm.input)) {
+          amount = parseInt(this.sendForm.input);
         }
 
-        console.log('🚀 Sending payment:', paymentRequest);
-        const result = await nwc.sendPayment(paymentRequest);
+        const comment = this.paymentComment || null;
+
+        console.log('🚀 Sending payment:', this.pendingPayment);
+        console.log('💰 Amount:', amount, 'Comment:', comment);
+        console.log('📝 Raw paymentAmount:', this.paymentAmount);
+        console.log('📝 Raw sendForm.input:', this.sendForm.input);
+        const result = await lightningService.sendPayment(this.pendingPayment, amount, comment);
         console.log('✅ Payment sent:', result);
 
         this.showPaymentConfirmation = false;

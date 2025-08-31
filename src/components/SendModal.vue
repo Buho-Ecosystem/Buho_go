@@ -318,6 +318,7 @@ export default {
     },
 
     showManualInput() {
+      // hide currrent show
       this.showManualDialog = true;
       this.manualInput = '';
     },
