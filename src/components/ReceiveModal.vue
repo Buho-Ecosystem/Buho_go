@@ -144,8 +144,7 @@
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
-import {webln} from "@getalby/sdk";
-
+import { NostrWebLNProvider } from "@getalby/sdk/webln";
 export default {
   name: 'ReceiveModal',
   components: {
@@ -313,7 +312,7 @@ export default {
           throw new Error('No active wallet found');
         }
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
 

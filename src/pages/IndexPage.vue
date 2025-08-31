@@ -211,7 +211,6 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
 import {QrcodeStream, QrcodeDropZone, QrcodeCapture} from 'vue-qrcode-reader'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import {useWalletStore} from '../stores/wallet'

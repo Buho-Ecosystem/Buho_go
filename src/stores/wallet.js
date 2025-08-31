@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { webln } from "@getalby/sdk"
+import { NostrWebLNProvider } from "@getalby/sdk/webln"
 import { fiatRatesService } from '../utils/fiatRates.js'
 
 export const useWalletStore = defineStore('wallet', {
@@ -19,7 +19,7 @@ export const useWalletStore = defineStore('wallet', {
     preferredFiatCurrency: 'USD',
     denominationCurrency: 'sats',
 
-    // Exchange rates (will be populated from fiatRatesService)
+    // Exchange rates
     exchangeRates: {},
 
     // Loading states
@@ -27,7 +27,10 @@ export const useWalletStore = defineStore('wallet', {
     isConnecting: false,
 
     // Error handling
-    lastError: null
+    lastError: null,
+
+    // Notification subscriptions
+    notificationSubscriptions: {}
   }),
 
   getters: {
@@ -53,15 +56,10 @@ export const useWalletStore = defineStore('wallet', {
 
     sortedWallets: (state) => {
       return [...state.wallets].sort((a, b) => {
-        // Active wallet first
         if (a.id === state.activeWalletId) return -1
         if (b.id === state.activeWalletId) return 1
-
-        // Default wallet second
         if (a.isDefault) return -1
         if (b.isDefault) return 1
-
-        // Then by last used
         return (b.lastUsed || 0) - (a.lastUsed || 0)
       })
     }
@@ -77,13 +75,9 @@ export const useWalletStore = defineStore('wallet', {
           this.$patch(parsed)
         }
 
-        // Validate and clean up any invalid wallets
         await this.validateWallets()
-
-        // Load exchange rates from fiat rates service
         await this.loadExchangeRates()
 
-        // Auto-connect to active wallet if exists
         if (this.activeWalletId) {
           await this.connectWallet(this.activeWalletId)
         }
@@ -93,20 +87,25 @@ export const useWalletStore = defineStore('wallet', {
       }
     },
 
-    // Add a new wallet
+    // Add a new wallet with enhanced connection testing
     async addWallet(walletData) {
       try {
         this.isConnecting = true
         this.lastError = null
 
-        // Test connection first
-        const nwc = new webln.NostrWebLNProvider({
+        // Create NostrWebLNProvider instance
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: walletData.nwcUrl,
         })
 
+        // Test connection
         await nwc.enable()
-        const info = await nwc.getInfo()
-        const balance = await nwc.getBalance()
+
+        // Get wallet info and balance in parallel
+        const [info, balance] = await Promise.all([
+          nwc.getInfo(),
+          nwc.getBalance()
+        ])
 
         // Create wallet object
         const wallet = {
@@ -114,38 +113,42 @@ export const useWalletStore = defineStore('wallet', {
           name: walletData.name,
           nwcUrl: walletData.nwcUrl,
           isActive: false,
-          isDefault: this.wallets.length === 0, // First wallet becomes default
+          isDefault: this.wallets.length === 0,
           createdAt: Date.now(),
           lastUsed: Date.now(),
           metadata: {
-            alias: info.alias || 'Unknown',
-            pubkey: info.pubkey || '',
-            network: info.network || 'mainnet'
+            alias: info.node?.alias || info.alias || 'Unknown',
+            pubkey: info.node?.pubkey || info.pubkey || '',
+            network: info.network || 'mainnet',
+            methods: info.methods || [],
+            supports: info.supports || []
           }
         }
 
-        // Add to wallets array
         this.wallets.push(wallet)
 
-        // Set connection state
+        // Set connection state with enhanced info
         this.connectionStates[wallet.id] = {
           connected: true,
           lastConnected: Date.now(),
-          nwcInstance: nwc
+          nwcInstance: nwc,
+          capabilities: info.methods || []
         }
 
-        // Store balance and info
         this.balances[wallet.id] = balance.balance
         this.walletInfos[wallet.id] = info
 
-        // Set as active if it's the first wallet
         if (this.wallets.length === 1) {
           this.activeWalletId = wallet.id
           wallet.isActive = true
         }
 
+        // Set up payment notifications if supported
+        await this.setupNotifications(wallet.id)
+
         await this.persistState()
         return wallet
+
       } catch (error) {
         this.lastError = error.message
         throw error
@@ -154,7 +157,163 @@ export const useWalletStore = defineStore('wallet', {
       }
     },
 
-    // Remove a wallet
+    // Enhanced connection with better error handling
+    async connectWallet(walletId) {
+      try {
+        const wallet = this.wallets.find(w => w.id === walletId)
+        if (!wallet) throw new Error('Wallet not found')
+
+        const nwc = new NostrWebLNProvider({
+          nostrWalletConnectUrl: wallet.nwcUrl,
+        })
+
+        await nwc.enable()
+
+        // Test connection with getInfo
+        const info = await nwc.getInfo()
+
+        this.connectionStates[walletId] = {
+          connected: true,
+          lastConnected: Date.now(),
+          nwcInstance: nwc,
+          capabilities: info.methods || []
+        }
+
+        // Set up notifications
+        await this.setupNotifications(walletId)
+
+        // Refresh wallet data
+        await this.refreshWalletData(walletId)
+
+        return nwc
+
+      } catch (error) {
+        this.connectionStates[walletId] = {
+          connected: false,
+          lastConnected: Date.now(),
+          error: error.message
+        }
+        throw error
+      }
+    },
+
+    // New: Set up payment notifications
+    async setupNotifications(walletId) {
+      try {
+        const nwcInstance = this.connectionStates[walletId]?.nwcInstance
+        if (!nwcInstance) return
+
+        // Check if wallet supports notifications
+        const info = await nwcInstance.getInfo()
+        if (!info.methods?.includes('notifications')) return
+
+        // Subscribe to payment notifications
+        const unsubscribe = await nwcInstance.subscribeNotifications(
+          (notification) => {
+            this.handleNotification(walletId, notification)
+          },
+          ['payment_received', 'payment_sent']
+        )
+
+        this.notificationSubscriptions[walletId] = unsubscribe
+
+      } catch (error) {
+        console.warn(`Could not set up notifications for wallet ${walletId}:`, error)
+      }
+    },
+
+    // New: Handle incoming notifications
+    handleNotification(walletId, notification) {
+      console.log(`Notification for wallet ${walletId}:`, notification)
+
+      // Update balance when payment is received/sent
+      if (notification.notification_type === 'payment_received' ||
+          notification.notification_type === 'payment_sent') {
+        // Refresh wallet data to get updated balance
+        this.refreshWalletData(walletId)
+      }
+    },
+
+    // Enhanced disconnect with notification cleanup
+    async disconnectWallet(walletId) {
+      // Clean up notification subscription
+      if (this.notificationSubscriptions[walletId]) {
+        try {
+          this.notificationSubscriptions[walletId]()
+          delete this.notificationSubscriptions[walletId]
+        } catch (error) {
+          console.warn(`Error cleaning up notifications for wallet ${walletId}:`, error)
+        }
+      }
+
+      // Close WebLN connection
+      if (this.connectionStates[walletId]?.nwcInstance) {
+        try {
+          this.connectionStates[walletId].nwcInstance.close()
+        } catch (error) {
+          console.warn(`Error closing WebLN connection for wallet ${walletId}:`, error)
+        }
+      }
+
+      if (this.connectionStates[walletId]) {
+        this.connectionStates[walletId].connected = false
+        delete this.connectionStates[walletId].nwcInstance
+      }
+    },
+
+    // Enhanced wallet data refresh
+    async refreshWalletData(walletId) {
+      try {
+        const connectionState = this.connectionStates[walletId]
+        if (!connectionState?.connected || !connectionState.nwcInstance) {
+          await this.connectWallet(walletId)
+        }
+
+        const nwc = this.connectionStates[walletId].nwcInstance
+
+        // Fetch balance and info in parallel with timeout
+        const [balance, info] = await Promise.all([
+          Promise.race([
+            nwc.getBalance(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Balance fetch timeout')), 10000)
+            )
+          ]),
+          Promise.race([
+            nwc.getInfo(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Info fetch timeout')), 10000)
+            )
+          ])
+        ])
+
+        this.balances[walletId] = balance.balance
+        this.walletInfos[walletId] = info
+
+        const wallet = this.wallets.find(w => w.id === walletId)
+        if (wallet) {
+          wallet.lastUsed = Date.now()
+          // Update metadata with latest info
+          wallet.metadata = {
+            ...wallet.metadata,
+            alias: info.node?.alias || info.alias || wallet.metadata.alias,
+            methods: info.methods || []
+          }
+        }
+
+        await this.persistState()
+
+      } catch (error) {
+        console.error(`Error refreshing wallet ${walletId}:`, error)
+        this.connectionStates[walletId] = {
+          ...this.connectionStates[walletId],
+          connected: false,
+          error: error.message
+        }
+      }
+    },
+
+    // Enhanced remove wallet with cleanup
     async removeWallet(walletId) {
       try {
         const walletIndex = this.wallets.findIndex(w => w.id === walletId)
@@ -162,10 +321,8 @@ export const useWalletStore = defineStore('wallet', {
 
         const wallet = this.wallets[walletIndex]
 
-        // Disconnect if connected
-        if (this.connectionStates[walletId]?.connected) {
-          await this.disconnectWallet(walletId)
-        }
+        // Disconnect and cleanup
+        await this.disconnectWallet(walletId)
 
         // Remove from arrays
         this.wallets.splice(walletIndex, 1)
@@ -176,7 +333,6 @@ export const useWalletStore = defineStore('wallet', {
         // Handle active wallet removal
         if (this.activeWalletId === walletId) {
           if (this.wallets.length > 0) {
-            // Switch to default wallet or first available
             const newActive = this.defaultWallet || this.wallets[0]
             await this.switchActiveWallet(newActive.id)
           } else {
@@ -190,169 +346,51 @@ export const useWalletStore = defineStore('wallet', {
         }
 
         await this.persistState()
+
       } catch (error) {
         this.lastError = error.message
         throw error
       }
     },
 
-    // Switch active wallet
-    async switchActiveWallet(walletId) {
+    // New: Create wallet from authorization URL (for easier setup)
+    async addWalletFromAuth(authUrl, walletName) {
       try {
-        const wallet = this.wallets.find(w => w.id === walletId)
-        if (!wallet) throw new Error('Wallet not found')
+        this.isConnecting = true
 
-        // Update active states
-        this.wallets.forEach(w => w.isActive = false)
-        wallet.isActive = true
-        wallet.lastUsed = Date.now()
-
-        this.activeWalletId = walletId
-
-        // Ensure wallet is connected
-        if (!this.connectionStates[walletId]?.connected) {
-          await this.connectWallet(walletId)
-        }
-
-        await this.persistState()
-      } catch (error) {
-        this.lastError = error.message
-        throw error
-      }
-    },
-
-    // Connect to a specific wallet
-    async connectWallet(walletId) {
-      try {
-        const wallet = this.wallets.find(w => w.id === walletId)
-        if (!wallet) throw new Error('Wallet not found')
-
-        const nwc = new webln.NostrWebLNProvider({
-          nostrWalletConnectUrl: wallet.nwcUrl,
+        const nwc = await NostrWebLNProvider.fromAuthorizationUrl(authUrl, {
+          name: walletName || `Wallet ${this.wallets.length + 1}`
         })
 
         await nwc.enable()
-
-        // Update connection state
-        this.connectionStates[walletId] = {
-          connected: true,
-          lastConnected: Date.now(),
-          nwcInstance: nwc
-        }
-
-        // Refresh balance and info
-        await this.refreshWalletData(walletId)
-
-        return nwc
-      } catch (error) {
-        this.connectionStates[walletId] = {
-          connected: false,
-          lastConnected: Date.now(),
-          error: error.message
-        }
-        throw error
-      }
-    },
-
-    // Disconnect from a specific wallet
-    async disconnectWallet(walletId) {
-      if (this.connectionStates[walletId]) {
-        this.connectionStates[walletId].connected = false
-        delete this.connectionStates[walletId].nwcInstance
-      }
-    },
-
-    // Refresh wallet data (balance, info)
-    async refreshWalletData(walletId) {
-      try {
-        const connectionState = this.connectionStates[walletId]
-        if (!connectionState?.connected || !connectionState.nwcInstance) {
-          await this.connectWallet(walletId)
-        }
-
-        const nwc = this.connectionStates[walletId].nwcInstance
-
-        // Fetch balance and info in parallel
-        const [balance, info] = await Promise.all([
-          nwc.getBalance(),
-          nwc.getInfo()
+        const [info, balance] = await Promise.all([
+          nwc.getInfo(),
+          nwc.getBalance()
         ])
 
-        this.balances[walletId] = balance.balance
-        this.walletInfos[walletId] = info
+        return this.addWallet({
+          name: walletName || info.node?.alias || `Wallet ${this.wallets.length + 1}`,
+          nwcUrl: nwc.getNostrWalletConnectUrl()
+        })
 
-        // Update last used timestamp
-        const wallet = this.wallets.find(w => w.id === walletId)
-        if (wallet) {
-          wallet.lastUsed = Date.now()
-        }
-
-        await this.persistState()
       } catch (error) {
-        console.error(`Error refreshing wallet ${walletId}:`, error)
-        this.connectionStates[walletId] = {
-          ...this.connectionStates[walletId],
-          connected: false,
-          error: error.message
-        }
-      }
-    },
-
-    // Refresh all connected wallets
-    async refreshAllWallets() {
-      this.isLoading = true
-      try {
-        const refreshPromises = this.wallets.map(wallet =>
-          this.refreshWalletData(wallet.id).catch(error => {
-            console.error(`Failed to refresh wallet ${wallet.id}:`, error)
-          })
-        )
-
-        await Promise.allSettled(refreshPromises)
+        this.lastError = error.message
+        throw error
       } finally {
-        this.isLoading = false
+        this.isConnecting = false
       }
     },
 
-    // Update wallet name
-    async updateWalletName(walletId, newName) {
-      const wallet = this.wallets.find(w => w.id === walletId)
-      if (wallet) {
-        wallet.name = newName
-        wallet.lastUsed = Date.now()
-        await this.persistState()
-      }
-    },
-
-    // Set default wallet
-    async setDefaultWallet(walletId) {
-      this.wallets.forEach(w => w.isDefault = false)
-      const wallet = this.wallets.find(w => w.id === walletId)
-      if (wallet) {
-        wallet.isDefault = true
-        await this.persistState()
-      }
-    },
-
-    // Get NWC instance for active wallet
-    getActiveNWC() {
-      if (!this.activeWalletId) return null
-      return this.connectionStates[this.activeWalletId]?.nwcInstance || null
-    },
-
-    // Get NWC instance for specific wallet
-    getNWC(walletId) {
-      return this.connectionStates[walletId]?.nwcInstance || null
-    },
-
-    // Validate all wallets (remove invalid ones)
+    // Enhanced validation with better NWC URL checking
     async validateWallets() {
       const validWallets = []
 
       for (const wallet of this.wallets) {
         try {
-          // Quick validation of NWC URL format
-          if (wallet.nwcUrl && wallet.nwcUrl.startsWith('nostr+walletconnect://')) {
+          // More robust NWC URL validation
+          if (wallet.nwcUrl &&
+              (wallet.nwcUrl.startsWith('nostr+walletconnect://') ||
+               wallet.nwcUrl.startsWith('nostrwalletconnect://'))) {
             validWallets.push(wallet)
           }
         } catch (error) {
@@ -362,14 +400,24 @@ export const useWalletStore = defineStore('wallet', {
 
       this.wallets = validWallets
 
-      // Ensure active wallet is still valid
       if (this.activeWalletId && !this.wallets.find(w => w.id === this.activeWalletId)) {
         this.activeWalletId = this.wallets.length > 0 ? this.wallets[0].id : null
       }
     },
 
-    // Disconnect all wallets
+    // Enhanced disconnect all with proper cleanup
     async disconnectAll() {
+      // Clean up all notification subscriptions
+      for (const walletId of Object.keys(this.notificationSubscriptions)) {
+        try {
+          this.notificationSubscriptions[walletId]()
+        } catch (error) {
+          console.warn(`Error cleaning up notifications for wallet ${walletId}:`, error)
+        }
+      }
+      this.notificationSubscriptions = {}
+
+      // Disconnect all wallets
       for (const walletId of Object.keys(this.connectionStates)) {
         await this.disconnectWallet(walletId)
       }
@@ -383,11 +431,72 @@ export const useWalletStore = defineStore('wallet', {
       await this.persistState()
     },
 
-    // Load exchange rates from fiat rates service
+    // Rest of the methods remain the same...
+    async switchActiveWallet(walletId) {
+      try {
+        const wallet = this.wallets.find(w => w.id === walletId)
+        if (!wallet) throw new Error('Wallet not found')
+
+        this.wallets.forEach(w => w.isActive = false)
+        wallet.isActive = true
+        wallet.lastUsed = Date.now()
+        this.activeWalletId = walletId
+
+        if (!this.connectionStates[walletId]?.connected) {
+          await this.connectWallet(walletId)
+        }
+
+        await this.persistState()
+      } catch (error) {
+        this.lastError = error.message
+        throw error
+      }
+    },
+
+    async refreshAllWallets() {
+      this.isLoading = true
+      try {
+        const refreshPromises = this.wallets.map(wallet =>
+          this.refreshWalletData(wallet.id).catch(error => {
+            console.error(`Failed to refresh wallet ${wallet.id}:`, error)
+          })
+        )
+        await Promise.allSettled(refreshPromises)
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async updateWalletName(walletId, newName) {
+      const wallet = this.wallets.find(w => w.id === walletId)
+      if (wallet) {
+        wallet.name = newName
+        wallet.lastUsed = Date.now()
+        await this.persistState()
+      }
+    },
+
+    async setDefaultWallet(walletId) {
+      this.wallets.forEach(w => w.isDefault = false)
+      const wallet = this.wallets.find(w => w.id === walletId)
+      if (wallet) {
+        wallet.isDefault = true
+        await this.persistState()
+      }
+    },
+
+    getActiveNWC() {
+      if (!this.activeWalletId) return null
+      return this.connectionStates[this.activeWalletId]?.nwcInstance || null
+    },
+
+    getNWC(walletId) {
+      return this.connectionStates[walletId]?.nwcInstance || null
+    },
+
     async loadExchangeRates() {
       try {
         const rates = await fiatRatesService.getRates()
-        // Convert to lowercase keys to match existing format
         this.exchangeRates = {
           usd: rates.USD || 0,
           eur: rates.EUR || 0,
@@ -398,7 +507,6 @@ export const useWalletStore = defineStore('wallet', {
         await this.persistState()
       } catch (error) {
         console.error('Error loading exchange rates:', error)
-        // Keep existing rates or use fallback
         if (Object.keys(this.exchangeRates).length === 0) {
           this.exchangeRates = {
             usd: 65000,
@@ -411,20 +519,17 @@ export const useWalletStore = defineStore('wallet', {
       }
     },
 
-    // Update exchange rates
     updateExchangeRates(rates) {
       this.exchangeRates = { ...this.exchangeRates, ...rates }
       this.persistState()
     },
 
-    // Update currency preferences
     updateCurrencyPreferences(fiatCurrency, denominationCurrency) {
       this.preferredFiatCurrency = fiatCurrency
       this.denominationCurrency = denominationCurrency
       this.persistState()
     },
 
-    // Persist state to localStorage
     async persistState() {
       try {
         const stateToSave = {
@@ -437,7 +542,7 @@ export const useWalletStore = defineStore('wallet', {
 
         localStorage.setItem('buhoGO_wallet_store', JSON.stringify(stateToSave))
 
-        // Also maintain backward compatibility with old format
+        // Maintain backward compatibility
         const legacyState = {
           balance: this.activeBalance,
           connectedWallets: this.wallets.map(w => ({
@@ -461,7 +566,6 @@ export const useWalletStore = defineStore('wallet', {
       }
     },
 
-    // Clear all data
     clearAll() {
       this.$reset()
       localStorage.removeItem('buhoGO_wallet_store')

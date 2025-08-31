@@ -437,7 +437,7 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk/webln";
 import {LightningPaymentService} from '../utils/lightning.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import LoadingScreen from '../components/LoadingScreen.vue';
@@ -631,7 +631,7 @@ export default {
             this.loadingText = 'Updating balance...';
           }
 
-          const nwc = new webln.NostrWebLNProvider({
+          const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
 
@@ -846,7 +846,7 @@ export default {
 
         if (this.paymentData.type === 'lightning_invoice') {
           try {
-            const nwc = new webln.NostrWebLNProvider({
+            const nwc = new NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
             await nwc.enable();
@@ -993,7 +993,7 @@ export default {
         const activeWallet = this.getActiveWallet();
         if (!activeWallet) return;
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         await nwc.enable();
@@ -1090,7 +1090,7 @@ export default {
           throw new Error('No active wallet found');
         }
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         await nwc.enable();
@@ -1158,7 +1158,7 @@ export default {
           throw new Error('No active wallet found');
         }
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         await nwc.enable();
