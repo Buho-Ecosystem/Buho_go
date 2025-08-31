@@ -347,7 +347,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Invoice created successfully!'),
-          position: 'top'
+          position: 'bottom'
         });
 
       } catch (error) {
@@ -356,7 +356,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to create invoice: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         });
 
         this.generatedInvoice = null;
@@ -373,14 +373,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Lightning invoice copied!'),
-          position: 'top'
+          position: 'bottom'
         });
       } catch (error) {
         console.error('Failed to copy invoice:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to copy invoice'),
-          position: 'top'
+          position: 'bottom'
         });
       }
     },
@@ -389,7 +389,7 @@ export default {
       this.$q.notify({
         type: 'info',
         message: this.$t('Lightning address feature coming soon!'),
-        position: 'top'
+        position: 'bottom'
       });
     }
   }

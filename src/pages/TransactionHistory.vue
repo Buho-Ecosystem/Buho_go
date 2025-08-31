@@ -464,7 +464,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to load transaction history'),
-          position: 'top'
+          position: 'bottom'
         });
       } finally {
         this.isLoading = false;
@@ -479,7 +479,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Transactions refreshed'),
-        position: 'top'
+        position: 'bottom'
       });
     },
 

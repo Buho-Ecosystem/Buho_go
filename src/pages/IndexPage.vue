@@ -298,7 +298,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to connect wallet: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         });
       } finally {
         this.isConnecting = false;
@@ -325,7 +325,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to scan QR code: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         });
       } finally {
         this.isScanning = false;

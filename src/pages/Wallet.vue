@@ -877,7 +877,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: error.message,
-          position: 'top'
+          position: 'bottom'
         });
       }
     },
@@ -976,7 +976,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: 'Failed to read clipboard',
-          position: 'top'
+          position: 'bottom'
         });
       }
     },
@@ -1016,7 +1016,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: 'Payment received!',
-            position: 'top'
+            position: 'bottom'
           });
         }
       } catch (error) {
@@ -1123,7 +1123,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: 'Payment sent successfully!',
-          position: 'top'
+          position: 'bottom'
         });
 
       } catch (error) {
@@ -1131,7 +1131,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: 'Payment failed: ' + error.message,
-          position: 'top'
+          position: 'bottom'
         });
       } finally {
         this.isSendingPayment = false;
@@ -1173,7 +1173,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: 'Failed to create invoice: ' + error.message,
-          position: 'top'
+          position: 'bottom'
         });
       } finally {
         this.isCreatingInvoice = false;
@@ -1238,14 +1238,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: 'Invoice copied to clipboard!',
-          position: 'top'
+          position: 'bottom'
         });
       } catch (error) {
         console.error('Failed to copy invoice:', error);
         this.$q.notify({
           type: 'negative',
           message: 'Failed to copy invoice',
-          position: 'top'
+          position: 'bottom'
         });
       }
     }

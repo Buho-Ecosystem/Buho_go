@@ -187,13 +187,13 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Switched to {name}', {name: this.wallets.find(w => w.id === walletId)?.name}),
-          position: 'top'
+          position: 'bottom'
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to switch wallet: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         })
       }
     },
@@ -208,13 +208,13 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet reconnected successfully'),
-          position: 'top'
+          position: 'bottom'
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to reconnect: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         })
       } finally {
         this.isReconnecting[walletId] = false

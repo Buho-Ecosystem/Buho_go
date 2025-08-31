@@ -265,7 +265,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Invalid QR code: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         });
         this.isProcessing = false;
       }
@@ -332,7 +332,7 @@ export default {
           this.$q.notify({
             type: 'info',
             message: this.$t('Clipboard is empty'),
-            position: 'top'
+            position: 'bottom'
           });
         }
       } catch (error) {
@@ -340,7 +340,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to read clipboard'),
-          position: 'top'
+          position: 'bottom'
         });
       }
     },
@@ -356,13 +356,13 @@ export default {
             this.$q.notify({
               type: 'info',
               message: this.$t('QR code import from images coming soon!'),
-              position: 'top'
+              position: 'bottom'
             });
           } catch (error) {
             this.$q.notify({
               type: 'negative',
               message: this.$t('Failed to read QR code from image'),
-              position: 'top'
+              position: 'bottom'
             });
           }
         }
@@ -382,7 +382,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: error.message,
-          position: 'top'
+          position: 'bottom'
         });
         this.isProcessing = false;
       }

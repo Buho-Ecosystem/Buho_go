@@ -829,13 +829,13 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet added successfully!'),
-          position: 'top'
+          position: 'bottom'
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to add wallet: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         })
       } finally {
         this.isAddingWallet = false
@@ -852,13 +852,13 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet reconnected successfully'),
-          position: 'top'
+          position: 'bottom'
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to reconnect: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         })
       } finally {
         this.isReconnecting[walletId] = false
@@ -878,7 +878,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('All wallets disconnected successfully'),
-            position: 'top'
+            position: 'bottom'
           });
 
           this.$router.push('/');
@@ -887,7 +887,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Failed to disconnect wallets'),
-            position: 'top'
+            position: 'bottom'
           });
         }
       });
@@ -909,13 +909,13 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Wallet removed successfully'),
-            position: 'top'
+            position: 'bottom'
           })
         } catch (error) {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Failed to remove wallet: ') + error.message,
-            position: 'top'
+            position: 'bottom'
           })
         }
       })
@@ -961,7 +961,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN set successfully'),
-          position: 'top'
+          position: 'bottom'
         });
       } else {
         const pinState = JSON.parse(localStorage.getItem('buhoGO_pin_state'));
@@ -969,7 +969,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Current PIN is incorrect'),
-            position: 'top'
+            position: 'bottom'
           });
           return;
         }
@@ -983,7 +983,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN changed successfully'),
-          position: 'top'
+          position: 'bottom'
         });
       }
     },
@@ -1016,7 +1016,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to enable notifications'),
-          position: 'top'
+          position: 'bottom'
         });
       }
     },
@@ -1090,7 +1090,7 @@ export default {
           message: urlToTest ?
             this.$t('Custom Mempool API URL saved and tested successfully!') :
             this.$t('Reset to default Mempool API successfully!'),
-          position: 'top'
+          position: 'bottom'
         });
 
       } catch (error) {
@@ -1098,7 +1098,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to connect to Mempool API: ') + error.message,
-          position: 'top'
+          position: 'bottom'
         });
       } finally {
         this.isTestingUrl = false;
@@ -1124,7 +1124,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Language changed successfully'),
-        position: 'top'
+        position: 'bottom'
       })
     },
 

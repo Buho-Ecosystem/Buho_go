@@ -368,7 +368,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: 'Failed to load transaction details',
-          position: 'top'
+          position: 'bottom'
         });
       } finally {
         this.loading = false;
@@ -599,14 +599,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Copied to clipboard!'),
-          position: 'top'
+          position: 'bottom'
         });
       } catch (error) {
         console.error('Failed to copy to clipboard:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to copy to clipboard'),
-          position: 'top'
+          position: 'bottom'
         });
       }
     },
