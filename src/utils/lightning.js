@@ -1,6 +1,6 @@
 import { webln } from "@getalby/sdk";
-import { LightningAddress } from "@getalby/lightning-tools";
-import * as lightningTools from "@getalby/lightning-tools";
+import { LightningAddress } from '@getalby/lightning-tools';
+import { bech32 } from 'bech32';
 
 export class LightningPaymentService {
   constructor(nwcString) {
@@ -14,6 +14,24 @@ export class LightningPaymentService {
     if (!this.enabled) {
       await this.nwc.enable();
       this.enabled = true;
+    }
+  }
+
+  decodeLNURL(lnurl) {
+    try {
+      // Decode LNURL using bech32
+      const cleanLnurl = lnurl.toLowerCase();
+      const decoded = bech32.decode(cleanLnurl, 2000);
+      
+      // Convert 5-bit words to bytes
+      const bytes = bech32.fromWords(decoded.words);
+      
+      // Convert bytes to string
+      const url = new TextDecoder().decode(new Uint8Array(bytes));
+      
+      return url;
+    } catch (error) {
+      throw new Error(`Failed to decode LNURL: ${error.message}`);
     }
   }
 
@@ -85,8 +103,8 @@ export class LightningPaymentService {
       // Clean the LNURL string
       const cleanLnurl = lnurlInput.replace(/^lightning:/i, '');
       
-      // Decode LNURL using the lightning-tools library
-      const { url } = lightningTools.decode(cleanLnurl);
+      // Decode LNURL using bech32 decoding
+      const url = this.decodeLNURL(cleanLnurl);
       
       // Fetch the LNURL data
       const response = await fetch(url);
@@ -165,18 +183,24 @@ export class LightningPaymentService {
   async sendPayment(paymentData, amount = null, comment = null) {
     try {
       await this.enable();
-
+      console.log('🚀 Sending payment:', paymentData.type);
       switch (paymentData.type) {
         case 'lightning_invoice':
           return await this.nwc.sendPayment(paymentData.invoice);
           
         case 'lightning_address':
-        case 'lnurl_pay':
+        case 'lnurl':
           if (!amount) {
             throw new Error('Amount is required for LNURL and Lightning Address payments');
           }
           
           const amountMsat = amount * 1000;
+          
+          // If this is a raw LNURL string, decode it first
+          if (paymentData.type === 'lnurl' && !paymentData.callback) {
+            const lnurlData = await this.handleLNURL(paymentData.data);
+            paymentData = lnurlData;
+          }
           
           // Validate amount range
           if (amountMsat < paymentData.minSendable || amountMsat > paymentData.maxSendable) {
@@ -187,7 +211,7 @@ export class LightningPaymentService {
           
           // Handle Lightning Address payments
           if (paymentData.type === 'lightning_address') {
-            const ln = new LightningAddress(paymentData.address);
+            const ln = new LightningAddress(paymentData.data);
             await ln.fetch();
             
             const invoice = await ln.requestInvoice({
@@ -199,7 +223,7 @@ export class LightningPaymentService {
           }
           
           // Handle LNURL-pay
-          if (paymentData.type === 'lnurl_pay') {
+          if (paymentData.type === 'lnurl' || paymentData.type === 'lnurl_pay') {
             // Build callback URL
             const callbackUrl = new URL(paymentData.callback);
             callbackUrl.searchParams.set('amount', amountMsat.toString());
