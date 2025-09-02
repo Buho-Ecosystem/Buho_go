@@ -279,15 +279,21 @@ export default {
 
     async processPaymentData(paymentData) {
       try {
-        // Basic validation - you can replace this with your Lightning service
+        // Basic validation
         if (!paymentData || paymentData.trim().length === 0) {
           throw new Error(this.$t('Invalid payment data'));
         }
 
+        const trimmedData = paymentData.trim();
+        // Handle lightning: prefix and extract the actual invoice
+        const cleanData = trimmedData.toLowerCase().startsWith('lightning:') 
+          ? trimmedData.substring(10) 
+          : trimmedData;
+
         // Emit the detected payment data to parent component
         this.$emit('payment-detected', {
-          data: paymentData,
-          type: this.determinePaymentType(paymentData)
+          data: cleanData,
+          type: this.determinePaymentType(cleanData)
         });
 
         this.closeModal();
@@ -299,9 +305,13 @@ export default {
 
     determinePaymentType(data) {
       const trimmed = data.trim().toLowerCase();
-      if (trimmed.startsWith('lnbc')) return 'invoice';
-      if (trimmed.includes('@') && trimmed.includes('.')) return 'lightning_address';
-      if (trimmed.startsWith('lnurl')) return 'lnurl';
+      // Handle lightning: prefix
+      const cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
+      
+      // Handle both invoice types for LNBC format
+      if (cleanData.startsWith('lnbc')) return 'lightning_invoice';
+      if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
+      if (cleanData.startsWith('lnurl')) return 'lnurl';
       return 'unknown';
     },
 
@@ -371,6 +381,7 @@ export default {
             });
 
             if (qrResult && qrResult.data) {
+              console.log(qrResult.data);
               // Process the decoded QR data using existing logic
               await this.processPaymentData(qrResult.data);
             } else {

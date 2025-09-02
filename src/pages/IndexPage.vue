@@ -127,7 +127,7 @@
               @camera-off="onCameraOff"
               style="border-radius: 16px !important;"
             />
-            
+
             <!-- Camera Error State -->
             <div v-if="cameraError" class="camera-error">
               <q-icon name="las la-camera" size="3em" color="grey-5"/>
@@ -352,13 +352,22 @@ export default {
     async handleNWCScan(result) {
       this.isScanning = true;
       this.scanError = null;
-
+      console.log(result)
       try {
-        if (!result.startsWith('nostr+walletconnect://')) {
+        // vue-qrcode-reader emits an array of detected codes. Each item has a rawValue
+        const detections = Array.isArray(result) ? result : (result ? [result] : []);
+        if (detections.length === 0) {
+          throw new Error(this.$t('No QR code detected'));
+        } 
+
+        // Find the first detection that looks like an NWC URL
+        const match = detections.find(d => typeof d?.rawValue === 'string' && d.rawValue.startsWith('nostr+walletconnect://'));
+        if (!match) {
           throw new Error(this.$t('Invalid NWC QR code format'));
         }
 
-        this.nwcString = result;
+        const nwcUrl = match.rawValue.trim();
+        this.nwcString = nwcUrl;
         this.showScanner = false;
         await this.connectWallet();
 
@@ -379,7 +388,7 @@ export default {
       console.error('Camera error:', error);
       this.cameraError = true;
       this.cameraLoading = false;
-      
+
       if (error.name === 'NotAllowedError') {
         this.cameraErrorMessage = this.$t('Camera access denied. Please allow camera permissions and try again.');
       } else if (error.name === 'NotFoundError') {

@@ -154,7 +154,7 @@ export class LightningPaymentService {
       // Fallback: try to parse basic invoice info
       try {
         return {
-          type: 'lightning_invoice',
+          type: 'lightning_invoice', // Keep consistent with primary return
           invoice: invoice.replace(/^lightning:/i, ''),
           amount: 0, // Will be determined when paying
           description: 'Lightning invoice',
@@ -186,6 +186,7 @@ export class LightningPaymentService {
       console.log('🚀 Sending payment:', paymentData.type);
       switch (paymentData.type) {
         case 'lightning_invoice':
+        case 'invoice':
           return await this.nwc.sendPayment(paymentData.invoice);
           
         case 'lightning_address':
