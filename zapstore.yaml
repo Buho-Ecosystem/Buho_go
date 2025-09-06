@@ -1,0 +1,40 @@
+identifier: com.buhogo.wallet
+name: Buhogo
+summary: Bitcoin payments made simple
+description: |
+  Buhogo is an open-source mobile wallet that makes sending and receiving Bitcoin effortless.
+  With support for both Lightning Network and on-chain transactions, Buhogo connects seamlessly
+  to your existing setup through Nostr Wallet Connect (NWC). 
+  
+  Think of it as your universal remote for Bitcoin payments – send, receive, and track with ease. 
+  Whether you're new to Bitcoin or a seasoned user, Buhogo is built to just work.
+
+  ## Key Features
+  - ⚡ Lightning-fast Bitcoin payments
+  - 🔑 Non-custodial and open-source
+  - 🔗 Connect multiple NWC-compatible wallets
+  - 📊 Transaction history & monthly summaries
+  - 🌙 Dark and light themes
+  - 🌍 Multi-language support
+  - 💸 Pay invoices, Lightning addresses, and LNURL requests
+
+  ## Why Buhogo?
+  Unlike most wallets that lock you into their ecosystem, Buhogo integrates with what you already use.
+  It’s designed for clarity, speed, and flexibility – a true Bitcoin-first experience.
+repository: https://github.com/Buho-Ecosystem/Buho_go
+homepage: https://go.mybuho.de
+license: MIT
+tags: bitcoin lightning wallet payments nwc nostr android
+icon: public/logo.png
+images:
+  - public/dark_img.png
+  - public/light.png
+  - public/connect_wallet.png
+  - public/create_send.png
+blossom_servers:
+  - https://cdn.zapstore.dev
+  - https://blossom.band
+assets:
+  - output/.*\.apk
+remote_metadata:
+  - github
