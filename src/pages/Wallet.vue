@@ -515,11 +515,16 @@ export default {
   },
   computed: {
     needsAmountInput() {
-      return this.pendingPayment &&
-        (this.pendingPayment.type === 'lightning_address' ||
+      if (!this.pendingPayment) return false;
+
+      if (this.pendingPayment.type === 'lightning_address' ||
           this.pendingPayment.type === 'lnurl' ||
-          (this.pendingPayment.type === 'lightning_invoice' && this.pendingPayment.amount === 0) ||
-          (this.pendingPayment.type === 'invoice' && this.pendingPayment.amount === 0));
+          this.pendingPayment.type === 'lnurl_pay') {
+        return this.pendingPayment.minSendable !== this.pendingPayment.maxSendable;
+      }
+
+      return (this.pendingPayment.type === 'lightning_invoice' && this.pendingPayment.amount === 0) ||
+             (this.pendingPayment.type === 'invoice' && this.pendingPayment.amount === 0);
     },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
@@ -987,23 +992,44 @@ export default {
 
     async onPaymentDetected(paymentData) {
       console.log('Payment detected:', paymentData);
-      
-      // Transform the payment data to match expected structure
-      if (paymentData.type === 'lightning_invoice' && paymentData.data) {
-        // Parse the invoice to get the amount
-        const parsedInvoice = this.parseInvoiceManually(paymentData.data);
-        
-        this.pendingPayment = {
-          ...paymentData,
-          invoice: paymentData.data,
-          amount: parsedInvoice.amount,
-          description: parsedInvoice.description
-        };
-      } else {
-        this.pendingPayment = paymentData;
+
+      try {
+        // Transform the payment data to match expected structure
+        if (paymentData.type === 'lightning_invoice' && paymentData.data) {
+          // Parse the invoice to get the amount
+          const parsedInvoice = this.parseInvoiceManually(paymentData.data);
+
+          this.pendingPayment = {
+            ...paymentData,
+            invoice: paymentData.data,
+            amount: parsedInvoice.amount,
+            description: parsedInvoice.description
+          };
+        } else if (paymentData.type === 'lnurl' && paymentData.data) {
+          // Process LNURL to get the actual payment parameters
+          const activeWallet = this.getActiveWallet();
+          if (!activeWallet) {
+            throw new Error('No active wallet found');
+          }
+
+          const lightningService = new LightningPaymentService(activeWallet.nwcString);
+          const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
+
+          console.log('✅ LNURL processed:', processedLnurl);
+          this.pendingPayment = processedLnurl;
+        } else {
+          this.pendingPayment = paymentData;
+        }
+
+        this.showPaymentConfirmation = true;
+      } catch (error) {
+        console.error('❌ Error processing payment:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: `Payment processing failed: ${error.message}`,
+          position: 'bottom'
+        });
       }
-      
-      this.showPaymentConfirmation = true;
     },
 
     async checkInvoiceStatus() {
@@ -1050,6 +1076,15 @@ export default {
         return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
       }
 
+      // For fixed-amount LNURL/Lightning Address payments
+      if ((this.pendingPayment.type === 'lnurl' ||
+           this.pendingPayment.type === 'lnurl_pay' ||
+           this.pendingPayment.type === 'lightning_address') &&
+          this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+        const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
+        return `${fixedAmount.toLocaleString()} sats`;
+      }
+
       return this.pendingPayment.amount ?
         `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` :
         'Variable amount';
@@ -1058,9 +1093,18 @@ export default {
     async formatPaymentFiat() {
       if (!this.pendingPayment) return '';
 
-      const amount = this.needsAmountInput ?
-        parseInt(this.paymentAmount) || 0 :
-        this.pendingPayment.amount || 0;
+      let amount = 0;
+      if (this.needsAmountInput) {
+        amount = parseInt(this.paymentAmount) || 0;
+      } else if ((this.pendingPayment.type === 'lnurl' ||
+                  this.pendingPayment.type === 'lnurl_pay' ||
+                  this.pendingPayment.type === 'lightning_address') &&
+                 this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+        // Fixed-amount LNURL/Lightning Address
+        amount = Math.floor(this.pendingPayment.minSendable / 1000);
+      } else {
+        amount = this.pendingPayment.amount || 0;
+      }
 
       if (amount === 0) return '';
 
@@ -1120,6 +1164,12 @@ export default {
         } else if (this.pendingPayment && this.pendingPayment.amount > 0) {
           // For fixed amount invoices
           amount = this.pendingPayment.amount;
+        } else if ((this.pendingPayment.type === 'lnurl' ||
+                    this.pendingPayment.type === 'lnurl_pay' ||
+                    this.pendingPayment.type === 'lightning_address') &&
+                   this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+          // For fixed-amount LNURL/Lightning Address payments
+          amount = Math.floor(this.pendingPayment.minSendable / 1000);
         }
 
         const comment = this.paymentComment || null;

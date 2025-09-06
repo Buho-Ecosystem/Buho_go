@@ -191,6 +191,7 @@ export class LightningPaymentService {
           
         case 'lightning_address':
         case 'lnurl':
+        case 'lnurl_pay':
           if (!amount) {
             throw new Error('Amount is required for LNURL and Lightning Address payments');
           }
