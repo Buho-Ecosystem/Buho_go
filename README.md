@@ -64,12 +64,16 @@ You can pay using any of these formats:
 
 Our interface focuses on clarity and speed:
 
-1. **Wallet Main Screen**: See all your connected wallets at a glance
-   ![Wallet Main Screen](public/Wallet.png)
-2. **Transaction History**: Clean monthly breakdowns showing exactly where your sats went
-   ![Transaction History](public/Transactions.png)
-3. **Settings**: Easily switch between light and dark modes, and set your preferred language.
-   ![Setting Up a Wallet](public/Setting.png)
+### 1. Dark Mode and Light Mode
+   ![Dark Mode](public/dark_img.png)
+
+   ![Light Mode](public/light.png)
+
+### 2. Wallet Connection
+   ![Connect Wallet](public/connect_wallet.png)
+
+### 3. Create/Send Functionality
+   ![Create/Send](public/create_send.png)
 
 ## Security & Philosophy
 
