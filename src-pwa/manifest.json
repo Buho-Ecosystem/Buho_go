@@ -5,17 +5,17 @@
   "start_url": "/",
   "icons": [
     {
-      "src": "buho_logo.svg",
+      "src": "/icons/icon-128x128.png",
       "sizes": "128x128",
       "type": "image/svg"
     },
     {
-      "src": "buho_logo.svg",
+      "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/svg"
     },
     {
-      "src": "buho_logo.svg",
+      "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/svg"
     }
