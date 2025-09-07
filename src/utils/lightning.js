@@ -213,7 +213,7 @@ export class LightningPaymentService {
           
           // Handle Lightning Address payments
           if (paymentData.type === 'lightning_address') {
-            const ln = new LightningAddress(paymentData.data);
+            const ln = new LightningAddress(paymentData.address || paymentData.data);
             await ln.fetch();
             
             const invoice = await ln.requestInvoice({

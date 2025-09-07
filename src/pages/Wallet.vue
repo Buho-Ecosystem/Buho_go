@@ -1011,12 +1011,24 @@ export default {
           if (!activeWallet) {
             throw new Error('No active wallet found');
           }
-
+          
           const lightningService = new LightningPaymentService(activeWallet.nwcString);
           const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
-
+          
           console.log('✅ LNURL processed:', processedLnurl);
           this.pendingPayment = processedLnurl;
+        } else if (paymentData.type === 'lightning_address' && paymentData.data) {
+          // Process Lightning Address to get the actual payment parameters
+          const activeWallet = this.getActiveWallet();
+          if (!activeWallet) {
+            throw new Error('No active wallet found');
+          }
+          
+          const lightningService = new LightningPaymentService(activeWallet.nwcString);
+          const processedAddress = await lightningService.processPaymentInput(paymentData.data);
+          
+          console.log('✅ Lightning Address processed:', processedAddress);
+          this.pendingPayment = processedAddress;
         } else {
           this.pendingPayment = paymentData;
         }
