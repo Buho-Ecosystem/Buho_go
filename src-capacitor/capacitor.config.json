@@ -1,6 +1,8 @@
 {
-  "appId": "org.capacitor.quasar.app",
-  "appName": "Quasar App",
+  "appId": "de.mybuho.buhogo",
+  "appName": "BuhoGo",
   "webDir": "www",
-  "server": {}
+  "server": {
+    "url": ""
+  }
 }

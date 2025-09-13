@@ -13,6 +13,7 @@
     "postinstall": "quasar prepare"
   },
   "dependencies": {
+    "@capacitor/ios": "^7.4.3",
     "@chenfengyuan/vue-qrcode": "^2.0.0",
     "@getalby/sdk": "^5.0.0",
     "@quasar/extras": "^1.16.4",
