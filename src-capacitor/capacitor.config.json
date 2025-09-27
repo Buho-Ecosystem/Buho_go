@@ -1,8 +1,5 @@
 {
-  "appId": "de.mybuho.buhogo",
+  "appId": "mybuho.buhogo",
   "appName": "BuhoGo",
-  "webDir": "www",
-  "server": {
-    "url": ""
-  }
+  "webDir": "www"
 }

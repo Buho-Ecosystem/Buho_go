@@ -73,8 +73,13 @@ export const useWalletStore = defineStore('wallet', {
       try {
         const savedState = localStorage.getItem('buhoGO_wallet_store')
         if (savedState) {
-          const parsed = JSON.parse(savedState)
-          this.$patch(parsed)
+          try {
+            const parsed = JSON.parse(savedState)
+            this.$patch(parsed)
+          } catch (parseError) {
+            console.warn('Failed to parse saved state, clearing:', parseError)
+            localStorage.removeItem('buhoGO_wallet_store')
+          }
         }
 
         // Validate and clean up any invalid wallets
@@ -85,7 +90,12 @@ export const useWalletStore = defineStore('wallet', {
 
         // Auto-connect to active wallet if exists
         if (this.activeWalletId) {
-          await this.connectWallet(this.activeWalletId)
+          try {
+            await this.connectWallet(this.activeWalletId)
+          } catch (connectError) {
+            console.warn('Failed to auto-connect wallet:', connectError)
+            // Don't throw, just log the error
+          }
         }
       } catch (error) {
         console.error('Error initializing wallet store:', error)
