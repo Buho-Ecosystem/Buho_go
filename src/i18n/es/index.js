@@ -256,6 +256,7 @@ export default {
   "Failed to delete contact": "Error al eliminar contacto",
   "Copy address": "Copiar dirección",
   "Delete entry": "Eliminar entrada",
+  "Edit Contact": "Editar Contacto",
   "Address copied to clipboard!": "¡Dirección copiada al portapapeles!",
   "Failed to copy address": "Error al copiar dirección",
   "Choose Color": "Elegir Color",

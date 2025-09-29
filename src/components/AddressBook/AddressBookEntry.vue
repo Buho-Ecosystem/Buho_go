@@ -2,7 +2,7 @@
   <div 
     class="address-entry"
     :class="$q.dark.isActive ? 'address-entry-dark' : 'address-entry-light'"
-    @click="$emit('edit', entry)"
+    @click="$emit('pay', entry)"
   >
     <!-- Avatar -->
     <div class="entry-avatar" @click.stop="$emit('change-color', entry)">
@@ -30,13 +30,13 @@
         flat
         round
         dense
-        icon="las la-paper-plane"
-        @click.stop="$emit('pay', entry)"
-        class="pay-btn"
-        :class="$q.dark.isActive ? 'pay-btn-dark' : 'pay-btn-light'"
+        icon="las la-edit"
+        @click.stop="$emit('edit', entry)"
+        class="edit-btn"
+        :class="$q.dark.isActive ? 'edit-btn-dark' : 'edit-btn-light'"
         size="sm"
       >
-        <q-tooltip>{{ $t('Send Payment') }}</q-tooltip>
+        <q-tooltip>{{ $t('Edit Contact') }}</q-tooltip>
       </q-btn>
       
       <q-btn
@@ -224,7 +224,7 @@ export default {
   opacity: 1;
 }
 
-.pay-btn,
+.edit-btn,
 .copy-btn,
 .delete-btn {
   width: 32px;
@@ -233,22 +233,22 @@ export default {
   transition: all 0.2s ease;
 }
 
-.pay-btn-dark {
+.edit-btn-dark {
   color: #B0B0B0;
 }
 
-.pay-btn-light {
+.edit-btn-light {
   color: #6B7280;
 }
 
-.pay-btn-dark:hover {
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
+.edit-btn-dark:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3B82F6;
 }
 
-.pay-btn-light:hover {
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
+.edit-btn-light:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3B82F6;
 }
 
 .copy-btn-dark {
@@ -321,7 +321,7 @@ export default {
     height: 28px;
   }
 
-  .pay-btn {
+  .edit-btn {
     width: 28px;
     height: 28px;
   }

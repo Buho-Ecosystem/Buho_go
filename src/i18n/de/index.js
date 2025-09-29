@@ -256,6 +256,7 @@ export default {
   "Failed to delete contact": "Fehler beim Löschen des Kontakts",
   "Copy address": "Adresse kopieren",
   "Delete entry": "Eintrag löschen",
+  "Edit Contact": "Kontakt bearbeiten",
   "Address copied to clipboard!": "Adresse in die Zwischenablage kopiert!",
   "Failed to copy address": "Fehler beim Kopieren der Adresse",
   "Choose Color": "Farbe wählen",
