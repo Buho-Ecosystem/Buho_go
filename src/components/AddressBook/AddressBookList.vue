@@ -5,14 +5,15 @@
       <q-input
         v-model="searchQuery"
         :placeholder="$t('Search contacts...')"
-        outlined
+        borderless
         dense
         :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+        input-class="q-px-md"
         clearable
         @clear="clearSearch"
       >
         <template v-slot:prepend>
-          <q-icon name="las la-search" />
+          <q-icon name="las la-search" class="q-ml-sm" />
         </template>
       </q-input>
     </div>

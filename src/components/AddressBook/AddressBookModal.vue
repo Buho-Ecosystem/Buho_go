@@ -44,26 +44,27 @@
         <div class="form-fields">
           <q-input
             v-model="formData.name"
-            :label="$t('Name')"
             :placeholder="$t('Enter contact name')"
-            outlined
             :class="$q.dark.isActive ? 'add_wallet_textbox_dark' : 'add_wallet_textbox_light'"
+            borderless
+            dense
+            input-class="q-px-md"
             :rules="[val => !!val || $t('Name is required')]"
             ref="nameInput"
             maxlength="50"
-            counter
           >
             <template v-slot:prepend>
-              <q-icon name="las la-user" />
+              <q-icon name="las la-user" class="q-ml-sm" />
             </template>
           </q-input>
 
           <q-input
             v-model="formData.lightningAddress"
-            :label="$t('Lightning Address')"
             :placeholder="$t('user@domain.com')"
-            outlined
             :class="$q.dark.isActive ? 'add_wallet_textbox_dark' : 'add_wallet_textbox_light'"
+            borderless
+            dense
+            input-class="q-px-md"
             :rules="[
               val => !!val || $t('Lightning address is required'),
               val => isValidLightningAddress(val) || $t('Invalid Lightning address format')
@@ -72,7 +73,7 @@
             maxlength="100"
           >
             <template v-slot:prepend>
-              <q-icon name="las la-at" />
+              <q-icon name="las la-at" class="q-ml-sm" />
             </template>
           </q-input>
         </div>
@@ -365,7 +366,15 @@ export default {
 .form-fields {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
+}
+
+.form-fields .q-field {
+  margin-bottom: 1rem;
+}
+
+.form-fields .q-field:last-child {
+  margin-bottom: 0;
 }
 
 .modal-actions {
