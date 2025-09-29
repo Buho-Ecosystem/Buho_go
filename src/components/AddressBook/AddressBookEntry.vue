@@ -30,6 +30,19 @@
         flat
         round
         dense
+        icon="las la-paper-plane"
+        @click.stop="$emit('pay', entry)"
+        class="pay-btn"
+        :class="$q.dark.isActive ? 'pay-btn-dark' : 'pay-btn-light'"
+        size="sm"
+      >
+        <q-tooltip>{{ $t('Send Payment') }}</q-tooltip>
+      </q-btn>
+      
+      <q-btn
+        flat
+        round
+        dense
         icon="las la-copy"
         @click.stop="copyAddress"
         class="copy-btn"
@@ -64,7 +77,7 @@ export default {
       required: true
     }
   },
-  emits: ['edit', 'delete', 'change-color'],
+  emits: ['edit', 'delete', 'change-color', 'pay'],
   methods: {
     getInitial(name) {
       return name ? name.charAt(0).toUpperCase() : '?'
@@ -202,7 +215,7 @@ export default {
 
 .entry-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.375rem;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -211,12 +224,31 @@ export default {
   opacity: 1;
 }
 
+.pay-btn,
 .copy-btn,
 .delete-btn {
   width: 32px;
   height: 32px;
   border-radius: 8px;
   transition: all 0.2s ease;
+}
+
+.pay-btn-dark {
+  color: #B0B0B0;
+}
+
+.pay-btn-light {
+  color: #6B7280;
+}
+
+.pay-btn-dark:hover {
+  background: rgba(21, 222, 114, 0.1);
+  color: #15DE72;
+}
+
+.pay-btn-light:hover {
+  background: rgba(21, 222, 114, 0.1);
+  color: #15DE72;
 }
 
 .copy-btn-dark {
@@ -285,6 +317,11 @@ export default {
 
   .copy-btn,
   .delete-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .pay-btn {
     width: 28px;
     height: 28px;
   }

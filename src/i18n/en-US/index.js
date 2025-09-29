@@ -263,5 +263,8 @@ export default {
   "Tap to change color": "Tap to change color",
   "Color updated successfully": "Color updated successfully",
   "Failed to update color": "Failed to update color",
-  "This Lightning address already exists in your address book": "This Lightning address already exists in your address book"
+  "This Lightning address already exists in your address book": "This Lightning address already exists in your address book",
+  "Send Payment": "Send Payment",
+  "Add a note for this payment": "Add a note for this payment",
+  "Sending...": "Sending..."
 }

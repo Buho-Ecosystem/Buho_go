@@ -32,6 +32,7 @@
       <AddressBookList
         @add-contact="showAddModal"
         @edit-contact="showEditModal"
+        @pay-contact="showPaymentModal"
       />
     </div>
 
@@ -41,6 +42,13 @@
       :entry="selectedEntry"
       @saved="handleEntrySaved"
     />
+
+    <!-- Payment Modal -->
+    <PaymentModal
+      v-model="showPayment"
+      :contact="selectedContact"
+      @payment-sent="handlePaymentSent"
+    />
   </q-page>
 </template>
 
@@ -49,17 +57,21 @@ import { useAddressBookStore } from '../stores/addressBook'
 import { mapActions } from 'pinia'
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
+import PaymentModal from '../components/PaymentModal.vue'
 
 export default {
   name: 'AddressBookPage',
   components: {
     AddressBookList,
-    AddressBookModal
+    AddressBookModal,
+    PaymentModal
   },
   data() {
     return {
       showModal: false,
-      selectedEntry: null
+      selectedEntry: null,
+      showPayment: false,
+      selectedContact: null
     }
   },
   async created() {
@@ -91,9 +103,24 @@ export default {
       this.showModal = true
     },
 
+    showPaymentModal(contact) {
+      this.selectedContact = contact
+      this.showPayment = true
+    },
+
     handleEntrySaved() {
       this.selectedEntry = null
       // Modal will close automatically
+    },
+
+    handlePaymentSent() {
+      this.selectedContact = null
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Payment sent successfully!'),
+        position: 'bottom',
+        icon: 'las la-check'
+      })
     }
   }
 }
