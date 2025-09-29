@@ -105,8 +105,12 @@
                   :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
         </div>
 
-        <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-          <div class="card-icon address-book-icon-disabled">
+        <div
+          class="section-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="$router.push('/address-book')"
+        >
+          <div class="card-icon address-book-icon">
             <q-icon name="las la-address-book" size="24px"/>
           </div>
           <div class="card-content">
@@ -117,7 +121,8 @@
               {{ $t('Save Lightning Addresses') }}
             </div>
           </div>
-          <div class="coming-soon-badge">{{ $t('Coming Soon') }}</div>
+          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
         </div>
 
         <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
@@ -1298,6 +1303,11 @@ export default {
 
 .language-icon {
   background: linear-gradient(135deg, #10B981, #059669);
+  color: white;
+}
+
+.address-book-icon {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
   color: white;
 }
 
