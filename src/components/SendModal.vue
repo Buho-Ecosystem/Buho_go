@@ -40,12 +40,12 @@
 
       <!-- Camera View -->
       <div class="camera-container">
-        <qrcode-stream
+        <video
           v-if="showCamera && !isProcessing"
-          @detect="onQRDetect"
-          @error="onCameraError"
+          ref="videoElement"
           class="camera-view"
-          :constraints="cameraConstraints"
+          style="width: 100%; height: 100%; object-fit: cover;"
+          playsinline
         />
 
         <!-- Processing Overlay -->
@@ -173,7 +173,6 @@
 </template>
 
 <script>
-import {QrcodeStream} from 'vue-qrcode-reader';
 import QrScanner from 'qr-scanner';
 // Assuming you have this service
 // import LightningPaymentService from '../utils/lightning.js';
@@ -181,7 +180,6 @@ import QrScanner from 'qr-scanner';
 export default {
   name: 'SendModal',
   components: {
-    QrcodeStream
   },
   props: {
     modelValue: {
@@ -197,11 +195,8 @@ export default {
       cameraError: null,
       showManualDialog: false,
       manualInput: '',
-      cameraConstraints: {
-        facingMode: 'environment',
-        width: {ideal: 1280},
-        height: {ideal: 720}
-      }
+      qrScanner: null,
+      videoElement: null
     }
   },
   computed: {
@@ -222,22 +217,69 @@ export default {
       if (newVal) {
         this.initializeCamera();
       } else {
+        this.stopQrScanner();
         this.showCamera = false;
         this.resetState();
       }
     }
   },
+  beforeUnmount() {
+    this.stopQrScanner();
+  },
   methods: {
     async initializeCamera() {
       this.cameraError = null;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({video: true});
-        stream.getTracks().forEach(track => track.stop());
+        // Check if QrScanner has camera support
+        const hasCamera = await QrScanner.hasCamera();
+        if (!hasCamera) {
+          throw new Error('No camera found on this device.');
+        }
 
         this.showCamera = true;
+        // Wait for the next tick to ensure the video element is rendered
+        await this.$nextTick();
+        await this.startQrScanner();
       } catch (error) {
         console.error('Camera initialization error:', error);
         this.handleCameraError(error);
+      }
+    },
+
+    async startQrScanner() {
+      try {
+        if (!this.$refs.videoElement) {
+          throw new Error('Video element not found');
+        }
+
+        this.videoElement = this.$refs.videoElement;
+        
+        // Create QR scanner instance
+        this.qrScanner = new QrScanner(
+          this.videoElement,
+          (result) => this.onQRDetect([{rawValue: result}]),
+          {
+            returnDetailedScanResult: false,
+            highlightScanRegion: true,
+            highlightCodeOutline: true,
+            preferredCamera: 'environment' // Use back camera if available
+          }
+        );
+
+        // Start scanning
+        await this.qrScanner.start();
+        
+      } catch (error) {
+        console.error('Error starting QR scanner:', error);
+        this.handleCameraError(error);
+      }
+    },
+
+    stopQrScanner() {
+      if (this.qrScanner) {
+        this.qrScanner.stop();
+        this.qrScanner.destroy();
+        this.qrScanner = null;
       }
     },
 

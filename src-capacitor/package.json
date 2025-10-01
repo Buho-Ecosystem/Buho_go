@@ -1,13 +1,14 @@
 {
   "name": "buho-app",
-  "version": "0.0.1",
-  "description": "A Quasar Project",
-  "author": "pratikpatel <pratik.patel@aurochssoftware.com>",
+  "version": "1.1.0",
+  "description": "BuhoGo - A Lightning Wallet for the Web",
+  "author": "pratikpatel <pratikpatelpp802@gmail.com>",
   "private": true,
   "dependencies": {
     "@capacitor/android": "^7.2.0",
     "@capacitor/app": "^7.0.0",
     "@capacitor/cli": "^7.0.0",
-    "@capacitor/core": "^7.0.0"
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/ios": "^7.4.3"
   }
 }
