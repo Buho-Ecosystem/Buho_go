@@ -42,7 +42,7 @@ export default defineConfig((/* ctx */) => {
         node: 'node20'
       },
 
-      vueRouterMode: 'history', // available values: 'hash', 'history'
+      vueRouterMode: 'hash', // available values: 'hash', 'history' - using hash for mobile compatibility
       // vueRouterBase,
       // vueDevtools,
       // vueOptionsAPI: false,
