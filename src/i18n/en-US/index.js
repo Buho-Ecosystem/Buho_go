@@ -256,6 +256,7 @@ export default {
   "Failed to delete contact": "Failed to delete contact",
   "Copy address": "Copy address",
   "Delete entry": "Delete entry",
+  "Edit Contact": "Edit Contact",
   "Address copied to clipboard!": "Address copied to clipboard!",
   "Failed to copy address": "Failed to copy address",
   "Choose Color": "Choose Color",
@@ -263,6 +264,10 @@ export default {
   "Tap to change color": "Tap to change color",
   "Color updated successfully": "Color updated successfully",
   "Failed to update color": "Failed to update color",
+  "This Lightning address already exists in your address book": "This Lightning address already exists in your address book",
+  "Send Payment": "Send Payment",
+  "Add a note for this payment": "Add a note for this payment",
+  "Sending...": "Sending..."
   "This Lightning address already exists in your address book": "This Lightning address already exists in your address book"
   "Connect Your Wallet": "Connect Your Wallet",
   "Enter your wallet's connection link or scan a QR code to get started": "Enter your wallet's connection link or scan a QR code to get started",

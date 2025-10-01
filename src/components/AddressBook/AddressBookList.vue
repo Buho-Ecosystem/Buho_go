@@ -45,6 +45,7 @@
             @edit="editEntry"
             @delete="deleteEntry"
             @change-color="changeEntryColor"
+            @pay="payContact"
           />
         </div>
       </q-scroll-area>
@@ -152,7 +153,7 @@ export default {
   components: {
     AddressBookEntry
   },
-  emits: ['add-contact', 'edit-contact'],
+  emits: ['add-contact', 'edit-contact', 'pay-contact'],
   data() {
     return {
       showColorPicker: false,
@@ -178,6 +179,10 @@ export default {
 
     editEntry(entry) {
       this.$emit('edit-contact', entry)
+    },
+
+    payContact(entry) {
+      this.$emit('pay-contact', entry)
     },
 
     async deleteEntry(entry) {

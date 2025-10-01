@@ -2,7 +2,7 @@
   <div 
     class="address-entry"
     :class="$q.dark.isActive ? 'address-entry-dark' : 'address-entry-light'"
-    @click="$emit('edit', entry)"
+    @click="$emit('pay', entry)"
   >
     <!-- Avatar -->
     <div class="entry-avatar" @click.stop="$emit('change-color', entry)">
@@ -26,6 +26,19 @@
 
     <!-- Actions -->
     <div class="entry-actions">
+      <q-btn
+        flat
+        round
+        dense
+        icon="las la-edit"
+        @click.stop="$emit('edit', entry)"
+        class="edit-btn"
+        :class="$q.dark.isActive ? 'edit-btn-dark' : 'edit-btn-light'"
+        size="sm"
+      >
+        <q-tooltip>{{ $t('Edit Contact') }}</q-tooltip>
+      </q-btn>
+      
       <q-btn
         flat
         round
@@ -64,7 +77,7 @@ export default {
       required: true
     }
   },
-  emits: ['edit', 'delete', 'change-color'],
+  emits: ['edit', 'delete', 'change-color', 'pay'],
   methods: {
     getInitial(name) {
       return name ? name.charAt(0).toUpperCase() : '?'
@@ -202,7 +215,7 @@ export default {
 
 .entry-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.375rem;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -211,12 +224,31 @@ export default {
   opacity: 1;
 }
 
+.edit-btn,
 .copy-btn,
 .delete-btn {
   width: 32px;
   height: 32px;
   border-radius: 8px;
   transition: all 0.2s ease;
+}
+
+.edit-btn-dark {
+  color: #B0B0B0;
+}
+
+.edit-btn-light {
+  color: #6B7280;
+}
+
+.edit-btn-dark:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3B82F6;
+}
+
+.edit-btn-light:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3B82F6;
 }
 
 .copy-btn-dark {
@@ -285,6 +317,11 @@ export default {
 
   .copy-btn,
   .delete-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .edit-btn {
     width: 28px;
     height: 28px;
   }

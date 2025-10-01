@@ -256,6 +256,7 @@ export default {
   "Failed to delete contact": "Error al eliminar contacto",
   "Copy address": "Copiar dirección",
   "Delete entry": "Eliminar entrada",
+  "Edit Contact": "Editar Contacto",
   "Address copied to clipboard!": "¡Dirección copiada al portapapeles!",
   "Failed to copy address": "Error al copiar dirección",
   "Choose Color": "Elegir Color",
@@ -263,5 +264,8 @@ export default {
   "Tap to change color": "Toca para cambiar color",
   "Color updated successfully": "Color actualizado exitosamente",
   "Failed to update color": "Error al actualizar color",
-  "This Lightning address already exists in your address book": "Esta dirección Lightning ya existe en tu libreta de direcciones"
+  "This Lightning address already exists in your address book": "Esta dirección Lightning ya existe en tu libreta de direcciones",
+  "Send Payment": "Enviar Pago",
+  "Add a note for this payment": "Agregar una nota para este pago",
+  "Sending...": "Enviando..."
 }
