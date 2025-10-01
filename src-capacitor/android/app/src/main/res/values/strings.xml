@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Quasar App</string>
-    <string name="title_activity_main">Quasar App</string>
-    <string name="package_name">org.capacitor.quasar.app</string>
-    <string name="custom_url_scheme">org.capacitor.quasar.app</string>
+    <string name="app_name">BuhoGo</string>
+    <string name="title_activity_main">BuhoGo</string>
+    <string name="package_name">de.mybuho.buhogo</string>
+    <string name="custom_url_scheme">de.mybuho.buhogo</string>
 </resources>

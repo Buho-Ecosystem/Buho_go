@@ -119,13 +119,12 @@
 
         <q-card-section class="q-pt-none">
           <div class="qr-scanner-container" :class="$q.dark.isActive ? 'scanner-dark' : 'scanner-light'">
-            <qrcode-stream
+            <video
               v-if="!cameraError"
-              @detect="handleNWCScan"
-              @error="onCameraError"
-              @camera-on="onCameraReady"
-              @camera-off="onCameraOff"
-              style="border-radius: 16px !important;"
+              ref="videoElement"
+              class="qr-video"
+              style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px;"
+              playsinline
             />
 
             <!-- Camera Error State -->
@@ -236,17 +235,26 @@
 
 <script>
 import {webln} from "@getalby/sdk";
-import {QrcodeStream, QrcodeDropZone, QrcodeCapture} from 'vue-qrcode-reader'
+import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import {useWalletStore} from '../stores/wallet'
 import {mapActions} from 'pinia'
 
+// Error handling wrapper for async operations
+const safeAsync = (fn) => {
+  return async (...args) => {
+    try {
+      return await fn(...args)
+    } catch (error) {
+      console.error('Async operation failed:', error)
+      throw error
+    }
+  }
+}
+
 export default {
   name: 'WalletConnectPage',
   components: {
-    QrcodeStream,
-    QrcodeDropZone,
-    QrcodeCapture,
     LoadingScreen,
   },
   data() {
@@ -262,44 +270,64 @@ export default {
       loadingText: 'Initializing BuhoGO...',
       cameraError: false,
       cameraErrorMessage: '',
-      cameraLoading: true
+      cameraLoading: true,
+      qrScanner: null,
+      videoElement: null
     }
   },
   mounted() {
     this.initializeApp();
   },
+  beforeUnmount() {
+    this.stopQrScanner();
+  },
   methods: {
     ...mapActions(useWalletStore, ['addWallet']),
 
     async initializeApp() {
-      // Check for existing wallet state
-      const existingState = localStorage.getItem('buhoGO_wallet_store');
-      if (existingState) {
-        this.loadingText = 'Checking wallet state...';
+      try {
+        // Check for existing wallet state
+        const existingState = localStorage.getItem('buhoGO_wallet_store');
+        if (existingState) {
+          this.loadingText = 'Checking wallet state...';
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const walletInfo = JSON.parse(existingState);
-        if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
-          this.loadingText = 'Loading wallet...';
-          await new Promise(resolve => setTimeout(resolve, 800));
-          this.$router.push('/wallet');
-          return;
+          try {
+            const walletInfo = JSON.parse(existingState);
+            if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
+              this.loadingText = 'Loading wallet...';
+              await new Promise(resolve => setTimeout(resolve, 800));
+              this.$router.push('/wallet');
+              return;
+            }
+          } catch (parseError) {
+            console.warn('Failed to parse wallet state, clearing:', parseError);
+            localStorage.removeItem('buhoGO_wallet_store');
+          }
         }
-      }
 
-      this.showLoadingScreen = false;
+        this.showLoadingScreen = false;
+      } catch (error) {
+        console.error('Error initializing app:', error);
+        this.showLoadingScreen = false;
+      }
     },
 
-    openScanner() {
+    async openScanner() {
       this.showScanner = true;
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
       this.isScanning = false;
+      
+      // Wait for the next tick to ensure the video element is rendered
+      await this.$nextTick();
+      await this.startQrScanner();
     },
 
     closeScanner() {
+      this.stopQrScanner();
       this.showScanner = false;
       this.cameraError = false;
       this.cameraLoading = true;
@@ -338,47 +366,94 @@ export default {
         this.$router.push('/wallet')
       } catch (error) {
         console.error('Error connecting wallet:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to connect wallet: ') + error.message,
-          position: 'bottom'
-        });
+        if (this.$q && this.$q.notify) {
+          this.$q.notify({
+            type: 'negative',
+            message: (this.$t ? this.$t('Failed to connect wallet: ') : 'Failed to connect wallet: ') + error.message,
+            position: 'bottom'
+          });
+        }
       } finally {
         this.isConnecting = false;
         this.showLoadingScreen = false;
       }
     },
 
-    async handleNWCScan(result) {
-      this.isScanning = true;
-      this.scanError = null;
-      console.log(result)
+    async startQrScanner() {
       try {
-        // vue-qrcode-reader emits an array of detected codes. Each item has a rawValue
-        const detections = Array.isArray(result) ? result : (result ? [result] : []);
-        if (detections.length === 0) {
-          throw new Error(this.$t('No QR code detected'));
-        } 
-
-        // Find the first detection that looks like an NWC URL
-        const match = detections.find(d => typeof d?.rawValue === 'string' && d.rawValue.startsWith('nostr+walletconnect://'));
-        if (!match) {
-          throw new Error(this.$t('Invalid NWC QR code format'));
+        if (!this.$refs.videoElement) {
+          throw new Error('Video element not found');
         }
 
-        const nwcUrl = match.rawValue.trim();
+        this.videoElement = this.$refs.videoElement;
+        
+        // Check if QrScanner has camera support
+        const hasCamera = await QrScanner.hasCamera();
+        if (!hasCamera) {
+          throw new Error('No camera found on this device.');
+        }
+
+        // Create QR scanner instance
+        this.qrScanner = new QrScanner(
+          this.videoElement,
+          (result) => this.handleNWCScan(result.data),
+          {
+            returnDetailedScanResult: false,
+            highlightScanRegion: true,
+            highlightCodeOutline: true,
+            preferredCamera: 'environment' // Use back camera if available
+          }
+        );
+
+        // Start scanning
+        await this.qrScanner.start();
+        this.cameraLoading = false;
+        this.cameraError = false;
+        
+      } catch (error) {
+        console.error('Error starting QR scanner:', error);
+        this.onCameraError(error);
+      }
+    },
+
+    stopQrScanner() {
+      if (this.qrScanner) {
+        this.qrScanner.stop();
+        this.qrScanner.destroy();
+        this.qrScanner = null;
+      }
+    },
+
+    async handleNWCScan(qrData) {
+      this.isScanning = true;
+      this.scanError = null;
+      console.log('QR Code detected:', qrData);
+      
+      try {
+        if (!qrData || typeof qrData !== 'string') {
+          throw new Error(this.$t ? this.$t('No QR code detected') : 'No QR code detected');
+        }
+
+        // Check if it's an NWC URL
+        if (!qrData.startsWith('nostr+walletconnect://')) {
+          throw new Error(this.$t ? this.$t('Invalid NWC QR code format') : 'Invalid NWC QR code format');
+        }
+
+        const nwcUrl = qrData.trim();
         this.nwcString = nwcUrl;
-        this.showScanner = false;
+        this.closeScanner();
         await this.connectWallet();
 
       } catch (error) {
-        console.error('Error scanning NWC QR code:', error);
+        console.error('Error processing QR code:', error);
         this.scanError = error.message;
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to scan QR code: ') + error.message,
-          position: 'bottom'
-        });
+        if (this.$q && this.$q.notify) {
+          this.$q.notify({
+            type: 'negative',
+            message: (this.$t ? this.$t('Failed to scan QR code: ') : 'Failed to scan QR code: ') + error.message,
+            position: 'bottom'
+          });
+        }
       } finally {
         this.isScanning = false;
       }
@@ -390,15 +465,15 @@ export default {
       this.cameraLoading = false;
 
       if (error.name === 'NotAllowedError') {
-        this.cameraErrorMessage = this.$t('Camera access denied. Please allow camera permissions and try again.');
+        this.cameraErrorMessage = this.$t ? this.$t('Camera access denied. Please allow camera permissions and try again.') : 'Camera access denied. Please allow camera permissions and try again.';
       } else if (error.name === 'NotFoundError') {
-        this.cameraErrorMessage = this.$t('No camera found on this device.');
+        this.cameraErrorMessage = this.$t ? this.$t('No camera found on this device.') : 'No camera found on this device.';
       } else if (error.name === 'NotSupportedError') {
-        this.cameraErrorMessage = this.$t('Camera not supported on this device.');
+        this.cameraErrorMessage = this.$t ? this.$t('Camera not supported on this device.') : 'Camera not supported on this device.';
       } else if (error.name === 'NotReadableError') {
-        this.cameraErrorMessage = this.$t('Camera is already in use by another application.');
+        this.cameraErrorMessage = this.$t ? this.$t('Camera is already in use by another application.') : 'Camera is already in use by another application.';
       } else {
-        this.cameraErrorMessage = this.$t('Unable to access camera. Please check your permissions.');
+        this.cameraErrorMessage = this.$t ? this.$t('Unable to access camera. Please check your permissions.') : 'Unable to access camera. Please check your permissions.';
       }
     },
 
@@ -412,10 +487,11 @@ export default {
       this.cameraLoading = true;
     },
 
-    retryCamera() {
+    async retryCamera() {
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
+      await this.startQrScanner();
     }
   }
 }
