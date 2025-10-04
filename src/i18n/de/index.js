@@ -5,7 +5,6 @@ export default {
   "connected": "verbunden",
   "Preferences": "Einstellungen",
   "Currency": "Währung",
-  "Address Book": "Adressbuch",
   "Save Lightning Addresses": "Lightning-Adressen speichern",
   "Coming Soon": "Demnächst verfügbar",
   "Notifications": "Benachrichtigungen",
@@ -256,7 +255,6 @@ export default {
   "Failed to delete contact": "Fehler beim Löschen des Kontakts",
   "Copy address": "Adresse kopieren",
   "Delete entry": "Eintrag löschen",
-  "Edit Contact": "Kontakt bearbeiten",
   "Address copied to clipboard!": "Adresse in die Zwischenablage kopiert!",
   "Failed to copy address": "Fehler beim Kopieren der Adresse",
   "Choose Color": "Farbe wählen",
@@ -265,7 +263,6 @@ export default {
   "Color updated successfully": "Farbe erfolgreich aktualisiert",
   "Failed to update color": "Fehler beim Aktualisieren der Farbe",
   "This Lightning address already exists in your address book": "Diese Lightning-Adresse existiert bereits in Ihrem Adressbuch",
-  "Send Payment": "Zahlung senden",
   "Add a note for this payment": "Eine Notiz für diese Zahlung hinzufügen",
   "Sending...": "Sende..."
 }
