@@ -4,7 +4,7 @@
     persistent
     :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'"
   >
-    <q-card 
+    <q-card
       class="address-modal"
       :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
     >
@@ -28,7 +28,7 @@
       <q-card-section class="modal-content">
         <!-- Avatar Preview -->
         <div class="avatar-preview">
-          <div 
+          <div
             class="preview-circle"
             :style="{ backgroundColor: formData.color }"
             @click="showColorPicker = true"
@@ -42,40 +42,35 @@
 
         <!-- Form Fields -->
         <div class="form-fields">
-          <q-input
-            v-model="formData.name"
-            :placeholder="$t('Enter contact name')"
-            :class="$q.dark.isActive ? 'add_wallet_textbox_dark' : 'add_wallet_textbox_light'"
-            borderless
-            dense
-            input-class="q-px-md"
-            :rules="[val => !!val || $t('Name is required')]"
-            ref="nameInput"
-            maxlength="50"
-          >
-            <template v-slot:prepend>
-              <q-icon name="las la-user" class="q-ml-sm" />
-            </template>
-          </q-input>
+          <div class="input-wrapper">
+            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Name') }}
+            </div>
+            <input
+              v-model="formData.name"
+              type="text"
+              :placeholder="$t('Enter contact name')"
+              class="form-input text-white"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              ref="nameInput"
+              maxlength="50"
+            />
+          </div>
 
-          <q-input
-            v-model="formData.lightningAddress"
-            :placeholder="$t('user@domain.com')"
-            :class="$q.dark.isActive ? 'add_wallet_textbox_dark' : 'add_wallet_textbox_light'"
-            borderless
-            dense
-            input-class="q-px-md"
-            :rules="[
-              val => !!val || $t('Lightning address is required'),
-              val => isValidLightningAddress(val) || $t('Invalid Lightning address format')
-            ]"
-            ref="addressInput"
-            maxlength="100"
-          >
-            <template v-slot:prepend>
-              <q-icon name="las la-at" class="q-ml-sm" />
-            </template>
-          </q-input>
+          <div class="input-wrapper">
+            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Lightning Address') }}
+            </div>
+            <input
+              v-model="formData.lightningAddress"
+              type="text"
+              placeholder="user@domain.com"
+              class="form-input text-white"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              ref="addressInput"
+              maxlength="100"
+            />
+          </div>
         </div>
       </q-card-section>
 
@@ -85,6 +80,7 @@
           flat
           :label="$t('Cancel')"
           @click="closeModal"
+          no-caps
           class="cancel-btn"
           :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
         />
@@ -109,7 +105,7 @@
             {{ $t('Choose Color') }}
           </div>
         </q-card-section>
-        
+
         <q-card-section class="color-grid">
           <div
             v-for="color in colorPalette"
@@ -119,7 +115,7 @@
             :style="{ backgroundColor: color }"
             @click="selectColor(color)"
           >
-            <q-icon 
+            <q-icon
               v-if="formData.color === color"
               name="las la-check"
               class="color-check"
@@ -161,7 +157,7 @@ export default {
   },
   computed: {
     ...mapState(useAddressBookStore, ['colorPalette']),
-    
+
     show: {
       get() {
         return this.modelValue
@@ -176,8 +172,8 @@ export default {
     },
 
     isFormValid() {
-      return this.formData.name.trim() && 
-             this.formData.lightningAddress.trim() && 
+      return this.formData.name.trim() &&
+             this.formData.lightningAddress.trim() &&
              this.isValidLightningAddress(this.formData.lightningAddress)
     }
   },
@@ -241,7 +237,7 @@ export default {
       if (!this.isFormValid) return
 
       this.isSaving = true
-      
+
       try {
         const entryData = {
           name: this.formData.name.trim(),
@@ -366,15 +362,42 @@ export default {
 .form-fields {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.5rem;
 }
 
-.form-fields .q-field {
-  margin-bottom: 1rem;
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-.form-fields .q-field:last-child {
-  margin-bottom: 0;
+.input-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  text-align: left;
+}
+
+.view_title {
+  color: #6D6D6D;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-input:focus {
+  border-color: #15DE72;
+}
+
+.form-input::placeholder {
+  color: #B0B0B0;
 }
 
 .modal-actions {

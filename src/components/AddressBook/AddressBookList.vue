@@ -27,6 +27,7 @@
         <q-btn
           flat
           dense
+          no-caps
           :label="$t('Clear All')"
           @click="showClearAllDialog"
           class="clear-all-btn"
@@ -43,7 +44,7 @@
             :key="entry.id"
             :entry="entry"
             @edit="editEntry"
-            @delete="deleteEntry"
+            @delete="confirmDeleteEntry"
             @change-color="changeEntryColor"
             @pay="payContact"
           />
@@ -70,7 +71,7 @@
       />
     </div>
 
-    <div v-else class="empty-state" :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
+    <div v-else class="empty-state full-height" :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
       <div class="empty-illustration">
         <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="60" cy="60" r="60" :fill="$q.dark.isActive ? '#2A342A' : '#F3F4F6'"/>
@@ -100,8 +101,8 @@
     </div>
 
     <!-- Floating Add Button -->
-    <q-page-sticky 
-      position="bottom-right" 
+    <q-page-sticky
+      position="bottom-right"
       :offset="[18, 18]"
       v-if="entries.length > 0"
     >
@@ -121,7 +122,7 @@
             {{ $t('Choose Color for {name}', { name: selectedEntry?.name || '' }) }}
           </div>
         </q-card-section>
-        
+
         <q-card-section class="color-grid">
           <div
             v-for="color in colorPalette"
@@ -131,7 +132,7 @@
             :style="{ backgroundColor: color }"
             @click="updateEntryColor(color)"
           >
-            <q-icon 
+            <q-icon
               v-if="selectedEntry?.color === color"
               name="las la-check"
               class="color-check"
@@ -185,10 +186,11 @@ export default {
       this.$emit('pay-contact', entry)
     },
 
-    async deleteEntry(entry) {
+    async confirmDeleteEntry(entry) {
+      console.log(entry)
       this.$q.dialog({
         title: this.$t('Delete Contact'),
-        message: this.$t('Are you sure you want to delete "{name}"?', { name: entry.name }),
+        message: this.$t('Are you sure you want to delete this contact? This action cannot be undone.'),
         cancel: true,
         persistent: true,
         class: this.$q.dark.isActive ? 'dailog_dark' : 'dailog_light'
@@ -223,7 +225,7 @@ export default {
         await this.updateEntry(this.selectedEntry.id, { color })
         this.showColorPicker = false
         this.selectedEntry = null
-        
+
         this.$q.notify({
           type: 'positive',
           message: this.$t('Color updated successfully'),
