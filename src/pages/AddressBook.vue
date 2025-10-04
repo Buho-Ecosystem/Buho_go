@@ -28,7 +28,7 @@
     </div>
 
     <!-- Content -->
-    <div class="page-content">
+    <div class="page-content full">
       <AddressBookList
         @add-contact="showAddModal"
         @edit-contact="showEditModal"
