@@ -44,7 +44,7 @@
             :key="entry.id"
             :entry="entry"
             @edit="editEntry"
-            @delete="deleteEntry"
+            @delete="confirmDeleteEntry"
             @change-color="changeEntryColor"
             @pay="payContact"
           />
@@ -186,7 +186,7 @@ export default {
       this.$emit('pay-contact', entry)
     },
 
-    async deleteEntry(entry) {
+    async confirmDeleteEntry(entry) {
       console.log(entry)
       this.$q.dialog({
         title: this.$t('Delete Contact'),
