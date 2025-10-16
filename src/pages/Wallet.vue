@@ -600,7 +600,6 @@ export default {
     }
   },
   methods: {
-    // ... (keeping all your existing methods from the original file)
     openWalletManagement() {
       this.$router.push('/settings');
     },
