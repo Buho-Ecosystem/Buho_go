@@ -601,6 +601,9 @@ export default {
   },
   methods: {
     // ... (keeping all your existing methods from the original file)
+    openWalletManagement() {
+      this.$router.push({ name: 'settings', params: { openWalletManagement: true } });
+    },
     async initializeWallet() {
       try {
         this.loadingText = 'Loading wallet state...';
@@ -1500,37 +1503,54 @@ export default {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   margin-bottom: 1rem;
   border: 1px solid;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .wallet-badge-dark {
-  background: rgba(21, 222, 114, 0.08);
-  border-color: rgba(21, 222, 114, 0.2);
-  color: #15DE72;
+  background: rgba(38, 38, 38, 0.6);
+  border-color: rgba(21, 222, 114, 0.3);
+  color: #a1a1a1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .wallet-badge-light {
-  background: rgba(5, 149, 115, 0.08);
-  border-color: rgba(5, 149, 115, 0.2);
-  color: #059573;
+  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(5, 149, 115, 0.35);
+  color: #6b6b6b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .wallet-badge-dark:hover {
-  background: rgba(21, 222, 114, 0.15);
-  border-color: #15DE72;
+  background: rgba(38, 38, 38, 0.8);
+  border-color: rgba(21, 222, 114, 0.6);
+  color: #d4d4d4;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .wallet-badge-light:hover {
-  background: rgba(5, 149, 115, 0.15);
-  border-color: #059573;
+  background: rgba(0, 0, 0, 0.6);
+  border-color: rgba(5, 149, 115, 0.55);
+  color: #3f3f3f;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .wallet-badge-icon {
-  opacity: 0.8;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.wallet-badge-dark:hover .wallet-badge-icon {
+  opacity: 1;
+}
+
+.wallet-badge-light:hover .wallet-badge-icon {
+  opacity: 1;
 }
 
 .wallet-badge-text {
