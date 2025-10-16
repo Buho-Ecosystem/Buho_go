@@ -602,7 +602,7 @@ export default {
   methods: {
     // ... (keeping all your existing methods from the original file)
     openWalletManagement() {
-      this.$router.push({ name: 'settings', params: { openWalletManagement: true } });
+      this.$router.push('/settings');
     },
     async initializeWallet() {
       try {
