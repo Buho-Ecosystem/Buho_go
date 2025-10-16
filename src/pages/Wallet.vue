@@ -42,6 +42,17 @@
     </q-toolbar>
     <!-- Main Content -->
     <div class="main-content">
+      <!-- Wallet Name Badge -->
+      <div
+        v-if="activeWallet"
+        class="wallet-name-badge"
+        :class="$q.dark.isActive ? 'wallet-badge-dark' : 'wallet-badge-light'"
+        @click="openWalletManagement"
+      >
+        <q-icon name="las la-wallet" size="12px" class="wallet-badge-icon" />
+        <span class="wallet-badge-text">{{ activeWallet.name }}</span>
+      </div>
+
       <!-- Balance Display -->
       <div class="balance-section">
         <div class="balance-container" @click="toggleCurrency" :class="{ 'switching': isSwitchingCurrency }">
@@ -1472,6 +1483,54 @@ export default {
   justify-content: center;
   align-items: center;
   padding: 2rem 1rem 8rem 1rem;
+}
+
+/* Wallet Name Badge */
+.wallet-name-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 1rem;
+  border: 1px solid;
+}
+
+.wallet-badge-dark {
+  background: rgba(21, 222, 114, 0.08);
+  border-color: rgba(21, 222, 114, 0.2);
+  color: #15DE72;
+}
+
+.wallet-badge-light {
+  background: rgba(5, 149, 115, 0.08);
+  border-color: rgba(5, 149, 115, 0.2);
+  color: #059573;
+}
+
+.wallet-badge-dark:hover {
+  background: rgba(21, 222, 114, 0.15);
+  border-color: #15DE72;
+  transform: translateY(-1px);
+}
+
+.wallet-badge-light:hover {
+  background: rgba(5, 149, 115, 0.15);
+  border-color: #059573;
+  transform: translateY(-1px);
+}
+
+.wallet-badge-icon {
+  opacity: 0.8;
+}
+
+.wallet-badge-text {
+  font-family: 'Inter', sans-serif;
+  letter-spacing: -0.01em;
 }
 
 /* Balance Section */
