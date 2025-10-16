@@ -59,17 +59,65 @@
 
         <!-- QR Code Display -->
         <div class="qr-display-section" v-if="generatedInvoice">
+          <!-- Status Badge -->
+          <div class="status-badge">
+            <div class="status-dot"></div>
+            <span>{{ $t('Waiting for payment') }}</span>
+          </div>
+
+          <!-- Amount Display -->
+          <div class="invoice-amount-section">
+            <div class="invoice-amount" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+              {{ formatInvoiceAmount(generatedInvoice.amount) }}
+            </div>
+            <div class="invoice-fiat" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ formatInvoiceFiat(generatedInvoice.amount) }}
+            </div>
+          </div>
+
+          <!-- Description/Memo -->
+          <div v-if="generatedInvoice.description && generatedInvoice.description !== 'BuhoGO Payment'"
+               class="invoice-memo"
+               :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ generatedInvoice.description }}
+          </div>
+
+          <!-- QR Code -->
           <div class="qr-container" @click="copyInvoice">
-            <div class="qr-wrapper" :class="$q.dark.isActive ? 'qr-wrapper-dark' : 'qr-wrapper-light'">
+            <div class="qr-wrapper">
               <vue-qrcode
                 :value="generatedInvoice.payment_request"
-                :options="{ width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } }"
+                :options="{ width: 280, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
                 class="qr-code"
               />
             </div>
-            <div class="qr-hint" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'">
-              {{ $t('Tap to copy') }}
+            <div class="qr-tap-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Tap to copy invoice') }}
             </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="invoice-actions">
+            <q-btn
+              flat
+              no-caps
+              class="invoice-action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="copyInvoice"
+            >
+              <q-icon name="las la-copy" size="20px" class="q-mr-xs"/>
+              {{ $t('Copy') }}
+            </q-btn>
+            <q-btn
+              flat
+              no-caps
+              class="invoice-action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="shareInvoice"
+            >
+              <q-icon name="las la-share-alt" size="20px" class="q-mr-xs"/>
+              {{ $t('Share') }}
+            </q-btn>
           </div>
         </div>
 
@@ -391,6 +439,55 @@ export default {
         message: this.$t('Lightning address feature coming soon!'),
         position: 'bottom'
       });
+    },
+
+    formatInvoiceAmount(sats) {
+      if (!sats) return '0 sats';
+      return new Intl.NumberFormat('en-US').format(sats) + ' sats';
+    },
+
+    formatInvoiceFiat(sats) {
+      if (!sats || !this.walletState.exchangeRates) return '';
+
+      const fiatCurrency = this.walletState.preferredFiatCurrency || 'USD';
+      const rate = this.walletState.exchangeRates[fiatCurrency.toLowerCase()] || 65000;
+      const btcAmount = sats / 100000000;
+      const fiatAmount = btcAmount * rate;
+
+      return `≈ $${fiatAmount.toFixed(2)} ${fiatCurrency}`;
+    },
+
+    async shareInvoice() {
+      if (!this.generatedInvoice) return;
+
+      const shareText = `lightning:${this.generatedInvoice.payment_request}`;
+
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: 'Lightning Invoice',
+            text: `Pay ${this.formatInvoiceAmount(this.generatedInvoice.amount)}`,
+            url: shareText
+          });
+
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Invoice shared!'),
+            position: 'bottom'
+          });
+        } else {
+          await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
+          this.$q.notify({
+            type: 'info',
+            message: this.$t('Invoice copied to clipboard!'),
+            position: 'bottom'
+          });
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Failed to share invoice:', error);
+        }
+      }
     }
   }
 }
@@ -477,59 +574,171 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  padding: 2rem;
+  padding: 2rem 1.5rem;
+  gap: 1.5rem;
+  overflow-y: auto;
 }
 
+/* Status Badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 100px;
+  background: rgba(255, 212, 59, 0.1);
+  border: 1px solid rgba(255, 212, 59, 0.3);
+}
+
+.status-badge span {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #FFD43B;
+  letter-spacing: 0.01em;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #FFD43B;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+}
+
+/* Invoice Amount Section */
+.invoice-amount-section {
+  text-align: center;
+  width: 100%;
+}
+
+.invoice-amount {
+  font-family: 'Inter', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin-bottom: 0.5rem;
+}
+
+.invoice-fiat {
+  font-family: 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+/* Invoice Memo */
+.invoice-memo {
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  text-align: center;
+  opacity: 0.65;
+  max-width: 320px;
+  line-height: 1.4;
+}
+
+/* QR Container */
 .qr-container {
   cursor: pointer;
-  transition: transform 0.2s ease;
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
+  max-width: 320px;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.qr-container:hover {
-  transform: scale(1.02);
-}
-
-.qr-container:active {
-  transform: scale(0.98);
-}
-
-.qr-wrapper-dark {
+.qr-wrapper {
   background: #FFF;
   border-radius: 16px;
-  border: 1px solid #2A342A;
-  padding: 1rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  max-width: 240px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   width: 100%;
 }
 
-.qr-wrapper-light {
-  background: #FFF;
-  border-radius: 16px;
-  border: 1px solid #E5E7EB;
-  padding: 1rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  max-width: 240px;
-  width: 100%;
-}
-
-.qr-hint {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 12px;
-  font-weight: 400;
-  margin-top: 1rem;
-  opacity: 0.7;
+.qr-container:active .qr-wrapper {
+  transform: scale(0.97);
 }
 
 .qr-code {
   width: 100%;
   height: auto;
+  display: block;
   border-radius: 8px;
+}
+
+.qr-tap-hint {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  margin-top: 1rem;
+  opacity: 0.6;
+  text-align: center;
+}
+
+/* Invoice Actions */
+.invoice-actions {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 360px;
+}
+
+.invoice-action-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 100px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  border: 1px solid;
+}
+
+.action-btn-dark {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #FFF;
+}
+
+.action-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.action-btn-dark:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.action-btn-light {
+  background: transparent;
+  border-color: rgba(15, 20, 25, 0.1);
+  color: #0F1419;
+}
+
+.action-btn-light:hover {
+  background: rgba(15, 20, 25, 0.03);
+}
+
+.action-btn-light:active {
+  transform: scale(0.97);
+  background: rgba(15, 20, 25, 0.05);
 }
 
 /* Amount Section */
@@ -697,17 +906,37 @@ export default {
   }
 
   .qr-display-section {
+    padding: 1.5rem 1rem;
+    gap: 1.25rem;
+  }
+
+  .invoice-amount {
+    font-size: 2rem;
+  }
+
+  .invoice-fiat {
+    font-size: 15px;
+  }
+
+  .qr-container {
+    max-width: 280px;
+  }
+
+  .qr-wrapper {
     padding: 1rem;
+  }
+
+  .invoice-actions {
+    max-width: 320px;
+  }
+
+  .invoice-action-btn {
+    height: 42px;
+    font-size: 14px;
   }
 
   .amount-icon-section {
     margin-bottom: 1.5rem;
-  }
-
-  .qr-wrapper-dark,
-  .qr-wrapper-light {
-    padding: 0.75rem;
-    max-width: 200px;
   }
 
   .amount-input {
