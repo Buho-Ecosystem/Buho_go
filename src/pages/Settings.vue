@@ -43,7 +43,7 @@
           @click="showWalletsDialog = true"
         >
           <div class="card-icon wallet-icon">
-            <q-icon name="las la-wallet" size="24px"/>
+            <q-icon name="las la-wallet" size="22px"/>
           </div>
           <div class="card-content">
             <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -54,7 +54,28 @@
               {{ wallets.length === 1 ? $t('wallet') : $t('wallets') }} {{ $t('connected') }}
             </div>
           </div>
-          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        </div>
+
+        <!-- Address Book -->
+        <div
+          class="section-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="$router.push('/address-book')"
+        >
+          <div class="card-icon address-book-icon">
+            <q-icon name="las la-address-book" size="22px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+              {{ $t('Address Book') }}
+            </div>
+            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Save Lightning Addresses') }}
+            </div>
+          </div>
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
                   :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
         </div>
       </div>
@@ -71,7 +92,7 @@
           @click="openCurrencyDialog"
         >
           <div class="card-icon currency-icon">
-            <q-icon name="las la-dollar-sign" size="24px"/>
+            <q-icon name="las la-dollar-sign" size="22px"/>
           </div>
           <div class="card-content">
             <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -81,7 +102,7 @@
               {{ preferredFiatCurrency }}
             </div>
           </div>
-          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
                   :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
         </div>
 
@@ -91,7 +112,7 @@
           @click="showLanguageDialog = true"
         >
           <div class="card-icon language-icon">
-            <q-icon name="las la-language" size="24px"/>
+            <q-icon name="las la-language" size="22px"/>
           </div>
           <div class="card-content">
             <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -101,33 +122,33 @@
               {{ getCurrentLanguageLabel() }}
             </div>
           </div>
-          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
                   :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
         </div>
 
         <div
           class="section-card"
           :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="$router.push('/address-book')"
+          @click="showMempoolDialog = true"
         >
-          <div class="card-icon address-book-icon">
-            <q-icon name="las la-address-book" size="24px"/>
+          <div class="card-icon mempool-icon">
+            <q-icon name="las la-server" size="22px"/>
           </div>
           <div class="card-content">
             <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Address Book') }}
+              {{ $t('Mempool API') }}
             </div>
             <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Save Lightning Addresses') }}
+              {{ customMempoolUrl ? $t('Custom URL') : $t('Default (mempool.space)') }}
             </div>
           </div>
-          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
                   :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
         </div>
 
         <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <div class="card-icon notifications-icon">
-            <q-icon name="las la-bell" size="24px"/>
+            <q-icon name="las la-bell" size="22px"/>
           </div>
           <div class="card-content">
             <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -140,29 +161,9 @@
           <div class="coming-soon-badge">{{ $t('Coming Soon') }}</div>
         </div>
 
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="showMempoolDialog = true"
-        >
-          <div class="card-icon mempool-icon">
-            <q-icon name="las la-server" size="24px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Mempool API') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ customMempoolUrl ? $t('Custom URL') : $t('Default (mempool.space)') }}
-            </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="20px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
-
         <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <div class="card-icon security-icon-disabled">
-            <q-icon name="las la-shield-alt" size="24px"/>
+            <q-icon name="las la-shield-alt" size="22px"/>
           </div>
           <div class="card-content">
             <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -176,7 +177,7 @@
         </div>
 
     <!-- Disconnect Button -->
-    <div class="" :class="$q.dark.isActive ? 'footer-dark' : 'footer-light'">
+    <div class="disconnect-section" :class="$q.dark.isActive ? 'footer-dark' : 'footer-light'">
       <div class="disconnect-container">
         <q-btn
           flat
@@ -1245,24 +1246,25 @@ export default {
 /* Content */
 .settings-content {
   flex: 1;
-  padding: 1rem;
-  /*padding-bottom: 6rem;*/
+  padding: 0.875rem;
 }
 
 .settings-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
 }
 
 .section-title {
   font-family: Fustat, 'Inter', sans-serif;
-  margin-bottom: 1rem;
-  padding-left: 0.5rem;
+  margin-bottom: 0.625rem;
+  padding-left: 0.375rem;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .section-card {
-  border-radius: 24px;
-  padding: 1rem;
-  margin-bottom: 0.75rem;
+  border-radius: 18px;
+  padding: 0.75rem 0.875rem;
+  margin-bottom: 0.5rem;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -1282,9 +1284,9 @@ export default {
 }
 
 .card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1333,12 +1335,19 @@ export default {
 
 .card-title {
   font-family: Fustat, 'Inter', sans-serif;
-  margin-bottom: 0.25rem;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 0.125rem;
 }
 
 .card-subtitle {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.chevron-icon {
+  font-size: 16px;
 }
 
 .chevron-icon {
@@ -1350,11 +1359,11 @@ export default {
   background: linear-gradient(135deg, #F59E0B, #D97706);
   color: white;
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  text-transform: capitalize;
+  padding: 0.25rem 0.625rem;
+  border-radius: 10px;
+  text-transform: uppercase;
   letter-spacing: 0.025em;
 }
 
@@ -1371,8 +1380,8 @@ export default {
 
 /* Disconnect Section */
 .disconnect-section {
-  padding: 1rem;
-  border-top: 1px solid;
+  padding: 0.75rem 0.875rem 0.875rem;
+  margin-top: 0.5rem;
 }
 
 .footer-dark {
@@ -1390,8 +1399,8 @@ export default {
 
 .disconnect-btn {
   width: 100%;
-  height: 52px;
-  border-radius: 24px;
+  height: 44px;
+  border-radius: 18px;
   font-family: Fustat, 'Inter', sans-serif;
   font-weight: 500;
   font-size: 14px;
@@ -1873,16 +1882,15 @@ export default {
 @media (max-width: 480px) {
   .settings-content {
     padding: 0.75rem;
-    /*padding-bottom: 5rem;*/
   }
 
   .section-card {
-    padding: 0.75rem;
+    padding: 0.625rem 0.75rem;
   }
 
   .card-icon {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 
   .dialog-header,
