@@ -525,6 +525,11 @@ export default {
     };
   },
   computed: {
+    activeWallet() {
+      return this.walletState.connectedWallets.find(
+        w => w.id === this.walletState.activeWalletId
+      ) || null;
+    },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
 
