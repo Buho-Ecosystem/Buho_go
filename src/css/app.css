@@ -188,13 +188,15 @@ body.platform-android {
 }
 
 .search_bg {
-    border-radius: 20px !important;;
+    border-radius: 20px !important;
     background: #171717 !important;
+    color: #FFF !important;
 }
 
 .search_light {
-    border-radius: 20px !important;;
+    border-radius: 20px !important;
     background-color: #F8F8F8 !important;
+    color: #212121 !important;
 }
 
 .add_wallet_textbox_dark {
@@ -350,7 +352,7 @@ body.platform-android {
 
 
 .q-field--dark .q-field__native, .q-field--dark .q-field__prefix, .q-field--dark .q-field__suffix, .q-field--dark .q-field__input {
-    color: var(--Shark-400, #888);
+    color: #FFF;
     font-family: Fustat;
     font-size: 14px;
     font-style: normal;

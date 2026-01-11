@@ -50,7 +50,7 @@
               v-model="formData.name"
               type="text"
               :placeholder="$t('Enter contact name')"
-              class="form-input text-white"
+              class="form-input"
               :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
               ref="nameInput"
               maxlength="50"
@@ -65,7 +65,7 @@
               v-model="formData.lightningAddress"
               type="text"
               placeholder="user@domain.com"
-              class="form-input text-white"
+              class="form-input"
               :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
               ref="addressInput"
               maxlength="100"
@@ -249,17 +249,17 @@ export default {
           await this.updateEntry(this.entry.id, entryData)
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Contact updated successfully!'),
+            message: this.$t('Contact saved'),
             position: 'bottom',
-            icon: 'las la-check'
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         } else {
           await this.addEntry(entryData)
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Contact added successfully!'),
+            message: this.$t('Contact added'),
             position: 'bottom',
-            icon: 'las la-check'
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         }
 
@@ -268,9 +268,10 @@ export default {
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: error.message || this.$t('Failed to save contact'),
+          message: this.$t('Couldn\'t save contact'),
+          caption: error.message,
           position: 'bottom',
-          icon: 'las la-exclamation-triangle'
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isSaving = false

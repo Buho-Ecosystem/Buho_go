@@ -367,8 +367,9 @@ export default {
         console.error('Error loading transaction details:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to load transaction details',
-          position: 'bottom'
+          message: this.$t('Couldn\'t load details'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.loading = false;
@@ -543,6 +544,11 @@ export default {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(this.transaction.amount), currency);
 
+        // Handle unavailable rates
+        if (fiatValue === null) {
+          return '--';
+        }
+
         const symbols = {
           USD: '$',
           EUR: '€',
@@ -602,15 +608,17 @@ export default {
         await navigator.clipboard.writeText(text);
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Copied to clipboard!'),
-          position: 'bottom'
+          message: this.$t('Copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         console.error('Failed to copy to clipboard:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to copy to clipboard'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },

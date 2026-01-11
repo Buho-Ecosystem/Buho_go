@@ -17,19 +17,6 @@ const STORAGE_KEYS = {
   LEGACY_STATE: 'buhoGO_wallet_state',
 };
 
-/**
- * Default fallback exchange rates (BTC price in each currency)
- */
-const FALLBACK_RATES = {
-  usd: 65000,
-  eur: 60000,
-  gbp: 52000,
-  jpy: 9800000,
-  chf: 62000,
-  cad: 88000,
-  aud: 98000,
-};
-
 export const useWalletStore = defineStore('wallet', {
   state: () => ({
     // Wallet list
@@ -49,6 +36,9 @@ export const useWalletStore = defineStore('wallet', {
 
     // Exchange rates (BTC price in each currency)
     exchangeRates: {},
+    exchangeRatesAvailable: false,
+    exchangeRatesLastUpdate: null,
+    exchangeRatesError: null,
 
     // UI states
     isLoading: false,
@@ -113,6 +103,41 @@ export const useWalletStore = defineStore('wallet', {
     hasConnectedWallet: (state) => {
       return Object.values(state.connectionStates).some((s) => s?.connected);
     },
+
+    /**
+     * Check if fiat conversion is available
+     */
+    canShowFiat: (state) => {
+      return state.exchangeRatesAvailable && Object.keys(state.exchangeRates).length > 0;
+    },
+
+    /**
+     * Lightning address of the active wallet (from NWC lud16 parameter)
+     */
+    activeWalletLightningAddress: (state) => {
+      const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
+      if (!activeWallet) return null;
+
+      // Check if already in metadata
+      if (activeWallet.metadata?.lud16) {
+        return activeWallet.metadata.lud16;
+      }
+
+      // Extract from nwcUrl for wallets added before lud16 extraction was implemented
+      if (activeWallet.nwcUrl) {
+        try {
+          const nwcUrlParsed = new URL(activeWallet.nwcUrl.replace('nostr+walletconnect://', 'http://'));
+          const lud16Raw = nwcUrlParsed.searchParams.get('lud16');
+          if (lud16Raw && lud16Raw !== 'null') {
+            return lud16Raw;
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+
+      return null;
+    },
   },
 
   actions: {
@@ -125,12 +150,23 @@ export const useWalletStore = defineStore('wallet', {
         const savedState = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
         if (savedState) {
           const parsed = JSON.parse(savedState);
+
+          // Check if cached exchange rates are still valid (less than 1 hour old)
+          let ratesStillValid = false;
+          if (parsed.exchangeRatesLastUpdate) {
+            const lastUpdate = new Date(parsed.exchangeRatesLastUpdate);
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+            ratesStillValid = lastUpdate > oneHourAgo;
+          }
+
           this.$patch({
             wallets: parsed.wallets || [],
             activeWalletId: parsed.activeWalletId || null,
             preferredFiatCurrency: parsed.preferredFiatCurrency || 'USD',
             denominationCurrency: parsed.denominationCurrency || 'sats',
-            exchangeRates: parsed.exchangeRates || {},
+            exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
+            exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
+            exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
           });
         }
 
@@ -179,10 +215,14 @@ export const useWalletStore = defineStore('wallet', {
           throw new Error('This wallet is already connected');
         }
 
-        // Parse NWC URL to get relay info for debugging
+        // Parse NWC URL to get relay info and lightning address
         const nwcUrlParsed = new URL(walletData.nwcUrl.replace('nostr+walletconnect://', 'http://'));
         const relays = nwcUrlParsed.searchParams.getAll('relay');
+        const lud16Raw = nwcUrlParsed.searchParams.get('lud16');
+        // Handle "null" string as no address
+        const lud16 = (lud16Raw && lud16Raw !== 'null') ? lud16Raw : null;
         console.log('Connecting to NWC with relays:', relays);
+        if (lud16) console.log('Lightning address (lud16):', lud16);
 
         // Test connection with retry logic
         const nwc = new NostrWebLNProvider({
@@ -245,6 +285,7 @@ export const useWalletStore = defineStore('wallet', {
             pubkey: info.pubkey || '',
             network: info.network || 'mainnet',
             methods: info.methods || [],
+            lud16: lud16,
           },
         };
 
@@ -548,23 +589,34 @@ export const useWalletStore = defineStore('wallet', {
      * Load exchange rates from fiat service
      */
     async loadExchangeRates() {
+      this.exchangeRatesError = null;
+
       try {
         const rates = await fiatRatesService.getRates();
-        this.exchangeRates = {
-          usd: rates.USD || FALLBACK_RATES.usd,
-          eur: rates.EUR || FALLBACK_RATES.eur,
-          gbp: rates.GBP || FALLBACK_RATES.gbp,
-          jpy: rates.JPY || FALLBACK_RATES.jpy,
-          chf: rates.CHF || FALLBACK_RATES.chf,
-          cad: rates.CAD || FALLBACK_RATES.cad,
-          aud: rates.AUD || FALLBACK_RATES.aud,
-        };
-        await this.persistState();
+
+        if (rates && fiatRatesService.areRatesAvailable()) {
+          this.exchangeRates = {
+            usd: rates.USD || 0,
+            eur: rates.EUR || 0,
+            gbp: rates.GBP || 0,
+            jpy: rates.JPY || 0,
+            chf: rates.CHF || 0,
+            cad: rates.CAD || 0,
+            aud: rates.AUD || 0,
+          };
+          this.exchangeRatesAvailable = true;
+          this.exchangeRatesLastUpdate = new Date().toISOString();
+          this.exchangeRatesError = null;
+          await this.persistState();
+        } else {
+          this.exchangeRatesAvailable = false;
+          this.exchangeRatesError = fiatRatesService.getLastError() || 'Exchange rates unavailable';
+          console.warn('Exchange rates unavailable:', this.exchangeRatesError);
+        }
       } catch (error) {
         console.error('Failed to load exchange rates:', error);
-        if (Object.keys(this.exchangeRates).length === 0) {
-          this.exchangeRates = { ...FALLBACK_RATES };
-        }
+        this.exchangeRatesAvailable = false;
+        this.exchangeRatesError = error.message || 'Failed to fetch exchange rates';
       }
     },
 
@@ -608,6 +660,8 @@ export const useWalletStore = defineStore('wallet', {
           preferredFiatCurrency: this.preferredFiatCurrency,
           denominationCurrency: this.denominationCurrency,
           exchangeRates: this.exchangeRates,
+          exchangeRatesAvailable: this.exchangeRatesAvailable,
+          exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
         };
         localStorage.setItem(STORAGE_KEYS.WALLET_STORE, JSON.stringify(stateToSave));
 

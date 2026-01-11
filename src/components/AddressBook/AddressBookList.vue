@@ -199,15 +199,16 @@ export default {
           await this.deleteEntry(entry.id)
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Contact deleted successfully'),
+            message: this.$t('Contact removed'),
             position: 'bottom',
-            icon: 'las la-trash'
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         } catch (error) {
           this.$q.notify({
             type: 'negative',
-            message: this.$t('Failed to delete contact'),
-            position: 'bottom'
+            message: this.$t('Couldn\'t delete contact'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         }
       })
@@ -228,15 +229,16 @@ export default {
 
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Color updated successfully'),
+          message: this.$t('Color updated'),
           position: 'bottom',
-          icon: 'las la-palette'
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to update color'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t update color'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -253,15 +255,16 @@ export default {
           await this.clearAll()
           this.$q.notify({
             type: 'positive',
-            message: this.$t('All contacts cleared successfully'),
+            message: this.$t('Contacts cleared'),
             position: 'bottom',
-            icon: 'las la-trash'
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         } catch (error) {
           this.$q.notify({
             type: 'negative',
-            message: this.$t('Failed to clear contacts'),
-            position: 'bottom'
+            message: this.$t('Couldn\'t clear contacts'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         }
       })

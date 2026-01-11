@@ -10,9 +10,12 @@ export class FiatRatesService {
     this.rates = {};
     this.lastUpdate = null;
     this.updateInterval = 5 * 60 * 1000; // 5 minutes
+    this.maxCacheAge = 60 * 60 * 1000; // 1 hour - max age for cached rates
     this.storageKey = 'buhoGO_fiat_rates';
     this.settingsKey = 'buhoGO_mempool_settings';
-    
+    this.ratesAvailable = false;
+    this.lastError = null;
+
     this.loadSettings();
     this.loadCachedRates();
   }
@@ -66,20 +69,42 @@ export class FiatRatesService {
 
   /**
    * Load cached rates from localStorage
+   * Only use cached rates if they're less than maxCacheAge old
    */
   loadCachedRates() {
     try {
       const cached = localStorage.getItem(this.storageKey);
       if (cached) {
         const data = JSON.parse(cached);
-        this.rates = data.rates || {};
         this.lastUpdate = data.lastUpdate ? new Date(data.lastUpdate) : null;
+
+        // Check if cached rates are still valid (not too old)
+        if (this.lastUpdate && this.isCacheValid()) {
+          this.rates = data.rates || {};
+          this.ratesAvailable = Object.keys(this.rates).length > 0;
+          console.log('📦 Loaded cached rates from', this.lastUpdate.toISOString());
+        } else {
+          // Cache is too old, clear it
+          this.rates = {};
+          this.ratesAvailable = false;
+          console.log('⚠️ Cached rates expired, need fresh data');
+        }
       }
     } catch (error) {
       console.error('Error loading cached rates:', error);
       this.rates = {};
       this.lastUpdate = null;
+      this.ratesAvailable = false;
     }
+  }
+
+  /**
+   * Check if cache is still valid (less than maxCacheAge old)
+   */
+  isCacheValid() {
+    if (!this.lastUpdate) return false;
+    const now = new Date();
+    return (now - this.lastUpdate) < this.maxCacheAge;
   }
 
   /**
@@ -111,22 +136,25 @@ export class FiatRatesService {
    */
   async fetchLatestRates() {
     const apiUrl = this.getApiUrl();
-    
+    this.lastError = null;
+
     try {
-      const response = await fetch(`${apiUrl}/prices`);
-      
+      const response = await fetch(`${apiUrl}/prices`, {
+        timeout: 10000 // 10 second timeout
+      });
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      
+
       // Validate response structure
       if (!data || typeof data !== 'object' || !data.USD) {
         throw new Error('Invalid response format from Mempool API');
       }
-      
-      // Convert to our expected format (rates per BTC, not per sat)
+
+      // Convert to our expected format (rates per BTC)
       this.rates = {
         USD: data.USD || 0,
         EUR: data.EUR || 0,
@@ -137,43 +165,29 @@ export class FiatRatesService {
         JPY: data.JPY || 0,
         time: data.time || Math.floor(Date.now() / 1000)
       };
-      
+
       this.lastUpdate = new Date();
+      this.ratesAvailable = true;
+      this.lastError = null;
       this.saveCachedRates();
-      
+
       console.log('✅ Fiat rates updated:', this.rates);
       return this.rates;
-      
+
     } catch (error) {
       console.error('❌ Error fetching fiat rates:', error);
-      
-      // If we have cached rates, use them
-      if (Object.keys(this.rates).length > 0) {
+      this.lastError = error.message;
+
+      // If we have valid cached rates, use them
+      if (this.isCacheValid() && Object.keys(this.rates).length > 0) {
         console.log('📦 Using cached rates due to fetch error');
+        this.ratesAvailable = true;
         return this.rates;
       }
-      
-      // Fallback to default rates
-      console.log('🔄 Using fallback rates');
-      this.rates = this.getFallbackRates();
-      return this.rates;
-    }
-  }
 
-  /**
-   * Get fallback rates when API is unavailable
-   */
-  getFallbackRates() {
-    return {
-      USD: 100000, // $100k fallback
-      EUR: 85000,  // €85k fallback
-      GBP: 75000,  // £75k fallback
-      CAD: 135000, // C$135k fallback
-      CHF: 90000,  // CHF 90k fallback
-      AUD: 150000, // A$150k fallback
-      JPY: 15000000, // ¥15M fallback
-      time: Math.floor(Date.now() / 1000)
-    };
+      this.ratesAvailable = false;
+      return null;
+    }
   }
 
   /**
@@ -195,34 +209,58 @@ export class FiatRatesService {
 
   /**
    * Get rate for specific currency
+   * Returns null if rates are unavailable
    */
   async getRate(currency) {
     const rates = await this.getRates();
-    return rates[currency.toUpperCase()] || 0;
+    if (!rates || !this.ratesAvailable) return null;
+    return rates[currency.toUpperCase()] || null;
+  }
+
+  /**
+   * Check if rates are available
+   */
+  areRatesAvailable() {
+    return this.ratesAvailable && Object.keys(this.rates).length > 0;
+  }
+
+  /**
+   * Get the last error message
+   */
+  getLastError() {
+    return this.lastError;
   }
 
   /**
    * Convert satoshis to fiat
+   * Returns null if rates are unavailable
    */
   async convertSatsToFiat(sats, currency = 'USD') {
     const rate = await this.getRate(currency);
+    if (rate === null) return null;
     const btc = sats / 100000000; // Convert sats to BTC
     return btc * rate;
   }
 
+  /**
+   * Synchronous conversion - returns null if rates unavailable
+   */
   convertSatsToFiatSync(sats, currency = 'USD') {
-    const rate = this.rates[currency] || this.getFallbackRates()[currency] || 65000;
+    if (!this.ratesAvailable) return null;
+    const rate = this.rates[currency.toUpperCase()];
+    if (!rate) return null;
     const btc = sats / 100000000; // Convert sats to BTC
     return btc * rate;
   }
 
   /**
    * Convert fiat to satoshis
+   * Returns null if rates are unavailable
    */
   async convertFiatToSats(fiatAmount, currency) {
     const rate = await this.getRate(currency);
-    if (!rate) return 0;
-    
+    if (!rate) return null;
+
     const btc = fiatAmount / rate;
     return Math.floor(btc * 100000000); // Convert BTC to sats
   }

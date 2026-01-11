@@ -404,17 +404,6 @@
 
               <div class="wallet-actions">
                 <q-btn
-                  flat
-                  dense
-                  :color="wallet.isDefault ? '#F59E0B' : '#6B7280'"
-                  :icon="wallet.isDefault ? 'las la-star' : 'las la-star'"
-                  @click="setDefaultWallet(wallet.id)"
-                  class="action-btn default-btn"
-                >
-                  <q-tooltip>{{ wallet.isDefault ? $t('Default wallet') : $t('Set as default') }}</q-tooltip>
-                </q-btn>
-
-                <q-btn
                   v-if="!connectionStates[wallet.id]?.connected"
                   flat
                   dense
@@ -428,14 +417,15 @@
                 </q-btn>
 
                 <q-btn
+                  v-if="wallet.id !== activeWalletId"
                   flat
                   dense
-                  :color="wallet.id === activeWalletId ? '#15DE72' : '#6B7280'"
-                  :icon="wallet.id === activeWalletId ? 'las la-check-circle' : 'las la-circle'"
-                  @click="switchActiveWallet(wallet.id)"
-                  class="action-btn active-btn"
+                  color="#15DE72"
+                  icon="las la-exchange-alt"
+                  @click="handleSwitchWallet(wallet.id)"
+                  class="action-btn switch-btn"
                 >
-                  <q-tooltip>{{ wallet.id === activeWalletId ? $t('Active wallet') : $t('Set as active') }}</q-tooltip>
+                  <q-tooltip>{{ $t('Switch to this wallet') }}</q-tooltip>
                 </q-btn>
 
                 <q-btn
@@ -834,14 +824,17 @@ export default {
 
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Wallet added successfully!'),
-          position: 'bottom'
+          message: this.$t('Wallet connected'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to add wallet: ') + error.message,
-          position: 'bottom'
+          message: this.$t('Connection failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isAddingWallet = false
@@ -857,17 +850,40 @@ export default {
         await this.connectWallet(walletId)
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Wallet reconnected successfully'),
-          position: 'bottom'
+          message: this.$t('Reconnected'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to reconnect: ') + error.message,
-          position: 'bottom'
+          message: this.$t('Reconnection failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isReconnecting[walletId] = false
+      }
+    },
+
+    async handleSwitchWallet(walletId) {
+      try {
+        await this.switchActiveWallet(walletId)
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Wallet switched'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t switch wallet'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
       }
     },
 
@@ -883,8 +899,9 @@ export default {
 
           this.$q.notify({
             type: 'positive',
-            message: this.$t('All wallets disconnected successfully'),
-            position: 'bottom'
+            message: this.$t('All wallets disconnected'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
 
           this.$router.push('/');
@@ -892,8 +909,9 @@ export default {
           console.error('Error disconnecting wallets:', error);
           this.$q.notify({
             type: 'negative',
-            message: this.$t('Failed to disconnect wallets'),
-            position: 'bottom'
+            message: this.$t('Couldn\'t disconnect wallets'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       });
@@ -914,14 +932,17 @@ export default {
 
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Wallet removed successfully'),
-            position: 'bottom'
+            message: this.$t('Wallet removed'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         } catch (error) {
           this.$q.notify({
             type: 'negative',
-            message: this.$t('Failed to remove wallet: ') + error.message,
-            position: 'bottom'
+            message: this.$t('Couldn\'t remove wallet'),
+            caption: error.message,
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         }
       })
@@ -966,16 +987,18 @@ export default {
         this.newPin = '';
         this.$q.notify({
           type: 'positive',
-          message: this.$t('PIN set successfully'),
-          position: 'bottom'
+          message: this.$t('PIN saved'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } else {
         const pinState = JSON.parse(localStorage.getItem('buhoGO_pin_state'));
         if (pinState.pin !== this.currentPin) {
           this.$q.notify({
             type: 'negative',
-            message: this.$t('Current PIN is incorrect'),
-            position: 'bottom'
+            message: this.$t('Wrong PIN'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           return;
         }
@@ -988,8 +1011,9 @@ export default {
         this.newPin = '';
         this.$q.notify({
           type: 'positive',
-          message: this.$t('PIN changed successfully'),
-          position: 'bottom'
+          message: this.$t('PIN updated'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1021,8 +1045,9 @@ export default {
         console.error('Error requesting notification permission:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to enable notifications'),
-          position: 'bottom'
+          message: this.$t('Notifications not available'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1094,17 +1119,20 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: urlToTest ?
-            this.$t('Custom Mempool API URL saved and tested successfully!') :
-            this.$t('Reset to default Mempool API successfully!'),
-          position: 'bottom'
+            this.$t('API settings saved') :
+            this.$t('Using default API'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
       } catch (error) {
         console.error('Error testing Mempool URL:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to connect to Mempool API: ') + error.message,
-          position: 'bottom'
+          message: this.$t('API connection failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isTestingUrl = false;
@@ -1129,8 +1157,9 @@ export default {
 
       this.$q.notify({
         type: 'positive',
-        message: this.$t('Language changed successfully'),
-        position: 'bottom'
+        message: this.$t('Language updated'),
+        position: 'bottom',
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
 

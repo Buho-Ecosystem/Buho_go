@@ -87,8 +87,9 @@ export default {
         console.error('Error initializing address book:', error)
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to load address book'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t load contacts'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -117,9 +118,9 @@ export default {
       this.selectedContact = null
       this.$q.notify({
         type: 'positive',
-        message: this.$t('Payment sent successfully!'),
+        message: this.$t('Sent'),
         position: 'bottom',
-        icon: 'las la-check'
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     }
   }

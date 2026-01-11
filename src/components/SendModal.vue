@@ -108,11 +108,11 @@
             flat
             class="action-btn"
             :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-            @click="importFromFile"
+            @click="showContactPicker"
           >
             <div class="btn-content">
-              <q-icon name="las la-image" size="24px" class="btn-icon"/>
-              <span class="btn-label">{{ $t('Import') }}</span>
+              <q-icon name="las la-address-book" size="24px" class="btn-icon"/>
+              <span class="btn-label">{{ $t('Contacts') }}</span>
             </div>
           </q-btn>
         </div>
@@ -120,11 +120,11 @@
     </q-card>
 
     <!-- Manual Input Dialog -->
-    <q-dialog v-model="showManualDialog" class="manual-dialog">
+    <q-dialog v-model="showManualDialog" class="manual-dialog-backdrop">
       <q-card class="manual-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="manual-header">
           <div class="manual-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Enter Payment Details') }}
+            {{ $t('Who do you want to pay?') }}
           </div>
           <q-btn flat round dense icon="las la-times" v-close-popup
                  class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
@@ -134,39 +134,114 @@
           <q-input
             v-model="manualInput"
             outlined
-            :label="$t('Lightning Invoice, Address, or LNURL')"
-            :placeholder="$t('lnbc... or user@domain.com or lnurl...')"
+            :label="$t('Paste invoice or enter address')"
+            :placeholder="$t('e.g. name@wallet.com')"
             class="manual-input"
+            :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
+            color="green"
             autofocus
             :rules="[validatePaymentInput]"
           />
-
-          <div class="input-help">
-            <div class="help-item">
-              <q-icon name="las la-bolt" class="help-icon"/>
-              <span>{{ $t('Lightning Invoice (lnbc...)') }}</span>
-            </div>
-            <div class="help-item">
-              <q-icon name="las la-at" class="help-icon"/>
-              <span>{{ $t('Lightning Address (user@domain.com)') }}</span>
-            </div>
-            <div class="help-item">
-              <q-icon name="las la-link" class="help-icon"/>
-              <span>{{ $t('LNURL (lnurl...)') }}</span>
-            </div>
-          </div>
         </q-card-section>
 
-        <q-card-actions align="right" class="manual-actions">
-          <q-btn flat :label="$t('Cancel')" v-close-popup/>
+        <q-card-actions align="right" class="manual-actions" :class="$q.dark.isActive ? 'actions-dark' : 'actions-light'">
+          <q-btn flat :label="$t('Cancel')" v-close-popup :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"/>
           <q-btn
             flat
             :label="$t('Continue')"
-            color="primary"
+            class="continue-btn"
             @click="processManualInput"
             :disable="!isValidManualInput"
           />
         </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Contact Picker Dialog -->
+    <q-dialog v-model="showContactDialog" class="contact-dialog-backdrop">
+      <q-card class="contact-picker-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="contact-picker-header">
+          <div class="contact-picker-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Choose a contact') }}
+          </div>
+          <q-btn flat round dense icon="las la-times" v-close-popup
+                 class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+        </q-card-section>
+
+        <!-- Search (only show if 5+ contacts) -->
+        <q-card-section v-if="contacts.length >= 5" class="contact-search-section">
+          <q-input
+            v-model="contactSearch"
+            outlined
+            dense
+            :placeholder="$t('Search contacts...')"
+            class="contact-search"
+            :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
+          >
+            <template v-slot:prepend>
+              <q-icon name="las la-search" :color="$q.dark.isActive ? 'grey-5' : 'grey-6'" />
+            </template>
+            <template v-slot:append v-if="contactSearch">
+              <q-icon name="las la-times" class="cursor-pointer" @click="contactSearch = ''" />
+            </template>
+          </q-input>
+        </q-card-section>
+
+        <!-- Contact List -->
+        <q-card-section class="contact-list-section">
+          <!-- Empty State -->
+          <div v-if="contacts.length === 0" class="contact-empty-state">
+            <q-icon name="las la-user-friends" size="48px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+            <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('No contacts yet') }}
+            </div>
+            <div class="empty-subtitle" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+              {{ $t('Save contacts in the Address Book to quickly pay them') }}
+            </div>
+            <q-btn
+              unelevated
+              no-caps
+              class="add-contact-cta"
+              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+              @click="goToAddressBook"
+            >
+              <q-icon name="las la-plus" class="q-mr-sm" />
+              {{ $t('Add Contact') }}
+            </q-btn>
+          </div>
+
+          <!-- No Results -->
+          <div v-else-if="filteredContacts.length === 0" class="contact-empty-state">
+            <q-icon name="las la-search" size="48px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+            <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('No matches found') }}
+            </div>
+          </div>
+
+          <!-- Contact Items -->
+          <div v-else class="contact-list">
+            <div
+              v-for="contact in filteredContacts"
+              :key="contact.id"
+              class="contact-item"
+              :class="$q.dark.isActive ? 'contact-item-dark' : 'contact-item-light'"
+              @click="selectContact(contact)"
+            >
+              <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
+                {{ contact.name.charAt(0).toUpperCase() }}
+              </div>
+              <div class="contact-info">
+                <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                  {{ contact.name }}
+                </div>
+                <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                  {{ contact.lightningAddress }}
+                </div>
+              </div>
+              <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+            </div>
+          </div>
+        </q-card-section>
       </q-card>
     </q-dialog>
   </q-dialog>
@@ -174,13 +249,10 @@
 
 <script>
 import QrScanner from 'qr-scanner';
-// Assuming you have this service
-// import LightningPaymentService from '../utils/lightning.js';
+import { useAddressBookStore } from '../stores/addressBook';
 
 export default {
   name: 'SendModal',
-  components: {
-  },
   props: {
     modelValue: {
       type: Boolean,
@@ -188,12 +260,18 @@ export default {
     }
   },
   emits: ['update:modelValue', 'payment-detected'],
+  setup() {
+    const addressBookStore = useAddressBookStore();
+    return { addressBookStore };
+  },
   data() {
     return {
       showCamera: false,
       isProcessing: false,
       cameraError: null,
       showManualDialog: false,
+      showContactDialog: false,
+      contactSearch: '',
       manualInput: '',
       qrScanner: null,
       videoElement: null
@@ -210,6 +288,17 @@ export default {
     },
     isValidManualInput() {
       return this.manualInput.trim().length > 0 && this.validatePaymentInput(this.manualInput) === true;
+    },
+    contacts() {
+      return this.addressBookStore.entries || [];
+    },
+    filteredContacts() {
+      if (!this.contactSearch) return this.contacts;
+      const search = this.contactSearch.toLowerCase();
+      return this.contacts.filter(c =>
+        c.name.toLowerCase().includes(search) ||
+        c.lightningAddress.toLowerCase().includes(search)
+      );
     }
   },
   watch: {
@@ -307,16 +396,13 @@ export default {
         console.error('QR processing error:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Invalid QR code: ') + error.message,
-          position: 'bottom'
+          message: this.$t('Invalid QR code'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }
-    },
-
-    onCameraError(error) {
-      console.error('Camera error:', error);
-      this.handleCameraError(error);
     },
 
     async processPaymentData(paymentData) {
@@ -326,11 +412,16 @@ export default {
           throw new Error(this.$t('Invalid payment data'));
         }
 
-        const trimmedData = paymentData.trim();
+        let trimmedData = paymentData.trim();
         // Handle lightning: prefix and extract the actual invoice
-        const cleanData = trimmedData.toLowerCase().startsWith('lightning:') 
-          ? trimmedData.substring(10) 
+        let cleanData = trimmedData.toLowerCase().startsWith('lightning:')
+          ? trimmedData.substring(10)
           : trimmedData;
+
+        // Normalize lightning addresses to lowercase (LN address standard)
+        if (cleanData.includes('@') && cleanData.includes('.')) {
+          cleanData = cleanData.toLowerCase();
+        }
 
         // Emit the detected payment data to parent component
         this.$emit('payment-detected', {
@@ -371,7 +462,6 @@ export default {
     },
 
     showManualInput() {
-      // hide currrent show
       this.showManualDialog = true;
       this.manualInput = '';
     },
@@ -384,72 +474,42 @@ export default {
         } else {
           this.$q.notify({
             type: 'info',
-            message: this.$t('Clipboard is empty'),
-            position: 'bottom'
+            message: this.$t('Nothing to paste'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       } catch (error) {
         console.error('Clipboard error:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to read clipboard'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t access clipboard'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
 
-    async importFromFile() {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = async (event) => {
-        const file = event.target.files[0];
-        if (file) {
-          this.isProcessing = true;
-          try {
-            // Show loading notification
-            this.$q.notify({
-              type: 'info',
-              message: this.$t('Reading QR code from image...'),
-              position: 'bottom',
-              timeout: 2000
-            });
+    async showContactPicker() {
+      // Initialize the address book store to load contacts from localStorage
+      await this.addressBookStore.initialize();
+      this.showContactDialog = true;
+      this.contactSearch = '';
+    },
 
-            // Decode QR code from image file
-            const qrResult = await QrScanner.scanImage(file, {
-              returnDetailedScanResult: true,
-              highlightScanRegion: false,
-              highlightCodeOutline: false
-            });
+    goToAddressBook() {
+      this.showContactDialog = false;
+      this.closeModal();
+      this.$router.push('/address-book');
+    },
 
-            if (qrResult && qrResult.data) {
-              console.log(qrResult.data);
-              // Process the decoded QR data using existing logic
-              await this.processPaymentData(qrResult.data);
-            } else {
-              throw new Error(this.$t('No QR code found in image'));
-            }
-
-          } catch (error) {
-            console.error('QR decode error:', error);
-            let errorMessage = this.$t('Failed to read QR code from image');
-            
-            if (error.message.includes('No QR code found')) {
-              errorMessage = this.$t('No QR code detected in the selected image');
-            } else if (error.message.includes('Invalid')) {
-              errorMessage = this.$t('Invalid QR code format in image');
-            }
-
-            this.$q.notify({
-              type: 'negative',
-              message: errorMessage,
-              position: 'bottom'
-            });
-            this.isProcessing = false;
-          }
-        }
-      };
-      input.click();
+    selectContact(contact) {
+      this.$emit('payment-detected', {
+        data: contact.lightningAddress,
+        type: 'lightning_address'
+      });
+      this.showContactDialog = false;
+      this.closeModal();
     },
 
     async processManualInput() {
@@ -463,8 +523,10 @@ export default {
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: error.message,
-          position: 'bottom'
+          message: this.$t('Invalid payment request'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }
@@ -734,37 +796,87 @@ export default {
   color: #6b7280;
 }
 
+/* Blur backdrop for manual dialog */
+.manual-dialog-backdrop :deep(.q-dialog__backdrop) {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 .manual-content {
   padding: 1.5rem;
 }
 
 .manual-input {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .manual-input :deep(.q-field__control) {
   border-radius: 12px;
 }
 
-.input-help {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+/* Dark mode input styling - green instead of blue */
+.manual-input-dark :deep(.q-field__control) {
+  border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
-.help-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: #6b7280;
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
+.manual-input-dark :deep(.q-field--focused .q-field__control) {
+  border-color: #15DE72 !important;
 }
 
-.help-icon {
-  color: #15DE72;
-  font-size: 16px;
-  width: 16px;
+.manual-input-dark :deep(.q-field__label) {
+  color: #B0B0B0;
+}
+
+.manual-input-dark :deep(.q-field--focused .q-field__label),
+.manual-input-dark :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.manual-input-dark :deep(.q-field__native) {
+  color: #FFF !important;
+}
+
+/* Light mode input styling - green instead of blue */
+.manual-input-light :deep(.q-field__control) {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+.manual-input-light :deep(.q-field--focused .q-field__control) {
+  border-color: #15DE72 !important;
+}
+
+.manual-input-light :deep(.q-field__label) {
+  color: #6B7280;
+}
+
+.manual-input-light :deep(.q-field--focused .q-field__label),
+.manual-input-light :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.manual-input-light :deep(.q-field__native) {
+  color: #212121 !important;
+}
+
+/* Continue button - green text */
+.continue-btn {
+  color: #15DE72 !important;
+  font-weight: 600;
+}
+
+.continue-btn:disabled {
+  color: #6b7280 !important;
+  opacity: 0.5;
+}
+
+/* Action buttons border colors */
+.actions-dark {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.actions-light {
+  border-top-color: rgba(0, 0, 0, 0.1);
 }
 
 .manual-actions {
@@ -793,5 +905,171 @@ export default {
   .manual-content {
     padding: 1rem;
   }
+}
+
+/* Contact Picker Dialog */
+.contact-dialog-backdrop :deep(.q-dialog__backdrop) {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.contact-picker-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.contact-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.contact-picker-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.contact-search-section {
+  padding: 0.75rem 1rem 0;
+}
+
+.contact-search :deep(.q-field__control) {
+  border-radius: 12px;
+}
+
+.contact-list-section {
+  padding: 0.5rem 0;
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+/* Empty State */
+.contact-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.empty-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+.empty-subtitle {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  margin-top: 0.5rem;
+  line-height: 1.4;
+  max-width: 250px;
+}
+
+.add-contact-cta {
+  margin-top: 1.25rem;
+  height: 44px;
+  border-radius: 22px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 1.5rem;
+}
+
+/* Contact List */
+.contact-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-item {
+  display: flex;
+  align-items: center;
+  padding: 0.875rem 1.25rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  gap: 0.875rem;
+}
+
+.contact-item-dark:hover {
+  background: rgba(21, 222, 114, 0.08);
+}
+
+.contact-item-dark:active {
+  background: rgba(21, 222, 114, 0.15);
+}
+
+.contact-item-light:hover {
+  background: rgba(21, 222, 114, 0.08);
+}
+
+.contact-item-light:active {
+  background: rgba(21, 222, 114, 0.12);
+}
+
+.contact-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.contact-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.contact-name {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-address {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Scrollbar styling for contact list */
+.contact-list-section::-webkit-scrollbar {
+  width: 4px;
+}
+
+.contact-list-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.contact-list-section::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 2px;
+}
+
+.contact-list-section::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
 }
 </style>

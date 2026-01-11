@@ -467,8 +467,9 @@ export default {
         console.error('Error loading transactions:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to load transaction history'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t load history'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isLoading = false;
@@ -482,8 +483,9 @@ export default {
 
       this.$q.notify({
         type: 'positive',
-        message: this.$t('Transactions refreshed'),
-        position: 'bottom'
+        message: this.$t('Up to date'),
+        position: 'bottom',
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
 
@@ -623,6 +625,11 @@ export default {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(tx.amount), currency);
 
+        // Handle unavailable rates
+        if (fiatValue === null) {
+          return '--';
+        }
+
         const symbols = {
           USD: '$',
           EUR: '€',
@@ -649,6 +656,11 @@ export default {
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(amount), currency);
+
+        // Handle unavailable rates
+        if (fiatValue === null) {
+          return '--';
+        }
 
         const symbols = {
           USD: '$',
