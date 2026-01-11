@@ -272,7 +272,7 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import {fiatRatesService} from '../utils/fiatRates.js';
 
@@ -386,7 +386,7 @@ export default {
             this.loadingText = 'Connecting to wallet...';
           }
 
-          const nwc = new webln.NostrWebLNProvider({
+          const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
 
@@ -404,10 +404,14 @@ export default {
             );
 
             if (this.transaction) {
+              // Ensure consistent field names across different API responses
               this.transaction.id = this.transaction.id || this.transaction.payment_hash || txId;
               this.transaction.type = this.transaction.type || (this.transaction.amount > 0 ? 'incoming' : 'outgoing');
               this.transaction.description = this.transaction.description || this.transaction.memo || '';
               this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || Math.floor(Date.now() / 1000);
+              // Map WebLN field names to expected field names
+              this.transaction.fee = this.transaction.fee || this.transaction.fees_paid || 0;
+              this.transaction.payment_request = this.transaction.payment_request || this.transaction.invoice || null;
 
               if (this.isZapTransaction(this.transaction)) {
                 this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);

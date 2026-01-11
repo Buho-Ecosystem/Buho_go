@@ -15,7 +15,8 @@
   "dependencies": {
     "@capacitor/ios": "^7.4.3",
     "@chenfengyuan/vue-qrcode": "^2.0.0",
-    "@getalby/sdk": "^5.0.0",
+    "@getalby/sdk": "^7.0.0",
+    "@getalby/lightning-tools": "^5.1.2",
     "@quasar/extras": "^1.16.4",
     "axios": "^1.12.0",
     "bech32": "^2.0.0",

@@ -450,7 +450,7 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService} from '../utils/lightning.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import LoadingScreen from '../components/LoadingScreen.vue';
@@ -533,12 +533,19 @@ export default {
     needsAmountInput() {
       if (!this.pendingPayment) return false;
 
+      // Check for LNURL and Lightning Address payments
       if (this.pendingPayment.type === 'lightning_address' ||
           this.pendingPayment.type === 'lnurl' ||
           this.pendingPayment.type === 'lnurl_pay') {
+        // Use isFixedAmount flag if available (from updated lightning.js)
+        if (this.pendingPayment.isFixedAmount !== undefined) {
+          return !this.pendingPayment.isFixedAmount;
+        }
+        // Fallback: check if min equals max
         return this.pendingPayment.minSendable !== this.pendingPayment.maxSendable;
       }
 
+      // Zero-amount invoices need amount input
       return (this.pendingPayment.type === 'lightning_invoice' && this.pendingPayment.amount === 0) ||
              (this.pendingPayment.type === 'invoice' && this.pendingPayment.amount === 0);
     },
@@ -658,7 +665,7 @@ export default {
             this.loadingText = 'Updating balance...';
           }
 
-          const nwc = new webln.NostrWebLNProvider({
+          const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
 
@@ -873,7 +880,7 @@ export default {
 
         if (this.paymentData.type === 'lightning_invoice') {
           try {
-            const nwc = new webln.NostrWebLNProvider({
+            const nwc = new NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
             await nwc.enable();
@@ -1069,7 +1076,7 @@ export default {
         const activeWallet = this.getActiveWallet();
         if (!activeWallet) return;
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         await nwc.enable();
@@ -1102,19 +1109,27 @@ export default {
     formatPaymentAmount() {
       if (!this.pendingPayment) return '';
 
+      // Variable amount - user needs to input
       if (this.needsAmountInput) {
         return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
       }
 
-      // For fixed-amount LNURL/Lightning Address payments
-      if ((this.pendingPayment.type === 'lnurl' ||
-           this.pendingPayment.type === 'lnurl_pay' ||
-           this.pendingPayment.type === 'lightning_address') &&
-          this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-        const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
-        return `${fixedAmount.toLocaleString()} sats`;
+      // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
+      if (this.pendingPayment.type === 'lnurl' ||
+          this.pendingPayment.type === 'lnurl_pay' ||
+          this.pendingPayment.type === 'lightning_address') {
+        // Use new fixedAmountSats property if available
+        if (this.pendingPayment.fixedAmountSats) {
+          return `${this.pendingPayment.fixedAmountSats.toLocaleString()} sats`;
+        }
+        // Fallback: calculate from minSendable
+        if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+          const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
+          return `${fixedAmount.toLocaleString()} sats`;
+        }
       }
 
+      // Standard invoice with amount
       return this.pendingPayment.amount ?
         `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` :
         'Variable amount';
@@ -1126,12 +1141,15 @@ export default {
       let amount = 0;
       if (this.needsAmountInput) {
         amount = parseInt(this.paymentAmount) || 0;
-      } else if ((this.pendingPayment.type === 'lnurl' ||
-                  this.pendingPayment.type === 'lnurl_pay' ||
-                  this.pendingPayment.type === 'lightning_address') &&
-                 this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-        // Fixed-amount LNURL/Lightning Address
-        amount = Math.floor(this.pendingPayment.minSendable / 1000);
+      } else if (this.pendingPayment.type === 'lnurl' ||
+                 this.pendingPayment.type === 'lnurl_pay' ||
+                 this.pendingPayment.type === 'lightning_address') {
+        // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
+        if (this.pendingPayment.fixedAmountSats) {
+          amount = this.pendingPayment.fixedAmountSats;
+        } else if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+          amount = Math.floor(this.pendingPayment.minSendable / 1000);
+        }
       } else {
         amount = this.pendingPayment.amount || 0;
       }
@@ -1156,18 +1174,16 @@ export default {
         return 'Amount must be greater than 0';
       }
 
-      if (this.pendingPayment.minSendable) {
-        const minSats = Math.floor(this.pendingPayment.minSendable / 1000);
-        if (amountNum < minSats) {
-          return `Minimum amount is ${minSats} sats`;
-        }
+      // Use minSats/maxSats from lightning.js if available
+      const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 1);
+      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
+
+      if (amountNum < minSats) {
+        return `Minimum amount is ${minSats.toLocaleString()} sats`;
       }
 
-      if (this.pendingPayment.maxSendable) {
-        const maxSats = Math.floor(this.pendingPayment.maxSendable / 1000);
-        if (amountNum > maxSats) {
-          return `Maximum amount is ${maxSats} sats`;
-        }
+      if (amountNum > maxSats) {
+        return `Maximum amount is ${maxSats.toLocaleString()} sats`;
       }
 
       return true;
@@ -1186,19 +1202,22 @@ export default {
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
 
-        // Get amount from paymentAmount for variable amount payments, or from pendingPayment for fixed amount invoices
+        // Determine the amount to send
         let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
-          // For variable amount invoices, LNURL, and Lightning Address
+          // Variable amount - user entered value
           amount = parseInt(this.paymentAmount);
-        } else if (this.pendingPayment && this.pendingPayment.amount > 0) {
-          // For fixed amount invoices
+        } else if (this.pendingPayment.fixedAmountSats) {
+          // Fixed-amount LNURL/Lightning Address - use fixedAmountSats from lightning.js
+          amount = this.pendingPayment.fixedAmountSats;
+        } else if (this.pendingPayment.amount > 0) {
+          // Fixed amount invoice
           amount = this.pendingPayment.amount;
         } else if ((this.pendingPayment.type === 'lnurl' ||
                     this.pendingPayment.type === 'lnurl_pay' ||
                     this.pendingPayment.type === 'lightning_address') &&
                    this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-          // For fixed-amount LNURL/Lightning Address payments
+          // Fallback: calculate fixed amount from minSendable
           amount = Math.floor(this.pendingPayment.minSendable / 1000);
         }
 
@@ -1248,7 +1267,7 @@ export default {
           throw new Error('No active wallet found');
         }
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         await nwc.enable();

@@ -269,7 +269,7 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import {fiatRatesService} from '../utils/fiatRates.js';
 
@@ -429,7 +429,7 @@ export default {
               this.loadingText = 'Fetching transactions...';
             }
 
-            const nwc = new webln.NostrWebLNProvider({
+            const nwc = new NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
 
@@ -443,10 +443,14 @@ export default {
             if (transactionsResponse && transactionsResponse.transactions) {
               this.transactions = transactionsResponse.transactions.map(tx => ({
                 ...tx,
+                // Ensure consistent field names across different API responses
                 id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
                 type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
                 description: tx.description || tx.memo || '',
-                settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
+                settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000),
+                // Map WebLN field names to expected field names for TransactionDetails
+                fee: tx.fee || tx.fees_paid || 0,
+                payment_request: tx.payment_request || tx.invoice || null
               }));
 
               this.transactions.sort((a, b) => b.settled_at - a.settled_at);
