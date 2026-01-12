@@ -16,11 +16,17 @@
 
     <!-- Entry Details -->
     <div class="entry-details">
-      <div class="entry-name" :class="$q.dark.isActive ? 'entry-name-dark' : 'entry-name-light'">
-        {{ entry.name }}
+      <div class="entry-name-row">
+        <div class="entry-name" :class="$q.dark.isActive ? 'entry-name-dark' : 'entry-name-light'">
+          {{ entry.name }}
+        </div>
+        <div class="address-type-badge" :class="addressTypeBadgeClass">
+          <q-icon :name="addressTypeIcon" size="10px" />
+          <span>{{ addressTypeLabel }}</span>
+        </div>
       </div>
       <div class="entry-address" :class="$q.dark.isActive ? 'entry-address-dark' : 'entry-address-light'">
-        {{ entry.lightningAddress }}
+        {{ displayAddress }}
       </div>
     </div>
 
@@ -78,6 +84,25 @@ export default {
     }
   },
   emits: ['edit', 'delete', 'change-color', 'pay'],
+  computed: {
+    addressType() {
+      return this.entry.addressType || 'lightning'
+    },
+    displayAddress() {
+      return this.entry.address || this.entry.lightningAddress || ''
+    },
+    addressTypeIcon() {
+      return this.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'
+    },
+    addressTypeLabel() {
+      return this.addressType === 'spark' ? 'Spark' : 'Lightning'
+    },
+    addressTypeBadgeClass() {
+      return this.addressType === 'spark'
+        ? 'badge-spark'
+        : 'badge-lightning'
+    }
+  },
   methods: {
     getInitial(name) {
       return name ? name.charAt(0).toUpperCase() : '?'
@@ -85,7 +110,7 @@ export default {
 
     async copyAddress() {
       try {
-        await navigator.clipboard.writeText(this.entry.lightningAddress)
+        await navigator.clipboard.writeText(this.displayAddress)
         this.$q.notify({
           type: 'positive',
           message: this.$t('Address copied'),
@@ -179,14 +204,44 @@ export default {
   min-width: 0;
 }
 
+.entry-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
 .entry-name {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 16px;
   font-weight: 600;
-  margin-bottom: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.address-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 8px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.badge-lightning {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+}
+
+.badge-spark {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+  color: white;
 }
 
 .entry-name-dark {

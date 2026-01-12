@@ -80,6 +80,97 @@
         </div>
       </div>
 
+      <!-- Spark Wallet Settings (only show if Spark wallet exists) -->
+      <div v-if="hasSparkWallet" class="settings-section">
+        <div class="section-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+          {{ $t('Spark Wallet') }}
+        </div>
+
+        <!-- View Spark Address -->
+        <div
+          class="section-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="copySparkAddress"
+        >
+          <div class="card-icon spark-icon">
+            <q-icon name="las la-bolt" size="22px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+              {{ $t('Spark Address') }}
+            </div>
+            <div class="card-subtitle spark-address-text" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ truncateAddress(activeSparkAddress) || $t('Not available') }}
+            </div>
+          </div>
+          <q-icon name="las la-copy" size="18px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        </div>
+
+        <!-- View Seed Phrase -->
+        <div
+          class="section-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="openViewMnemonicDialog"
+        >
+          <div class="card-icon seed-icon">
+            <q-icon name="las la-key" size="22px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+              {{ $t('View Seed Phrase') }}
+            </div>
+            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Requires PIN') }}
+            </div>
+          </div>
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        </div>
+
+        <!-- Change PIN -->
+        <div
+          class="section-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="openChangePinDialog"
+        >
+          <div class="card-icon pin-icon">
+            <q-icon name="las la-lock" size="22px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+              {{ $t('Change PIN') }}
+            </div>
+            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Update your wallet PIN') }}
+            </div>
+          </div>
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        </div>
+
+        <!-- Delete Spark Wallet -->
+        <div
+          class="section-card delete-spark-card"
+          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+          @click="confirmDeleteSparkWallet"
+        >
+          <div class="card-icon delete-icon">
+            <q-icon name="las la-trash-alt" size="22px"/>
+          </div>
+          <div class="card-content">
+            <div class="card-title delete-text">
+              {{ $t('Delete Spark Wallet') }}
+            </div>
+            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Remove wallet permanently') }}
+            </div>
+          </div>
+          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        </div>
+      </div>
+
       <!-- Preferences -->
       <div class="settings-section">
         <div class="section-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
@@ -366,7 +457,7 @@
             >
               <div class="wallet-icon-container">
                 <div class="wallet-icon" :class="getWalletAvatarClass(wallet)">
-                  <q-icon name="las la-wallet" size="24px"/>
+                  <q-icon :name="getWalletTypeIcon(wallet)" size="24px"/>
                 </div>
                 <div
                   v-if="connectionStates[wallet.id]?.connected"
@@ -390,6 +481,9 @@
                 />
                 <div class="wallet-name-container">
                   <div class="wallet-badges">
+                    <div :class="wallet.type === 'spark' ? 'spark-type-badge' : 'nwc-type-badge'">
+                      {{ getWalletTypeLabel(wallet) }}
+                    </div>
                     <div v-if="wallet.isDefault" class="default-badge">{{ $t('Default') }}</div>
                     <div v-if="wallet.id === activeWalletId" class="active-badge">{{ $t('Active') }}</div>
                   </div>
@@ -475,6 +569,57 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
+          <!-- Spark Wallet Options (only show if no Spark wallet exists) -->
+          <div v-if="!hasSparkWallet" class="wallet-type-section">
+            <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Self-Custodial Wallet') }}
+            </div>
+
+            <div
+              class="wallet-type-option"
+              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              @click="navigateToCreateSpark"
+            >
+              <div class="option-icon spark-option-icon">
+                <q-icon name="las la-bolt" size="24px"/>
+              </div>
+              <div class="option-content">
+                <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ $t('Create Spark Wallet') }}
+                </div>
+                <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ $t('Generate a new seed phrase') }}
+                </div>
+              </div>
+              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+            </div>
+
+            <div
+              class="wallet-type-option"
+              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              @click="navigateToRestoreSpark"
+            >
+              <div class="option-icon restore-option-icon">
+                <q-icon name="las la-redo-alt" size="24px"/>
+              </div>
+              <div class="option-content">
+                <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ $t('Restore Spark Wallet') }}
+                </div>
+                <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ $t('Import existing seed phrase') }}
+                </div>
+              </div>
+              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+            </div>
+
+            <q-separator class="q-my-md" :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'"/>
+          </div>
+
+          <!-- NWC Wallet Section -->
+          <div class="section-label q-mb-sm" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+            {{ $t('Custodial Wallet (NWC)') }}
+          </div>
 
           <q-item dense style="padding: 0px">
             <q-item-section>
@@ -623,6 +768,165 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- View Mnemonic Dialog -->
+    <q-dialog v-model="showViewMnemonicDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('View Seed Phrase') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            @click="closeViewMnemonicDialog"
+            class="close-btn"
+            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+          />
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <!-- PIN Entry -->
+          <div v-if="!viewedMnemonic">
+            <div class="mnemonic-warning" :class="$q.dark.isActive ? 'warning-dark' : 'warning-light'">
+              <q-icon name="las la-exclamation-triangle" class="warning-icon"/>
+              <div class="warning-text">
+                {{ $t('Never share your seed phrase. Anyone with it can access your funds.') }}
+              </div>
+            </div>
+
+            <q-input
+              v-model="sparkPinInput"
+              type="password"
+              :label="$t('Enter your PIN')"
+              maxlength="6"
+              mask="######"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              borderless
+              input-class="q-px-md text-center"
+              class="q-mt-md"
+              dense
+            />
+          </div>
+
+          <!-- Mnemonic Display -->
+          <div v-else class="mnemonic-display">
+            <div class="mnemonic-grid">
+              <div
+                v-for="(word, index) in viewedMnemonic.split(' ')"
+                :key="index"
+                class="mnemonic-word"
+                :class="$q.dark.isActive ? 'word-dark' : 'word-light'"
+              >
+                <span class="word-number">{{ index + 1 }}</span>
+                <span class="word-text">{{ word }}</span>
+              </div>
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-actions align="right" class="dialog-actions">
+          <q-btn
+            flat
+            :label="$t('Close')"
+            @click="closeViewMnemonicDialog"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            v-if="!viewedMnemonic"
+            flat
+            :label="$t('View')"
+            @click="viewMnemonic"
+            :loading="isViewingMnemonic"
+            :disable="!sparkPinInput || sparkPinInput.length < 6"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Change PIN Dialog -->
+    <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Change PIN') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            v-close-popup
+            class="close-btn"
+            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+          />
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <q-input
+            v-model="sparkPinInput"
+            type="password"
+            :label="$t('Current PIN')"
+            maxlength="6"
+            mask="######"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            borderless
+            input-class="q-px-md"
+            class="q-mb-md"
+            dense
+          />
+
+          <q-input
+            v-model="sparkNewPin"
+            type="password"
+            :label="$t('New PIN')"
+            maxlength="6"
+            mask="######"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            borderless
+            input-class="q-px-md"
+            class="q-mb-md"
+            dense
+          />
+
+          <q-input
+            v-model="sparkConfirmNewPin"
+            type="password"
+            :label="$t('Confirm New PIN')"
+            maxlength="6"
+            mask="######"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            borderless
+            input-class="q-px-md"
+            dense
+          />
+        </q-card-section>
+
+        <q-card-actions align="right" class="dialog-actions">
+          <q-btn
+            flat
+            :label="$t('Cancel')"
+            v-close-popup
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            flat
+            :label="$t('Change PIN')"
+            @click="handleChangePin"
+            :loading="isChangingPin"
+            :disable="!sparkPinInput || sparkPinInput.length < 6 || !sparkNewPin || sparkNewPin.length < 6 || sparkNewPin !== sparkConfirmNewPin"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -670,6 +974,17 @@ export default {
         { value: 'de', label: 'Deutsch' },
         { value: 'es', label: 'Español' }
       ],
+
+      // Spark wallet settings
+      showSparkSettingsDialog: false,
+      showViewMnemonicDialog: false,
+      showChangePinDialog: false,
+      sparkPinInput: '',
+      sparkNewPin: '',
+      sparkConfirmNewPin: '',
+      isViewingMnemonic: false,
+      viewedMnemonic: '',
+      isChangingPin: false,
     }
   },
   computed: {
@@ -682,7 +997,11 @@ export default {
       'totalBalance',
       'connectedWallets',
       'preferredFiatCurrency',
-      'exchangeRates'
+      'exchangeRates',
+      'hasSparkWallet',
+      'sparkWallet',
+      'isActiveWalletSpark',
+      'activeSparkAddress'
     ]),
 
     isValidNewWallet() {
@@ -748,7 +1067,9 @@ export default {
       'connectWallet',
       'disconnectAll',
       'updateCurrencyPreferences',
-      'loadExchangeRates'
+      'loadExchangeRates',
+      'getSparkMnemonic',
+      'changeSparkPin'
     ]),
 
     async initializeStore() {
@@ -1168,6 +1489,184 @@ export default {
       if (savedLanguage && this.localeOptions.find(lang => lang.value === savedLanguage)) {
         this.$i18n.locale = savedLanguage
       }
+    },
+
+    // Spark wallet methods
+    getWalletTypeIcon(wallet) {
+      return wallet.type === 'spark' ? 'las la-bolt' : 'las la-link';
+    },
+
+    getWalletTypeLabel(wallet) {
+      return wallet.type === 'spark' ? 'Spark' : 'NWC';
+    },
+
+    async copySparkAddress() {
+      if (!this.activeSparkAddress) return;
+      try {
+        await navigator.clipboard.writeText(this.activeSparkAddress);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Spark address copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      }
+    },
+
+    openViewMnemonicDialog() {
+      this.sparkPinInput = '';
+      this.viewedMnemonic = '';
+      this.isViewingMnemonic = false;
+      this.showViewMnemonicDialog = true;
+    },
+
+    async viewMnemonic() {
+      if (!this.sparkPinInput || this.sparkPinInput.length < 6) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Please enter your PIN'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        return;
+      }
+
+      this.isViewingMnemonic = true;
+      try {
+        const mnemonic = await this.getSparkMnemonic(this.sparkPinInput);
+        this.viewedMnemonic = mnemonic;
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Invalid PIN'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        this.sparkPinInput = '';
+      } finally {
+        this.isViewingMnemonic = false;
+      }
+    },
+
+    closeViewMnemonicDialog() {
+      this.showViewMnemonicDialog = false;
+      this.sparkPinInput = '';
+      this.viewedMnemonic = '';
+    },
+
+    openChangePinDialog() {
+      this.sparkPinInput = '';
+      this.sparkNewPin = '';
+      this.sparkConfirmNewPin = '';
+      this.showChangePinDialog = true;
+    },
+
+    async handleChangePin() {
+      if (!this.sparkPinInput || this.sparkPinInput.length < 6) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Please enter your current PIN'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        return;
+      }
+
+      if (!this.sparkNewPin || this.sparkNewPin.length < 6) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('New PIN must be 6 digits'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        return;
+      }
+
+      if (this.sparkNewPin !== this.sparkConfirmNewPin) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('PINs do not match'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        return;
+      }
+
+      this.isChangingPin = true;
+      try {
+        await this.changeSparkPin(this.sparkPinInput, this.sparkNewPin);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('PIN changed successfully'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        this.showChangePinDialog = false;
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: error.message || this.$t('Failed to change PIN'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } finally {
+        this.isChangingPin = false;
+        this.sparkPinInput = '';
+        this.sparkNewPin = '';
+        this.sparkConfirmNewPin = '';
+      }
+    },
+
+    confirmDeleteSparkWallet() {
+      if (!this.sparkWallet) return;
+
+      this.$q.dialog({
+        title: this.$t('Delete Spark Wallet'),
+        message: this.$t('Are you sure you want to delete your Spark wallet? This action cannot be undone. Make sure you have backed up your seed phrase.'),
+        cancel: true,
+        persistent: true,
+        color: 'negative'
+      }).onOk(async () => {
+        try {
+          await this.removeWallet(this.sparkWallet.id);
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Spark wallet deleted'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        } catch (error) {
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t('Failed to delete wallet'),
+            caption: error.message,
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        }
+      });
+    },
+
+    truncateAddress(address) {
+      if (!address || address.length < 20) return address;
+      return `${address.slice(0, 10)}...${address.slice(-8)}`;
+    },
+
+    navigateToCreateSpark() {
+      this.showAddWalletDialog = false;
+      this.$router.push('/spark-setup');
+    },
+
+    navigateToRestoreSpark() {
+      this.showAddWalletDialog = false;
+      this.$router.push('/spark-restore');
     }
   }
 }
@@ -2065,5 +2564,221 @@ export default {
 .rate-status span {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 12px;
+}
+
+/* Spark Wallet Section Styles */
+.spark-icon {
+  background: linear-gradient(135deg, #F59E0B, #EAB308);
+  color: white;
+}
+
+.seed-icon {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+  color: white;
+}
+
+.pin-icon {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+}
+
+.delete-icon {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+  color: white;
+}
+
+.delete-spark-card:hover {
+  border-color: #EF4444 !important;
+}
+
+.delete-text {
+  color: #EF4444;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.spark-address-text {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 10px;
+}
+
+/* Wallet Type Badges */
+.spark-type-badge {
+  background: linear-gradient(135deg, #F59E0B, #EAB308);
+  color: white;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.nwc-type-badge {
+  background: linear-gradient(135deg, #6B7280, #4B5563);
+  color: white;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* Wallet Type Options in Add Wallet Dialog */
+.wallet-type-section {
+  margin-bottom: 0.5rem;
+}
+
+.section-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+.wallet-type-option {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.option-dark {
+  background: #171717;
+}
+
+.option-light {
+  background: #F8F8F8;
+}
+
+.wallet-type-option:hover {
+  border-color: #15DE72;
+  transform: translateY(-1px);
+}
+
+.option-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.spark-option-icon {
+  background: linear-gradient(135deg, #F59E0B, #EAB308);
+}
+
+.restore-option-icon {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+}
+
+.option-content {
+  flex: 1;
+}
+
+.option-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.option-subtitle {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+}
+
+/* View Mnemonic Dialog */
+.mnemonic-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.warning-dark {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.warning-light {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+}
+
+.warning-icon {
+  color: #EF4444;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.warning-text {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  color: #EF4444;
+  line-height: 1.4;
+}
+
+.mnemonic-display {
+  padding: 0.5rem 0;
+}
+
+.mnemonic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.mnemonic-word {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+}
+
+.word-dark {
+  background: #171717;
+  border: 1px solid #2A342A;
+}
+
+.word-light {
+  background: #F8F8F8;
+  border: 1px solid #E5E7EB;
+}
+
+.word-number {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  color: #6B7280;
+  min-width: 16px;
+}
+
+.word-text {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
+  color: #15DE72;
+}
+
+@media (max-width: 480px) {
+  .mnemonic-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

@@ -271,7 +271,8 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
-import {fiatRatesService} from '../utils/fiatRates.js';
+import { fiatRatesService } from '../utils/fiatRates.js';
+import { useWalletStore } from '../stores/wallet';
 
 export default {
   name: 'TransactionHistoryPage',
@@ -285,6 +286,7 @@ export default {
       activeFilter: 'today',
       transactions: [],
       walletState: {},
+      walletStore: null,
       nostrProfiles: {},
       expandedGroups: new Set(),
       showLoadingScreen: true,
@@ -379,6 +381,7 @@ export default {
     }
   },
   async created() {
+    this.walletStore = useWalletStore();
     this.initializeTransactionHistory();
     this.loadFiatRates();
   },
@@ -416,53 +419,31 @@ export default {
           this.loadingText = 'Connecting to wallet...';
         }
 
+        // Load wallet state for fiat currency preference
         const savedState = localStorage.getItem('buhoGO_wallet_state');
         if (savedState) {
           this.walletState = JSON.parse(savedState);
-
-          const activeWallet = this.walletState.connectedWallets.find(
-            w => w.id === this.walletState.activeWalletId
-          );
-
-          if (activeWallet) {
-            if (this.showLoadingScreen) {
-              this.loadingText = 'Fetching transactions...';
-            }
-
-            const nwc = new NostrWebLNProvider({
-              nostrWalletConnectUrl: activeWallet.nwcString,
-            });
-
-            await nwc.enable();
-
-            const transactionsResponse = await nwc.listTransactions({
-              limit: 500,
-              offset: 0
-            });
-
-            if (transactionsResponse && transactionsResponse.transactions) {
-              this.transactions = transactionsResponse.transactions.map(tx => ({
-                ...tx,
-                // Ensure consistent field names across different API responses
-                id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
-                type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
-                description: tx.description || tx.memo || '',
-                settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000),
-                // Map WebLN field names to expected field names for TransactionDetails
-                fee: tx.fee || tx.fees_paid || 0,
-                payment_request: tx.payment_request || tx.invoice || null
-              }));
-
-              this.transactions.sort((a, b) => b.settled_at - a.settled_at);
-
-              if (this.showLoadingScreen) {
-                this.loadingText = 'Processing zap transactions...';
-              }
-
-              await this.processZapTransactions();
-            }
-          }
         }
+
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Fetching transactions...';
+        }
+
+        // Check wallet type and load transactions accordingly
+        if (this.walletStore.isActiveWalletSpark) {
+          await this.loadSparkTransactions();
+        } else {
+          await this.loadNWCTransactions();
+        }
+
+        this.transactions.sort((a, b) => b.settled_at - a.settled_at);
+
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Processing zap transactions...';
+        }
+
+        await this.processZapTransactions();
+
       } catch (error) {
         console.error('Error loading transactions:', error);
         this.$q.notify({
@@ -473,6 +454,59 @@ export default {
         });
       } finally {
         this.isLoading = false;
+      }
+    },
+
+    async loadSparkTransactions() {
+      // Ensure Spark wallet is connected (auto-connects if session PIN available)
+      const provider = await this.walletStore.ensureSparkConnected();
+
+      const sparkTransactions = await provider.getTransactions({ limit: 500, offset: 0 });
+
+      // Normalize Spark transactions to match expected format
+      this.transactions = sparkTransactions.map(tx => ({
+        id: tx.id,
+        type: tx.type === 'receive' ? 'incoming' : 'outgoing',
+        amount: tx.amount,
+        description: tx.description || '',
+        memo: tx.description || '',
+        settled_at: tx.timestamp,
+        fee: tx.fee || 0,
+        status: tx.status || 'completed',
+        sparkTransfer: tx.sparkTransfer || false
+      }));
+    },
+
+    async loadNWCTransactions() {
+      const activeWallet = this.walletState.connectedWallets?.find(
+        w => w.id === this.walletState.activeWalletId
+      );
+
+      if (!activeWallet?.nwcString) {
+        throw new Error('No active NWC wallet found');
+      }
+
+      const nwc = new NostrWebLNProvider({
+        nostrWalletConnectUrl: activeWallet.nwcString,
+      });
+
+      await nwc.enable();
+
+      const transactionsResponse = await nwc.listTransactions({
+        limit: 500,
+        offset: 0
+      });
+
+      if (transactionsResponse && transactionsResponse.transactions) {
+        this.transactions = transactionsResponse.transactions.map(tx => ({
+          ...tx,
+          id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
+          type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
+          description: tx.description || tx.memo || '',
+          settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000),
+          fee: tx.fee || tx.fees_paid || 0,
+          payment_request: tx.payment_request || tx.invoice || null
+        }));
       }
     },
 

@@ -51,12 +51,80 @@
 
       <!-- Content -->
       <q-card-section class="receive-content">
-        <!-- Amount Icon -->
-        <!--        <div class="amount-icon-section" v-if="!generatedInvoice">-->
-        <!--          <div class="amount-icon text-h2">-->
-        <!--            {{ getCurrencySymbol() }}-->
-        <!--          </div>-->
-        <!--        </div>-->
+        <!-- Spark/Lightning Toggle (for Spark wallets) -->
+        <div v-if="isSparkWallet && !generatedInvoice && !showAddressView" class="receive-type-toggle">
+          <q-btn-toggle
+            v-model="receiveMode"
+            toggle-color="primary"
+            :options="[
+              { label: 'Lightning', value: 'lightning', icon: 'las la-bolt' },
+              { label: 'Spark', value: 'spark', icon: 'las la-fire' }
+            ]"
+            class="type-toggle"
+            :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
+            no-caps
+            unelevated
+            spread
+          />
+          <div v-if="receiveMode === 'spark'" class="spark-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Zero fee from other Spark users') }}
+          </div>
+        </div>
+
+        <!-- Spark Address View -->
+        <div v-if="showSparkAddressView && sparkAddress" class="address-view">
+          <div class="address-qr-section">
+            <div class="qr-container" @click="copySparkAddress">
+              <div class="qr-wrapper">
+                <vue-qrcode
+                  :value="sparkAddress"
+                  :options="{ width: 280, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
+                  class="qr-code"
+                />
+              </div>
+            </div>
+
+            <!-- Spark Address Display -->
+            <div
+              class="address-display-box spark-address-box"
+              :class="$q.dark.isActive ? 'address-box-dark' : 'address-box-light'"
+              @click="copySparkAddress"
+            >
+              <q-icon name="las la-fire" size="18px" class="address-icon spark-icon" />
+              <span class="address-text-value">{{ truncateSparkAddress(sparkAddress) }}</span>
+              <q-icon name="las la-copy" size="16px" class="copy-icon" />
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="spark-actions">
+              <q-btn
+                flat
+                no-caps
+                class="invoice-action-btn"
+                :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+                @click="copySparkAddress"
+              >
+                <q-icon name="las la-copy" size="20px" class="q-mr-xs"/>
+                {{ $t('Copy') }}
+              </q-btn>
+              <q-btn
+                flat
+                no-caps
+                class="invoice-action-btn"
+                :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+                @click="shareSparkAddress"
+              >
+                <q-icon name="las la-share-alt" size="20px" class="q-mr-xs"/>
+                {{ $t('Share') }}
+              </q-btn>
+            </div>
+
+            <!-- User Hint -->
+            <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+              {{ $t('Share this address to receive instant, zero-fee payments from other Spark users.') }}
+            </div>
+          </div>
+        </div>
 
         <!-- QR Code Display -->
         <div class="qr-display-section" v-if="generatedInvoice">
@@ -254,7 +322,8 @@ export default {
       walletState: {},
       amountInSats: 0,
       isAmountFocused: false,
-      showAddressView: false
+      showAddressView: false,
+      receiveMode: 'lightning' // 'lightning' or 'spark'
     }
   },
   computed: {
@@ -274,6 +343,15 @@ export default {
     },
     lightningAddress() {
       return this.walletStore.activeWalletLightningAddress;
+    },
+    isSparkWallet() {
+      return this.walletStore.isActiveWalletSpark;
+    },
+    sparkAddress() {
+      return this.walletStore.activeSparkAddress;
+    },
+    showSparkAddressView() {
+      return this.isSparkWallet && this.receiveMode === 'spark' && !this.generatedInvoice;
     }
   },
   watch: {
@@ -299,6 +377,7 @@ export default {
       this.generatedInvoice = null;
       this.amountInSats = 0;
       this.showAddressView = false;
+      this.receiveMode = 'lightning';
     },
 
     closeModal() {
@@ -399,27 +478,47 @@ export default {
 
       this.isCreatingInvoice = true;
       try {
-        const activeWallet = this.walletState.connectedWallets?.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-
-        await nwc.enable();
-
-        const invoiceRequest = {
+        const invoiceParams = {
           amount: this.amountInSats,
           description: this.description || 'BuhoGO Payment',
           expiry: 3600
         };
 
-        const invoice = await nwc.makeInvoice(invoiceRequest);
+        let invoice;
+
+        // Check if active wallet is Spark or NWC
+        if (this.isSparkWallet) {
+          // Use Spark wallet provider
+          const provider = this.walletStore.getActiveProvider();
+          if (!provider) {
+            throw new Error('Spark wallet not unlocked. Please enter your PIN.');
+          }
+
+          const result = await provider.createInvoice(invoiceParams);
+          invoice = {
+            paymentRequest: result.paymentRequest,
+            payment_hash: result.paymentHash,
+            amount: this.amountInSats,
+            description: invoiceParams.description,
+            expires_at: result.expiresAt
+          };
+        } else {
+          // Use NWC for non-Spark wallets
+          const activeWallet = this.walletState.connectedWallets?.find(
+            w => w.id === this.walletState.activeWalletId
+          );
+
+          if (!activeWallet || !activeWallet.nwcString) {
+            throw new Error('No active wallet found');
+          }
+
+          const nwc = new NostrWebLNProvider({
+            nostrWalletConnectUrl: activeWallet.nwcString,
+          });
+
+          await nwc.enable();
+          invoice = await nwc.makeInvoice(invoiceParams);
+        }
 
         const paymentRequest = invoice.paymentRequest || invoice.payment_request;
         if (!paymentRequest) {
@@ -508,6 +607,59 @@ export default {
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
+    },
+
+    async copySparkAddress() {
+      if (!this.sparkAddress) return;
+
+      try {
+        await navigator.clipboard.writeText(this.sparkAddress);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Spark address copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      }
+    },
+
+    async shareSparkAddress() {
+      if (!this.sparkAddress) return;
+
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: 'Spark Address',
+            text: this.sparkAddress
+          });
+
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Shared'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        } else {
+          await this.copySparkAddress();
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Failed to share Spark address:', error);
+        }
+      }
+    },
+
+    truncateSparkAddress(address) {
+      if (!address) return '';
+      if (address.length <= 20) return address;
+      return `${address.slice(0, 10)}...${address.slice(-8)}`;
     },
 
     formatInvoiceAmount(sats) {
@@ -1143,6 +1295,97 @@ export default {
   .address-hint {
     font-size: 12px;
     max-width: 260px;
+  }
+}
+
+/* Spark/Lightning Toggle */
+.receive-type-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.type-toggle {
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 280px;
+  width: 100%;
+}
+
+.type-toggle :deep(.q-btn) {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0.625rem 1rem;
+  min-height: 40px;
+}
+
+.toggle-dark {
+  background: #1A1A1A;
+  border: 1px solid #2A342A;
+}
+
+.toggle-dark :deep(.q-btn) {
+  color: #B0B0B0;
+}
+
+.toggle-dark :deep(.q-btn--active) {
+  background: linear-gradient(90deg, #059573, #15DE72);
+  color: #FFFFFF;
+}
+
+.toggle-light {
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+}
+
+.toggle-light :deep(.q-btn) {
+  color: #6B7280;
+}
+
+.toggle-light :deep(.q-btn--active) {
+  background: linear-gradient(90deg, #059573, #15DE72);
+  color: #FFFFFF;
+}
+
+.spark-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Spark Address Specific */
+.spark-icon {
+  color: #FF6B35;
+}
+
+.spark-address-box {
+  margin-top: 1rem;
+}
+
+.spark-actions {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 320px;
+  margin-top: 1rem;
+}
+
+@media (max-width: 480px) {
+  .type-toggle {
+    max-width: 260px;
+  }
+
+  .type-toggle :deep(.q-btn) {
+    font-size: 12px;
+    padding: 0.5rem 0.75rem;
+    min-height: 36px;
+  }
+
+  .spark-actions {
+    max-width: 280px;
   }
 }
 </style>

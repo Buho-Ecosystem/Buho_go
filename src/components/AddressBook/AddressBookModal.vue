@@ -57,19 +57,42 @@
             />
           </div>
 
+          <!-- Address Type Toggle -->
           <div class="input-wrapper">
             <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Lightning Address') }}
+              {{ $t('Address Type') }}
+            </div>
+            <q-btn-toggle
+              v-model="formData.addressType"
+              toggle-color="primary"
+              :options="[
+                { label: 'Lightning', value: 'lightning', icon: 'las la-bolt' },
+                { label: 'Spark', value: 'spark', icon: 'las la-fire' }
+              ]"
+              class="address-type-toggle"
+              :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
+              no-caps
+              unelevated
+              spread
+            />
+          </div>
+
+          <div class="input-wrapper">
+            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ formData.addressType === 'spark' ? $t('Spark Address') : $t('Lightning Address') }}
             </div>
             <input
-              v-model="formData.lightningAddress"
+              v-model="formData.address"
               type="text"
-              placeholder="user@domain.com"
+              :placeholder="addressPlaceholder"
               class="form-input"
               :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
               ref="addressInput"
-              maxlength="100"
+              maxlength="150"
             />
+            <div v-if="formData.address && !isAddressValid" class="input-error">
+              {{ formData.addressType === 'spark' ? $t('Invalid Spark address (should start with sp1 or tsp1)') : $t('Invalid Lightning address format') }}
+            </div>
           </div>
         </div>
       </q-card-section>
@@ -148,7 +171,8 @@ export default {
     return {
       formData: {
         name: '',
-        lightningAddress: '',
+        address: '',
+        addressType: 'lightning',
         color: '#3B82F6'
       },
       isSaving: false,
@@ -171,10 +195,24 @@ export default {
       return !!this.entry
     },
 
+    addressPlaceholder() {
+      return this.formData.addressType === 'spark'
+        ? 'sp1... or tsp1...'
+        : 'user@domain.com'
+    },
+
+    isAddressValid() {
+      if (!this.formData.address.trim()) return true // Don't show error for empty
+      if (this.formData.addressType === 'spark') {
+        return this.isValidSparkAddress(this.formData.address)
+      }
+      return this.isValidLightningAddress(this.formData.address)
+    },
+
     isFormValid() {
       return this.formData.name.trim() &&
-             this.formData.lightningAddress.trim() &&
-             this.isValidLightningAddress(this.formData.lightningAddress)
+             this.formData.address.trim() &&
+             this.isAddressValid
     }
   },
   watch: {
@@ -187,6 +225,12 @@ export default {
       } else {
         this.resetForm()
       }
+    },
+    'formData.addressType'() {
+      // Clear address when switching types to avoid confusion
+      if (!this.isEditing) {
+        this.formData.address = ''
+      }
     }
   },
   methods: {
@@ -196,13 +240,15 @@ export default {
       if (this.entry) {
         this.formData = {
           name: this.entry.name,
-          lightningAddress: this.entry.lightningAddress,
+          address: this.entry.address || this.entry.lightningAddress || '',
+          addressType: this.entry.addressType || 'lightning',
           color: this.entry.color
         }
       } else {
         this.formData = {
           name: '',
-          lightningAddress: '',
+          address: '',
+          addressType: 'lightning',
           color: this.getRandomColor()
         }
       }
@@ -211,7 +257,8 @@ export default {
     resetForm() {
       this.formData = {
         name: '',
-        lightningAddress: '',
+        address: '',
+        addressType: 'lightning',
         color: '#3B82F6'
       }
       this.isSaving = false
@@ -233,6 +280,12 @@ export default {
       return lightningAddressRegex.test(address.trim())
     },
 
+    isValidSparkAddress(address) {
+      if (!address) return false
+      const trimmed = address.trim().toLowerCase()
+      return trimmed.startsWith('sp1') || trimmed.startsWith('tsp1')
+    },
+
     async saveEntry() {
       if (!this.isFormValid) return
 
@@ -241,7 +294,8 @@ export default {
       try {
         const entryData = {
           name: this.formData.name.trim(),
-          lightningAddress: this.formData.lightningAddress.trim(),
+          address: this.formData.address.trim(),
+          addressType: this.formData.addressType,
           color: this.formData.color
         }
 
@@ -266,11 +320,13 @@ export default {
         this.$emit('saved')
         this.closeModal()
       } catch (error) {
+        const errorMessage = this.getErrorMessage(error)
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Couldn\'t save contact'),
-          caption: error.message,
+          message: errorMessage.title,
+          caption: errorMessage.caption,
           position: 'bottom',
+          timeout: 4000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
@@ -280,6 +336,36 @@ export default {
 
     closeModal() {
       this.show = false
+    },
+
+    getErrorMessage(error) {
+      const msg = error.message || ''
+
+      if (msg.includes('already exists')) {
+        return {
+          title: this.$t('Contact already exists'),
+          caption: this.$t('This address is already saved in your address book')
+        }
+      }
+
+      if (msg.includes('Invalid Lightning')) {
+        return {
+          title: this.$t('Invalid Lightning address'),
+          caption: this.$t('Please enter a valid address like user@domain.com')
+        }
+      }
+
+      if (msg.includes('Invalid Spark')) {
+        return {
+          title: this.$t('Invalid Spark address'),
+          caption: this.$t('Spark addresses start with sp1 or tsp1')
+        }
+      }
+
+      return {
+        title: this.$t('Couldn\'t save contact'),
+        caption: msg || this.$t('Please try again')
+      }
     }
   }
 }
@@ -380,6 +466,44 @@ export default {
 
 .view_title {
   color: #6D6D6D;
+}
+
+/* Address Type Toggle */
+.address-type-toggle {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.toggle-dark {
+  background: #171717;
+  border: 1px solid #2A342A;
+}
+
+.toggle-light {
+  background: #F8F8F8;
+  border: 1px solid #E5E7EB;
+}
+
+.toggle-dark :deep(.q-btn) {
+  color: #B0B0B0;
+}
+
+.toggle-light :deep(.q-btn) {
+  color: #6B7280;
+}
+
+.toggle-dark :deep(.q-btn--active),
+.toggle-light :deep(.q-btn--active) {
+  background: linear-gradient(135deg, #059573, #15DE72) !important;
+  color: white !important;
+}
+
+.input-error {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  color: #EF4444;
+  margin-top: 0.5rem;
+  padding-left: 0.25rem;
 }
 
 .form-input {

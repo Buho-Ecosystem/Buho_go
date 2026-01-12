@@ -88,7 +88,7 @@
         {{ $t('No contacts yet') }}
       </div>
       <div class="empty-subtitle" :class="$q.dark.isActive ? 'empty_subtitle_dark' : 'empty_subtitle_light'">
-        {{ $t('Add your first Lightning contact to get started') }}
+        {{ $t('Add Lightning or Spark contacts to get started') }}
       </div>
       <q-btn
         unelevated

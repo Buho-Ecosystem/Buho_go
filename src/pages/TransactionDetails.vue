@@ -274,7 +274,8 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
-import {fiatRatesService} from '../utils/fiatRates.js';
+import { fiatRatesService } from '../utils/fiatRates.js';
+import { useWalletStore } from '../stores/wallet';
 
 export default {
   name: 'TransactionDetailsPage',
@@ -288,6 +289,7 @@ export default {
       transaction: null,
       nostrProfile: null,
       walletState: {},
+      walletStore: null,
       showLoadingScreen: true,
       loadingText: 'Loading transaction details...',
       fiatRates: {},
@@ -295,6 +297,7 @@ export default {
     }
   },
   async created() {
+    this.walletStore = useWalletStore();
     this.initializeTransactionDetails();
     this.loadFiatRates();
   },
@@ -377,50 +380,88 @@ export default {
     },
 
     async fetchTransactionFromWallet(txId) {
+      try {
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Connecting to wallet...';
+        }
+
+        // Check wallet type and fetch accordingly
+        if (this.walletStore.isActiveWalletSpark) {
+          await this.fetchSparkTransaction(txId);
+        } else {
+          await this.fetchNWCTransaction(txId);
+        }
+
+        // Process zap info if applicable
+        if (this.transaction && this.isZapTransaction(this.transaction)) {
+          this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);
+        }
+      } catch (error) {
+        console.error('Error fetching transaction from wallet:', error);
+      }
+    },
+
+    async fetchSparkTransaction(txId) {
+      // Ensure Spark wallet is connected (auto-connects if session PIN available)
+      const provider = await this.walletStore.ensureSparkConnected();
+
+      if (this.showLoadingScreen) {
+        this.loadingText = 'Fetching transaction data...';
+      }
+
+      const transactions = await provider.getTransactions({ limit: 100, offset: 0 });
+      const found = transactions.find(tx => tx.id === txId);
+
+      if (found) {
+        // Normalize Spark transaction to expected format
+        this.transaction = {
+          id: found.id,
+          type: found.type === 'receive' ? 'incoming' : 'outgoing',
+          amount: found.amount,
+          description: found.description || '',
+          memo: found.description || '',
+          settled_at: found.timestamp,
+          fee: found.fee || 0,
+          status: found.status || 'completed',
+          sparkTransfer: found.sparkTransfer || false
+        };
+      }
+    },
+
+    async fetchNWCTransaction(txId) {
       const activeWallet = this.walletState.connectedWallets?.find(
         w => w.id === this.walletState.activeWalletId
       );
 
-      if (activeWallet) {
-        try {
-          if (this.showLoadingScreen) {
-            this.loadingText = 'Connecting to wallet...';
-          }
+      if (!activeWallet?.nwcString) {
+        throw new Error('No active NWC wallet found');
+      }
 
-          const nwc = new NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
+      const nwc = new NostrWebLNProvider({
+        nostrWalletConnectUrl: activeWallet.nwcString,
+      });
 
-          await nwc.enable();
+      await nwc.enable();
 
-          if (this.showLoadingScreen) {
-            this.loadingText = 'Fetching transaction data...';
-          }
+      if (this.showLoadingScreen) {
+        this.loadingText = 'Fetching transaction data...';
+      }
 
-          const transactionsResponse = await nwc.listTransactions({limit: 100});
+      const transactionsResponse = await nwc.listTransactions({ limit: 100 });
 
-          if (transactionsResponse && transactionsResponse.transactions) {
-            this.transaction = transactionsResponse.transactions.find(tx =>
-              tx.id === txId || tx.payment_hash === txId
-            );
+      if (transactionsResponse && transactionsResponse.transactions) {
+        this.transaction = transactionsResponse.transactions.find(tx =>
+          tx.id === txId || tx.payment_hash === txId
+        );
 
-            if (this.transaction) {
-              // Ensure consistent field names across different API responses
-              this.transaction.id = this.transaction.id || this.transaction.payment_hash || txId;
-              this.transaction.type = this.transaction.type || (this.transaction.amount > 0 ? 'incoming' : 'outgoing');
-              this.transaction.description = this.transaction.description || this.transaction.memo || '';
-              this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || Math.floor(Date.now() / 1000);
-              // Map WebLN field names to expected field names
-              this.transaction.fee = this.transaction.fee || this.transaction.fees_paid || 0;
-              this.transaction.payment_request = this.transaction.payment_request || this.transaction.invoice || null;
-
-              if (this.isZapTransaction(this.transaction)) {
-                this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching transaction from wallet:', error);
+        if (this.transaction) {
+          // Ensure consistent field names across different API responses
+          this.transaction.id = this.transaction.id || this.transaction.payment_hash || txId;
+          this.transaction.type = this.transaction.type || (this.transaction.amount > 0 ? 'incoming' : 'outgoing');
+          this.transaction.description = this.transaction.description || this.transaction.memo || '';
+          this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || Math.floor(Date.now() / 1000);
+          this.transaction.fee = this.transaction.fee || this.transaction.fees_paid || 0;
+          this.transaction.payment_request = this.transaction.payment_request || this.transaction.invoice || null;
         }
       }
     },

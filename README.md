@@ -1,109 +1,225 @@
-# 🦉 Buhogo - Bitcoin Payments Made Simple
+# BuhoGO
 
-**Send and receive Bitcoin instantly. Connect any wallet, pay anywhere.**
+**Bitcoin Lightning Wallet for Web and Mobile**
 
-Buhogo is an open-source mobile wallet that brings Bitcoin and Lightning Network payments to everyone. Whether you're
-new to Bitcoin or a seasoned user managing multiple wallets, we've built something that just works.
+BuhoGO is an open-source wallet application that makes Bitcoin Lightning payments accessible to everyone. Whether you prefer full self-custody with Spark or want to connect your existing wallet via NWC, BuhoGO provides a clean, intuitive interface for everyday Bitcoin transactions.
 
-## Why Buhogo?
+[Live App](https://go.mybuho.de) | [Report Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
 
-We believe Bitcoin payments should be as easy as sending a text message. That's why we created Buhogo – a wallet that
-connects to your existing setup rather than locking you into ours. Think of it as your universal remote for Bitcoin
-payments.
+<br>
 
-## What You Can Do
+## Features
 
-**Lightning-Fast Payments**
+### Two Wallet Options
 
-- Send Bitcoin in seconds with Lightning Network support
-- Handle traditional on-chain transactions when you need them
-- Pay lightning invoices, lightning addresses (like user@domain.com), and LNURL requests
+**Spark Wallet (Self-Custodial)**
+- Generate a new wallet with 12-word seed phrase
+- Full control over your Bitcoin with PIN-protected encryption
+- Zero-fee instant transfers to other Spark users
+- Standard Lightning Network payments with minimal fees
 
-**Connect Everything**
+**NWC Connected Wallet**
+- Connect any Nostr Wallet Connect compatible wallet
+- Use your existing Lightning setup (LNBits, Alby, Primal, Buho etc.)
+- Multiple NWC wallets supported simultaneously
+- No seed phrase management required
 
-- Use multiple wallets simultaneously – switch between them with a tap
-- Works with any NWC-compatible wallet
-- Scan QR codes, paste from clipboard, or type manually
+### Payment Capabilities
 
-**Stay Informed**
+| Feature | Spark | NWC |
+|---------|-------|-----|
+| Pay Lightning Invoices | Yes | Yes |
+| Pay Lightning Addresses | Yes | Yes |
+| Pay LNURL Requests | Yes | Yes |
+| Receive Lightning | Yes | Yes |
+| Spark-to-Spark Transfers | Yes | No |
+| Zero-Fee Transfers | Yes | No |
 
-- Track all your transactions with detailed history
-- Get monthly spending summaries
-- Watch real-time Bitcoin prices right in the app
+### Additional Features
 
-**Made for Humans**
+- **QR Scanner**: Scan invoices, addresses, and LNURL codes
+- **Address Book**: Save contacts with Lightning or Spark addresses
+- **Transaction History**: Complete record of all payments
+- **Multi-Wallet**: Switch between wallets instantly
+- **Dark and Light Themes**: Choose your preferred appearance
+- **Multi-Language**: Available in multiple languages
+- **Real-Time Prices**: Bitcoin price display in your currency
 
-- Clean interface that actually makes sense
-- Dark and light themes (because preferences matter)
-- Available in multiple languages
+<br>
+
+## Screenshots
+
+### Interface Themes
+
+| Dark Mode | Light Mode |
+|-----------|------------|
+| ![Dark Mode](public/dark_img.png) | ![Light Mode](public/light.png) |
+
+### NWC Wallet Connection
+
+![Connect Wallet](public/connect_wallet.png)
+
+### Send and Receive
+
+![Create/Send](public/create_send.png)
+
+### Spark Wallet Setup
+
+*Screenshots coming soon*
+
+<br>
+
+## Quick Start
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/Buho-Ecosystem/Buho_go.git
+cd Buho_go
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+The app will be available at `http://localhost:9000`
+
+### Production Build
+
+```bash
+npm run build
+```
+
+Build output will be in the `dist/spa` directory.
+
+<br>
 
 ## Getting Started
 
-**Connect Your First Wallet**
+For detailed step-by-step instructions, see the [User Guide](Guide.md).
 
-1. Open the app and head to the Send screen
-2. Add your wallet using Nostr Wallet Connect (NWC)
-3. Start making payments immediately
+### Option A: Create a Spark Wallet
 
-**Making Your First Payment**
-You can pay using any of these formats:
+1. Open the app and select "Create Wallet"
+2. Write down your 12-word seed phrase (this is your backup)
+3. Verify your backup by entering 3 random words
+4. Set a 6-digit PIN to protect your wallet
+5. Start sending and receiving Bitcoin
 
-- Lightning invoices (those long strings starting with `lnbc`)
-- Lightning addresses (simple as `friend@wallet.com`)
-- LNURL payment requests
-- Just scan a QR code and we'll figure out the rest
+See [Setting Up a Spark Wallet](Guide.md#setting-up-a-spark-wallet) for detailed instructions.
 
-**Customize Your Experience**
+### Option B: Connect an NWC Wallet
 
-- Toggle between dark and light themes in settings
-- Change your language preference
-- Set up multiple wallets for different use cases
-- Take your own mempool for trustless fiat rates
+1. Open the app and select "Connect Wallet"
+2. Get your NWC connection string from your wallet provider
+3. Paste the string or scan the QR code
+4. Your wallet is now connected
 
-## Screenshots & Interface
+See [Connecting an NWC Wallet](Guide.md#connecting-an-nwc-wallet) for detailed instructions.
 
-Our interface focuses on clarity and speed:
+### Making Payments
 
-### 1. Dark Mode and Light Mode
-   ![Dark Mode](public/dark_img.png)
+BuhoGO accepts multiple payment formats:
 
-   ![Light Mode](public/light.png)
+- **Lightning Invoice**: Strings starting with `lnbc...`
+- **Lightning Address**: Email-like format `name@domain.com`
+- **LNURL**: Encoded payment requests starting with `lnurl...`
+- **Spark Address**: Strings starting with `sp1...` (Spark wallets only)
 
-### 2. Wallet Connection
-   ![Connect Wallet](public/connect_wallet.png)
+Simply scan a QR code or paste the payment destination and the app handles the rest.
 
-### 3. Create/Send Functionality
-   ![Create/Send](public/create_send.png)
+<br>
 
-## Security & Philosophy
+## Security
 
-**Open by Design**
+For technical details on the encryption implementation, see the [Developer Guide](Developer.md#security-considerations).
 
-- Full source code available for audit
-- Non-custodial architecture – your keys, your coins
-- NWC compatibility ensures secure wallet connections
+### Spark Wallet Security
 
-**Multi-Wallet Isolation**
-Each connected wallet operates independently, so your personal Lightning wallet stays separate from your business
-payments.
+- Seed phrases are encrypted with AES-256-GCM
+- PIN is required to unlock and view seed phrase
+- Private keys never leave your device
+- No server-side storage of sensitive data
 
-## Community & Support
+### NWC Wallet Security
 
-- **Web App**: [go.mybuho.de](https://go.mybuho.de)
-- **Issues**: Report bugs or request features on GitHub
+- Connection strings stored locally only
+- Each wallet operates independently
+- Non-custodial architecture throughout
+
+### Best Practices
+
+- Back up your Spark seed phrase securely offline
+- Use a unique PIN you can remember
+- Verify recipient addresses before sending
+- Start with small amounts when testing
+
+<br>
+
+## Tech Stack
+
+For detailed architecture documentation, see the [Developer Guide](Developer.md#architecture-overview).
+
+| Component | Technology |
+|-----------|------------|
+| Framework | Vue.js 3 |
+| UI Library | Quasar Framework |
+| State Management | Pinia |
+| Build Tool | Vite |
+| Lightning (Spark) | @buildonspark/spark-sdk |
+| Lightning (NWC) | @getalby/sdk |
+| Mobile | Capacitor (iOS/Android) |
+
+<br>
+
+## Project Structure
+
+```
+src/
+  components/       # Reusable Vue components
+  pages/            # Application pages/routes
+  providers/        # Wallet provider implementations
+  stores/           # Pinia state stores
+  css/              # Global styles
+  i18n/             # Internationalization files
+  router/           # Vue Router configuration
+```
+
+<br>
+
+## Documentation
+
+- [User Guide](Guide.md) - How to use BuhoGO
+- [Developer Guide](Developer.md) - Technical documentation for contributors
+
+<br>
+
+## Contributing
+
+Contributions are welcome. Please read the [Developer Guide](Developer.md) before contributing.
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes following the [Styling Guidelines](Developer.md#styling-guidelines)
+4. Submit a pull request
+
+<br>
 
 ## License
 
-MIT License – use it, modify it, contribute back if you can.
+MIT License - Use it, modify it, contribute back.
 
----
+<br>
 
-**What Makes Buhogo Different?**
+## Links
 
-Most Bitcoin wallets force you to choose: either use their solution entirely, or find something else. Buhogo works with
-what you already have. We're the bridge between your existing Bitcoin setup and the payments you want to make.
+- **Web App**: [go.mybuho.de](https://go.mybuho.de)
+- **GitHub**: [Buho-Ecosystem/Buho_go](https://github.com/Buho-Ecosystem/Buho_go)
+- **Google PlayStore**: [BuhoGO](https://play.google.com/store/apps/details?id=mybuho.buhogo)
 
-Built with genuine care for the Bitcoin community – because better tools mean better adoption, and better adoption means
-a better world.
+<br>
 
-*Made with ❤️ by people who actually use Bitcoin every day*
+*Built for the Bitcoin community by people who use Bitcoin every day.*

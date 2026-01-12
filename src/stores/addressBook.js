@@ -1,5 +1,11 @@
 import { defineStore } from 'pinia'
 
+// Address type constants
+export const ADDRESS_TYPES = {
+  LIGHTNING: 'lightning',
+  SPARK: 'spark'
+}
+
 export const useAddressBookStore = defineStore('addressBook', {
   state: () => ({
     entries: [],
@@ -22,17 +28,18 @@ export const useAddressBookStore = defineStore('addressBook', {
 
   getters: {
     filteredEntries: (state) => {
+      const sorted = [...state.entries].sort((a, b) => a.name.localeCompare(b.name))
+
       if (!state.searchQuery.trim()) {
-        return state.entries.sort((a, b) => a.name.localeCompare(b.name))
+        return sorted
       }
-      
+
       const query = state.searchQuery.toLowerCase()
-      return state.entries
-        .filter(entry => 
-          entry.name.toLowerCase().includes(query) ||
-          entry.lightningAddress.toLowerCase().includes(query)
-        )
-        .sort((a, b) => a.name.localeCompare(b.name))
+      return sorted.filter(entry => {
+        const address = entry.address || entry.lightningAddress || ''
+        return entry.name.toLowerCase().includes(query) ||
+          address.toLowerCase().includes(query)
+      })
     },
 
     getEntryById: (state) => (id) => {
@@ -41,6 +48,16 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     getRandomColor: (state) => () => {
       return state.colorPalette[Math.floor(Math.random() * state.colorPalette.length)]
+    },
+
+    lightningEntries: (state) => {
+      return state.entries.filter(entry =>
+        (entry.addressType || 'lightning') === 'lightning'
+      )
+    },
+
+    sparkEntries: (state) => {
+      return state.entries.filter(entry => entry.addressType === 'spark')
     }
   },
 
@@ -61,32 +78,40 @@ export const useAddressBookStore = defineStore('addressBook', {
     // Add new entry
     async addEntry(entryData) {
       try {
+        const addressType = entryData.addressType || 'lightning'
+        const address = entryData.address || entryData.lightningAddress || ''
+
         const newEntry = {
           id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: entryData.name.trim(),
-          lightningAddress: entryData.lightningAddress.trim(),
+          address: address.trim(),
+          addressType: addressType,
+          // Keep lightningAddress for backward compatibility
+          lightningAddress: addressType === 'lightning' ? address.trim() : '',
           color: entryData.color || this.getRandomColor(),
           createdAt: Date.now(),
           updatedAt: Date.now()
         }
 
-        // Validate lightning address format
-        if (!this.isValidLightningAddress(newEntry.lightningAddress)) {
-          throw new Error('Invalid Lightning address format')
+        // Validate address format based on type
+        if (!this.isValidAddress(newEntry.address, newEntry.addressType)) {
+          throw new Error(addressType === 'spark'
+            ? 'Invalid Spark address format'
+            : 'Invalid Lightning address format')
         }
 
         // Check for duplicates
         const existingEntry = this.entries.find(
-          entry => entry.lightningAddress.toLowerCase() === newEntry.lightningAddress.toLowerCase()
+          entry => this.getEntryAddress(entry).toLowerCase() === newEntry.address.toLowerCase()
         )
-        
+
         if (existingEntry) {
-          throw new Error('This Lightning address already exists in your address book')
+          throw new Error('This address already exists in your address book')
         }
 
         this.entries.push(newEntry)
         await this.persistEntries()
-        
+
         return newEntry
       } catch (error) {
         throw error
@@ -101,32 +126,41 @@ export const useAddressBookStore = defineStore('addressBook', {
           throw new Error('Entry not found')
         }
 
+        const currentEntry = this.entries[entryIndex]
         const updatedEntry = {
-          ...this.entries[entryIndex],
+          ...currentEntry,
           ...updateData,
           updatedAt: Date.now()
         }
 
-        // Validate lightning address format if it's being updated
-        if (updateData.lightningAddress && !this.isValidLightningAddress(updatedEntry.lightningAddress)) {
-          throw new Error('Invalid Lightning address format')
-        }
+        // If address is being updated, validate it
+        const newAddress = updateData.address || updateData.lightningAddress
+        if (newAddress) {
+          const addressType = updateData.addressType || updatedEntry.addressType || 'lightning'
+          updatedEntry.address = newAddress.trim()
+          updatedEntry.addressType = addressType
+          updatedEntry.lightningAddress = addressType === 'lightning' ? newAddress.trim() : ''
 
-        // Check for duplicates if lightning address is being updated
-        if (updateData.lightningAddress) {
+          if (!this.isValidAddress(updatedEntry.address, addressType)) {
+            throw new Error(addressType === 'spark'
+              ? 'Invalid Spark address format'
+              : 'Invalid Lightning address format')
+          }
+
+          // Check for duplicates
           const existingEntry = this.entries.find(
-            entry => entry.id !== id && 
-            entry.lightningAddress.toLowerCase() === updatedEntry.lightningAddress.toLowerCase()
+            entry => entry.id !== id &&
+            this.getEntryAddress(entry).toLowerCase() === updatedEntry.address.toLowerCase()
           )
-          
+
           if (existingEntry) {
-            throw new Error('This Lightning address already exists in your address book')
+            throw new Error('This address already exists in your address book')
           }
         }
 
         this.entries[entryIndex] = updatedEntry
         await this.persistEntries()
-        
+
         return updatedEntry
       } catch (error) {
         throw error
@@ -161,11 +195,46 @@ export const useAddressBookStore = defineStore('addressBook', {
       this.searchQuery = ''
     },
 
+    // Validate address based on type
+    isValidAddress(address, type = 'lightning') {
+      if (!address || !address.trim()) return false
+
+      if (type === 'spark') {
+        return this.isValidSparkAddress(address)
+      }
+      return this.isValidLightningAddress(address)
+    },
+
     // Validate lightning address format
     isValidLightningAddress(address) {
       // Basic validation for Lightning address format (user@domain.com)
       const lightningAddressRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-      return lightningAddressRegex.test(address)
+      return lightningAddressRegex.test(address.trim())
+    },
+
+    // Validate Spark address format
+    isValidSparkAddress(address) {
+      // Spark addresses start with sp1 (mainnet) or tsp1 (testnet)
+      const trimmed = address.trim().toLowerCase()
+      return trimmed.startsWith('sp1') || trimmed.startsWith('tsp1')
+    },
+
+    // Detect address type from input
+    detectAddressType(address) {
+      if (!address) return null
+      const trimmed = address.trim().toLowerCase()
+      if (trimmed.startsWith('sp1') || trimmed.startsWith('tsp1')) {
+        return 'spark'
+      }
+      if (this.isValidLightningAddress(address)) {
+        return 'lightning'
+      }
+      return null
+    },
+
+    // Get address from entry (handles backward compatibility)
+    getEntryAddress(entry) {
+      return entry?.address || entry?.lightningAddress || ''
     },
 
     // Persist entries to localStorage
@@ -185,30 +254,42 @@ export const useAddressBookStore = defineStore('addressBook', {
       localStorage.removeItem('buhoGO_address_book')
     },
 
-    // Import entries (for future use)
+    // Import entries (supports both Lightning and Spark addresses)
     async importEntries(entries) {
       try {
-        const validEntries = entries.filter(entry => 
-          entry.name && 
-          entry.lightningAddress && 
-          this.isValidLightningAddress(entry.lightningAddress)
-        )
+        let importedCount = 0
 
-        for (const entry of validEntries) {
+        for (const entry of entries) {
+          if (!entry.name) continue
+
+          // Get address from either new or old field
+          const address = entry.address || entry.lightningAddress
+          if (!address) continue
+
+          // Detect or use provided address type
+          const addressType = entry.addressType || this.detectAddressType(address)
+          if (!addressType) continue
+
+          // Validate address format
+          if (!this.isValidAddress(address, addressType)) continue
+
+          // Check for duplicates
           const existingEntry = this.entries.find(
-            existing => existing.lightningAddress.toLowerCase() === entry.lightningAddress.toLowerCase()
+            existing => this.getEntryAddress(existing).toLowerCase() === address.toLowerCase()
           )
-          
+
           if (!existingEntry) {
             await this.addEntry({
               name: entry.name,
-              lightningAddress: entry.lightningAddress,
+              address: address,
+              addressType: addressType,
               color: entry.color || this.getRandomColor()
             })
+            importedCount++
           }
         }
 
-        return validEntries.length
+        return importedCount
       } catch (error) {
         throw error
       }

@@ -200,6 +200,16 @@
       @payment-detected="onPaymentDetected"
     />
 
+    <!-- PIN Entry Dialog for Spark Wallet -->
+    <PinEntryDialog
+      v-model="showPinDialog"
+      :title="$t('Unlock Wallet')"
+      :subtitle="$t('Enter your PIN to unlock your Spark wallet')"
+      :error-message="pinError"
+      @pin-complete="handlePinComplete"
+      @cancel="handlePinCancel"
+    />
+
     <!-- Wallet Switcher Dialog -->
     <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
       <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
@@ -518,13 +528,15 @@ import {useWalletStore} from '../stores/wallet';
 import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
+import PinEntryDialog from '../components/PinEntryDialog.vue';
 
 export default {
   name: 'WalletPage',
   components: {
     LoadingScreen,
     ReceiveModal,
-    SendModal
+    SendModal,
+    PinEntryDialog
   },
   setup() {
     const walletStore = useWalletStore();
@@ -588,7 +600,9 @@ export default {
       fiatRatesLoaded: false,
       secondaryValue: '',
       paymentFiatValue: '',
-      showWalletSwitcher: false
+      showWalletSwitcher: false,
+      showPinDialog: false,
+      pinError: ''
     };
   },
   computed: {
@@ -746,6 +760,9 @@ export default {
         this.loadingText = 'Loading wallet state...';
         await this.loadWalletState();
 
+        // Initialize wallet store
+        await this.walletStore.initialize();
+
         this.loadingText = 'Loading fiat rates...';
         await this.loadFiatRates();
 
@@ -762,12 +779,60 @@ export default {
         this.loadingText = 'Ready!';
         await new Promise(resolve => setTimeout(resolve, 500));
         this.showLoadingScreen = false;
+
+        // Check if Spark wallet needs unlocking
+        await this.checkSparkWalletUnlock();
       } catch (error) {
         console.error('Error initializing wallet:', error);
         this.loadingText = 'Error loading wallet';
         await new Promise(resolve => setTimeout(resolve, 1000));
         this.showLoadingScreen = false;
       }
+    },
+
+    async checkSparkWalletUnlock() {
+      // Check if active wallet is Spark and needs unlocking
+      if (this.walletStore.isActiveWalletSpark) {
+        const provider = this.walletStore.getActiveProvider();
+        if (!provider) {
+          // Spark wallet exists but not unlocked - show PIN dialog
+          this.pinError = '';
+          this.showPinDialog = true;
+        }
+      }
+    },
+
+    async handlePinComplete(pin) {
+      try {
+        this.pinError = '';
+        await this.walletStore.unlockSparkWallet(pin);
+        this.showPinDialog = false;
+
+        // Refresh balance after unlock
+        await this.updateWalletBalance();
+
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Wallet unlocked'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        console.error('PIN unlock failed:', error);
+        this.pinError = this.$t('Incorrect PIN. Please try again.');
+      }
+    },
+
+    handlePinCancel() {
+      this.showPinDialog = false;
+      // Optionally redirect or show warning that wallet features are limited
+      this.$q.notify({
+        type: 'warning',
+        message: this.$t('Wallet locked'),
+        caption: this.$t('Some features require PIN unlock'),
+        position: 'bottom',
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
     },
 
     async loadWalletState() {
@@ -786,16 +851,28 @@ export default {
     },
 
     async updateWalletBalance() {
-      const activeWallet = this.walletState.connectedWallets.find(
-        w => w.id === this.walletState.activeWalletId
-      );
+      try {
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Updating balance...';
+        }
 
-      if (activeWallet && activeWallet.nwcString) {
-        try {
-          if (this.showLoadingScreen) {
-            this.loadingText = 'Updating balance...';
+        // Check if active wallet is Spark
+        if (this.walletStore.isActiveWalletSpark) {
+          const provider = this.walletStore.getActiveProvider();
+          if (provider) {
+            const balanceResult = await provider.getBalance();
+            this.walletState.balance = balanceResult.balance;
+            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
           }
+          return;
+        }
 
+        // NWC wallet flow
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (activeWallet && activeWallet.nwcString) {
           const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
@@ -806,9 +883,9 @@ export default {
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-        } catch (error) {
-          console.error('Failed to update balance:', error);
         }
+      } catch (error) {
+        console.error('Failed to update balance:', error);
       }
     },
 
@@ -1182,29 +1259,47 @@ export default {
             description: parsedInvoice.description
           };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
-          // Process LNURL to get the actual payment parameters
-          const activeWallet = this.getActiveWallet();
-          if (!activeWallet) {
-            throw new Error('No active wallet found');
+          // For Spark wallets, just pass through - we'll process during payment
+          if (this.walletStore.isActiveWalletSpark) {
+            this.pendingPayment = {
+              ...paymentData,
+              lnurl: paymentData.data
+            };
+          } else {
+            // Process LNURL for NWC wallets
+            const activeWallet = this.getActiveWallet();
+            if (!activeWallet?.nwcString) {
+              throw new Error('No active wallet found');
+            }
+            const lightningService = new LightningPaymentService(activeWallet.nwcString);
+            const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
+            console.log('✅ LNURL processed:', processedLnurl);
+            this.pendingPayment = processedLnurl;
           }
-
-          const lightningService = new LightningPaymentService(activeWallet.nwcString);
-          const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
-
-          console.log('✅ LNURL processed:', processedLnurl);
-          this.pendingPayment = processedLnurl;
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
-          // Process Lightning Address to get the actual payment parameters
-          const activeWallet = this.getActiveWallet();
-          if (!activeWallet) {
-            throw new Error('No active wallet found');
+          // For Spark wallets, just pass through - we'll process during payment
+          if (this.walletStore.isActiveWalletSpark) {
+            this.pendingPayment = {
+              ...paymentData,
+              lightningAddress: paymentData.data
+            };
+          } else {
+            // Process Lightning Address for NWC wallets
+            const activeWallet = this.getActiveWallet();
+            if (!activeWallet?.nwcString) {
+              throw new Error('No active wallet found');
+            }
+            const lightningService = new LightningPaymentService(activeWallet.nwcString);
+            const processedAddress = await lightningService.processPaymentInput(paymentData.data);
+            console.log('✅ Lightning Address processed:', processedAddress);
+            this.pendingPayment = processedAddress;
           }
-
-          const lightningService = new LightningPaymentService(activeWallet.nwcString);
-          const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-
-          console.log('✅ Lightning Address processed:', processedAddress);
-          this.pendingPayment = processedAddress;
+        } else if (paymentData.type === 'spark_address' && paymentData.address) {
+          // Spark address payment
+          this.pendingPayment = {
+            ...paymentData,
+            sparkAddress: paymentData.address
+          };
         } else {
           this.pendingPayment = paymentData;
         }
@@ -1226,22 +1321,38 @@ export default {
       if (!this.currentInvoicePaymentHash || this.invoicePaid) return;
 
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) return;
+        let isPaid = false;
 
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-        await nwc.enable();
+        if (this.walletStore.isActiveWalletSpark) {
+          // Spark wallet - ensure connected and use provider's lookupInvoice
+          try {
+            const provider = await this.walletStore.ensureSparkConnected();
+            const result = await provider.lookupInvoice(this.currentInvoicePaymentHash);
+            isPaid = result.paid;
+          } catch (e) {
+            // Silently fail if wallet not connected during background check
+            return;
+          }
+        } else {
+          // NWC wallet
+          const activeWallet = this.getActiveWallet();
+          if (!activeWallet?.nwcString) return;
 
-        const transactions = await nwc.getTransactions();
-        const paidInvoice = transactions.find(tx =>
-          tx.type === 'incoming' &&
-          tx.payment_hash === this.currentInvoicePaymentHash
-        );
+          const nwc = new NostrWebLNProvider({
+            nostrWalletConnectUrl: activeWallet.nwcString,
+          });
+          await nwc.enable();
 
-        if (paidInvoice) {
-          console.log('✅ Invoice paid!', paidInvoice);
+          const transactions = await nwc.getTransactions();
+          const paidInvoice = transactions.find(tx =>
+            tx.type === 'incoming' &&
+            tx.payment_hash === this.currentInvoicePaymentHash
+          );
+          isPaid = !!paidInvoice;
+        }
+
+        if (isPaid) {
+          console.log('✅ Invoice paid!');
           this.invoicePaid = true;
           this.waitingForPayment = false;
           this.stopInvoiceMonitoring();
@@ -1355,13 +1466,6 @@ export default {
       this.isSendingPayment = true;
 
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
-
         // Determine the amount to send
         let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
@@ -1385,9 +1489,16 @@ export default {
 
         console.log('🚀 Sending payment:', this.pendingPayment);
         console.log('💰 Amount:', amount, 'Comment:', comment);
-        console.log('📝 Raw paymentAmount:', this.paymentAmount);
-        console.log('📝 Raw sendForm.input:', this.sendForm.input);
-        const result = await lightningService.sendPayment(this.pendingPayment, amount, comment);
+
+        let result;
+
+        // Route payment based on wallet type
+        if (this.walletStore.isActiveWalletSpark) {
+          result = await this.sendSparkPayment(amount, comment);
+        } else {
+          result = await this.sendNWCPayment(amount, comment);
+        }
+
         console.log('✅ Payment sent:', result);
 
         this.showPaymentConfirmation = false;
@@ -1419,29 +1530,168 @@ export default {
       }
     },
 
+    async sendSparkPayment(amount, comment) {
+      // Ensure Spark wallet is connected (auto-connects if session PIN available)
+      const provider = await this.walletStore.ensureSparkConnected();
+
+      // Spark address transfer (zero-fee)
+      if (this.pendingPayment.sparkAddress) {
+        return await provider.transferToSparkAddress(this.pendingPayment.sparkAddress, amount);
+      }
+
+      // Lightning invoice
+      if (this.pendingPayment.invoice) {
+        return await provider.payInvoice({ invoice: this.pendingPayment.invoice });
+      }
+
+      // Lightning address
+      if (this.pendingPayment.lightningAddress) {
+        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '');
+      }
+
+      // LNURL - decode and fetch invoice, then pay
+      if (this.pendingPayment.lnurl) {
+        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
+        return await provider.payInvoice({ invoice });
+      }
+
+      throw new Error('Unsupported payment type for Spark wallet');
+    },
+
+    async sendNWCPayment(amount, comment) {
+      const activeWallet = this.getActiveWallet();
+      if (!activeWallet?.nwcString) {
+        throw new Error('No active NWC wallet found');
+      }
+
+      const lightningService = new LightningPaymentService(activeWallet.nwcString);
+      return await lightningService.sendPayment(this.pendingPayment, amount, comment);
+    },
+
+    // Helper: Check if input is a Lightning invoice
+    isLightningInvoice(input) {
+      const lower = input.toLowerCase();
+      return lower.startsWith('lnbc') || lower.startsWith('lntb') || lower.startsWith('lnbcrt');
+    },
+
+    // Helper: Check if input is a Lightning address
+    isLightningAddress(input) {
+      return input.includes('@') && !input.startsWith('lnurl');
+    },
+
+    // Helper: Check if input is an LNURL
+    isLNURL(input) {
+      const lower = input.toLowerCase();
+      return lower.startsWith('lnurl');
+    },
+
+    // Helper: Fetch invoice from LNURL
+    async fetchLNURLInvoice(lnurl, amountSats) {
+      const url = this.decodeLNURL(lnurl);
+
+      // Fetch LNURL endpoint
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch LNURL');
+
+      const data = await response.json();
+      if (data.status === 'ERROR') throw new Error(data.reason || 'LNURL error');
+
+      // Validate amount bounds
+      const minSats = Math.ceil((data.minSendable || 1000) / 1000);
+      const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
+      if (amountSats < minSats || amountSats > maxSats) {
+        throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
+      }
+
+      // Request invoice
+      const amountMs = amountSats * 1000;
+      const callbackUrl = `${data.callback}?amount=${amountMs}`;
+      const invoiceResponse = await fetch(callbackUrl);
+      if (!invoiceResponse.ok) throw new Error('Failed to get invoice');
+
+      const invoiceData = await invoiceResponse.json();
+      if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
+
+      return invoiceData.pr;
+    },
+
+    // Helper: Decode LNURL (bech32) to URL
+    decodeLNURL(lnurl) {
+      const input = lnurl.toLowerCase().replace('lightning:', '');
+      const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+      const hrpEnd = input.lastIndexOf('1');
+      if (hrpEnd < 1) throw new Error('Invalid LNURL');
+
+      const data = input.slice(hrpEnd + 1);
+      const values = [];
+
+      for (const char of data) {
+        const index = CHARSET.indexOf(char);
+        if (index === -1) throw new Error('Invalid LNURL character');
+        values.push(index);
+      }
+
+      // Remove checksum (last 6 chars)
+      const dataValues = values.slice(0, -6);
+
+      // Convert 5-bit to 8-bit
+      let bits = 0;
+      let value = 0;
+      const bytes = [];
+
+      for (const v of dataValues) {
+        value = (value << 5) | v;
+        bits += 5;
+        while (bits >= 8) {
+          bits -= 8;
+          bytes.push((value >> bits) & 0xff);
+        }
+      }
+
+      return new TextDecoder().decode(new Uint8Array(bytes));
+    },
+
     async createInvoice() {
       if (!this.receiveForm.amount || this.receiveForm.amount <= 0) return;
 
       this.isCreatingInvoice = true;
 
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-        await nwc.enable();
-
         const invoiceData = {
           amount: parseInt(this.receiveForm.amount),
           description: this.receiveForm.description || 'BuhoGO Payment'
         };
 
         console.log('🧾 Creating invoice:', invoiceData);
-        const invoice = await nwc.makeInvoice(invoiceData);
+
+        let invoice;
+
+        if (this.walletStore.isActiveWalletSpark) {
+          // Spark wallet - ensure connected and use provider
+          const provider = await this.walletStore.ensureSparkConnected();
+
+          const result = await provider.createInvoice(invoiceData);
+          invoice = {
+            paymentRequest: result.paymentRequest,
+            paymentHash: result.paymentHash,
+            amount: invoiceData.amount,
+            description: invoiceData.description
+          };
+        } else {
+          // NWC wallet
+          const activeWallet = this.getActiveWallet();
+          if (!activeWallet?.nwcString) {
+            throw new Error('No active NWC wallet found');
+          }
+
+          const nwc = new NostrWebLNProvider({
+            nostrWalletConnectUrl: activeWallet.nwcString,
+          });
+          await nwc.enable();
+
+          invoice = await nwc.makeInvoice(invoiceData);
+        }
+
         console.log('✅ Invoice created:', invoice);
 
         this.generatedInvoice = invoice;

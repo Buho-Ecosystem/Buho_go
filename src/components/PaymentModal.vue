@@ -50,11 +50,30 @@
             </div>
           </div>
           <div class="contact-details">
-            <div class="contact-name" :class="$q.dark.isActive ? 'contact-name-dark' : 'contact-name-light'">
-              {{ contact?.name || 'Contact' }}
+            <div class="contact-name-row">
+              <div class="contact-name" :class="$q.dark.isActive ? 'contact-name-dark' : 'contact-name-light'">
+                {{ contact?.name || 'Contact' }}
+              </div>
+              <div class="contact-type-badge" :class="contactTypeBadgeClass">
+                <q-icon :name="contactTypeIcon" size="10px" />
+                <span>{{ contactTypeLabel }}</span>
+              </div>
             </div>
             <div class="contact-address" :class="$q.dark.isActive ? 'contact-address-dark' : 'contact-address-light'">
-              {{ contact?.lightningAddress || '' }}
+              {{ contactAddress }}
+            </div>
+          </div>
+        </div>
+      </q-card-section>
+
+      <!-- Wallet Mismatch Warning -->
+      <q-card-section v-if="!canPayContact" class="warning-section">
+        <div class="warning-banner" :class="$q.dark.isActive ? 'warning-dark' : 'warning-light'">
+          <q-icon name="las la-exclamation-triangle" class="warning-icon" />
+          <div class="warning-content">
+            <div class="warning-title">{{ $t('Spark wallet required') }}</div>
+            <div class="warning-text">
+              {{ $t('Switch to your Spark wallet to pay this Spark address') }}
             </div>
           </div>
         </div>
@@ -117,7 +136,7 @@
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           :loading="isSending"
           @click="sendPayment"
-          :disable="!isValidAmount"
+          :disable="!isValidAmount || !canPayContact"
           no-caps
           unelevated
         >
@@ -168,7 +187,8 @@ export default {
       'activeWallet',
       'denominationCurrency',
       'exchangeRates',
-      'preferredFiatCurrency'
+      'preferredFiatCurrency',
+      'isActiveWalletSpark'
     ]),
 
     show: {
@@ -182,6 +202,41 @@ export default {
 
     isValidAmount() {
       return this.amountInSats > 0
+    },
+
+    // Contact address helpers
+    contactAddress() {
+      return this.contact?.address || this.contact?.lightningAddress || ''
+    },
+
+    contactAddressType() {
+      return this.contact?.addressType || 'lightning'
+    },
+
+    isSparkContact() {
+      return this.contactAddressType === 'spark'
+    },
+
+    contactTypeIcon() {
+      return this.isSparkContact ? 'las la-fire' : 'las la-bolt'
+    },
+
+    contactTypeLabel() {
+      return this.isSparkContact ? 'Spark' : 'Lightning'
+    },
+
+    contactTypeBadgeClass() {
+      return this.isSparkContact ? 'badge-spark' : 'badge-lightning'
+    },
+
+    // Check if payment is possible with current wallet
+    canPayContact() {
+      if (this.isSparkContact) {
+        // Spark addresses can only be paid from Spark wallets
+        return this.isActiveWalletSpark
+      }
+      // Lightning addresses can be paid from both wallet types
+      return true
     }
   },
   watch: {
@@ -332,38 +387,36 @@ export default {
     async sendPayment() {
       if (!this.isValidAmount || !this.contact) return
 
+      // Check if payment is possible with current wallet
+      if (!this.canPayContact) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Cannot pay Spark address'),
+          caption: this.$t('Switch to your Spark wallet to pay Spark addresses'),
+          position: 'bottom',
+          timeout: 4000,
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+        return
+      }
+
       this.isSending = true
 
       try {
-        // Get active wallet
-        const activeWallet = this.walletState.connectedWallets?.find(
-          w => w.id === this.walletState.activeWalletId
-        )
+        const walletStore = useWalletStore()
 
-        if (!activeWallet) {
-          throw new Error(this.$t('No active wallet found'))
+        if (this.isSparkContact) {
+          // Spark-to-Spark payment
+          await this.sendSparkPayment(walletStore)
+        } else {
+          // Lightning payment
+          await this.sendLightningPayment()
         }
-
-        // Create Lightning payment service
-        const lightningService = new LightningPaymentService(activeWallet.nwcString)
-
-        // Process Lightning address payment
-        const paymentData = await lightningService.processPaymentInput(this.contact.lightningAddress)
-
-        // Send payment
-        const result = await lightningService.sendPayment(
-          paymentData,
-          this.amountInSats,
-          this.comment || undefined
-        )
-
-        console.log('Payment result:', result)
 
         this.$emit('payment-sent', {
           contact: this.contact,
           amount: this.amountInSats,
-          comment: this.comment,
-          result: result
+          comment: this.comment
         })
 
         this.closeModal()
@@ -372,13 +425,225 @@ export default {
         console.error('Payment error:', error)
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Payment failed'),
-          caption: error.message,
+          message: this.getPaymentErrorMessage(error),
+          caption: this.getPaymentErrorCaption(error),
           position: 'bottom',
+          timeout: 5000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isSending = false
+      }
+    },
+
+    async sendSparkPayment(walletStore) {
+      // Get the Spark wallet provider
+      const provider = walletStore.providers[walletStore.activeWalletId]
+
+      if (!provider) {
+        throw new Error('SPARK_NOT_CONNECTED')
+      }
+
+      // Transfer to Spark address
+      const result = await provider.transferToSparkAddress(
+        this.contactAddress,
+        this.amountInSats
+      )
+
+      console.log('Spark transfer result:', result)
+      return result
+    },
+
+    async sendLightningPayment() {
+      const walletStore = useWalletStore()
+      const address = this.contactAddress
+
+      // Use Spark wallet if active
+      if (this.isActiveWalletSpark) {
+        const provider = walletStore.getActiveProvider()
+
+        if (!provider) {
+          throw new Error('SPARK_NOT_CONNECTED')
+        }
+
+        // Determine payment type and route accordingly
+        if (this.isLightningInvoice(address)) {
+          // Pay BOLT11 invoice
+          const result = await provider.payInvoice({ invoice: address })
+          console.log('Spark invoice payment result:', result)
+          return result
+        } else if (this.isLightningAddress(address)) {
+          // Pay Lightning address via LNURL
+          const result = await provider.payLightningAddress(
+            address,
+            this.amountInSats,
+            this.comment || undefined
+          )
+          console.log('Spark Lightning address payment result:', result)
+          return result
+        } else if (this.isLNURL(address)) {
+          // Handle LNURL - fetch invoice and pay
+          const invoice = await this.fetchLNURLInvoice(address, this.amountInSats)
+          const result = await provider.payInvoice({ invoice })
+          console.log('Spark LNURL payment result:', result)
+          return result
+        } else {
+          throw new Error('UNSUPPORTED_PAYMENT_TYPE')
+        }
+      }
+
+      // NWC wallet flow
+      const activeWallet = this.walletState.connectedWallets?.find(
+        w => w.id === this.walletState.activeWalletId
+      )
+
+      if (!activeWallet?.nwcString) {
+        throw new Error('NO_ACTIVE_WALLET')
+      }
+
+      const lightningService = new LightningPaymentService(activeWallet.nwcString)
+      const paymentData = await lightningService.processPaymentInput(address)
+      const result = await lightningService.sendPayment(
+        paymentData,
+        this.amountInSats,
+        this.comment || undefined
+      )
+      console.log('NWC payment result:', result)
+      return result
+    },
+
+    // Helper methods for payment type detection
+    isLightningInvoice(input) {
+      const lower = input.toLowerCase()
+      return lower.startsWith('lnbc') || lower.startsWith('lntb') || lower.startsWith('lnbcrt')
+    },
+
+    isLightningAddress(input) {
+      return input.includes('@') && !input.startsWith('lnurl')
+    },
+
+    isLNURL(input) {
+      const lower = input.toLowerCase()
+      return lower.startsWith('lnurl')
+    },
+
+    async fetchLNURLInvoice(lnurl, amountSats) {
+      // Decode LNURL (bech32) to get the URL
+      const url = this.decodeLNURL(lnurl)
+
+      // Fetch LNURL endpoint
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Failed to fetch LNURL')
+
+      const data = await response.json()
+      if (data.status === 'ERROR') throw new Error(data.reason || 'LNURL error')
+
+      // Validate amount bounds
+      const minSats = Math.ceil((data.minSendable || 1000) / 1000)
+      const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000)
+      if (amountSats < minSats || amountSats > maxSats) {
+        throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`)
+      }
+
+      // Request invoice
+      const amountMs = amountSats * 1000
+      const callbackUrl = `${data.callback}?amount=${amountMs}`
+      const invoiceResponse = await fetch(callbackUrl)
+      if (!invoiceResponse.ok) throw new Error('Failed to get invoice')
+
+      const invoiceData = await invoiceResponse.json()
+      if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error')
+
+      return invoiceData.pr
+    },
+
+    decodeLNURL(lnurl) {
+      // Remove prefix if present
+      const input = lnurl.toLowerCase().replace('lightning:', '')
+
+      // Bech32 character set
+      const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
+      const hrpEnd = input.lastIndexOf('1')
+      if (hrpEnd < 1) throw new Error('Invalid LNURL')
+
+      const data = input.slice(hrpEnd + 1)
+      const values = []
+
+      for (const char of data) {
+        const index = CHARSET.indexOf(char)
+        if (index === -1) throw new Error('Invalid LNURL character')
+        values.push(index)
+      }
+
+      // Remove checksum (last 6 chars)
+      const dataValues = values.slice(0, -6)
+
+      // Convert 5-bit to 8-bit
+      let bits = 0
+      let value = 0
+      const bytes = []
+
+      for (const v of dataValues) {
+        value = (value << 5) | v
+        bits += 5
+        while (bits >= 8) {
+          bits -= 8
+          bytes.push((value >> bits) & 0xff)
+        }
+      }
+
+      return new TextDecoder().decode(new Uint8Array(bytes))
+    },
+
+    getPaymentErrorMessage(error) {
+      const errorCode = error.message || ''
+
+      switch (errorCode) {
+        case 'NO_ACTIVE_WALLET':
+          return this.$t('No wallet connected')
+        case 'SPARK_NOT_CONNECTED':
+          return this.$t('Spark wallet not unlocked')
+        case 'INSUFFICIENT_BALANCE':
+          return this.$t('Insufficient balance')
+        case 'PAYMENT_FAILED':
+          return this.$t('Payment failed')
+        case 'UNSUPPORTED_PAYMENT_TYPE':
+          return this.$t('Unsupported payment format')
+        default:
+          if (errorCode.includes('insufficient') || errorCode.includes('balance')) {
+            return this.$t('Insufficient balance')
+          }
+          if (errorCode.includes('timeout') || errorCode.includes('Timeout')) {
+            return this.$t('Payment timed out')
+          }
+          if (errorCode.includes('network') || errorCode.includes('Network')) {
+            return this.$t('Network error')
+          }
+          if (errorCode.includes('LNURL') || errorCode.includes('lnurl')) {
+            return this.$t('LNURL error')
+          }
+          return this.$t('Payment failed')
+      }
+    },
+
+    getPaymentErrorCaption(error) {
+      const errorCode = error.message || ''
+
+      switch (errorCode) {
+        case 'NO_ACTIVE_WALLET':
+          return this.$t('Please connect a wallet first')
+        case 'SPARK_NOT_CONNECTED':
+          return this.$t('Please enter your PIN to unlock')
+        case 'INSUFFICIENT_BALANCE':
+          return this.$t('You don\'t have enough funds for this payment')
+        case 'UNSUPPORTED_PAYMENT_TYPE':
+          return this.$t('Use a Lightning invoice, address, or LNURL')
+        default:
+          // Return the actual error message for debugging if not a known code
+          if (errorCode.length < 100) {
+            return errorCode
+          }
+          return this.$t('Please try again later')
       }
     }
   }
@@ -489,14 +754,93 @@ export default {
   min-width: 0;
 }
 
+.contact-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
 .contact-name {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 16px;
   font-weight: 600;
-  margin-bottom: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.contact-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.badge-lightning {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+}
+
+.badge-spark {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+  color: white;
+}
+
+/* Warning Section */
+.warning-section {
+  padding: 0 1rem;
+}
+
+.warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
+}
+
+.warning-dark {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.warning-light {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+}
+
+.warning-icon {
+  color: #F59E0B;
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.warning-content {
+  flex: 1;
+}
+
+.warning-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #F59E0B;
+  margin-bottom: 0.25rem;
+}
+
+.warning-text {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  color: #D97706;
+  line-height: 1.4;
 }
 
 .contact-name-dark {
