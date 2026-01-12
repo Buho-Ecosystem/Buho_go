@@ -234,7 +234,7 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
 import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import {useWalletStore} from '../stores/wallet'
@@ -369,8 +369,10 @@ export default {
         if (this.$q && this.$q.notify) {
           this.$q.notify({
             type: 'negative',
-            message: (this.$t ? this.$t('Failed to connect wallet: ') : 'Failed to connect wallet: ') + error.message,
-            position: 'bottom'
+            message: this.$t ? this.$t('Connection failed') : 'Connection failed',
+            caption: error.message,
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       } finally {
@@ -450,8 +452,10 @@ export default {
         if (this.$q && this.$q.notify) {
           this.$q.notify({
             type: 'negative',
-            message: (this.$t ? this.$t('Failed to scan QR code: ') : 'Failed to scan QR code: ') + error.message,
-            position: 'bottom'
+            message: this.$t ? this.$t('Invalid QR code') : 'Invalid QR code',
+            caption: error.message,
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       } finally {

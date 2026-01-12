@@ -299,13 +299,19 @@ export default {
 
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD'
-        
+
         if (this.currentCurrency === currency.toLowerCase()) {
           // Show sats equivalent
           return `≈ ${this.amountInSats.toLocaleString()} sats`
         } else {
           // Show fiat equivalent
           const fiatValue = fiatRatesService.convertSatsToFiatSync(this.amountInSats, currency)
+
+          // Handle unavailable rates
+          if (fiatValue === null) {
+            return ''
+          }
+
           const symbols = {
             USD: '$',
             EUR: '€',
@@ -366,8 +372,10 @@ export default {
         console.error('Payment error:', error)
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Payment failed: ') + error.message,
-          position: 'bottom'
+          message: this.$t('Payment failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isSending = false

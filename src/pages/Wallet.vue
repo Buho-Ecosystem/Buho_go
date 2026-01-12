@@ -200,6 +200,67 @@
       @payment-detected="onPaymentDetected"
     />
 
+    <!-- Wallet Switcher Dialog -->
+    <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="switcher-header">
+          <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Switch Wallet') }}
+          </div>
+          <q-btn flat round dense icon="las la-times" v-close-popup
+                 class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+        </q-card-section>
+
+        <q-card-section class="switcher-content">
+          <div class="wallet-list">
+            <div
+              v-for="wallet in storeWallets"
+              :key="wallet.id"
+              class="wallet-switch-item"
+              :class="{
+                'active-wallet': wallet.id === storeActiveWalletId,
+                'wallet-switch-item-dark': $q.dark.isActive,
+                'wallet-switch-item-light': !$q.dark.isActive
+              }"
+              @click="switchToWallet(wallet.id)"
+            >
+              <div class="wallet-switch-icon" :class="getWalletColorClass(wallet)">
+                <q-icon name="las la-wallet" size="20px" />
+              </div>
+              <div class="wallet-switch-info">
+                <div class="wallet-switch-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                  {{ wallet.name }}
+                </div>
+                <div class="wallet-switch-balance" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                  {{ formatBalance(storeBalances[wallet.id] || 0) }}
+                </div>
+              </div>
+              <q-icon
+                v-if="wallet.id === storeActiveWalletId"
+                name="las la-check-circle"
+                size="22px"
+                color="positive"
+                class="active-check"
+              />
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-section class="switcher-footer">
+          <q-btn
+            flat
+            no-caps
+            class="manage-wallets-btn"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+            @click="goToSettings"
+          >
+            <q-icon name="las la-cog" class="q-mr-sm" />
+            {{ $t('Manage Wallets') }}
+          </q-btn>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
     <!-- Payment Confirmation Dialog -->
     <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px;">
@@ -450,9 +511,10 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService} from '../utils/lightning.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
+import {useWalletStore} from '../stores/wallet';
 import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
@@ -463,6 +525,10 @@ export default {
     LoadingScreen,
     ReceiveModal,
     SendModal
+  },
+  setup() {
+    const walletStore = useWalletStore();
+    return { walletStore };
   },
   data() {
     return {
@@ -521,7 +587,8 @@ export default {
       isSendingPayment: false,
       fiatRatesLoaded: false,
       secondaryValue: '',
-      paymentFiatValue: ''
+      paymentFiatValue: '',
+      showWalletSwitcher: false
     };
   },
   computed: {
@@ -533,12 +600,19 @@ export default {
     needsAmountInput() {
       if (!this.pendingPayment) return false;
 
+      // Check for LNURL and Lightning Address payments
       if (this.pendingPayment.type === 'lightning_address' ||
           this.pendingPayment.type === 'lnurl' ||
           this.pendingPayment.type === 'lnurl_pay') {
+        // Use isFixedAmount flag if available (from updated lightning.js)
+        if (this.pendingPayment.isFixedAmount !== undefined) {
+          return !this.pendingPayment.isFixedAmount;
+        }
+        // Fallback: check if min equals max
         return this.pendingPayment.minSendable !== this.pendingPayment.maxSendable;
       }
 
+      // Zero-amount invoices need amount input
       return (this.pendingPayment.type === 'lightning_invoice' && this.pendingPayment.amount === 0) ||
              (this.pendingPayment.type === 'invoice' && this.pendingPayment.amount === 0);
     },
@@ -548,6 +622,16 @@ export default {
         return this.paymentAmount && this.paymentAmount > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
       }
       return true;
+    },
+    // Computed properties from Pinia store for wallet switcher
+    storeWallets() {
+      return this.walletStore.wallets || [];
+    },
+    storeActiveWalletId() {
+      return this.walletStore.activeWalletId;
+    },
+    storeBalances() {
+      return this.walletStore.balances || {};
     }
   },
   async created() {
@@ -600,8 +684,62 @@ export default {
     }
   },
   methods: {
-    openWalletManagement() {
+    async openWalletManagement() {
+      // Initialize the store to ensure we have the latest wallet data
+      await this.walletStore.initialize();
+      this.showWalletSwitcher = true;
+    },
+
+    async switchToWallet(walletId) {
+      if (walletId === this.storeActiveWalletId) {
+        this.showWalletSwitcher = false;
+        return;
+      }
+
+      try {
+        // Use the wallet store to switch - this keeps Settings in sync
+        await this.walletStore.switchActiveWallet(walletId);
+
+        // Also update local walletState to stay in sync
+        this.walletState.activeWalletId = walletId;
+
+        // Get the new active wallet's balance from the store
+        this.walletState.balance = this.storeBalances[walletId] || 0;
+
+        // Save state to localStorage
+        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+        this.showWalletSwitcher = false;
+
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Wallet switched'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+
+        // Refresh balance in background
+        this.updateWalletBalance();
+      } catch (error) {
+        console.error('Error switching wallet:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t switch wallet'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      }
+    },
+
+    goToSettings() {
+      this.showWalletSwitcher = false;
       this.$router.push('/settings');
+    },
+
+    getWalletColorClass(wallet) {
+      const colors = ['wallet-green', 'wallet-blue', 'wallet-purple', 'wallet-orange', 'wallet-red'];
+      const index = wallet.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+      return colors[index];
     },
     async initializeWallet() {
       try {
@@ -658,7 +796,7 @@ export default {
             this.loadingText = 'Updating balance...';
           }
 
-          const nwc = new webln.NostrWebLNProvider({
+          const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
 
@@ -819,13 +957,30 @@ export default {
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(balance, currency);
+
+        // Handle unavailable rates - return empty string instead of fake value
+        if (fiatAmount === null) {
+          return '--';
+        }
+
         return fiatRatesService.formatFiatAmount(fiatAmount, currency);
       } catch (error) {
         console.error('Error getting fiat value:', error);
-        // Fallback to stored rates
+
+        // Check if we have valid stored rates (not guessed/fallback)
+        if (!this.walletState.exchangeRatesAvailable) {
+          return '--';
+        }
+
+        // Use stored rates only if they're valid
         const btcAmount = balance / 100000000;
         const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const rate = this.walletState.exchangeRates[currency.toLowerCase()] || 100000;
+        const rate = this.walletState.exchangeRates[currency.toLowerCase()];
+
+        if (!rate) {
+          return '--';
+        }
+
         const fiatValue = btcAmount * rate;
 
         const symbols = {
@@ -873,7 +1028,7 @@ export default {
 
         if (this.paymentData.type === 'lightning_invoice') {
           try {
-            const nwc = new webln.NostrWebLNProvider({
+            const nwc = new NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
             await nwc.enable();
@@ -902,8 +1057,10 @@ export default {
         console.error('Error processing payment input:', error);
         this.$q.notify({
           type: 'negative',
-          message: error.message,
-          position: 'bottom'
+          message: this.$t('Invalid payment request'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1002,8 +1159,9 @@ export default {
         console.error('Failed to read clipboard:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to read clipboard',
-          position: 'bottom'
+          message: this.$t('Couldn\'t access clipboard'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1012,39 +1170,27 @@ export default {
       console.log('Payment detected:', paymentData);
 
       try {
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet) {
+          throw new Error('No active wallet found');
+        }
+
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+
         // Transform the payment data to match expected structure
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
-          // Parse the invoice to get the amount
-          const parsedInvoice = this.parseInvoiceManually(paymentData.data);
-
-          this.pendingPayment = {
-            ...paymentData,
-            invoice: paymentData.data,
-            amount: parsedInvoice.amount,
-            description: parsedInvoice.description
-          };
+          // Use LightningPaymentService to properly decode the invoice
+          const processedInvoice = await lightningService.processPaymentInput(paymentData.data);
+          console.log('✅ Invoice processed:', processedInvoice);
+          this.pendingPayment = processedInvoice;
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
           // Process LNURL to get the actual payment parameters
-          const activeWallet = this.getActiveWallet();
-          if (!activeWallet) {
-            throw new Error('No active wallet found');
-          }
-
-          const lightningService = new LightningPaymentService(activeWallet.nwcString);
           const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
-
           console.log('✅ LNURL processed:', processedLnurl);
           this.pendingPayment = processedLnurl;
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
           // Process Lightning Address to get the actual payment parameters
-          const activeWallet = this.getActiveWallet();
-          if (!activeWallet) {
-            throw new Error('No active wallet found');
-          }
-
-          const lightningService = new LightningPaymentService(activeWallet.nwcString);
           const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-
           console.log('✅ Lightning Address processed:', processedAddress);
           this.pendingPayment = processedAddress;
         } else {
@@ -1056,8 +1202,10 @@ export default {
         console.error('❌ Error processing payment:', error);
         this.$q.notify({
           type: 'negative',
-          message: `Payment processing failed: ${error.message}`,
-          position: 'bottom'
+          message: this.$t('Payment failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1069,7 +1217,7 @@ export default {
         const activeWallet = this.getActiveWallet();
         if (!activeWallet) return;
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         await nwc.enable();
@@ -1090,8 +1238,9 @@ export default {
 
           this.$q.notify({
             type: 'positive',
-            message: 'Payment received!',
-            position: 'bottom'
+            message: this.$t('Payment received'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       } catch (error) {
@@ -1102,19 +1251,27 @@ export default {
     formatPaymentAmount() {
       if (!this.pendingPayment) return '';
 
+      // Variable amount - user needs to input
       if (this.needsAmountInput) {
         return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
       }
 
-      // For fixed-amount LNURL/Lightning Address payments
-      if ((this.pendingPayment.type === 'lnurl' ||
-           this.pendingPayment.type === 'lnurl_pay' ||
-           this.pendingPayment.type === 'lightning_address') &&
-          this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-        const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
-        return `${fixedAmount.toLocaleString()} sats`;
+      // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
+      if (this.pendingPayment.type === 'lnurl' ||
+          this.pendingPayment.type === 'lnurl_pay' ||
+          this.pendingPayment.type === 'lightning_address') {
+        // Use new fixedAmountSats property if available
+        if (this.pendingPayment.fixedAmountSats) {
+          return `${this.pendingPayment.fixedAmountSats.toLocaleString()} sats`;
+        }
+        // Fallback: calculate from minSendable
+        if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+          const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
+          return `${fixedAmount.toLocaleString()} sats`;
+        }
       }
 
+      // Standard invoice with amount
       return this.pendingPayment.amount ?
         `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` :
         'Variable amount';
@@ -1126,12 +1283,15 @@ export default {
       let amount = 0;
       if (this.needsAmountInput) {
         amount = parseInt(this.paymentAmount) || 0;
-      } else if ((this.pendingPayment.type === 'lnurl' ||
-                  this.pendingPayment.type === 'lnurl_pay' ||
-                  this.pendingPayment.type === 'lightning_address') &&
-                 this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-        // Fixed-amount LNURL/Lightning Address
-        amount = Math.floor(this.pendingPayment.minSendable / 1000);
+      } else if (this.pendingPayment.type === 'lnurl' ||
+                 this.pendingPayment.type === 'lnurl_pay' ||
+                 this.pendingPayment.type === 'lightning_address') {
+        // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
+        if (this.pendingPayment.fixedAmountSats) {
+          amount = this.pendingPayment.fixedAmountSats;
+        } else if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+          amount = Math.floor(this.pendingPayment.minSendable / 1000);
+        }
       } else {
         amount = this.pendingPayment.amount || 0;
       }
@@ -1141,6 +1301,12 @@ export default {
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
+
+        // Handle unavailable rates
+        if (fiatAmount === null) {
+          return '';
+        }
+
         return '≈ ' + fiatRatesService.formatFiatAmount(fiatAmount, currency);
       } catch (error) {
         console.error('Error formatting payment fiat:', error);
@@ -1156,18 +1322,16 @@ export default {
         return 'Amount must be greater than 0';
       }
 
-      if (this.pendingPayment.minSendable) {
-        const minSats = Math.floor(this.pendingPayment.minSendable / 1000);
-        if (amountNum < minSats) {
-          return `Minimum amount is ${minSats} sats`;
-        }
+      // Use minSats/maxSats from lightning.js if available
+      const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 1);
+      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
+
+      if (amountNum < minSats) {
+        return `Minimum amount is ${minSats.toLocaleString()} sats`;
       }
 
-      if (this.pendingPayment.maxSendable) {
-        const maxSats = Math.floor(this.pendingPayment.maxSendable / 1000);
-        if (amountNum > maxSats) {
-          return `Maximum amount is ${maxSats} sats`;
-        }
+      if (amountNum > maxSats) {
+        return `Maximum amount is ${maxSats.toLocaleString()} sats`;
       }
 
       return true;
@@ -1186,19 +1350,22 @@ export default {
 
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
 
-        // Get amount from paymentAmount for variable amount payments, or from pendingPayment for fixed amount invoices
+        // Determine the amount to send
         let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
-          // For variable amount invoices, LNURL, and Lightning Address
+          // Variable amount - user entered value
           amount = parseInt(this.paymentAmount);
-        } else if (this.pendingPayment && this.pendingPayment.amount > 0) {
-          // For fixed amount invoices
+        } else if (this.pendingPayment.fixedAmountSats) {
+          // Fixed-amount LNURL/Lightning Address - use fixedAmountSats from lightning.js
+          amount = this.pendingPayment.fixedAmountSats;
+        } else if (this.pendingPayment.amount > 0) {
+          // Fixed amount invoice
           amount = this.pendingPayment.amount;
         } else if ((this.pendingPayment.type === 'lnurl' ||
                     this.pendingPayment.type === 'lnurl_pay' ||
                     this.pendingPayment.type === 'lightning_address') &&
                    this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-          // For fixed-amount LNURL/Lightning Address payments
+          // Fallback: calculate fixed amount from minSendable
           amount = Math.floor(this.pendingPayment.minSendable / 1000);
         }
 
@@ -1221,16 +1388,19 @@ export default {
 
         this.$q.notify({
           type: 'positive',
-          message: 'Payment sent successfully!',
-          position: 'bottom'
+          message: this.$t('Sent'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
       } catch (error) {
         console.error('❌ Payment failed:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Payment failed: ' + error.message,
-          position: 'bottom'
+          message: this.$t('Payment failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isSendingPayment = false;
@@ -1248,7 +1418,7 @@ export default {
           throw new Error('No active wallet found');
         }
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
         await nwc.enable();
@@ -1271,8 +1441,10 @@ export default {
         console.error('❌ Failed to create invoice:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to create invoice: ' + error.message,
-          position: 'bottom'
+          message: this.$t('Couldn\'t create invoice'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isCreatingInvoice = false;
@@ -1336,15 +1508,17 @@ export default {
         await navigator.clipboard.writeText(this.generatedInvoice.paymentRequest);
         this.$q.notify({
           type: 'positive',
-          message: 'Invoice copied to clipboard!',
-          position: 'bottom'
+          message: this.$t('Invoice copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         console.error('Failed to copy invoice:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to copy invoice',
-          position: 'bottom'
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     }
@@ -2442,5 +2616,129 @@ export default {
   .payment-content {
     padding: 1rem;
   }
+}
+
+/* Wallet Switcher Dialog */
+.wallet-switcher-card {
+  width: 100%;
+  max-width: 360px;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.switcher-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.switcher-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.switcher-content {
+  padding: 0.5rem 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.wallet-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-switch-item {
+  display: flex;
+  align-items: center;
+  padding: 0.875rem 1.25rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  gap: 0.875rem;
+}
+
+.wallet-switch-item-dark:hover {
+  background: rgba(21, 222, 114, 0.08);
+}
+
+.wallet-switch-item-light:hover {
+  background: rgba(21, 222, 114, 0.08);
+}
+
+.wallet-switch-item.active-wallet {
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.wallet-switch-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.wallet-green {
+  background: linear-gradient(135deg, #059573, #15DE72);
+}
+
+.wallet-blue {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+}
+
+.wallet-purple {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+}
+
+.wallet-orange {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+}
+
+.wallet-red {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+}
+
+.wallet-switch-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.wallet-switch-name {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wallet-switch-balance {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+}
+
+.active-check {
+  flex-shrink: 0;
+}
+
+.switcher-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  display: flex;
+  justify-content: center;
+}
+
+.manage-wallets-btn {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 </style>

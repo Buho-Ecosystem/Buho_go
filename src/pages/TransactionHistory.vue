@@ -269,7 +269,7 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import {fiatRatesService} from '../utils/fiatRates.js';
 
@@ -429,7 +429,7 @@ export default {
               this.loadingText = 'Fetching transactions...';
             }
 
-            const nwc = new webln.NostrWebLNProvider({
+            const nwc = new NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
 
@@ -443,10 +443,14 @@ export default {
             if (transactionsResponse && transactionsResponse.transactions) {
               this.transactions = transactionsResponse.transactions.map(tx => ({
                 ...tx,
+                // Ensure consistent field names across different API responses
                 id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
                 type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
                 description: tx.description || tx.memo || '',
-                settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000)
+                settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000),
+                // Map WebLN field names to expected field names for TransactionDetails
+                fee: tx.fee || tx.fees_paid || 0,
+                payment_request: tx.payment_request || tx.invoice || null
               }));
 
               this.transactions.sort((a, b) => b.settled_at - a.settled_at);
@@ -463,8 +467,9 @@ export default {
         console.error('Error loading transactions:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to load transaction history'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t load history'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isLoading = false;
@@ -478,8 +483,9 @@ export default {
 
       this.$q.notify({
         type: 'positive',
-        message: this.$t('Transactions refreshed'),
-        position: 'bottom'
+        message: this.$t('Up to date'),
+        position: 'bottom',
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
 
@@ -619,6 +625,11 @@ export default {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(tx.amount), currency);
 
+        // Handle unavailable rates
+        if (fiatValue === null) {
+          return '--';
+        }
+
         const symbols = {
           USD: '$',
           EUR: '€',
@@ -645,6 +656,11 @@ export default {
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(amount), currency);
+
+        // Handle unavailable rates
+        if (fiatValue === null) {
+          return '--';
+        }
 
         const symbols = {
           USD: '$',

@@ -36,6 +36,7 @@
           </div>
           <div class="header-actions">
             <q-btn
+              v-if="hasLightningAddress"
               flat
               round
               dense
@@ -121,8 +122,40 @@
           </div>
         </div>
 
+        <!-- Lightning Address View -->
+        <div v-else-if="showAddressView && hasLightningAddress" class="address-view">
+          <!-- Centered QR Section -->
+          <div class="address-qr-section">
+            <div class="qr-container" @click="copyLightningAddress">
+              <div class="qr-wrapper">
+                <vue-qrcode
+                  :value="'lightning:' + lightningAddress"
+                  :options="{ width: 280, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
+                  class="qr-code"
+                />
+              </div>
+            </div>
+
+            <!-- Address Display -->
+            <div
+              class="address-display-box"
+              :class="$q.dark.isActive ? 'address-box-dark' : 'address-box-light'"
+              @click="copyLightningAddress"
+            >
+              <q-icon name="las la-at" size="18px" class="address-icon" />
+              <span class="address-text-value">{{ lightningAddress }}</span>
+              <q-icon name="las la-copy" size="16px" class="copy-icon" />
+            </div>
+
+            <!-- User Hint -->
+            <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+              {{ $t('Your permanent payment address. Share this QR or address to receive payments anytime.') }}
+            </div>
+          </div>
+        </div>
+
         <!-- Amount Section -->
-        <div class="amount-section" v-if="!generatedInvoice">
+        <div class="amount-section" v-else>
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency"
                :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
@@ -151,7 +184,7 @@
         </div>
 
         <!-- Description Section -->
-        <div class="description-section" v-if="!generatedInvoice">
+        <div class="description-section" v-if="!generatedInvoice && !showAddressView">
           <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
             {{ $t('Description (optional)') }}
           </div>
@@ -169,7 +202,7 @@
       </q-card-section>
 
       <!-- Footer -->
-      <q-card-section class="receive-footer" v-if="!generatedInvoice">
+      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView">
         <q-btn
           class="create-invoice-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -192,12 +225,17 @@
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
+import { useWalletStore } from '../stores/wallet';
 
 export default {
   name: 'ReceiveModal',
   components: {
     VueQrcode
+  },
+  setup() {
+    const walletStore = useWalletStore();
+    return { walletStore };
   },
   props: {
     modelValue: {
@@ -215,7 +253,8 @@ export default {
       generatedInvoice: null,
       walletState: {},
       amountInSats: 0,
-      isAmountFocused: false
+      isAmountFocused: false,
+      showAddressView: false
     }
   },
   computed: {
@@ -229,6 +268,12 @@ export default {
     },
     isValidAmount() {
       return this.amountInSats > 0;
+    },
+    hasLightningAddress() {
+      return !!this.walletStore.activeWalletLightningAddress;
+    },
+    lightningAddress() {
+      return this.walletStore.activeWalletLightningAddress;
     }
   },
   watch: {
@@ -253,6 +298,7 @@ export default {
       this.description = '';
       this.generatedInvoice = null;
       this.amountInSats = 0;
+      this.showAddressView = false;
     },
 
     closeModal() {
@@ -361,7 +407,7 @@ export default {
           throw new Error('No active wallet found');
         }
 
-        const nwc = new webln.NostrWebLNProvider({
+        const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: activeWallet.nwcString,
         });
 
@@ -394,8 +440,9 @@ export default {
 
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Invoice created successfully!'),
-          position: 'bottom'
+          message: this.$t('Invoice ready'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
       } catch (error) {
@@ -403,8 +450,10 @@ export default {
 
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to create invoice: ') + error.message,
-          position: 'bottom'
+          message: this.$t('Couldn\'t create invoice'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
         this.generatedInvoice = null;
@@ -420,25 +469,45 @@ export default {
         await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Lightning invoice copied!'),
-          position: 'bottom'
+          message: this.$t('Invoice copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         console.error('Failed to copy invoice:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to copy invoice'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
 
     showLightningAddress() {
-      this.$q.notify({
-        type: 'info',
-        message: this.$t('Lightning address feature coming soon!'),
-        position: 'bottom'
-      });
+      this.showAddressView = true;
+      this.generatedInvoice = null;
+    },
+
+    async copyLightningAddress() {
+      if (!this.lightningAddress) return;
+
+      try {
+        await navigator.clipboard.writeText(this.lightningAddress);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Address copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      }
     },
 
     formatInvoiceAmount(sats) {
@@ -472,15 +541,17 @@ export default {
 
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Invoice shared!'),
-            position: 'bottom'
+            message: this.$t('Shared'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } else {
           await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
           this.$q.notify({
-            type: 'info',
-            message: this.$t('Invoice copied to clipboard!'),
-            position: 'bottom'
+            type: 'positive',
+            message: this.$t('Invoice copied'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       } catch (error) {
@@ -966,6 +1037,112 @@ export default {
 
   .create-invoice-btn {
     height: 48px;
+  }
+}
+
+/* Lightning Address View */
+.address-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 0;
+}
+
+.address-qr-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.5rem 2rem;
+  gap: 1.25rem;
+}
+
+.address-display-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 320px;
+  transition: all 0.2s ease;
+}
+
+.address-box-dark {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.address-box-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.address-box-dark:active {
+  transform: scale(0.98);
+}
+
+.address-box-light {
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.address-box-light:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.address-box-light:active {
+  transform: scale(0.98);
+}
+
+.address-icon {
+  color: #15DE72;
+  flex-shrink: 0;
+}
+
+.address-text-value {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 13px;
+  flex: 1;
+  word-break: break-all;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.copy-icon {
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.address-hint {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.5;
+  max-width: 280px;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 480px) {
+  .address-qr-section {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .address-display-box {
+    max-width: 280px;
+    padding: 0.625rem 0.875rem;
+  }
+
+  .address-text-value {
+    font-size: 12px;
+  }
+
+  .address-hint {
+    font-size: 12px;
+    max-width: 260px;
   }
 }
 </style>

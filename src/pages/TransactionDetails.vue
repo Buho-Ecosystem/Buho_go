@@ -272,7 +272,7 @@
 </template>
 
 <script>
-import {webln} from "@getalby/sdk";
+import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import {fiatRatesService} from '../utils/fiatRates.js';
 
@@ -367,8 +367,9 @@ export default {
         console.error('Error loading transaction details:', error);
         this.$q.notify({
           type: 'negative',
-          message: 'Failed to load transaction details',
-          position: 'bottom'
+          message: this.$t('Couldn\'t load details'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.loading = false;
@@ -386,7 +387,7 @@ export default {
             this.loadingText = 'Connecting to wallet...';
           }
 
-          const nwc = new webln.NostrWebLNProvider({
+          const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
 
@@ -404,10 +405,14 @@ export default {
             );
 
             if (this.transaction) {
+              // Ensure consistent field names across different API responses
               this.transaction.id = this.transaction.id || this.transaction.payment_hash || txId;
               this.transaction.type = this.transaction.type || (this.transaction.amount > 0 ? 'incoming' : 'outgoing');
               this.transaction.description = this.transaction.description || this.transaction.memo || '';
               this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || Math.floor(Date.now() / 1000);
+              // Map WebLN field names to expected field names
+              this.transaction.fee = this.transaction.fee || this.transaction.fees_paid || 0;
+              this.transaction.payment_request = this.transaction.payment_request || this.transaction.invoice || null;
 
               if (this.isZapTransaction(this.transaction)) {
                 this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);
@@ -539,6 +544,11 @@ export default {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(this.transaction.amount), currency);
 
+        // Handle unavailable rates
+        if (fiatValue === null) {
+          return '--';
+        }
+
         const symbols = {
           USD: '$',
           EUR: '€',
@@ -598,15 +608,17 @@ export default {
         await navigator.clipboard.writeText(text);
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Copied to clipboard!'),
-          position: 'bottom'
+          message: this.$t('Copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         console.error('Failed to copy to clipboard:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to copy to clipboard'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },

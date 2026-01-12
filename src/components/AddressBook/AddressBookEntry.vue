@@ -88,15 +88,16 @@ export default {
         await navigator.clipboard.writeText(this.entry.lightningAddress)
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Address copied to clipboard!'),
+          message: this.$t('Address copied'),
           position: 'bottom',
-          timeout: 2000
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to copy address'),
-          position: 'bottom'
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     }

@@ -187,13 +187,16 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Switched to {name}', {name: this.wallets.find(w => w.id === walletId)?.name}),
-          position: 'bottom'
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to switch wallet: ') + error.message,
-          position: 'bottom'
+          message: this.$t('Couldn\'t switch wallet'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -207,14 +210,17 @@ export default {
         await this.connectWallet(walletId)
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Wallet reconnected successfully'),
-          position: 'bottom'
+          message: this.$t('Reconnected'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Failed to reconnect: ') + error.message,
-          position: 'bottom'
+          message: this.$t('Reconnection failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isReconnecting[walletId] = false
