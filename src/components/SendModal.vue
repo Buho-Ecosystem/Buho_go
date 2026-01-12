@@ -346,12 +346,16 @@ export default {
         // Create QR scanner instance
         this.qrScanner = new QrScanner(
           this.videoElement,
-          (result) => this.onQRDetect([{rawValue: result}]),
+          (result) => {
+            // Handle both string and object result formats from qr-scanner
+            const data = typeof result === 'string' ? result : (result?.data || result?.text || '');
+            this.onQRDetect(data);
+          },
           {
-            returnDetailedScanResult: false,
+            returnDetailedScanResult: true,
             highlightScanRegion: true,
             highlightCodeOutline: true,
-            preferredCamera: 'environment' // Use back camera if available
+            preferredCamera: 'environment'
           }
         );
 
@@ -384,10 +388,9 @@ export default {
       }
     },
 
-    async onQRDetect(detectedCodes) {
-      if (this.isProcessing || !detectedCodes.length) return;
+    async onQRDetect(qrContent) {
+      if (this.isProcessing || !qrContent) return;
 
-      const qrContent = detectedCodes[0].rawValue;
       this.isProcessing = true;
 
       try {
@@ -407,12 +410,17 @@ export default {
 
     async processPaymentData(paymentData) {
       try {
+        // Ensure paymentData is a string
+        const inputData = typeof paymentData === 'string'
+          ? paymentData
+          : (paymentData?.data || paymentData?.text || String(paymentData || ''));
+
         // Basic validation
-        if (!paymentData || paymentData.trim().length === 0) {
+        if (!inputData || inputData.trim().length === 0) {
           throw new Error(this.$t('Invalid payment data'));
         }
 
-        let trimmedData = paymentData.trim();
+        let trimmedData = inputData.trim();
         // Handle lightning: prefix and extract the actual invoice
         let cleanData = trimmedData.toLowerCase().startsWith('lightning:')
           ? trimmedData.substring(10)
@@ -440,9 +448,16 @@ export default {
       const trimmed = data.trim().toLowerCase();
       // Handle lightning: prefix
       const cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
-      
-      // Handle both invoice types for LNBC format
-      if (cleanData.startsWith('lnbc')) return 'lightning_invoice';
+
+      // Check Lightning invoice (mainnet, testnet, regtest, signet)
+      if (
+        cleanData.startsWith('lnbc') ||
+        cleanData.startsWith('lntb') ||
+        cleanData.startsWith('lnbcrt') ||
+        cleanData.startsWith('lntbs')
+      ) {
+        return 'lightning_invoice';
+      }
       if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
       if (cleanData.startsWith('lnurl')) return 'lnurl';
       return 'unknown';
@@ -454,9 +469,20 @@ export default {
       }
 
       const trimmed = input.trim().toLowerCase();
-      const isValid = trimmed.startsWith('lnbc') ||
-        (trimmed.includes('@') && trimmed.includes('.')) ||
-        trimmed.startsWith('lnurl');
+      // Handle lightning: prefix
+      const cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
+
+      // Check Lightning invoice (mainnet, testnet, regtest, signet)
+      const isLightningInvoice =
+        cleanData.startsWith('lnbc') ||
+        cleanData.startsWith('lntb') ||
+        cleanData.startsWith('lnbcrt') ||
+        cleanData.startsWith('lntbs');
+
+      const isLightningAddress = cleanData.includes('@') && cleanData.includes('.');
+      const isLnurl = cleanData.startsWith('lnurl');
+
+      const isValid = isLightningInvoice || isLightningAddress || isLnurl;
 
       return isValid ? true : this.$t('Invalid payment format');
     },
