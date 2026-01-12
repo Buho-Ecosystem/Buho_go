@@ -17,7 +17,7 @@
     "@chenfengyuan/vue-qrcode": "^2.0.0",
     "@getalby/sdk": "^5.0.0",
     "@quasar/extras": "^1.16.4",
-    "axios": "^1.2.1",
+    "axios": "^1.12.0",
     "bech32": "^2.0.0",
     "pinia": "^3.0.3",
     "qr-scanner": "^1.4.2",
