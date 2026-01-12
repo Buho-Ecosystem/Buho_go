@@ -1532,7 +1532,7 @@ export default {
 }
 
 .wallet-badge-light:hover {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(255, 255, 255, 0.8);
   border-color: rgba(5, 149, 115, 0.55);
   color: #3f3f3f;
   transform: translateY(-1px);
