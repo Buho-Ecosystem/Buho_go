@@ -513,9 +513,11 @@ export default {
     },
 
     // Helper methods for payment type detection
+    // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
     isLightningInvoice(input) {
       const lower = input.toLowerCase()
-      return lower.startsWith('lnbc') || lower.startsWith('lntb') || lower.startsWith('lnbcrt')
+      return lower.startsWith('lnbc') || lower.startsWith('lntb') ||
+        lower.startsWith('lntbs') || lower.startsWith('lnbcrt')
     },
 
     isLightningAddress(input) {

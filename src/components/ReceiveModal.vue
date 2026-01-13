@@ -51,14 +51,14 @@
 
       <!-- Content -->
       <q-card-section class="receive-content">
-        <!-- Spark/Lightning Toggle (for Spark wallets) -->
+        <!-- Receive Mode Toggle (for Spark wallets) -->
         <div v-if="isSparkWallet && !generatedInvoice && !showAddressView" class="receive-type-toggle">
           <q-btn-toggle
             v-model="receiveMode"
             toggle-color="primary"
             :options="[
-              { label: 'Lightning', value: 'lightning', icon: 'las la-bolt' },
-              { label: 'Spark', value: 'spark', icon: 'las la-fire' }
+              { label: $t('Invoice'), value: 'lightning', icon: 'las la-file-invoice' },
+              { label: $t('Address'), value: 'spark', icon: 'las la-qrcode' }
             ]"
             class="type-toggle"
             :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
@@ -66,8 +66,13 @@
             unelevated
             spread
           />
-          <div v-if="receiveMode === 'spark'" class="spark-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Zero fee from other Spark users') }}
+          <div class="mode-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            <template v-if="receiveMode === 'spark'">
+              {{ $t('Spark-to-Spark only, zero fees') }}
+            </template>
+            <template v-else>
+              {{ $t('One-time request with amount') }}
+            </template>
           </div>
         </div>
 
@@ -121,7 +126,7 @@
 
             <!-- User Hint -->
             <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-              {{ $t('Share this address to receive instant, zero-fee payments from other Spark users.') }}
+              {{ $t('Share this address to receive zero-fee payments from other Spark wallets.') }}
             </div>
           </div>
         </div>
@@ -222,8 +227,8 @@
           </div>
         </div>
 
-        <!-- Amount Section -->
-        <div class="amount-section" v-else>
+        <!-- Amount Section (only for invoice creation, not for static address views) -->
+        <div class="amount-section" v-else-if="!showSparkAddressView">
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency"
                :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
@@ -251,8 +256,8 @@
           </div>
         </div>
 
-        <!-- Description Section -->
-        <div class="description-section" v-if="!generatedInvoice && !showAddressView">
+        <!-- Description Section (only for invoice creation) -->
+        <div class="description-section" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
           <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
             {{ $t('Description (optional)') }}
           </div>
@@ -269,8 +274,8 @@
         </div>
       </q-card-section>
 
-      <!-- Footer -->
-      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView">
+      <!-- Footer (only for invoice creation) -->
+      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
         <q-btn
           class="create-invoice-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -1350,7 +1355,7 @@ export default {
   color: #FFFFFF;
 }
 
-.spark-hint {
+.mode-hint {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 12px;
   text-align: center;

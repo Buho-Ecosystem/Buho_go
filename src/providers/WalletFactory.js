@@ -105,8 +105,9 @@ export function parsePaymentDestination(input) {
     };
   }
 
-  // Lightning invoice (BOLT11)
-  if (normalized.startsWith('lnbc') || normalized.startsWith('lntb') || normalized.startsWith('lntbs')) {
+  // Lightning invoice (BOLT11): lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
+  if (normalized.startsWith('lnbc') || normalized.startsWith('lntb') ||
+      normalized.startsWith('lntbs') || normalized.startsWith('lnbcrt')) {
     return {
       type: 'lightning_invoice',
       invoice: input.trim(),

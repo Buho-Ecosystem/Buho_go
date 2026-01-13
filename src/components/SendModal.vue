@@ -135,7 +135,7 @@
             v-model="manualInput"
             outlined
             :label="$t('Paste invoice or enter address')"
-            :placeholder="$t('e.g. name@wallet.com or sp1...')"
+            :placeholder="manualInputPlaceholder"
             class="manual-input"
             :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
             color="green"
@@ -314,6 +314,11 @@ export default {
     },
     isActiveWalletSpark() {
       return this.walletStore.isActiveWalletSpark;
+    },
+    manualInputPlaceholder() {
+      return this.isActiveWalletSpark
+        ? this.$t('e.g. name@wallet.com, lnbc..., or sp1...')
+        : this.$t('e.g. name@wallet.com or lnbc...');
     }
   },
   watch: {
@@ -438,10 +443,24 @@ export default {
           cleanData = cleanData.toLowerCase();
         }
 
+        const paymentType = this.determinePaymentType(cleanData);
+
+        // Early warning: NWC wallet cannot pay Spark addresses
+        if (paymentType === 'spark_address' && !this.isActiveWalletSpark) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Spark address detected'),
+            caption: this.$t('Switch to Spark wallet to pay this address'),
+            position: 'bottom',
+            timeout: 4000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        }
+
         // Emit the detected payment data to parent component
         this.$emit('payment-detected', {
           data: cleanData,
-          type: this.determinePaymentType(cleanData)
+          type: paymentType
         });
 
         this.closeModal();
@@ -458,8 +477,9 @@ export default {
 
       // Spark addresses (sp1... for mainnet, tsp1... for testnet) - Zero fee transfers
       if (cleanData.startsWith('sp1') || cleanData.startsWith('tsp1')) return 'spark_address';
-      // Handle both invoice types for LNBC format
-      if (cleanData.startsWith('lnbc')) return 'lightning_invoice';
+      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
+      if (cleanData.startsWith('lnbc') || cleanData.startsWith('lntb') ||
+          cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
       if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
       if (cleanData.startsWith('lnurl')) return 'lnurl';
       return 'unknown';
@@ -471,11 +491,14 @@ export default {
       }
 
       const trimmed = input.trim().toLowerCase();
-      const isValid = trimmed.startsWith('lnbc') ||
-        (trimmed.includes('@') && trimmed.includes('.')) ||
-        trimmed.startsWith('lnurl') ||
-        trimmed.startsWith('sp1') ||  // Spark mainnet address
-        trimmed.startsWith('tsp1');    // Spark testnet address
+      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
+      const isLightningInvoice = trimmed.startsWith('lnbc') || trimmed.startsWith('lntb') ||
+        trimmed.startsWith('lntbs') || trimmed.startsWith('lnbcrt');
+      const isLightningAddress = trimmed.includes('@') && trimmed.includes('.');
+      const isLnurl = trimmed.startsWith('lnurl');
+      const isSparkAddress = trimmed.startsWith('sp1') || trimmed.startsWith('tsp1');
+
+      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddress;
 
       return isValid ? true : this.$t('Invalid payment format');
     },
