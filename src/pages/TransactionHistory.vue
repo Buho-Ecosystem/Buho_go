@@ -458,22 +458,42 @@ export default {
     },
 
     async loadSparkTransactions() {
+      // Check if Spark wallet needs PIN unlock
+      if (this.walletStore.needsPinEntry) {
+        // Redirect to wallet page to unlock
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Wallet locked'),
+          caption: this.$t('Please unlock your Spark wallet to view transactions'),
+          position: 'bottom',
+          timeout: 3000,
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        this.$router.push('/wallet');
+        return;
+      }
+
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected();
+
+      if (!provider) {
+        throw new Error('Could not connect to Spark wallet');
+      }
 
       const sparkTransactions = await provider.getTransactions({ limit: 500, offset: 0 });
 
       // Normalize Spark transactions to match expected format
-      this.transactions = sparkTransactions.map(tx => ({
+      this.transactions = (sparkTransactions || []).map(tx => ({
         id: tx.id,
         type: tx.type === 'receive' ? 'incoming' : 'outgoing',
-        amount: tx.amount,
+        amount: tx.amount || 0,
         description: tx.description || '',
         memo: tx.description || '',
-        settled_at: tx.timestamp,
+        settled_at: tx.timestamp || Math.floor(Date.now() / 1000),
         fee: tx.fee || 0,
         status: tx.status || 'completed',
-        sparkTransfer: tx.sparkTransfer || false
+        sparkTransfer: tx.sparkTransfer || false,
+        rawType: tx.rawType || null
       }));
     },
 

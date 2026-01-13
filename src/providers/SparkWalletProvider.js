@@ -210,17 +210,34 @@ export class SparkWalletProvider extends WalletProvider {
     this._ensureConnected();
 
     try {
-      // Spark SDK getTransfers returns { transfers: WalletTransfer[], offset: number }
-      const result = await this.wallet.getTransfers({ limit: 100, offset: 0 });
+      // Try to get the specific Lightning receive request first
+      const receiveRequest = await this.wallet.getLightningReceiveRequest(paymentHash);
+
+      if (receiveRequest) {
+        const status = String(receiveRequest.status || '').toUpperCase();
+        return {
+          paid: status.includes('COMPLETED') || status.includes('CLAIMED'),
+          preimage: receiveRequest.preimage || null,
+          amount: Number(receiveRequest.amount || receiveRequest.invoice?.amountSats || 0)
+        };
+      }
+
+      // Fallback: search in recent transfers
+      const result = await this.wallet.getTransfers(100, 0);
       const transferList = result.transfers || [];
 
-      const found = transferList.find(t => t.id === paymentHash);
+      const found = transferList.find(t =>
+        t.id === paymentHash ||
+        t.paymentHash === paymentHash ||
+        t.invoice?.paymentHash === paymentHash
+      );
 
       if (found) {
+        const status = String(found.status || '').toUpperCase();
         return {
-          paid: found.status === 'COMPLETED',
+          paid: status.includes('COMPLETED') || status.includes('CLAIMED'),
           preimage: found.preimage || null,
-          amount: Number(found.totalValue || 0)
+          amount: Number(found.totalValue || found.amount || 0)
         };
       }
 
@@ -236,23 +253,78 @@ export class SparkWalletProvider extends WalletProvider {
 
     try {
       // Spark SDK getTransfers returns { transfers: WalletTransfer[], offset: number }
-      const result = await this.wallet.getTransfers({ limit, offset });
+      const result = await this.wallet.getTransfers(limit, offset);
       const transferList = result.transfers || [];
 
       return transferList.map(transfer => ({
         id: transfer.id,
         type: this._mapTransferType(transfer),
-        amount: Number(transfer.totalValue || 0),
-        timestamp: new Date(transfer.createdAt).getTime() / 1000,
-        description: transfer.memo || '',
-        status: transfer.status?.toLowerCase() || 'completed',
-        fee: 0, // Spark transfers don't have explicit fees
-        sparkTransfer: transfer.transferDirection === 'OUTGOING' || transfer.transferDirection === 'INCOMING'
+        amount: Number(transfer.totalValue || transfer.amount || 0),
+        timestamp: this._parseTimestamp(transfer.createdAt || transfer.updatedAt),
+        description: transfer.memo || transfer.description || '',
+        status: this._normalizeStatus(transfer.status),
+        fee: Number(transfer.fee || 0),
+        // Determine if this is a Spark-to-Spark transfer (zero fee) vs Lightning
+        sparkTransfer: this._isSparkTransfer(transfer),
+        // Keep original transfer data for debugging
+        rawType: transfer.type || transfer.transferDirection
       }));
     } catch (error) {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Parse timestamp from various formats the SDK might return
+   */
+  _parseTimestamp(timestamp) {
+    if (!timestamp) return Math.floor(Date.now() / 1000);
+
+    // Already a Unix timestamp (number)
+    if (typeof timestamp === 'number') {
+      // If it's in milliseconds, convert to seconds
+      return timestamp > 1e12 ? Math.floor(timestamp / 1000) : timestamp;
+    }
+
+    // Date object or ISO string
+    const date = new Date(timestamp);
+    return Math.floor(date.getTime() / 1000);
+  }
+
+  /**
+   * Normalize status to lowercase string
+   */
+  _normalizeStatus(status) {
+    if (!status) return 'completed';
+    const statusStr = String(status).toLowerCase();
+    // Map SDK statuses to simple statuses
+    if (statusStr.includes('completed') || statusStr.includes('finalized') || statusStr.includes('claimed')) {
+      return 'completed';
+    }
+    if (statusStr.includes('pending') || statusStr.includes('waiting')) {
+      return 'pending';
+    }
+    if (statusStr.includes('failed') || statusStr.includes('expired')) {
+      return 'failed';
+    }
+    return statusStr;
+  }
+
+  /**
+   * Determine if transfer is Spark-to-Spark (not Lightning)
+   */
+  _isSparkTransfer(transfer) {
+    // Check explicit type field first
+    if (transfer.type) {
+      const typeStr = String(transfer.type).toUpperCase();
+      return typeStr.includes('SPARK') && !typeStr.includes('LIGHTNING');
+    }
+    // If no type but has transferDirection, assume Spark transfer
+    if (transfer.transferDirection) {
+      return true;
+    }
+    return false;
   }
 
   // ==========================================
