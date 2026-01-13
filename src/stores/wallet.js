@@ -1174,6 +1174,33 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Disconnect and remove only NWC wallets (keeps Spark wallet)
+     */
+    async disconnectNwcWallets() {
+      const nwcWallets = this.wallets.filter(w => w.type === WALLET_TYPES.NWC);
+
+      // Disconnect each NWC wallet
+      for (const wallet of nwcWallets) {
+        await this.disconnectWallet(wallet.id);
+        // Clean up state for this wallet
+        delete this.connectionStates[wallet.id];
+        delete this.balances[wallet.id];
+        delete this.walletInfos[wallet.id];
+        delete this.providers[wallet.id];
+      }
+
+      // Remove NWC wallets from the list
+      this.wallets = this.wallets.filter(w => w.type !== WALLET_TYPES.NWC);
+
+      // If active wallet was NWC, switch to Spark or null
+      if (!this.wallets.find(w => w.id === this.activeWalletId)) {
+        this.activeWalletId = this.wallets[0]?.id || null;
+      }
+
+      await this.persistState();
+    },
+
+    /**
      * Load exchange rates from fiat service
      */
     async loadExchangeRates() {

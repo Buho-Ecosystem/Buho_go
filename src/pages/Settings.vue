@@ -10,281 +10,337 @@
         class="back-btn"
         :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
       >
-        <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
-             fill="none">
-          <path
-            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-            fill="white"/>
-        </svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path
-            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-            fill="#6D6D6D"/>
-        </svg>
+        <q-icon name="las la-arrow-left" size="20px"/>
       </q-btn>
-      <div class="header-content">
-        <div class="logo-container">
-
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Settings') }}
-      </div>
-        </div>
       </div>
       <div class="header-spacer"></div>
     </div>
 
     <!-- Settings Content -->
     <div class="settings-content">
-      <!-- Wallet Management -->
-      <div class="settings-section">
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="showWalletsDialog = true"
-        >
-          <div class="card-icon wallet-icon">
-            <q-icon name="las la-wallet" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Manage Wallets') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ wallets.length }}
-              {{ wallets.length === 1 ? $t('wallet') : $t('wallets') }} {{ $t('connected') }}
-            </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
 
-        <!-- Address Book -->
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="$router.push('/address-book')"
-        >
-          <div class="card-icon address-book-icon">
-            <q-icon name="las la-address-book" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+      <!-- GENERAL Section -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('General') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item clickable v-ripple @click="showWalletsDialog = true">
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Manage Wallets') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ wallets.length }} {{ wallets.length === 1 ? $t('wallet') : $t('wallets') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+          </q-item-section>
+        </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item clickable v-ripple @click="$router.push('/address-book')">
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
               {{ $t('Address Book') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Save Lightning Addresses') }}
-            </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+          </q-item-section>
+        </q-item>
       </div>
 
-      <!-- Spark Wallet Settings (only show if Spark wallet exists) -->
-      <div v-if="hasSparkWallet" class="settings-section">
-        <div class="section-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+      <!-- SPARK WALLET Section (only if spark wallet exists) -->
+      <template v-if="hasSparkWallet">
+        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
           {{ $t('Spark Wallet') }}
         </div>
-
-        <!-- View Spark Address -->
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="copySparkAddress"
-        >
-          <div class="card-icon spark-icon">
-            <q-icon name="las la-bolt" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Spark Address') }}
-            </div>
-            <div class="card-subtitle spark-address-text" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ truncateAddress(activeSparkAddress) || $t('Not available') }}
-            </div>
-          </div>
-          <q-icon name="las la-copy" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
+        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+          <q-item clickable v-ripple @click="copySparkAddress">
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Spark Address') }}
+              </q-item-label>
+              <q-item-label caption class="mono-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ truncateAddress(activeSparkAddress) || $t('Not available') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-icon name="las la-copy" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            </q-item-section>
+          </q-item>
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+          <q-item clickable v-ripple @click="openViewMnemonicDialog">
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('View Seed Phrase') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            </q-item-section>
+          </q-item>
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+          <q-item clickable v-ripple @click="openChangePinDialog">
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Change PIN') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            </q-item-section>
+          </q-item>
         </div>
+      </template>
 
-        <!-- View Seed Phrase -->
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="openViewMnemonicDialog"
-        >
-          <div class="card-icon seed-icon">
-            <q-icon name="las la-key" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('View Seed Phrase') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Requires PIN') }}
-            </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
-
-        <!-- Change PIN -->
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="openChangePinDialog"
-        >
-          <div class="card-icon pin-icon">
-            <q-icon name="las la-lock" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Change PIN') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Update your wallet PIN') }}
-            </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
-
-        <!-- Delete Spark Wallet -->
-        <div
-          class="section-card delete-spark-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="confirmDeleteSparkWallet"
-        >
-          <div class="card-icon delete-icon">
-            <q-icon name="las la-trash-alt" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title delete-text">
-              {{ $t('Delete Spark Wallet') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Remove wallet permanently') }}
-            </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
+      <!-- PREFERENCES Section -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Preferences') }}
       </div>
-
-      <!-- Preferences -->
-      <div class="settings-section">
-        <div class="section-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-          {{ $t('Preferences') }}
-        </div>
-
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="openCurrencyDialog"
-        >
-          <div class="card-icon currency-icon">
-            <q-icon name="las la-dollar-sign" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item clickable v-ripple @click="openCurrencyDialog">
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
               {{ $t('Currency') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <div class="side-value" :class="$q.dark.isActive ? 'side-value-dark' : 'side-value-light'">
               {{ preferredFiatCurrency }}
             </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
-
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="showLanguageDialog = true"
-        >
-          <div class="card-icon language-icon">
-            <q-icon name="las la-language" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+          </q-item-section>
+          <q-item-section side>
+            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+          </q-item-section>
+        </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item clickable v-ripple @click="showLanguageDialog = true">
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
               {{ $t('Language') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <div class="side-value" :class="$q.dark.isActive ? 'side-value-dark' : 'side-value-light'">
               {{ getCurrentLanguageLabel() }}
             </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
-
-        <div
-          class="section-card"
-          :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-          @click="showMempoolDialog = true"
-        >
-          <div class="card-icon mempool-icon">
-            <q-icon name="las la-server" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+          </q-item-section>
+          <q-item-section side>
+            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+          </q-item-section>
+        </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item clickable v-ripple @click="showMempoolDialog = true">
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
               {{ $t('Mempool API') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <div class="side-value" :class="$q.dark.isActive ? 'side-value-dark' : 'side-value-light'">
+              {{ customMempoolUrl ? $t('Custom') : $t('Default') }}
             </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ customMempoolUrl ? $t('Custom URL') : $t('Default (mempool.space)') }}
-            </div>
-          </div>
-          <q-icon name="las la-chevron-right" size="18px" class="chevron-icon"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"/>
-        </div>
-
-        <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-          <div class="card-icon notifications-icon">
-            <q-icon name="las la-bell" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Notifications') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Live Information') }}
-            </div>
-          </div>
-          <div class="coming-soon-badge">{{ $t('Coming Soon') }}</div>
-        </div>
-
-        <div class="section-card disabled-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-          <div class="card-icon security-icon-disabled">
-            <q-icon name="las la-shield-alt" size="22px"/>
-          </div>
-          <div class="card-content">
-            <div class="card-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Security') }}
-            </div>
-            <div class="card-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('PIN Protection') }}
-            </div>
-          </div>
-          <div class="coming-soon-badge">{{ $t('Coming Soon') }}</div>
-        </div>
-
-    <!-- Disconnect Button -->
-    <div class="disconnect-section" :class="$q.dark.isActive ? 'footer-dark' : 'footer-light'">
-      <div class="disconnect-container">
-        <q-btn
-          flat
-          no-caps
-          class="disconnect-btn"
-          :class="$q.dark.isActive ? 'disconnect-btn-dark' : 'disconnect-btn-light'"
-          @click="confirmDisconnect"
-        >
-          <q-icon name="las la-sign-out-alt" class="disconnect-icon"/>
-          <span class="disconnect-text">{{ $t('Disconnect All Wallets') }}</span>
-        </q-btn>
+          </q-item-section>
+          <q-item-section side>
+            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+          </q-item-section>
+        </q-item>
       </div>
+
+      <!-- DANGER ZONE -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Account') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item v-if="hasSparkWallet" clickable v-ripple @click="confirmDeleteSparkWallet">
+          <q-item-section>
+            <q-item-label class="danger-text text-center">
+              {{ $t('Delete Spark Wallet') }}
+            </q-item-label>
+          </q-item-section>
+        </q-item>
+        <q-separator v-if="hasSparkWallet" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item clickable v-ripple @click="confirmDisconnectNwc">
+          <q-item-section>
+            <q-item-label class="danger-text text-center">
+              {{ $t('Remove NWC Connections') }}
+            </q-item-label>
+          </q-item-section>
+        </q-item>
+      </div>
+
+      <!-- SUPPORT Section -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Support') }}
+      </div>
+      <div class="settings-card support-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <div class="support-content">
+          <div class="support-message" :class="$q.dark.isActive ? 'support-message-dark' : 'support-message-light'">
+            {{ $t('Buy us a coffee to keep Buho free') }}
+          </div>
+          <div class="donation-row">
+            <q-btn
+              flat
+              dense
+              no-caps
+              class="donate-btn"
+              :class="$q.dark.isActive ? 'donate-btn-dark' : 'donate-btn-light'"
+              :loading="donationLoading === 5000"
+              @click="handleDonation(5000)"
+            >
+              5k sats
+            </q-btn>
+            <q-btn
+              unelevated
+              dense
+              no-caps
+              class="donate-btn donate-btn-primary"
+              :loading="donationLoading === 21000"
+              @click="handleDonation(21000)"
+            >
+              21k sats
+            </q-btn>
+            <q-btn
+              flat
+              dense
+              no-caps
+              class="donate-btn"
+              :class="$q.dark.isActive ? 'donate-btn-dark' : 'donate-btn-light'"
+              @click="showDonationDialog = true"
+            >
+              {{ $t('Other') }}
+            </q-btn>
+          </div>
+        </div>
+      </div>
+
+      <!-- App Version -->
+      <div class="app-version" :class="$q.dark.isActive ? 'version-dark' : 'version-light'">
+        Buho v1.1.0
+      </div>
+
     </div>
 
-      </div>
-    </div>
+    <!-- Custom Donation Dialog -->
+    <q-dialog v-model="showDonationDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="donation-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Support Buho') }}
+          </div>
+          <q-btn flat round dense icon="las la-times" v-close-popup
+                 :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+        </q-card-section>
+        <q-card-section class="donation-dialog-content">
+          <q-input
+            v-model.number="customDonationAmount"
+            type="number"
+            outlined
+            :label="$t('Amount in sats')"
+            class="donation-input"
+            :dark="$q.dark.isActive"
+          />
+          <q-btn
+            unelevated
+            no-caps
+            class="send-donation-btn action-btn-green"
+            :loading="donationLoading === 'custom'"
+            :disable="!customDonationAmount || customDonationAmount < 1"
+            @click="handleDonation(customDonationAmount)"
+          >
+            {{ $t('Send Donation') }}
+          </q-btn>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Donation Invoice Dialog (with QR code) -->
+    <q-dialog v-model="showDonationInvoiceDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="donation-invoice-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Donate') }} {{ formatSats(donationInvoiceAmount) }}
+          </div>
+          <q-btn flat round dense icon="las la-times" v-close-popup
+                 :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+        </q-card-section>
+        <q-card-section class="donation-invoice-content">
+          <div class="donation-qr-wrapper" @click="copyDonationInvoice">
+            <vue-qrcode
+              v-if="donationInvoice"
+              :value="donationInvoice"
+              :options="{ width: 220, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
+              class="donation-qr"
+            />
+          </div>
+          <div class="donation-qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Tap QR to copy invoice') }}
+          </div>
+          <q-btn
+            unelevated
+            no-caps
+            class="open-wallet-btn action-btn-green"
+            @click="openInWallet"
+          >
+            <q-icon name="las la-external-link-alt" class="q-mr-sm"/>
+            {{ $t('Open in Wallet') }}
+          </q-btn>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Danger Confirmation Dialog -->
+    <q-dialog v-model="showDangerConfirmDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="danger-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="danger-header">
+          <div class="danger-icon-wrapper">
+            <q-icon name="las la-exclamation-triangle" size="32px" class="danger-icon"/>
+          </div>
+          <div class="danger-title">{{ dangerConfirmTitle }}</div>
+          <div class="danger-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ dangerConfirmMessage }}
+          </div>
+        </q-card-section>
+
+        <q-card-section class="danger-content">
+          <div class="confirm-instruction" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Type') }} <span class="confirm-phrase">"{{ dangerConfirmPhrase }}"</span> {{ $t('to confirm') }}
+          </div>
+          <q-input
+            v-model="dangerConfirmInput"
+            outlined
+            dense
+            :placeholder="dangerConfirmPhrase"
+            class="confirm-input"
+            :dark="$q.dark.isActive"
+            @keyup.enter="executeDangerAction"
+          />
+        </q-card-section>
+
+        <q-card-actions class="danger-actions">
+          <q-btn
+            flat
+            no-caps
+            :label="$t('Cancel')"
+            v-close-popup
+            class="cancel-btn"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            unelevated
+            no-caps
+            :label="dangerConfirmButtonText"
+            :disable="dangerConfirmInput !== dangerConfirmPhrase"
+            :loading="isDangerActionLoading"
+            class="danger-action-btn"
+            @click="executeDangerAction"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
 
     <!-- Language Dialog -->
     <q-dialog v-model="showLanguageDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
@@ -1006,9 +1062,13 @@
 import {useWalletStore} from '../stores/wallet'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
+import VueQrcode from '@chenfengyuan/vue-qrcode'
 
 export default {
   name: 'SettingsPage',
+  components: {
+    VueQrcode
+  },
   data() {
     return {
       showWalletsDialog: false,
@@ -1063,6 +1123,25 @@ export default {
       sparkReconnectWalletId: null,
       sparkReconnectPin: '',
       isSparkReconnecting: false,
+
+      // Donation
+      showDonationDialog: false,
+      customDonationAmount: null,
+      donationAddress: 'buhogo@timecatcher.lnbits.de',
+      donationLoading: null,
+      showDonationInvoiceDialog: false,
+      donationInvoice: '',
+      donationInvoiceAmount: 0,
+
+      // Danger confirmation dialog
+      showDangerConfirmDialog: false,
+      dangerConfirmTitle: '',
+      dangerConfirmMessage: '',
+      dangerConfirmPhrase: 'I understand',
+      dangerConfirmButtonText: '',
+      dangerConfirmInput: '',
+      dangerConfirmAction: null,
+      isDangerActionLoading: false,
     }
   },
   computed: {
@@ -1144,6 +1223,7 @@ export default {
       'switchActiveWallet',
       'connectWallet',
       'disconnectAll',
+      'disconnectNwcWallets',
       'updateCurrencyPreferences',
       'loadExchangeRates',
       'getSparkMnemonic',
@@ -1346,34 +1426,172 @@ export default {
       }
     },
 
-    async confirmDisconnect() {
-      this.$q.dialog({
-        title: this.$t('Disconnect Wallets'),
-        message: this.$t('Are you sure you want to disconnect all wallets?'),
-        cancel: true,
-        persistent: true
-      }).onOk(async () => {
-        try {
-          await this.disconnectAll()
+    confirmDisconnectNwc() {
+      this.dangerConfirmTitle = this.$t('Remove NWC Connections');
+      this.dangerConfirmMessage = this.$t('This will remove all NWC wallet connections. Your Spark wallet will not be affected. You can reconnect NWC wallets later using your connection strings.');
+      this.dangerConfirmPhrase = 'I understand';
+      this.dangerConfirmButtonText = this.$t('Remove NWC');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'disconnectNwc';
+      this.showDangerConfirmDialog = true;
+    },
 
+    async executeDangerAction() {
+      if (this.dangerConfirmInput !== this.dangerConfirmPhrase) return;
+
+      this.isDangerActionLoading = true;
+
+      try {
+        if (this.dangerConfirmAction === 'disconnectNwc') {
+          await this.disconnectNwcWallets();
           this.$q.notify({
             type: 'positive',
-            message: this.$t('All wallets disconnected'),
+            message: this.$t('NWC connections removed'),
             position: 'bottom',
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
-
-          this.$router.push('/');
-        } catch (error) {
-          console.error('Error disconnecting wallets:', error);
+          this.showDangerConfirmDialog = false;
+          // Only redirect if no wallets left
+          if (this.wallets.length === 0) {
+            this.$router.push('/');
+          }
+        } else if (this.dangerConfirmAction === 'deleteSparkWallet') {
+          await this.removeWallet(this.sparkWallet.id);
           this.$q.notify({
-            type: 'negative',
-            message: this.$t('Couldn\'t disconnect wallets'),
+            type: 'positive',
+            message: this.$t('Spark wallet deleted'),
             position: 'bottom',
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
+          this.showDangerConfirmDialog = false;
         }
+      } catch (error) {
+        console.error('Danger action error:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Action failed'),
+          caption: error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } finally {
+        this.isDangerActionLoading = false;
+      }
+    },
+
+    /**
+     * Handle donation - fetches LNURL-pay invoice and shows QR code
+     */
+    async handleDonation(amount) {
+      const loadingKey = amount === this.customDonationAmount ? 'custom' : amount;
+      this.donationLoading = loadingKey;
+
+      try {
+        // Parse lightning address to get LNURL-pay endpoint
+        const [name, domain] = this.donationAddress.split('@');
+        const lnurlPayUrl = `https://${domain}/.well-known/lnurlp/${name}`;
+
+        // Step 1: Fetch LNURL-pay params
+        const paramsResponse = await fetch(lnurlPayUrl);
+        if (!paramsResponse.ok) {
+          throw new Error('Failed to fetch LNURL-pay params');
+        }
+        const params = await paramsResponse.json();
+
+        if (params.status === 'ERROR') {
+          throw new Error(params.reason || 'LNURL-pay error');
+        }
+
+        // Validate amount is within bounds (params use millisats)
+        const amountMsat = amount * 1000;
+        if (amountMsat < params.minSendable || amountMsat > params.maxSendable) {
+          throw new Error(this.$t('Amount must be between {min} and {max} sats', {
+            min: Math.ceil(params.minSendable / 1000),
+            max: Math.floor(params.maxSendable / 1000)
+          }));
+        }
+
+        // Step 2: Request invoice from callback URL
+        const callbackUrl = new URL(params.callback);
+        callbackUrl.searchParams.set('amount', amountMsat.toString());
+
+        const invoiceResponse = await fetch(callbackUrl.toString());
+        if (!invoiceResponse.ok) {
+          throw new Error('Failed to fetch invoice');
+        }
+        const invoiceData = await invoiceResponse.json();
+
+        if (invoiceData.status === 'ERROR') {
+          throw new Error(invoiceData.reason || 'Failed to generate invoice');
+        }
+
+        // Success - show the invoice QR
+        this.donationInvoice = invoiceData.pr;
+        this.donationInvoiceAmount = amount;
+        this.showDonationDialog = false;
+        this.customDonationAmount = null;
+        this.showDonationInvoiceDialog = true;
+
+      } catch (error) {
+        console.error('Donation error:', error);
+        // Fallback to copying the lightning address
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Could not generate invoice'),
+          caption: this.$t('Copy the lightning address instead: {address}', { address: this.donationAddress }),
+          position: 'bottom',
+          timeout: 10000,
+          actions: [
+            {
+              label: this.$t('Copy'),
+              color: 'white',
+              handler: () => {
+                navigator.clipboard.writeText(this.donationAddress);
+                this.$q.notify({
+                  type: 'positive',
+                  message: this.$t('Address copied'),
+                  position: 'bottom'
+                });
+              }
+            }
+          ]
+        });
+      } finally {
+        this.donationLoading = null;
+      }
+    },
+
+    /**
+     * Copy donation invoice to clipboard
+     */
+    copyDonationInvoice() {
+      if (!this.donationInvoice) return;
+
+      navigator.clipboard.writeText(this.donationInvoice);
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Invoice copied'),
+        position: 'bottom',
+        timeout: 2000
       });
+    },
+
+    /**
+     * Open invoice in external wallet via lightning: URL
+     */
+    openInWallet() {
+      if (!this.donationInvoice) return;
+      window.location.href = `lightning:${this.donationInvoice}`;
+    },
+
+    /**
+     * Format sats amount for display
+     */
+    formatSats(amount) {
+      if (amount >= 1000) {
+        return `${(amount / 1000).toLocaleString()}k sats`;
+      }
+      return `${amount.toLocaleString()} sats`;
     },
 
     async confirmRemoveWallet(walletId) {
@@ -1765,31 +1983,13 @@ export default {
     confirmDeleteSparkWallet() {
       if (!this.sparkWallet) return;
 
-      this.$q.dialog({
-        title: this.$t('Delete Spark Wallet'),
-        message: this.$t('Are you sure you want to delete your Spark wallet? This action cannot be undone. Make sure you have backed up your seed phrase.'),
-        cancel: true,
-        persistent: true,
-        color: 'negative'
-      }).onOk(async () => {
-        try {
-          await this.removeWallet(this.sparkWallet.id);
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Spark wallet deleted'),
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        } catch (error) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t('Failed to delete wallet'),
-            caption: error.message,
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        }
-      });
+      this.dangerConfirmTitle = this.$t('Delete Spark Wallet');
+      this.dangerConfirmMessage = this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
+      this.dangerConfirmPhrase = 'I understand';
+      this.dangerConfirmButtonText = this.$t('Delete Wallet');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'deleteSparkWallet';
+      this.showDangerConfirmDialog = true;
     },
 
     truncateAddress(address) {
@@ -1912,41 +2112,371 @@ export default {
 /* Content */
 .settings-content {
   flex: 1;
-  padding: 0.875rem;
+  padding: 1rem 1rem 2rem;
 }
 
-.settings-section {
-  margin-bottom: 1.25rem;
-}
-
-.section-title {
+/* Section Labels */
+.section-label {
   font-family: Fustat, 'Inter', sans-serif;
-  margin-bottom: 0.625rem;
-  padding-left: 0.375rem;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 1.5rem 0 0.5rem 0.25rem;
+}
+
+.section-label:first-child {
+  margin-top: 0.5rem;
+}
+
+.section-label-dark {
+  color: #666;
+}
+
+.section-label-light {
+  color: #6B7280;
+}
+
+/* Settings Cards */
+.settings-card {
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.card-dark {
+  background: #1A1A1A;
+}
+
+.card-light {
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Q-Item Styles */
+.settings-card :deep(.q-item) {
+  padding: 14px 16px;
+  min-height: 48px;
+}
+
+.item-label-dark {
+  color: #FFFFFF;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.item-label-light {
+  color: #1F2937;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.item-caption-dark {
+  color: #666;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+}
+
+.item-caption-light {
+  color: #9CA3AF;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+}
+
+.mono-caption {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+}
+
+/* Side Values */
+.side-value {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  margin-right: 4px;
+}
+
+.side-value-dark {
+  color: #666;
+}
+
+.side-value-light {
+  color: #9CA3AF;
+}
+
+/* Chevrons */
+.chevron-dark {
+  color: #444;
+  font-size: 18px;
+}
+
+.chevron-light {
+  color: #D1D5DB;
+  font-size: 18px;
+}
+
+/* Separators */
+.separator-dark {
+  background: #2A2A2A;
+  margin-left: 16px;
+}
+
+.separator-light {
+  background: #F3F4F6;
+  margin-left: 16px;
+}
+
+/* Danger Text */
+.danger-text {
+  color: #EF4444 !important;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.text-center {
+  text-align: center;
+  width: 100%;
+}
+
+/* Support Card */
+.support-card {
+  padding: 1rem;
+}
+
+.support-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.support-message {
+  font-family: Fustat, 'Inter', sans-serif;
   font-size: 14px;
+  font-weight: 500;
+}
+
+.support-message-dark {
+  color: #888;
+}
+
+.support-message-light {
+  color: #6B7280;
+}
+
+.donation-row {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.donate-btn {
+  min-width: 80px;
+  height: 36px;
+  border-radius: 8px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
   font-weight: 600;
 }
 
-.section-card {
-  border-radius: 18px;
-  padding: 0.75rem 0.875rem;
-  margin-bottom: 0.5rem;
+.donate-btn-dark {
+  color: #888;
+}
+
+.donate-btn-light {
+  color: #6B7280;
+}
+
+.donate-btn-primary {
+  background: #15DE72;
+  color: #000;
+}
+
+/* Donation Dialog */
+.donation-dialog-card {
+  width: 100%;
+  max-width: 320px;
+  border-radius: 16px;
+}
+
+.donation-dialog-content {
+  padding: 0 1.25rem 1.25rem;
+}
+
+.donation-input {
+  margin-bottom: 1rem;
+}
+
+.send-donation-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.action-btn-green {
+  background: #15DE72 !important;
+  color: #000 !important;
+}
+
+.action-btn-green:disabled {
+  opacity: 0.4;
+}
+
+/* Donation Invoice Dialog */
+.donation-invoice-card {
+  width: 100%;
+  max-width: 320px;
+  border-radius: 16px;
+}
+
+.donation-invoice-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 1.25rem 1.25rem;
+}
+
+.donation-qr-wrapper {
+  background: #fff;
+  padding: 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.donation-qr-wrapper:active {
+  transform: scale(0.98);
+}
+
+.donation-qr-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+.open-wallet-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Danger Confirmation Dialog */
+.danger-confirm-card {
+  width: 100%;
+  max-width: 340px;
+  border-radius: 16px;
+}
+
+.danger-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1.5rem 0.5rem;
+}
+
+.danger-icon-wrapper {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
   display: flex;
   align-items: center;
-  gap: 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
+  justify-content: center;
+  margin-bottom: 1rem;
 }
 
-.section-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-  border-color: #15DE72;
+.danger-icon {
+  color: #EF4444;
 }
 
-.section-card:active {
-  transform: translateY(0);
+.danger-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: #EF4444;
+  margin-bottom: 0.5rem;
+}
+
+.danger-message {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.danger-content {
+  padding: 1rem 1.5rem;
+}
+
+.confirm-instruction {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.confirm-phrase {
+  font-weight: 600;
+  color: #EF4444;
+}
+
+.confirm-input {
+  margin-bottom: 0;
+}
+
+.confirm-input :deep(.q-field__control) {
+  border-radius: 10px;
+}
+
+.danger-actions {
+  padding: 0.5rem 1.5rem 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.cancel-btn {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-weight: 600;
+  border-radius: 10px;
+}
+
+.danger-action-btn {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-weight: 600;
+  border-radius: 10px;
+  background: #EF4444 !important;
+  color: white !important;
+}
+
+.danger-action-btn:disabled {
+  opacity: 0.4;
+}
+
+/* App Version */
+.app-version {
+  text-align: center;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  padding: 2rem 1rem 1rem;
+}
+
+.version-dark {
+  color: #444;
+}
+
+.version-light {
+  color: #9CA3AF;
 }
 
 .card-icon {
@@ -1965,7 +2495,7 @@ export default {
 }
 
 .currency-icon {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  background: linear-gradient(135deg, #059573, #15DE72);
   color: white;
 }
 
@@ -2699,12 +3229,12 @@ export default {
 }
 
 .info-light {
-  background: #F0F9FF;
-  border: 1px solid #BAE6FD;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
 }
 
 .info-icon {
-  color: #3B82F6;
+  color: #15DE72;
   font-size: 20px;
   margin-top: 0.125rem;
   flex-shrink: 0;
@@ -2816,7 +3346,7 @@ export default {
 }
 
 .pin-icon {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  background: linear-gradient(135deg, #059573, #15DE72);
   color: white;
 }
 
@@ -3045,5 +3575,48 @@ export default {
   font-size: 14px;
   line-height: 1.5;
   max-width: 280px;
+}
+
+/* Override Quasar's default blue focus colors */
+.settings-page :deep(.q-field--outlined.q-field--focused .q-field__control:before) {
+  border-color: #15DE72 !important;
+}
+
+.settings-page :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
+  border-color: #15DE72 !important;
+}
+
+.settings-page :deep(.q-field--focused .q-field__label) {
+  color: #15DE72 !important;
+}
+
+/* Override for all input types including borderless */
+.settings-page :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.settings-page :deep(.q-field__bottom) {
+  color: inherit;
+}
+
+/* Dialog inputs - override Quasar primary color */
+.dailog_dark :deep(.q-field--focused .q-field__label),
+.dailog_light :deep(.q-field--focused .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.dailog_dark :deep(.q-field--float .q-field__label),
+.dailog_light :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.dailog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:before),
+.dailog_light :deep(.q-field--outlined.q-field--focused .q-field__control:before) {
+  border-color: #15DE72 !important;
+}
+
+.dailog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:after),
+.dailog_light :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
+  border-color: #15DE72 !important;
 }
 </style>
