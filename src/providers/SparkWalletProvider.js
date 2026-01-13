@@ -444,6 +444,57 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   // ==========================================
+  // Event-based payment notifications
+  // ==========================================
+
+  /**
+   * Subscribe to incoming payment events (real-time, no polling)
+   * Uses Spark SDK's EventEmitter for instant notifications
+   * @param {Function} callback - (transferId: string, newBalance: number) => void
+   * @returns {Function} Unsubscribe function
+   */
+  onPaymentReceived(callback) {
+    this._ensureConnected();
+
+    const handler = (transferId, updatedBalance) => {
+      callback(transferId, Number(updatedBalance));
+    };
+
+    this.wallet.on('transfer:claimed', handler);
+
+    // Return unsubscribe function
+    return () => {
+      if (this.wallet) {
+        this.wallet.off('transfer:claimed', handler);
+      }
+    };
+  }
+
+  /**
+   * Subscribe to connection status changes
+   * @param {Function} onConnect - () => void
+   * @param {Function} onDisconnect - (reason: string) => void
+   * @returns {Function} Unsubscribe function
+   */
+  onConnectionChange(onConnect, onDisconnect) {
+    this._ensureConnected();
+
+    if (onConnect) {
+      this.wallet.on('stream:connected', onConnect);
+    }
+    if (onDisconnect) {
+      this.wallet.on('stream:disconnected', onDisconnect);
+    }
+
+    return () => {
+      if (this.wallet) {
+        if (onConnect) this.wallet.off('stream:connected', onConnect);
+        if (onDisconnect) this.wallet.off('stream:disconnected', onDisconnect);
+      }
+    };
+  }
+
+  // ==========================================
   // Private helper methods
   // ==========================================
 

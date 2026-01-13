@@ -265,11 +265,15 @@ export const useWalletStore = defineStore('wallet', {
 
     /**
      * Spark address of active wallet (if Spark)
+     * Falls back to stored metadata address when wallet is locked/disconnected
      */
     activeSparkAddress: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
       if (activeWallet?.type !== WALLET_TYPES.SPARK) return null;
-      return state.walletInfos[state.activeWalletId]?.sparkAddress || null;
+      // Try runtime state first, fall back to persisted metadata
+      return state.walletInfos[state.activeWalletId]?.sparkAddress
+        || activeWallet?.metadata?.sparkAddress
+        || null;
     },
 
     /**
@@ -279,6 +283,63 @@ export const useWalletStore = defineStore('wallet', {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
       if (activeWallet?.type !== WALLET_TYPES.SPARK) return false;
       return !state.sessionPin;
+    },
+
+    /**
+     * Get display balance for a wallet (uses cached balance for locked Spark)
+     * @returns {Function} (walletId) => { balance: number, isLocked: boolean, isCached: boolean }
+     */
+    getDisplayBalance: (state) => (walletId) => {
+      const wallet = state.wallets.find(w => w.id === walletId);
+      if (!wallet) return { balance: 0, isLocked: false, isCached: false };
+
+      // For Spark wallets
+      if (wallet.type === WALLET_TYPES.SPARK) {
+        const isConnected = state.connectionStates[walletId]?.connected;
+        const currentBalance = state.balances[walletId];
+
+        // If connected, use current balance
+        if (isConnected && currentBalance !== undefined) {
+          return { balance: currentBalance, isLocked: false, isCached: false };
+        }
+
+        // If not connected, try cached balance from metadata
+        const cachedBalance = wallet.metadata?.cachedBalance;
+        if (cachedBalance !== undefined) {
+          return { balance: cachedBalance, isLocked: true, isCached: true };
+        }
+
+        // No cached balance, wallet is locked
+        return { balance: 0, isLocked: true, isCached: false };
+      }
+
+      // For NWC wallets, use current balance
+      return {
+        balance: state.balances[walletId] || 0,
+        isLocked: false,
+        isCached: false
+      };
+    },
+
+    /**
+     * Check if a Spark wallet is currently locked
+     */
+    isSparkWalletLocked: (state) => (walletId) => {
+      const wallet = state.wallets.find(w => w.id === walletId);
+      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return false;
+      return !state.connectionStates[walletId]?.connected;
+    },
+
+    /**
+     * Get Spark address for any wallet by ID
+     * Works even when wallet is locked (uses persisted metadata)
+     */
+    getSparkAddress: (state) => (walletId) => {
+      const wallet = state.wallets.find(w => w.id === walletId);
+      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return null;
+      return state.walletInfos[walletId]?.sparkAddress
+        || wallet?.metadata?.sparkAddress
+        || null;
     },
   },
 
@@ -476,6 +537,11 @@ export const useWalletStore = defineStore('wallet', {
         // Get balance
         const balanceResult = await provider.getBalance();
         this.balances[walletId] = balanceResult.balance;
+
+        // Cache balance in wallet metadata for display when locked
+        wallet.metadata = wallet.metadata || {};
+        wallet.metadata.cachedBalance = balanceResult.balance;
+        wallet.metadata.balanceUpdatedAt = Date.now();
 
         // Get info
         const info = await provider.getInfo();

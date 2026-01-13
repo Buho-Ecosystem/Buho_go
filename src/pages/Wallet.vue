@@ -732,7 +732,10 @@ export default {
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
-        // Refresh balance in background
+        // Check if Spark wallet needs PIN unlock
+        await this.checkSparkWalletUnlock();
+
+        // Refresh balance in background (only if provider is available)
         this.updateWalletBalance();
       } catch (error) {
         console.error('Error switching wallet:', error);
@@ -2609,31 +2612,41 @@ export default {
   text-align: center;
 }
 
-.qr_code_section_dark {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1rem;
-  background: #FFF;
-  border-radius: 16px;
-  border: 1px solid #2A342A;
-  margin-bottom: 0.75rem;
-}
-
+.qr_code_section_dark,
 .qr_code_section_light {
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 1rem;
-  background: white;
   border-radius: 16px;
-  border: 1px solid #e5e7eb;
   margin-bottom: 0.75rem;
+  width: 100%;
+  max-width: 280px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+.qr_code_section_dark {
+  background: #FFF;
+  border: 1px solid #2A342A;
+}
+
+.qr_code_section_light {
+  background: white;
+  border: 1px solid #e5e7eb;
 }
 
 .qr-code {
   border-radius: 8px;
   overflow: hidden;
+  width: 100%;
+  height: auto;
+  max-width: 240px;
+}
+
+.qr-code-section.compact .qr-code {
+  max-width: 200px;
 }
 
 .invoice_info_compact_dark {
@@ -2877,6 +2890,47 @@ export default {
 
   .payment-content {
     padding: 1rem;
+  }
+
+  /* QR Code responsive for mobile */
+  .qr_code_section_dark,
+  .qr_code_section_light {
+    max-width: 240px;
+    padding: 0.75rem;
+  }
+
+  .qr-code {
+    max-width: 200px;
+  }
+
+  .qr-code-section.compact .qr-code {
+    max-width: 160px;
+  }
+}
+
+/* Extra small screens (320px and below) */
+@media (max-width: 360px) {
+  .qr_code_section_dark,
+  .qr_code_section_light {
+    max-width: 200px;
+    padding: 0.5rem;
+  }
+
+  .qr-code {
+    max-width: 160px;
+  }
+
+  .qr-code-section.compact .qr-code {
+    max-width: 140px;
+  }
+
+  .amount_compact_dark,
+  .amount_compact_light {
+    font-size: 1.1rem;
+  }
+
+  .compact-invoice {
+    gap: 1rem;
   }
 }
 

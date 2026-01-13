@@ -388,8 +388,9 @@
 
     <!-- Enhanced Wallets Management Dialog -->
     <q-dialog v-model="showWalletsDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
+      <q-card class="wallets-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <!-- Fixed Header -->
+        <q-card-section class="dialog-header wallets-dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Manage Wallets') }}
           </div>
@@ -404,7 +405,8 @@
           />
         </q-card-section>
 
-        <q-card-section class="dialog-content">
+        <!-- Scrollable Content -->
+        <q-card-section class="wallets-dialog-content">
           <!-- Wallet Statistics -->
           <div class="wallet-stats" :class="$q.dark.isActive ? 'stats-dark' : 'stats-light'" v-if="wallets.length > 0">
             <div class="stat-item">
@@ -412,7 +414,7 @@
                 {{ wallets.length }}
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ $t('Connected') }}
+                {{ $t('Wallets') }}
               </div>
             </div>
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
@@ -421,13 +423,13 @@
                 {{ formatBalance(totalBalance) }}
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ $t('Total Balance') }}
+                {{ $t('Total') }}
               </div>
             </div>
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
             <div class="stat-item">
-              <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-                {{ connectedWallets.length }}
+              <div class="stat-value online-value">
+                {{ connectedWallets.length }}/{{ wallets.length }}
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
                 {{ $t('Online') }}
@@ -435,117 +437,123 @@
             </div>
           </div>
 
-          <div class="wallets-list">
+          <!-- Add Wallet Button -->
+          <q-btn
+            class="add-wallet-btn"
+            :class="$q.dark.isActive ? 'add-wallet-btn-dark' : 'add-wallet-btn-light'"
+            no-caps
+            flat
+            @click="showAddWalletDialog = true"
+          >
+            <q-icon name="las la-plus-circle" size="20px" class="q-mr-sm"/>
+            {{ $t('Add Wallet') }}
+          </q-btn>
+
+          <!-- Scrollable Wallet List -->
+          <div class="wallets-list-container">
             <div v-if="wallets.length === 0" class="no-wallets">
               <q-icon name="las la-wallet" size="48px" class="no-wallets-icon"
                       :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-4'"/>
               <div class="no-wallets-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
                 {{ $t('No wallets connected yet') }}
               </div>
+              <div class="no-wallets-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                {{ $t('Tap "Add Wallet" to get started') }}
+              </div>
             </div>
 
-            <div
-              v-for="wallet in sortedWallets"
-              :key="wallet.id"
-              class="wallet-item"
-              :class="{
-                'active-wallet': wallet.id === activeWalletId,
-                'disconnected': !connectionStates[wallet.id]?.connected,
-                'wallet-item-dark': $q.dark.isActive,
-                'wallet-item-light': !$q.dark.isActive
-              }"
-            >
-              <div class="wallet-icon-container">
-                <div class="wallet-icon" :class="getWalletAvatarClass(wallet)">
-                  <q-icon :name="getWalletTypeIcon(wallet)" size="24px"/>
+            <div class="wallets-list-scroll">
+              <div
+                v-for="wallet in sortedWallets"
+                :key="wallet.id"
+                class="wallet-item"
+                :class="{
+                  'active-wallet': wallet.id === activeWalletId,
+                  'disconnected': !connectionStates[wallet.id]?.connected,
+                  'wallet-item-dark': $q.dark.isActive,
+                  'wallet-item-light': !$q.dark.isActive
+                }"
+              >
+                <div class="wallet-icon-container">
+                  <div class="wallet-icon" :class="getWalletAvatarClass(wallet)">
+                    <q-icon :name="getWalletTypeIcon(wallet)" size="24px"/>
+                  </div>
+                  <div
+                    v-if="connectionStates[wallet.id]?.connected"
+                    class="connection-status connected"
+                  ></div>
+                  <div
+                    v-else
+                    class="connection-status disconnected"
+                  ></div>
                 </div>
-                <div
-                  v-if="connectionStates[wallet.id]?.connected"
-                  class="connection-status connected"
-                ></div>
-                <div
-                  v-else
-                  class="connection-status disconnected"
-                ></div>
-              </div>
 
-              <div class="wallet-info">
-
-                <q-input
-                  v-model="wallet.name"
-                  dense
-                  out
-                  borderless
-                  input-class="q-px-md q-mb-sm"
-                  :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-                />
-                <div class="wallet-name-container">
-                  <div class="wallet-badges">
-                    <div :class="wallet.type === 'spark' ? 'spark-type-badge' : 'nwc-type-badge'">
-                      {{ getWalletTypeLabel(wallet) }}
+                <div class="wallet-info">
+                  <q-input
+                    v-model="wallet.name"
+                    dense
+                    out
+                    borderless
+                    input-class="q-px-md q-mb-sm"
+                    :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+                  />
+                  <div class="wallet-name-container">
+                    <div class="wallet-badges">
+                      <div :class="wallet.type === 'spark' ? 'spark-type-badge' : 'nwc-type-badge'">
+                        {{ getWalletTypeLabel(wallet) }}
+                      </div>
+                      <div v-if="wallet.isDefault" class="default-badge">{{ $t('Default') }}</div>
+                      <div v-if="wallet.id === activeWalletId" class="active-badge">{{ $t('Active') }}</div>
                     </div>
-                    <div v-if="wallet.isDefault" class="default-badge">{{ $t('Default') }}</div>
-                    <div v-if="wallet.id === activeWalletId" class="active-badge">{{ $t('Active') }}</div>
+                  </div>
+                  <div class="wallet-balance" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                    {{ formatBalance(balances[wallet.id] || 0) }}
+                  </div>
+                  <div v-if="connectionStates[wallet.id]?.error" class="wallet-error">
+                    {{ connectionStates[wallet.id].error }}
                   </div>
                 </div>
-                <div class="wallet-balance" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                  {{ formatBalance(balances[wallet.id] || 0) }}
+
+                <div class="wallet-actions">
+                  <q-btn
+                    v-if="!connectionStates[wallet.id]?.connected"
+                    flat
+                    dense
+                    color="#15DE72"
+                    icon="las la-sync-alt"
+                    @click="reconnectWallet(wallet.id)"
+                    :loading="isReconnecting[wallet.id]"
+                    class="action-btn reconnect-btn"
+                  >
+                    <q-tooltip>{{ $t('Reconnect wallet') }}</q-tooltip>
+                  </q-btn>
+
+                  <q-btn
+                    v-if="wallet.id !== activeWalletId"
+                    flat
+                    dense
+                    color="#15DE72"
+                    icon="las la-exchange-alt"
+                    @click="handleSwitchWallet(wallet.id)"
+                    class="action-btn switch-btn"
+                  >
+                    <q-tooltip>{{ $t('Switch to this wallet') }}</q-tooltip>
+                  </q-btn>
+
+                  <q-btn
+                    flat
+                    dense
+                    color="#EF4444"
+                    icon="las la-trash-alt"
+                    @click="confirmRemoveWallet(wallet.id)"
+                    class="action-btn delete-btn"
+                  >
+                    <q-tooltip>{{ $t('Remove wallet') }}</q-tooltip>
+                  </q-btn>
                 </div>
-                <div v-if="connectionStates[wallet.id]?.error" class="wallet-error">
-                  {{ connectionStates[wallet.id].error }}
-                </div>
-              </div>
-
-              <div class="wallet-actions">
-                <q-btn
-                  v-if="!connectionStates[wallet.id]?.connected"
-                  flat
-                  dense
-                  color="#15DE72"
-                  icon="las la-sync-alt"
-                  @click="reconnectWallet(wallet.id)"
-                  :loading="isReconnecting[wallet.id]"
-                  class="action-btn reconnect-btn"
-                >
-                  <q-tooltip>{{ $t('Reconnect wallet') }}</q-tooltip>
-                </q-btn>
-
-                <q-btn
-                  v-if="wallet.id !== activeWalletId"
-                  flat
-                  dense
-                  color="#15DE72"
-                  icon="las la-exchange-alt"
-                  @click="handleSwitchWallet(wallet.id)"
-                  class="action-btn switch-btn"
-                >
-                  <q-tooltip>{{ $t('Switch to this wallet') }}</q-tooltip>
-                </q-btn>
-
-                <q-btn
-                  flat
-                  dense
-                  color="#EF4444"
-                  icon="las la-trash-alt"
-                  @click="confirmRemoveWallet(wallet.id)"
-                  class="action-btn delete-btn"
-                >
-                  <q-tooltip>{{ $t('Remove wallet') }}</q-tooltip>
-                </q-btn>
               </div>
             </div>
           </div>
-
-          <q-btn
-            class="connect-wallet-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            no-caps
-            @click="showAddWalletDialog = true"
-            unelevated
-          >
-            <q-icon name="las la-plus" class="q-mr-sm"/>
-            {{ $t('Connect a Wallet') }}
-          </q-btn>
         </q-card-section>
       </q-card>
     </q-dialog>
@@ -927,6 +935,70 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Spark Reconnect PIN Dialog -->
+    <q-dialog v-model="showSparkReconnectDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Unlock Wallet') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            @click="closeSparkReconnectDialog"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <div class="unlock-info">
+            <div class="unlock-icon">
+              <q-icon name="las la-lock" size="48px" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'" />
+            </div>
+            <div class="unlock-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
+              {{ $t('Enter your PIN to unlock your Spark wallet') }}
+            </div>
+          </div>
+
+          <q-input
+            v-model="sparkReconnectPin"
+            type="password"
+            :label="$t('Enter PIN')"
+            maxlength="6"
+            mask="######"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            borderless
+            input-class="q-px-md text-center"
+            class="q-mt-lg"
+            dense
+            autofocus
+            @keyup.enter="handleSparkReconnect"
+          />
+        </q-card-section>
+
+        <q-card-actions align="right" class="dialog-actions">
+          <q-btn
+            flat
+            :label="$t('Cancel')"
+            @click="closeSparkReconnectDialog"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            flat
+            :label="$t('Unlock')"
+            @click="handleSparkReconnect"
+            :loading="isSparkReconnecting"
+            :disable="!sparkReconnectPin || sparkReconnectPin.length < 6"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -985,6 +1057,12 @@ export default {
       isViewingMnemonic: false,
       viewedMnemonic: '',
       isChangingPin: false,
+
+      // Spark reconnect dialog
+      showSparkReconnectDialog: false,
+      sparkReconnectWalletId: null,
+      sparkReconnectPin: '',
+      isSparkReconnecting: false,
     }
   },
   computed: {
@@ -1069,7 +1147,8 @@ export default {
       'updateCurrencyPreferences',
       'loadExchangeRates',
       'getSparkMnemonic',
-      'changeSparkPin'
+      'changeSparkPin',
+      'connectSparkWallet'
     ]),
 
     async initializeStore() {
@@ -1165,6 +1244,17 @@ export default {
     async reconnectWallet(walletId) {
       if (this.isReconnecting[walletId]) return
 
+      // Check if this is a Spark wallet
+      const wallet = this.wallets.find(w => w.id === walletId)
+      if (wallet?.type === 'spark') {
+        // Show PIN dialog for Spark wallets
+        this.sparkReconnectWalletId = walletId
+        this.sparkReconnectPin = ''
+        this.showSparkReconnectDialog = true
+        return
+      }
+
+      // NWC wallet - proceed with normal reconnection
       this.isReconnecting[walletId] = true
 
       try {
@@ -1186,6 +1276,54 @@ export default {
       } finally {
         this.isReconnecting[walletId] = false
       }
+    },
+
+    /**
+     * Handle Spark wallet reconnection with PIN
+     */
+    async handleSparkReconnect() {
+      if (!this.sparkReconnectPin || this.sparkReconnectPin.length < 6) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Please enter your 6-digit PIN'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+        return
+      }
+
+      this.isSparkReconnecting = true
+
+      try {
+        await this.connectSparkWallet(this.sparkReconnectWalletId, this.sparkReconnectPin)
+
+        this.showSparkReconnectDialog = false
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Wallet unlocked'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+      } catch (error) {
+        const isInvalidPin = error.message?.toLowerCase().includes('invalid pin')
+        this.$q.notify({
+          type: 'negative',
+          message: isInvalidPin ? this.$t('Incorrect PIN') : this.$t('Reconnection failed'),
+          caption: isInvalidPin ? this.$t('Please try again') : error.message,
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+        // Clear PIN on error
+        this.sparkReconnectPin = ''
+      } finally {
+        this.isSparkReconnecting = false
+      }
+    },
+
+    closeSparkReconnectDialog() {
+      this.showSparkReconnectDialog = false
+      this.sparkReconnectWalletId = null
+      this.sparkReconnectPin = ''
     },
 
     async handleSwitchWallet(walletId) {
@@ -2152,6 +2290,10 @@ export default {
   margin-bottom: 0.25rem;
 }
 
+.stat-value.online-value {
+  color: #15DE72;
+}
+
 .stat-label {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 10px;
@@ -2174,8 +2316,71 @@ export default {
 }
 
 /* Wallets List */
-.wallets-list {
-  margin-bottom: 1.5rem;
+/* Wallets Dialog - Scrollable Layout */
+.wallets-dialog-card {
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  border-radius: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-dialog-header {
+  flex-shrink: 0;
+}
+
+/* Add Wallet Button */
+.add-wallet-btn {
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 1rem;
+  border: 2px dashed;
+  transition: all 0.2s ease;
+}
+
+.add-wallet-btn-dark {
+  color: #15DE72;
+  border-color: #2A342A;
+  background: transparent;
+}
+
+.add-wallet-btn-dark:hover {
+  border-color: #15DE72;
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.add-wallet-btn-light {
+  color: #059573;
+  border-color: #E5E7EB;
+  background: transparent;
+}
+
+.add-wallet-btn-light:hover {
+  border-color: #15DE72;
+  background: rgba(21, 222, 114, 0.08);
+}
+
+.wallets-dialog-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.5rem 1.5rem;
+  min-height: 0;
+}
+
+.wallets-list-container {
+  margin-top: 1rem;
+}
+
+.wallets-list-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .no-wallets {
@@ -2185,6 +2390,12 @@ export default {
 
 .no-wallets-icon {
   margin-bottom: 1rem;
+}
+
+.no-wallets-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  margin-top: 0.5rem;
   opacity: 0.5;
 }
 
@@ -2438,6 +2649,33 @@ export default {
   .wallet-icon {
     width: 40px;
     height: 40px;
+  }
+
+  /* Wallets Dialog Mobile */
+  .wallets-dialog-card {
+    max-height: 90vh;
+  }
+
+  .add-wallet-btn {
+    height: 42px;
+    font-size: 13px;
+    margin-top: 0.75rem;
+  }
+
+  .wallets-dialog-content {
+    padding: 0.75rem 1rem 1rem;
+  }
+
+  .wallet-stats {
+    padding: 0.75rem;
+  }
+
+  .stat-value {
+    font-size: 14px;
+  }
+
+  .stat-label {
+    font-size: 9px;
   }
 
   .dialog-actions {
@@ -2780,5 +3018,32 @@ export default {
   .mnemonic-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* Unlock Dialog */
+.unlock-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.unlock-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(21, 222, 114, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.unlock-text {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 280px;
 }
 </style>

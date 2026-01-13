@@ -177,21 +177,60 @@ export class NWCWalletProvider extends WalletProvider {
   async lookupInvoice(paymentHash) {
     this._ensureConnected();
 
+    // Try direct lookupInvoice first (NIP-47)
     try {
       const invoice = await this.nwc.lookupInvoice({
         payment_hash: paymentHash
       });
 
-      return {
-        paid: invoice.settled || invoice.paid || false,
-        preimage: invoice.preimage,
-        amount: invoice.amount
-      };
-    } catch (error) {
-      // Many NWC wallets don't support lookupInvoice
-      console.warn('lookupInvoice not supported or failed:', error);
-      return { paid: false };
+      if (invoice) {
+        const isPaid = invoice.settled || invoice.paid ||
+          invoice.state === 'SETTLED' ||
+          (typeof invoice.settled_at === 'number' && invoice.settled_at > 0);
+
+        return {
+          paid: isPaid,
+          preimage: invoice.preimage || null,
+          amount: invoice.amount || 0
+        };
+      }
+    } catch (lookupError) {
+      // lookupInvoice not supported, try fallback
+      console.warn('lookupInvoice not supported, trying fallback:', lookupError.message);
     }
+
+    // Fallback: search in recent transactions
+    try {
+      const txResponse = await this.nwc.listTransactions({
+        limit: 50,
+        unpaid: false,
+        type: 'incoming'
+      });
+
+      if (txResponse?.transactions) {
+        const found = txResponse.transactions.find(tx =>
+          tx.payment_hash === paymentHash ||
+          tx.paymentHash === paymentHash
+        );
+
+        if (found) {
+          const isPaid = found.settled || found.paid ||
+            found.state === 'SETTLED' ||
+            (typeof found.settled_at === 'number' && found.settled_at > 0);
+
+          return {
+            paid: isPaid,
+            preimage: found.preimage || null,
+            amount: Math.abs(found.amount || 0)
+          };
+        }
+      }
+    } catch (listError) {
+      console.warn('listTransactions fallback failed:', listError.message);
+    }
+
+    // Could not determine payment status
+    return { paid: false };
   }
 
   async getTransactions({ limit = 50, offset = 0 } = {}) {

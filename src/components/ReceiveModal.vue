@@ -133,10 +133,10 @@
 
         <!-- QR Code Display -->
         <div class="qr-display-section" v-if="generatedInvoice">
-          <!-- Status Badge -->
-          <div class="status-badge">
-            <div class="status-dot"></div>
-            <span>{{ $t('Waiting for payment') }}</span>
+          <!-- Payment Status Badge -->
+          <div class="status-badge" :class="paymentStatusClass">
+            <div class="status-dot" :class="paymentStatusDotClass"></div>
+            <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
           </div>
 
           <!-- Amount Display -->
@@ -294,17 +294,30 @@
       </q-card-section>
     </q-card>
   </q-dialog>
+
+  <!-- Payment Confirmation Screen -->
+  <PaymentConfirmation
+    v-model="showPaymentConfirmation"
+    :amount="confirmedAmount"
+    :fiat-amount="confirmedFiatAmount"
+    :description="generatedInvoice?.description"
+    :auto-close-delay="5"
+    @closed="handleConfirmationClosed"
+  />
 </template>
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { useWalletStore } from '../stores/wallet';
+import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
+import PaymentConfirmation from './PaymentConfirmation.vue';
 
 export default {
   name: 'ReceiveModal',
   components: {
-    VueQrcode
+    VueQrcode,
+    PaymentConfirmation
   },
   setup() {
     const walletStore = useWalletStore();
@@ -328,7 +341,17 @@ export default {
       amountInSats: 0,
       isAmountFocused: false,
       showAddressView: false,
-      receiveMode: 'lightning' // 'lightning' or 'spark'
+      receiveMode: 'lightning', // 'lightning' or 'spark'
+      // Payment monitoring
+      paymentMonitor: null,
+      sparkEventUnsubscribe: null, // For Spark event-based monitoring
+      paymentStatus: PaymentStatus.PENDING,
+      paymentStatusMessage: '',
+      isPaymentConfirmed: false,
+      // Payment confirmation screen
+      showPaymentConfirmation: false,
+      confirmedAmount: 0,
+      confirmedFiatAmount: ''
     }
   },
   computed: {
@@ -357,6 +380,30 @@ export default {
     },
     showSparkAddressView() {
       return this.isSparkWallet && this.receiveMode === 'spark' && !this.generatedInvoice;
+    },
+    paymentStatusClass() {
+      switch (this.paymentStatus) {
+        case PaymentStatus.CONFIRMED:
+          return 'status-confirmed';
+        case PaymentStatus.EXPIRED:
+          return 'status-expired';
+        case PaymentStatus.ERROR:
+          return 'status-error';
+        default:
+          return 'status-pending';
+      }
+    },
+    paymentStatusDotClass() {
+      switch (this.paymentStatus) {
+        case PaymentStatus.CONFIRMED:
+          return 'dot-confirmed';
+        case PaymentStatus.EXPIRED:
+          return 'dot-expired';
+        case PaymentStatus.ERROR:
+          return 'dot-error';
+        default:
+          return 'dot-pending';
+      }
     }
   },
   watch: {
@@ -364,8 +411,15 @@ export default {
       if (newVal) {
         this.loadWalletState();
         this.resetForm();
+      } else {
+        // Stop monitoring when modal closes
+        this.stopPaymentMonitor();
       }
     }
+  },
+  beforeUnmount() {
+    // Cleanup on component destroy
+    this.stopPaymentMonitor();
   },
   methods: {
     // ... (keeping all existing methods from the original component)
@@ -377,16 +431,198 @@ export default {
     },
 
     resetForm() {
+      this.stopPaymentMonitor();
       this.displayAmount = '';
       this.description = '';
       this.generatedInvoice = null;
       this.amountInSats = 0;
       this.showAddressView = false;
       this.receiveMode = 'lightning';
+      this.paymentStatus = PaymentStatus.PENDING;
+      this.paymentStatusMessage = '';
+      this.isPaymentConfirmed = false;
+      // Reset confirmation data
+      this.confirmedAmount = 0;
+      this.confirmedFiatAmount = '';
     },
 
     closeModal() {
+      this.stopPaymentMonitor();
       this.show = false;
+    },
+
+    /**
+     * Stop the payment monitor if running
+     */
+    stopPaymentMonitor() {
+      // Stop polling-based monitor (NWC)
+      if (this.paymentMonitor) {
+        this.paymentMonitor.stop();
+        this.paymentMonitor = null;
+      }
+      // Unsubscribe from Spark events
+      if (this.sparkEventUnsubscribe) {
+        this.sparkEventUnsubscribe();
+        this.sparkEventUnsubscribe = null;
+      }
+    },
+
+    /**
+     * Start monitoring for payment confirmation
+     * Uses event-based for Spark (instant), polling for NWC
+     */
+    async startPaymentMonitor() {
+      if (!this.generatedInvoice?.payment_hash) {
+        console.warn('Cannot start payment monitor: no invoice');
+        return;
+      }
+
+      this.paymentStatus = PaymentStatus.PENDING;
+      this.paymentStatusMessage = this.$t('Waiting for payment...');
+
+      if (this.isSparkWallet) {
+        // Spark: Use event-based monitoring (instant, no polling)
+        await this.startSparkEventMonitor();
+      } else {
+        // NWC: Use polling-based monitoring
+        await this.startNWCPollingMonitor();
+      }
+    },
+
+    /**
+     * Start Spark event-based payment monitoring (real-time, no polling)
+     */
+    async startSparkEventMonitor() {
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+
+        // Subscribe to payment events
+        this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
+          // Any incoming payment triggers confirmation
+          // The Spark event fires for all incoming transfers
+          this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
+            transferId,
+            amount: this.generatedInvoice?.amount,
+            newBalance
+          });
+        });
+
+        console.log('Spark event listener active - waiting for payment');
+      } catch (error) {
+        console.warn('Could not start Spark event monitoring, falling back to polling:', error);
+        // Fallback to polling if events fail
+        await this.startNWCPollingMonitor();
+      }
+    },
+
+    /**
+     * Start NWC polling-based payment monitoring
+     */
+    async startNWCPollingMonitor() {
+      let provider = null;
+
+      try {
+        provider = this.walletStore.getActiveProvider();
+        if (!provider) {
+          // Create NWC provider on-the-fly
+          const activeWallet = this.walletState.connectedWallets?.find(
+            w => w.id === this.walletState.activeWalletId
+          );
+          if (activeWallet?.nwcString) {
+            const nwc = new NostrWebLNProvider({
+              nostrWalletConnectUrl: activeWallet.nwcString,
+            });
+            await nwc.enable();
+            // Create a minimal provider wrapper
+            provider = {
+              lookupInvoice: async (hash) => {
+                try {
+                  const invoice = await nwc.lookupInvoice({ payment_hash: hash });
+                  return {
+                    paid: invoice?.settled || invoice?.paid || false,
+                    preimage: invoice?.preimage,
+                    amount: invoice?.amount
+                  };
+                } catch {
+                  return { paid: false };
+                }
+              }
+            };
+          }
+        }
+      } catch (error) {
+        console.warn('Could not get provider for payment monitoring:', error);
+        return;
+      }
+
+      if (!provider) {
+        console.warn('No provider available for payment monitoring');
+        return;
+      }
+
+      // Create and start the polling monitor
+      this.paymentMonitor = createPaymentMonitor();
+
+      this.paymentMonitor.start({
+        invoice: {
+          payment_hash: this.generatedInvoice.payment_hash,
+          expires_at: this.generatedInvoice.expires_at,
+          amount: this.generatedInvoice.amount
+        },
+        provider: provider,
+        onStatusChange: this.handlePaymentStatus
+      });
+    },
+
+    /**
+     * Handle payment status updates from monitor
+     */
+    handlePaymentStatus(status, data) {
+      this.paymentStatus = status;
+
+      switch (status) {
+        case PaymentStatus.CONFIRMED:
+          this.isPaymentConfirmed = true;
+          this.paymentStatusMessage = this.$t('Payment received!');
+
+          // Stop monitoring
+          this.stopPaymentMonitor();
+
+          // Set confirmed amount for confirmation screen
+          this.confirmedAmount = data.amount || this.generatedInvoice?.amount || 0;
+          this.confirmedFiatAmount = this.formatInvoiceFiat(this.confirmedAmount);
+
+          // Close the receive modal and show confirmation screen
+          this.show = false;
+          this.$nextTick(() => {
+            this.showPaymentConfirmation = true;
+          });
+
+          // Refresh wallet balance in background
+          this.walletStore.refreshActiveWallet();
+          break;
+
+        case PaymentStatus.EXPIRED:
+          this.paymentStatusMessage = this.$t('Invoice expired');
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Invoice expired'),
+            caption: this.$t('Please create a new invoice'),
+            position: 'bottom',
+            timeout: 4000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+          break;
+
+        case PaymentStatus.ERROR:
+          this.paymentStatusMessage = data.message || this.$t('Error checking payment');
+          break;
+
+        case PaymentStatus.PENDING:
+        default:
+          this.paymentStatusMessage = this.$t('Waiting for payment...');
+          break;
+      }
     },
 
     toggleCurrency() {
@@ -548,6 +784,9 @@ export default {
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
+
+        // Start monitoring for payment confirmation
+        this.startPaymentMonitor();
 
       } catch (error) {
         console.error('Error creating invoice:', error);
@@ -716,6 +955,20 @@ export default {
           console.error('Failed to share invoice:', error);
         }
       }
+    },
+
+    /**
+     * Handle when the payment confirmation screen is closed
+     * Redirects to home/wallet page
+     */
+    handleConfirmationClosed() {
+      this.showPaymentConfirmation = false;
+      this.resetForm();
+
+      // Navigate to home/wallet page
+      if (this.$router.currentRoute.value.path !== '/wallet') {
+        this.$router.push('/wallet');
+      }
     }
   }
 }
@@ -817,6 +1070,7 @@ export default {
   border-radius: 100px;
   background: rgba(255, 212, 59, 0.1);
   border: 1px solid rgba(255, 212, 59, 0.3);
+  transition: all 0.3s ease;
 }
 
 .status-badge span {
@@ -825,6 +1079,7 @@ export default {
   font-weight: 500;
   color: #FFD43B;
   letter-spacing: 0.01em;
+  transition: color 0.3s ease;
 }
 
 .status-dot {
@@ -833,7 +1088,40 @@ export default {
   border-radius: 50%;
   background: #FFD43B;
   animation: pulse 2s ease-in-out infinite;
+  transition: background 0.3s ease;
 }
+
+/* Payment status: Pending (default yellow) */
+.status-pending {
+  background: rgba(255, 212, 59, 0.1);
+  border-color: rgba(255, 212, 59, 0.3);
+}
+.status-pending span { color: #FFD43B; }
+.dot-pending { background: #FFD43B; animation: pulse 2s ease-in-out infinite; }
+
+/* Payment status: Confirmed (green) */
+.status-confirmed {
+  background: rgba(21, 222, 114, 0.15);
+  border-color: rgba(21, 222, 114, 0.4);
+}
+.status-confirmed span { color: #15DE72; }
+.dot-confirmed { background: #15DE72; animation: none; }
+
+/* Payment status: Expired (gray) */
+.status-expired {
+  background: rgba(107, 114, 128, 0.1);
+  border-color: rgba(107, 114, 128, 0.3);
+}
+.status-expired span { color: #6B7280; }
+.dot-expired { background: #6B7280; animation: none; }
+
+/* Payment status: Error (red) */
+.status-error {
+  background: rgba(255, 75, 75, 0.1);
+  border-color: rgba(255, 75, 75, 0.3);
+}
+.status-error span { color: #FF4B4B; }
+.dot-error { background: #FF4B4B; animation: none; }
 
 @keyframes pulse {
   0%, 100% {
@@ -1194,6 +1482,43 @@ export default {
 
   .create-invoice-btn {
     height: 48px;
+  }
+}
+
+/* Extra small screens (320px and below) */
+@media (max-width: 360px) {
+  .qr-container {
+    max-width: 220px;
+  }
+
+  .qr-wrapper {
+    padding: 0.75rem;
+  }
+
+  .invoice-amount {
+    font-size: 1.75rem;
+  }
+
+  .invoice-actions {
+    max-width: 260px;
+    flex-direction: column;
+  }
+
+  .invoice-action-btn {
+    width: 100%;
+  }
+
+  .amount-input {
+    font-size: 2rem;
+    min-width: 120px;
+  }
+
+  .currency-symbol {
+    font-size: 1.75rem;
+  }
+
+  .address-qr-section {
+    padding: 1rem;
   }
 }
 

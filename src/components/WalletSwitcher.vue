@@ -19,7 +19,13 @@
             {{ activeWallet?.name || $t('No Wallet') }}
           </div>
           <div class="wallet-balance" :class="$q.dark.isActive ? 'balance-text-dark' : 'balance-text-light'">
-            {{ formatBalance(balances[activeWallet?.id] || 0) }}
+            <template v-if="activeWallet && isSparkWalletLocked(activeWallet.id)">
+              <q-icon name="las la-lock" size="12px" class="q-mr-xs"/>
+              {{ formatBalanceWithLock(activeWallet.id) }}
+            </template>
+            <template v-else>
+              {{ formatBalance(balances[activeWallet?.id] || 0) }}
+            </template>
           </div>
         </div>
       </div>
@@ -76,7 +82,13 @@
                   />
                 </div>
                 <div class="option-balance" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                  {{ formatBalance(balances[wallet.id] || 0) }}
+                  <template v-if="isSparkWalletLocked(wallet.id)">
+                    <q-icon name="las la-lock" size="11px" class="q-mr-xs locked-icon"/>
+                    {{ formatBalanceWithLock(wallet.id) }}
+                  </template>
+                  <template v-else>
+                    {{ formatBalance(balances[wallet.id] || 0) }}
+                  </template>
                 </div>
                 <div v-if="connectionStates[wallet.id]?.error" class="option-error">
                   {{ $t('Connection failed') }}
@@ -89,8 +101,9 @@
                   name="las la-check"
                   class="active-icon"
                 />
+                <!-- Reconnect button for NWC wallets only -->
                 <q-btn
-                  v-if="!connectionStates[wallet.id]?.connected"
+                  v-if="!connectionStates[wallet.id]?.connected && wallet.type !== 'spark'"
                   flat
                   dense
                   round
@@ -100,6 +113,16 @@
                   :class="$q.dark.isActive ? 'reconnect-btn-dark' : 'reconnect-btn-light'"
                   size="sm"
                 />
+                <!-- Tap to unlock hint for locked Spark wallets -->
+                <q-icon
+                  v-if="isSparkWalletLocked(wallet.id) && wallet.id !== activeWalletId"
+                  name="las la-unlock-alt"
+                  class="unlock-hint-icon"
+                  :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+                  size="18px"
+                >
+                  <q-tooltip>{{ $t('Tap to unlock') }}</q-tooltip>
+                </q-icon>
               </div>
             </div>
           </div>
@@ -164,7 +187,9 @@ export default {
       'sortedWallets',
       'denominationCurrency',
       'exchangeRates',
-      'preferredFiatCurrency'
+      'preferredFiatCurrency',
+      'getDisplayBalance',
+      'isSparkWalletLocked'
     ])
   },
   methods: {
@@ -247,6 +272,22 @@ export default {
         default:
           return balance.toLocaleString() + ' sats'
       }
+    },
+
+    /**
+     * Format balance for locked Spark wallets
+     * Shows cached balance if available, otherwise "Locked"
+     */
+    formatBalanceWithLock(walletId) {
+      const displayData = this.getDisplayBalance(walletId)
+
+      if (displayData.isCached && displayData.balance > 0) {
+        // Show cached balance with indicator
+        return this.formatBalance(displayData.balance)
+      }
+
+      // No cached balance available
+      return this.$t('Locked')
     }
   }
 }
@@ -382,6 +423,8 @@ export default {
   font-size: 12px;
   font-weight: 400;
   line-height: 100%;
+  display: flex;
+  align-items: center;
 }
 
 .balance-text-light {
@@ -390,6 +433,8 @@ export default {
   font-size: 12px;
   font-weight: 400;
   line-height: 100%;
+  display: flex;
+  align-items: center;
 }
 
 .expand-icon {
@@ -428,6 +473,26 @@ export default {
 .wallet-list {
   max-height: 300px;
   overflow-y: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar styling */
+.wallet-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wallet-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wallet-list::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.4);
+  border-radius: 3px;
+}
+
+.wallet-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.6);
 }
 
 .wallet-option {
@@ -518,6 +583,21 @@ export default {
   font-size: 12px;
   font-weight: 400;
   line-height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.locked-icon {
+  opacity: 0.6;
+}
+
+.unlock-hint-icon {
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.wallet-option:hover .unlock-hint-icon {
+  opacity: 0.8;
 }
 
 .option-error {
