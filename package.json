@@ -1,9 +1,9 @@
 {
   "name": "buho-app",
-  "version": "1.1.0",
+  "version": "0.3.0",
   "description": "BuhoGo - A Lightning Wallet for the Web",
   "productName": "BuhoGo",
-  "author": "pratikpatel <pratikpatelpp802@gmail.com>",
+  "author": "pratikpatel <pratikpatelpp802@gmail.com> & drshift <keleeweb@tutanota.com>",
   "type": "module",
   "private": true,
   "scripts": {

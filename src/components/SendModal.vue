@@ -317,7 +317,7 @@ export default {
     },
     manualInputPlaceholder() {
       return this.isActiveWalletSpark
-        ? this.$t('e.g. name@wallet.com, lnbc..., or sp1...')
+        ? this.$t('e.g. name@wallet.com, lnbc..., or spark1...')
         : this.$t('e.g. name@wallet.com or lnbc...');
     }
   },
@@ -475,14 +475,27 @@ export default {
       // Handle lightning: prefix
       const cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
 
-      // Spark addresses (sp1... for mainnet, tsp1... for testnet) - Zero fee transfers
-      if (cleanData.startsWith('sp1') || cleanData.startsWith('tsp1')) return 'spark_address';
+      // Spark addresses - Zero fee transfers
+      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
+      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
+      if (this.isSparkAddress(cleanData)) return 'spark_address';
       // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
       if (cleanData.startsWith('lnbc') || cleanData.startsWith('lntb') ||
           cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
       if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
       if (cleanData.startsWith('lnurl')) return 'lnurl';
       return 'unknown';
+    },
+
+    isSparkAddress(address) {
+      if (!address) return false;
+      const normalized = address.toLowerCase().trim();
+      // New format prefixes
+      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1'];
+      // Legacy format prefixes
+      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1'];
+      return newPrefixes.some(p => normalized.startsWith(p)) ||
+             legacyPrefixes.some(p => normalized.startsWith(p));
     },
 
     validatePaymentInput(input) {
@@ -496,9 +509,9 @@ export default {
         trimmed.startsWith('lntbs') || trimmed.startsWith('lnbcrt');
       const isLightningAddress = trimmed.includes('@') && trimmed.includes('.');
       const isLnurl = trimmed.startsWith('lnurl');
-      const isSparkAddress = trimmed.startsWith('sp1') || trimmed.startsWith('tsp1');
+      const isSparkAddr = this.isSparkAddress(trimmed);
 
-      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddress;
+      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddr;
 
       return isValid ? true : this.$t('Invalid payment format');
     },

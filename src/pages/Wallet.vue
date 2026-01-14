@@ -222,46 +222,64 @@
         </q-card-section>
 
         <q-card-section class="switcher-content">
-          <div class="wallet-list">
+          <div class="wallet-switch-list">
             <div
               v-for="wallet in storeWallets"
               :key="wallet.id"
-              class="wallet-switch-item"
+              class="wallet-switch-card"
               :class="{
-                'active-wallet': wallet.id === storeActiveWalletId,
-                'wallet-switch-item-dark': $q.dark.isActive,
-                'wallet-switch-item-light': !$q.dark.isActive
+                'wallet-switch-card-active': wallet.id === storeActiveWalletId,
+                'wallet-switch-card-dark': $q.dark.isActive,
+                'wallet-switch-card-light': !$q.dark.isActive
               }"
               @click="switchToWallet(wallet.id)"
             >
-              <div class="wallet-switch-icon" :class="getWalletColorClass(wallet)">
-                <q-icon name="las la-wallet" size="20px" />
+              <!-- Avatar -->
+              <div class="switch-avatar">
+                <div class="switch-avatar-circle" :class="getWalletColorClass(wallet)">
+                  <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-wallet'" size="20px" />
+                </div>
+                <div
+                  class="switch-status-dot"
+                  :class="storeConnectionStates[wallet.id]?.connected ? 'status-connected' : 'status-disconnected'"
+                ></div>
               </div>
-              <div class="wallet-switch-info">
-                <div class="wallet-switch-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+
+              <!-- Details -->
+              <div class="switch-details">
+                <div class="switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">
                   {{ wallet.name }}
                 </div>
-                <div class="wallet-switch-balance" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                <div class="switch-meta-row">
+                  <div class="switch-type-badge" :class="wallet.type === 'spark' ? 'type-spark' : 'type-nwc'">
+                    <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-plug'" size="9px" />
+                    <span>{{ wallet.type === 'spark' ? 'Spark' : 'NWC' }}</span>
+                  </div>
+                  <div v-if="wallet.isDefault" class="switch-tag tag-default">{{ $t('Default') }}</div>
+                  <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
+                </div>
+                <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   {{ formatBalance(storeBalances[wallet.id] || 0) }}
                 </div>
               </div>
+
+              <!-- Check Icon -->
               <q-icon
                 v-if="wallet.id === storeActiveWalletId"
                 name="las la-check-circle"
-                size="22px"
-                color="positive"
-                class="active-check"
+                size="20px"
+                class="switch-check-icon"
               />
             </div>
           </div>
         </q-card-section>
 
-        <q-card-section class="switcher-footer">
+        <q-card-section class="switcher-footer" :class="$q.dark.isActive ? 'switcher-footer-dark' : 'switcher-footer-light'">
           <q-btn
             flat
             no-caps
             class="manage-wallets-btn"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+            :class="$q.dark.isActive ? 'manage-btn-dark' : 'manage-btn-light'"
             @click="goToSettings"
           >
             <q-icon name="las la-cog" class="q-mr-sm" />
@@ -308,6 +326,16 @@
                 <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
                     getPaymentTypeLabel()
                   }}</span>
+              </div>
+              <!-- Fee estimate for Spark Lightning payments -->
+              <div class="detail-item" v-if="showFeeEstimate">
+                <span class="detail-label"
+                      :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Est. Fee') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">
+                  <span v-if="isEstimatingFee" class="fee-loading">{{ $t('Estimating...') }}</span>
+                  <span v-else-if="estimatedFee !== null">{{ estimatedFee.toLocaleString() }} sats</span>
+                  <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
+                </span>
               </div>
             </div>
 
@@ -602,7 +630,10 @@ export default {
       paymentFiatValue: '',
       showWalletSwitcher: false,
       showPinDialog: false,
-      pinError: ''
+      pinError: '',
+      // Fee estimation for Spark Lightning payments
+      estimatedFee: null,
+      isEstimatingFee: false
     };
   },
   computed: {
@@ -637,6 +668,14 @@ export default {
       }
       return true;
     },
+    // Show fee estimate for Spark wallet Lightning payments (not Spark-to-Spark transfers)
+    showFeeEstimate() {
+      if (!this.pendingPayment) return false;
+      if (!this.walletStore.isActiveWalletSpark) return false;
+      // Show for Lightning invoice, Lightning address, or LNURL payments
+      const paymentTypes = ['lightning_invoice', 'invoice', 'lightning_address', 'lnurl', 'lnurl_pay'];
+      return paymentTypes.includes(this.pendingPayment.type) || this.pendingPayment.sparkAddress;
+    },
     // Computed properties from Pinia store for wallet switcher
     storeWallets() {
       return this.walletStore.wallets || [];
@@ -646,6 +685,9 @@ export default {
     },
     storeBalances() {
       return this.walletStore.balances || {};
+    },
+    storeConnectionStates() {
+      return this.walletStore.connectionStates || {};
     }
   },
   async created() {
@@ -1509,6 +1551,8 @@ export default {
         this.paymentAmount = '';
         this.paymentComment = '';
         this.sendForm.input = '';
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
 
         await this.updateWalletBalance();
 
@@ -1544,7 +1588,14 @@ export default {
 
       // Lightning invoice
       if (this.pendingPayment.invoice) {
-        return await provider.payInvoice({ invoice: this.pendingPayment.invoice });
+        // For zero-amount invoices, pass user-provided amount
+        const isZeroAmountInvoice = !this.pendingPayment.amount || this.pendingPayment.amount === 0;
+
+        return await provider.payInvoice({
+          invoice: this.pendingPayment.invoice,
+          preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
+          amountSats: isZeroAmountInvoice ? amount : null // Only pass amount for zero-amount invoices
+        });
       }
 
       // Lightning address
@@ -1555,7 +1606,11 @@ export default {
       // LNURL - decode and fetch invoice, then pay
       if (this.pendingPayment.lnurl) {
         const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
-        return await provider.payInvoice({ invoice });
+        return await provider.payInvoice({
+          invoice,
+          preferSpark: true,
+          amountSats: amount // LNURL invoices may need amount passed
+        });
       }
 
       throw new Error('Unsupported payment type for Spark wallet');
@@ -1724,6 +1779,80 @@ export default {
 
     async updatePaymentFiatValue() {
       this.paymentFiatValue = await this.formatPaymentFiat();
+      // Also update fee estimate when payment changes
+      await this.updateFeeEstimate();
+    },
+
+    async updateFeeEstimate() {
+      // Only estimate fees for Spark wallet Lightning payments
+      if (!this.pendingPayment || !this.walletStore.isActiveWalletSpark) {
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
+        return;
+      }
+
+      // Spark-to-Spark transfers are free
+      if (this.pendingPayment.sparkAddress) {
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
+        return;
+      }
+
+      // Only estimate for Lightning invoices
+      if (!this.pendingPayment.invoice) {
+        // For LNURL/Lightning Address, calculate estimated fee based on amount
+        const amount = this.getPaymentAmountForFee();
+        if (amount > 0) {
+          this.estimatedFee = this.calculateRecommendedFee(amount);
+        } else {
+          this.estimatedFee = null;
+        }
+        this.isEstimatingFee = false;
+        return;
+      }
+
+      // Get fee estimate from Spark SDK for Lightning invoices
+      this.isEstimatingFee = true;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        const estimate = await provider.getLightningSendFeeEstimate(this.pendingPayment.invoice);
+        this.estimatedFee = estimate.estimatedFeeSats;
+      } catch (error) {
+        console.warn('Fee estimation failed:', error.message);
+        // Fall back to calculated fee
+        const amount = this.pendingPayment.amount || this.getPaymentAmountForFee();
+        if (amount > 0) {
+          this.estimatedFee = this.calculateRecommendedFee(amount);
+        } else {
+          this.estimatedFee = null;
+        }
+      } finally {
+        this.isEstimatingFee = false;
+      }
+    },
+
+    // Calculate recommended fee for Lightning payments (17 basis points, min 5 sats)
+    calculateRecommendedFee(amountSats) {
+      const minFee = 5;
+      const bpsFee = Math.ceil(amountSats * 0.0017);
+      return Math.max(minFee, bpsFee);
+    },
+
+    getPaymentAmountForFee() {
+      if (!this.pendingPayment) return 0;
+      if (this.paymentAmount && parseInt(this.paymentAmount) > 0) {
+        return parseInt(this.paymentAmount);
+      }
+      if (this.pendingPayment.fixedAmountSats) {
+        return this.pendingPayment.fixedAmountSats;
+      }
+      if (this.pendingPayment.amount > 0) {
+        return this.pendingPayment.amount;
+      }
+      if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable && this.pendingPayment.minSendable) {
+        return Math.floor(this.pendingPayment.minSendable / 1000);
+      }
+      return 0;
     },
 
     startInvoiceMonitoring() {
@@ -2469,6 +2598,17 @@ export default {
   word-break: break-all;
 }
 
+/* Fee estimate states */
+.fee-loading {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.fee-free {
+  color: #10B981;
+  font-weight: 500;
+}
+
 /* Amount Input Section */
 .amount-input-section {
   text-align: left;
@@ -2938,7 +3078,7 @@ export default {
 .wallet-switcher-card {
   width: 100%;
   max-width: 360px;
-  border-radius: 24px;
+  border-radius: 20px;
   overflow: hidden;
 }
 
@@ -2947,60 +3087,85 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
 }
 
 .switcher-title {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
 }
 
 .switcher-content {
-  padding: 0.5rem 0;
-  max-height: 300px;
+  padding: 0.5rem;
+  max-height: 320px;
   overflow-y: auto;
 }
 
-.wallet-list {
+.wallet-switch-list {
   display: flex;
   flex-direction: column;
+  gap: 0.375rem;
 }
 
-.wallet-switch-item {
+/* Wallet Switch Card - iOS style */
+.wallet-switch-card {
   display: flex;
   align-items: center;
-  padding: 0.875rem 1.25rem;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
-  gap: 0.875rem;
+  transition: background 0.15s ease;
 }
 
-.wallet-switch-item-dark:hover {
-  background: rgba(21, 222, 114, 0.08);
+.wallet-switch-card-dark {
+  background: transparent;
 }
 
-.wallet-switch-item-light:hover {
-  background: rgba(21, 222, 114, 0.08);
+.wallet-switch-card-light {
+  background: transparent;
 }
 
-.wallet-switch-item.active-wallet {
-  background: rgba(21, 222, 114, 0.1);
+.wallet-switch-card-dark:hover {
+  background: #222;
 }
 
-.wallet-switch-icon {
+.wallet-switch-card-light:hover {
+  background: #F3F4F6;
+}
+
+.wallet-switch-card-active {
+  box-shadow: inset 0 0 0 1px #15DE72;
+  background: rgba(21, 222, 114, 0.03) !important;
+}
+
+.wallet-switch-card-active.wallet-switch-card-dark:hover {
+  background: rgba(21, 222, 114, 0.06) !important;
+}
+
+.wallet-switch-card-active.wallet-switch-card-light:hover {
+  background: rgba(21, 222, 114, 0.05) !important;
+}
+
+/* Switch Avatar */
+.switch-avatar {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.switch-avatar-circle {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  flex-shrink: 0;
 }
 
 .wallet-green {
-  background: linear-gradient(135deg, #059573, #15DE72);
+  background: linear-gradient(135deg, #15DE72, #059573);
 }
 
 .wallet-blue {
@@ -3019,42 +3184,173 @@ export default {
   background: linear-gradient(135deg, #EF4444, #DC2626);
 }
 
-.wallet-switch-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+.switch-status-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid;
 }
 
-.wallet-switch-name {
+.wallet-switch-card-dark .switch-status-dot {
+  border-color: #0C0C0C;
+}
+
+.wallet-switch-card-light .switch-status-dot {
+  border-color: #FFF;
+}
+
+.status-connected {
+  background: #15DE72;
+}
+
+.status-disconnected {
+  background: #EF4444;
+}
+
+/* Switch Details */
+.switch-details {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.switch-name {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-bottom: 0.125rem;
 }
 
-.wallet-switch-balance {
+.switch-name-dark {
+  color: #F6F6F6;
+}
+
+.switch-name-light {
+  color: #212121;
+}
+
+/* Meta Row with Badges */
+.switch-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.switch-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 13px;
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: white;
 }
 
-.active-check {
+.type-spark {
+  background: linear-gradient(135deg, #15DE72, #059573);
+}
+
+.type-nwc {
+  background: linear-gradient(135deg, #6B7280, #4B5563);
+}
+
+.switch-tag {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.tag-default {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.tag-active {
+  background: #D1FAE5;
+  color: #065F46;
+}
+
+/* Switch Balance */
+.switch-balance {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.switch-balance-dark {
+  color: #777;
+}
+
+.switch-balance-light {
+  color: #9CA3AF;
+}
+
+/* Check Icon */
+.switch-check-icon {
   flex-shrink: 0;
+  color: #15DE72;
 }
 
+/* Switcher Footer */
 .switcher-footer {
-  padding: 0.75rem 1.25rem;
-  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  padding: 0.75rem 1rem;
+  border-top: 1px solid;
   display: flex;
   justify-content: center;
 }
 
+.switcher-footer-dark {
+  border-top-color: #222;
+  background: #171717;
+}
+
+.switcher-footer-light {
+  border-top-color: #E5E7EB;
+  background: #F8F9FA;
+}
+
 .manage-wallets-btn {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
+  transition: all 0.15s ease;
+}
+
+.manage-btn-dark {
+  color: #888;
+}
+
+.manage-btn-light {
+  color: #6B7280;
+}
+
+.manage-wallets-btn:hover {
+  background: rgba(107, 114, 128, 0.1);
+}
+
+.manage-btn-dark:hover {
+  color: #F6F6F6;
+}
+
+.manage-btn-light:hover {
+  color: #374151;
 }
 </style>

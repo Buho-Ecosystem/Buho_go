@@ -3,10 +3,27 @@
  *
  * Uses @buildonspark/spark-sdk for self-custodial Bitcoin Lightning.
  * Supports both Lightning payments and zero-fee Spark-to-Spark transfers.
+ *
+ * Features:
+ * - Lightning invoice payments with fee estimation
+ * - Zero-fee Spark-to-Spark transfers
+ * - Lightning address payments (LNURL-pay)
+ * - Zero-amount invoice support
+ * - preferSpark option for auto-detecting Spark addresses in invoices
+ * - Real-time payment notifications via events
  */
 
 import { WalletProvider } from './WalletProvider';
 import { SparkWallet } from '@buildonspark/spark-sdk';
+
+/**
+ * Payment status constants matching SDK statuses
+ */
+const PAYMENT_STATUS = {
+  PENDING: 'pending',
+  COMPLETED: 'completed',
+  FAILED: 'failed'
+};
 
 export class SparkWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
@@ -24,6 +41,22 @@ export class SparkWalletProvider extends WalletProvider {
 
   isSpark() {
     return true;
+  }
+
+  // ==========================================
+  // Static utility methods
+  // ==========================================
+
+  /**
+   * Calculate recommended fee based on Spark documentation
+   * Recommendation: max(5 sats, 17 bps × amount)
+   * @param {number} amountSats - Payment amount in satoshis
+   * @returns {number} Recommended max fee in satoshis
+   */
+  static calculateRecommendedFee(amountSats) {
+    const minFee = 5;
+    const bpsFee = Math.ceil(amountSats * 0.0017); // 17 basis points = 0.17%
+    return Math.max(minFee, bpsFee);
   }
 
   /**
@@ -155,15 +188,35 @@ export class SparkWalletProvider extends WalletProvider {
     }
   }
 
-  async createInvoice({ amount, description, expiry = 3600 }) {
+  /**
+   * Create a Lightning invoice for receiving payments
+   *
+   * @param {Object} options - Invoice options
+   * @param {number} options.amount - Amount in satoshis (use 0 for zero-amount invoices)
+   * @param {string} [options.description] - Invoice memo/description
+   * @param {number} [options.expiry=3600] - Invoice expiry in seconds
+   * @param {boolean} [options.includeSparkAddress=true] - Embed Spark address in invoice for zero-fee transfers
+   * @param {string} [options.descriptionHash] - Hash of description (for LNURL/UMA, cannot use with description)
+   * @returns {Promise<{paymentRequest: string, paymentHash: string, id: string, expiresAt: number}>}
+   */
+  async createInvoice({ amount, description, expiry = 3600, includeSparkAddress = true, descriptionHash = null }) {
     this._ensureConnected();
 
     try {
-      const result = await this.wallet.createLightningInvoice({
+      // Build invoice parameters
+      const invoiceParams = {
         amountSats: amount,
-        memo: description || 'BuhoGO Payment',
-        expirySeconds: expiry
-      });
+        includeSparkAddress: includeSparkAddress
+      };
+
+      // Use descriptionHash OR memo, not both (SDK constraint)
+      if (descriptionHash) {
+        invoiceParams.descriptionHash = descriptionHash;
+      } else {
+        invoiceParams.memo = description || 'BuhoGO Payment';
+      }
+
+      const result = await this.wallet.createLightningInvoice(invoiceParams);
 
       // Spark SDK returns LightningReceiveRequest:
       // { id, invoice: { encodedInvoice, paymentHash, ... }, status, ... }
@@ -177,7 +230,8 @@ export class SparkWalletProvider extends WalletProvider {
 
       return {
         paymentRequest: invoiceString,
-        paymentHash: result.invoice?.paymentHash || result.id || null,
+        paymentHash: result.invoice?.paymentHash || null,
+        id: result.id, // Invoice ID for monitoring with getLightningReceiveRequest()
         expiresAt: Math.floor(Date.now() / 1000) + expiry
       };
     } catch (error) {
@@ -186,24 +240,159 @@ export class SparkWalletProvider extends WalletProvider {
     }
   }
 
-  async payInvoice({ invoice, maxFee = 10 }) {
+  /**
+   * Pay a Lightning invoice
+   *
+   * @param {Object} options - Payment options
+   * @param {string} options.invoice - BOLT11 encoded Lightning invoice
+   * @param {number} [options.maxFee] - Maximum fee in sats (defaults to recommended fee)
+   * @param {boolean} [options.preferSpark=false] - When true, uses Spark transfer if invoice contains Spark address
+   * @param {number} [options.amountSats] - Amount for zero-amount invoices (ignored for fixed-amount invoices)
+   * @returns {Promise<{id: string, preimage: string, fee: number, status: string}>}
+   */
+  async payInvoice({ invoice, maxFee, preferSpark = false, amountSats = null }) {
     this._ensureConnected();
 
     try {
-      const payment = await this.wallet.payLightningInvoice({
+      // Calculate recommended fee if not provided
+      // Use amountSats if provided (for zero-amount invoices), otherwise use a sensible default
+      const feeAmount = amountSats || 10000; // Default to 10k sats for fee calculation if unknown
+      const effectiveMaxFee = maxFee ?? SparkWalletProvider.calculateRecommendedFee(feeAmount);
+
+      // Build payment parameters
+      const paymentParams = {
         invoice: invoice,
-        maxFeeSats: maxFee
-      });
+        maxFeeSats: effectiveMaxFee,
+        preferSpark: preferSpark
+      };
+
+      // Add amount for zero-amount invoices
+      if (amountSats && amountSats > 0) {
+        paymentParams.amountSatsToSend = amountSats;
+      }
+
+      const payment = await this.wallet.payLightningInvoice(paymentParams);
 
       return {
+        id: payment.id || null,
         preimage: payment.preimage,
         fee: payment.feeSats || 0,
-        status: payment.status || 'completed'
+        status: this._normalizePaymentStatus(payment.status)
       };
     } catch (error) {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Get fee estimate for a Lightning invoice before paying
+   * Useful for showing users the expected fee before confirming payment
+   *
+   * @param {string} invoice - BOLT11 encoded Lightning invoice
+   * @returns {Promise<{estimatedFeeSats: number, invoice: string}>}
+   */
+  async getLightningSendFeeEstimate(invoice) {
+    this._ensureConnected();
+
+    try {
+      const estimate = await this.wallet.getLightningSendFeeEstimate({
+        encodedInvoice: invoice
+      });
+
+      return {
+        estimatedFeeSats: estimate?.feeSats || estimate?.estimatedFeeSats || 0,
+        invoice: invoice
+      };
+    } catch (error) {
+      // If fee estimation fails, return a calculated estimate based on recommendation
+      // This provides a fallback rather than failing completely
+      console.warn('Fee estimation failed, using calculated estimate:', error.message);
+
+      // Try to decode invoice amount for better estimate (fallback to default)
+      const fallbackFee = SparkWalletProvider.calculateRecommendedFee(10000);
+
+      return {
+        estimatedFeeSats: fallbackFee,
+        invoice: invoice,
+        isEstimated: true
+      };
+    }
+  }
+
+  /**
+   * Get the status of an outgoing Lightning payment
+   * Use this to monitor payment progress after calling payInvoice()
+   *
+   * Note: The 'transfer:claimed' event does NOT fire for outgoing payments.
+   * Use this method to poll for outgoing payment status.
+   *
+   * @param {string} paymentId - The payment ID returned from payInvoice()
+   * @returns {Promise<{id: string, status: string, amount: number, fee: number, preimage: string|null, isComplete: boolean, isFailed: boolean}>}
+   */
+  async getLightningSendStatus(paymentId) {
+    this._ensureConnected();
+
+    try {
+      const sendRequest = await this.wallet.getLightningSendRequest(paymentId);
+
+      const status = this._normalizePaymentStatus(sendRequest.status);
+
+      return {
+        id: sendRequest.id,
+        status: status,
+        amount: sendRequest.amountSats || 0,
+        fee: sendRequest.feeSats || 0,
+        preimage: sendRequest.preimage || null,
+        isComplete: status === PAYMENT_STATUS.COMPLETED,
+        isFailed: status === PAYMENT_STATUS.FAILED
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Poll for outgoing payment completion
+   * Convenience method that polls getLightningSendStatus until complete or failed
+   *
+   * @param {string} paymentId - The payment ID to monitor
+   * @param {Object} options - Polling options
+   * @param {number} [options.intervalMs=3000] - Polling interval in milliseconds
+   * @param {number} [options.timeoutMs=60000] - Maximum time to wait in milliseconds
+   * @param {Function} [options.onStatusChange] - Callback for status updates
+   * @returns {Promise<{id: string, status: string, amount: number, fee: number, preimage: string|null}>}
+   */
+  async waitForPaymentCompletion(paymentId, options = {}) {
+    const {
+      intervalMs = 3000,
+      timeoutMs = 60000,
+      onStatusChange = null
+    } = options;
+
+    const startTime = Date.now();
+    let lastStatus = null;
+
+    while (Date.now() - startTime < timeoutMs) {
+      const status = await this.getLightningSendStatus(paymentId);
+
+      // Notify on status change
+      if (onStatusChange && status.status !== lastStatus) {
+        onStatusChange(status);
+        lastStatus = status.status;
+      }
+
+      // Return if complete or failed
+      if (status.isComplete || status.isFailed) {
+        return status;
+      }
+
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error('Payment status check timed out');
   }
 
   async lookupInvoice(paymentHash) {
@@ -246,6 +435,80 @@ export class SparkWalletProvider extends WalletProvider {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Get detailed status of an incoming Lightning payment/invoice
+   * Use the invoice ID returned from createInvoice()
+   *
+   * @param {string} invoiceId - The invoice ID (e.g., "SparkLightningReceiveRequest:...")
+   * @returns {Promise<{id: string, status: string, isPaid: boolean, isExpired: boolean, amount: number, amountReceived: number}>}
+   */
+  async getLightningReceiveStatus(invoiceId) {
+    this._ensureConnected();
+
+    try {
+      const receiveRequest = await this.wallet.getLightningReceiveRequest(invoiceId);
+
+      const status = String(receiveRequest.status || '').toUpperCase();
+      const isPaid = status.includes('COMPLETED') || status.includes('CLAIMED');
+      const isExpired = status.includes('EXPIRED');
+
+      return {
+        id: receiveRequest.id,
+        status: this._normalizePaymentStatus(receiveRequest.status),
+        isPaid: isPaid,
+        isExpired: isExpired,
+        amount: Number(receiveRequest.amount || receiveRequest.invoice?.amountSats || 0),
+        amountReceived: Number(receiveRequest.amountReceived || 0),
+        preimage: receiveRequest.preimage || null
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Wait for an incoming Lightning payment to be received
+   * Polls getLightningReceiveStatus until paid or expired
+   *
+   * @param {string} invoiceId - The invoice ID to monitor
+   * @param {Object} options - Polling options
+   * @param {number} [options.intervalMs=3000] - Polling interval in milliseconds
+   * @param {number} [options.timeoutMs=300000] - Maximum wait time (default 5 minutes)
+   * @param {Function} [options.onStatusChange] - Callback for status updates
+   * @returns {Promise<{id: string, status: string, isPaid: boolean, amount: number}>}
+   */
+  async waitForInvoicePayment(invoiceId, options = {}) {
+    const {
+      intervalMs = 3000,
+      timeoutMs = 300000,
+      onStatusChange = null
+    } = options;
+
+    const startTime = Date.now();
+    let lastStatus = null;
+
+    while (Date.now() - startTime < timeoutMs) {
+      const status = await this.getLightningReceiveStatus(invoiceId);
+
+      // Notify on status change
+      if (onStatusChange && status.status !== lastStatus) {
+        onStatusChange(status);
+        lastStatus = status.status;
+      }
+
+      // Return if paid or expired
+      if (status.isPaid || status.isExpired) {
+        return status;
+      }
+
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error('Invoice payment check timed out');
   }
 
   async getTransactions({ limit = 50, offset = 0 } = {}) {
@@ -293,22 +556,40 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Normalize status to lowercase string
+   * Normalize status to lowercase string (for transactions)
    */
   _normalizeStatus(status) {
-    if (!status) return 'completed';
+    if (!status) return PAYMENT_STATUS.COMPLETED;
     const statusStr = String(status).toLowerCase();
     // Map SDK statuses to simple statuses
     if (statusStr.includes('completed') || statusStr.includes('finalized') || statusStr.includes('claimed')) {
-      return 'completed';
+      return PAYMENT_STATUS.COMPLETED;
     }
     if (statusStr.includes('pending') || statusStr.includes('waiting')) {
-      return 'pending';
+      return PAYMENT_STATUS.PENDING;
     }
     if (statusStr.includes('failed') || statusStr.includes('expired')) {
-      return 'failed';
+      return PAYMENT_STATUS.FAILED;
     }
     return statusStr;
+  }
+
+  /**
+   * Normalize payment status from SDK format
+   * SDK uses: TRANSFER_COMPLETED, TRANSFER_FAILED, TRANSFER_PENDING, etc.
+   */
+  _normalizePaymentStatus(status) {
+    if (!status) return PAYMENT_STATUS.PENDING;
+    const statusStr = String(status).toUpperCase();
+
+    if (statusStr.includes('COMPLETED') || statusStr.includes('FINALIZED') || statusStr.includes('SUCCESS')) {
+      return PAYMENT_STATUS.COMPLETED;
+    }
+    if (statusStr.includes('FAILED') || statusStr.includes('ERROR') || statusStr.includes('EXPIRED')) {
+      return PAYMENT_STATUS.FAILED;
+    }
+    // Default to pending for any other status
+    return PAYMENT_STATUS.PENDING;
   }
 
   /**
@@ -430,8 +711,12 @@ export class SparkWalletProvider extends WalletProvider {
         throw new Error(invoiceData.reason || 'Failed to get invoice');
       }
 
-      // Pay the invoice
-      const result = await this.payInvoice({ invoice: invoiceData.pr });
+      // Pay the invoice with smart fee calculation based on amount
+      const result = await this.payInvoice({
+        invoice: invoiceData.pr,
+        maxFee: SparkWalletProvider.calculateRecommendedFee(amountSats),
+        preferSpark: true // Prefer Spark transfer if recipient has Spark address
+      });
 
       return {
         ...result,

@@ -8,19 +8,21 @@
     >
       <div class="wallet-info">
         <div class="wallet-avatar">
-          <div class="avatar-bg" :class="getWalletAvatarClass(activeWallet)">
-            <q-icon name="las la-wallet" size="20px"/>
+          <div class="avatar-circle-main" :class="getWalletAvatarClass(activeWallet)">
+            <q-icon :name="activeWallet?.type === 'spark' ? 'las la-fire' : 'las la-wallet'" size="20px"/>
           </div>
-          <div v-if="connectionStates[activeWallet?.id]?.connected" class="connection-indicator connected"></div>
-          <div v-else class="connection-indicator disconnected"></div>
+          <div
+            class="status-dot-main"
+            :class="connectionStates[activeWallet?.id]?.connected ? 'status-connected' : 'status-disconnected'"
+          ></div>
         </div>
         <div class="wallet-details">
-          <div class="wallet-name" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+          <div class="wallet-name" :class="$q.dark.isActive ? 'wallet-name-dark' : 'wallet-name-light'">
             {{ activeWallet?.name || $t('No Wallet') }}
           </div>
-          <div class="wallet-balance" :class="$q.dark.isActive ? 'balance-text-dark' : 'balance-text-light'">
+          <div class="wallet-balance" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
             <template v-if="activeWallet && isSparkWalletLocked(activeWallet.id)">
-              <q-icon name="las la-lock" size="12px" class="q-mr-xs"/>
+              <q-icon name="las la-lock" size="11px" class="q-mr-xs"/>
               {{ formatBalanceWithLock(activeWallet.id) }}
             </template>
             <template v-else>
@@ -51,39 +53,42 @@
               :key="wallet.id"
               class="wallet-option"
               :class="{
-                'active': wallet.id === activeWalletId,
-                'disconnected': !connectionStates[wallet.id]?.connected,
+                'wallet-option-active': wallet.id === activeWalletId,
+                'wallet-option-disconnected': !connectionStates[wallet.id]?.connected,
                 'wallet-option-dark': $q.dark.isActive,
                 'wallet-option-light': !$q.dark.isActive
               }"
               @click="handleWalletSwitch(wallet.id)"
             >
+              <!-- Wallet Avatar -->
               <div class="option-avatar">
-                <div class="avatar-bg" :class="getWalletAvatarClass(wallet)">
-                  <q-icon name="las la-wallet" size="16px"/>
+                <div class="avatar-circle" :class="getWalletAvatarClass(wallet)">
+                  <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-wallet'" size="18px"/>
                 </div>
                 <div
-                  v-if="connectionStates[wallet.id]?.connected"
-                  class="connection-indicator connected"
-                ></div>
-                <div
-                  v-else
-                  class="connection-indicator disconnected"
+                  class="status-dot"
+                  :class="connectionStates[wallet.id]?.connected ? 'status-connected' : 'status-disconnected'"
                 ></div>
               </div>
 
+              <!-- Wallet Details -->
               <div class="option-details">
-                <div class="option-name" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-                  {{ wallet.name }}
-                  <q-icon
-                    v-if="wallet.isDefault"
-                    name="las la-star"
-                    class="default-icon"
-                  />
+                <div class="option-name-row">
+                  <span class="option-name" :class="$q.dark.isActive ? 'option-name-dark' : 'option-name-light'">
+                    {{ wallet.name }}
+                  </span>
                 </div>
-                <div class="option-balance" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                <div class="option-meta-row">
+                  <div class="wallet-type-badge" :class="wallet.type === 'spark' ? 'type-spark' : 'type-nwc'">
+                    <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-plug'" size="9px" />
+                    <span>{{ wallet.type === 'spark' ? 'Spark' : 'NWC' }}</span>
+                  </div>
+                  <div v-if="wallet.isDefault" class="wallet-tag tag-default">{{ $t('Default') }}</div>
+                  <div v-if="wallet.id === activeWalletId" class="wallet-tag tag-active">{{ $t('Active') }}</div>
+                </div>
+                <div class="option-balance" :class="$q.dark.isActive ? 'option-balance-dark' : 'option-balance-light'">
                   <template v-if="isSparkWalletLocked(wallet.id)">
-                    <q-icon name="las la-lock" size="11px" class="q-mr-xs locked-icon"/>
+                    <q-icon name="las la-lock" size="10px" class="q-mr-xs locked-icon"/>
                     {{ formatBalanceWithLock(wallet.id) }}
                   </template>
                   <template v-else>
@@ -95,11 +100,12 @@
                 </div>
               </div>
 
+              <!-- Wallet Actions -->
               <div class="option-actions">
                 <q-icon
                   v-if="wallet.id === activeWalletId"
-                  name="las la-check"
-                  class="active-icon"
+                  name="las la-check-circle"
+                  class="active-check-icon"
                 />
                 <!-- Reconnect button for NWC wallets only -->
                 <q-btn
@@ -109,8 +115,8 @@
                   round
                   icon="las la-sync-alt"
                   @click.stop="reconnectWallet(wallet.id)"
-                  class="reconnect-btn"
-                  :class="$q.dark.isActive ? 'reconnect-btn-dark' : 'reconnect-btn-light'"
+                  class="option-action-btn"
+                  :class="$q.dark.isActive ? 'option-action-btn-dark' : 'option-action-btn-light'"
                   size="sm"
                 />
                 <!-- Tap to unlock hint for locked Spark wallets -->
@@ -119,7 +125,7 @@
                   name="las la-unlock-alt"
                   class="unlock-hint-icon"
                   :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-                  size="18px"
+                  size="16px"
                 >
                   <q-tooltip>{{ $t('Tap to unlock') }}</q-tooltip>
                 </q-icon>
@@ -304,35 +310,28 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
-  border-radius: 24px;
+  padding: 0.625rem 0.875rem;
+  border-radius: 16px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid;
+  transition: all 0.15s ease;
 }
 
 .current-wallet-dark {
-  background: #0C0C0C;
-  border-color: #2A342A;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  background: #1A1A1A;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
 .current-wallet-light {
   background: #FFF;
-  border-color: #E5E7EB;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
 .current-wallet-dark:hover {
-  background: #171717;
-  border-color: #15DE72;
-  transform: translateY(-1px);
+  background: #222;
 }
 
 .current-wallet-light:hover {
   background: #F9FAFB;
-  border-color: #15DE72;
-  transform: translateY(-1px);
 }
 
 .wallet-info {
@@ -344,12 +343,13 @@ export default {
 
 .wallet-avatar {
   position: relative;
+  flex-shrink: 0;
 }
 
-.avatar-bg {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+.avatar-circle-main {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -361,7 +361,7 @@ export default {
 }
 
 .avatar-green {
-  background: linear-gradient(135deg, #059573, #15DE72);
+  background: linear-gradient(135deg, #15DE72, #059573);
 }
 
 .avatar-blue {
@@ -380,24 +380,30 @@ export default {
   background: linear-gradient(135deg, #EF4444, #DC2626);
 }
 
-.connection-indicator {
+.status-dot-main {
   position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 12px;
-  height: 12px;
+  bottom: 0;
+  right: 0;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   border: 2px solid;
 }
 
-.connection-indicator.connected {
-  background: #15DE72;
+.current-wallet-dark .status-dot-main {
+  border-color: #1A1A1A;
+}
+
+.current-wallet-light .status-dot-main {
   border-color: #FFF;
 }
 
-.connection-indicator.disconnected {
+.status-connected {
+  background: #15DE72;
+}
+
+.status-disconnected {
   background: #EF4444;
-  border-color: #FFF;
 }
 
 .wallet-details {
@@ -408,33 +414,36 @@ export default {
 .wallet-name {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 14px;
-  font-weight: 700;
-  line-height: 100%;
-  letter-spacing: -0.28px;
-  margin-bottom: 0.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: 0.125rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.balance-text-dark {
-  color: var(--Shark-300, #B0B0B0);
-  font-family: Fustat, 'Inter', sans-serif;
+.wallet-name-dark {
+  color: #F6F6F6;
+}
+
+.wallet-name-light {
+  color: #212121;
+}
+
+.wallet-balance {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
   font-size: 12px;
-  font-weight: 400;
-  line-height: 100%;
+  font-weight: 500;
   display: flex;
   align-items: center;
 }
 
-.balance-text-light {
-  color: var(--Shark-600, #5D5D5D);
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 100%;
-  display: flex;
-  align-items: center;
+.wallet-balance-dark {
+  color: #777;
+}
+
+.wallet-balance-light {
+  color: #9CA3AF;
 }
 
 .expand-icon {
@@ -443,11 +452,11 @@ export default {
 }
 
 .expand-icon-dark {
-  color: #B0B0B0;
+  color: #666;
 }
 
 .expand-icon-light {
-  color: #6B7280;
+  color: #9CA3AF;
 }
 
 .expand-icon.rotated {
@@ -465,7 +474,7 @@ export default {
 }
 
 .dropdown-content {
-  border-radius: 24px;
+  border-radius: 16px;
   overflow: hidden;
 }
 
@@ -475,6 +484,7 @@ export default {
   overflow-y: auto;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  padding: 0.25rem 0;
 }
 
 /* Scrollbar styling */
@@ -495,96 +505,179 @@ export default {
   background: rgba(128, 128, 128, 0.6);
 }
 
+/* Wallet Option - iOS style cards */
 .wallet-option {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
+  margin: 0.25rem 0.5rem;
+  border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  border-bottom: 1px solid;
+  transition: background 0.15s ease;
 }
 
 .wallet-option-dark {
-  border-bottom-color: #2A342A;
+  background: transparent;
 }
 
 .wallet-option-light {
-  border-bottom-color: #F3F4F6;
-}
-
-.wallet-option:last-child {
-  border-bottom: none;
+  background: transparent;
 }
 
 .wallet-option-dark:hover {
-  background: #171717;
+  background: #222;
 }
 
 .wallet-option-light:hover {
-  background: #F9FAFB;
+  background: #F3F4F6;
 }
 
-.wallet-option.active {
-  background: rgba(21, 222, 114, 0.1);
-  border-left: 3px solid #15DE72;
+.wallet-option-active {
+  box-shadow: inset 0 0 0 1px #15DE72;
+  background: rgba(21, 222, 114, 0.03) !important;
 }
 
-.wallet-option.disconnected {
+.wallet-option-active.wallet-option-dark:hover {
+  background: rgba(21, 222, 114, 0.06) !important;
+}
+
+.wallet-option-active.wallet-option-light:hover {
+  background: rgba(21, 222, 114, 0.05) !important;
+}
+
+.wallet-option-disconnected {
   opacity: 0.6;
 }
 
+/* Option Avatar */
 .option-avatar {
   position: relative;
   flex-shrink: 0;
 }
 
-.option-avatar .avatar-bg {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+.avatar-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
 }
 
-.option-avatar .connection-indicator {
+.status-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
   width: 10px;
   height: 10px;
-  bottom: -1px;
-  right: -1px;
+  border-radius: 50%;
+  border: 2px solid;
 }
 
+.wallet-option-dark .status-dot {
+  border-color: #0C0C0C;
+}
+
+.wallet-option-light .status-dot {
+  border-color: #FFF;
+}
+
+/* Option Details */
 .option-details {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+
+.option-name-row {
+  margin-bottom: 0.125rem;
 }
 
 .option-name {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 14px;
-  font-weight: 700;
-  line-height: 100%;
-  letter-spacing: -0.28px;
-  margin-bottom: 0.25rem;
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.default-icon {
-  color: #F59E0B;
-  font-size: 12px;
-  flex-shrink: 0;
+.option-name-dark {
+  color: #F6F6F6;
 }
 
-.option-balance {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 100%;
+.option-name-light {
+  color: #212121;
+}
+
+/* Meta Row with Badges */
+.option-meta-row {
   display: flex;
   align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.wallet-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: white;
+}
+
+.type-spark {
+  background: linear-gradient(135deg, #15DE72, #059573);
+}
+
+.type-nwc {
+  background: linear-gradient(135deg, #6B7280, #4B5563);
+}
+
+.wallet-tag {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.tag-default {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.tag-active {
+  background: #D1FAE5;
+  color: #065F46;
+}
+
+/* Option Balance */
+.option-balance {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.option-balance-dark {
+  color: #777;
+}
+
+.option-balance-light {
+  color: #9CA3AF;
 }
 
 .locked-icon {
@@ -605,38 +698,43 @@ export default {
   font-size: 10px;
   color: #EF4444;
   font-weight: 500;
+  margin-top: 0.125rem;
 }
 
+/* Option Actions */
 .option-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
+  flex-shrink: 0;
 }
 
-.active-icon {
+.active-check-icon {
   color: #15DE72;
-  font-size: 18px;
+  font-size: 20px;
 }
 
-.reconnect-btn {
+.option-action-btn {
   width: 28px;
   height: 28px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
 }
 
-.reconnect-btn-dark {
-  color: #B0B0B0;
+.option-action-btn-dark {
+  color: #666;
 }
 
-.reconnect-btn-light {
-  color: #6B7280;
+.option-action-btn-light {
+  color: #9CA3AF;
 }
 
-.reconnect-btn-dark:hover {
+.option-action-btn-dark:hover {
   color: #15DE72;
   background: rgba(21, 222, 114, 0.1);
 }
 
-.reconnect-btn-light:hover {
+.option-action-btn-light:hover {
   color: #15DE72;
   background: rgba(21, 222, 114, 0.1);
 }
@@ -644,14 +742,14 @@ export default {
 /* Switcher Actions */
 .switcher-actions {
   border-top: 1px solid;
-  padding: 0.75rem;
+  padding: 0.625rem 0.75rem;
   display: flex;
   gap: 0.5rem;
 }
 
 .actions-dark {
   background: #171717;
-  border-top-color: #2A342A;
+  border-top-color: #222;
 }
 
 .actions-light {
@@ -661,16 +759,16 @@ export default {
 
 .action-btn {
   flex: 1;
-  height: 40px;
-  border-radius: 12px;
+  height: 38px;
+  border-radius: 10px;
   font-family: Fustat, 'Inter', sans-serif;
   font-weight: 500;
   font-size: 12px;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .action-btn-dark {
-  color: #B0B0B0;
+  color: #888;
 }
 
 .action-btn-light {
@@ -687,7 +785,7 @@ export default {
 }
 
 .manage-btn.action-btn-dark:hover {
-  color: #FFF;
+  color: #F6F6F6;
 }
 
 .manage-btn.action-btn-light:hover {
@@ -708,42 +806,79 @@ export default {
 /* Responsive Design */
 @media (max-width: 480px) {
   .current-wallet {
-    padding: 0.625rem 0.875rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 12px;
   }
 
-  .wallet-avatar .avatar-bg {
-    width: 32px;
-    height: 32px;
+  .avatar-circle-main {
+    width: 34px;
+    height: 34px;
+  }
+
+  .avatar-circle-main .q-icon {
+    font-size: 18px !important;
+  }
+
+  .status-dot-main {
+    width: 9px;
+    height: 9px;
   }
 
   .wallet-name {
     font-size: 13px;
   }
 
-  .balance-text-dark,
-  .balance-text-light {
+  .wallet-balance {
     font-size: 11px;
   }
 
+  .dropdown-content {
+    border-radius: 14px;
+  }
+
   .wallet-option {
-    padding: 0.625rem 0.875rem;
+    padding: 0.625rem 0.75rem;
+    margin: 0.125rem 0.375rem;
+    border-radius: 10px;
+    gap: 0.625rem;
+  }
+
+  .avatar-circle {
+    width: 32px;
+    height: 32px;
+  }
+
+  .avatar-circle .q-icon {
+    font-size: 16px !important;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
   }
 
   .option-name {
     font-size: 13px;
   }
 
+  .wallet-type-badge,
+  .wallet-tag {
+    font-size: 7px;
+  }
+
   .option-balance {
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .switcher-actions {
-    padding: 0.625rem;
+    padding: 0.5rem;
+    gap: 0.375rem;
   }
 
   .action-btn {
-    height: 36px;
+    height: 34px;
     font-size: 11px;
+    border-radius: 8px;
   }
 }
 
@@ -760,7 +895,7 @@ export default {
   right: 0;
   bottom: 0;
   background: rgba(255, 255, 255, 0.8);
-  border-radius: 10px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -776,7 +911,7 @@ export default {
   }
 }
 
-.connection-indicator.connecting {
+.status-dot.connecting {
   animation: pulse 1.5s ease-in-out infinite;
 }
 </style>

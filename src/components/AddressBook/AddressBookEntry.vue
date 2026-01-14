@@ -1,12 +1,12 @@
 <template>
-  <div 
+  <div
     class="address-entry"
     :class="$q.dark.isActive ? 'address-entry-dark' : 'address-entry-light'"
     @click="$emit('pay', entry)"
   >
     <!-- Avatar -->
     <div class="entry-avatar" @click.stop="$emit('change-color', entry)">
-      <div 
+      <div
         class="avatar-circle"
         :style="{ backgroundColor: entry.color }"
       >
@@ -26,49 +26,48 @@
         </div>
       </div>
       <div class="entry-address" :class="$q.dark.isActive ? 'entry-address-dark' : 'entry-address-light'">
-        {{ displayAddress }}
+        {{ truncatedAddress }}
       </div>
     </div>
 
     <!-- Actions -->
-    <div class="entry-actions">
+    <div class="entry-actions" :class="{ 'actions-visible': isTouchDevice }">
       <q-btn
         flat
         round
         dense
-        icon="las la-edit"
+        icon="las la-pen"
         @click.stop="$emit('edit', entry)"
-        class="edit-btn"
-        :class="$q.dark.isActive ? 'edit-btn-dark' : 'edit-btn-light'"
+        class="action-btn"
+        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
         size="sm"
       >
-        <q-tooltip>{{ $t('Edit Contact') }}</q-tooltip>
+        <q-tooltip>{{ $t('Edit') }}</q-tooltip>
       </q-btn>
-      
+
       <q-btn
         flat
         round
         dense
         icon="las la-copy"
         @click.stop="copyAddress"
-        class="copy-btn"
-        :class="$q.dark.isActive ? 'copy-btn-dark' : 'copy-btn-light'"
+        class="action-btn"
+        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
         size="sm"
       >
-        <q-tooltip>{{ $t('Copy address') }}</q-tooltip>
+        <q-tooltip>{{ $t('Copy') }}</q-tooltip>
       </q-btn>
-      
+
       <q-btn
         flat
         round
         dense
-        icon="las la-trash"
+        icon="las la-trash-alt"
         @click.stop="$emit('delete', entry)"
-        class="delete-btn"
-        :class="$q.dark.isActive ? 'delete-btn-dark' : 'delete-btn-light'"
+        class="action-btn action-btn-danger"
         size="sm"
       >
-        <q-tooltip>{{ $t('Delete entry') }}</q-tooltip>
+        <q-tooltip>{{ $t('Delete') }}</q-tooltip>
       </q-btn>
     </div>
   </div>
@@ -84,12 +83,29 @@ export default {
     }
   },
   emits: ['edit', 'delete', 'change-color', 'pay'],
+  data() {
+    return {
+      isTouchDevice: false
+    }
+  },
   computed: {
     addressType() {
       return this.entry.addressType || 'lightning'
     },
     displayAddress() {
       return this.entry.address || this.entry.lightningAddress || ''
+    },
+    truncatedAddress() {
+      const address = this.displayAddress
+      if (!address) return ''
+
+      // For short addresses (like lightning addresses user@domain.com), show full
+      if (address.length <= 30) return address
+
+      // For long addresses (like Spark addresses), truncate in the middle
+      const start = address.slice(0, 12)
+      const end = address.slice(-10)
+      return `${start}...${end}`
     },
     addressTypeIcon() {
       return this.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'
@@ -103,6 +119,10 @@ export default {
         : 'badge-lightning'
     }
   },
+  mounted() {
+    // Detect touch device
+    this.isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+  },
   methods: {
     getInitial(name) {
       return name ? name.charAt(0).toUpperCase() : '?'
@@ -115,14 +135,13 @@ export default {
           type: 'positive',
           message: this.$t('Address copied'),
           position: 'bottom',
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          timeout: 2000
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          position: 'bottom'
         })
       }
     }
@@ -134,100 +153,90 @@ export default {
 .address-entry {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  border-radius: 16px;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid;
-  margin-bottom: 0.75rem;
+  transition: background 0.15s ease;
 }
 
 .address-entry-dark {
-  background: #0C0C0C;
-  border-color: #2A342A;
+  background: #1A1A1A;
 }
 
 .address-entry-light {
   background: #FFF;
-  border-color: #E5E7EB;
 }
 
 .address-entry-dark:hover {
-  background: #171717;
-  border-color: #15DE72;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.15);
+  background: #222;
 }
 
 .address-entry-light:hover {
   background: #F9FAFB;
-  border-color: #15DE72;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.15);
 }
 
+/* Avatar */
 .entry-avatar {
-  cursor: pointer;
-  transition: transform 0.2s ease;
-}
-
-.entry-avatar:hover {
-  transform: scale(1.05);
+  flex-shrink: 0;
 }
 
 .avatar-circle {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  transition: box-shadow 0.2s ease;
-}
-
-.avatar-circle:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 .avatar-initial {
   color: white;
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  font-size: 17px;
+  font-weight: 600;
 }
 
+/* Entry Details */
 .entry-details {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .entry-name-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.125rem;
 }
 
 .entry-name {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.entry-name-dark {
+  color: #F6F6F6;
+}
+
+.entry-name-light {
+  color: #212121;
+}
+
+/* Address Type Badge */
 .address-type-badge {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 8px;
+  gap: 0.2rem;
+  padding: 0.125rem 0.4rem;
+  border-radius: 6px;
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
@@ -240,21 +249,14 @@ export default {
 }
 
 .badge-spark {
-  background: linear-gradient(135deg, #EF4444, #DC2626);
+  background: linear-gradient(135deg, #15DE72, #059573);
   color: white;
 }
 
-.entry-name-dark {
-  color: #F6F6F6;
-}
-
-.entry-name-light {
-  color: #212121;
-}
-
+/* Address */
 .entry-address {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
   font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -262,92 +264,74 @@ export default {
 }
 
 .entry-address-dark {
-  color: #B0B0B0;
+  color: #777;
 }
 
 .entry-address-light {
-  color: #6B7280;
+  color: #9CA3AF;
 }
 
+/* Actions */
 .entry-actions {
   display: flex;
-  gap: 0.375rem;
+  gap: 0.25rem;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
 }
 
-.address-entry:hover .entry-actions {
+.address-entry:hover .entry-actions,
+.entry-actions.actions-visible {
   opacity: 1;
 }
 
-.edit-btn,
-.copy-btn,
-.delete-btn {
+.action-btn {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
-.edit-btn-dark {
-  color: #B0B0B0;
+.action-btn-dark {
+  color: #666;
 }
 
-.edit-btn-light {
-  color: #6B7280;
+.action-btn-light {
+  color: #9CA3AF;
 }
 
-.edit-btn-dark:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3B82F6;
-}
-
-.edit-btn-light:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3B82F6;
-}
-
-.copy-btn-dark {
-  color: #B0B0B0;
-}
-
-.copy-btn-light {
-  color: #6B7280;
-}
-
-.copy-btn-dark:hover {
+.action-btn-dark:hover {
   background: rgba(21, 222, 114, 0.1);
   color: #15DE72;
 }
 
-.copy-btn-light:hover {
+.action-btn-light:hover {
   background: rgba(21, 222, 114, 0.1);
   color: #15DE72;
 }
 
-.delete-btn-dark {
-  color: #B0B0B0;
+.action-btn-danger {
+  color: #777;
 }
 
-.delete-btn-light {
-  color: #6B7280;
+.action-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #EF4444 !important;
 }
 
-.delete-btn-dark:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: #EF4444;
+/* Responsive - Tablet and smaller */
+@media (max-width: 768px) {
+  .entry-actions {
+    opacity: 1;
+  }
 }
 
-.delete-btn-light:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: #EF4444;
-}
-
-/* Mobile Responsive */
+/* Responsive - Mobile */
 @media (max-width: 480px) {
   .address-entry {
     padding: 0.75rem;
     gap: 0.75rem;
+    border-radius: 10px;
   }
 
   .avatar-circle {
@@ -356,30 +340,43 @@ export default {
   }
 
   .avatar-initial {
-    font-size: 16px;
-  }
-
-  .entry-name {
     font-size: 15px;
   }
 
+  .entry-name {
+    font-size: 14px;
+  }
+
   .entry-address {
-    font-size: 13px;
+    font-size: 11px;
+  }
+
+  .address-type-badge {
+    font-size: 8px;
+    padding: 0.1rem 0.35rem;
   }
 
   .entry-actions {
-    opacity: 1; /* Always show on mobile */
+    opacity: 1;
+    flex-direction: column;
+    gap: 0.125rem;
   }
 
-  .copy-btn,
-  .delete-btn {
+  .action-btn {
     width: 28px;
     height: 28px;
   }
+}
 
-  .edit-btn {
-    width: 28px;
-    height: 28px;
+/* Extra small screens */
+@media (max-width: 360px) {
+  .entry-name-row {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .entry-address {
+    font-size: 10px;
   }
 }
 </style>

@@ -214,16 +214,25 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     // Validate Spark address format
     isValidSparkAddress(address) {
-      // Spark addresses start with sp1 (mainnet) or tsp1 (testnet)
+      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
+      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
       const trimmed = address.trim().toLowerCase()
-      return trimmed.startsWith('sp1') || trimmed.startsWith('tsp1')
+      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1']
+      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1']
+      return newPrefixes.some(p => trimmed.startsWith(p)) ||
+             legacyPrefixes.some(p => trimmed.startsWith(p))
     },
 
     // Detect address type from input
     detectAddressType(address) {
       if (!address) return null
       const trimmed = address.trim().toLowerCase()
-      if (trimmed.startsWith('sp1') || trimmed.startsWith('tsp1')) {
+      // Check for Spark address (new and legacy formats)
+      const sparkNewPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1']
+      const sparkLegacyPrefixes = ['sp1', 'tsp1', 'sprt1']
+      const isSpark = sparkNewPrefixes.some(p => trimmed.startsWith(p)) ||
+                      sparkLegacyPrefixes.some(p => trimmed.startsWith(p))
+      if (isSpark) {
         return 'spark'
       }
       if (this.isValidLightningAddress(address)) {

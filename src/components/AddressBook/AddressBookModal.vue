@@ -91,7 +91,7 @@
               maxlength="150"
             />
             <div v-if="formData.address && !isAddressValid" class="input-error">
-              {{ formData.addressType === 'spark' ? $t('Invalid Spark address (should start with sp1 or tsp1)') : $t('Invalid Lightning address format') }}
+              {{ formData.addressType === 'spark' ? $t('Invalid Spark address (should start with spark1 or sp1)') : $t('Invalid Lightning address format') }}
             </div>
           </div>
         </div>
@@ -197,7 +197,7 @@ export default {
 
     addressPlaceholder() {
       return this.formData.addressType === 'spark'
-        ? 'sp1... or tsp1...'
+        ? 'spark1... or sp1...'
         : 'user@domain.com'
     },
 
@@ -283,7 +283,12 @@ export default {
     isValidSparkAddress(address) {
       if (!address) return false
       const trimmed = address.trim().toLowerCase()
-      return trimmed.startsWith('sp1') || trimmed.startsWith('tsp1')
+      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
+      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
+      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1']
+      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1']
+      return newPrefixes.some(p => trimmed.startsWith(p)) ||
+             legacyPrefixes.some(p => trimmed.startsWith(p))
     },
 
     async saveEntry() {
@@ -358,7 +363,7 @@ export default {
       if (msg.includes('Invalid Spark')) {
         return {
           title: this.$t('Invalid Spark address'),
-          caption: this.$t('Spark addresses start with sp1 or tsp1')
+          caption: this.$t('Spark addresses start with spark1 or sp1')
         }
       }
 

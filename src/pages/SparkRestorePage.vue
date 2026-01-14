@@ -39,10 +39,10 @@
               </div>
             </div>
             <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ $t('Restore Your Wallet') }}
+              {{ $t('Restore Spark Wallet') }}
             </h2>
             <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Enter your 12-word seed phrase to restore your wallet.') }}
+              {{ $t('Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets created with BuhoGO.') }}
             </p>
 
             <!-- Word Inputs Grid -->
@@ -141,7 +141,7 @@
               <q-spinner-orbit size="80px" color="primary" />
             </div>
             <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ $t('Restoring Your Wallet') }}
+              {{ $t('Restoring Spark Wallet') }}
             </h2>
             <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
               {{ restoringStatus }}
@@ -160,7 +160,7 @@
             no-caps
             unelevated
           >
-            {{ $t('Restore Wallet') }}
+            {{ $t('Restore Spark Wallet') }}
           </q-btn>
         </q-card-section>
       </q-card>
@@ -376,8 +376,17 @@ export default {
   min-height: 100vh;
   padding: 1rem;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Center content only when viewport is tall enough */
+@media (min-height: 700px) {
+  .spark-restore-page {
+    align-items: center;
+  }
 }
 
 .bg-dark {
@@ -391,6 +400,7 @@ export default {
 .container {
   width: 100%;
   max-width: 480px;
+  margin: auto 0;
 }
 
 .restore-card {
@@ -417,7 +427,6 @@ export default {
 /* Content */
 .restore-content {
   padding: 0 1.5rem 1.5rem;
-  min-height: 400px;
   display: flex;
   flex-direction: column;
 }
@@ -789,6 +798,158 @@ export default {
   .pin-dot {
     width: 14px;
     height: 14px;
+  }
+}
+
+/* Very small screens (iPhone SE, small Android) */
+@media (max-width: 360px) {
+  .spark-restore-page {
+    padding: 0.25rem;
+  }
+
+  .card-header {
+    padding: 0.75rem;
+  }
+
+  .restore-content {
+    padding: 0 0.75rem 1rem;
+  }
+
+  .step-icon {
+    margin-bottom: 1rem;
+  }
+
+  .icon-bg {
+    width: 56px;
+    height: 56px;
+  }
+
+  .icon-bg .q-icon {
+    font-size: 24px !important;
+  }
+
+  .step-title {
+    font-size: 18px;
+  }
+
+  .step-desc {
+    font-size: 12px;
+    max-width: 240px;
+    margin-bottom: 1rem;
+  }
+
+  .words-input-grid {
+    gap: 4px;
+  }
+
+  .word-input-item {
+    padding: 6px 8px;
+    border-radius: 8px;
+  }
+
+  .word-number {
+    font-size: 10px;
+    min-width: 14px;
+  }
+
+  .word-input {
+    font-size: 11px;
+  }
+
+  .numpad-btn {
+    width: 48px;
+    height: 48px;
+    font-size: 18px;
+  }
+
+  .numpad-row {
+    gap: 8px;
+  }
+
+  .numpad-inline {
+    gap: 6px;
+  }
+
+  .pin-dots-inline {
+    gap: 10px;
+    margin: 1rem 0;
+  }
+
+  .pin-dot {
+    width: 12px;
+    height: 12px;
+  }
+
+  .restore-footer {
+    padding: 0 0.75rem 1rem;
+  }
+
+  .continue-btn {
+    height: 44px;
+    border-radius: 20px;
+  }
+}
+
+/* Very short screens (landscape or small phones) */
+@media (max-height: 600px) {
+  .step-icon {
+    margin-bottom: 0.5rem;
+  }
+
+  .icon-bg {
+    width: 48px;
+    height: 48px;
+  }
+
+  .icon-bg .q-icon {
+    font-size: 22px !important;
+  }
+
+  .step-title {
+    font-size: 16px;
+    margin-bottom: 0.25rem;
+  }
+
+  .step-desc {
+    font-size: 11px;
+    margin-bottom: 0.75rem;
+  }
+
+  .words-input-grid {
+    gap: 4px;
+  }
+
+  .word-input-item {
+    padding: 6px 8px;
+  }
+
+  .numpad-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  .numpad-row {
+    gap: 8px;
+  }
+
+  .numpad-inline {
+    gap: 4px;
+    margin-top: 0.25rem;
+  }
+
+  .pin-dots-inline {
+    margin: 0.5rem 0;
+    gap: 10px;
+  }
+
+  .pin-dot {
+    width: 12px;
+    height: 12px;
+  }
+
+  .step-pin {
+    padding-top: 0.5rem;
   }
 }
 </style>

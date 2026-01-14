@@ -282,11 +282,6 @@ export default {
 
 .search-section {
   padding: 1rem;
-  border-bottom: 1px solid;
-}
-
-.search-section {
-  border-bottom-color: #2A342A;
 }
 
 .entries-container {
@@ -299,23 +294,23 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid;
+  padding: 0.5rem 1rem;
 }
 
 .entries-header-dark {
-  border-bottom-color: #2A342A;
+  color: #666;
 }
 
 .entries-header-light {
-  border-bottom-color: #E5E7EB;
+  color: #9CA3AF;
 }
 
 .entries-count {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
-  color: #B0B0B0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .clear-all-btn {
@@ -345,7 +340,7 @@ export default {
 }
 
 .entries-list {
-  padding: 1rem;
+  padding: 0 1rem 1rem;
 }
 
 /* Empty States */

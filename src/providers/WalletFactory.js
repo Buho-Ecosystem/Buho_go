@@ -96,7 +96,14 @@ export function parsePaymentDestination(input) {
   const normalized = input.trim().toLowerCase();
 
   // Spark address (zero-fee transfer)
-  if (normalized.startsWith('sp1') || normalized.startsWith('tsp1')) {
+  // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
+  // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
+  const sparkNewPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1'];
+  const sparkLegacyPrefixes = ['sp1', 'tsp1', 'sprt1'];
+  const isSparkAddr = sparkNewPrefixes.some(p => normalized.startsWith(p)) ||
+                      sparkLegacyPrefixes.some(p => normalized.startsWith(p));
+
+  if (isSparkAddr) {
     return {
       type: 'spark_address',
       address: input.trim(),
