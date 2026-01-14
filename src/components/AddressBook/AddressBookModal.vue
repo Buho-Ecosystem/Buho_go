@@ -94,6 +94,21 @@
               {{ formData.addressType === 'spark' ? $t('Invalid Spark address (should start with spark1 or sp1)') : $t('Invalid Lightning address format') }}
             </div>
           </div>
+
+          <!-- Notes Field -->
+          <div class="input-wrapper">
+            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Notes') }} <span class="optional-hint">({{ $t('optional') }})</span>
+            </div>
+            <textarea
+              v-model="formData.notes"
+              :placeholder="$t('e.g., Monthly rent, Coffee shop...')"
+              class="form-input notes-textarea"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              maxlength="200"
+              rows="2"
+            />
+          </div>
         </div>
       </q-card-section>
 
@@ -173,7 +188,8 @@ export default {
         name: '',
         address: '',
         addressType: 'lightning',
-        color: '#3B82F6'
+        color: '#3B82F6',
+        notes: ''
       },
       isSaving: false,
       showColorPicker: false
@@ -242,14 +258,16 @@ export default {
           name: this.entry.name,
           address: this.entry.address || this.entry.lightningAddress || '',
           addressType: this.entry.addressType || 'lightning',
-          color: this.entry.color
+          color: this.entry.color,
+          notes: this.entry.notes || ''
         }
       } else {
         this.formData = {
           name: '',
           address: '',
           addressType: 'lightning',
-          color: this.getRandomColor()
+          color: this.getRandomColor(),
+          notes: ''
         }
       }
     },
@@ -259,7 +277,8 @@ export default {
         name: '',
         address: '',
         addressType: 'lightning',
-        color: '#3B82F6'
+        color: '#3B82F6',
+        notes: ''
       }
       this.isSaving = false
       this.showColorPicker = false
@@ -301,7 +320,8 @@ export default {
           name: this.formData.name.trim(),
           address: this.formData.address.trim(),
           addressType: this.formData.addressType,
-          color: this.formData.color
+          color: this.formData.color,
+          notes: this.formData.notes?.trim() || ''
         }
 
         if (this.isEditing) {
@@ -528,6 +548,18 @@ export default {
 
 .form-input::placeholder {
   color: #B0B0B0;
+}
+
+.notes-textarea {
+  resize: none;
+  min-height: 60px;
+  line-height: 1.4;
+}
+
+.optional-hint {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.6;
 }
 
 .modal-actions {

@@ -14,6 +14,20 @@
       </div>
     </div>
 
+    <!-- Favorite Toggle -->
+    <q-btn
+      flat
+      round
+      dense
+      :icon="entry.isFavorite ? 'las la-star' : 'lar la-star'"
+      @click.stop="$emit('toggle-favorite', entry)"
+      class="favorite-btn"
+      :class="entry.isFavorite ? 'favorite-active' : ($q.dark.isActive ? 'favorite-inactive-dark' : 'favorite-inactive-light')"
+      size="sm"
+    >
+      <q-tooltip>{{ entry.isFavorite ? $t('Remove from favorites') : $t('Add to favorites') }}</q-tooltip>
+    </q-btn>
+
     <!-- Entry Details -->
     <div class="entry-details">
       <div class="entry-name-row">
@@ -27,6 +41,10 @@
       </div>
       <div class="entry-address" :class="$q.dark.isActive ? 'entry-address-dark' : 'entry-address-light'">
         {{ truncatedAddress }}
+      </div>
+      <!-- Notes Preview -->
+      <div v-if="entry.notes" class="entry-notes" :class="$q.dark.isActive ? 'entry-notes-dark' : 'entry-notes-light'">
+        {{ truncatedNotes }}
       </div>
     </div>
 
@@ -82,7 +100,7 @@ export default {
       required: true
     }
   },
-  emits: ['edit', 'delete', 'change-color', 'pay'],
+  emits: ['edit', 'delete', 'change-color', 'pay', 'toggle-favorite'],
   data() {
     return {
       isTouchDevice: false
@@ -106,6 +124,11 @@ export default {
       const start = address.slice(0, 12)
       const end = address.slice(-10)
       return `${start}...${end}`
+    },
+    truncatedNotes() {
+      const notes = this.entry.notes || ''
+      if (notes.length <= 40) return notes
+      return notes.slice(0, 40) + '...'
     },
     addressTypeIcon() {
       return this.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'
@@ -269,6 +292,49 @@ export default {
 
 .entry-address-light {
   color: #9CA3AF;
+}
+
+/* Notes */
+.entry-notes {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 11px;
+  font-style: italic;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-notes-dark {
+  color: #666;
+}
+
+.entry-notes-light {
+  color: #9CA3AF;
+}
+
+/* Favorite Button */
+.favorite-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+}
+
+.favorite-active {
+  color: #F59E0B;
+}
+
+.favorite-inactive-dark {
+  color: #444;
+}
+
+.favorite-inactive-light {
+  color: #D1D5DB;
+}
+
+.favorite-inactive-dark:hover,
+.favorite-inactive-light:hover {
+  color: #F59E0B;
 }
 
 /* Actions */

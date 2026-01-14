@@ -211,44 +211,126 @@
           </div>
 
           <!-- No Results -->
-          <div v-else-if="filteredContacts.length === 0" class="contact-empty-state">
+          <div v-else-if="!hasContactsToShow" class="contact-empty-state">
             <q-icon name="las la-search" size="48px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
             <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('No matches found') }}
             </div>
           </div>
 
-          <!-- Contact Items -->
+          <!-- Sectioned Contact List -->
           <div v-else class="contact-list">
-            <div
-              v-for="contact in filteredContacts"
-              :key="contact.id"
-              class="contact-item"
-              :class="[
-                $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
-                { 'contact-disabled': !canPayContact(contact) }
-              ]"
-              @click="selectContact(contact)"
-            >
-              <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
-                {{ contact.name.charAt(0).toUpperCase() }}
+            <!-- Favorites Section -->
+            <template v-if="favoriteContacts.length > 0">
+              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
+                <q-icon name="las la-star" size="14px" color="amber" />
+                <span>{{ $t('Favorites') }}</span>
               </div>
-              <div class="contact-info">
-                <div class="contact-name-row">
-                  <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
-                    {{ contact.name }}
+              <div
+                v-for="contact in favoriteContacts"
+                :key="'fav-' + contact.id"
+                class="contact-item"
+                :class="[
+                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
+                  { 'contact-disabled': !canPayContact(contact) }
+                ]"
+                @click="selectContact(contact)"
+              >
+                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
+                  {{ contact.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="contact-info">
+                  <div class="contact-name-row">
+                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                      {{ contact.name }}
+                    </div>
+                    <q-icon name="las la-star" size="12px" color="amber" class="q-ml-xs" />
+                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
+                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <span>{{ getContactTypeLabel(contact) }}</span>
+                    </div>
                   </div>
-                  <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
-                    <q-icon :name="getContactTypeIcon(contact)" size="10px" />
-                    <span>{{ getContactTypeLabel(contact) }}</span>
+                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ getContactAddress(contact) }}
                   </div>
                 </div>
-                <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                  {{ getContactAddress(contact) }}
-                </div>
+                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
               </div>
-              <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
-            </div>
+            </template>
+
+            <!-- Recent Section -->
+            <template v-if="recentContacts.length > 0">
+              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
+                <q-icon name="las la-clock" size="14px" />
+                <span>{{ $t('Recent') }}</span>
+              </div>
+              <div
+                v-for="contact in recentContacts"
+                :key="'recent-' + contact.id"
+                class="contact-item"
+                :class="[
+                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
+                  { 'contact-disabled': !canPayContact(contact) }
+                ]"
+                @click="selectContact(contact)"
+              >
+                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
+                  {{ contact.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="contact-info">
+                  <div class="contact-name-row">
+                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                      {{ contact.name }}
+                    </div>
+                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
+                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <span>{{ getContactTypeLabel(contact) }}</span>
+                    </div>
+                  </div>
+                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ getContactAddress(contact) }}
+                  </div>
+                </div>
+                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+              </div>
+            </template>
+
+            <!-- All Contacts Section -->
+            <template v-if="otherContacts.length > 0">
+              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
+                <q-icon name="las la-user-friends" size="14px" />
+                <span>{{ $t('All Contacts') }}</span>
+              </div>
+              <div
+                v-for="contact in otherContacts"
+                :key="'other-' + contact.id"
+                class="contact-item"
+                :class="[
+                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
+                  { 'contact-disabled': !canPayContact(contact) }
+                ]"
+                @click="selectContact(contact)"
+              >
+                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
+                  {{ contact.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="contact-info">
+                  <div class="contact-name-row">
+                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                      {{ contact.name }}
+                    </div>
+                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
+                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <span>{{ getContactTypeLabel(contact) }}</span>
+                    </div>
+                  </div>
+                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ getContactAddress(contact) }}
+                  </div>
+                </div>
+                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+              </div>
+            </template>
           </div>
         </q-card-section>
       </q-card>
@@ -303,14 +385,42 @@ export default {
     contacts() {
       return this.addressBookStore.entries || [];
     },
+    // Favorite contacts (filtered by search)
+    favoriteContacts() {
+      return (this.addressBookStore.favoriteEntries || [])
+        .filter(c => this.matchesSearch(c));
+    },
+    // Recent contacts (filtered by search)
+    recentContacts() {
+      return (this.addressBookStore.recentEntries || [])
+        .filter(c => this.matchesSearch(c));
+    },
+    // Other contacts (not in favorites or recent, filtered by search)
+    otherContacts() {
+      const favoriteIds = new Set((this.addressBookStore.favoriteEntries || []).map(c => c.id));
+      const recentIds = new Set((this.addressBookStore.recentEntries || []).map(c => c.id));
+      return this.contacts
+        .filter(c => !favoriteIds.has(c.id) && !recentIds.has(c.id))
+        .filter(c => this.matchesSearch(c))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
+    // All filtered contacts (for backward compatibility and empty state check)
     filteredContacts() {
       if (!this.contactSearch) return this.contacts;
       const search = this.contactSearch.toLowerCase();
       return this.contacts.filter(c => {
         const address = c.address || c.lightningAddress || '';
+        const notes = c.notes || '';
         return c.name.toLowerCase().includes(search) ||
-          address.toLowerCase().includes(search);
+          address.toLowerCase().includes(search) ||
+          notes.toLowerCase().includes(search);
       });
+    },
+    // Check if we have any contacts to show in sections
+    hasContactsToShow() {
+      return this.favoriteContacts.length > 0 ||
+             this.recentContacts.length > 0 ||
+             this.otherContacts.length > 0;
     },
     isActiveWalletSpark() {
       return this.walletStore.isActiveWalletSpark;
@@ -336,6 +446,17 @@ export default {
     this.stopQrScanner();
   },
   methods: {
+    // Search filter helper
+    matchesSearch(contact) {
+      if (!this.contactSearch) return true;
+      const search = this.contactSearch.toLowerCase();
+      const address = contact.address || contact.lightningAddress || '';
+      const notes = contact.notes || '';
+      return contact.name.toLowerCase().includes(search) ||
+        address.toLowerCase().includes(search) ||
+        notes.toLowerCase().includes(search);
+    },
+
     async initializeCamera() {
       this.cameraError = null;
       try {
@@ -558,7 +679,7 @@ export default {
       this.$router.push('/address-book');
     },
 
-    selectContact(contact) {
+    async selectContact(contact) {
       // Check if user can pay this contact
       if (!this.canPayContact(contact)) {
         this.$q.notify({
@@ -575,6 +696,9 @@ export default {
       // Use store methods for consistent address/type detection
       const address = this.getContactAddress(contact);
       const addressType = this.getContactAddressType(contact);
+
+      // Update last used timestamp for recent contacts tracking
+      await this.addressBookStore.updateLastUsed(contact.id);
 
       this.$emit('payment-detected', {
         data: address,
@@ -1101,6 +1225,27 @@ export default {
 .contact-list {
   display: flex;
   flex-direction: column;
+}
+
+/* Contact Section Headers */
+.contact-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem 0.5rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.section-header-dark {
+  color: #777;
+}
+
+.section-header-light {
+  color: #9CA3AF;
 }
 
 .contact-item {

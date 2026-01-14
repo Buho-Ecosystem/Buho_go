@@ -564,7 +564,6 @@
                       <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-plug'" size="10px" />
                       <span>{{ getWalletTypeLabel(wallet) }}</span>
                     </div>
-                    <div v-if="wallet.isDefault" class="wallet-tag tag-default">{{ $t('Default') }}</div>
                     <div v-if="wallet.id === activeWalletId" class="wallet-tag tag-active">{{ $t('Active') }}</div>
                   </div>
                   <div class="wallet-balance-row" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
@@ -1154,6 +1153,9 @@ export default {
       dangerConfirmInput: '',
       dangerConfirmAction: null,
       isDangerActionLoading: false,
+
+      // Wallet removal
+      walletToRemove: null,
     }
   },
   computed: {
@@ -1480,6 +1482,16 @@ export default {
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
+        } else if (this.dangerConfirmAction === 'removeWallet') {
+          await this.removeWallet(this.walletToRemove.id);
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Wallet removed'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+          this.showDangerConfirmDialog = false;
+          this.walletToRemove = null;
         }
       } catch (error) {
         console.error('Danger action error:', error);
@@ -1610,35 +1622,18 @@ export default {
       return `${amount.toLocaleString()} sats`;
     },
 
-    async confirmRemoveWallet(walletId) {
+    confirmRemoveWallet(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId)
       if (!wallet) return
 
-      this.$q.dialog({
-        title: this.$t('Remove Wallet'),
-        message: this.$t('Are you sure you want to remove "{name}"?', {name: wallet.name}),
-        cancel: true,
-        persistent: true
-      }).onOk(async () => {
-        try {
-          await this.removeWallet(walletId)
-
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Wallet removed'),
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          })
-        } catch (error) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t('Couldn\'t remove wallet'),
-            caption: error.message,
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          })
-        }
-      })
+      this.walletToRemove = wallet
+      this.dangerConfirmTitle = this.$t('Remove Wallet')
+      this.dangerConfirmMessage = this.$t('Are you sure you want to remove "{name}"? This action cannot be undone.', { name: wallet.name })
+      this.dangerConfirmPhrase = 'I understand'
+      this.dangerConfirmButtonText = this.$t('Remove Wallet')
+      this.dangerConfirmInput = ''
+      this.dangerConfirmAction = 'removeWallet'
+      this.showDangerConfirmDialog = true
     },
 
     loadPinState() {
@@ -3151,11 +3146,6 @@ export default {
   border-radius: 5px;
   text-transform: capitalize;
   letter-spacing: 0.02em;
-}
-
-.tag-default {
-  background: #FEF3C7;
-  color: #92400E;
 }
 
 .tag-active {

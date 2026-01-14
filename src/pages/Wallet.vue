@@ -255,7 +255,6 @@
                     <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-plug'" size="9px" />
                     <span>{{ wallet.type === 'spark' ? 'Spark' : 'NWC' }}</span>
                   </div>
-                  <div v-if="wallet.isDefault" class="switch-tag tag-default">{{ $t('Default') }}</div>
                   <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
@@ -545,6 +544,75 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <!-- Save Contact Dialog -->
+    <q-dialog v-model="showSaveContactDialog" persistent class="save-contact-dialog">
+      <q-card class="save-contact-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="save-contact-header" :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
+          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Save to Contacts?') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            @click="closeSaveContactDialog"
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          />
+        </q-card-section>
+
+        <q-card-section class="save-contact-content">
+          <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            <q-icon
+              :name="saveContactData.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'"
+              size="16px"
+              :color="saveContactData.addressType === 'spark' ? 'green' : 'amber'"
+              class="q-mr-xs"
+            />
+            <span class="address-preview">{{ truncateAddress(saveContactData.address) }}</span>
+          </div>
+
+          <q-input
+            v-model="saveContactData.name"
+            outlined
+            :label="$t('Name')"
+            :placeholder="$t('Enter a name for this contact')"
+            class="q-mt-md"
+            :class="$q.dark.isActive ? 'save-input-dark' : 'save-input-light'"
+            autofocus
+          />
+
+          <q-input
+            v-model="saveContactData.notes"
+            outlined
+            :label="$t('Notes')"
+            :placeholder="$t('Optional notes')"
+            type="textarea"
+            rows="2"
+            class="q-mt-sm"
+            :class="$q.dark.isActive ? 'save-input-dark' : 'save-input-light'"
+            maxlength="200"
+          />
+        </q-card-section>
+
+        <q-card-actions align="right" class="save-contact-actions" :class="$q.dark.isActive ? 'actions-dark' : 'actions-light'">
+          <q-btn
+            flat
+            :label="$t('Skip')"
+            @click="closeSaveContactDialog"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+          />
+          <q-btn
+            flat
+            :label="$t('Save')"
+            @click="saveRecipientAsContact"
+            class="save-btn"
+            :disable="!saveContactData.name?.trim()"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -553,6 +621,7 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService} from '../utils/lightning.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {useWalletStore} from '../stores/wallet';
+import {useAddressBookStore} from '../stores/addressBook';
 import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
@@ -568,7 +637,8 @@ export default {
   },
   setup() {
     const walletStore = useWalletStore();
-    return { walletStore };
+    const addressBookStore = useAddressBookStore();
+    return { walletStore, addressBookStore };
   },
   data() {
     return {
@@ -633,7 +703,15 @@ export default {
       pinError: '',
       // Fee estimation for Spark Lightning payments
       estimatedFee: null,
-      isEstimatingFee: false
+      isEstimatingFee: false,
+      // Save-to-contacts after payment
+      showSaveContactDialog: false,
+      saveContactData: {
+        address: '',
+        addressType: 'lightning',
+        name: '',
+        notes: ''
+      }
     };
   },
   computed: {
@@ -1551,7 +1629,13 @@ export default {
 
         console.log('✅ Payment sent:', result);
 
+        // Check if we should offer to save this recipient as a contact
+        const recipientAddress = this.getRecipientAddress();
+        const recipientAddressType = this.getRecipientAddressType();
+        const shouldOfferSave = recipientAddress && !this.addressBookStore.findContactByAddress(recipientAddress);
+
         this.showPaymentConfirmation = false;
+        const pendingPaymentBackup = this.pendingPayment; // Keep reference for save dialog
         this.pendingPayment = null;
         this.paymentAmount = '';
         this.paymentComment = '';
@@ -1567,6 +1651,20 @@ export default {
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
+
+        // Offer to save contact if this is a new recipient
+        if (shouldOfferSave) {
+          this.saveContactData = {
+            address: recipientAddress,
+            addressType: recipientAddressType,
+            name: '',
+            notes: ''
+          };
+          // Small delay so the success notification is seen first
+          setTimeout(() => {
+            this.showSaveContactDialog = true;
+          }, 500);
+        }
 
       } catch (error) {
         console.error('❌ Payment failed:', error);
@@ -1646,6 +1744,81 @@ export default {
     isLNURL(input) {
       const lower = input.toLowerCase();
       return lower.startsWith('lnurl');
+    },
+
+    // Helper: Get recipient address from pending payment
+    getRecipientAddress() {
+      if (!this.pendingPayment) return null;
+      // Lightning address
+      if (this.pendingPayment.lightningAddress) return this.pendingPayment.lightningAddress;
+      // Spark address
+      if (this.pendingPayment.sparkAddress) return this.pendingPayment.sparkAddress;
+      // LNURL is not saveable as a stable address
+      return null;
+    },
+
+    // Helper: Get recipient address type from pending payment
+    getRecipientAddressType() {
+      if (!this.pendingPayment) return 'lightning';
+      if (this.pendingPayment.sparkAddress) return 'spark';
+      return 'lightning';
+    },
+
+    // Save recipient as contact
+    async saveRecipientAsContact() {
+      try {
+        if (!this.saveContactData.name?.trim()) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Please enter a name'),
+            position: 'bottom'
+          });
+          return;
+        }
+
+        await this.addressBookStore.addEntry({
+          name: this.saveContactData.name.trim(),
+          address: this.saveContactData.address,
+          addressType: this.saveContactData.addressType,
+          notes: this.saveContactData.notes?.trim() || ''
+        });
+
+        this.showSaveContactDialog = false;
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Contact saved'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        console.error('Error saving contact:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to save contact'),
+          caption: error.message,
+          position: 'bottom'
+        });
+      }
+    },
+
+    // Close save contact dialog
+    closeSaveContactDialog() {
+      this.showSaveContactDialog = false;
+      this.saveContactData = {
+        address: '',
+        addressType: 'lightning',
+        name: '',
+        notes: ''
+      };
+    },
+
+    // Helper: Truncate address for display
+    truncateAddress(address) {
+      if (!address) return '';
+      if (address.length <= 30) return address;
+      const start = address.slice(0, 14);
+      const end = address.slice(-10);
+      return `${start}...${end}`;
     },
 
     // Helper: Fetch invoice from LNURL
@@ -3281,11 +3454,6 @@ export default {
   letter-spacing: 0.02em;
 }
 
-.tag-default {
-  background: #FEF3C7;
-  color: #92400E;
-}
-
 .tag-active {
   background: #D1FAE5;
   color: #065F46;
@@ -3357,5 +3525,105 @@ export default {
 
 .manage-btn-light:hover {
   color: #374151;
+}
+
+/* Save Contact Dialog */
+.save-contact-dialog :deep(.q-dialog__backdrop) {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.save-contact-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 24px;
+}
+
+.save-contact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.save-contact-content {
+  padding: 1.25rem;
+}
+
+.save-contact-address {
+  display: flex;
+  align-items: center;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.address-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-contact-actions {
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  padding: 0.75rem 1rem;
+}
+
+.save-btn {
+  color: #15DE72 !important;
+  font-weight: 600;
+}
+
+.save-btn:disabled {
+  color: #6b7280 !important;
+  opacity: 0.5;
+}
+
+/* Save input styles - dark mode */
+.save-input-dark :deep(.q-field__control) {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.save-input-dark :deep(.q-field--focused .q-field__control) {
+  border-color: #15DE72 !important;
+}
+
+.save-input-dark :deep(.q-field__label) {
+  color: #B0B0B0;
+}
+
+.save-input-dark :deep(.q-field--focused .q-field__label),
+.save-input-dark :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.save-input-dark :deep(.q-field__native) {
+  color: #FFF !important;
+}
+
+/* Save input styles - light mode */
+.save-input-light :deep(.q-field__control) {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+.save-input-light :deep(.q-field--focused .q-field__control) {
+  border-color: #15DE72 !important;
+}
+
+.save-input-light :deep(.q-field__label) {
+  color: #6B7280;
+}
+
+.save-input-light :deep(.q-field--focused .q-field__label),
+.save-input-light :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.save-input-light :deep(.q-field__native) {
+  color: #212121 !important;
 }
 </style>

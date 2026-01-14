@@ -37,9 +37,27 @@ export const useAddressBookStore = defineStore('addressBook', {
       const query = state.searchQuery.toLowerCase()
       return sorted.filter(entry => {
         const address = entry.address || entry.lightningAddress || ''
+        const notes = entry.notes || ''
         return entry.name.toLowerCase().includes(query) ||
-          address.toLowerCase().includes(query)
+          address.toLowerCase().includes(query) ||
+          notes.toLowerCase().includes(query)
       })
+    },
+
+    // Get favorite contacts sorted by name
+    favoriteEntries: (state) => {
+      return state.entries
+        .filter(entry => entry.isFavorite)
+        .sort((a, b) => a.name.localeCompare(b.name))
+    },
+
+    // Get recently used contacts (last 5, used within 30 days, excluding favorites)
+    recentEntries: (state) => {
+      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
+      return state.entries
+        .filter(entry => entry.lastUsedAt && entry.lastUsedAt > thirtyDaysAgo && !entry.isFavorite)
+        .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
+        .slice(0, 5)
     },
 
     getEntryById: (state) => (id) => {
@@ -89,6 +107,10 @@ export const useAddressBookStore = defineStore('addressBook', {
           // Keep lightningAddress for backward compatibility
           lightningAddress: addressType === 'lightning' ? address.trim() : '',
           color: entryData.color || this.getRandomColor(),
+          // New fields for enhanced contacts
+          notes: entryData.notes?.trim() || '',
+          isFavorite: entryData.isFavorite || false,
+          lastUsedAt: entryData.lastUsedAt || null,
           createdAt: Date.now(),
           updatedAt: Date.now()
         }
@@ -129,7 +151,11 @@ export const useAddressBookStore = defineStore('addressBook', {
         const currentEntry = this.entries[entryIndex]
         const updatedEntry = {
           ...currentEntry,
-          ...updateData,
+          // Explicitly update all editable fields
+          name: updateData.name !== undefined ? updateData.name : currentEntry.name,
+          color: updateData.color !== undefined ? updateData.color : currentEntry.color,
+          notes: updateData.notes !== undefined ? updateData.notes : (currentEntry.notes || ''),
+          isFavorite: updateData.isFavorite !== undefined ? updateData.isFavorite : (currentEntry.isFavorite || false),
           updatedAt: Date.now()
         }
 
@@ -158,7 +184,8 @@ export const useAddressBookStore = defineStore('addressBook', {
           }
         }
 
-        this.entries[entryIndex] = updatedEntry
+        // Use splice for proper Vue reactivity
+        this.entries.splice(entryIndex, 1, updatedEntry)
         await this.persistEntries()
 
         return updatedEntry
@@ -178,11 +205,42 @@ export const useAddressBookStore = defineStore('addressBook', {
         const deletedEntry = this.entries[entryIndex]
         this.entries.splice(entryIndex, 1)
         await this.persistEntries()
-        
+
         return deletedEntry
       } catch (error) {
         throw error
       }
+    },
+
+    // Toggle favorite status
+    async toggleFavorite(id) {
+      const entry = this.entries.find(e => e.id === id)
+      if (entry) {
+        entry.isFavorite = !entry.isFavorite
+        entry.updatedAt = Date.now()
+        await this.persistEntries()
+      }
+      return entry
+    },
+
+    // Update last used timestamp (called when paying a contact)
+    async updateLastUsed(id) {
+      const entry = this.entries.find(e => e.id === id)
+      if (entry) {
+        entry.lastUsedAt = Date.now()
+        await this.persistEntries()
+      }
+      return entry
+    },
+
+    // Find contact by address (for save-to-contacts check)
+    findContactByAddress(address) {
+      if (!address) return null
+      const normalizedAddress = address.toLowerCase().trim()
+      return this.entries.find(entry => {
+        const entryAddress = (entry.address || entry.lightningAddress || '').toLowerCase().trim()
+        return entryAddress === normalizedAddress
+      }) || null
     },
 
     // Update search query
