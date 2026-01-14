@@ -93,7 +93,15 @@ export function parsePaymentDestination(input) {
     return { type: 'unknown', valid: false };
   }
 
-  const normalized = input.trim().toLowerCase();
+  let cleaned = input.trim();
+  // Strip common URI prefixes (lightning:, bitcoin:, LIGHTNING:, etc.)
+  if (cleaned.toLowerCase().startsWith('lightning:')) {
+    cleaned = cleaned.substring(10);
+  } else if (cleaned.toLowerCase().startsWith('bitcoin:')) {
+    cleaned = cleaned.substring(8);
+  }
+
+  const normalized = cleaned.toLowerCase();
 
   // Spark address (zero-fee transfer)
   // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
@@ -106,7 +114,7 @@ export function parsePaymentDestination(input) {
   if (isSparkAddr) {
     return {
       type: 'spark_address',
-      address: input.trim(),
+      address: cleaned,
       isZeroFee: true,
       valid: true
     };
@@ -117,18 +125,18 @@ export function parsePaymentDestination(input) {
       normalized.startsWith('lntbs') || normalized.startsWith('lnbcrt')) {
     return {
       type: 'lightning_invoice',
-      invoice: input.trim(),
+      invoice: cleaned,
       valid: true
     };
   }
 
   // Lightning address
-  if (input.includes('@') && input.split('@').length === 2) {
-    const [name, domain] = input.split('@');
+  if (cleaned.includes('@') && cleaned.split('@').length === 2) {
+    const [name, domain] = cleaned.split('@');
     if (name.length > 0 && domain.includes('.')) {
       return {
         type: 'lightning_address',
-        address: input.trim().toLowerCase(),
+        address: cleaned.toLowerCase(),
         valid: true
       };
     }
@@ -138,7 +146,7 @@ export function parsePaymentDestination(input) {
   if (normalized.startsWith('lnurl1')) {
     return {
       type: 'lnurl',
-      lnurl: input.trim(),
+      lnurl: cleaned,
       valid: true
     };
   }
@@ -148,7 +156,7 @@ export function parsePaymentDestination(input) {
       normalized.startsWith('1') || normalized.startsWith('3')) {
     return {
       type: 'bitcoin_address',
-      address: input.trim(),
+      address: cleaned,
       valid: true,
       supported: false,
       message: 'On-chain Bitcoin addresses are not supported. Use Lightning or Spark addresses.'

@@ -624,7 +624,11 @@ export default {
         return this.$t('Please enter a payment request');
       }
 
-      const trimmed = input.trim().toLowerCase();
+      let trimmed = input.trim().toLowerCase();
+      // Strip lightning: prefix if present
+      if (trimmed.startsWith('lightning:')) {
+        trimmed = trimmed.substring(10);
+      }
       // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
       const isLightningInvoice = trimmed.startsWith('lnbc') || trimmed.startsWith('lntb') ||
         trimmed.startsWith('lntbs') || trimmed.startsWith('lnbcrt');
