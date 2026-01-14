@@ -80,7 +80,7 @@
             </h2>
             <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
               {{ pinMode === 'create'
-                ? $t('Create a 6-digit PIN to protect your wallet')
+                ? $t('Choose a 6-digit PIN you can remember. You will need it every time you open the app.')
                 : $t('Enter your PIN again to confirm')
               }}
             </p>

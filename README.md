@@ -192,7 +192,8 @@ src/
 
 ## Documentation
 
-- [User Guide](Guide.md) - How to use BuhoGO
+- [User Guide](Guide.md) - Step-by-step instructions for using BuhoGO
+- [Use Cases](USE_CASES.md) - Real-world scenarios and examples
 - [Developer Guide](Developer.md) - Technical documentation for contributors
 
 <br>

@@ -584,6 +584,7 @@ Web Crypto API requires secure context (HTTPS or localhost). For local developme
 
 - [README](README.md) - Project overview, features, and quick start
 - [User Guide](Guide.md) - Step-by-step instructions for end users
+- [Use Cases](USE_CASES.md) - Real-world scenarios and examples
 
 <br>
 

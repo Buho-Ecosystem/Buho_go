@@ -1469,10 +1469,6 @@ export default {
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
-          // Only redirect if no wallets left
-          if (this.wallets.length === 0) {
-            this.$router.push('/');
-          }
         } else if (this.dangerConfirmAction === 'deleteSparkWallet') {
           await this.removeWallet(this.sparkWallet.id);
           this.$q.notify({
@@ -1492,6 +1488,11 @@ export default {
           });
           this.showDangerConfirmDialog = false;
           this.walletToRemove = null;
+        }
+
+        // Redirect to welcome page if no wallets remain after any deletion
+        if (this.wallets.length === 0) {
+          this.$router.push('/');
         }
       } catch (error) {
         console.error('Danger action error:', error);

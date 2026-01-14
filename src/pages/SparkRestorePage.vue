@@ -42,7 +42,7 @@
               {{ $t('Restore Spark Wallet') }}
             </h2>
             <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets created with BuhoGO.') }}
+              {{ $t('Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.') }}
             </p>
 
             <!-- Word Inputs Grid -->

@@ -64,13 +64,28 @@ Open BuhoGO and tap "Create Wallet" on the welcome screen.
 
 ### Step 2: Save Your Seed Phrase
 
-You will see 12 words displayed on screen. These words are your wallet backup.
+You will see 12 words displayed on screen. These words are your **only way** to recover your wallet.
 
-**Important**: Write these words down on paper and store them securely. Anyone with these words can access your Bitcoin. Never store them digitally, take screenshots, or share them with anyone.
+**Important**:
+- Write these words down on paper in the exact order shown
+- Store them in a secure, offline location
+- Never store them digitally, take screenshots, or share them with anyone
+- Anyone with these words can access your Bitcoin
+
+**We cannot recover your phrase if you lose it.** Your funds are entirely in your hands.
 
 ### Step 3: Verify Your Backup
 
-The app will ask you to enter 3 random words from your seed phrase. This confirms you have properly recorded your backup.
+The app will show all 12 words shuffled in random order. You must tap each word in the correct sequence (1-12) to prove you've properly recorded your backup.
+
+**How it works:**
+- Tap the first word of your seed phrase
+- A green badge with "1" appears on that word
+- Continue tapping words in order (2, 3, 4... up to 12)
+- If you tap the wrong word, you'll see a red badge and an error message
+- Use "Show me again" if you need to go back and check your written backup
+
+Once all 12 words are selected correctly, you'll see a success message reminding you to store your phrase safely.
 
 ### Step 4: Create Your PIN
 
@@ -357,6 +372,7 @@ If you encounter issues not covered in this guide:
 ## Related Documentation
 
 - [README](README.md) - Project overview and quick start
+- [Use Cases](USE_CASES.md) - Real-world scenarios and examples
 - [Developer Guide](Developer.md) - Technical documentation for contributors
 
 <br>
