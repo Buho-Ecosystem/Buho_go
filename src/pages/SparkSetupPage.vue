@@ -59,28 +59,13 @@
           </div>
 
           <!-- Step 2: Verify Seed Phrase -->
-          <div v-else-if="currentStep === 2" class="step-content">
-            <div class="step-icon">
-              <div class="icon-bg icon-verify">
-                <q-icon name="las la-check-double" size="32px" color="white" />
-              </div>
-            </div>
-            <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ $t('Verify Your Backup') }}
-            </h2>
-
-            <MnemonicVerify
+          <div v-else-if="currentStep === 2" class="step-content step-verify">
+            <MnemonicOrderVerify
               ref="verifyComponent"
               :mnemonic="mnemonicWords"
-              :word-count="3"
-              :show-button="false"
-              :show-errors="showVerifyErrors"
-              @input-change="onVerifyInputChange"
+              @verify-success="onVerifySuccess"
+              @show-phrase="goToStep(1)"
             />
-
-            <div v-if="verifyError" class="verify-error">
-              {{ verifyError }}
-            </div>
           </div>
 
           <!-- Step 3: Set PIN -->
@@ -157,7 +142,7 @@
         </q-card-section>
 
         <!-- Footer -->
-        <q-card-section class="setup-footer" v-if="currentStep < 4 && currentStep !== 3">
+        <q-card-section class="setup-footer" v-if="currentStep === 1">
           <q-btn
             class="continue-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -177,7 +162,7 @@
 
 <script>
 import MnemonicDisplay from '../components/MnemonicDisplay.vue';
-import MnemonicVerify from '../components/MnemonicVerify.vue';
+import MnemonicOrderVerify from '../components/MnemonicOrderVerify.vue';
 import { useWalletStore } from '../stores/wallet';
 import { SparkWalletProvider } from '../providers/SparkWalletProvider';
 
@@ -185,7 +170,7 @@ export default {
   name: 'SparkSetupPage',
   components: {
     MnemonicDisplay,
-    MnemonicVerify,
+    MnemonicOrderVerify,
   },
   setup() {
     const walletStore = useWalletStore();
@@ -198,12 +183,6 @@ export default {
       isProcessing: false,
       mnemonic: '',
       mnemonicWords: [],
-
-      // Verification
-      verifyAllFilled: false,
-      verifyAllCorrect: false,
-      showVerifyErrors: false,
-      verifyError: '',
 
       // PIN
       pinMode: 'create',
@@ -226,8 +205,6 @@ export default {
       switch (this.currentStep) {
         case 1:
           return this.mnemonicWords.length === 12 && !this.isGenerating;
-        case 2:
-          return this.verifyAllFilled;
         default:
           return true;
       }
@@ -270,63 +247,35 @@ export default {
           this.pinError = '';
         } else {
           this.currentStep--;
-          if (this.currentStep === 2) {
-            this.showVerifyErrors = false;
-            this.verifyError = '';
-          }
         }
       } else {
         this.$router.push('/');
       }
     },
 
+    goToStep(step) {
+      this.currentStep = step;
+    },
+
     getButtonText() {
       switch (this.currentStep) {
         case 1:
           return this.$t('I Saved It');
-        case 2:
-          return this.$t('Verify');
         default:
           return this.$t('Continue');
       }
     },
 
     nextStep() {
-      switch (this.currentStep) {
-        case 1:
-          this.currentStep = 2;
-          break;
-        case 2:
-          this.verifyBackup();
-          break;
+      if (this.currentStep === 1) {
+        this.currentStep = 2;
       }
     },
 
-    onVerifyInputChange({ allFilled, allCorrect }) {
-      this.verifyAllFilled = allFilled;
-      this.verifyAllCorrect = allCorrect;
-      if (allFilled && allCorrect) {
-        this.verifyError = '';
-        this.showVerifyErrors = false;
-      }
-    },
-
-    verifyBackup() {
-      this.showVerifyErrors = true;
-
-      if (this.verifyAllCorrect) {
-        this.currentStep = 3;
-        this.pinMode = 'create';
-        this.currentPin = '';
-      } else {
-        this.verifyError = this.$t('Please check the words and try again');
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Incorrect words'),
-          caption: this.$t('Please verify your backup and try again'),
-          position: 'bottom'
-        });
-      }
+    onVerifySuccess() {
+      this.currentStep = 3;
+      this.pinMode = 'create';
+      this.currentPin = '';
     },
 
     handlePinKey(key) {
@@ -527,13 +476,10 @@ export default {
   padding: 3rem 0;
 }
 
-/* Verify Error */
-.verify-error {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 13px;
-  color: #ff4444;
-  text-align: center;
-  margin-top: 1rem;
+/* Verify Step */
+.step-verify {
+  padding-top: 0;
+  width: 100%;
 }
 
 /* PIN Step */

@@ -696,10 +696,10 @@ export default {
   font-weight: 500;
 }
 
-/* Responsive */
+/* Responsive - Tablets and smaller */
 @media (max-width: 480px) {
   .spark-restore-page {
-    padding: 0.5rem;
+    padding: 0.75rem;
   }
 
   .restore-content {
@@ -721,11 +721,11 @@ export default {
   }
 
   .word-input-item {
-    padding: 8px 10px;
+    padding: 10px 12px;
   }
 
   .word-input {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .numpad-btn {
@@ -751,7 +751,20 @@ export default {
   }
 }
 
-@media (max-height: 700px) {
+/* Small phones (iPhone SE, small Android) */
+@media (max-width: 375px) {
+  .spark-restore-page {
+    padding: 0.5rem;
+  }
+
+  .card-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .restore-content {
+    padding: 0 0.875rem 1rem;
+  }
+
   .step-icon {
     margin-bottom: 1rem;
   }
@@ -762,7 +775,84 @@ export default {
   }
 
   .icon-bg .q-icon {
-    font-size: 28px !important;
+    font-size: 26px !important;
+  }
+
+  .step-title {
+    font-size: 18px;
+  }
+
+  .step-desc {
+    font-size: 12px;
+    max-width: 260px;
+    margin-bottom: 1.25rem;
+  }
+
+  .words-input-grid {
+    gap: 6px;
+  }
+
+  .word-input-item {
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+
+  .word-number {
+    font-size: 11px;
+    min-width: 14px;
+  }
+
+  .word-input {
+    font-size: 12px;
+  }
+
+  .numpad-btn {
+    width: 52px;
+    height: 52px;
+    font-size: 20px;
+  }
+
+  .numpad-row {
+    gap: 10px;
+  }
+
+  .numpad-inline {
+    gap: 6px;
+  }
+
+  .pin-dots-inline {
+    gap: 12px;
+    margin: 1.25rem 0;
+  }
+
+  .pin-dot {
+    width: 14px;
+    height: 14px;
+  }
+
+  .restore-footer {
+    padding: 0 0.875rem 1rem;
+  }
+
+  .continue-btn {
+    height: 46px;
+    border-radius: 22px;
+  }
+}
+
+/* Short screens - reduce vertical spacing */
+@media (max-height: 700px) {
+  .step-icon {
+    margin-bottom: 1rem;
+  }
+
+  .icon-bg {
+    width: 56px;
+    height: 56px;
+  }
+
+  .icon-bg .q-icon {
+    font-size: 24px !important;
   }
 
   .step-title {
@@ -801,99 +891,10 @@ export default {
   }
 }
 
-/* Very small screens (iPhone SE, small Android) */
-@media (max-width: 360px) {
-  .spark-restore-page {
-    padding: 0.25rem;
-  }
-
-  .card-header {
-    padding: 0.75rem;
-  }
-
-  .restore-content {
-    padding: 0 0.75rem 1rem;
-  }
-
-  .step-icon {
-    margin-bottom: 1rem;
-  }
-
-  .icon-bg {
-    width: 56px;
-    height: 56px;
-  }
-
-  .icon-bg .q-icon {
-    font-size: 24px !important;
-  }
-
-  .step-title {
-    font-size: 18px;
-  }
-
-  .step-desc {
-    font-size: 12px;
-    max-width: 240px;
-    margin-bottom: 1rem;
-  }
-
-  .words-input-grid {
-    gap: 4px;
-  }
-
-  .word-input-item {
-    padding: 6px 8px;
-    border-radius: 8px;
-  }
-
-  .word-number {
-    font-size: 10px;
-    min-width: 14px;
-  }
-
-  .word-input {
-    font-size: 11px;
-  }
-
-  .numpad-btn {
-    width: 48px;
-    height: 48px;
-    font-size: 18px;
-  }
-
-  .numpad-row {
-    gap: 8px;
-  }
-
-  .numpad-inline {
-    gap: 6px;
-  }
-
-  .pin-dots-inline {
-    gap: 10px;
-    margin: 1rem 0;
-  }
-
-  .pin-dot {
-    width: 12px;
-    height: 12px;
-  }
-
-  .restore-footer {
-    padding: 0 0.75rem 1rem;
-  }
-
-  .continue-btn {
-    height: 44px;
-    border-radius: 20px;
-  }
-}
-
-/* Very short screens (landscape or small phones) */
+/* Very short screens (landscape or compact phones) */
 @media (max-height: 600px) {
   .step-icon {
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
   }
 
   .icon-bg {
@@ -924,8 +925,8 @@ export default {
   }
 
   .numpad-btn {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 46px;
     font-size: 18px;
   }
 
