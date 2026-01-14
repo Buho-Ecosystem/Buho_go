@@ -246,6 +246,16 @@ export const useAddressBookStore = defineStore('addressBook', {
       return entry?.address || entry?.lightningAddress || ''
     },
 
+    // Get address type from entry (with auto-detection fallback)
+    getEntryAddressType(entry) {
+      if (entry?.addressType) {
+        return entry.addressType
+      }
+      // Fallback: detect type from address
+      const address = this.getEntryAddress(entry)
+      return this.detectAddressType(address) || 'lightning'
+    },
+
     // Persist entries to localStorage
     async persistEntries() {
       try {

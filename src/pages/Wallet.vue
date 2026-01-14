@@ -645,6 +645,11 @@ export default {
     needsAmountInput() {
       if (!this.pendingPayment) return false;
 
+      // Spark addresses always need amount input (no embedded amount)
+      if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress) {
+        return true;
+      }
+
       // Check for LNURL and Lightning Address payments
       if (this.pendingPayment.type === 'lightning_address' ||
           this.pendingPayment.type === 'lnurl' ||
@@ -1339,11 +1344,11 @@ export default {
             console.log('✅ Lightning Address processed:', processedAddress);
             this.pendingPayment = processedAddress;
           }
-        } else if (paymentData.type === 'spark_address' && paymentData.address) {
+        } else if (paymentData.type === 'spark_address' && paymentData.data) {
           // Spark address payment
           this.pendingPayment = {
             ...paymentData,
-            sparkAddress: paymentData.address
+            sparkAddress: paymentData.data
           };
         } else {
           this.pendingPayment = paymentData;

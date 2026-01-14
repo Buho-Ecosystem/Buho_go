@@ -572,8 +572,9 @@ export default {
         return;
       }
 
-      const address = contact.address || contact.lightningAddress || '';
-      const addressType = contact.addressType || 'lightning';
+      // Use store methods for consistent address/type detection
+      const address = this.getContactAddress(contact);
+      const addressType = this.getContactAddressType(contact);
 
       this.$emit('payment-detected', {
         data: address,
@@ -583,28 +584,32 @@ export default {
       this.closeModal();
     },
 
-    // Contact type helper methods
+    // Contact type helper methods - use store methods for consistency and auto-detection
     getContactAddress(contact) {
-      return contact.address || contact.lightningAddress || '';
+      return this.addressBookStore.getEntryAddress(contact);
+    },
+
+    getContactAddressType(contact) {
+      return this.addressBookStore.getEntryAddressType(contact);
     },
 
     getContactTypeIcon(contact) {
-      const type = contact.addressType || 'lightning';
+      const type = this.getContactAddressType(contact);
       return type === 'spark' ? 'las la-fire' : 'las la-bolt';
     },
 
     getContactTypeLabel(contact) {
-      const type = contact.addressType || 'lightning';
+      const type = this.getContactAddressType(contact);
       return type === 'spark' ? 'Spark' : 'Lightning';
     },
 
     getContactTypeBadgeClass(contact) {
-      const type = contact.addressType || 'lightning';
+      const type = this.getContactAddressType(contact);
       return type === 'spark' ? 'badge-spark' : 'badge-lightning';
     },
 
     canPayContact(contact) {
-      const type = contact.addressType || 'lightning';
+      const type = this.getContactAddressType(contact);
       if (type === 'spark') {
         // Spark contacts can only be paid from Spark wallet
         return this.isActiveWalletSpark;
