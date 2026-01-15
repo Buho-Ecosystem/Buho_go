@@ -171,11 +171,11 @@ export class FiatRatesService {
       this.lastError = null;
       this.saveCachedRates();
 
-      console.log('✅ Fiat rates updated:', this.rates);
+      console.log('Fiat rates updated:', this.rates);
       return this.rates;
 
     } catch (error) {
-      console.error('❌ Error fetching fiat rates:', error);
+      console.error('Error fetching fiat rates:', error);
       this.lastError = error.message;
 
       // If we have valid cached rates, use them

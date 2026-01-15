@@ -112,7 +112,7 @@ export default {
         console.error('Failed to copy:', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Could not copy'),
+          message: this.$t('Couldn\'t copy'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });

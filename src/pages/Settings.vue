@@ -231,7 +231,7 @@
     </div>
 
     <!-- Custom Donation Dialog -->
-    <q-dialog v-model="showDonationDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showDonationDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="donation-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -264,7 +264,7 @@
     </q-dialog>
 
     <!-- Donation Invoice Dialog (with QR code) -->
-    <q-dialog v-model="showDonationInvoiceDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showDonationInvoiceDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="donation-invoice-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -299,7 +299,7 @@
     </q-dialog>
 
     <!-- Danger Confirmation Dialog -->
-    <q-dialog v-model="showDangerConfirmDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showDangerConfirmDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="danger-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="danger-header">
           <div class="danger-icon-wrapper">
@@ -349,7 +349,7 @@
     </q-dialog>
 
     <!-- Language Dialog -->
-    <q-dialog v-model="showLanguageDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showLanguageDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -399,7 +399,7 @@
     </q-dialog>
 
     <!-- Currency Dialog -->
-    <q-dialog v-model="showCurrencyDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showCurrencyDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -449,7 +449,7 @@
     </q-dialog>
 
     <!-- Enhanced Wallets Management Dialog -->
-    <q-dialog v-model="showWalletsDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showWalletsDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="wallets-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <!-- Fixed Header -->
         <q-card-section class="dialog-header wallets-dialog-header">
@@ -625,7 +625,7 @@
     </q-dialog>
 
     <!-- Add Wallet Dialog -->
-    <q-dialog v-model="showAddWalletDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showAddWalletDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="add-wallet-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -761,7 +761,7 @@
     </q-dialog>
 
     <!-- Mempool API Dialog -->
-    <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -844,7 +844,7 @@
     </q-dialog>
 
     <!-- View Mnemonic Dialog -->
-    <q-dialog v-model="showViewMnemonicDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showViewMnemonicDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -924,7 +924,7 @@
     </q-dialog>
 
     <!-- Change PIN Dialog -->
-    <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -1003,7 +1003,7 @@
     </q-dialog>
 
     <!-- Spark Reconnect PIN Dialog -->
-    <q-dialog v-model="showSparkReconnectDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showSparkReconnectDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -1566,7 +1566,7 @@ export default {
         // Fallback to copying the lightning address
         this.$q.notify({
           type: 'warning',
-          message: this.$t('Could not generate invoice'),
+          message: this.$t('Couldn\'t generate invoice'),
           caption: this.$t('Copy the lightning address instead: {address}', { address: this.donationAddress }),
           position: 'bottom',
           timeout: 10000,
@@ -1685,7 +1685,7 @@ export default {
         if (pinState.pin !== this.currentPin) {
           this.$q.notify({
             type: 'negative',
-            message: this.$t('Wrong PIN'),
+            message: this.$t('Incorrect PIN'),
             position: 'bottom',
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -1913,7 +1913,7 @@ export default {
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Invalid PIN'),
+          message: this.$t('Incorrect PIN'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -3761,23 +3761,23 @@ export default {
 }
 
 /* Dialog inputs - override Quasar primary color */
-.dailog_dark :deep(.q-field--focused .q-field__label),
-.dailog_light :deep(.q-field--focused .q-field__label) {
+.dialog_dark :deep(.q-field--focused .q-field__label),
+.dialog_light :deep(.q-field--focused .q-field__label) {
   color: #15DE72 !important;
 }
 
-.dailog_dark :deep(.q-field--float .q-field__label),
-.dailog_light :deep(.q-field--float .q-field__label) {
+.dialog_dark :deep(.q-field--float .q-field__label),
+.dialog_light :deep(.q-field--float .q-field__label) {
   color: #15DE72 !important;
 }
 
-.dailog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:before),
-.dailog_light :deep(.q-field--outlined.q-field--focused .q-field__control:before) {
+.dialog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:before),
+.dialog_light :deep(.q-field--outlined.q-field--focused .q-field__control:before) {
   border-color: #15DE72 !important;
 }
 
-.dailog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:after),
-.dailog_light :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
+.dialog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:after),
+.dialog_light :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
   border-color: #15DE72 !important;
 }
 </style>

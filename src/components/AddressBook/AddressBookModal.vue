@@ -2,7 +2,7 @@
   <q-dialog
     v-model="show"
     persistent
-    :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'"
+    :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
   >
     <q-card
       class="address-modal"

@@ -144,7 +144,7 @@
     </q-dialog>
 
     <!-- Delete Confirmation Dialog -->
-    <q-dialog v-model="showDeleteDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showDeleteDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="delete-header">
           <div class="delete-icon-wrapper">
@@ -177,7 +177,7 @@
     </q-dialog>
 
     <!-- Clear All Confirmation Dialog -->
-    <q-dialog v-model="showClearAllConfirmDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showClearAllConfirmDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="delete-header">
           <div class="delete-icon-wrapper">

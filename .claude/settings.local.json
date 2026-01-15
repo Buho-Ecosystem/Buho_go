@@ -6,7 +6,9 @@
       "WebFetch(domain:docs.spark.money)",
       "WebSearch",
       "WebFetch(domain:www.npmjs.com)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "WebFetch(domain:bitcoin.design)",
+      "Bash(grep:*)"
     ]
   }
 }

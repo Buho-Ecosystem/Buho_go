@@ -97,7 +97,7 @@ const CryptoUtils = {
 
       return new TextDecoder().decode(decrypted);
     } catch (error) {
-      throw new Error('Invalid PIN');
+      throw new Error('Incorrect PIN');
     }
   }
 };
@@ -712,7 +712,7 @@ export const useWalletStore = defineStore('wallet', {
           try {
             console.log(`NWC enable attempt ${6 - retries}/5...`);
             await nwc.enable();
-            console.log('✅ NWC connection successful');
+            console.log('NWC connection successful');
             break; // Success
           } catch (enableError) {
             lastError = enableError;

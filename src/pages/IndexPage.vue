@@ -193,7 +193,7 @@
       </q-card>
 
       <!-- Add Wallet Name Dialog -->
-      <q-dialog v-model="showNameDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+      <q-dialog v-model="showNameDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
         <q-card class="name-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <q-card-section class="dialog-header">
             <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">

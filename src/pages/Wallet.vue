@@ -12,9 +12,6 @@
       <q-avatar square size="30px">
         <img src="buho_logo.svg" alt="Logo" class="app-logo">
       </q-avatar>
-<!--      <q-toolbar-title>-->
-<!--        <div class="title" :class="$q.dark.isActive ? 'title-dark' : 'title-light'">BuhoGO</div>-->
-<!--      </q-toolbar-title>-->
       <q-space/>
       <q-btn
         flat
@@ -59,18 +56,36 @@
           <div class="balance-amount">
             <transition name="balance-fade" mode="out-in">
               <div :key="currentDisplayMode" class="amount-display">
+                <!-- BTC icon on the left -->
+                <span v-if="currentDisplayMode === 'btc'" class="currency-icon-left">
+                  <img src="/icons/bitcoin-52.png" alt="BTC" class="balance-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
+                </span>
                 <span class="amount-number" :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'">{{
                     formatMainBalance(walletState.balance)
                   }}</span>
-                <span class="amount-unit"
-                      :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'">{{ getCurrentUnit() }}</span>
+                <!-- Sats icon on the right -->
+                <span v-if="currentDisplayMode === 'sats'" class="currency-icon-right">
+                  <img src="/icons/sats-32.png" alt="sats" class="balance-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
+                </span>
+                <!-- Fiat icon on the right -->
+                <span v-if="currentDisplayMode === 'fiat'" class="currency-icon-right">
+                  <q-icon :name="getFiatCurrencyIcon()" size="28px" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
+                </span>
               </div>
             </transition>
           </div>
           <transition name="secondary-fade" mode="out-in">
             <div :key="currentDisplayMode" class="balance-secondary"
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
-              <span v-if="secondaryValue">{{ secondaryValue }}</span>
+              <span v-if="secondaryValue" class="secondary-amount-display">
+                <span class="secondary-value">{{ getSecondaryDisplayValue() }}</span>
+                <span v-if="getSecondaryDisplayType() === 'sats'" class="secondary-icon-right">
+                  <img src="/icons/sats-32.png" alt="sats" class="secondary-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
+                </span>
+                <span v-else-if="getSecondaryDisplayType() === 'fiat'" class="secondary-icon-right">
+                  <q-icon :name="getFiatCurrencyIcon()" size="18px" :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'" />
+                </span>
+              </span>
               <span v-else class="loading-secondary">{{ $t('Loading...') }}</span>
             </div>
           </transition>
@@ -118,7 +133,7 @@
     </div>
 
     <!-- Send Dialog -->
-    <q-dialog v-model="showSendDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showSendDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
@@ -211,7 +226,7 @@
     />
 
     <!-- Wallet Switcher Dialog -->
-    <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="switcher-header">
           <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -289,7 +304,7 @@
     </q-dialog>
 
     <!-- Payment Confirmation Dialog -->
-    <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px;">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{ $t('Confirm Payment') }}</div>
@@ -382,7 +397,7 @@
     </q-dialog>
 
     <!-- Receive Dialog -->
-    <q-dialog v-model="showReceiveDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showReceiveDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
@@ -525,7 +540,7 @@
     </q-dialog>
 
     <!-- QR Scanner Dialog -->
-    <q-dialog v-model="showQRScanner" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showQRScanner" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
@@ -1058,9 +1073,9 @@ export default {
         // Save updated state
         localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-        console.log('✅ Fiat rates loaded:', this.walletState.exchangeRates);
+        console.log('Fiat rates loaded:', this.walletState.exchangeRates);
       } catch (error) {
-        console.error('❌ Error loading fiat rates:', error);
+        console.error('Error loading fiat rates:', error);
         // Keep existing rates or use fallbacks
         if (!this.fiatRatesLoaded) {
           this.walletState.exchangeRates = {
@@ -1107,9 +1122,6 @@ export default {
       switch (this.currentDisplayMode) {
         case 'btc':
           const btcAmount = balance / 100000000;
-          if (btcAmount < 0.001) {
-            return balance.toLocaleString();
-          }
           return btcAmount.toFixed(8);
         case 'fiat':
           const btcAmountForFiat = balance / 100000000;
@@ -1122,29 +1134,35 @@ export default {
       }
     },
 
-    getCurrentUnit() {
-      switch (this.currentDisplayMode) {
-        case 'btc':
-          const btcAmount = this.walletState.balance / 100000000;
-          if (btcAmount < 0.001) {
-            return 'sats';
-          }
-          return 'BTC';
-        case 'fiat':
-          return this.walletState.preferredFiatCurrency || 'USD';
-        case 'sats':
-        default:
-          return 'sats';
+    getFiatCurrencyIcon() {
+      // Using more visual money-bill-wave icon for all fiat currencies
+      // This provides a consistent, modern look across all currencies
+      return 'las la-money-bill-wave';
+    },
+
+    getSecondaryDisplayValue() {
+      if (!this.secondaryValue) return '';
+      // Remove " sats" suffix if present
+      if (this.secondaryValue.includes(' sats')) {
+        return this.secondaryValue.replace(' sats', '');
       }
+      // Otherwise it's a fiat value, return as is
+      return this.secondaryValue;
+    },
+
+    getSecondaryDisplayType() {
+      if (!this.secondaryValue) return '';
+      // Check if it contains 'sats' text
+      if (this.secondaryValue.includes(' sats')) {
+        return 'sats';
+      }
+      // Otherwise it's fiat
+      return 'fiat';
     },
 
     async getSecondaryValue(balance) {
       switch (this.currentDisplayMode) {
         case 'btc':
-          const btcAmountForSecondary = balance / 100000000;
-          if (btcAmountForSecondary < 0.001) {
-            return await this.getFiatValue(balance);
-          }
           return balance.toLocaleString() + ' sats';
         case 'fiat':
           return balance.toLocaleString() + ' sats';
@@ -1214,7 +1232,7 @@ export default {
       if (!this.sendForm.input.trim()) return;
 
       try {
-        console.log('🔍 Processing payment input:', this.sendForm.input);
+        console.log('Processing payment input:', this.sendForm.input);
 
         const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
         if (!validation.valid) {
@@ -1229,7 +1247,7 @@ export default {
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
         this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
 
-        console.log('✅ Payment data processed:', this.paymentData);
+        console.log('Payment data processed:', this.paymentData);
 
         if (this.paymentData.type === 'lightning_invoice') {
           try {
@@ -1239,10 +1257,10 @@ export default {
             await nwc.enable();
 
             const invoiceDetails = await nwc.getInfo();
-            console.log('📋 Invoice details from NWC:', invoiceDetails);
+            console.log('Invoice details from NWC:', invoiceDetails);
 
             this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
-            console.log('📊 Parsed invoice:', this.parsedInvoice);
+            console.log('Parsed invoice:', this.parsedInvoice);
 
           } catch (error) {
             console.warn('Could not get detailed invoice info:', error);
@@ -1401,7 +1419,7 @@ export default {
             }
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
-            console.log('✅ LNURL processed:', processedLnurl);
+            console.log('LNURL processed:', processedLnurl);
             this.pendingPayment = processedLnurl;
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
@@ -1419,7 +1437,7 @@ export default {
             }
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-            console.log('✅ Lightning Address processed:', processedAddress);
+            console.log('Lightning Address processed:', processedAddress);
             this.pendingPayment = processedAddress;
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
@@ -1434,7 +1452,7 @@ export default {
 
         this.showPaymentConfirmation = true;
       } catch (error) {
-        console.error('❌ Error processing payment:', error);
+        console.error('Error processing payment:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Payment failed'),
@@ -1480,7 +1498,7 @@ export default {
         }
 
         if (isPaid) {
-          console.log('✅ Invoice paid!');
+          console.log('Invoice paid!');
           this.invoicePaid = true;
           this.waitingForPayment = false;
           this.stopInvoiceMonitoring();
@@ -1615,8 +1633,8 @@ export default {
 
         const comment = this.paymentComment || null;
 
-        console.log('🚀 Sending payment:', this.pendingPayment);
-        console.log('💰 Amount:', amount, 'Comment:', comment);
+        console.log('Sending payment:', this.pendingPayment);
+        console.log('Amount:', amount, 'Comment:', comment);
 
         let result;
 
@@ -1627,7 +1645,7 @@ export default {
           result = await this.sendNWCPayment(amount, comment);
         }
 
-        console.log('✅ Payment sent:', result);
+        console.log('Payment sent:', result);
 
         // Check if we should offer to save this recipient as a contact
         const recipientAddress = this.getRecipientAddress();
@@ -1667,7 +1685,7 @@ export default {
         }
 
       } catch (error) {
-        console.error('❌ Payment failed:', error);
+        console.error('Payment failed:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Payment failed'),
@@ -1898,7 +1916,7 @@ export default {
           description: this.receiveForm.description || 'BuhoGO Payment'
         };
 
-        console.log('🧾 Creating invoice:', invoiceData);
+        console.log('Creating invoice:', invoiceData);
 
         let invoice;
 
@@ -1928,7 +1946,7 @@ export default {
           invoice = await nwc.makeInvoice(invoiceData);
         }
 
-        console.log('✅ Invoice created:', invoice);
+        console.log('Invoice created:', invoice);
 
         this.generatedInvoice = invoice;
         this.currentInvoicePaymentHash = invoice.paymentHash;
@@ -1936,7 +1954,7 @@ export default {
         this.startInvoiceMonitoring();
 
       } catch (error) {
-        console.error('❌ Failed to create invoice:', error);
+        console.error('Failed to create invoice:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t create invoice'),
@@ -2354,9 +2372,56 @@ export default {
   color: #6b7280;
 }
 
+.currency-icon-left {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
+}
+
+.currency-icon-right {
+  display: flex;
+  align-items: center;
+  margin-left: 0.5rem;
+}
+
+.balance-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.balance-icon-dark {
+  filter: brightness(0) invert(1);
+}
+
+.balance-icon-light {
+  filter: brightness(0);
+}
+
 .balance-secondary {
   font-size: 1.25rem;
   font-weight: 400;
+}
+
+.secondary-amount-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.secondary-value {
+  display: inline;
+}
+
+.secondary-icon-right {
+  display: inline-flex;
+  align-items: center;
+}
+
+.secondary-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
 .balance-secondary-dark {
