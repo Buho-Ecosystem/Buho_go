@@ -182,10 +182,10 @@
 
                 <!-- Center: Info -->
                 <div class="tx-info">
-                  <!-- Line 1: Time or Status (always shown) -->
+                  <!-- Line 1: Date and Time (always shown) -->
                   <div class="tx-primary" :class="$q.dark.isActive ? 'tx_primary_dark' : 'tx_primary_light'">
                     <span v-if="tx.status === 'pending'">{{ $t('Sending...') }}</span>
-                    <span v-else>{{ formatShortTime(tx.settled_at) }}</span>
+                    <span v-else>{{ formatHumanDateTime(tx.settled_at) }}</span>
                   </div>
 
                   <!-- Line 2: Contact name (if assigned) -->
@@ -265,7 +265,7 @@
                       @click="viewTransaction(innerTx)"
                     >
                       <div class="item-time" :class="$q.dark.isActive ? 'item_time_dark' : 'item_time_light'">
-                        {{ formatShortTime(innerTx.settled_at) }}
+                        {{ formatHumanDateTime(innerTx.settled_at) }}
                       </div>
                       <div class="item-amount"
                            :class="[innerTx.type === 'incoming' ? 'positive' : '', $q.dark.isActive ? 'item_amount_dark' : 'item_amount_light']">
@@ -335,7 +335,7 @@ import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../uti
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
-import { formatRelativeTime, formatShortTime } from '../utils/timeFormatting';
+import { formatRelativeTime, formatShortTime, formatHumanDateTime } from '../utils/timeFormatting';
 import { groupMicropayments } from '../composables/useTransactionGrouping';
 
 export default {
@@ -365,7 +365,13 @@ export default {
         {name: 'month', label: 'Month'}
       ],
       fiatRates: {},
-      loadingFiatRates: true
+      loadingFiatRates: true,
+      // Batching state
+      batchSize: 20,
+      currentOffset: 0,
+      isFetchingMore: false,
+      hasMoreTransactions: true,
+      backgroundFetchAborted: false
     }
   },
   computed: {
@@ -496,6 +502,11 @@ export default {
     this.loadFiatRates();
   },
 
+  beforeUnmount() {
+    // Abort any ongoing background fetch when component is destroyed
+    this.backgroundFetchAborted = true;
+  },
+
   watch: {
     'fiatRates': {
       handler() {
@@ -580,6 +591,16 @@ export default {
         return formatShortTime(timestamp);
       } catch (error) {
         console.error('Error formatting short time:', error);
+        return '';
+      }
+    },
+
+    formatHumanDateTime(timestamp) {
+      if (!timestamp) return '';
+      try {
+        return formatHumanDateTime(timestamp);
+      } catch (error) {
+        console.error('Error formatting human date time:', error);
         return '';
       }
     },
@@ -685,6 +706,10 @@ export default {
 
     async loadTransactions() {
       this.isLoading = true;
+
+      // Reset batching state
+      this.resetBatchingState();
+
       try {
         if (this.showLoadingScreen) {
           this.loadingText = 'Connecting to wallet...';
@@ -700,12 +725,8 @@ export default {
           this.loadingText = 'Fetching transactions...';
         }
 
-        // Check wallet type and load transactions accordingly
-        if (this.walletStore.isActiveWalletSpark) {
-          await this.loadSparkTransactions();
-        } else {
-          await this.loadNWCTransactions();
-        }
+        // Phase 1: Load first batch (fast, always happens)
+        await this.loadFirstBatch();
 
         this.transactions.sort((a, b) => b.settled_at - a.settled_at);
 
@@ -722,6 +743,13 @@ export default {
         // Auto-assign contacts from address book
         await this.autoAssignContacts();
 
+        // Phase 2: If on "All" tab, load remaining batches in background
+        if (this.activeFilter === 'all' && this.hasMoreTransactions) {
+          this.$nextTick(() => {
+            this.loadRemainingBatchesInBackground();
+          });
+        }
+
       } catch (error) {
         console.error('Error loading transactions:', error);
         this.$q.notify({
@@ -735,10 +763,83 @@ export default {
       }
     },
 
-    async loadSparkTransactions() {
+    // Batching helper methods
+    resetBatchingState() {
+      this.currentOffset = 0;
+      this.hasMoreTransactions = true;
+      this.isFetchingMore = false;
+      this.backgroundFetchAborted = false;
+      this.transactions = [];
+    },
+
+    async loadFirstBatch() {
+      console.log('Loading first batch of transactions...');
+
+      if (this.walletStore.isActiveWalletSpark) {
+        await this.loadSparkTransactionsBatch();
+      } else {
+        await this.loadNWCTransactionsBatch();
+      }
+
+      console.log(`First batch loaded: ${this.transactions.length} transactions`);
+    },
+
+    async loadRemainingBatchesInBackground() {
+      if (this.isFetchingMore || this.backgroundFetchAborted) {
+        return;
+      }
+
+      this.isFetchingMore = true;
+      console.log('Starting background fetch for remaining transactions...');
+
+      try {
+        let batchCount = 1;
+        const maxBatches = 250; // Safety limit: 250 batches × 20 = 5000 transactions max
+
+        while (this.hasMoreTransactions && batchCount < maxBatches && !this.backgroundFetchAborted) {
+          // Small delay to avoid overwhelming wallet
+          await this.sleep(100);
+
+          const beforeCount = this.transactions.length;
+
+          if (this.walletStore.isActiveWalletSpark) {
+            await this.loadSparkTransactionsBatch();
+          } else {
+            await this.loadNWCTransactionsBatch();
+          }
+
+          const afterCount = this.transactions.length;
+          const fetchedInBatch = afterCount - beforeCount;
+
+          console.log(`Background batch ${batchCount}: fetched ${fetchedInBatch} transactions (total: ${afterCount})`);
+
+          // Sort and process new transactions
+          this.transactions.sort((a, b) => b.settled_at - a.settled_at);
+          await this.processZapTransactions();
+          await this.autoAssignContacts();
+
+          batchCount++;
+        }
+
+        if (batchCount >= maxBatches) {
+          console.warn('Reached maximum batch limit (5000 transactions)');
+        }
+
+        console.log(`Background fetch complete: ${this.transactions.length} total transactions`);
+      } catch (error) {
+        console.error('Error during background fetch:', error);
+      } finally {
+        this.isFetchingMore = false;
+      }
+    },
+
+    sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    },
+
+    async loadSparkTransactionsBatch() {
       // Check if Spark wallet needs PIN unlock
       if (this.walletStore.needsPinEntry) {
-        // Redirect to wallet page to unlock
         this.$q.notify({
           type: 'warning',
           message: this.$t('Wallet locked'),
@@ -748,20 +849,30 @@ export default {
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.$router.push('/wallet');
+        this.hasMoreTransactions = false;
         return;
       }
 
-      // Ensure Spark wallet is connected (auto-connects if session PIN available)
+      // Ensure Spark wallet is connected
       const provider = await this.walletStore.ensureSparkConnected();
 
       if (!provider) {
         throw new Error('Could not connect to Spark wallet');
       }
 
-      const sparkTransactions = await provider.getTransactions({ limit: 500, offset: 0 });
+      // Fetch batch with current offset
+      const sparkTransactions = await provider.getTransactions({
+        limit: this.batchSize,
+        offset: this.currentOffset
+      });
 
-      // Normalize Spark transactions to match expected format
-      this.transactions = (sparkTransactions || []).map(tx => ({
+      if (!sparkTransactions || sparkTransactions.length === 0) {
+        this.hasMoreTransactions = false;
+        return;
+      }
+
+      // Normalize and append to transactions array
+      const normalizedTransactions = sparkTransactions.map(tx => ({
         id: tx.id,
         type: tx.type === 'receive' ? 'incoming' : 'outgoing',
         amount: tx.amount || 0,
@@ -773,9 +884,17 @@ export default {
         sparkTransfer: tx.sparkTransfer || false,
         rawType: tx.rawType || null
       }));
+
+      this.transactions.push(...normalizedTransactions);
+      this.currentOffset += this.batchSize;
+
+      // Check if we got fewer transactions than requested (end of list)
+      if (sparkTransactions.length < this.batchSize) {
+        this.hasMoreTransactions = false;
+      }
     },
 
-    async loadNWCTransactions() {
+    async loadNWCTransactionsBatch() {
       const activeWallet = this.walletState.connectedWallets?.find(
         w => w.id === this.walletState.activeWalletId
       );
@@ -790,25 +909,43 @@ export default {
 
       await nwc.enable();
 
+      // Fetch batch with current offset
       const transactionsResponse = await nwc.listTransactions({
-        limit: 500,
-        offset: 0
+        limit: this.batchSize,
+        offset: this.currentOffset
       });
 
-      if (transactionsResponse && transactionsResponse.transactions) {
-        this.transactions = transactionsResponse.transactions.map(tx => ({
-          ...tx,
-          id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
-          type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
-          description: tx.description || tx.memo || '',
-          settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000),
-          fee: tx.fee || tx.fees_paid || 0,
-          payment_request: tx.payment_request || tx.invoice || null
-        }));
+      if (!transactionsResponse || !transactionsResponse.transactions || transactionsResponse.transactions.length === 0) {
+        this.hasMoreTransactions = false;
+        return;
+      }
+
+      // Normalize and append to transactions array
+      const normalizedTransactions = transactionsResponse.transactions.map(tx => ({
+        ...tx,
+        id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
+        type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
+        description: tx.description || tx.memo || '',
+        settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000),
+        fee: tx.fee || tx.fees_paid || 0,
+        payment_request: tx.payment_request || tx.invoice || null
+      }));
+
+      console.log(`NWC batch loaded: ${normalizedTransactions.length} transactions`);
+
+      this.transactions.push(...normalizedTransactions);
+      this.currentOffset += this.batchSize;
+
+      // Check if we got fewer transactions than requested (end of list)
+      if (transactionsResponse.transactions.length < this.batchSize) {
+        this.hasMoreTransactions = false;
       }
     },
 
     async refreshTransactions() {
+      // Abort any ongoing background fetch
+      this.backgroundFetchAborted = true;
+
       this.isRefreshing = true;
       await this.loadTransactions();
       this.isRefreshing = false;

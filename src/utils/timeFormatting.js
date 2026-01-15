@@ -218,3 +218,51 @@ export function formatDuration(seconds) {
   }
   return `${secs}s`
 }
+
+/**
+ * Format timestamp into human-readable date and time
+ * Shows context-aware date with time
+ * @param {number} timestamp - Unix timestamp in seconds
+ * @returns {string} Human-readable date and time (e.g., "Today at 14:30", "Jan 15 at 03:59")
+ */
+export function formatHumanDateTime(timestamp) {
+  if (!timestamp) return ''
+
+  const date = new Date(timestamp * 1000)
+  const time = date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+
+  // Check if today
+  if (isToday(timestamp)) {
+    return `Today at ${time}`
+  }
+
+  // Check if yesterday
+  if (isYesterday(timestamp)) {
+    return `Yesterday at ${time}`
+  }
+
+  // Check if this year
+  const thisYear = new Date().getFullYear()
+  const txYear = date.getFullYear()
+
+  if (txYear === thisYear) {
+    // Same year: show "Jan 15 at 14:30"
+    const monthDay = date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
+    })
+    return `${monthDay} at ${time}`
+  }
+
+  // Different year: show "Jan 15, 2025 at 14:30"
+  const fullDate = date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+  return `${fullDate} at ${time}`
+}
