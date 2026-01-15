@@ -280,5 +280,9 @@ export default {
   "Change PIN": "Cambiar PIN",
   "Language": "Idioma",
   "Delete Spark Wallet": "Eliminar Cartera Spark",
-  "Remove NWC Connections": "Eliminar Conexiones NWC"
+  "Remove NWC Connections": "Eliminar Conexiones NWC",
+  "CONTACT": "CONTACTO",
+  "Select Contact": "Seleccionar Contacto",
+  "Contact assigned": "Contacto asignado",
+  "Failed to assign contact": "Error al asignar contacto"
 }

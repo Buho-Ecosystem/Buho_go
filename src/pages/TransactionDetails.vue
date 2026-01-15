@@ -38,11 +38,11 @@
           @click="toggleDeveloperMode"
           :class="[$q.dark.isActive ? 'dev_toggle_dark' : 'dev_toggle_light', { 'dev-active': showDeveloperMode }]"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M5.24101 9.40703C5.31848 9.48514 5.41065 9.54713 5.5122 9.58944C5.61375 9.63175 5.72267 9.65353 5.83268 9.65353C5.94269 9.65353 6.05161 9.63175 6.15316 9.58944C6.25471 9.54713 6.34687 9.48514 6.42434 9.40703L9.16601 6.66536L9.16601 14.9987C9.16601 15.2197 9.25381 15.4317 9.41009 15.588C9.56637 15.7442 9.77833 15.832 9.99934 15.832C10.2204 15.832 10.4323 15.7442 10.5886 15.588C10.7449 15.4317 10.8327 15.2197 10.8327 14.9987L10.8327 6.66536L13.5743 9.40703C13.6518 9.48514 13.744 9.54713 13.8455 9.58944C13.9471 9.63175 14.056 9.65353 14.166 9.65353C14.276 9.65353 14.3849 9.63175 14.4865 9.58944C14.588 9.54713 14.6802 9.48514 14.7577 9.40703C14.9129 9.25089 15 9.03968 15 8.81953C15 8.59938 14.9129 8.38817 14.7577 8.23203L11.1743 4.65703C10.8632 4.34404 10.4407 4.16722 9.99934 4.16536C9.56092 4.16942 9.14176 4.34607 8.83268 4.65703L5.24934 8.23203C5.09302 8.38706 5.0044 8.59765 5.00284 8.81781C5.00128 9.03797 5.0869 9.2498 5.24101 9.40703Z"
-              :fill="$q.dark.isActive ? (showDeveloperMode ? '#15DE72' : '#B0B0B0') : (showDeveloperMode ? '#15DE72' : '#6D6D6D')"/>
-          </svg>
+          <q-icon
+            name="las la-code"
+            size="20px"
+            :color="$q.dark.isActive ? (showDeveloperMode ? '#15DE72' : '#B0B0B0') : (showDeveloperMode ? '#15DE72' : '#6D6D6D')"
+          />
           <q-tooltip>{{ showDeveloperMode ? $t('Hide') : $t('Show') }} {{ $t('Developer Details') }}</q-tooltip>
         </q-btn>
       </div>
@@ -59,34 +59,39 @@
 
     <!-- Transaction Details -->
     <div v-else-if="transaction" class="transaction-content">
-      <!-- Status Section -->
-      <div class="status-section" :class="$q.dark.isActive ? 'status_section_dark' : 'status_section_light'">
-        <div class="status-icon">
-          <div class="tx-status-container" :class="getTransactionIconClass()">
-            <q-icon :name="getTransactionIcon()" size="48px"/>
-          </div>
-        </div>
-        <div class="status-info">
-          <div class="transaction-type" :class="$q.dark.isActive ? 'transaction_type_dark' : 'transaction_type_light'">
-            {{ getTransactionTypeLabel() }}
-          </div>
-          <div class="transaction-status"
-               :class="[getStatusClass(), $q.dark.isActive ? 'transaction_status_dark' : 'transaction_status_light']">
-            <q-icon :name="getStatusIcon()" class="q-mr-xs"/>
-            {{ getTransactionStatus() }}
-          </div>
-        </div>
-      </div>
+      <!-- Transaction Hero Card -->
+      <div class="transaction-hero">
+        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+          <!-- Accent Bar (left edge) -->
+          <div class="hero-accent" :class="getAccentClass()"></div>
 
-      <!-- Amount Section -->
-      <div class="amount-section" :class="$q.dark.isActive ? 'amount_section_dark' : 'amount_section_light'">
-        <div class="amount-display">
-          <div class="amount-value"
-               :class="[getAmountClass(), $q.dark.isActive ? 'amount_value_dark' : 'amount_value_light']">
-            {{ getFormattedAmount() }}
-          </div>
-          <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-            {{ getFiatAmount() }}
+          <!-- Hero Content -->
+          <div class="hero-content">
+            <!-- Top: Icon + Type + Status -->
+            <div class="hero-header">
+              <div class="hero-icon-container" :class="getTransactionIconClass()">
+                <q-icon :name="getTransactionIcon()" size="20px"/>
+              </div>
+              <div class="hero-info">
+                <div class="hero-type" :class="$q.dark.isActive ? 'hero-type-dark' : 'hero-type-light'">
+                  {{ getTransactionTypeLabel() }}
+                </div>
+                <div class="hero-status" :class="[getStatusClass(), $q.dark.isActive ? 'hero-status-dark' : 'hero-status-light']">
+                  <q-icon :name="getStatusIcon()" size="14px"/>
+                  {{ getTransactionStatus() }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom: Amount + Fiat -->
+            <div class="hero-amounts">
+              <div class="hero-amount" :class="[getAmountClass(), $q.dark.isActive ? 'hero-amount-dark' : 'hero-amount-light']">
+                {{ getFormattedAmount() }}
+              </div>
+              <div class="hero-fiat" :class="$q.dark.isActive ? 'hero-fiat-dark' : 'hero-fiat-light'">
+                {{ getFiatAmount() }}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -132,7 +137,7 @@
           {{ $t('CONTACT') }}
         </div>
         <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-          <q-item v-if="!assignedContact" clickable v-ripple @click="showContactPicker = true">
+          <q-item v-if="!assignedContact" clickable v-ripple @click="openContactPicker">
             <q-item-section avatar>
               <q-icon name="las la-user-plus" :class="$q.dark.isActive ? 'icon-muted-dark' : 'icon-muted-light'"/>
             </q-item-section>
@@ -533,6 +538,13 @@ export default {
 
   methods: {
     // Contact and Tag methods
+    openContactPicker() {
+      console.log('Opening contact picker...');
+      console.log('Address book entries:', this.addressBookStore?.entries?.length || 0);
+      this.showContactPicker = true;
+      console.log('showContactPicker set to:', this.showContactPicker);
+    },
+
     async assignContact(contact) {
       try {
         await this.metadataStore.setContactForTransaction(this.transaction.id, contact.id);
@@ -735,6 +747,7 @@ export default {
           status: found.status || 'completed',
           sparkTransfer: found.sparkTransfer || false
         };
+        console.log('Transaction loaded with description:', this.transaction.description);
       }
     },
 
@@ -772,6 +785,7 @@ export default {
           this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || Math.floor(Date.now() / 1000);
           this.transaction.fee = this.transaction.fee || this.transaction.fees_paid || 0;
           this.transaction.payment_request = this.transaction.payment_request || this.transaction.invoice || null;
+          console.log('NWC Transaction loaded with description:', this.transaction.description);
         }
       }
     },
@@ -835,6 +849,11 @@ export default {
     getTransactionIcon() {
       if (this.transaction.senderNpub) return 'las la-bolt';
       return this.transaction.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
+    },
+
+    getAccentClass() {
+      if (this.transaction.senderNpub) return 'accent-zap';
+      return this.transaction.type === 'incoming' ? 'accent-positive' : 'accent-negative';
     },
 
     getTransactionStatus() {
@@ -1128,81 +1147,125 @@ export default {
   min-height: calc(100vh - 80px);
 }
 
-/* Status Section */
-.status_section_dark {
+/* Transaction Hero Card */
+.transaction-hero {
+  padding: 1rem;
+}
+
+.transaction-hero .settings-card {
+  position: relative;
+  overflow: visible;
+}
+
+/* Accent Bar (left edge) */
+.hero-accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+
+.hero-accent.accent-positive {
+  background: linear-gradient(180deg, #15DE72, #059573);
+}
+
+.hero-accent.accent-negative {
+  background: linear-gradient(180deg, #6B7280, #4B5563);
+}
+
+.hero-accent.accent-zap {
+  background: linear-gradient(180deg, #15DE72, #78D53C);
+}
+
+/* Hero Content */
+.hero-content {
+  padding: 20px 20px 20px 24px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 2rem 1rem;
-  text-align: center;
-  border-bottom: 1px solid #2A342A;
-  background: #0C0C0C;
+  gap: 16px;
 }
 
-.status_section_light {
+/* Hero Header (Icon + Type + Status) */
+.hero-header {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 2rem 1rem;
-  text-align: center;
-  border-bottom: 1px solid #E5E7EB;
-  background: white;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.status-icon {
-  margin-bottom: 1rem;
-}
-
-.tx-status-container {
-  width: 80px;
-  height: 80px;
+.hero-icon-container {
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   color: white;
 }
 
-.tx-status-received {
+.hero-icon-container.tx-status-received {
   background: linear-gradient(135deg, #15DE72, #059573);
 }
 
-.tx-status-sent {
+.hero-icon-container.tx-status-sent {
   background: linear-gradient(135deg, #6B7280, #4B5563);
 }
 
-.tx-status-zap {
-  background: linear-gradient(135deg, #15DE72, #43B65B);
+.hero-icon-container.tx-status-zap {
+  background: linear-gradient(135deg, #15DE72, #78D53C);
 }
 
-.transaction_type_dark {
-  font-size: 1.5rem;
+.hero-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-type,
+.hero-type-dark,
+.hero-type-light {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 17px;
   font-weight: 600;
-  color: #F6F6F6;
-  margin-bottom: 0.5rem;
+  line-height: 1.3;
+  margin-bottom: 4px;
 }
 
-.transaction_type_light {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #212121;
-  margin-bottom: 0.5rem;
+.hero-type-dark {
+  color: #FFFFFF;
 }
 
-.transaction_status_dark {
+.hero-type-light {
+  color: #000000;
+}
+
+.hero-status,
+.hero-status-dark,
+.hero-status-light {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 500;
-  font-size: 1rem;
+  gap: 4px;
 }
 
-.transaction_status_light {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 500;
-  font-size: 1rem;
+.hero-status-dark {
+  color: #999;
+}
+
+.hero-status-light {
+  color: #6B7280;
+}
+
+.hero-status.status-completed {
+  color: #15DE72;
+}
+
+.hero-status.status-pending {
+  color: #78716c;
 }
 
 .status-completed {
@@ -1213,31 +1276,28 @@ export default {
   color: #78716c;
 }
 
-/* Amount Section */
-.amount_section_dark {
-  padding: 2rem 1rem;
+/* Hero Amounts */
+.hero-amounts {
   text-align: center;
-  border-bottom: 1px solid #2A342A;
-  background: #0C0C0C;
+  padding-top: 4px;
 }
 
-.amount_section_light {
-  padding: 2rem 1rem;
-  text-align: center;
-  border-bottom: 1px solid #E5E7EB;
-  background: white;
-}
-
-.amount_value_dark {
-  font-size: 2.5rem;
+.hero-amount,
+.hero-amount-dark,
+.hero-amount-light {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 28px;
   font-weight: 700;
-  margin-bottom: 0.5rem;
+  line-height: 1.2;
+  margin-bottom: 4px;
 }
 
-.amount_value_light {
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
+.hero-amount.amount-positive {
+  color: #15DE72;
+}
+
+.hero-amount.amount-negative {
+  color: #FF4B4B;
 }
 
 .amount-positive {
@@ -1248,13 +1308,19 @@ export default {
   color: #FF4B4B;
 }
 
-.amount_fiat_dark {
-  font-size: 1.25rem;
-  color: #B0B0B0;
+.hero-fiat,
+.hero-fiat-dark,
+.hero-fiat-light {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 
-.amount_fiat_light {
-  font-size: 1.25rem;
+.hero-fiat-dark {
+  color: #999;
+}
+
+.hero-fiat-light {
   color: #6B7280;
 }
 
@@ -1916,20 +1982,33 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .amount_value_dark,
-  .amount_value_light {
-    font-size: 2rem;
+  /* Hero Card Responsive */
+  .hero-content {
+    padding: 16px 16px 16px 20px;
+    gap: 12px;
   }
 
-  .transaction_type_dark,
-  .transaction_type_light {
-    font-size: 1.25rem;
+  .hero-icon-container {
+    width: 28px;
+    height: 28px;
   }
 
-  .status_section_dark,
-  .status_section_light,
-  .amount_section_dark,
-  .amount_section_light,
+  .hero-icon-container :deep(.q-icon) {
+    font-size: 16px !important;
+  }
+
+  .hero-type,
+  .hero-type-dark,
+  .hero-type-light {
+    font-size: 16px;
+  }
+
+  .hero-amount,
+  .hero-amount-dark,
+  .hero-amount-light {
+    font-size: 24px;
+  }
+
   .profile-section {
     padding: 1rem 0.75rem;
   }
@@ -1951,11 +2030,6 @@ export default {
   .raw_text_light {
     font-size: 0.6875rem;
     padding: 0.75rem;
-  }
-
-  .tx-status-container {
-    width: 64px;
-    height: 64px;
   }
 
   .settings-card :deep(.q-item) {

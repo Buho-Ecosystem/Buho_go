@@ -182,25 +182,27 @@
 
                 <!-- Center: Info -->
                 <div class="tx-info">
-                  <!-- Primary text: Contact name OR relative date -->
+                  <!-- Line 1: Time or Status (always shown) -->
                   <div class="tx-primary" :class="$q.dark.isActive ? 'tx_primary_dark' : 'tx_primary_light'">
-                    {{ getContactForTransaction(tx) ? getContactForTransaction(tx).name : formatRelativeTime(tx.settled_at) }}
-                  </div>
-
-                  <!-- Secondary text: Status or time -->
-                  <div class="tx-secondary" :class="$q.dark.isActive ? 'tx_secondary_dark' : 'tx_secondary_light'">
-                    <span v-if="tx.status === 'pending'">Sending...</span>
-                    <span v-else-if="getContactForTransaction(tx)">{{ formatRelativeTime(tx.settled_at) }}</span>
+                    <span v-if="tx.status === 'pending'">{{ $t('Sending...') }}</span>
                     <span v-else>{{ formatShortTime(tx.settled_at) }}</span>
                   </div>
 
-                  <!-- Description if present -->
-                  <div v-if="shouldShowDescription(tx)" class="tx-description"
+                  <!-- Line 2: Contact name (if assigned) -->
+                  <div v-if="getContactForTransaction(tx)"
+                       class="tx-secondary"
+                       :class="$q.dark.isActive ? 'tx_secondary_dark' : 'tx_secondary_light'">
+                    {{ getContactForTransaction(tx).name }}
+                  </div>
+
+                  <!-- Line 3: Description (if present) -->
+                  <div v-if="shouldShowDescription(tx)"
+                       class="tx-description tx-description-italic"
                        :class="$q.dark.isActive ? 'tx_description_dark' : 'tx_description_light'">
                     {{ tx.description || tx.memo }}
                   </div>
 
-                  <!-- Tags if present -->
+                  <!-- Line 4: Tags (if present) -->
                   <div v-if="getTagsForTransaction(tx).length > 0" class="tx-tags">
                     <span v-for="tag in getTagsForTransaction(tx)" :key="tag" class="tag-pill">
                       {{ tag }}
@@ -345,7 +347,7 @@ export default {
     return {
       isLoading: true,
       isRefreshing: false,
-      activeFilter: 'today',
+      activeFilter: 'week',
       transactions: [],
       walletState: {},
       walletStore: null,
@@ -545,9 +547,20 @@ export default {
     },
 
     shouldShowDescription(tx) {
-      if (!tx) return false;
+      if (!tx) {
+        console.log('shouldShowDescription: no tx');
+        return false;
+      }
       const desc = tx.description || tx.memo;
-      if (!desc || desc === 'Lightning transaction') return false;
+      if (!desc) {
+        console.log('shouldShowDescription: no description/memo for tx', tx.id);
+        return false;
+      }
+      if (desc === 'Lightning transaction') {
+        console.log('shouldShowDescription: default Lightning transaction text for tx', tx.id);
+        return false;
+      }
+      console.log('shouldShowDescription: showing description for tx', tx.id, '-', desc);
       return true;
     },
 
@@ -1747,6 +1760,10 @@ export default {
 
 .tx_description_light {
   color: #6B7280;
+}
+
+.tx-description-italic {
+  font-style: italic;
 }
 
 /* Tags */
