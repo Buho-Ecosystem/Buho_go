@@ -159,55 +159,57 @@
           <q-slide-transition>
             <div v-show="group.expanded || group.isFlat" class="group-transactions"
                  :class="[{ 'flat-list': group.isFlat }, $q.dark.isActive ? 'group_transactions_dark' : 'group_transactions_light']">
-              <div
-                v-for="tx in group.transactions"
-                :key="tx.id"
-                class="transaction-item"
-                :class="$q.dark.isActive ? 'transaction_item_dark' : 'transaction_item_light'"
-                @click="viewTransaction(tx)"
-              >
-                <div class="transaction-icon">
-                  <div class="tx-icon-container" :class="getTransactionIconClass(tx)">
-                    <q-icon :name="getTransactionIcon(tx)" size="18px"/>
+
+              <template v-for="tx in group.transactions" :key="tx.id">
+                <!-- Regular Transaction -->
+                <div
+                  v-if="!tx.isGroup"
+                  class="transaction-card"
+                  :class="$q.dark.isActive ? 'transaction_card_dark' : 'transaction_card_light'"
+                  @click="viewTransaction(tx)"
+                >
+                <!-- Left: Avatar/Icon -->
+                <div class="tx-avatar">
+                  <div v-if="getContactForTransaction(tx)"
+                       class="contact-avatar"
+                       :style="{ backgroundColor: getContactForTransaction(tx).color }">
+                    {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
+                  </div>
+                  <div v-else class="direction-icon" :class="tx.type">
+                    <q-icon :name="getTransactionIcon(tx)" size="20px"/>
                   </div>
                 </div>
 
-                <div class="transaction-details">
-                  <div class="transaction-main">
-                    <div class="transaction-type"
-                         :class="$q.dark.isActive ? 'transaction_type_dark' : 'transaction_type_light'">
-                      {{ getTransactionTypeText(tx) }}
-                    </div>
-                    <div class="transaction-time"
-                         :class="$q.dark.isActive ? 'transaction_time_dark' : 'transaction_time_light'">
-                      {{ formatTime(tx.settled_at) }}
-                    </div>
+                <!-- Center: Info -->
+                <div class="tx-info">
+                  <!-- Primary text: Contact name OR relative date -->
+                  <div class="tx-primary" :class="$q.dark.isActive ? 'tx_primary_dark' : 'tx_primary_light'">
+                    {{ getContactForTransaction(tx) ? getContactForTransaction(tx).name : formatRelativeTime(tx.settled_at) }}
                   </div>
-                  <div class="transaction-description"
-                       :class="$q.dark.isActive ? 'transaction_description_dark' : 'transaction_description_light'"
-                       v-if="tx.description && tx.description !== 'Lightning transaction'">
-                    {{ tx.description }}
+
+                  <!-- Secondary text: Status or time -->
+                  <div class="tx-secondary" :class="$q.dark.isActive ? 'tx_secondary_dark' : 'tx_secondary_light'">
+                    <span v-if="tx.status === 'pending'">Sending...</span>
+                    <span v-else-if="getContactForTransaction(tx)">{{ formatRelativeTime(tx.settled_at) }}</span>
+                    <span v-else>{{ formatShortTime(tx.settled_at) }}</span>
                   </div>
-                  <div class="transaction-description"
-                       :class="$q.dark.isActive ? 'transaction_description_dark' : 'transaction_description_light'"
-                       v-else-if="tx.memo">
-                    {{ tx.memo }}
+
+                  <!-- Description if present -->
+                  <div v-if="shouldShowDescription(tx)" class="tx-description"
+                       :class="$q.dark.isActive ? 'tx_description_dark' : 'tx_description_light'">
+                    {{ tx.description || tx.memo }}
                   </div>
-                  <div class="nostr-info" :class="$q.dark.isActive ? 'nostr_info_dark' : 'nostr_info_light'"
-                       v-if="tx.senderNpub && nostrProfiles[tx.senderNpub]">
-                    <q-avatar size="14px" class="sender-avatar">
-                      <img
-                        v-if="nostrProfiles[tx.senderNpub].picture"
-                        :src="nostrProfiles[tx.senderNpub].picture"
-                        :alt="getSenderDisplayName(tx.senderNpub)"
-                      />
-                      <q-icon v-else name="las la-user" size="8px"/>
-                    </q-avatar>
-                    <span class="sender-name">{{ getSenderDisplayName(tx.senderNpub) }}</span>
+
+                  <!-- Tags if present -->
+                  <div v-if="getTagsForTransaction(tx).length > 0" class="tx-tags">
+                    <span v-for="tag in getTagsForTransaction(tx)" :key="tag" class="tag-pill">
+                      {{ tag }}
+                    </span>
                   </div>
                 </div>
 
-                <div class="transaction-amount">
+                <!-- Right: Amounts -->
+                <div class="tx-amounts">
                   <div class="amount-sats"
                        :class="[getAmountClass(tx), $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
                     {{ getFormattedAmount(tx) }}
@@ -216,7 +218,62 @@
                     {{ getFiatAmount(tx) }}
                   </div>
                 </div>
-              </div>
+                </div>
+
+                <!-- Micropayment Group -->
+                <div
+                  v-if="tx.isGroup"
+                  class="micropayment-group"
+                  :class="$q.dark.isActive ? 'micropayment_group_dark' : 'micropayment_group_light'"
+                >
+                <div class="group-header-micro" @click="toggleMicropaymentGroup(tx.id)">
+                  <div class="group-icon-micro">
+                    <q-icon name="las la-layer-group" size="20px"/>
+                  </div>
+                  <div class="group-info-micro">
+                    <div class="group-primary" :class="$q.dark.isActive ? 'group_primary_dark' : 'group_primary_light'">
+                      {{ tx.count }} {{ tx.transactionType === 'incoming' ? 'payments from' : 'payments to' }} {{ getGroupRecipientDisplay(tx) }}
+                    </div>
+                    <div class="group-secondary" :class="$q.dark.isActive ? 'group_secondary_dark' : 'group_secondary_light'">
+                      {{ formatRelativeTime(tx.startTime) }}
+                    </div>
+                  </div>
+                  <div class="group-amount-micro">
+                    <div class="amount-sats"
+                         :class="[tx.transactionType === 'incoming' ? 'positive' : 'negative', $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
+                      {{ tx.transactionType === 'incoming' ? '+' : '-' }}{{ Math.abs(tx.totalAmount).toLocaleString() }} sats
+                    </div>
+                    <q-icon
+                      :name="expandedMicropaymentGroups.has(tx.id) ? 'las la-chevron-up' : 'las la-chevron-down'"
+                      size="16px"
+                      :class="$q.dark.isActive ? 'expand_icon_dark' : 'expand_icon_light'"
+                    />
+                  </div>
+                </div>
+
+                <!-- Expanded Group Items -->
+                <q-slide-transition>
+                  <div v-show="expandedMicropaymentGroups.has(tx.id)" class="group-items-micro"
+                       :class="$q.dark.isActive ? 'group_items_micro_dark' : 'group_items_micro_light'">
+                    <div
+                      v-for="innerTx in tx.transactions"
+                      :key="innerTx.id"
+                      class="group-item-micro"
+                      :class="$q.dark.isActive ? 'group_item_micro_dark' : 'group_item_micro_light'"
+                      @click="viewTransaction(innerTx)"
+                    >
+                      <div class="item-time" :class="$q.dark.isActive ? 'item_time_dark' : 'item_time_light'">
+                        {{ formatShortTime(innerTx.settled_at) }}
+                      </div>
+                      <div class="item-amount"
+                           :class="[innerTx.type === 'incoming' ? 'positive' : '', $q.dark.isActive ? 'item_amount_dark' : 'item_amount_light']">
+                        {{ innerTx.type === 'incoming' ? '+' : '-' }}{{ Math.abs(innerTx.amount).toLocaleString() }} sats
+                      </div>
+                    </div>
+                  </div>
+                </q-slide-transition>
+                </div>
+              </template>
             </div>
           </q-slide-transition>
         </div>
@@ -273,6 +330,10 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { useWalletStore } from '../stores/wallet';
+import { useAddressBookStore } from '../stores/addressBook';
+import { useTransactionMetadataStore } from '../stores/transactionMetadata';
+import { formatRelativeTime, formatShortTime } from '../utils/timeFormatting';
+import { groupMicropayments } from '../composables/useTransactionGrouping';
 
 export default {
   name: 'TransactionHistoryPage',
@@ -287,8 +348,11 @@ export default {
       transactions: [],
       walletState: {},
       walletStore: null,
+      addressBookStore: null,
+      metadataStore: null,
       nostrProfiles: {},
       expandedGroups: new Set(),
+      expandedMicropaymentGroups: new Set(),
       showLoadingScreen: true,
       loadingText: 'Loading transactions...',
       filterTabs: [
@@ -325,11 +389,33 @@ export default {
     },
 
     groupedTransactions() {
+      // Safety check
+      if (!this.filteredTransactions || this.filteredTransactions.length === 0) {
+        return [{
+          date: 'flat',
+          dateLabel: '',
+          transactions: [],
+          netAmount: 0,
+          expanded: true,
+          isFlat: true
+        }];
+      }
+
+      // Apply micropayment grouping first
+      const groupedWithMicropayments = groupMicropayments(this.filteredTransactions, {
+        timeWindowSeconds: 3600,
+        descriptionSimilarity: 0.75,
+        minGroupSize: 2,
+        enabled: true
+      });
+
       if (this.activeFilter === 'all') {
         const groups = {};
 
-        this.filteredTransactions.forEach(tx => {
-          const date = new Date(tx.settled_at * 1000);
+        groupedWithMicropayments.forEach(tx => {
+          // Use endTime for groups, settled_at for regular transactions
+          const timestamp = tx.isGroup ? tx.endTime : tx.settled_at;
+          const date = new Date(timestamp * 1000);
           const groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
           if (!groups[groupKey]) {
@@ -343,21 +429,35 @@ export default {
           }
 
           groups[groupKey].transactions.push(tx);
-          groups[groupKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+
+          // Calculate net amount
+          if (tx.isGroup) {
+            groups[groupKey].netAmount += tx.transactionType === 'incoming' ? tx.totalAmount : -tx.totalAmount;
+          } else {
+            groups[groupKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+          }
         });
 
         return Object.values(groups)
           .sort((a, b) => b.date.localeCompare(a.date))
           .map(group => ({
             ...group,
-            transactions: group.transactions.sort((a, b) => b.settled_at - a.settled_at)
+            transactions: group.transactions.sort((a, b) => {
+              const aTime = a.isGroup ? a.endTime : a.settled_at;
+              const bTime = b.isGroup ? b.endTime : b.settled_at;
+              return bTime - aTime;
+            })
           }));
       }
 
       return [{
         date: 'flat',
         dateLabel: '',
-        transactions: this.filteredTransactions.sort((a, b) => b.settled_at - a.settled_at),
+        transactions: groupedWithMicropayments.sort((a, b) => {
+          const aTime = a.isGroup ? a.endTime : a.settled_at;
+          const bTime = b.isGroup ? b.endTime : b.settled_at;
+          return bTime - aTime;
+        }),
         netAmount: this.netAmount,
         expanded: true,
         isFlat: true
@@ -382,6 +482,13 @@ export default {
   },
   async created() {
     this.walletStore = useWalletStore();
+    this.addressBookStore = useAddressBookStore();
+    this.metadataStore = useTransactionMetadataStore();
+
+    // Initialize stores
+    await this.addressBookStore.initialize();
+    await this.metadataStore.initialize();
+
     this.initializeTransactionHistory();
     this.loadFiatRates();
   },
@@ -409,6 +516,156 @@ export default {
       } catch (error) {
         console.error('Error initializing transaction history:', error);
         this.showLoadingScreen = false;
+      }
+    },
+
+    // New helper methods for redesigned transaction cards
+
+    getContactForTransaction(tx) {
+      if (!tx || !tx.id || !this.metadataStore || !this.addressBookStore) return null;
+      try {
+        const metadata = this.metadataStore.getMetadataForTransaction(tx.id);
+        if (!metadata?.contactId) return null;
+        return this.addressBookStore.getEntryById(metadata.contactId);
+      } catch (error) {
+        console.error('Error getting contact for transaction:', error);
+        return null;
+      }
+    },
+
+    getTagsForTransaction(tx) {
+      if (!tx || !tx.id || !this.metadataStore) return [];
+      try {
+        return this.metadataStore.getTagsForTransaction(tx.id) || [];
+      } catch (error) {
+        console.error('Error getting tags for transaction:', error);
+        return [];
+      }
+    },
+
+    shouldShowDescription(tx) {
+      if (!tx) return false;
+      const desc = tx.description || tx.memo;
+      if (!desc || desc === 'Lightning transaction') return false;
+      return true;
+    },
+
+    formatRelativeTime(timestamp) {
+      if (!timestamp) return '';
+      try {
+        return formatRelativeTime(timestamp);
+      } catch (error) {
+        console.error('Error formatting relative time:', error);
+        return '';
+      }
+    },
+
+    formatShortTime(timestamp) {
+      if (!timestamp) return '';
+      try {
+        return formatShortTime(timestamp);
+      } catch (error) {
+        console.error('Error formatting short time:', error);
+        return '';
+      }
+    },
+
+    toggleMicropaymentGroup(groupId) {
+      if (this.expandedMicropaymentGroups.has(groupId)) {
+        this.expandedMicropaymentGroups.delete(groupId);
+      } else {
+        this.expandedMicropaymentGroups.add(groupId);
+      }
+      this.$forceUpdate(); // Force re-render to show/hide expansion
+    },
+
+    getGroupRecipientDisplay(group) {
+      if (!group) return 'unknown';
+
+      try {
+        let recipient = group.recipient || '';
+
+        // If it's a hash or too long, use description instead
+        if (!recipient || recipient.length > 20 || recipient.startsWith('lnbc')) {
+          recipient = group.description || 'unknown';
+        }
+
+        // Truncate if still too long
+        if (recipient && recipient.length > 30) {
+          return recipient.substring(0, 27) + '...';
+        }
+
+        return recipient || 'unknown';
+      } catch (error) {
+        console.error('Error getting group recipient display:', error);
+        return 'unknown';
+      }
+    },
+
+    // Auto-assign contacts from address book
+    async autoAssignContacts() {
+      if (!this.transactions || !this.addressBookStore || !this.metadataStore) {
+        return;
+      }
+
+      console.log('Auto-assigning contacts for transactions...');
+      let assignedCount = 0;
+
+      for (const tx of this.transactions) {
+        try {
+          // Skip if already assigned
+          const existingMetadata = this.metadataStore.getMetadataForTransaction(tx.id);
+          if (existingMetadata?.contactId) {
+            continue;
+          }
+
+          // Try to find a matching contact
+          let matchedContact = null;
+
+          // 1. Check for Nostr zap sender
+          if (tx.senderNpub) {
+            // Look for contact with matching npub in notes or address
+            matchedContact = this.addressBookStore.entries.find(contact =>
+              contact.notes?.includes(tx.senderNpub) ||
+              contact.address?.includes(tx.senderNpub)
+            );
+          }
+
+          // 2. Check description/memo for Lightning address
+          if (!matchedContact) {
+            const desc = tx.description || tx.memo || '';
+            const lightningAddressMatch = desc.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+
+            if (lightningAddressMatch) {
+              const address = lightningAddressMatch[0].toLowerCase();
+              matchedContact = this.addressBookStore.entries.find(contact =>
+                contact.address?.toLowerCase() === address
+              );
+            }
+          }
+
+          // 3. Check payment_request for matches (first few chars)
+          if (!matchedContact && tx.payment_request) {
+            const invoicePrefix = tx.payment_request.substring(0, 20);
+            matchedContact = this.addressBookStore.entries.find(contact =>
+              contact.notes?.includes(invoicePrefix)
+            );
+          }
+
+          // If we found a match, auto-assign it
+          if (matchedContact) {
+            await this.metadataStore.setContactForTransaction(tx.id, matchedContact.id);
+            assignedCount++;
+            console.log(`Auto-assigned contact "${matchedContact.name}" to transaction ${tx.id}`);
+          }
+        } catch (error) {
+          console.error(`Error auto-assigning contact for transaction ${tx.id}:`, error);
+        }
+      }
+
+      if (assignedCount > 0) {
+        console.log(`Auto-assigned ${assignedCount} contacts`);
+        this.$forceUpdate(); // Refresh UI to show assigned contacts
       }
     },
 
@@ -443,6 +700,13 @@ export default {
         }
 
         await this.processZapTransactions();
+
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Auto-assigning contacts...';
+        }
+
+        // Auto-assign contacts from address book
+        await this.autoAssignContacts();
 
       } catch (error) {
         console.error('Error loading transactions:', error);
@@ -1015,34 +1279,35 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  background: #0C0C0C;
-  border: 1px solid #2A342A;
+  padding: 12px 16px;
+  background: #1A1A1A;
   border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.2s;
-  margin-bottom: 0.5rem;
+  transition: background-color 0.15s ease;
+  margin: 0 16px 8px 16px;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group_header_light {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  background: white;
-  border: 1px solid #E5E7EB;
+  padding: 12px 16px;
+  background: #FFFFFF;
   border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.2s;
-  margin-bottom: 0.5rem;
+  transition: background-color 0.15s ease;
+  margin: 0 16px 8px 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group_header_dark:hover {
-  background: #2A342A;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .group_header_light:hover {
-  background: #F3F4F6;
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .group-info {
@@ -1050,37 +1315,37 @@ export default {
 }
 
 .group_date_dark {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #F6F6F6;
-  margin-bottom: 0.25rem;
-  font-family: Fustat, sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: #FFFFFF;
+  margin-bottom: 2px;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group_date_light {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #212121;
-  margin-bottom: 0.25rem;
-  font-family: Fustat, sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: #000000;
+  margin-bottom: 2px;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group_summary_dark {
-  font-size: 0.875rem;
-  color: #B0B0B0;
+  font-size: 13px;
+  color: #999;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: Fustat, sans-serif;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group_summary_light {
-  font-size: 0.875rem;
+  font-size: 13px;
   color: #6B7280;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: Fustat, sans-serif;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group-amount {
@@ -1090,26 +1355,25 @@ export default {
 }
 
 .group_total_dark {
-  font-size: 1rem;
-  font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group_total_light {
-  font-size: 1rem;
-  font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .group-fiat {
-  font-size: 0.75rem;
+  font-size: 13px;
   font-weight: 400;
-  margin-top: 0.125rem;
-  opacity: 0.8;
+  margin-top: 2px;
 }
 
 .group_fiat_dark {
-  color: #B0B0B0;
+  color: #999;
 }
 
 .group_fiat_light {
@@ -1128,23 +1392,26 @@ export default {
 
 /* Group Transactions */
 .group_transactions_dark {
-  background: #0C0C0C;
-  border: 1px solid #2A342A;
+  background: #1A1A1A;
   border-radius: 12px;
   overflow: hidden;
+  margin: 0 16px 16px 16px;
 }
 
 .group_transactions_light {
-  background: white;
-  border: 1px solid #E5E7EB;
+  background: #FFFFFF;
   border-radius: 12px;
   overflow: hidden;
+  margin: 0 16px 16px 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .flat-list {
   border: none !important;
   border-radius: 0 !important;
   background: transparent !important;
+  margin: 0 !important;
+  box-shadow: none !important;
 }
 
 .transaction_item_dark {
@@ -1334,6 +1601,407 @@ export default {
   color: #6B7280;
   font-size: 0.8rem;
   font-family: Fustat, sans-serif;
+}
+
+/* Redesigned Transaction Card - Bitcoin Design Guide Pattern */
+.transaction-card,
+.transaction_card_dark,
+.transaction_card_light {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  min-height: 72px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.transaction_card_dark {
+  border-bottom: 1px solid #2A2A2A;
+}
+
+.transaction_card_light {
+  border-bottom: 1px solid #E5E7EB;
+}
+
+/* Remove border on last transaction in grouped view */
+.group_transactions_dark .transaction-card:last-child,
+.group_transactions_dark .micropayment-group:last-child {
+  border-bottom: none;
+}
+
+.group_transactions_light .transaction-card:last-child,
+.group_transactions_light .micropayment-group:last-child {
+  border-bottom: none;
+}
+
+.transaction_card_dark:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.transaction_card_light:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* Avatar/Icon Section */
+.tx-avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+}
+
+.contact-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  font-family: Fustat, sans-serif;
+}
+
+.direction-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  color: white;
+}
+
+.direction-icon.incoming {
+  background: linear-gradient(135deg, #15DE72, #059573);
+}
+
+.direction-icon.outgoing {
+  background: linear-gradient(135deg, #6B7280, #4B5563);
+}
+
+/* Info Section */
+.tx-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.tx-primary,
+.tx_primary_dark,
+.tx_primary_light {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.tx_primary_dark {
+  color: #FFFFFF;
+}
+
+.tx_primary_light {
+  color: #000000;
+}
+
+.tx-secondary,
+.tx_secondary_dark,
+.tx_secondary_light {
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 2px;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.tx_secondary_dark {
+  color: #999;
+}
+
+.tx_secondary_light {
+  color: #6B7280;
+}
+
+.tx-description,
+.tx_description_dark,
+.tx_description_light {
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.tx_description_dark {
+  color: #999;
+}
+
+.tx_description_light {
+  color: #6B7280;
+}
+
+/* Tags */
+.tx-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  background: #78716c;
+  color: white;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-family: Fustat, sans-serif;
+}
+
+/* Amount Section */
+.tx-amounts {
+  flex-shrink: 0;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 90px;
+}
+
+.amount-sats,
+.amount_sats_dark,
+.amount_sats_light {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.amount_sats_dark.positive,
+.amount_sats_light.positive {
+  color: #15DE72 !important;
+}
+
+.amount_sats_dark.negative {
+  color: #FFFFFF;
+}
+
+.amount_sats_light.negative {
+  color: #000000;
+}
+
+.amount-sats.positive {
+  color: #15DE72 !important;
+}
+
+.amount-sats.positive::before {
+  content: '+';
+}
+
+.amount-sats.negative::before {
+  content: '-';
+}
+
+.amount-fiat,
+.amount_fiat_dark,
+.amount_fiat_light {
+  font-size: 13px;
+  line-height: 1.4;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.amount_fiat_dark {
+  color: #999;
+}
+
+.amount_fiat_light {
+  color: #6B7280;
+}
+
+/* Micropayment Group Styles */
+.micropayment-group,
+.micropayment_group_dark,
+.micropayment_group_light {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.micropayment_group_dark {
+  border-bottom: 1px solid #2A2A2A;
+}
+
+.micropayment_group_light {
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.group-header-micro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  min-height: 72px;
+  transition: background-color 0.15s ease;
+}
+
+.micropayment_group_dark .group-header-micro:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.micropayment_group_light .group-header-micro:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.group-icon-micro {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #8B5CF6, #6366F1);
+  color: white;
+  flex-shrink: 0;
+}
+
+.group-info-micro {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.group-primary,
+.group_primary_dark,
+.group_primary_light {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.group_primary_dark {
+  color: #FFFFFF;
+}
+
+.group_primary_light {
+  color: #000000;
+}
+
+.group-secondary,
+.group_secondary_dark,
+.group_secondary_light {
+  font-size: 13px;
+  line-height: 1.4;
+  font-family: Fustat, 'Inter', sans-serif;
+  margin-top: 2px;
+}
+
+.group_secondary_dark {
+  color: #999;
+}
+
+.group_secondary_light {
+  color: #6B7280;
+}
+
+.group-amount-micro {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Expanded Group Items */
+.group-items-micro,
+.group_items_micro_dark,
+.group_items_micro_light {
+  display: flex;
+  flex-direction: column;
+  font-family: Fustat, sans-serif;
+}
+
+.group_items_micro_dark {
+  background: #0C0C0C;
+  border-top: 1px solid #2A342A;
+}
+
+.group_items_micro_light {
+  background: #FAFAFA;
+  border-top: 1px solid #E5E7EB;
+}
+
+.group-item-micro,
+.group_item_micro_dark,
+.group_item_micro_light {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.group_item_micro_dark {
+  border-bottom: 1px solid #2A342A;
+}
+
+.group_item_micro_light {
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.group_item_micro_dark:hover {
+  background: #171717;
+}
+
+.group_item_micro_light:hover {
+  background: #F5F5F5;
+}
+
+.item-time,
+.item_time_dark,
+.item_time_light {
+  font-size: 0.85rem;
+  font-family: Fustat, sans-serif;
+}
+
+.item_time_dark {
+  color: #B0B0B0;
+}
+
+.item_time_light {
+  color: #6B7280;
+}
+
+.item-amount,
+.item_amount_dark,
+.item_amount_light {
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: Fustat, sans-serif;
+}
+
+.item_amount_dark {
+  color: #F6F6F6;
+}
+
+.item_amount_light {
+  color: #212121;
+}
+
+.item-amount.positive {
+  color: #15DE72 !important;
 }
 
 /* Loading and Empty States */

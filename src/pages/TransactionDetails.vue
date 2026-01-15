@@ -126,33 +126,136 @@
         </div>
       </div>
 
+      <!-- Contact Assignment Section -->
+      <div class="details-section">
+        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+          {{ $t('CONTACT') }}
+        </div>
+        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+          <q-item v-if="!assignedContact" clickable v-ripple @click="showContactPicker = true">
+            <q-item-section avatar>
+              <q-icon name="las la-user-plus" :class="$q.dark.isActive ? 'icon-muted-dark' : 'icon-muted-light'"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Assign Contact') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            </q-item-section>
+          </q-item>
+
+          <q-item v-else>
+            <q-item-section avatar>
+              <div class="contact-avatar-small" :style="{ backgroundColor: assignedContact.color }">
+                {{ assignedContact.name.substring(0, 2).toUpperCase() }}
+              </div>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ assignedContact.name }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ truncateAddress(assignedContact.address) }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-btn flat round dense icon="las la-times" @click="removeContact"
+                     :class="$q.dark.isActive ? 'icon-muted-dark' : 'icon-muted-light'">
+                <q-tooltip>{{ $t('Remove Contact') }}</q-tooltip>
+              </q-btn>
+            </q-item-section>
+          </q-item>
+        </div>
+      </div>
+
+      <!-- Tags Section -->
+      <div class="details-section">
+        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+          {{ $t('TAGS') }}
+        </div>
+        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+          <div class="tags-content">
+            <div class="tag-selector">
+              <button
+                v-for="tag in availableTags"
+                :key="tag"
+                @click="toggleTag(tag)"
+                class="tag-option"
+                :class="[
+                  { selected: isTagSelected(tag) },
+                  $q.dark.isActive ? 'tag_option_dark' : 'tag_option_light'
+                ]"
+              >
+                {{ tag }}
+              </button>
+            </div>
+
+            <div v-if="currentTags.length >= 2" class="tag-limit-notice"
+                 :class="$q.dark.isActive ? 'tag_limit_dark' : 'tag_limit_light'">
+              <q-icon name="las la-info-circle" class="q-mr-xs"/>
+              {{ $t('Maximum 2 tags per transaction') }}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Transaction Info -->
-      <div class="info-section">
-        <div class="info-card" :class="$q.dark.isActive ? 'info_card_dark' : 'info_card_light'">
-          <div class="section-title" :class="$q.dark.isActive ? 'section_title_dark' : 'section_title_light'">
-            {{ $t('Details') }}
-          </div>
-
-          <div class="info-grid">
-            <div class="info-item" v-if="getTransactionDescription()">
-              <div class="info-label" :class="$q.dark.isActive ? 'info_label_dark' : 'info_label_light'">
+      <div class="details-section">
+        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+          {{ $t('TRANSACTION DETAILS') }}
+        </div>
+        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+          <q-item v-if="getTransactionDescription()">
+            <q-item-section>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
                 {{ $t('Description') }}
-              </div>
-              <div class="info-value" :class="$q.dark.isActive ? 'info_value_dark' : 'info_value_light'">
+              </q-item-label>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ getTransactionDescription() }}
-              </div>
-            </div>
+              </q-item-label>
+            </q-item-section>
+          </q-item>
 
-            <div class="info-item">
-              <div class="info-label" :class="$q.dark.isActive ? 'info_label_dark' : 'info_label_light'">{{
-                  $t('Date')
-                }}
-              </div>
-              <div class="info-value" :class="$q.dark.isActive ? 'info_value_dark' : 'info_value_light'">
+          <q-separator v-if="getTransactionDescription() && transaction.memo" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+
+          <q-item v-if="transaction.memo && transaction.memo !== getTransactionDescription()">
+            <q-item-section>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ $t('Memo') }}
+              </q-item-label>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ transaction.memo }}
+              </q-item-label>
+            </q-item-section>
+          </q-item>
+
+          <q-separator v-if="getTransactionDescription() || transaction.memo" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+
+          <q-item>
+            <q-item-section>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ $t('Date & Time') }}
+              </q-item-label>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ formatDateTime(transaction.settled_at) }}
-              </div>
-            </div>
-          </div>
+              </q-item-label>
+            </q-item-section>
+          </q-item>
+
+          <q-separator v-if="transaction.fee && transaction.fee > 0" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+
+          <q-item v-if="transaction.fee && transaction.fee > 0">
+            <q-item-section>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ $t('Fee') }}
+              </q-item-label>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                ₿ {{ transaction.fee.toLocaleString() }}
+              </q-item-label>
+            </q-item-section>
+          </q-item>
         </div>
       </div>
 
@@ -268,6 +371,71 @@
         :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
       />
     </div>
+
+    <!-- Contact Picker Modal -->
+    <q-dialog v-model="showContactPicker">
+      <q-card style="min-width: 350px; max-width: 500px"
+              :class="$q.dark.isActive ? 'contact_picker_card_dark' : 'contact_picker_card_light'">
+        <q-card-section>
+          <div class="text-h6" :class="$q.dark.isActive ? 'picker_title_dark' : 'picker_title_light'">
+            {{ $t('Select Contact') }}
+          </div>
+        </q-card-section>
+
+        <q-card-section>
+          <q-input
+            v-model="contactSearch"
+            :placeholder="$t('Search contacts...')"
+            dense
+            :class="$q.dark.isActive ? 'search_input_dark' : 'search_input_light'"
+          >
+            <template v-slot:prepend>
+              <q-icon name="las la-search"/>
+            </template>
+          </q-input>
+        </q-card-section>
+
+        <q-scroll-area style="height: 300px">
+          <q-list>
+            <q-item
+              v-for="contact in filteredContacts"
+              :key="contact.id"
+              clickable
+              @click="assignContact(contact)"
+              :class="$q.dark.isActive ? 'contact_item_dark' : 'contact_item_light'"
+            >
+              <q-item-section avatar>
+                <div class="picker-contact-avatar"
+                     :style="{ backgroundColor: contact.color }">
+                  {{ contact.name.substring(0, 2).toUpperCase() }}
+                </div>
+              </q-item-section>
+              <q-item-section>
+                <q-item-label :class="$q.dark.isActive ? 'picker_contact_name_dark' : 'picker_contact_name_light'">
+                  {{ contact.name }}
+                </q-item-label>
+                <q-item-label caption :class="$q.dark.isActive ? 'picker_contact_address_dark' : 'picker_contact_address_light'">
+                  {{ contact.address }}
+                </q-item-label>
+              </q-item-section>
+            </q-item>
+
+            <q-item v-if="filteredContacts.length === 0" class="empty-contacts">
+              <q-item-section>
+                <q-item-label :class="$q.dark.isActive ? 'empty_text_dark' : 'empty_text_light'">
+                  {{ $t('No contacts found') }}
+                </q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-scroll-area>
+
+        <q-card-actions align="right">
+          <q-btn flat :label="$t('Cancel')" v-close-popup
+                 :class="$q.dark.isActive ? 'cancel_btn_dark' : 'cancel_btn_light'"/>
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -276,6 +444,8 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { useWalletStore } from '../stores/wallet';
+import { useAddressBookStore } from '../stores/addressBook';
+import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 
 export default {
   name: 'TransactionDetailsPage',
@@ -290,14 +460,38 @@ export default {
       nostrProfile: null,
       walletState: {},
       walletStore: null,
+      addressBookStore: null,
+      metadataStore: null,
       showLoadingScreen: true,
       loadingText: 'Loading transaction details...',
       fiatRates: {},
-      loadingFiatRates: true
+      loadingFiatRates: true,
+      // Contact picker
+      showContactPicker: false,
+      contactSearch: '',
+      // Available tags
+      availableTags: [
+        'Groceries',
+        'Business',
+        'Personal',
+        'Entertainment',
+        'Bills',
+        'Travel',
+        'Food & Drink',
+        'Shopping',
+        'Other'
+      ]
     }
   },
   async created() {
     this.walletStore = useWalletStore();
+    this.addressBookStore = useAddressBookStore();
+    this.metadataStore = useTransactionMetadataStore();
+
+    // Initialize stores
+    await this.addressBookStore.initialize();
+    await this.metadataStore.initialize();
+
     this.initializeTransactionDetails();
     this.loadFiatRates();
   },
@@ -310,7 +504,122 @@ export default {
       deep: true
     }
   },
+
+  computed: {
+    assignedContact() {
+      if (!this.transaction || !this.metadataStore) return null;
+      const metadata = this.metadataStore.getMetadataForTransaction(this.transaction.id);
+      if (!metadata?.contactId) return null;
+      return this.addressBookStore.getEntryById(metadata.contactId);
+    },
+
+    currentTags() {
+      if (!this.transaction || !this.metadataStore) return [];
+      return this.metadataStore.getTagsForTransaction(this.transaction.id);
+    },
+
+    filteredContacts() {
+      if (!this.addressBookStore) return [];
+      const query = this.contactSearch.toLowerCase();
+      if (!query) return this.addressBookStore.entries;
+
+      return this.addressBookStore.entries.filter(c =>
+        c.name.toLowerCase().includes(query) ||
+        c.address.toLowerCase().includes(query)
+      );
+    }
+  },
+
   methods: {
+    // Contact and Tag methods
+    async assignContact(contact) {
+      try {
+        await this.metadataStore.setContactForTransaction(this.transaction.id, contact.id);
+        this.showContactPicker = false;
+        this.contactSearch = '';
+
+        // Update lastUsedAt in address book
+        await this.addressBookStore.updateEntry(contact.id, { lastUsedAt: Date.now() });
+
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Contact assigned'),
+          position: 'bottom',
+          timeout: 2000
+        });
+      } catch (error) {
+        console.error('Error assigning contact:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to assign contact'),
+          position: 'bottom'
+        });
+      }
+    },
+
+    async removeContact() {
+      try {
+        await this.metadataStore.setContactForTransaction(this.transaction.id, null);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Contact removed'),
+          position: 'bottom',
+          timeout: 2000
+        });
+      } catch (error) {
+        console.error('Error removing contact:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to remove contact'),
+          position: 'bottom'
+        });
+      }
+    },
+
+    isTagSelected(tag) {
+      return this.currentTags.includes(tag);
+    },
+
+    async toggleTag(tag) {
+      try {
+        const currentTags = this.currentTags;
+
+        // Check if tag is already selected
+        if (currentTags.includes(tag)) {
+          // Remove tag
+          const newTags = currentTags.filter(t => t !== tag);
+          await this.metadataStore.setTagsForTransaction(this.transaction.id, newTags);
+        } else {
+          // Check if already at limit (2 tags)
+          if (currentTags.length >= 2) {
+            this.$q.notify({
+              type: 'warning',
+              message: this.$t('Maximum 2 tags allowed per transaction'),
+              position: 'bottom',
+              timeout: 2000
+            });
+            return;
+          }
+
+          // Add tag
+          const newTags = [...currentTags, tag];
+          await this.metadataStore.setTagsForTransaction(this.transaction.id, newTags);
+        }
+      } catch (error) {
+        console.error('Error toggling tag:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to update tags'),
+          position: 'bottom'
+        });
+      }
+    },
+
+    truncateAddress(address) {
+      if (!address || address.length <= 20) return address;
+      return `${address.substring(0, 10)}...${address.substring(address.length - 6)}`;
+    },
+
     async initializeTransactionDetails() {
       try {
         this.loadingText = 'Loading transaction details...';
@@ -1040,23 +1349,329 @@ export default {
   color: #9CA3AF;
 }
 
-/* Info Section */
-.info-section {
-  padding: 1rem;
+/* Details Section (iOS-inspired) */
+.details-section {
+  padding: 0 1rem;
+  margin-bottom: 1rem;
 }
 
-.info_card_dark {
-  background: #171717;
-  border: 1px solid #2A342A;
+.section-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 1.5rem 0 0.5rem 0.25rem;
+}
+
+.section-label:first-child {
+  margin-top: 0.5rem;
+}
+
+.section-label-dark {
+  color: #666;
+}
+
+.section-label-light {
+  color: #6B7280;
+}
+
+.settings-card {
   border-radius: 12px;
-  padding: 1.5rem;
+  overflow: hidden;
+  margin-bottom: 0;
 }
 
-.info_card_light {
+.card-dark {
+  background: #1A1A1A;
+}
+
+.card-light {
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.settings-card :deep(.q-item) {
+  padding: 14px 16px;
+  min-height: 48px;
+}
+
+.item-label-dark {
+  color: #FFFFFF;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.item-label-light {
+  color: #000000;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.item-caption-dark {
+  color: #999;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.item-caption-light {
+  color: #6B7280;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.chevron-dark {
+  color: #666;
+  font-size: 18px;
+}
+
+.chevron-light {
+  color: #9CA3AF;
+  font-size: 18px;
+}
+
+.separator-dark {
+  background: #2A2A2A;
+  margin-left: 16px;
+}
+
+.separator-light {
+  background: #E5E7EB;
+  margin-left: 16px;
+}
+
+.icon-muted-dark {
+  color: #999;
+}
+
+.icon-muted-light {
+  color: #6B7280;
+}
+
+.contact-avatar-small {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: white;
+  font-family: Fustat, sans-serif;
+}
+
+/* Removed old contact styles - using Settings card pattern now */
+
+/* Tags Section */
+.tags-content {
+  padding: 14px 16px;
+}
+
+.tag-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.tag-option,
+.tag_option_dark,
+.tag_option_light {
+  padding: 0.625rem 1.25rem;
+  border-radius: 16px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+  font-family: Fustat, sans-serif;
+}
+
+.tag_option_dark {
+  background: #2A342A;
+  color: #F6F6F6;
+  border-color: #2A342A;
+}
+
+.tag_option_dark:hover {
+  background: #374444;
+  border-color: #374444;
+}
+
+.tag_option_dark.selected {
+  background: #78716c;
+  color: white;
+  border-color: #78716c;
+}
+
+.tag_option_light {
+  background: #F3F4F6;
+  color: #212121;
+  border-color: #F3F4F6;
+}
+
+.tag_option_light:hover {
+  background: #E5E7EB;
+  border-color: #E5E7EB;
+}
+
+.tag_option_light.selected {
+  background: #78716c;
+  color: white;
+  border-color: #78716c;
+}
+
+.tag-limit-notice,
+.tag_limit_dark,
+.tag_limit_light {
+  display: flex;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-family: Fustat, sans-serif;
+}
+
+.tag_limit_dark {
+  background: #2A342A;
+  color: #B0B0B0;
+}
+
+.tag_limit_light {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+/* Contact Picker Modal */
+.contact_picker_card_dark {
+  background: #0C0C0C;
+  color: #F6F6F6;
+}
+
+.contact_picker_card_light {
+  background: white;
+  color: #212121;
+}
+
+.picker_title_dark,
+.picker_title_light {
+  font-family: Fustat, sans-serif;
+  font-weight: 600;
+}
+
+.picker_title_dark {
+  color: #F6F6F6;
+}
+
+.picker_title_light {
+  color: #212121;
+}
+
+.search_input_dark :deep(.q-field__control) {
+  background: #2A342A;
+  color: #F6F6F6;
+}
+
+.search_input_light :deep(.q-field__control) {
   background: #F9FAFB;
-  border: 1px solid #E5E7EB;
-  border-radius: 12px;
-  padding: 1.5rem;
+  color: #212121;
+}
+
+.contact_item_dark,
+.contact_item_light {
+  transition: background-color 0.2s ease;
+}
+
+.contact_item_dark:hover {
+  background: #2A342A;
+}
+
+.contact_item_light:hover {
+  background: #F9FAFB;
+}
+
+.picker-contact-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: white;
+  font-family: Fustat, sans-serif;
+}
+
+.picker_contact_name_dark,
+.picker_contact_name_light {
+  font-weight: 500;
+  font-family: Fustat, sans-serif;
+}
+
+.picker_contact_name_dark {
+  color: #F6F6F6;
+}
+
+.picker_contact_name_light {
+  color: #212121;
+}
+
+.picker_contact_address_dark,
+.picker_contact_address_light {
+  font-size: 0.8rem;
+  font-family: Fustat, sans-serif;
+}
+
+.picker_contact_address_dark {
+  color: #B0B0B0;
+}
+
+.picker_contact_address_light {
+  color: #6B7280;
+}
+
+.empty-contacts {
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.empty_text_dark,
+.empty_text_light {
+  font-family: Fustat, sans-serif;
+}
+
+.empty_text_dark {
+  color: #B0B0B0;
+}
+
+.empty_text_light {
+  color: #6B7280;
+}
+
+.cancel_btn_dark,
+.cancel_btn_light {
+  font-family: Fustat, sans-serif;
+}
+
+.cancel_btn_dark {
+  color: #B0B0B0;
+}
+
+.cancel_btn_light {
+  color: #6B7280;
+}
+
+/* Removed old info section styles - using Settings card pattern now */
+
+/* Developer Section */
+.developer-section {
+  padding: 0 1rem 1rem 1rem;
 }
 
 .section_title_dark {
@@ -1075,47 +1690,6 @@ export default {
   margin-bottom: 1rem;
   display: flex;
   align-items: center;
-}
-
-.info-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.info_label_dark {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #B0B0B0;
-}
-
-.info_label_light {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #6B7280;
-}
-
-.info_value_dark {
-  font-size: 1rem;
-  color: #F6F6F6;
-  word-break: break-all;
-}
-
-.info_value_light {
-  font-size: 1rem;
-  color: #212121;
-  word-break: break-all;
-}
-
-/* Developer Section */
-.developer-section {
-  padding: 1rem;
 }
 
 .developer_card_dark {
@@ -1355,14 +1929,18 @@ export default {
   .status_section_light,
   .amount_section_dark,
   .amount_section_light,
-  .profile-section,
-  .info-section,
-  .developer-section {
+  .profile-section {
     padding: 1rem 0.75rem;
   }
 
-  .info_card_dark,
-  .info_card_light,
+  .details-section {
+    padding: 0 0.75rem;
+  }
+
+  .developer-section {
+    padding: 0 0.75rem 1rem 0.75rem;
+  }
+
   .developer_card_dark,
   .developer_card_light {
     padding: 1rem;
@@ -1377,6 +1955,11 @@ export default {
   .tx-status-container {
     width: 64px;
     height: 64px;
+  }
+
+  .settings-card :deep(.q-item) {
+    padding: 12px 14px;
+    min-height: 44px;
   }
 }
 </style>
