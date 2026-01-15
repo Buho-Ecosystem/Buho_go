@@ -56,17 +56,13 @@
           <div class="balance-amount">
             <transition name="balance-fade" mode="out-in">
               <div :key="currentDisplayMode" class="amount-display">
-                <!-- BTC icon on the left -->
-                <span v-if="currentDisplayMode === 'btc'" class="currency-icon-left">
-                  <img src="/icons/bitcoin-52.png" alt="BTC" class="balance-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
+                <!-- ₿ icon on the left (BIP-177 format) -->
+                <span v-if="currentDisplayMode === 'bitcoin'" class="currency-icon-left">
+                  <img src="/icons/sats-32.png" alt="₿" class="balance-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
                 </span>
                 <span class="amount-number" :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'">{{
                     formatMainBalance(walletState.balance)
                   }}</span>
-                <!-- Sats icon on the right -->
-                <span v-if="currentDisplayMode === 'sats'" class="currency-icon-right">
-                  <img src="/icons/sats-32.png" alt="sats" class="balance-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
-                </span>
                 <!-- Fiat icon on the right -->
                 <span v-if="currentDisplayMode === 'fiat'" class="currency-icon-right">
                   <q-icon :name="getFiatCurrencyIcon()" size="28px" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
@@ -78,13 +74,12 @@
             <div :key="currentDisplayMode" class="balance-secondary"
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
               <span v-if="secondaryValue" class="secondary-amount-display">
+                <!-- For BIP-177: icon on the left for bitcoin only -->
+                <span v-if="getSecondaryDisplayType() === 'bitcoin'" class="secondary-icon-left">
+                  <img src="/icons/sats-32.png" alt="₿" class="secondary-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
+                </span>
                 <span class="secondary-value">{{ getSecondaryDisplayValue() }}</span>
-                <span v-if="getSecondaryDisplayType() === 'sats'" class="secondary-icon-right">
-                  <img src="/icons/sats-32.png" alt="sats" class="secondary-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
-                </span>
-                <span v-else-if="getSecondaryDisplayType() === 'fiat'" class="secondary-icon-right">
-                  <q-icon :name="getFiatCurrencyIcon()" size="18px" :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'" />
-                </span>
+                <!-- Fiat values already include currency symbol, no icon needed -->
               </span>
               <span v-else class="loading-secondary">{{ $t('Loading...') }}</span>
             </div>
@@ -196,7 +191,7 @@
             <div class="amount-limits" v-if="getAmountLimits()"
                  :class="$q.dark.isActive ? 'amount_limits_dark' : 'amount_limits_light'">
               <q-icon name="las la-info-circle" class="limits-icon"/>
-              <span>{{ $t('Amount') }}: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
+              <span>{{ $t('Amount') }}: ₿{{ getAmountLimits().min }} - ₿{{ getAmountLimits().max }}</span>
             </div>
           </div>
         </q-card-section>
@@ -347,7 +342,7 @@
                       :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Est. Fee') }}:</span>
                 <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">
                   <span v-if="isEstimatingFee" class="fee-loading">{{ $t('Estimating...') }}</span>
-                  <span v-else-if="estimatedFee !== null">{{ estimatedFee.toLocaleString() }} sats</span>
+                  <span v-else-if="estimatedFee !== null">₿{{ estimatedFee.toLocaleString() }}</span>
                   <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
                 </span>
               </div>
@@ -358,7 +353,7 @@
               <q-input
                 v-model="paymentAmount"
                 outlined
-                :label="$t('Amount (sats)')"
+                :label="$t('Amount')"
                 type="number"
                 :min="pendingPayment.minSendable ? Math.floor(pendingPayment.minSendable / 1000) : 1"
                 :max="pendingPayment.maxSendable ? Math.floor(pendingPayment.maxSendable / 1000) : 100000000"
@@ -414,7 +409,7 @@
             <q-input
               v-model="receiveForm.amount"
               outlined
-              :label="$t('Amount (sats)')"
+              :label="$t('Amount')"
               type="number"
               min="1"
               :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
@@ -471,7 +466,7 @@
               <div class="invoice-info-compact"
                    :class="$q.dark.isActive ? 'invoice_info_compact_dark' : 'invoice_info_compact_light'">
                 <div class="amount-compact" :class="$q.dark.isActive ? 'amount_compact_dark' : 'amount_compact_light'">
-                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                  {{ parseInt(receiveForm.amount).toLocaleString() }}
                 </div>
                 <div class="description-compact" v-if="receiveForm.description"
                      :class="$q.dark.isActive ? 'description_compact_dark' : 'description_compact_light'">
@@ -514,7 +509,7 @@
               <!-- Amount Display -->
               <div class="amount-section">
                 <div class="amount-value" :class="$q.dark.isActive ? 'amount_value_dark' : 'amount_value_light'">
-                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                  {{ parseInt(receiveForm.amount).toLocaleString() }}
                 </div>
                 <div class="description-text" v-if="receiveForm.description"
                      :class="$q.dark.isActive ? 'description_text_dark' : 'description_text_light'">
@@ -666,8 +661,8 @@ export default {
         exchangeRates: {},
         lastRateUpdate: null,
         preferredFiatCurrency: 'USD',
-        denominationCurrency: 'sats',
-        displayMode: 'sats'
+        denominationCurrency: 'bitcoin',
+        displayMode: 'bitcoin'
       },
       recentTransactions: [],
       showReceiveModal: false,
@@ -700,7 +695,7 @@ export default {
       waitingForPayment: false,
       showLoadingScreen: true,
       loadingText: 'Loading wallet...',
-      currentDisplayMode: 'sats',
+      currentDisplayMode: 'bitcoin',
       isSwitchingCurrency: false,
       shouldPulse: false,
       showSendDialog: false,
@@ -1105,7 +1100,8 @@ export default {
 
       this.isSwitchingCurrency = true;
 
-      const modes = ['sats', 'fiat', 'btc'];
+      // BIP-177: Only 2 modes - bitcoin and fiat
+      const modes = ['bitcoin', 'fiat'];
       const currentIndex = modes.indexOf(this.currentDisplayMode);
       const nextIndex = (currentIndex + 1) % modes.length;
 
@@ -1120,31 +1116,45 @@ export default {
 
     formatMainBalance(balance) {
       switch (this.currentDisplayMode) {
-        case 'btc':
-          const btcAmount = balance / 100000000;
-          return btcAmount.toFixed(8);
+        case 'bitcoin':
+          // BIP-177: Show base units as integers with thousand separators
+          return balance.toLocaleString();
         case 'fiat':
-          const btcAmountForFiat = balance / 100000000;
+          const btcAmount = balance / 100000000;
           const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
-          const fiatValue = btcAmountForFiat * rate;
+          const fiatValue = btcAmount * rate;
           return fiatValue.toFixed(2);
-        case 'sats':
         default:
           return balance.toLocaleString();
       }
     },
 
     getFiatCurrencyIcon() {
-      // Using more visual money-bill-wave icon for all fiat currencies
-      // This provides a consistent, modern look across all currencies
-      return 'las la-money-bill-wave';
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const iconMap = {
+        'USD': 'las la-dollar-sign',
+        'EUR': 'las la-euro-sign',
+        'GBP': 'las la-pound-sign',
+        'JPY': 'las la-yen-sign',
+        'CNY': 'las la-yen-sign',
+        'INR': 'las la-rupee-sign',
+        'CAD': 'las la-dollar-sign',
+        'AUD': 'las la-dollar-sign',
+        'CHF': 'las la-dollar-sign',
+        'KRW': 'las la-won-sign',
+        'BRL': 'las la-dollar-sign',
+        'MXN': 'las la-dollar-sign',
+        'RUB': 'las la-ruble-sign',
+        'TRY': 'las la-lira-sign',
+      };
+      return iconMap[currency.toUpperCase()] || 'las la-dollar-sign';
     },
 
     getSecondaryDisplayValue() {
       if (!this.secondaryValue) return '';
-      // Remove " sats" suffix if present
-      if (this.secondaryValue.includes(' sats')) {
-        return this.secondaryValue.replace(' sats', '');
+      // Remove "₿" prefix if present (for BIP-177)
+      if (this.secondaryValue.startsWith('₿')) {
+        return this.secondaryValue.replace('₿', '').trim();
       }
       // Otherwise it's a fiat value, return as is
       return this.secondaryValue;
@@ -1152,9 +1162,9 @@ export default {
 
     getSecondaryDisplayType() {
       if (!this.secondaryValue) return '';
-      // Check if it contains 'sats' text
-      if (this.secondaryValue.includes(' sats')) {
-        return 'sats';
+      // Check if it starts with ₿ symbol (BIP-177 bitcoin format)
+      if (this.secondaryValue.startsWith('₿')) {
+        return 'bitcoin';
       }
       // Otherwise it's fiat
       return 'fiat';
@@ -1162,18 +1172,20 @@ export default {
 
     async getSecondaryValue(balance) {
       switch (this.currentDisplayMode) {
-        case 'btc':
-          return balance.toLocaleString() + ' sats';
+        case 'bitcoin':
+          // When showing bitcoin, secondary shows fiat
+          return await this.getFiatValue(balance);
         case 'fiat':
-          return balance.toLocaleString() + ' sats';
-        case 'sats':
+          // When showing fiat, secondary shows bitcoin (BIP-177)
+          return '₿' + balance.toLocaleString();
         default:
           return await this.getFiatValue(balance);
       }
     },
 
     formatBalance(balance) {
-      return balance.toLocaleString() + ' sats';
+      // BIP-177: Return formatted integer
+      return balance.toLocaleString();
     },
 
     async getFiatValue(balance) {
@@ -1522,7 +1534,7 @@ export default {
 
       // Variable amount - user needs to input
       if (this.needsAmountInput) {
-        return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
+        return this.paymentAmount ? `₿${parseInt(this.paymentAmount).toLocaleString()}` : 'Enter amount';
       }
 
       // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
@@ -1531,18 +1543,18 @@ export default {
           this.pendingPayment.type === 'lightning_address') {
         // Use new fixedAmountSats property if available
         if (this.pendingPayment.fixedAmountSats) {
-          return `${this.pendingPayment.fixedAmountSats.toLocaleString()} sats`;
+          return `₿${this.pendingPayment.fixedAmountSats.toLocaleString()}`;
         }
         // Fallback: calculate from minSendable
         if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
           const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
-          return `${fixedAmount.toLocaleString()} sats`;
+          return `₿${fixedAmount.toLocaleString()}`;
         }
       }
 
       // Standard invoice with amount
       return this.pendingPayment.amount ?
-        `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` :
+        `₿${parseInt(this.pendingPayment.amount).toLocaleString()}` :
         'Variable amount';
     },
 
@@ -1596,11 +1608,11 @@ export default {
       const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
 
       if (amountNum < minSats) {
-        return `Minimum amount is ${minSats.toLocaleString()} sats`;
+        return `Minimum amount is ₿${minSats.toLocaleString()}`;
       }
 
       if (amountNum > maxSats) {
-        return `Maximum amount is ${maxSats.toLocaleString()} sats`;
+        return `Maximum amount is ₿${maxSats.toLocaleString()}`;
       }
 
       return true;
@@ -1854,7 +1866,7 @@ export default {
       const minSats = Math.ceil((data.minSendable || 1000) / 1000);
       const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
       if (amountSats < minSats || amountSats > maxSats) {
-        throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
+        throw new Error(`Amount must be between ₿${minSats} and ₿${maxSats}`);
       }
 
       // Request invoice
@@ -2375,7 +2387,7 @@ export default {
 .currency-icon-left {
   display: flex;
   align-items: center;
-  margin-right: 0.5rem;
+  margin-right: 0.75rem;
 }
 
 .currency-icon-right {
@@ -2413,9 +2425,16 @@ export default {
   display: inline;
 }
 
+.secondary-icon-left {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.4rem;
+}
+
 .secondary-icon-right {
   display: inline-flex;
   align-items: center;
+  margin-left: 0.4rem;
 }
 
 .secondary-icon {

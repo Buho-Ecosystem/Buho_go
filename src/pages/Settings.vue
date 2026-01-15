@@ -191,7 +191,7 @@
               :loading="donationLoading === 5000"
               @click="handleDonation(5000)"
             >
-              5k sats
+              ₿5,000
             </q-btn>
             <q-btn
               unelevated
@@ -201,7 +201,7 @@
               :loading="donationLoading === 21000"
               @click="handleDonation(21000)"
             >
-              21k sats
+              ₿21,000
             </q-btn>
             <q-btn
               flat
@@ -245,7 +245,7 @@
             v-model.number="customDonationAmount"
             type="number"
             outlined
-            :label="$t('Amount in sats')"
+            :label="$t('Amount')"
             class="donation-input"
             :dark="$q.dark.isActive"
           />
@@ -434,7 +434,7 @@
                   {{ currency }}
                 </div>
                 <div class="currency-rate" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                  {{ getCurrencySymbol(currency) }}1 = {{ exchangeRates[currency.toLowerCase()] }} sats
+                  {{ getCurrencySymbol(currency) }}1 = ₿{{ exchangeRates[currency.toLowerCase()] }}
                 </div>
               </div>
               <q-icon
@@ -1283,8 +1283,9 @@ export default {
           const usdValue = (balance / 100000000) * (this.exchangeRates.usd || 65000)
           return '$' + usdValue.toFixed(2)
         case 'sats':
+        case 'bitcoin':
         default:
-          return balance.toLocaleString() + ' sats'
+          return '₿' + balance.toLocaleString()
       }
     },
 
@@ -1534,7 +1535,7 @@ export default {
         // Validate amount is within bounds (params use millisats)
         const amountMsat = amount * 1000;
         if (amountMsat < params.minSendable || amountMsat > params.maxSendable) {
-          throw new Error(this.$t('Amount must be between {min} and {max} sats', {
+          throw new Error(this.$t('Amount must be between ₿{min} and ₿{max}', {
             min: Math.ceil(params.minSendable / 1000),
             max: Math.floor(params.maxSendable / 1000)
           }));
@@ -1614,13 +1615,11 @@ export default {
     },
 
     /**
-     * Format sats amount for display
+     * Format bitcoin amount for display (BIP-177)
      */
     formatSats(amount) {
-      if (amount >= 1000) {
-        return `${(amount / 1000).toLocaleString()}k sats`;
-      }
-      return `${amount.toLocaleString()} sats`;
+      // BIP-177: Always show full integer, never abbreviate
+      return `₿${amount.toLocaleString()}`;
     },
 
     confirmRemoveWallet(walletId) {

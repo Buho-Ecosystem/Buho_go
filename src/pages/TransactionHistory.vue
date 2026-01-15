@@ -78,7 +78,7 @@
             }}
           </div>
           <div class="stat-value positive">
-            +{{ formatAmount(totalReceived) }}
+            {{ formatAmountWithSign(totalReceived, true) }}
             <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
               +{{ getFiatAmountForStats(totalReceived) }}
             </div>
@@ -91,7 +91,7 @@
             }}
           </div>
           <div class="stat-value negative">
-            -{{ formatAmount(totalSent) }}
+            {{ formatAmountWithSign(totalSent, false) }}
             <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
               -{{ getFiatAmountForStats(totalSent) }}
             </div>
@@ -104,7 +104,7 @@
             }}
           </div>
           <div class="stat-value" :class="netAmount >= 0 ? 'positive' : 'negative'">
-            {{ netAmount >= 0 ? '+' : '' }}{{ formatAmount(netAmount) }}
+            {{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}
             <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
               {{ netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(netAmount) }}
             </div>
@@ -143,7 +143,7 @@
             <div class="group-amount">
               <div class="group-total"
                    :class="[group.netAmount >= 0 ? 'positive' : 'negative', $q.dark.isActive ? 'group_total_dark' : 'group_total_light']">
-                {{ group.netAmount >= 0 ? '+' : '' }}{{ formatAmount(group.netAmount) }}
+                {{ formatAmountWithSign(Math.abs(group.netAmount), group.netAmount >= 0) }}
                 <div class="group-fiat text-right" :class="$q.dark.isActive ? 'group_fiat_dark' : 'group_fiat_light'">
                   {{ group.netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(group.netAmount) }}
                 </div>
@@ -651,11 +651,16 @@ export default {
 
     getFormattedAmount(tx) {
       const prefix = tx.type === 'incoming' ? '+' : '-';
-      return prefix + ' ' + Math.abs(tx.amount).toLocaleString() + ' sats';
+      return '₿ ' + prefix + Math.abs(tx.amount).toLocaleString();
     },
 
     formatAmount(amount) {
-      return Math.abs(amount).toLocaleString() + ' sats';
+      return '₿' + Math.abs(amount).toLocaleString();
+    },
+
+    formatAmountWithSign(amount, isPositive) {
+      const sign = isPositive ? '+' : '-';
+      return '₿ ' + sign + Math.abs(amount).toLocaleString();
     },
 
     async loadFiatRates() {

@@ -275,8 +275,9 @@ export default {
           const usdValue = (balance / 100000000) * (this.exchangeRates.usd || 65000)
           return '$' + usdValue.toFixed(2)
         case 'sats':
+        case 'bitcoin':
         default:
-          return balance.toLocaleString() + ' sats'
+          return '₿' + balance.toLocaleString()
       }
     },
 

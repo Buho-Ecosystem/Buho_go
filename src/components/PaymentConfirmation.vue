@@ -177,8 +177,8 @@ export default {
     },
 
     formatAmount(sats) {
-      if (!sats) return '0 sats'
-      return new Intl.NumberFormat('en-US').format(sats) + ' sats'
+      if (!sats) return '₿0'
+      return '₿' + new Intl.NumberFormat('en-US').format(sats)
     },
 
     getConfettiStyle(index) {

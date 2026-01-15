@@ -356,8 +356,8 @@ export default {
         const currency = this.walletState.preferredFiatCurrency || 'USD'
 
         if (this.currentCurrency === currency.toLowerCase()) {
-          // Show sats equivalent
-          return `≈ ${this.amountInSats.toLocaleString()} sats`
+          // Show bitcoin equivalent (BIP-177)
+          return `≈ ₿${this.amountInSats.toLocaleString()}`
         } else {
           // Show fiat equivalent
           const fiatValue = fiatRatesService.convertSatsToFiatSync(this.amountInSats, currency)

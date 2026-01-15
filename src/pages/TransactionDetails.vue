@@ -205,7 +205,7 @@
                   }}
                 </div>
                 <div class="dev-value" :class="$q.dark.isActive ? 'dev_value_dark' : 'dev_value_light'">
-                  {{ transaction.fee }} sats
+                  ₿{{ transaction.fee.toLocaleString() }}
                 </div>
               </div>
             </div>
@@ -561,7 +561,7 @@ export default {
 
     getFormattedAmount() {
       const prefix = this.transaction.type === 'incoming' ? '+' : '-';
-      return prefix + ' ' + Math.abs(this.transaction.amount).toLocaleString() + ' sats';
+      return '₿ ' + prefix + Math.abs(this.transaction.amount).toLocaleString();
     },
 
     async loadFiatRates() {
