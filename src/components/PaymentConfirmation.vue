@@ -68,6 +68,9 @@
 </template>
 
 <script>
+import { formatAmount as formatAmountUtil } from '../utils/amountFormatting.js';
+import { useWalletStore } from '../stores/wallet';
+
 export default {
   name: 'PaymentConfirmation',
   props: {
@@ -93,6 +96,12 @@ export default {
     }
   },
   emits: ['update:modelValue', 'closed'],
+  setup() {
+    const walletStore = useWalletStore();
+    return {
+      walletStore
+    };
+  },
   data() {
     return {
       showAnimation: false,
@@ -177,8 +186,8 @@ export default {
     },
 
     formatAmount(sats) {
-      if (!sats) return '₿0'
-      return '₿' + new Intl.NumberFormat('en-US').format(sats)
+      if (!sats) return formatAmountUtil(0, this.walletStore.useBip177Format);
+      return formatAmountUtil(sats, this.walletStore.useBip177Format);
     },
 
     getConfettiStyle(index) {

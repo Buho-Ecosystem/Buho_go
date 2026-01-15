@@ -156,6 +156,7 @@ import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
 import LightningPaymentService from '../utils/lightning.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
+import { formatAmount } from '../utils/amountFormatting.js'
 
 export default {
   name: 'PaymentModal',
@@ -188,7 +189,8 @@ export default {
       'denominationCurrency',
       'exchangeRates',
       'preferredFiatCurrency',
-      'isActiveWalletSpark'
+      'isActiveWalletSpark',
+      'useBip177Format'
     ]),
 
     show: {
@@ -356,8 +358,8 @@ export default {
         const currency = this.walletState.preferredFiatCurrency || 'USD'
 
         if (this.currentCurrency === currency.toLowerCase()) {
-          // Show bitcoin equivalent (BIP-177)
-          return `≈ ₿${this.amountInSats.toLocaleString()}`
+          // Show bitcoin equivalent using utility
+          return `≈ ${formatAmount(this.amountInSats, this.useBip177Format)}`
         } else {
           // Show fiat equivalent
           const fiatValue = fiatRatesService.convertSatsToFiatSync(this.amountInSats, currency)

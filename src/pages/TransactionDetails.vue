@@ -252,7 +252,7 @@
                 {{ $t('Fee') }}
               </q-item-label>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                ₿ {{ transaction.fee.toLocaleString() }}
+                {{ formatAmount(transaction.fee, walletStore.useBip177Format) }}
               </q-item-label>
             </q-item-section>
           </q-item>
@@ -308,7 +308,7 @@
                   }}
                 </div>
                 <div class="dev-value" :class="$q.dark.isActive ? 'dev_value_dark' : 'dev_value_light'">
-                  ₿{{ transaction.fee.toLocaleString() }}
+                  {{ formatAmount(transaction.fee, walletStore.useBip177Format) }}
                 </div>
               </div>
             </div>
@@ -443,6 +443,7 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
@@ -870,7 +871,7 @@ export default {
 
     getFormattedAmount() {
       const prefix = this.transaction.type === 'incoming' ? '+' : '-';
-      return '₿ ' + prefix + Math.abs(this.transaction.amount).toLocaleString();
+      return formatAmountWithPrefix(Math.abs(this.transaction.amount), this.walletStore.useBip177Format, prefix);
     },
 
     async loadFiatRates() {

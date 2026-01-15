@@ -329,6 +329,7 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
@@ -915,16 +916,16 @@ export default {
 
     getFormattedAmount(tx) {
       const prefix = tx.type === 'incoming' ? '+' : '-';
-      return '₿ ' + prefix + Math.abs(tx.amount).toLocaleString();
+      return formatAmountWithPrefix(Math.abs(tx.amount), this.walletStore.useBip177Format, prefix);
     },
 
     formatAmount(amount) {
-      return '₿' + Math.abs(amount).toLocaleString();
+      return formatAmountUtil(Math.abs(amount), this.walletStore.useBip177Format);
     },
 
     formatAmountWithSign(amount, isPositive) {
       const sign = isPositive ? '+' : '-';
-      return '₿ ' + sign + Math.abs(amount).toLocaleString();
+      return formatAmountWithPrefix(Math.abs(amount), this.walletStore.useBip177Format, sign);
     },
 
     async loadFiatRates() {

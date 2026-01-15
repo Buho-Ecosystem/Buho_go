@@ -148,6 +148,24 @@
             <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
           </q-item-section>
         </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Amount Display Format') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ useBip177Format ? 'BIP-177 (e.g. ₿ 1,234)' : $t('Legacy (e.g. 1,234 sats)') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-toggle
+              :model-value="useBip177Format"
+              @update:model-value="updateAmountFormat"
+              :color="$q.dark.isActive ? 'green' : 'green-7'"
+            />
+          </q-item-section>
+        </q-item>
       </div>
 
       <!-- DANGER ZONE -->
@@ -191,7 +209,7 @@
               :loading="donationLoading === 5000"
               @click="handleDonation(5000)"
             >
-              ₿5,000
+              {{ formatSats(5000) }}
             </q-btn>
             <q-btn
               unelevated
@@ -201,7 +219,7 @@
               :loading="donationLoading === 21000"
               @click="handleDonation(21000)"
             >
-              ₿21,000
+              {{ formatSats(21000) }}
             </q-btn>
             <q-btn
               flat
@@ -434,7 +452,7 @@
                   {{ currency }}
                 </div>
                 <div class="currency-rate" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                  {{ getCurrencySymbol(currency) }}1 = ₿{{ exchangeRates[currency.toLowerCase()] }}
+                  {{ getCurrencySymbol(currency) }}1 = {{ formatSats(exchangeRates[currency.toLowerCase()]) }}
                 </div>
               </div>
               <q-icon
@@ -1072,6 +1090,7 @@
 import {useWalletStore} from '../stores/wallet'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
+import {formatAmount} from '../utils/amountFormatting.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import { version } from '../../package.json'
 
@@ -1172,7 +1191,8 @@ export default {
       'hasSparkWallet',
       'sparkWallet',
       'isActiveWalletSpark',
-      'activeSparkAddress'
+      'activeSparkAddress',
+      'useBip177Format'
     ]),
 
     isValidNewWallet() {
@@ -1246,7 +1266,8 @@ export default {
       'loadExchangeRates',
       'getSparkMnemonic',
       'changeSparkPin',
-      'connectSparkWallet'
+      'connectSparkWallet',
+      'updateBip177Preference'
     ]),
 
     async initializeStore() {
@@ -1262,6 +1283,20 @@ export default {
     setPreferredCurrency(currency) {
       this.updateCurrencyPreferences(currency, this.denominationCurrency)
       this.showCurrencyDialog = false
+    },
+
+    updateAmountFormat(value) {
+      this.updateBip177Preference(value)
+
+      // Show confirmation
+      this.$q.notify({
+        type: 'positive',
+        message: value
+          ? this.$t('Amount format changed to BIP-177 (₿)')
+          : this.$t('Amount format changed to Legacy (sats)'),
+        position: 'bottom',
+        timeout: 2000
+      })
     },
 
     getCurrencySymbol(currency) {
@@ -1285,7 +1320,7 @@ export default {
         case 'sats':
         case 'bitcoin':
         default:
-          return '₿' + balance.toLocaleString()
+          return formatAmount(balance, this.useBip177Format)
       }
     },
 
@@ -1535,10 +1570,11 @@ export default {
         // Validate amount is within bounds (params use millisats)
         const amountMsat = amount * 1000;
         if (amountMsat < params.minSendable || amountMsat > params.maxSendable) {
-          throw new Error(this.$t('Amount must be between ₿{min} and ₿{max}', {
-            min: Math.ceil(params.minSendable / 1000),
-            max: Math.floor(params.maxSendable / 1000)
-          }));
+          const minSats = Math.ceil(params.minSendable / 1000);
+          const maxSats = Math.floor(params.maxSendable / 1000);
+          const minFormatted = formatAmount(minSats, this.useBip177Format);
+          const maxFormatted = formatAmount(maxSats, this.useBip177Format);
+          throw new Error(`Amount must be between ${minFormatted} and ${maxFormatted}`);
         }
 
         // Step 2: Request invoice from callback URL
@@ -1618,8 +1654,8 @@ export default {
      * Format bitcoin amount for display (BIP-177)
      */
     formatSats(amount) {
-      // BIP-177: Always show full integer, never abbreviate
-      return `₿${amount.toLocaleString()}`;
+      // Use utility for BIP-177 or Legacy format
+      return formatAmount(amount, this.useBip177Format);
     },
 
     confirmRemoveWallet(walletId) {

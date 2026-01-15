@@ -309,6 +309,7 @@
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { NostrWebLNProvider } from "@getalby/sdk";
+import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
 import PaymentConfirmation from './PaymentConfirmation.vue';
@@ -907,8 +908,8 @@ export default {
     },
 
     formatInvoiceAmount(sats) {
-      if (!sats) return '₿0';
-      return '₿' + new Intl.NumberFormat('en-US').format(sats);
+      if (!sats) return formatAmount(0, this.walletStore.useBip177Format);
+      return formatAmount(sats, this.walletStore.useBip177Format);
     },
 
     formatInvoiceFiat(sats) {

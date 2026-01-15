@@ -56,10 +56,6 @@
           <div class="balance-amount">
             <transition name="balance-fade" mode="out-in">
               <div :key="currentDisplayMode" class="amount-display">
-                <!-- ₿ icon on the left (BIP-177 format) -->
-                <span v-if="currentDisplayMode === 'bitcoin'" class="currency-icon-left">
-                  <img src="/icons/sats-32.png" alt="₿" class="balance-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
-                </span>
                 <span class="amount-number" :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'">{{
                     formatMainBalance(walletState.balance)
                   }}</span>
@@ -74,12 +70,7 @@
             <div :key="currentDisplayMode" class="balance-secondary"
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
               <span v-if="secondaryValue" class="secondary-amount-display">
-                <!-- For BIP-177: icon on the left for bitcoin only -->
-                <span v-if="getSecondaryDisplayType() === 'bitcoin'" class="secondary-icon-left">
-                  <img src="/icons/sats-32.png" alt="₿" class="secondary-icon" :class="$q.dark.isActive ? 'balance-icon-dark' : 'balance-icon-light'" />
-                </span>
-                <span class="secondary-value">{{ getSecondaryDisplayValue() }}</span>
-                <!-- Fiat values already include currency symbol, no icon needed -->
+                <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
               <span v-else class="loading-secondary">{{ $t('Loading...') }}</span>
             </div>
@@ -191,7 +182,7 @@
             <div class="amount-limits" v-if="getAmountLimits()"
                  :class="$q.dark.isActive ? 'amount_limits_dark' : 'amount_limits_light'">
               <q-icon name="las la-info-circle" class="limits-icon"/>
-              <span>{{ $t('Amount') }}: ₿{{ getAmountLimits().min }} - ₿{{ getAmountLimits().max }}</span>
+              <span>{{ $t('Amount') }}: {{ formatAmountInline(getAmountLimits().min) }} - {{ formatAmountInline(getAmountLimits().max) }}</span>
             </div>
           </div>
         </q-card-section>
@@ -342,7 +333,7 @@
                       :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Est. Fee') }}:</span>
                 <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">
                   <span v-if="isEstimatingFee" class="fee-loading">{{ $t('Estimating...') }}</span>
-                  <span v-else-if="estimatedFee !== null">₿{{ estimatedFee.toLocaleString() }}</span>
+                  <span v-else-if="estimatedFee !== null">{{ formatAmountInline(estimatedFee) }}</span>
                   <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
                 </span>
               </div>
@@ -630,6 +621,7 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService} from '../utils/lightning.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
+import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
 import LoadingScreen from '../components/LoadingScreen.vue';
@@ -1117,15 +1109,15 @@ export default {
     formatMainBalance(balance) {
       switch (this.currentDisplayMode) {
         case 'bitcoin':
-          // BIP-177: Show base units as integers with thousand separators
-          return balance.toLocaleString();
+          // Use utility for BIP-177 or Legacy format
+          return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
         case 'fiat':
           const btcAmount = balance / 100000000;
           const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
           const fiatValue = btcAmount * rate;
           return fiatValue.toFixed(2);
         default:
-          return balance.toLocaleString();
+          return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
       }
     },
 
@@ -1156,6 +1148,10 @@ export default {
       if (this.secondaryValue.startsWith('₿')) {
         return this.secondaryValue.replace('₿', '').trim();
       }
+      // Remove "sats" suffix if present (for Legacy format)
+      if (this.secondaryValue.endsWith(' sats')) {
+        return this.secondaryValue.replace(' sats', '').trim();
+      }
       // Otherwise it's a fiat value, return as is
       return this.secondaryValue;
     },
@@ -1164,6 +1160,10 @@ export default {
       if (!this.secondaryValue) return '';
       // Check if it starts with ₿ symbol (BIP-177 bitcoin format)
       if (this.secondaryValue.startsWith('₿')) {
+        return 'bitcoin';
+      }
+      // Check if it ends with "sats" (Legacy bitcoin format)
+      if (this.secondaryValue.endsWith(' sats')) {
         return 'bitcoin';
       }
       // Otherwise it's fiat
@@ -1176,16 +1176,21 @@ export default {
           // When showing bitcoin, secondary shows fiat
           return await this.getFiatValue(balance);
         case 'fiat':
-          // When showing fiat, secondary shows bitcoin (BIP-177)
-          return '₿' + balance.toLocaleString();
+          // When showing fiat, secondary shows bitcoin using utility
+          return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
         default:
           return await this.getFiatValue(balance);
       }
     },
 
     formatBalance(balance) {
-      // BIP-177: Return formatted integer
-      return balance.toLocaleString();
+      // Use utility for BIP-177 or Legacy format
+      return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
+    },
+
+    // Helper method for inline template formatting
+    formatAmountInline(amount) {
+      return formatAmount(amount, this.walletStore.useBip177Format);
     },
 
     async getFiatValue(balance) {
@@ -1534,7 +1539,7 @@ export default {
 
       // Variable amount - user needs to input
       if (this.needsAmountInput) {
-        return this.paymentAmount ? `₿${parseInt(this.paymentAmount).toLocaleString()}` : 'Enter amount';
+        return this.paymentAmount ? formatAmount(parseInt(this.paymentAmount), this.walletStore.useBip177Format) : 'Enter amount';
       }
 
       // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
@@ -1543,18 +1548,18 @@ export default {
           this.pendingPayment.type === 'lightning_address') {
         // Use new fixedAmountSats property if available
         if (this.pendingPayment.fixedAmountSats) {
-          return `₿${this.pendingPayment.fixedAmountSats.toLocaleString()}`;
+          return formatAmount(this.pendingPayment.fixedAmountSats, this.walletStore.useBip177Format);
         }
         // Fallback: calculate from minSendable
         if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
           const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
-          return `₿${fixedAmount.toLocaleString()}`;
+          return formatAmount(fixedAmount, this.walletStore.useBip177Format);
         }
       }
 
       // Standard invoice with amount
       return this.pendingPayment.amount ?
-        `₿${parseInt(this.pendingPayment.amount).toLocaleString()}` :
+        formatAmount(parseInt(this.pendingPayment.amount), this.walletStore.useBip177Format) :
         'Variable amount';
     },
 
@@ -1608,11 +1613,11 @@ export default {
       const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
 
       if (amountNum < minSats) {
-        return `Minimum amount is ₿${minSats.toLocaleString()}`;
+        return `Minimum amount is ${formatAmount(minSats, this.walletStore.useBip177Format)}`;
       }
 
       if (amountNum > maxSats) {
-        return `Maximum amount is ₿${maxSats.toLocaleString()}`;
+        return `Maximum amount is ${formatAmount(maxSats, this.walletStore.useBip177Format)}`;
       }
 
       return true;
@@ -1866,7 +1871,7 @@ export default {
       const minSats = Math.ceil((data.minSendable || 1000) / 1000);
       const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
       if (amountSats < minSats || amountSats > maxSats) {
-        throw new Error(`Amount must be between ₿${minSats} and ₿${maxSats}`);
+        throw new Error(`Amount must be between ${formatAmount(minSats, this.walletStore.useBip177Format)} and ${formatAmount(maxSats, this.walletStore.useBip177Format)}`);
       }
 
       // Request invoice

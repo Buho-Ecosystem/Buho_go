@@ -124,6 +124,7 @@ export const useWalletStore = defineStore('wallet', {
     // User preferences
     preferredFiatCurrency: 'USD',
     denominationCurrency: 'sats',
+    useBip177Format: true, // BIP-177 (₿) vs Legacy (sats) format
 
     // Exchange rates (BTC price in each currency)
     exchangeRates: {},
@@ -373,6 +374,7 @@ export const useWalletStore = defineStore('wallet', {
             activeWalletId: parsed.activeWalletId || null,
             preferredFiatCurrency: parsed.preferredFiatCurrency || 'USD',
             denominationCurrency: parsed.denominationCurrency || 'sats',
+            useBip177Format: parsed.useBip177Format !== undefined ? parsed.useBip177Format : true,
             exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
             exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
             exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
@@ -1256,6 +1258,15 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Update BIP-177 format preference
+     * @param {boolean} useBip177 - Use BIP-177 format (₿) vs Legacy (sats)
+     */
+    updateBip177Preference(useBip177) {
+      this.useBip177Format = useBip177;
+      this.persistState();
+    },
+
+    /**
      * Generate a unique wallet ID
      * @returns {string} Unique wallet ID
      */
@@ -1274,6 +1285,7 @@ export const useWalletStore = defineStore('wallet', {
           activeWalletId: this.activeWalletId,
           preferredFiatCurrency: this.preferredFiatCurrency,
           denominationCurrency: this.denominationCurrency,
+          useBip177Format: this.useBip177Format,
           exchangeRates: this.exchangeRates,
           exchangeRatesAvailable: this.exchangeRatesAvailable,
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,

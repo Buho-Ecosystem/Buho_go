@@ -173,6 +173,7 @@
 <script>
 import {useWalletStore} from '../stores/wallet'
 import {mapState, mapActions} from 'pinia'
+import {formatAmount} from '../utils/amountFormatting.js'
 
 export default {
   name: 'WalletSwitcher',
@@ -195,7 +196,8 @@ export default {
       'exchangeRates',
       'preferredFiatCurrency',
       'getDisplayBalance',
-      'isSparkWalletLocked'
+      'isSparkWalletLocked',
+      'useBip177Format'
     ])
   },
   methods: {
@@ -277,7 +279,7 @@ export default {
         case 'sats':
         case 'bitcoin':
         default:
-          return '₿' + balance.toLocaleString()
+          return formatAmount(balance, this.useBip177Format)
       }
     },
 
