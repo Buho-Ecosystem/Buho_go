@@ -483,7 +483,7 @@ export default {
         }
 
         this.videoElement = this.$refs.videoElement;
-        
+
         // Create QR scanner instance
         this.qrScanner = new QrScanner(
           this.videoElement,
@@ -498,7 +498,7 @@ export default {
 
         // Start scanning
         await this.qrScanner.start();
-        
+
       } catch (error) {
         console.error('Error starting QR scanner:', error);
         this.handleCameraError(error);
@@ -910,6 +910,7 @@ export default {
 
 /* Scanning Frame */
 .scanning-frame {
+  display: none !Important;
   position: absolute;
   top: 50%;
   left: 50%;
