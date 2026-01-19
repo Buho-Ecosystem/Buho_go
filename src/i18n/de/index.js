@@ -284,5 +284,7 @@ export default {
   "CONTACT": "KONTAKT",
   "Select Contact": "Kontakt auswählen",
   "Contact assigned": "Kontakt zugewiesen",
-  "Failed to assign contact": "Fehler beim Zuweisen des Kontakts"
+  "Failed to assign contact": "Fehler beim Zuweisen des Kontakts",
+  "See top donors & recent donations": "Top-Spender & aktuelle Spenden ansehen",
+  "Donations Portal": "Spenden-Portal"
 }

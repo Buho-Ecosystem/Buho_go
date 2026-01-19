@@ -312,6 +312,22 @@
             <q-icon name="las la-external-link-alt" class="q-mr-sm"/>
             {{ $t('Open in Wallet') }}
           </q-btn>
+          <div class="donation-portal-section">
+            <q-separator :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'" class="q-my-md"/>
+            <div class="donation-portal-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('See top donors & recent donations') }}
+            </div>
+            <q-btn
+              flat
+              no-caps
+              dense
+              class="donation-portal-link"
+              @click="openSupportPortal"
+            >
+              <q-icon name="las la-heart" class="q-mr-xs"/>
+              {{ $t('Donations Portal') }}
+            </q-btn>
+          </div>
         </q-card-section>
       </q-card>
     </q-dialog>
@@ -1651,6 +1667,13 @@ export default {
     },
 
     /**
+     * Open the donations support portal
+     */
+    openSupportPortal() {
+      window.open('https://support-buhogo.netlify.app', '_blank');
+    },
+
+    /**
      * Format bitcoin amount for display (BIP-177)
      */
     formatSats(amount) {
@@ -2415,6 +2438,29 @@ export default {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 15px;
   font-weight: 600;
+}
+
+.donation-portal-section {
+  width: 100%;
+  text-align: center;
+  margin-top: 8px;
+}
+
+.donation-portal-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.donation-portal-link {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #ff6b9d;
+}
+
+.donation-portal-link .q-icon {
+  color: #ff6b9d;
 }
 
 /* Danger Confirmation Dialog */

@@ -310,5 +310,7 @@ export default {
   "CONTACT": "CONTACT",
   "Select Contact": "Select Contact",
   "Contact assigned": "Contact assigned",
-  "Failed to assign contact": "Failed to assign contact"
+  "Failed to assign contact": "Failed to assign contact",
+  "See top donors & recent donations": "See top donors & recent donations",
+  "Donations Portal": "Donations Portal"
 }
