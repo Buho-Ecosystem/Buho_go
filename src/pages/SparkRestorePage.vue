@@ -62,6 +62,7 @@
                   autocapitalize="none"
                   spellcheck="false"
                   class="word-input"
+                  style="width: 20%;"
                   :class="$q.dark.isActive ? 'input-dark' : 'input-light'"
                   @input="normalizeWord(index)"
                   @keydown.enter="focusNextInput(index)"
