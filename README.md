@@ -55,9 +55,9 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 |-----------|------------|
 | ![Dark Mode](public/Spark_images/Home_Black.png) | ![Light Mode](public/Spark_images/Home_Light.png) |
 
-### NWC Wallet Connection
+### Welcome Screen
 
-![Connect Wallet](public/connect_wallet.png)
+![Welcome Screen](public/Spark_images/Starting_Point_view.png)
 
 ### Send and Receive
 
