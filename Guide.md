@@ -13,10 +13,11 @@ Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 3. [Connecting an NWC Wallet](#connecting-an-nwc-wallet)
 4. [Receiving Bitcoin](#receiving-bitcoin)
 5. [Sending Bitcoin](#sending-bitcoin)
-6. [Managing Contacts](#managing-contacts)
-7. [Switching Wallets](#switching-wallets)
-8. [Settings and Preferences](#settings-and-preferences)
-9. [Troubleshooting](#troubleshooting)
+6. [Transaction History](#transaction-history)
+7. [Managing Contacts](#managing-contacts)
+8. [Switching Wallets](#switching-wallets)
+9. [Settings and Preferences](#settings-and-preferences)
+10. [Troubleshooting](#troubleshooting)
 
 <br>
 
@@ -62,9 +63,13 @@ Best for users who already have a Lightning wallet they want to use.
 
 Open BuhoGO and tap "Create Wallet" on the welcome screen.
 
+![Add New Wallet](public/Spark_images/AddNew_Wallet.png)
+
 ### Step 2: Save Your Seed Phrase
 
 You will see 12 words displayed on screen. These words are your **only way** to recover your wallet.
+
+![Create Seed Phrase](public/Spark_images/CreateSeed_1.png)
 
 **Important**:
 - Write these words down on paper in the exact order shown
@@ -77,6 +82,8 @@ You will see 12 words displayed on screen. These words are your **only way** to 
 ### Step 3: Verify Your Backup
 
 The app will show all 12 words shuffled in random order. You must tap each word in the correct sequence (1-12) to prove you've properly recorded your backup.
+
+![Verify Seed Phrase](public/Spark_images/CreateSeed_2.png)
 
 **How it works:**
 - Tap the first word of your seed phrase
@@ -100,6 +107,12 @@ Choose a PIN you can remember but others cannot guess.
 ### Step 5: Done
 
 Your wallet is now ready. You will be taken to the main wallet screen where you can start receiving and sending Bitcoin.
+
+![Wallet Ready](public/Spark_images/CreateSeed_3.png)
+
+| Dark Mode | Light Mode |
+|-----------|------------|
+| ![Home Dark](public/Spark_images/Home_Black.png) | ![Home Light](public/Spark_images/Home_Light.png) |
 
 <br>
 
@@ -203,6 +216,22 @@ Review these details carefully before confirming.
 
 <br>
 
+## Transaction History
+
+Your transaction history shows all payments sent and received. Access it by tapping "Transactions" on the main wallet screen.
+
+### Grouped Transactions
+
+When you send or receive multiple payments to/from the same destination within a short period, BuhoGO automatically groups them together to keep your transaction list clean and organized.
+
+| Expanded View | Grouped View |
+|---------------|--------------|
+| ![Transactions Expanded](public/Spark_images/TX_List_1.png) | ![Transactions Grouped](public/Spark_images/TX_List_closed.png) |
+
+Tap on a grouped transaction to expand and see individual payments within the group.
+
+<br>
+
 ## Managing Contacts
 
 ### Adding a Contact
@@ -276,6 +305,8 @@ For Spark wallets, additional options are available:
 
 **Delete Wallet**: Permanently removes the Spark wallet. Make sure you have your seed phrase backed up before deleting.
 
+![Delete Wallet](public/Spark_images/DeleteWallet.png)
+
 ### NWC Wallet Settings
 
 **Rename**: Change the display name for the wallet.
@@ -296,6 +327,8 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 2. Select "Restore Wallet"
 3. Enter your 12-word seed phrase
 4. Set a new PIN
+
+![Restore Wallet](public/Spark_images/RestoreSeed.png)
 
 **Payment Failed**
 - Check your balance is sufficient
