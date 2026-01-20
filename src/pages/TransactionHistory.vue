@@ -243,7 +243,7 @@
                   <div class="group-amount-micro">
                     <div class="amount-sats"
                          :class="[tx.transactionType === 'incoming' ? 'positive' : 'negative', $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
-                      {{ tx.transactionType === 'incoming' ? '+' : '-' }}{{ Math.abs(tx.totalAmount).toLocaleString() }} sats
+                      {{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}
                     </div>
                     <q-icon
                       :name="expandedMicropaymentGroups.has(tx.id) ? 'las la-chevron-up' : 'las la-chevron-down'"
@@ -269,7 +269,7 @@
                       </div>
                       <div class="item-amount"
                            :class="[innerTx.type === 'incoming' ? 'positive' : '', $q.dark.isActive ? 'item_amount_dark' : 'item_amount_light']">
-                        {{ innerTx.type === 'incoming' ? '+' : '-' }}{{ Math.abs(innerTx.amount).toLocaleString() }} sats
+                        {{ formatAmountWithSign(innerTx.amount, innerTx.type === 'incoming') }}
                       </div>
                     </div>
                   </div>
@@ -2024,7 +2024,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #8B5CF6, #6366F1);
+  background: linear-gradient(135deg, #007AFF, #5AC8FA);
   color: white;
   flex-shrink: 0;
 }
