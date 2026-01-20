@@ -878,7 +878,7 @@ export default {
         amount: tx.amount || 0,
         description: tx.description || '',
         memo: tx.description || '',
-        settled_at: tx.timestamp || Math.floor(Date.now() / 1000),
+        settled_at: tx.timestamp || null,
         fee: tx.fee || 0,
         status: tx.status || 'completed',
         sparkTransfer: tx.sparkTransfer || false,
@@ -926,7 +926,7 @@ export default {
         id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
         type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
         description: tx.description || tx.memo || '',
-        settled_at: tx.settled_at || tx.created_at || Math.floor(Date.now() / 1000),
+        settled_at: tx.settled_at || tx.created_at || null,
         fee: tx.fee || tx.fees_paid || 0,
         payment_request: tx.payment_request || tx.invoice || null
       }));

@@ -523,7 +523,7 @@ export class SparkWalletProvider extends WalletProvider {
         id: transfer.id,
         type: this._mapTransferType(transfer),
         amount: Number(transfer.totalValue || transfer.amount || 0),
-        timestamp: this._parseTimestamp(transfer.createdAt || transfer.updatedAt),
+        timestamp: this._parseTimestamp(transfer.createdTime || transfer.updatedTime),
         description: transfer.memo || transfer.description || '',
         status: this._normalizeStatus(transfer.status),
         fee: Number(transfer.fee || 0),
@@ -542,7 +542,7 @@ export class SparkWalletProvider extends WalletProvider {
    * Parse timestamp from various formats the SDK might return
    */
   _parseTimestamp(timestamp) {
-    if (!timestamp) return Math.floor(Date.now() / 1000);
+    if (!timestamp) return null;
 
     // Already a Unix timestamp (number)
     if (typeof timestamp === 'number') {
