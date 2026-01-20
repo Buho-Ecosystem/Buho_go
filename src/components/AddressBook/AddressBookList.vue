@@ -47,6 +47,7 @@
             @delete="confirmDeleteEntry"
             @change-color="changeEntryColor"
             @pay="payContact"
+            @toggle-favorite="toggleFavorite"
           />
         </div>
       </q-scroll-area>
@@ -88,7 +89,7 @@
         {{ $t('No contacts yet') }}
       </div>
       <div class="empty-subtitle" :class="$q.dark.isActive ? 'empty_subtitle_dark' : 'empty_subtitle_light'">
-        {{ $t('Add your first Lightning contact to get started') }}
+        {{ $t('Add Lightning or Spark contacts to get started') }}
       </div>
       <q-btn
         unelevated
@@ -141,6 +142,72 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <q-dialog v-model="showDeleteDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="delete-header">
+          <div class="delete-icon-wrapper">
+            <q-icon name="las la-trash-alt" size="32px" class="delete-icon"/>
+          </div>
+          <div class="delete-title">{{ $t('Delete Contact') }}</div>
+          <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('Are you sure you want to delete') }} <strong>{{ entryToDelete?.name }}</strong>{{ $t('?') }}
+          </div>
+        </q-card-section>
+
+        <q-card-actions class="delete-actions">
+          <q-btn
+            flat
+            no-caps
+            :label="$t('Cancel')"
+            @click="showDeleteDialog = false"
+            class="cancel-btn"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            unelevated
+            no-caps
+            :label="$t('Delete')"
+            @click="executeDeleteEntry"
+            class="delete-action-btn"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Clear All Confirmation Dialog -->
+    <q-dialog v-model="showClearAllConfirmDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="delete-header">
+          <div class="delete-icon-wrapper">
+            <q-icon name="las la-exclamation-triangle" size="32px" class="delete-icon"/>
+          </div>
+          <div class="delete-title">{{ $t('Clear All Contacts') }}</div>
+          <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('This will permanently delete all your contacts. This action cannot be undone.') }}
+          </div>
+        </q-card-section>
+
+        <q-card-actions class="delete-actions">
+          <q-btn
+            flat
+            no-caps
+            :label="$t('Cancel')"
+            @click="showClearAllConfirmDialog = false"
+            class="cancel-btn"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            unelevated
+            no-caps
+            :label="$t('Clear All')"
+            @click="executeClearAll"
+            class="delete-action-btn"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
@@ -158,7 +225,10 @@ export default {
   data() {
     return {
       showColorPicker: false,
-      selectedEntry: null
+      selectedEntry: null,
+      showDeleteDialog: false,
+      entryToDelete: null,
+      showClearAllConfirmDialog: false
     }
   },
   computed: {
@@ -178,6 +248,11 @@ export default {
       'clearAll'
     ]),
 
+    async toggleFavorite(entry) {
+      const store = useAddressBookStore()
+      await store.toggleFavorite(entry.id)
+    },
+
     editEntry(entry) {
       this.$emit('edit-contact', entry)
     },
@@ -186,32 +261,31 @@ export default {
       this.$emit('pay-contact', entry)
     },
 
-    async confirmDeleteEntry(entry) {
-      console.log(entry)
-      this.$q.dialog({
-        title: this.$t('Delete Contact'),
-        message: this.$t('Are you sure you want to delete this contact? This action cannot be undone.'),
-        cancel: true,
-        persistent: true,
-        class: this.$q.dark.isActive ? 'dailog_dark' : 'dailog_light'
-      }).onOk(async () => {
-        try {
-          await this.deleteEntry(entry.id)
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Contact removed'),
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          })
-        } catch (error) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t('Couldn\'t delete contact'),
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          })
-        }
-      })
+    confirmDeleteEntry(entry) {
+      this.entryToDelete = entry
+      this.showDeleteDialog = true
+    },
+
+    async executeDeleteEntry() {
+      if (!this.entryToDelete) return
+      try {
+        await this.deleteEntry(this.entryToDelete.id)
+        this.showDeleteDialog = false
+        this.entryToDelete = null
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Contact removed'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t delete contact'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+      }
     },
 
     changeEntryColor(entry) {
@@ -244,30 +318,27 @@ export default {
     },
 
     showClearAllDialog() {
-      this.$q.dialog({
-        title: this.$t('Clear All Contacts'),
-        message: this.$t('Are you sure you want to delete all contacts? This action cannot be undone.'),
-        cancel: true,
-        persistent: true,
-        class: this.$q.dark.isActive ? 'dailog_dark' : 'dailog_light'
-      }).onOk(async () => {
-        try {
-          await this.clearAll()
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Contacts cleared'),
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          })
-        } catch (error) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t('Couldn\'t clear contacts'),
-            position: 'bottom',
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          })
-        }
-      })
+      this.showClearAllConfirmDialog = true
+    },
+
+    async executeClearAll() {
+      try {
+        await this.clearAll()
+        this.showClearAllConfirmDialog = false
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Contacts cleared'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t clear contacts'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        })
+      }
     }
   }
 }
@@ -282,11 +353,6 @@ export default {
 
 .search-section {
   padding: 1rem;
-  border-bottom: 1px solid;
-}
-
-.search-section {
-  border-bottom-color: #2A342A;
 }
 
 .entries-container {
@@ -299,23 +365,23 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid;
+  padding: 0.5rem 1rem;
 }
 
 .entries-header-dark {
-  border-bottom-color: #2A342A;
+  color: #666;
 }
 
 .entries-header-light {
-  border-bottom-color: #E5E7EB;
+  color: #9CA3AF;
 }
 
 .entries-count {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
-  color: #B0B0B0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .clear-all-btn {
@@ -345,7 +411,7 @@ export default {
 }
 
 .entries-list {
-  padding: 1rem;
+  padding: 0 1rem 1rem;
 }
 
 /* Empty States */
@@ -555,5 +621,78 @@ export default {
     width: 40px;
     height: 40px;
   }
+}
+
+/* Delete Confirmation Dialog */
+.delete-confirm-card {
+  width: 100%;
+  max-width: 340px;
+  border-radius: 16px;
+}
+
+.delete-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1.5rem 0.5rem;
+}
+
+.delete-icon-wrapper {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(249, 115, 22, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.delete-icon {
+  color: #F97316;
+}
+
+.delete-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: #F97316;
+  margin-bottom: 0.5rem;
+}
+
+.delete-message {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.delete-message strong {
+  color: #F97316;
+}
+
+.delete-actions {
+  padding: 0.5rem 1.5rem 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.cancel-btn {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-weight: 500;
+  border-radius: 10px;
+}
+
+.delete-action-btn {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-weight: 600;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #F97316, #EA580C) !important;
+  color: white !important;
+}
+
+.delete-action-btn:disabled {
+  opacity: 0.4;
 }
 </style>

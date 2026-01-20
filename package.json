@@ -3,7 +3,7 @@
   "version": "1.0.2",
   "description": "BuhoGo - A Lightning Wallet for the Web",
   "productName": "BuhoGo",
-  "author": "pratikpatel <pratikpatelpp802@gmail.com>",
+  "author": "pratikpatel <pratikpatelpp802@gmail.com> & drshift <keleeweb@tutanota.com>",
   "type": "module",
   "private": true,
   "scripts": {
@@ -13,10 +13,11 @@
     "postinstall": "quasar prepare"
   },
   "dependencies": {
+    "@buildonspark/spark-sdk": "^0.5.5",
     "@capacitor/ios": "^7.4.3",
     "@chenfengyuan/vue-qrcode": "^2.0.0",
-    "@getalby/sdk": "^7.0.0",
     "@getalby/lightning-tools": "^5.1.2",
+    "@getalby/sdk": "^7.0.0",
     "@quasar/extras": "^1.16.4",
     "axios": "^1.12.0",
     "bech32": "^2.0.0",

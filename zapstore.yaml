@@ -2,28 +2,29 @@ identifier: de.mybuho.buhogo
 name: Buhogo
 summary: Bitcoin payments made simple
 description: |
-  Buhogo is an open-source mobile wallet that makes sending and receiving Bitcoin effortless.
+  BuhoGO is an open-source mobile wallet that makes sending and receiving Bitcoin effortless.
   Buhogo connects seamlessly to your existing setup through Nostr Wallet Connect (NWC). 
   
   Think of it as your universal remote for Bitcoin payments – send, receive, and track with ease. 
   Whether you're new to Bitcoin or a seasoned user, Buhogo is built to just work.
 
   ## Key Features
-  - ⚡ Lightning-fast Bitcoin payments
-  - 🔑 Non-custodial and open-source
-  - 🔗 Connect multiple NWC-compatible wallets
-  - 📊 Transaction history & monthly summaries
-  - 🌙 Dark and light themes
-  - 🌍 Multi-language support
-  - 💸 Pay invoices, Lightning addresses, and LNURL requests
+  - Lightning-fast Bitcoin payments
+  - Non-custodial and open-source
+  - Connect multiple NWC-compatible wallets
+  - Create self custodial Spark wallet
+  - Transaction history & monthly summaries
+  - Dark and light themes
+  - Multi-language support
+  - Pay invoices, Lightning addresses, and LNURL requests, spark addresses
 
   ## Why Buhogo?
-  Unlike most wallets that lock you into their ecosystem, Buhogo integrates with what you already use.
+  Unlike most wallets that lock you into their ecosystem, BuhoGO integrates with what you already use or let you start from scratch in 2 minutes.
   It’s designed for clarity, speed, and flexibility – a true Bitcoin-first experience.
 repository: https://github.com/Buho-Ecosystem/Buho_go
-homepage: https://go.mybuho.de
+homepage: https://home.mybuho.de/buhogo
 license: MIT
-tags: bitcoin lightning wallet payments nwc nostr android
+tags: bitcoin lightning wallet payments nwc nostr android spark 
 icon: public/logo.png
 images:
   - public/dark_img.png

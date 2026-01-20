@@ -135,7 +135,7 @@
             v-model="manualInput"
             outlined
             :label="$t('Paste invoice or enter address')"
-            :placeholder="$t('e.g. name@wallet.com')"
+            :placeholder="manualInputPlaceholder"
             class="manual-input"
             :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
             color="green"
@@ -211,35 +211,126 @@
           </div>
 
           <!-- No Results -->
-          <div v-else-if="filteredContacts.length === 0" class="contact-empty-state">
+          <div v-else-if="!hasContactsToShow" class="contact-empty-state">
             <q-icon name="las la-search" size="48px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
             <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('No matches found') }}
             </div>
           </div>
 
-          <!-- Contact Items -->
+          <!-- Sectioned Contact List -->
           <div v-else class="contact-list">
-            <div
-              v-for="contact in filteredContacts"
-              :key="contact.id"
-              class="contact-item"
-              :class="$q.dark.isActive ? 'contact-item-dark' : 'contact-item-light'"
-              @click="selectContact(contact)"
-            >
-              <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
-                {{ contact.name.charAt(0).toUpperCase() }}
+            <!-- Favorites Section -->
+            <template v-if="favoriteContacts.length > 0">
+              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
+                <q-icon name="las la-star" size="14px" color="amber" />
+                <span>{{ $t('Favorites') }}</span>
               </div>
-              <div class="contact-info">
-                <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
-                  {{ contact.name }}
+              <div
+                v-for="contact in favoriteContacts"
+                :key="'fav-' + contact.id"
+                class="contact-item"
+                :class="[
+                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
+                  { 'contact-disabled': !canPayContact(contact) }
+                ]"
+                @click="selectContact(contact)"
+              >
+                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
+                  {{ contact.name.charAt(0).toUpperCase() }}
                 </div>
-                <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                  {{ contact.lightningAddress }}
+                <div class="contact-info">
+                  <div class="contact-name-row">
+                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                      {{ contact.name }}
+                    </div>
+                    <q-icon name="las la-star" size="12px" color="amber" class="q-ml-xs" />
+                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
+                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <span>{{ getContactTypeLabel(contact) }}</span>
+                    </div>
+                  </div>
+                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ getContactAddress(contact) }}
+                  </div>
                 </div>
+                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
               </div>
-              <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
-            </div>
+            </template>
+
+            <!-- Recent Section -->
+            <template v-if="recentContacts.length > 0">
+              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
+                <q-icon name="las la-clock" size="14px" />
+                <span>{{ $t('Recent') }}</span>
+              </div>
+              <div
+                v-for="contact in recentContacts"
+                :key="'recent-' + contact.id"
+                class="contact-item"
+                :class="[
+                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
+                  { 'contact-disabled': !canPayContact(contact) }
+                ]"
+                @click="selectContact(contact)"
+              >
+                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
+                  {{ contact.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="contact-info">
+                  <div class="contact-name-row">
+                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                      {{ contact.name }}
+                    </div>
+                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
+                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <span>{{ getContactTypeLabel(contact) }}</span>
+                    </div>
+                  </div>
+                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ getContactAddress(contact) }}
+                  </div>
+                </div>
+                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+              </div>
+            </template>
+
+            <!-- All Contacts Section -->
+            <template v-if="otherContacts.length > 0">
+              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
+                <q-icon name="las la-user-friends" size="14px" />
+                <span>{{ $t('All Contacts') }}</span>
+              </div>
+              <div
+                v-for="contact in otherContacts"
+                :key="'other-' + contact.id"
+                class="contact-item"
+                :class="[
+                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
+                  { 'contact-disabled': !canPayContact(contact) }
+                ]"
+                @click="selectContact(contact)"
+              >
+                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
+                  {{ contact.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="contact-info">
+                  <div class="contact-name-row">
+                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+                      {{ contact.name }}
+                    </div>
+                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
+                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <span>{{ getContactTypeLabel(contact) }}</span>
+                    </div>
+                  </div>
+                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ getContactAddress(contact) }}
+                  </div>
+                </div>
+                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+              </div>
+            </template>
           </div>
         </q-card-section>
       </q-card>
@@ -250,6 +341,7 @@
 <script>
 import QrScanner from 'qr-scanner';
 import { useAddressBookStore } from '../stores/addressBook';
+import { useWalletStore } from '../stores/wallet';
 
 export default {
   name: 'SendModal',
@@ -262,7 +354,8 @@ export default {
   emits: ['update:modelValue', 'payment-detected'],
   setup() {
     const addressBookStore = useAddressBookStore();
-    return { addressBookStore };
+    const walletStore = useWalletStore();
+    return { addressBookStore, walletStore };
   },
   data() {
     return {
@@ -292,13 +385,50 @@ export default {
     contacts() {
       return this.addressBookStore.entries || [];
     },
+    // Favorite contacts (filtered by search)
+    favoriteContacts() {
+      return (this.addressBookStore.favoriteEntries || [])
+        .filter(c => this.matchesSearch(c));
+    },
+    // Recent contacts (filtered by search)
+    recentContacts() {
+      return (this.addressBookStore.recentEntries || [])
+        .filter(c => this.matchesSearch(c));
+    },
+    // Other contacts (not in favorites or recent, filtered by search)
+    otherContacts() {
+      const favoriteIds = new Set((this.addressBookStore.favoriteEntries || []).map(c => c.id));
+      const recentIds = new Set((this.addressBookStore.recentEntries || []).map(c => c.id));
+      return this.contacts
+        .filter(c => !favoriteIds.has(c.id) && !recentIds.has(c.id))
+        .filter(c => this.matchesSearch(c))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
+    // All filtered contacts (for backward compatibility and empty state check)
     filteredContacts() {
       if (!this.contactSearch) return this.contacts;
       const search = this.contactSearch.toLowerCase();
-      return this.contacts.filter(c =>
-        c.name.toLowerCase().includes(search) ||
-        c.lightningAddress.toLowerCase().includes(search)
-      );
+      return this.contacts.filter(c => {
+        const address = c.address || c.lightningAddress || '';
+        const notes = c.notes || '';
+        return c.name.toLowerCase().includes(search) ||
+          address.toLowerCase().includes(search) ||
+          notes.toLowerCase().includes(search);
+      });
+    },
+    // Check if we have any contacts to show in sections
+    hasContactsToShow() {
+      return this.favoriteContacts.length > 0 ||
+             this.recentContacts.length > 0 ||
+             this.otherContacts.length > 0;
+    },
+    isActiveWalletSpark() {
+      return this.walletStore.isActiveWalletSpark;
+    },
+    manualInputPlaceholder() {
+      return this.isActiveWalletSpark
+        ? this.$t('e.g. name@wallet.com, lnbc..., or spark1...')
+        : this.$t('e.g. name@wallet.com or lnbc...');
     }
   },
   watch: {
@@ -316,6 +446,17 @@ export default {
     this.stopQrScanner();
   },
   methods: {
+    // Search filter helper
+    matchesSearch(contact) {
+      if (!this.contactSearch) return true;
+      const search = this.contactSearch.toLowerCase();
+      const address = contact.address || contact.lightningAddress || '';
+      const notes = contact.notes || '';
+      return contact.name.toLowerCase().includes(search) ||
+        address.toLowerCase().includes(search) ||
+        notes.toLowerCase().includes(search);
+    },
+
     async initializeCamera() {
       this.cameraError = null;
       try {
@@ -342,7 +483,7 @@ export default {
         }
 
         this.videoElement = this.$refs.videoElement;
-        
+
         // Create QR scanner instance
         this.qrScanner = new QrScanner(
           this.videoElement,
@@ -361,7 +502,7 @@ export default {
 
         // Start scanning
         await this.qrScanner.start();
-        
+
       } catch (error) {
         console.error('Error starting QR scanner:', error);
         this.handleCameraError(error);
@@ -431,10 +572,24 @@ export default {
           cleanData = cleanData.toLowerCase();
         }
 
+        const paymentType = this.determinePaymentType(cleanData);
+
+        // Early warning: NWC wallet cannot pay Spark addresses
+        if (paymentType === 'spark_address' && !this.isActiveWalletSpark) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Spark address detected'),
+            caption: this.$t('Switch to Spark wallet to pay this address'),
+            position: 'bottom',
+            timeout: 4000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        }
+
         // Emit the detected payment data to parent component
         this.$emit('payment-detected', {
           data: cleanData,
-          type: this.determinePaymentType(cleanData)
+          type: paymentType
         });
 
         this.closeModal();
@@ -449,18 +604,27 @@ export default {
       // Handle lightning: prefix
       const cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
 
-      // Check Lightning invoice (mainnet, testnet, regtest, signet)
-      if (
-        cleanData.startsWith('lnbc') ||
-        cleanData.startsWith('lntb') ||
-        cleanData.startsWith('lnbcrt') ||
-        cleanData.startsWith('lntbs')
-      ) {
-        return 'lightning_invoice';
-      }
+      // Spark addresses - Zero fee transfers
+      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
+      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
+      if (this.isSparkAddress(cleanData)) return 'spark_address';
+      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
+      if (cleanData.startsWith('lnbc') || cleanData.startsWith('lntb') ||
+          cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
       if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
       if (cleanData.startsWith('lnurl')) return 'lnurl';
       return 'unknown';
+    },
+
+    isSparkAddress(address) {
+      if (!address) return false;
+      const normalized = address.toLowerCase().trim();
+      // New format prefixes
+      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1'];
+      // Legacy format prefixes
+      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1'];
+      return newPrefixes.some(p => normalized.startsWith(p)) ||
+             legacyPrefixes.some(p => normalized.startsWith(p));
     },
 
     validatePaymentInput(input) {
@@ -468,21 +632,19 @@ export default {
         return this.$t('Please enter a payment request');
       }
 
-      const trimmed = input.trim().toLowerCase();
-      // Handle lightning: prefix
-      const cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
+      let trimmed = input.trim().toLowerCase();
+      // Strip lightning: prefix if present
+      if (trimmed.startsWith('lightning:')) {
+        trimmed = trimmed.substring(10);
+      }
+      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
+      const isLightningInvoice = trimmed.startsWith('lnbc') || trimmed.startsWith('lntb') ||
+        trimmed.startsWith('lntbs') || trimmed.startsWith('lnbcrt');
+      const isLightningAddress = trimmed.includes('@') && trimmed.includes('.');
+      const isLnurl = trimmed.startsWith('lnurl');
+      const isSparkAddr = this.isSparkAddress(trimmed);
 
-      // Check Lightning invoice (mainnet, testnet, regtest, signet)
-      const isLightningInvoice =
-        cleanData.startsWith('lnbc') ||
-        cleanData.startsWith('lntb') ||
-        cleanData.startsWith('lnbcrt') ||
-        cleanData.startsWith('lntbs');
-
-      const isLightningAddress = cleanData.includes('@') && cleanData.includes('.');
-      const isLnurl = cleanData.startsWith('lnurl');
-
-      const isValid = isLightningInvoice || isLightningAddress || isLnurl;
+      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddr;
 
       return isValid ? true : this.$t('Invalid payment format');
     },
@@ -529,13 +691,74 @@ export default {
       this.$router.push('/address-book');
     },
 
-    selectContact(contact) {
+    async selectContact(contact) {
+      // Check if user can pay this contact
+      if (!this.canPayContact(contact)) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Cannot pay this contact'),
+          caption: this.getContactDisabledReason(contact),
+          position: 'bottom',
+          timeout: 3500,
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        return;
+      }
+
+      // Use store methods for consistent address/type detection
+      const address = this.getContactAddress(contact);
+      const addressType = this.getContactAddressType(contact);
+
+      // Update last used timestamp for recent contacts tracking
+      await this.addressBookStore.updateLastUsed(contact.id);
+
       this.$emit('payment-detected', {
-        data: contact.lightningAddress,
-        type: 'lightning_address'
+        data: address,
+        type: addressType === 'spark' ? 'spark_address' : 'lightning_address'
       });
       this.showContactDialog = false;
       this.closeModal();
+    },
+
+    // Contact type helper methods - use store methods for consistency and auto-detection
+    getContactAddress(contact) {
+      return this.addressBookStore.getEntryAddress(contact);
+    },
+
+    getContactAddressType(contact) {
+      return this.addressBookStore.getEntryAddressType(contact);
+    },
+
+    getContactTypeIcon(contact) {
+      const type = this.getContactAddressType(contact);
+      return type === 'spark' ? 'las la-fire' : 'las la-bolt';
+    },
+
+    getContactTypeLabel(contact) {
+      const type = this.getContactAddressType(contact);
+      return type === 'spark' ? 'Spark' : 'Lightning';
+    },
+
+    getContactTypeBadgeClass(contact) {
+      const type = this.getContactAddressType(contact);
+      return type === 'spark' ? 'badge-spark' : 'badge-lightning';
+    },
+
+    canPayContact(contact) {
+      const type = this.getContactAddressType(contact);
+      if (type === 'spark') {
+        // Spark contacts can only be paid from Spark wallet
+        return this.isActiveWalletSpark;
+      }
+      // Lightning contacts can be paid from any wallet
+      return true;
+    },
+
+    getContactDisabledReason(contact) {
+      if (!this.canPayContact(contact)) {
+        return this.$t('Switch to Spark wallet to pay this contact');
+      }
+      return '';
     },
 
     async processManualInput() {
@@ -695,6 +918,7 @@ export default {
 
 /* Scanning Frame */
 .scanning-frame {
+  display: none !Important;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1016,6 +1240,27 @@ export default {
   flex-direction: column;
 }
 
+/* Contact Section Headers */
+.contact-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem 0.5rem;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.section-header-dark {
+  color: #777;
+}
+
+.section-header-light {
+  color: #9CA3AF;
+}
+
 .contact-item {
   display: flex;
   align-items: center;
@@ -1041,6 +1286,15 @@ export default {
   background: rgba(21, 222, 114, 0.12);
 }
 
+.contact-disabled {
+  opacity: 0.5;
+}
+
+.contact-disabled:hover {
+  background: transparent !important;
+  cursor: not-allowed;
+}
+
 .contact-avatar {
   width: 44px;
   height: 44px;
@@ -1064,6 +1318,12 @@ export default {
   gap: 0.25rem;
 }
 
+.contact-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .contact-name {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 15px;
@@ -1071,6 +1331,30 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.contact-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.badge-lightning {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+}
+
+.badge-spark {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+  color: white;
 }
 
 .contact-address {

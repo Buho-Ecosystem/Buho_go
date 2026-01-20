@@ -12,9 +12,6 @@
       <q-avatar square size="30px">
         <img src="buho_logo.svg" alt="Logo" class="app-logo">
       </q-avatar>
-<!--      <q-toolbar-title>-->
-<!--        <div class="title" :class="$q.dark.isActive ? 'title-dark' : 'title-light'">BuhoGO</div>-->
-<!--      </q-toolbar-title>-->
       <q-space/>
       <q-btn
         flat
@@ -62,15 +59,19 @@
                 <span class="amount-number" :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'">{{
                     formatMainBalance(walletState.balance)
                   }}</span>
-                <span class="amount-unit"
-                      :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'">{{ getCurrentUnit() }}</span>
+                <!-- Fiat icon on the right -->
+                <span v-if="currentDisplayMode === 'fiat'" class="currency-icon-right">
+                  <q-icon :name="getFiatCurrencyIcon()" size="28px" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
+                </span>
               </div>
             </transition>
           </div>
           <transition name="secondary-fade" mode="out-in">
             <div :key="currentDisplayMode" class="balance-secondary"
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
-              <span v-if="secondaryValue">{{ secondaryValue }}</span>
+              <span v-if="secondaryValue" class="secondary-amount-display">
+                <span class="secondary-value">{{ secondaryValue }}</span>
+              </span>
               <span v-else class="loading-secondary">{{ $t('Loading...') }}</span>
             </div>
           </transition>
@@ -118,7 +119,7 @@
     </div>
 
     <!-- Send Dialog -->
-    <q-dialog v-model="showSendDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showSendDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
@@ -181,7 +182,7 @@
             <div class="amount-limits" v-if="getAmountLimits()"
                  :class="$q.dark.isActive ? 'amount_limits_dark' : 'amount_limits_light'">
               <q-icon name="las la-info-circle" class="limits-icon"/>
-              <span>{{ $t('Amount') }}: {{ getAmountLimits().min }} - {{ getAmountLimits().max }} sats</span>
+              <span>{{ $t('Amount') }}: {{ formatAmountInline(getAmountLimits().min) }} - {{ formatAmountInline(getAmountLimits().max) }}</span>
             </div>
           </div>
         </q-card-section>
@@ -200,8 +201,18 @@
       @payment-detected="onPaymentDetected"
     />
 
+    <!-- PIN Entry Dialog for Spark Wallet -->
+    <PinEntryDialog
+      v-model="showPinDialog"
+      :title="$t('Unlock Wallet')"
+      :subtitle="$t('Enter your PIN to unlock your Spark wallet')"
+      :error-message="pinError"
+      @pin-complete="handlePinComplete"
+      @cancel="handlePinCancel"
+    />
+
     <!-- Wallet Switcher Dialog -->
-    <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="switcher-header">
           <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -212,46 +223,63 @@
         </q-card-section>
 
         <q-card-section class="switcher-content">
-          <div class="wallet-list">
+          <div class="wallet-switch-list">
             <div
               v-for="wallet in storeWallets"
               :key="wallet.id"
-              class="wallet-switch-item"
+              class="wallet-switch-card"
               :class="{
-                'active-wallet': wallet.id === storeActiveWalletId,
-                'wallet-switch-item-dark': $q.dark.isActive,
-                'wallet-switch-item-light': !$q.dark.isActive
+                'wallet-switch-card-active': wallet.id === storeActiveWalletId,
+                'wallet-switch-card-dark': $q.dark.isActive,
+                'wallet-switch-card-light': !$q.dark.isActive
               }"
               @click="switchToWallet(wallet.id)"
             >
-              <div class="wallet-switch-icon" :class="getWalletColorClass(wallet)">
-                <q-icon name="las la-wallet" size="20px" />
+              <!-- Avatar -->
+              <div class="switch-avatar">
+                <div class="switch-avatar-circle" :class="getWalletColorClass(wallet)">
+                  <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-wallet'" size="20px" />
+                </div>
+                <div
+                  class="switch-status-dot"
+                  :class="storeConnectionStates[wallet.id]?.connected ? 'status-connected' : 'status-disconnected'"
+                ></div>
               </div>
-              <div class="wallet-switch-info">
-                <div class="wallet-switch-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+
+              <!-- Details -->
+              <div class="switch-details">
+                <div class="switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">
                   {{ wallet.name }}
                 </div>
-                <div class="wallet-switch-balance" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                <div class="switch-meta-row">
+                  <div class="switch-type-badge" :class="wallet.type === 'spark' ? 'type-spark' : 'type-nwc'">
+                    <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-plug'" size="9px" />
+                    <span>{{ wallet.type === 'spark' ? 'Spark' : 'NWC' }}</span>
+                  </div>
+                  <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
+                </div>
+                <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   {{ formatBalance(storeBalances[wallet.id] || 0) }}
                 </div>
               </div>
+
+              <!-- Check Icon -->
               <q-icon
                 v-if="wallet.id === storeActiveWalletId"
                 name="las la-check-circle"
-                size="22px"
-                color="positive"
-                class="active-check"
+                size="20px"
+                class="switch-check-icon"
               />
             </div>
           </div>
         </q-card-section>
 
-        <q-card-section class="switcher-footer">
+        <q-card-section class="switcher-footer" :class="$q.dark.isActive ? 'switcher-footer-dark' : 'switcher-footer-light'">
           <q-btn
             flat
             no-caps
             class="manage-wallets-btn"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+            :class="$q.dark.isActive ? 'manage-btn-dark' : 'manage-btn-light'"
             @click="goToSettings"
           >
             <q-icon name="las la-cog" class="q-mr-sm" />
@@ -262,7 +290,7 @@
     </q-dialog>
 
     <!-- Payment Confirmation Dialog -->
-    <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px;">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{ $t('Confirm Payment') }}</div>
@@ -299,6 +327,16 @@
                     getPaymentTypeLabel()
                   }}</span>
               </div>
+              <!-- Fee estimate for Spark Lightning payments -->
+              <div class="detail-item" v-if="showFeeEstimate">
+                <span class="detail-label"
+                      :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Est. Fee') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">
+                  <span v-if="isEstimatingFee" class="fee-loading">{{ $t('Estimating...') }}</span>
+                  <span v-else-if="estimatedFee !== null">{{ formatAmountInline(estimatedFee) }}</span>
+                  <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
+                </span>
+              </div>
             </div>
 
             <!-- Amount input for LNURL/Lightning Address -->
@@ -306,7 +344,7 @@
               <q-input
                 v-model="paymentAmount"
                 outlined
-                :label="$t('Amount (sats)')"
+                :label="$t('Amount')"
                 type="number"
                 :min="pendingPayment.minSendable ? Math.floor(pendingPayment.minSendable / 1000) : 1"
                 :max="pendingPayment.maxSendable ? Math.floor(pendingPayment.maxSendable / 1000) : 100000000"
@@ -345,7 +383,7 @@
     </q-dialog>
 
     <!-- Receive Dialog -->
-    <q-dialog v-model="showReceiveDialog" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showReceiveDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
@@ -362,7 +400,7 @@
             <q-input
               v-model="receiveForm.amount"
               outlined
-              :label="$t('Amount (sats)')"
+              :label="$t('Amount')"
               type="number"
               min="1"
               :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
@@ -419,7 +457,7 @@
               <div class="invoice-info-compact"
                    :class="$q.dark.isActive ? 'invoice_info_compact_dark' : 'invoice_info_compact_light'">
                 <div class="amount-compact" :class="$q.dark.isActive ? 'amount_compact_dark' : 'amount_compact_light'">
-                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                  {{ parseInt(receiveForm.amount).toLocaleString() }}
                 </div>
                 <div class="description-compact" v-if="receiveForm.description"
                      :class="$q.dark.isActive ? 'description_compact_dark' : 'description_compact_light'">
@@ -462,7 +500,7 @@
               <!-- Amount Display -->
               <div class="amount-section">
                 <div class="amount-value" :class="$q.dark.isActive ? 'amount_value_dark' : 'amount_value_light'">
-                  {{ parseInt(receiveForm.amount).toLocaleString() }} sats
+                  {{ parseInt(receiveForm.amount).toLocaleString() }}
                 </div>
                 <div class="description-text" v-if="receiveForm.description"
                      :class="$q.dark.isActive ? 'description_text_dark' : 'description_text_light'">
@@ -488,7 +526,7 @@
     </q-dialog>
 
     <!-- QR Scanner Dialog -->
-    <q-dialog v-model="showQRScanner" :class="$q.dark.isActive ? 'dailog_dark' : 'dailog_light'">
+    <q-dialog v-model="showQRScanner" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
@@ -507,6 +545,75 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <!-- Save Contact Dialog -->
+    <q-dialog v-model="showSaveContactDialog" persistent class="save-contact-dialog">
+      <q-card class="save-contact-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="save-contact-header" :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
+          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Save to Contacts?') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            @click="closeSaveContactDialog"
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          />
+        </q-card-section>
+
+        <q-card-section class="save-contact-content">
+          <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            <q-icon
+              :name="saveContactData.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'"
+              size="16px"
+              :color="saveContactData.addressType === 'spark' ? 'green' : 'amber'"
+              class="q-mr-xs"
+            />
+            <span class="address-preview">{{ truncateAddress(saveContactData.address) }}</span>
+          </div>
+
+          <q-input
+            v-model="saveContactData.name"
+            outlined
+            :label="$t('Name')"
+            :placeholder="$t('Enter a name for this contact')"
+            class="q-mt-md"
+            :class="$q.dark.isActive ? 'save-input-dark' : 'save-input-light'"
+            autofocus
+          />
+
+          <q-input
+            v-model="saveContactData.notes"
+            outlined
+            :label="$t('Notes')"
+            :placeholder="$t('Optional notes')"
+            type="textarea"
+            rows="2"
+            class="q-mt-sm"
+            :class="$q.dark.isActive ? 'save-input-dark' : 'save-input-light'"
+            maxlength="200"
+          />
+        </q-card-section>
+
+        <q-card-actions align="right" class="save-contact-actions" :class="$q.dark.isActive ? 'actions-dark' : 'actions-light'">
+          <q-btn
+            flat
+            :label="$t('Skip')"
+            @click="closeSaveContactDialog"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+          />
+          <q-btn
+            flat
+            :label="$t('Save')"
+            @click="saveRecipientAsContact"
+            class="save-btn"
+            :disable="!saveContactData.name?.trim()"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -514,21 +621,26 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService} from '../utils/lightning.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
+import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {useWalletStore} from '../stores/wallet';
+import {useAddressBookStore} from '../stores/addressBook';
 import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
+import PinEntryDialog from '../components/PinEntryDialog.vue';
 
 export default {
   name: 'WalletPage',
   components: {
     LoadingScreen,
     ReceiveModal,
-    SendModal
+    SendModal,
+    PinEntryDialog
   },
   setup() {
     const walletStore = useWalletStore();
-    return { walletStore };
+    const addressBookStore = useAddressBookStore();
+    return { walletStore, addressBookStore };
   },
   data() {
     return {
@@ -541,8 +653,8 @@ export default {
         exchangeRates: {},
         lastRateUpdate: null,
         preferredFiatCurrency: 'USD',
-        denominationCurrency: 'sats',
-        displayMode: 'sats'
+        denominationCurrency: 'bitcoin',
+        displayMode: 'bitcoin'
       },
       recentTransactions: [],
       showReceiveModal: false,
@@ -575,7 +687,7 @@ export default {
       waitingForPayment: false,
       showLoadingScreen: true,
       loadingText: 'Loading wallet...',
-      currentDisplayMode: 'sats',
+      currentDisplayMode: 'bitcoin',
       isSwitchingCurrency: false,
       shouldPulse: false,
       showSendDialog: false,
@@ -588,7 +700,20 @@ export default {
       fiatRatesLoaded: false,
       secondaryValue: '',
       paymentFiatValue: '',
-      showWalletSwitcher: false
+      showWalletSwitcher: false,
+      showPinDialog: false,
+      pinError: '',
+      // Fee estimation for Spark Lightning payments
+      estimatedFee: null,
+      isEstimatingFee: false,
+      // Save-to-contacts after payment
+      showSaveContactDialog: false,
+      saveContactData: {
+        address: '',
+        addressType: 'lightning',
+        name: '',
+        notes: ''
+      }
     };
   },
   computed: {
@@ -599,6 +724,11 @@ export default {
     },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
+
+      // Spark addresses always need amount input (no embedded amount)
+      if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress) {
+        return true;
+      }
 
       // Check for LNURL and Lightning Address payments
       if (this.pendingPayment.type === 'lightning_address' ||
@@ -623,6 +753,14 @@ export default {
       }
       return true;
     },
+    // Show fee estimate for Spark wallet Lightning payments (not Spark-to-Spark transfers)
+    showFeeEstimate() {
+      if (!this.pendingPayment) return false;
+      if (!this.walletStore.isActiveWalletSpark) return false;
+      // Show for Lightning invoice, Lightning address, or LNURL payments
+      const paymentTypes = ['lightning_invoice', 'invoice', 'lightning_address', 'lnurl', 'lnurl_pay'];
+      return paymentTypes.includes(this.pendingPayment.type) || this.pendingPayment.sparkAddress;
+    },
     // Computed properties from Pinia store for wallet switcher
     storeWallets() {
       return this.walletStore.wallets || [];
@@ -632,6 +770,9 @@ export default {
     },
     storeBalances() {
       return this.walletStore.balances || {};
+    },
+    storeConnectionStates() {
+      return this.walletStore.connectionStates || {};
     }
   },
   async created() {
@@ -718,7 +859,10 @@ export default {
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
-        // Refresh balance in background
+        // Check if Spark wallet needs PIN unlock
+        await this.checkSparkWalletUnlock();
+
+        // Refresh balance in background (only if provider is available)
         this.updateWalletBalance();
       } catch (error) {
         console.error('Error switching wallet:', error);
@@ -746,6 +890,9 @@ export default {
         this.loadingText = 'Loading wallet state...';
         await this.loadWalletState();
 
+        // Initialize wallet store
+        await this.walletStore.initialize();
+
         this.loadingText = 'Loading fiat rates...';
         await this.loadFiatRates();
 
@@ -762,12 +909,60 @@ export default {
         this.loadingText = 'Ready!';
         await new Promise(resolve => setTimeout(resolve, 500));
         this.showLoadingScreen = false;
+
+        // Check if Spark wallet needs unlocking
+        await this.checkSparkWalletUnlock();
       } catch (error) {
         console.error('Error initializing wallet:', error);
         this.loadingText = 'Error loading wallet';
         await new Promise(resolve => setTimeout(resolve, 1000));
         this.showLoadingScreen = false;
       }
+    },
+
+    async checkSparkWalletUnlock() {
+      // Check if active wallet is Spark and needs unlocking
+      if (this.walletStore.isActiveWalletSpark) {
+        const provider = this.walletStore.getActiveProvider();
+        if (!provider) {
+          // Spark wallet exists but not unlocked - show PIN dialog
+          this.pinError = '';
+          this.showPinDialog = true;
+        }
+      }
+    },
+
+    async handlePinComplete(pin) {
+      try {
+        this.pinError = '';
+        await this.walletStore.unlockSparkWallet(pin);
+        this.showPinDialog = false;
+
+        // Refresh balance after unlock
+        await this.updateWalletBalance();
+
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Wallet unlocked'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        console.error('PIN unlock failed:', error);
+        this.pinError = this.$t('Incorrect PIN. Please try again.');
+      }
+    },
+
+    handlePinCancel() {
+      this.showPinDialog = false;
+      // Optionally redirect or show warning that wallet features are limited
+      this.$q.notify({
+        type: 'warning',
+        message: this.$t('Wallet locked'),
+        caption: this.$t('Some features require PIN unlock'),
+        position: 'bottom',
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
     },
 
     async loadWalletState() {
@@ -786,16 +981,28 @@ export default {
     },
 
     async updateWalletBalance() {
-      const activeWallet = this.walletState.connectedWallets.find(
-        w => w.id === this.walletState.activeWalletId
-      );
+      try {
+        if (this.showLoadingScreen) {
+          this.loadingText = 'Updating balance...';
+        }
 
-      if (activeWallet && activeWallet.nwcString) {
-        try {
-          if (this.showLoadingScreen) {
-            this.loadingText = 'Updating balance...';
+        // Check if active wallet is Spark
+        if (this.walletStore.isActiveWalletSpark) {
+          const provider = this.walletStore.getActiveProvider();
+          if (provider) {
+            const balanceResult = await provider.getBalance();
+            this.walletState.balance = balanceResult.balance;
+            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
           }
+          return;
+        }
 
+        // NWC wallet flow
+        const activeWallet = this.walletState.connectedWallets.find(
+          w => w.id === this.walletState.activeWalletId
+        );
+
+        if (activeWallet && activeWallet.nwcString) {
           const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
           });
@@ -806,9 +1013,9 @@ export default {
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-        } catch (error) {
-          console.error('Failed to update balance:', error);
         }
+      } catch (error) {
+        console.error('Failed to update balance:', error);
       }
     },
 
@@ -853,9 +1060,9 @@ export default {
         // Save updated state
         localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-        console.log('✅ Fiat rates loaded:', this.walletState.exchangeRates);
+        console.log('Fiat rates loaded:', this.walletState.exchangeRates);
       } catch (error) {
-        console.error('❌ Error loading fiat rates:', error);
+        console.error('Error loading fiat rates:', error);
         // Keep existing rates or use fallbacks
         if (!this.fiatRatesLoaded) {
           this.walletState.exchangeRates = {
@@ -885,7 +1092,8 @@ export default {
 
       this.isSwitchingCurrency = true;
 
-      const modes = ['sats', 'fiat', 'btc'];
+      // BIP-177: Only 2 modes - bitcoin and fiat
+      const modes = ['bitcoin', 'fiat'];
       const currentIndex = modes.indexOf(this.currentDisplayMode);
       const nextIndex = (currentIndex + 1) % modes.length;
 
@@ -900,57 +1108,89 @@ export default {
 
     formatMainBalance(balance) {
       switch (this.currentDisplayMode) {
-        case 'btc':
-          const btcAmount = balance / 100000000;
-          if (btcAmount < 0.001) {
-            return balance.toLocaleString();
-          }
-          return btcAmount.toFixed(8);
+        case 'bitcoin':
+          // Use utility for BIP-177 or Legacy format
+          return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
         case 'fiat':
-          const btcAmountForFiat = balance / 100000000;
+          const btcAmount = balance / 100000000;
           const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
-          const fiatValue = btcAmountForFiat * rate;
+          const fiatValue = btcAmount * rate;
           return fiatValue.toFixed(2);
-        case 'sats':
         default:
-          return balance.toLocaleString();
+          return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
       }
     },
 
-    getCurrentUnit() {
-      switch (this.currentDisplayMode) {
-        case 'btc':
-          const btcAmount = this.walletState.balance / 100000000;
-          if (btcAmount < 0.001) {
-            return 'sats';
-          }
-          return 'BTC';
-        case 'fiat':
-          return this.walletState.preferredFiatCurrency || 'USD';
-        case 'sats':
-        default:
-          return 'sats';
+    getFiatCurrencyIcon() {
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const iconMap = {
+        'USD': 'las la-dollar-sign',
+        'EUR': 'las la-euro-sign',
+        'GBP': 'las la-pound-sign',
+        'JPY': 'las la-yen-sign',
+        'CNY': 'las la-yen-sign',
+        'INR': 'las la-rupee-sign',
+        'CAD': 'las la-dollar-sign',
+        'AUD': 'las la-dollar-sign',
+        'CHF': 'las la-dollar-sign',
+        'KRW': 'las la-won-sign',
+        'BRL': 'las la-dollar-sign',
+        'MXN': 'las la-dollar-sign',
+        'RUB': 'las la-ruble-sign',
+        'TRY': 'las la-lira-sign',
+      };
+      return iconMap[currency.toUpperCase()] || 'las la-dollar-sign';
+    },
+
+    getSecondaryDisplayValue() {
+      if (!this.secondaryValue) return '';
+      // Remove "₿" prefix if present (for BIP-177)
+      if (this.secondaryValue.startsWith('₿')) {
+        return this.secondaryValue.replace('₿', '').trim();
       }
+      // Remove "sats" suffix if present (for Legacy format)
+      if (this.secondaryValue.endsWith(' sats')) {
+        return this.secondaryValue.replace(' sats', '').trim();
+      }
+      // Otherwise it's a fiat value, return as is
+      return this.secondaryValue;
+    },
+
+    getSecondaryDisplayType() {
+      if (!this.secondaryValue) return '';
+      // Check if it starts with ₿ symbol (BIP-177 bitcoin format)
+      if (this.secondaryValue.startsWith('₿')) {
+        return 'bitcoin';
+      }
+      // Check if it ends with "sats" (Legacy bitcoin format)
+      if (this.secondaryValue.endsWith(' sats')) {
+        return 'bitcoin';
+      }
+      // Otherwise it's fiat
+      return 'fiat';
     },
 
     async getSecondaryValue(balance) {
       switch (this.currentDisplayMode) {
-        case 'btc':
-          const btcAmountForSecondary = balance / 100000000;
-          if (btcAmountForSecondary < 0.001) {
-            return await this.getFiatValue(balance);
-          }
-          return balance.toLocaleString() + ' sats';
+        case 'bitcoin':
+          // When showing bitcoin, secondary shows fiat
+          return await this.getFiatValue(balance);
         case 'fiat':
-          return balance.toLocaleString() + ' sats';
-        case 'sats':
+          // When showing fiat, secondary shows bitcoin using utility
+          return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
         default:
           return await this.getFiatValue(balance);
       }
     },
 
     formatBalance(balance) {
-      return balance.toLocaleString() + ' sats';
+      // Use utility for BIP-177 or Legacy format
+      return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
+    },
+
+    // Helper method for inline template formatting
+    formatAmountInline(amount) {
+      return formatAmount(amount, this.walletStore.useBip177Format);
     },
 
     async getFiatValue(balance) {
@@ -1009,7 +1249,7 @@ export default {
       if (!this.sendForm.input.trim()) return;
 
       try {
-        console.log('🔍 Processing payment input:', this.sendForm.input);
+        console.log('Processing payment input:', this.sendForm.input);
 
         const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
         if (!validation.valid) {
@@ -1024,7 +1264,7 @@ export default {
         const lightningService = new LightningPaymentService(activeWallet.nwcString);
         this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
 
-        console.log('✅ Payment data processed:', this.paymentData);
+        console.log('Payment data processed:', this.paymentData);
 
         if (this.paymentData.type === 'lightning_invoice') {
           try {
@@ -1034,10 +1274,10 @@ export default {
             await nwc.enable();
 
             const invoiceDetails = await nwc.getInfo();
-            console.log('📋 Invoice details from NWC:', invoiceDetails);
+            console.log('Invoice details from NWC:', invoiceDetails);
 
             this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
-            console.log('📊 Parsed invoice:', this.parsedInvoice);
+            console.log('Parsed invoice:', this.parsedInvoice);
 
           } catch (error) {
             console.warn('Could not get detailed invoice info:', error);
@@ -1170,36 +1410,66 @@ export default {
       console.log('Payment detected:', paymentData);
 
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
-
         // Transform the payment data to match expected structure
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
-          // Use LightningPaymentService to properly decode the invoice
-          const processedInvoice = await lightningService.processPaymentInput(paymentData.data);
-          console.log('✅ Invoice processed:', processedInvoice);
-          this.pendingPayment = processedInvoice;
+          // Parse the invoice to get the amount
+          const parsedInvoice = this.parseInvoiceManually(paymentData.data);
+
+          this.pendingPayment = {
+            ...paymentData,
+            invoice: paymentData.data,
+            amount: parsedInvoice.amount,
+            description: parsedInvoice.description
+          };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
-          // Process LNURL to get the actual payment parameters
-          const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
-          console.log('✅ LNURL processed:', processedLnurl);
-          this.pendingPayment = processedLnurl;
+          // For Spark wallets, just pass through - we'll process during payment
+          if (this.walletStore.isActiveWalletSpark) {
+            this.pendingPayment = {
+              ...paymentData,
+              lnurl: paymentData.data
+            };
+          } else {
+            // Process LNURL for NWC wallets
+            const activeWallet = this.getActiveWallet();
+            if (!activeWallet?.nwcString) {
+              throw new Error('No active wallet found');
+            }
+            const lightningService = new LightningPaymentService(activeWallet.nwcString);
+            const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
+            console.log('LNURL processed:', processedLnurl);
+            this.pendingPayment = processedLnurl;
+          }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
-          // Process Lightning Address to get the actual payment parameters
-          const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-          console.log('✅ Lightning Address processed:', processedAddress);
-          this.pendingPayment = processedAddress;
+          // For Spark wallets, just pass through - we'll process during payment
+          if (this.walletStore.isActiveWalletSpark) {
+            this.pendingPayment = {
+              ...paymentData,
+              lightningAddress: paymentData.data
+            };
+          } else {
+            // Process Lightning Address for NWC wallets
+            const activeWallet = this.getActiveWallet();
+            if (!activeWallet?.nwcString) {
+              throw new Error('No active wallet found');
+            }
+            const lightningService = new LightningPaymentService(activeWallet.nwcString);
+            const processedAddress = await lightningService.processPaymentInput(paymentData.data);
+            console.log('Lightning Address processed:', processedAddress);
+            this.pendingPayment = processedAddress;
+          }
+        } else if (paymentData.type === 'spark_address' && paymentData.data) {
+          // Spark address payment
+          this.pendingPayment = {
+            ...paymentData,
+            sparkAddress: paymentData.data
+          };
         } else {
           this.pendingPayment = paymentData;
         }
 
         this.showPaymentConfirmation = true;
       } catch (error) {
-        console.error('❌ Error processing payment:', error);
+        console.error('Error processing payment:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Payment failed'),
@@ -1214,22 +1484,38 @@ export default {
       if (!this.currentInvoicePaymentHash || this.invoicePaid) return;
 
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) return;
+        let isPaid = false;
 
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-        await nwc.enable();
+        if (this.walletStore.isActiveWalletSpark) {
+          // Spark wallet - ensure connected and use provider's lookupInvoice
+          try {
+            const provider = await this.walletStore.ensureSparkConnected();
+            const result = await provider.lookupInvoice(this.currentInvoicePaymentHash);
+            isPaid = result.paid;
+          } catch (e) {
+            // Silently fail if wallet not connected during background check
+            return;
+          }
+        } else {
+          // NWC wallet
+          const activeWallet = this.getActiveWallet();
+          if (!activeWallet?.nwcString) return;
 
-        const transactions = await nwc.getTransactions();
-        const paidInvoice = transactions.find(tx =>
-          tx.type === 'incoming' &&
-          tx.payment_hash === this.currentInvoicePaymentHash
-        );
+          const nwc = new NostrWebLNProvider({
+            nostrWalletConnectUrl: activeWallet.nwcString,
+          });
+          await nwc.enable();
 
-        if (paidInvoice) {
-          console.log('✅ Invoice paid!', paidInvoice);
+          const transactions = await nwc.getTransactions();
+          const paidInvoice = transactions.find(tx =>
+            tx.type === 'incoming' &&
+            tx.payment_hash === this.currentInvoicePaymentHash
+          );
+          isPaid = !!paidInvoice;
+        }
+
+        if (isPaid) {
+          console.log('Invoice paid!');
           this.invoicePaid = true;
           this.waitingForPayment = false;
           this.stopInvoiceMonitoring();
@@ -1253,7 +1539,7 @@ export default {
 
       // Variable amount - user needs to input
       if (this.needsAmountInput) {
-        return this.paymentAmount ? `${parseInt(this.paymentAmount).toLocaleString()} sats` : 'Enter amount';
+        return this.paymentAmount ? formatAmount(parseInt(this.paymentAmount), this.walletStore.useBip177Format) : 'Enter amount';
       }
 
       // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
@@ -1262,18 +1548,18 @@ export default {
           this.pendingPayment.type === 'lightning_address') {
         // Use new fixedAmountSats property if available
         if (this.pendingPayment.fixedAmountSats) {
-          return `${this.pendingPayment.fixedAmountSats.toLocaleString()} sats`;
+          return formatAmount(this.pendingPayment.fixedAmountSats, this.walletStore.useBip177Format);
         }
         // Fallback: calculate from minSendable
         if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
           const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
-          return `${fixedAmount.toLocaleString()} sats`;
+          return formatAmount(fixedAmount, this.walletStore.useBip177Format);
         }
       }
 
       // Standard invoice with amount
       return this.pendingPayment.amount ?
-        `${parseInt(this.pendingPayment.amount).toLocaleString()} sats` :
+        formatAmount(parseInt(this.pendingPayment.amount), this.walletStore.useBip177Format) :
         'Variable amount';
     },
 
@@ -1327,11 +1613,11 @@ export default {
       const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
 
       if (amountNum < minSats) {
-        return `Minimum amount is ${minSats.toLocaleString()} sats`;
+        return `Minimum amount is ${formatAmount(minSats, this.walletStore.useBip177Format)}`;
       }
 
       if (amountNum > maxSats) {
-        return `Maximum amount is ${maxSats.toLocaleString()} sats`;
+        return `Maximum amount is ${formatAmount(maxSats, this.walletStore.useBip177Format)}`;
       }
 
       return true;
@@ -1343,13 +1629,6 @@ export default {
       this.isSendingPayment = true;
 
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
-
         // Determine the amount to send
         let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
@@ -1371,18 +1650,33 @@ export default {
 
         const comment = this.paymentComment || null;
 
-        console.log('🚀 Sending payment:', this.pendingPayment);
-        console.log('💰 Amount:', amount, 'Comment:', comment);
-        console.log('📝 Raw paymentAmount:', this.paymentAmount);
-        console.log('📝 Raw sendForm.input:', this.sendForm.input);
-        const result = await lightningService.sendPayment(this.pendingPayment, amount, comment);
-        console.log('✅ Payment sent:', result);
+        console.log('Sending payment:', this.pendingPayment);
+        console.log('Amount:', amount, 'Comment:', comment);
+
+        let result;
+
+        // Route payment based on wallet type
+        if (this.walletStore.isActiveWalletSpark) {
+          result = await this.sendSparkPayment(amount, comment);
+        } else {
+          result = await this.sendNWCPayment(amount, comment);
+        }
+
+        console.log('Payment sent:', result);
+
+        // Check if we should offer to save this recipient as a contact
+        const recipientAddress = this.getRecipientAddress();
+        const recipientAddressType = this.getRecipientAddressType();
+        const shouldOfferSave = recipientAddress && !this.addressBookStore.findContactByAddress(recipientAddress);
 
         this.showPaymentConfirmation = false;
+        const pendingPaymentBackup = this.pendingPayment; // Keep reference for save dialog
         this.pendingPayment = null;
         this.paymentAmount = '';
         this.paymentComment = '';
         this.sendForm.input = '';
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
 
         await this.updateWalletBalance();
 
@@ -1393,8 +1687,22 @@ export default {
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
+        // Offer to save contact if this is a new recipient
+        if (shouldOfferSave) {
+          this.saveContactData = {
+            address: recipientAddress,
+            addressType: recipientAddressType,
+            name: '',
+            notes: ''
+          };
+          // Small delay so the success notification is seen first
+          setTimeout(() => {
+            this.showSaveContactDialog = true;
+          }, 500);
+        }
+
       } catch (error) {
-        console.error('❌ Payment failed:', error);
+        console.error('Payment failed:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Payment failed'),
@@ -1407,30 +1715,255 @@ export default {
       }
     },
 
+    async sendSparkPayment(amount, comment) {
+      // Ensure Spark wallet is connected (auto-connects if session PIN available)
+      const provider = await this.walletStore.ensureSparkConnected();
+
+      // Spark address transfer (zero-fee)
+      if (this.pendingPayment.sparkAddress) {
+        return await provider.transferToSparkAddress(this.pendingPayment.sparkAddress, amount);
+      }
+
+      // Lightning invoice
+      if (this.pendingPayment.invoice) {
+        // For zero-amount invoices, pass user-provided amount
+        const isZeroAmountInvoice = !this.pendingPayment.amount || this.pendingPayment.amount === 0;
+
+        return await provider.payInvoice({
+          invoice: this.pendingPayment.invoice,
+          preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
+          amountSats: isZeroAmountInvoice ? amount : null // Only pass amount for zero-amount invoices
+        });
+      }
+
+      // Lightning address
+      if (this.pendingPayment.lightningAddress) {
+        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '');
+      }
+
+      // LNURL - decode and fetch invoice, then pay
+      if (this.pendingPayment.lnurl) {
+        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
+        return await provider.payInvoice({
+          invoice,
+          preferSpark: true,
+          amountSats: amount // LNURL invoices may need amount passed
+        });
+      }
+
+      throw new Error('Unsupported payment type for Spark wallet');
+    },
+
+    async sendNWCPayment(amount, comment) {
+      const activeWallet = this.getActiveWallet();
+      if (!activeWallet?.nwcString) {
+        throw new Error('No active NWC wallet found');
+      }
+
+      const lightningService = new LightningPaymentService(activeWallet.nwcString);
+      return await lightningService.sendPayment(this.pendingPayment, amount, comment);
+    },
+
+    // Helper: Check if input is a Lightning invoice
+    isLightningInvoice(input) {
+      const lower = input.toLowerCase();
+      return lower.startsWith('lnbc') || lower.startsWith('lntb') || lower.startsWith('lnbcrt');
+    },
+
+    // Helper: Check if input is a Lightning address
+    isLightningAddress(input) {
+      return input.includes('@') && !input.startsWith('lnurl');
+    },
+
+    // Helper: Check if input is an LNURL
+    isLNURL(input) {
+      const lower = input.toLowerCase();
+      return lower.startsWith('lnurl');
+    },
+
+    // Helper: Get recipient address from pending payment
+    getRecipientAddress() {
+      if (!this.pendingPayment) return null;
+      // Lightning address
+      if (this.pendingPayment.lightningAddress) return this.pendingPayment.lightningAddress;
+      // Spark address
+      if (this.pendingPayment.sparkAddress) return this.pendingPayment.sparkAddress;
+      // LNURL is not saveable as a stable address
+      return null;
+    },
+
+    // Helper: Get recipient address type from pending payment
+    getRecipientAddressType() {
+      if (!this.pendingPayment) return 'lightning';
+      if (this.pendingPayment.sparkAddress) return 'spark';
+      return 'lightning';
+    },
+
+    // Save recipient as contact
+    async saveRecipientAsContact() {
+      try {
+        if (!this.saveContactData.name?.trim()) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Please enter a name'),
+            position: 'bottom'
+          });
+          return;
+        }
+
+        await this.addressBookStore.addEntry({
+          name: this.saveContactData.name.trim(),
+          address: this.saveContactData.address,
+          addressType: this.saveContactData.addressType,
+          notes: this.saveContactData.notes?.trim() || ''
+        });
+
+        this.showSaveContactDialog = false;
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Contact saved'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        console.error('Error saving contact:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to save contact'),
+          caption: error.message,
+          position: 'bottom'
+        });
+      }
+    },
+
+    // Close save contact dialog
+    closeSaveContactDialog() {
+      this.showSaveContactDialog = false;
+      this.saveContactData = {
+        address: '',
+        addressType: 'lightning',
+        name: '',
+        notes: ''
+      };
+    },
+
+    // Helper: Truncate address for display
+    truncateAddress(address) {
+      if (!address) return '';
+      if (address.length <= 30) return address;
+      const start = address.slice(0, 14);
+      const end = address.slice(-10);
+      return `${start}...${end}`;
+    },
+
+    // Helper: Fetch invoice from LNURL
+    async fetchLNURLInvoice(lnurl, amountSats) {
+      const url = this.decodeLNURL(lnurl);
+
+      // Fetch LNURL endpoint
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch LNURL');
+
+      const data = await response.json();
+      if (data.status === 'ERROR') throw new Error(data.reason || 'LNURL error');
+
+      // Validate amount bounds
+      const minSats = Math.ceil((data.minSendable || 1000) / 1000);
+      const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
+      if (amountSats < minSats || amountSats > maxSats) {
+        throw new Error(`Amount must be between ${formatAmount(minSats, this.walletStore.useBip177Format)} and ${formatAmount(maxSats, this.walletStore.useBip177Format)}`);
+      }
+
+      // Request invoice
+      const amountMs = amountSats * 1000;
+      const callbackUrl = `${data.callback}?amount=${amountMs}`;
+      const invoiceResponse = await fetch(callbackUrl);
+      if (!invoiceResponse.ok) throw new Error('Failed to get invoice');
+
+      const invoiceData = await invoiceResponse.json();
+      if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
+
+      return invoiceData.pr;
+    },
+
+    // Helper: Decode LNURL (bech32) to URL
+    decodeLNURL(lnurl) {
+      const input = lnurl.toLowerCase().replace('lightning:', '');
+      const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+      const hrpEnd = input.lastIndexOf('1');
+      if (hrpEnd < 1) throw new Error('Invalid LNURL');
+
+      const data = input.slice(hrpEnd + 1);
+      const values = [];
+
+      for (const char of data) {
+        const index = CHARSET.indexOf(char);
+        if (index === -1) throw new Error('Invalid LNURL character');
+        values.push(index);
+      }
+
+      // Remove checksum (last 6 chars)
+      const dataValues = values.slice(0, -6);
+
+      // Convert 5-bit to 8-bit
+      let bits = 0;
+      let value = 0;
+      const bytes = [];
+
+      for (const v of dataValues) {
+        value = (value << 5) | v;
+        bits += 5;
+        while (bits >= 8) {
+          bits -= 8;
+          bytes.push((value >> bits) & 0xff);
+        }
+      }
+
+      return new TextDecoder().decode(new Uint8Array(bytes));
+    },
+
     async createInvoice() {
       if (!this.receiveForm.amount || this.receiveForm.amount <= 0) return;
 
       this.isCreatingInvoice = true;
 
       try {
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-        await nwc.enable();
-
         const invoiceData = {
           amount: parseInt(this.receiveForm.amount),
           description: this.receiveForm.description || 'BuhoGO Payment'
         };
 
-        console.log('🧾 Creating invoice:', invoiceData);
-        const invoice = await nwc.makeInvoice(invoiceData);
-        console.log('✅ Invoice created:', invoice);
+        console.log('Creating invoice:', invoiceData);
+
+        let invoice;
+
+        if (this.walletStore.isActiveWalletSpark) {
+          // Spark wallet - ensure connected and use provider
+          const provider = await this.walletStore.ensureSparkConnected();
+
+          const result = await provider.createInvoice(invoiceData);
+          invoice = {
+            paymentRequest: result.paymentRequest,
+            paymentHash: result.paymentHash,
+            amount: invoiceData.amount,
+            description: invoiceData.description
+          };
+        } else {
+          // NWC wallet
+          const activeWallet = this.getActiveWallet();
+          if (!activeWallet?.nwcString) {
+            throw new Error('No active NWC wallet found');
+          }
+
+          const nwc = new NostrWebLNProvider({
+            nostrWalletConnectUrl: activeWallet.nwcString,
+          });
+          await nwc.enable();
+
+          invoice = await nwc.makeInvoice(invoiceData);
+        }
+
+        console.log('Invoice created:', invoice);
 
         this.generatedInvoice = invoice;
         this.currentInvoicePaymentHash = invoice.paymentHash;
@@ -1438,7 +1971,7 @@ export default {
         this.startInvoiceMonitoring();
 
       } catch (error) {
-        console.error('❌ Failed to create invoice:', error);
+        console.error('Failed to create invoice:', error);
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t create invoice'),
@@ -1459,6 +1992,80 @@ export default {
 
     async updatePaymentFiatValue() {
       this.paymentFiatValue = await this.formatPaymentFiat();
+      // Also update fee estimate when payment changes
+      await this.updateFeeEstimate();
+    },
+
+    async updateFeeEstimate() {
+      // Only estimate fees for Spark wallet Lightning payments
+      if (!this.pendingPayment || !this.walletStore.isActiveWalletSpark) {
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
+        return;
+      }
+
+      // Spark-to-Spark transfers are free
+      if (this.pendingPayment.sparkAddress) {
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
+        return;
+      }
+
+      // Only estimate for Lightning invoices
+      if (!this.pendingPayment.invoice) {
+        // For LNURL/Lightning Address, calculate estimated fee based on amount
+        const amount = this.getPaymentAmountForFee();
+        if (amount > 0) {
+          this.estimatedFee = this.calculateRecommendedFee(amount);
+        } else {
+          this.estimatedFee = null;
+        }
+        this.isEstimatingFee = false;
+        return;
+      }
+
+      // Get fee estimate from Spark SDK for Lightning invoices
+      this.isEstimatingFee = true;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        const estimate = await provider.getLightningSendFeeEstimate(this.pendingPayment.invoice);
+        this.estimatedFee = estimate.estimatedFeeSats;
+      } catch (error) {
+        console.warn('Fee estimation failed:', error.message);
+        // Fall back to calculated fee
+        const amount = this.pendingPayment.amount || this.getPaymentAmountForFee();
+        if (amount > 0) {
+          this.estimatedFee = this.calculateRecommendedFee(amount);
+        } else {
+          this.estimatedFee = null;
+        }
+      } finally {
+        this.isEstimatingFee = false;
+      }
+    },
+
+    // Calculate recommended fee for Lightning payments (17 basis points, min 5 sats)
+    calculateRecommendedFee(amountSats) {
+      const minFee = 5;
+      const bpsFee = Math.ceil(amountSats * 0.0017);
+      return Math.max(minFee, bpsFee);
+    },
+
+    getPaymentAmountForFee() {
+      if (!this.pendingPayment) return 0;
+      if (this.paymentAmount && parseInt(this.paymentAmount) > 0) {
+        return parseInt(this.paymentAmount);
+      }
+      if (this.pendingPayment.fixedAmountSats) {
+        return this.pendingPayment.fixedAmountSats;
+      }
+      if (this.pendingPayment.amount > 0) {
+        return this.pendingPayment.amount;
+      }
+      if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable && this.pendingPayment.minSendable) {
+        return Math.floor(this.pendingPayment.minSendable / 1000);
+      }
+      return 0;
     },
 
     startInvoiceMonitoring() {
@@ -1782,9 +2389,63 @@ export default {
   color: #6b7280;
 }
 
+.currency-icon-left {
+  display: flex;
+  align-items: center;
+  margin-right: 0.75rem;
+}
+
+.currency-icon-right {
+  display: flex;
+  align-items: center;
+  margin-left: 0.5rem;
+}
+
+.balance-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.balance-icon-dark {
+  filter: brightness(0) invert(1);
+}
+
+.balance-icon-light {
+  filter: brightness(0);
+}
+
 .balance-secondary {
   font-size: 1.25rem;
   font-weight: 400;
+}
+
+.secondary-amount-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.secondary-value {
+  display: inline;
+}
+
+.secondary-icon-left {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.4rem;
+}
+
+.secondary-icon-right {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+}
+
+.secondary-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
 .balance-secondary-dark {
@@ -2204,6 +2865,17 @@ export default {
   word-break: break-all;
 }
 
+/* Fee estimate states */
+.fee-loading {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.fee-free {
+  color: #10B981;
+  font-weight: 500;
+}
+
 /* Amount Input Section */
 .amount-input-section {
   text-align: left;
@@ -2347,31 +3019,41 @@ export default {
   text-align: center;
 }
 
-.qr_code_section_dark {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1rem;
-  background: #FFF;
-  border-radius: 16px;
-  border: 1px solid #2A342A;
-  margin-bottom: 0.75rem;
-}
-
+.qr_code_section_dark,
 .qr_code_section_light {
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 1rem;
-  background: white;
   border-radius: 16px;
-  border: 1px solid #e5e7eb;
   margin-bottom: 0.75rem;
+  width: 100%;
+  max-width: 280px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+.qr_code_section_dark {
+  background: #FFF;
+  border: 1px solid #2A342A;
+}
+
+.qr_code_section_light {
+  background: white;
+  border: 1px solid #e5e7eb;
 }
 
 .qr-code {
   border-radius: 8px;
   overflow: hidden;
+  width: 100%;
+  height: auto;
+  max-width: 240px;
+}
+
+.qr-code-section.compact .qr-code {
+  max-width: 200px;
 }
 
 .invoice_info_compact_dark {
@@ -2616,13 +3298,54 @@ export default {
   .payment-content {
     padding: 1rem;
   }
+
+  /* QR Code responsive for mobile */
+  .qr_code_section_dark,
+  .qr_code_section_light {
+    max-width: 240px;
+    padding: 0.75rem;
+  }
+
+  .qr-code {
+    max-width: 200px;
+  }
+
+  .qr-code-section.compact .qr-code {
+    max-width: 160px;
+  }
+}
+
+/* Extra small screens (320px and below) */
+@media (max-width: 360px) {
+  .qr_code_section_dark,
+  .qr_code_section_light {
+    max-width: 200px;
+    padding: 0.5rem;
+  }
+
+  .qr-code {
+    max-width: 160px;
+  }
+
+  .qr-code-section.compact .qr-code {
+    max-width: 140px;
+  }
+
+  .amount_compact_dark,
+  .amount_compact_light {
+    font-size: 1.1rem;
+  }
+
+  .compact-invoice {
+    gap: 1rem;
+  }
 }
 
 /* Wallet Switcher Dialog */
 .wallet-switcher-card {
   width: 100%;
   max-width: 360px;
-  border-radius: 24px;
+  border-radius: 20px;
   overflow: hidden;
 }
 
@@ -2631,60 +3354,85 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
 }
 
 .switcher-title {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
 }
 
 .switcher-content {
-  padding: 0.5rem 0;
-  max-height: 300px;
+  padding: 0.5rem;
+  max-height: 320px;
   overflow-y: auto;
 }
 
-.wallet-list {
+.wallet-switch-list {
   display: flex;
   flex-direction: column;
+  gap: 0.375rem;
 }
 
-.wallet-switch-item {
+/* Wallet Switch Card - iOS style */
+.wallet-switch-card {
   display: flex;
   align-items: center;
-  padding: 0.875rem 1.25rem;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
-  gap: 0.875rem;
+  transition: background 0.15s ease;
 }
 
-.wallet-switch-item-dark:hover {
-  background: rgba(21, 222, 114, 0.08);
+.wallet-switch-card-dark {
+  background: transparent;
 }
 
-.wallet-switch-item-light:hover {
-  background: rgba(21, 222, 114, 0.08);
+.wallet-switch-card-light {
+  background: transparent;
 }
 
-.wallet-switch-item.active-wallet {
-  background: rgba(21, 222, 114, 0.1);
+.wallet-switch-card-dark:hover {
+  background: #222;
 }
 
-.wallet-switch-icon {
+.wallet-switch-card-light:hover {
+  background: #F3F4F6;
+}
+
+.wallet-switch-card-active {
+  box-shadow: inset 0 0 0 1px #15DE72;
+  background: rgba(21, 222, 114, 0.03) !important;
+}
+
+.wallet-switch-card-active.wallet-switch-card-dark:hover {
+  background: rgba(21, 222, 114, 0.06) !important;
+}
+
+.wallet-switch-card-active.wallet-switch-card-light:hover {
+  background: rgba(21, 222, 114, 0.05) !important;
+}
+
+/* Switch Avatar */
+.switch-avatar {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.switch-avatar-circle {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  flex-shrink: 0;
 }
 
 .wallet-green {
-  background: linear-gradient(135deg, #059573, #15DE72);
+  background: linear-gradient(135deg, #15DE72, #059573);
 }
 
 .wallet-blue {
@@ -2703,42 +3451,268 @@ export default {
   background: linear-gradient(135deg, #EF4444, #DC2626);
 }
 
-.wallet-switch-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+.switch-status-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid;
 }
 
-.wallet-switch-name {
+.wallet-switch-card-dark .switch-status-dot {
+  border-color: #0C0C0C;
+}
+
+.wallet-switch-card-light .switch-status-dot {
+  border-color: #FFF;
+}
+
+.status-connected {
+  background: #15DE72;
+}
+
+.status-disconnected {
+  background: #EF4444;
+}
+
+/* Switch Details */
+.switch-details {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.switch-name {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-bottom: 0.125rem;
 }
 
-.wallet-switch-balance {
+.switch-name-dark {
+  color: #F6F6F6;
+}
+
+.switch-name-light {
+  color: #212121;
+}
+
+/* Meta Row with Badges */
+.switch-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.switch-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 13px;
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: white;
 }
 
-.active-check {
+.type-spark {
+  background: linear-gradient(135deg, #15DE72, #059573);
+}
+
+.type-nwc {
+  background: linear-gradient(135deg, #6B7280, #4B5563);
+}
+
+.switch-tag {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.tag-active {
+  background: #D1FAE5;
+  color: #065F46;
+}
+
+/* Switch Balance */
+.switch-balance {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.switch-balance-dark {
+  color: #777;
+}
+
+.switch-balance-light {
+  color: #9CA3AF;
+}
+
+/* Check Icon */
+.switch-check-icon {
   flex-shrink: 0;
+  color: #15DE72;
 }
 
+/* Switcher Footer */
 .switcher-footer {
-  padding: 0.75rem 1.25rem;
-  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  padding: 0.75rem 1rem;
+  border-top: 1px solid;
   display: flex;
   justify-content: center;
 }
 
+.switcher-footer-dark {
+  border-top-color: #222;
+  background: #171717;
+}
+
+.switcher-footer-light {
+  border-top-color: #E5E7EB;
+  background: #F8F9FA;
+}
+
 .manage-wallets-btn {
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
+  transition: all 0.15s ease;
+}
+
+.manage-btn-dark {
+  color: #888;
+}
+
+.manage-btn-light {
+  color: #6B7280;
+}
+
+.manage-wallets-btn:hover {
+  background: rgba(107, 114, 128, 0.1);
+}
+
+.manage-btn-dark:hover {
+  color: #F6F6F6;
+}
+
+.manage-btn-light:hover {
+  color: #374151;
+}
+
+/* Save Contact Dialog */
+.save-contact-dialog :deep(.q-dialog__backdrop) {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.save-contact-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 24px;
+}
+
+.save-contact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.save-contact-content {
+  padding: 1.25rem;
+}
+
+.save-contact-address {
+  display: flex;
+  align-items: center;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.address-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-contact-actions {
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  padding: 0.75rem 1rem;
+}
+
+.save-btn {
+  color: #15DE72 !important;
+  font-weight: 600;
+}
+
+.save-btn:disabled {
+  color: #6b7280 !important;
+  opacity: 0.5;
+}
+
+/* Save input styles - dark mode */
+.save-input-dark :deep(.q-field__control) {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.save-input-dark :deep(.q-field--focused .q-field__control) {
+  border-color: #15DE72 !important;
+}
+
+.save-input-dark :deep(.q-field__label) {
+  color: #B0B0B0;
+}
+
+.save-input-dark :deep(.q-field--focused .q-field__label),
+.save-input-dark :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.save-input-dark :deep(.q-field__native) {
+  color: #FFF !important;
+}
+
+/* Save input styles - light mode */
+.save-input-light :deep(.q-field__control) {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+.save-input-light :deep(.q-field--focused .q-field__control) {
+  border-color: #15DE72 !important;
+}
+
+.save-input-light :deep(.q-field__label) {
+  color: #6B7280;
+}
+
+.save-input-light :deep(.q-field--focused .q-field__label),
+.save-input-light :deep(.q-field--float .q-field__label) {
+  color: #15DE72 !important;
+}
+
+.save-input-light :deep(.q-field__native) {
+  color: #212121 !important;
 }
 </style>

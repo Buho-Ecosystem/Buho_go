@@ -51,19 +51,92 @@
 
       <!-- Content -->
       <q-card-section class="receive-content">
-        <!-- Amount Icon -->
-        <!--        <div class="amount-icon-section" v-if="!generatedInvoice">-->
-        <!--          <div class="amount-icon text-h2">-->
-        <!--            {{ getCurrencySymbol() }}-->
-        <!--          </div>-->
-        <!--        </div>-->
+        <!-- Receive Mode Toggle (for Spark wallets) -->
+        <div v-if="isSparkWallet && !generatedInvoice && !showAddressView" class="receive-type-toggle">
+          <q-btn-toggle
+            v-model="receiveMode"
+            toggle-color="primary"
+            :options="[
+              { label: $t('Invoice'), value: 'lightning', icon: 'las la-file-invoice' },
+              { label: $t('Address'), value: 'spark', icon: 'las la-qrcode' }
+            ]"
+            class="type-toggle"
+            :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
+            no-caps
+            unelevated
+            spread
+          />
+          <div class="mode-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            <template v-if="receiveMode === 'spark'">
+              {{ $t('Spark-to-Spark only, zero fees') }}
+            </template>
+            <template v-else>
+              {{ $t('One-time request with amount') }}
+            </template>
+          </div>
+        </div>
+
+        <!-- Spark Address View -->
+        <div v-if="showSparkAddressView && sparkAddress" class="address-view">
+          <div class="address-qr-section">
+            <div class="qr-container" @click="copySparkAddress">
+              <div class="qr-wrapper">
+                <vue-qrcode
+                  :value="sparkAddress"
+                  :options="{ width: 280, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
+                  class="qr-code"
+                />
+              </div>
+            </div>
+
+            <!-- Spark Address Display -->
+            <div
+              class="address-display-box spark-address-box"
+              :class="$q.dark.isActive ? 'address-box-dark' : 'address-box-light'"
+              @click="copySparkAddress"
+            >
+              <q-icon name="las la-fire" size="18px" class="address-icon spark-icon" />
+              <span class="address-text-value">{{ truncateSparkAddress(sparkAddress) }}</span>
+              <q-icon name="las la-copy" size="16px" class="copy-icon" />
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="spark-actions">
+              <q-btn
+                flat
+                no-caps
+                class="invoice-action-btn"
+                :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+                @click="copySparkAddress"
+              >
+                <q-icon name="las la-copy" size="20px" class="q-mr-xs"/>
+                {{ $t('Copy') }}
+              </q-btn>
+              <q-btn
+                flat
+                no-caps
+                class="invoice-action-btn"
+                :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+                @click="shareSparkAddress"
+              >
+                <q-icon name="las la-share-alt" size="20px" class="q-mr-xs"/>
+                {{ $t('Share') }}
+              </q-btn>
+            </div>
+
+            <!-- User Hint -->
+            <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+              {{ $t('Share this address to receive zero-fee payments from other Spark wallets.') }}
+            </div>
+          </div>
+        </div>
 
         <!-- QR Code Display -->
         <div class="qr-display-section" v-if="generatedInvoice">
-          <!-- Status Badge -->
-          <div class="status-badge">
-            <div class="status-dot"></div>
-            <span>{{ $t('Waiting for payment') }}</span>
+          <!-- Payment Status Badge -->
+          <div class="status-badge" :class="paymentStatusClass">
+            <div class="status-dot" :class="paymentStatusDotClass"></div>
+            <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
           </div>
 
           <!-- Amount Display -->
@@ -154,8 +227,8 @@
           </div>
         </div>
 
-        <!-- Amount Section -->
-        <div class="amount-section" v-else>
+        <!-- Amount Section (only for invoice creation, not for static address views) -->
+        <div class="amount-section" v-else-if="!showSparkAddressView">
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency"
                :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
@@ -183,8 +256,8 @@
           </div>
         </div>
 
-        <!-- Description Section -->
-        <div class="description-section" v-if="!generatedInvoice && !showAddressView">
+        <!-- Description Section (only for invoice creation) -->
+        <div class="description-section" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
           <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
             {{ $t('Description (optional)') }}
           </div>
@@ -201,8 +274,8 @@
         </div>
       </q-card-section>
 
-      <!-- Footer -->
-      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView">
+      <!-- Footer (only for invoice creation) -->
+      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
         <q-btn
           class="create-invoice-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -221,17 +294,31 @@
       </q-card-section>
     </q-card>
   </q-dialog>
+
+  <!-- Payment Confirmation Screen -->
+  <PaymentConfirmation
+    v-model="showPaymentConfirmation"
+    :amount="confirmedAmount"
+    :fiat-amount="confirmedFiatAmount"
+    :description="generatedInvoice?.description"
+    :auto-close-delay="5"
+    @closed="handleConfirmationClosed"
+  />
 </template>
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { NostrWebLNProvider } from "@getalby/sdk";
+import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
+import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
+import PaymentConfirmation from './PaymentConfirmation.vue';
 
 export default {
   name: 'ReceiveModal',
   components: {
-    VueQrcode
+    VueQrcode,
+    PaymentConfirmation
   },
   setup() {
     const walletStore = useWalletStore();
@@ -254,7 +341,18 @@ export default {
       walletState: {},
       amountInSats: 0,
       isAmountFocused: false,
-      showAddressView: false
+      showAddressView: false,
+      receiveMode: 'lightning', // 'lightning' or 'spark'
+      // Payment monitoring
+      paymentMonitor: null,
+      sparkEventUnsubscribe: null, // For Spark event-based monitoring
+      paymentStatus: PaymentStatus.PENDING,
+      paymentStatusMessage: '',
+      isPaymentConfirmed: false,
+      // Payment confirmation screen
+      showPaymentConfirmation: false,
+      confirmedAmount: 0,
+      confirmedFiatAmount: ''
     }
   },
   computed: {
@@ -274,6 +372,39 @@ export default {
     },
     lightningAddress() {
       return this.walletStore.activeWalletLightningAddress;
+    },
+    isSparkWallet() {
+      return this.walletStore.isActiveWalletSpark;
+    },
+    sparkAddress() {
+      return this.walletStore.activeSparkAddress;
+    },
+    showSparkAddressView() {
+      return this.isSparkWallet && this.receiveMode === 'spark' && !this.generatedInvoice;
+    },
+    paymentStatusClass() {
+      switch (this.paymentStatus) {
+        case PaymentStatus.CONFIRMED:
+          return 'status-confirmed';
+        case PaymentStatus.EXPIRED:
+          return 'status-expired';
+        case PaymentStatus.ERROR:
+          return 'status-error';
+        default:
+          return 'status-pending';
+      }
+    },
+    paymentStatusDotClass() {
+      switch (this.paymentStatus) {
+        case PaymentStatus.CONFIRMED:
+          return 'dot-confirmed';
+        case PaymentStatus.EXPIRED:
+          return 'dot-expired';
+        case PaymentStatus.ERROR:
+          return 'dot-error';
+        default:
+          return 'dot-pending';
+      }
     }
   },
   watch: {
@@ -281,8 +412,15 @@ export default {
       if (newVal) {
         this.loadWalletState();
         this.resetForm();
+      } else {
+        // Stop monitoring when modal closes
+        this.stopPaymentMonitor();
       }
     }
+  },
+  beforeUnmount() {
+    // Cleanup on component destroy
+    this.stopPaymentMonitor();
   },
   methods: {
     // ... (keeping all existing methods from the original component)
@@ -294,15 +432,198 @@ export default {
     },
 
     resetForm() {
+      this.stopPaymentMonitor();
       this.displayAmount = '';
       this.description = '';
       this.generatedInvoice = null;
       this.amountInSats = 0;
       this.showAddressView = false;
+      this.receiveMode = 'lightning';
+      this.paymentStatus = PaymentStatus.PENDING;
+      this.paymentStatusMessage = '';
+      this.isPaymentConfirmed = false;
+      // Reset confirmation data
+      this.confirmedAmount = 0;
+      this.confirmedFiatAmount = '';
     },
 
     closeModal() {
+      this.stopPaymentMonitor();
       this.show = false;
+    },
+
+    /**
+     * Stop the payment monitor if running
+     */
+    stopPaymentMonitor() {
+      // Stop polling-based monitor (NWC)
+      if (this.paymentMonitor) {
+        this.paymentMonitor.stop();
+        this.paymentMonitor = null;
+      }
+      // Unsubscribe from Spark events
+      if (this.sparkEventUnsubscribe) {
+        this.sparkEventUnsubscribe();
+        this.sparkEventUnsubscribe = null;
+      }
+    },
+
+    /**
+     * Start monitoring for payment confirmation
+     * Uses event-based for Spark (instant), polling for NWC
+     */
+    async startPaymentMonitor() {
+      if (!this.generatedInvoice?.payment_hash) {
+        console.warn('Cannot start payment monitor: no invoice');
+        return;
+      }
+
+      this.paymentStatus = PaymentStatus.PENDING;
+      this.paymentStatusMessage = this.$t('Waiting for payment...');
+
+      if (this.isSparkWallet) {
+        // Spark: Use event-based monitoring (instant, no polling)
+        await this.startSparkEventMonitor();
+      } else {
+        // NWC: Use polling-based monitoring
+        await this.startNWCPollingMonitor();
+      }
+    },
+
+    /**
+     * Start Spark event-based payment monitoring (real-time, no polling)
+     */
+    async startSparkEventMonitor() {
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+
+        // Subscribe to payment events
+        this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
+          // Any incoming payment triggers confirmation
+          // The Spark event fires for all incoming transfers
+          this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
+            transferId,
+            amount: this.generatedInvoice?.amount,
+            newBalance
+          });
+        });
+
+        console.log('Spark event listener active - waiting for payment');
+      } catch (error) {
+        console.warn('Could not start Spark event monitoring, falling back to polling:', error);
+        // Fallback to polling if events fail
+        await this.startNWCPollingMonitor();
+      }
+    },
+
+    /**
+     * Start NWC polling-based payment monitoring
+     */
+    async startNWCPollingMonitor() {
+      let provider = null;
+
+      try {
+        provider = this.walletStore.getActiveProvider();
+        if (!provider) {
+          // Create NWC provider on-the-fly
+          const activeWallet = this.walletState.connectedWallets?.find(
+            w => w.id === this.walletState.activeWalletId
+          );
+          if (activeWallet?.nwcString) {
+            const nwc = new NostrWebLNProvider({
+              nostrWalletConnectUrl: activeWallet.nwcString,
+            });
+            await nwc.enable();
+            // Create a minimal provider wrapper
+            provider = {
+              lookupInvoice: async (hash) => {
+                try {
+                  const invoice = await nwc.lookupInvoice({ payment_hash: hash });
+                  return {
+                    paid: invoice?.settled || invoice?.paid || false,
+                    preimage: invoice?.preimage,
+                    amount: invoice?.amount
+                  };
+                } catch {
+                  return { paid: false };
+                }
+              }
+            };
+          }
+        }
+      } catch (error) {
+        console.warn('Could not get provider for payment monitoring:', error);
+        return;
+      }
+
+      if (!provider) {
+        console.warn('No provider available for payment monitoring');
+        return;
+      }
+
+      // Create and start the polling monitor
+      this.paymentMonitor = createPaymentMonitor();
+
+      this.paymentMonitor.start({
+        invoice: {
+          payment_hash: this.generatedInvoice.payment_hash,
+          expires_at: this.generatedInvoice.expires_at,
+          amount: this.generatedInvoice.amount
+        },
+        provider: provider,
+        onStatusChange: this.handlePaymentStatus
+      });
+    },
+
+    /**
+     * Handle payment status updates from monitor
+     */
+    handlePaymentStatus(status, data) {
+      this.paymentStatus = status;
+
+      switch (status) {
+        case PaymentStatus.CONFIRMED:
+          this.isPaymentConfirmed = true;
+          this.paymentStatusMessage = this.$t('Payment received!');
+
+          // Stop monitoring
+          this.stopPaymentMonitor();
+
+          // Set confirmed amount for confirmation screen
+          this.confirmedAmount = data.amount || this.generatedInvoice?.amount || 0;
+          this.confirmedFiatAmount = this.formatInvoiceFiat(this.confirmedAmount);
+
+          // Close the receive modal and show confirmation screen
+          this.show = false;
+          this.$nextTick(() => {
+            this.showPaymentConfirmation = true;
+          });
+
+          // Refresh wallet balance in background
+          this.walletStore.refreshActiveWallet();
+          break;
+
+        case PaymentStatus.EXPIRED:
+          this.paymentStatusMessage = this.$t('Invoice expired');
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Invoice expired'),
+            caption: this.$t('Please create a new invoice'),
+            position: 'bottom',
+            timeout: 4000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+          break;
+
+        case PaymentStatus.ERROR:
+          this.paymentStatusMessage = data.message || this.$t('Error checking payment');
+          break;
+
+        case PaymentStatus.PENDING:
+        default:
+          this.paymentStatusMessage = this.$t('Waiting for payment...');
+          break;
+      }
     },
 
     toggleCurrency() {
@@ -399,27 +720,47 @@ export default {
 
       this.isCreatingInvoice = true;
       try {
-        const activeWallet = this.walletState.connectedWallets?.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: activeWallet.nwcString,
-        });
-
-        await nwc.enable();
-
-        const invoiceRequest = {
+        const invoiceParams = {
           amount: this.amountInSats,
           description: this.description || 'BuhoGO Payment',
           expiry: 3600
         };
 
-        const invoice = await nwc.makeInvoice(invoiceRequest);
+        let invoice;
+
+        // Check if active wallet is Spark or NWC
+        if (this.isSparkWallet) {
+          // Use Spark wallet provider
+          const provider = this.walletStore.getActiveProvider();
+          if (!provider) {
+            throw new Error('Spark wallet not unlocked. Please enter your PIN.');
+          }
+
+          const result = await provider.createInvoice(invoiceParams);
+          invoice = {
+            paymentRequest: result.paymentRequest,
+            payment_hash: result.paymentHash,
+            amount: this.amountInSats,
+            description: invoiceParams.description,
+            expires_at: result.expiresAt
+          };
+        } else {
+          // Use NWC for non-Spark wallets
+          const activeWallet = this.walletState.connectedWallets?.find(
+            w => w.id === this.walletState.activeWalletId
+          );
+
+          if (!activeWallet || !activeWallet.nwcString) {
+            throw new Error('No active wallet found');
+          }
+
+          const nwc = new NostrWebLNProvider({
+            nostrWalletConnectUrl: activeWallet.nwcString,
+          });
+
+          await nwc.enable();
+          invoice = await nwc.makeInvoice(invoiceParams);
+        }
 
         const paymentRequest = invoice.paymentRequest || invoice.payment_request;
         if (!paymentRequest) {
@@ -444,6 +785,9 @@ export default {
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
+
+        // Start monitoring for payment confirmation
+        this.startPaymentMonitor();
 
       } catch (error) {
         console.error('Error creating invoice:', error);
@@ -510,9 +854,62 @@ export default {
       }
     },
 
+    async copySparkAddress() {
+      if (!this.sparkAddress) return;
+
+      try {
+        await navigator.clipboard.writeText(this.sparkAddress);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Spark address copied'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t copy'),
+          position: 'bottom',
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      }
+    },
+
+    async shareSparkAddress() {
+      if (!this.sparkAddress) return;
+
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: 'Spark Address',
+            text: this.sparkAddress
+          });
+
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Shared'),
+            position: 'bottom',
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        } else {
+          await this.copySparkAddress();
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Failed to share Spark address:', error);
+        }
+      }
+    },
+
+    truncateSparkAddress(address) {
+      if (!address) return '';
+      if (address.length <= 20) return address;
+      return `${address.slice(0, 10)}...${address.slice(-8)}`;
+    },
+
     formatInvoiceAmount(sats) {
-      if (!sats) return '0 sats';
-      return new Intl.NumberFormat('en-US').format(sats) + ' sats';
+      if (!sats) return formatAmount(0, this.walletStore.useBip177Format);
+      return formatAmount(sats, this.walletStore.useBip177Format);
     },
 
     formatInvoiceFiat(sats) {
@@ -558,6 +955,20 @@ export default {
         if (error.name !== 'AbortError') {
           console.error('Failed to share invoice:', error);
         }
+      }
+    },
+
+    /**
+     * Handle when the payment confirmation screen is closed
+     * Redirects to home/wallet page
+     */
+    handleConfirmationClosed() {
+      this.showPaymentConfirmation = false;
+      this.resetForm();
+
+      // Navigate to home/wallet page
+      if (this.$router.currentRoute.value.path !== '/wallet') {
+        this.$router.push('/wallet');
       }
     }
   }
@@ -660,6 +1071,7 @@ export default {
   border-radius: 100px;
   background: rgba(255, 212, 59, 0.1);
   border: 1px solid rgba(255, 212, 59, 0.3);
+  transition: all 0.3s ease;
 }
 
 .status-badge span {
@@ -668,6 +1080,7 @@ export default {
   font-weight: 500;
   color: #FFD43B;
   letter-spacing: 0.01em;
+  transition: color 0.3s ease;
 }
 
 .status-dot {
@@ -676,7 +1089,40 @@ export default {
   border-radius: 50%;
   background: #FFD43B;
   animation: pulse 2s ease-in-out infinite;
+  transition: background 0.3s ease;
 }
+
+/* Payment status: Pending (default yellow) */
+.status-pending {
+  background: rgba(255, 212, 59, 0.1);
+  border-color: rgba(255, 212, 59, 0.3);
+}
+.status-pending span { color: #FFD43B; }
+.dot-pending { background: #FFD43B; animation: pulse 2s ease-in-out infinite; }
+
+/* Payment status: Confirmed (green) */
+.status-confirmed {
+  background: rgba(21, 222, 114, 0.15);
+  border-color: rgba(21, 222, 114, 0.4);
+}
+.status-confirmed span { color: #15DE72; }
+.dot-confirmed { background: #15DE72; animation: none; }
+
+/* Payment status: Expired (gray) */
+.status-expired {
+  background: rgba(107, 114, 128, 0.1);
+  border-color: rgba(107, 114, 128, 0.3);
+}
+.status-expired span { color: #6B7280; }
+.dot-expired { background: #6B7280; animation: none; }
+
+/* Payment status: Error (red) */
+.status-error {
+  background: rgba(255, 75, 75, 0.1);
+  border-color: rgba(255, 75, 75, 0.3);
+}
+.status-error span { color: #FF4B4B; }
+.dot-error { background: #FF4B4B; animation: none; }
 
 @keyframes pulse {
   0%, 100% {
@@ -1040,6 +1486,43 @@ export default {
   }
 }
 
+/* Extra small screens (320px and below) */
+@media (max-width: 360px) {
+  .qr-container {
+    max-width: 220px;
+  }
+
+  .qr-wrapper {
+    padding: 0.75rem;
+  }
+
+  .invoice-amount {
+    font-size: 1.75rem;
+  }
+
+  .invoice-actions {
+    max-width: 260px;
+    flex-direction: column;
+  }
+
+  .invoice-action-btn {
+    width: 100%;
+  }
+
+  .amount-input {
+    font-size: 2rem;
+    min-width: 120px;
+  }
+
+  .currency-symbol {
+    font-size: 1.75rem;
+  }
+
+  .address-qr-section {
+    padding: 1rem;
+  }
+}
+
 /* Lightning Address View */
 .address-view {
   flex: 1;
@@ -1143,6 +1626,97 @@ export default {
   .address-hint {
     font-size: 12px;
     max-width: 260px;
+  }
+}
+
+/* Spark/Lightning Toggle */
+.receive-type-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.type-toggle {
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 280px;
+  width: 100%;
+}
+
+.type-toggle :deep(.q-btn) {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0.625rem 1rem;
+  min-height: 40px;
+}
+
+.toggle-dark {
+  background: #1A1A1A;
+  border: 1px solid #2A342A;
+}
+
+.toggle-dark :deep(.q-btn) {
+  color: #B0B0B0;
+}
+
+.toggle-dark :deep(.q-btn--active) {
+  background: linear-gradient(90deg, #059573, #15DE72);
+  color: #FFFFFF;
+}
+
+.toggle-light {
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+}
+
+.toggle-light :deep(.q-btn) {
+  color: #6B7280;
+}
+
+.toggle-light :deep(.q-btn--active) {
+  background: linear-gradient(90deg, #059573, #15DE72);
+  color: #FFFFFF;
+}
+
+.mode-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Spark Address Specific */
+.spark-icon {
+  color: #FF6B35;
+}
+
+.spark-address-box {
+  margin-top: 1rem;
+}
+
+.spark-actions {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 320px;
+  margin-top: 1rem;
+}
+
+@media (max-width: 480px) {
+  .type-toggle {
+    max-width: 260px;
+  }
+
+  .type-toggle :deep(.q-btn) {
+    font-size: 12px;
+    padding: 0.5rem 0.75rem;
+    min-height: 36px;
+  }
+
+  .spark-actions {
+    max-width: 280px;
   }
 }
 </style>
