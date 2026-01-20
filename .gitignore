@@ -2,6 +2,9 @@
 .thumbs.db
 node_modules
 
+# LLM Stuff
+/.claude
+
 # Quasar core related directories
 .quasar
 /dist
