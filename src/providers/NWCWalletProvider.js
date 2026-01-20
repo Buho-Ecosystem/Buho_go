@@ -254,7 +254,7 @@ export class NWCWalletProvider extends WalletProvider {
         id: tx.payment_hash || tx.paymentHash || tx.id,
         type: tx.type === 'incoming' || tx.amount > 0 ? 'receive' : 'send',
         amount: Math.abs(tx.amount || 0),
-        timestamp: tx.settled_at || tx.settledAt || tx.created_at || tx.createdAt || Date.now() / 1000,
+        timestamp: tx.settled_at || tx.settledAt || tx.created_at || tx.createdAt || null,
         description: tx.description || tx.memo || '',
         status: tx.settled ? 'completed' : 'pending',
         fee: tx.fees_paid || tx.feesPaid || 0

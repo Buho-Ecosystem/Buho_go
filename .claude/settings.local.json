@@ -8,7 +8,8 @@
       "WebFetch(domain:www.npmjs.com)",
       "Bash(npm run build:*)",
       "WebFetch(domain:bitcoin.design)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(npm run dev:*)"
     ]
   }
 }
