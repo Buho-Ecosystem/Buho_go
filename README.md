@@ -51,29 +51,23 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 
 ### Interface Themes
 
-| Dark Mode | Light Mode |
-|-----------|------------|
-| ![Dark Mode](public/Spark_images/Home_Black.png) | ![Light Mode](public/Spark_images/Home_Light.png) |
+<img src="public/Spark_images/Home_Black.png" alt="Dark Mode" width="280"> <img src="public/Spark_images/Home_Light.png" alt="Light Mode" width="280">
 
 ### Welcome Screen
 
-![Welcome Screen](public/Spark_images/Starting_Point_view.png)
+<img src="public/Spark_images/Starting_Point_view.png" alt="Welcome Screen" width="280">
 
 ### Send and Receive
 
-![Create/Send](public/create_send.png)
+<img src="public/create_send.png" alt="Create/Send" width="280">
 
 ### Spark Wallet Setup
 
-| Create Seed | Verify Backup | Wallet Ready |
-|-------------|---------------|--------------|
-| ![Create Seed](public/Spark_images/CreateSeed_1.png) | ![Verify Backup](public/Spark_images/CreateSeed_2.png) | ![Success](public/Spark_images/CreateSeed_3.png) |
+<img src="public/Spark_images/CreateSeed_1.png" alt="Create Seed" width="280"> <img src="public/Spark_images/CreateSeed_2.png" alt="Verify Backup" width="280"> <img src="public/Spark_images/CreateSeed_3.png" alt="Wallet Ready" width="280">
 
 ### Transaction History
 
-| Expanded View | Collapsed View |
-|---------------|----------------|
-| ![Transactions](public/Spark_images/TX_List_1.png) | ![Transactions Collapsed](public/Spark_images/TX_List_closed.png) |
+<img src="public/Spark_images/TX_List_1.png" alt="Transactions Expanded" width="280"> <img src="public/Spark_images/TX_List_closed.png" alt="Transactions Collapsed" width="280">
 
 <br>
 
