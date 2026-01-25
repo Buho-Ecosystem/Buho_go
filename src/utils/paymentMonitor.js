@@ -19,10 +19,10 @@ export const PaymentStatus = {
  * Default configuration for payment monitoring
  */
 const DEFAULT_CONFIG = {
-  initialInterval: 2000,     // Start checking after 2 seconds
-  maxInterval: 30000,        // Max 30 seconds between checks
-  backoffMultiplier: 1.5,    // Multiply interval by 1.5 each time
-  maxAttempts: 60,           // Stop after 60 attempts (~15 min with backoff)
+  initialInterval: 1500,     // Start checking after 1.5 seconds
+  maxInterval: 6000,         // Max 6 seconds between checks (more real-time feel)
+  backoffMultiplier: 1.25,   // Gentle backoff
+  maxAttempts: 35,           // Stop after ~3 minutes
   expiryBuffer: 60           // Stop checking 60 seconds before expiry
 };
 
