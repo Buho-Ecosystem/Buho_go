@@ -312,6 +312,15 @@
             </div>
 
             <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
+              <!-- Recipient (Lightning Address or Spark Address) -->
+              <div class="detail-item" v-if="pendingPayment.lightningAddress || pendingPayment.sparkAddress">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
+                    $t('To')
+                  }}:</span>
+                <span class="detail-value recipient-address" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
+                    pendingPayment.lightningAddress || pendingPayment.sparkAddress
+                  }}</span>
+              </div>
               <div class="detail-item" v-if="pendingPayment.description">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
                     $t('Description')
@@ -730,15 +739,25 @@ export default {
         return true;
       }
 
-      // Check for LNURL and Lightning Address payments
-      if (this.pendingPayment.type === 'lightning_address' ||
-          this.pendingPayment.type === 'lnurl' ||
-          this.pendingPayment.type === 'lnurl_pay') {
-        // Use isFixedAmount flag if available (from updated lightning.js)
+      // Lightning Address always needs amount input (no embedded amount in address)
+      if (this.pendingPayment.type === 'lightning_address' || this.pendingPayment.lightningAddress) {
+        // Use isFixedAmount flag if available (from NWC processing)
         if (this.pendingPayment.isFixedAmount !== undefined) {
           return !this.pendingPayment.isFixedAmount;
         }
-        // Fallback: check if min equals max
+        // For Spark wallet (no LNURL info fetched yet), always require amount
+        if (!this.pendingPayment.minSendable && !this.pendingPayment.maxSendable) {
+          return true;
+        }
+        // Check if min equals max (fixed amount from LNURL info)
+        return this.pendingPayment.minSendable !== this.pendingPayment.maxSendable;
+      }
+
+      // Check for LNURL payments
+      if (this.pendingPayment.type === 'lnurl' || this.pendingPayment.type === 'lnurl_pay') {
+        if (this.pendingPayment.isFixedAmount !== undefined) {
+          return !this.pendingPayment.isFixedAmount;
+        }
         return this.pendingPayment.minSendable !== this.pendingPayment.maxSendable;
       }
 

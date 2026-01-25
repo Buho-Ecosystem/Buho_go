@@ -290,5 +290,10 @@ export default {
   "Closing in {seconds}s...": "Cerrando en {seconds}s...",
   "Close Now": "Cerrar Ahora",
   "Unlock Wallet": "Desbloquear Cartera",
-  "Enter your PIN to unlock your Spark wallet": "Ingresa tu PIN para desbloquear tu cartera Spark"
+  "Enter your PIN to unlock your Spark wallet": "Ingresa tu PIN para desbloquear tu cartera Spark",
+  "To": "Para",
+  "Enter amount": "Ingresar cantidad",
+  "Est. Fee": "Comisión est.",
+  "Estimating...": "Estimando...",
+  "Free (Spark transfer)": "Gratis (transferencia Spark)"
 }
