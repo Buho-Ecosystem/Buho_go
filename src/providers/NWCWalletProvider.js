@@ -3,16 +3,22 @@
  *
  * Wraps @getalby/sdk NostrWebLNProvider to match the WalletProvider interface.
  * Maintains backward compatibility with existing NWC functionality.
+ *
+ * Features:
+ * - Real-time payment notifications via subscribeNotifications (Alby SDK v7)
+ * - Polling fallback for wallets that don't support notifications
+ * - Comprehensive payment status detection
  */
 
 import { WalletProvider } from './WalletProvider';
-import { NostrWebLNProvider } from '@getalby/sdk';
+import { NostrWebLNProvider, NWCClient } from '@getalby/sdk';
 
 export class NWCWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
 
     this.nwc = null;
+    this.nwcClient = null; // For notification subscriptions
     this.nwcUrl = walletData.nwcUrl;
     this.metadata = walletData.metadata || {};
   }
@@ -56,11 +62,23 @@ export class NWCWalletProvider extends WalletProvider {
         throw lastError;
       }
 
+      // Also create NWCClient for notification subscriptions (Alby SDK v7)
+      try {
+        this.nwcClient = new NWCClient({
+          nostrWalletConnectUrl: this.nwcUrl
+        });
+      } catch (e) {
+        // NWCClient is optional - notifications won't work but polling will
+        console.warn('NWCClient creation failed (notifications unavailable):', e.message);
+        this.nwcClient = null;
+      }
+
       this.isConnected = true;
       this.clearError();
     } catch (error) {
       this.setError(error);
       this.nwc = null;
+      this.nwcClient = null;
       throw error;
     }
   }
@@ -76,7 +94,18 @@ export class NWCWalletProvider extends WalletProvider {
       }
     }
 
+    if (this.nwcClient) {
+      try {
+        if (typeof this.nwcClient.close === 'function') {
+          this.nwcClient.close();
+        }
+      } catch (error) {
+        console.warn('Error closing NWCClient:', error);
+      }
+    }
+
     this.nwc = null;
+    this.nwcClient = null;
     this.isConnected = false;
   }
 
@@ -174,6 +203,38 @@ export class NWCWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Check if a payment/invoice record indicates payment was received
+   * Handles various response formats from different NWC wallet implementations
+   * @param {Object} record - Invoice or transaction record
+   * @returns {boolean}
+   * @private
+   */
+  _checkIfPaid(record) {
+    if (!record) return false;
+
+    // Alby SDK v7 uses 'state' field with lowercase values
+    if (record.state === 'settled') return true;
+    if (record.state === 'SETTLED') return true;
+
+    // Legacy/fallback checks for different wallet implementations
+    if (record.settled === true) return true;
+    if (record.paid === true) return true;
+
+    // Status field variants
+    if (record.status === 'SETTLED' || record.status === 'settled') return true;
+    if (record.status === 'complete' || record.status === 'completed') return true;
+
+    // settled_at timestamp (camelCase and snake_case)
+    if (typeof record.settled_at === 'number' && record.settled_at > 0) return true;
+    if (typeof record.settledAt === 'number' && record.settledAt > 0) return true;
+
+    // Preimage presence indicates payment was received
+    if (record.preimage && record.preimage.length > 0) return true;
+
+    return false;
+  }
+
   async lookupInvoice(paymentHash) {
     this._ensureConnected();
 
@@ -184,12 +245,8 @@ export class NWCWalletProvider extends WalletProvider {
       });
 
       if (invoice) {
-        const isPaid = invoice.settled || invoice.paid ||
-          invoice.state === 'SETTLED' ||
-          (typeof invoice.settled_at === 'number' && invoice.settled_at > 0);
-
         return {
-          paid: isPaid,
+          paid: this._checkIfPaid(invoice),
           preimage: invoice.preimage || null,
           amount: invoice.amount || 0
         };
@@ -199,34 +256,37 @@ export class NWCWalletProvider extends WalletProvider {
       console.warn('lookupInvoice not supported, trying fallback:', lookupError.message);
     }
 
-    // Fallback: search in recent transactions
-    try {
-      const txResponse = await this.nwc.listTransactions({
-        limit: 50,
-        unpaid: false,
-        type: 'incoming'
-      });
+    // Fallback: search in recent transactions with retry
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const txResponse = await this.nwc.listTransactions({
+          limit: 100,
+          unpaid: false,
+          type: 'incoming'
+        });
 
-      if (txResponse?.transactions) {
-        const found = txResponse.transactions.find(tx =>
-          tx.payment_hash === paymentHash ||
-          tx.paymentHash === paymentHash
-        );
+        if (txResponse?.transactions) {
+          const found = txResponse.transactions.find(tx =>
+            tx.payment_hash === paymentHash ||
+            tx.paymentHash === paymentHash
+          );
 
-        if (found) {
-          const isPaid = found.settled || found.paid ||
-            found.state === 'SETTLED' ||
-            (typeof found.settled_at === 'number' && found.settled_at > 0);
-
-          return {
-            paid: isPaid,
-            preimage: found.preimage || null,
-            amount: Math.abs(found.amount || 0)
-          };
+          if (found) {
+            return {
+              paid: this._checkIfPaid(found),
+              preimage: found.preimage || null,
+              amount: Math.abs(found.amount || 0)
+            };
+          }
         }
+      } catch (listError) {
+        console.warn(`listTransactions attempt ${attempt + 1} failed:`, listError.message);
       }
-    } catch (listError) {
-      console.warn('listTransactions fallback failed:', listError.message);
+
+      // Wait before retry (but not on last attempt)
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
 
     // Could not determine payment status
@@ -271,11 +331,70 @@ export class NWCWalletProvider extends WalletProvider {
   // ==========================================
 
   /**
+   * Subscribe to payment notifications (real-time, no polling needed)
+   * Uses Alby SDK v7 built-in subscribeNotifications
+   *
+   * @param {Function} callback - Called with payment info: { paymentHash, amount, preimage, state, settledAt }
+   * @returns {Promise<Function>} Unsubscribe function
+   * @throws {Error} If NWCClient is not available
+   */
+  async subscribeToPaymentNotifications(callback) {
+    if (!this.nwcClient) {
+      throw new Error('NWCClient not available for notifications');
+    }
+
+    const unsubscribe = await this.nwcClient.subscribeNotifications(
+      (notification) => {
+        // Only handle payment_received notifications
+        if (notification.notification_type === 'payment_received') {
+          const tx = notification.notification;
+          callback({
+            paymentHash: tx.payment_hash,
+            amount: tx.amount,
+            settledAt: tx.settled_at,
+            preimage: tx.preimage,
+            state: tx.state,
+            invoice: tx.invoice
+          });
+        }
+      },
+      ['payment_received'] // Filter to only payment_received notifications
+    );
+
+    return unsubscribe;
+  }
+
+  /**
+   * Check if the connected wallet supports real-time notifications
+   * @returns {Promise<boolean>}
+   */
+  async supportsNotifications() {
+    if (!this.nwcClient) return false;
+
+    try {
+      const info = await this.nwcClient.getInfo();
+      // Check if notifications array exists and has items
+      return Array.isArray(info.notifications) && info.notifications.length > 0;
+    } catch (error) {
+      console.warn('Could not check notification support:', error.message);
+      return false;
+    }
+  }
+
+  /**
    * Get the underlying NWC instance for direct access
    * @returns {NostrWebLNProvider|null}
    */
   getNWCInstance() {
     return this.nwc;
+  }
+
+  /**
+   * Get the NWCClient instance (for notifications)
+   * @returns {NWCClient|null}
+   */
+  getNWCClient() {
+    return this.nwcClient;
   }
 
   /**

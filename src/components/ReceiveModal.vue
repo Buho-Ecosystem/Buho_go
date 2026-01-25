@@ -83,7 +83,7 @@
               <div class="qr-wrapper">
                 <vue-qrcode
                   :value="sparkAddress"
-                  :options="{ width: 280, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
+                  :options="qrOptions"
                   class="qr-code"
                 />
               </div>
@@ -161,7 +161,7 @@
             <div class="qr-wrapper">
               <vue-qrcode
                 :value="generatedInvoice.payment_request"
-                :options="{ width: 280, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
+                :options="qrOptions"
                 class="qr-code"
               />
             </div>
@@ -203,7 +203,7 @@
               <div class="qr-wrapper">
                 <vue-qrcode
                   :value="'lightning:' + lightningAddress"
-                  :options="{ width: 280, margin: 0, color: { dark: '#000000', light: '#ffffff' } }"
+                  :options="qrOptions"
                   class="qr-code"
                 />
               </div>
@@ -309,6 +309,7 @@
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { NostrWebLNProvider } from "@getalby/sdk";
+import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
@@ -346,13 +347,16 @@ export default {
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
+      nwcNotificationUnsubscribe: null, // For NWC notification-based monitoring
       paymentStatus: PaymentStatus.PENDING,
       paymentStatusMessage: '',
       isPaymentConfirmed: false,
       // Payment confirmation screen
       showPaymentConfirmation: false,
       confirmedAmount: 0,
-      confirmedFiatAmount: ''
+      confirmedFiatAmount: '',
+      // Screen width for responsive QR sizing
+      screenWidth: typeof window !== 'undefined' ? window.innerWidth : 375
     }
   },
   computed: {
@@ -405,6 +409,33 @@ export default {
         default:
           return 'dot-pending';
       }
+    },
+    /**
+     * Dynamic QR code options based on screen width
+     * Ensures QR codes always fit within the viewport
+     */
+    qrOptions() {
+      let qrSize;
+
+      if (this.screenWidth <= 320) {
+        // Extra small phones (iPhone SE 1st gen)
+        qrSize = Math.min(this.screenWidth - 80, 200);
+      } else if (this.screenWidth <= 375) {
+        // Small phones (iPhone SE, iPhone 8)
+        qrSize = Math.min(this.screenWidth - 70, 240);
+      } else if (this.screenWidth <= 414) {
+        // Medium phones (iPhone Plus, most Android)
+        qrSize = Math.min(this.screenWidth - 60, 270);
+      } else {
+        // Larger screens
+        qrSize = 280;
+      }
+
+      return {
+        width: qrSize,
+        margin: 0,
+        color: { dark: '#000000', light: '#ffffff' }
+      };
     }
   },
   watch: {
@@ -418,9 +449,14 @@ export default {
       }
     }
   },
+  mounted() {
+    // Listen for window resize to update QR size
+    window.addEventListener('resize', this.handleResize);
+  },
   beforeUnmount() {
     // Cleanup on component destroy
     this.stopPaymentMonitor();
+    window.removeEventListener('resize', this.handleResize);
   },
   methods: {
     // ... (keeping all existing methods from the original component)
@@ -429,6 +465,13 @@ export default {
       if (savedState) {
         this.walletState = JSON.parse(savedState);
       }
+    },
+
+    /**
+     * Handle window resize for responsive QR sizing
+     */
+    handleResize() {
+      this.screenWidth = window.innerWidth;
     },
 
     resetForm() {
@@ -466,6 +509,11 @@ export default {
         this.sparkEventUnsubscribe();
         this.sparkEventUnsubscribe = null;
       }
+      // Unsubscribe from NWC notifications
+      if (this.nwcNotificationUnsubscribe) {
+        this.nwcNotificationUnsubscribe();
+        this.nwcNotificationUnsubscribe = null;
+      }
     },
 
     /**
@@ -474,7 +522,7 @@ export default {
      */
     async startPaymentMonitor() {
       if (!this.generatedInvoice?.payment_hash) {
-        console.warn('Cannot start payment monitor: no invoice');
+        console.warn('Cannot start payment monitor: no invoice payment_hash');
         return;
       }
 
@@ -482,10 +530,8 @@ export default {
       this.paymentStatusMessage = this.$t('Waiting for payment...');
 
       if (this.isSparkWallet) {
-        // Spark: Use event-based monitoring (instant, no polling)
         await this.startSparkEventMonitor();
       } else {
-        // NWC: Use polling-based monitoring
         await this.startNWCPollingMonitor();
       }
     },
@@ -499,16 +545,12 @@ export default {
 
         // Subscribe to payment events
         this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
-          // Any incoming payment triggers confirmation
-          // The Spark event fires for all incoming transfers
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
             transferId,
             amount: this.generatedInvoice?.amount,
             newBalance
           });
         });
-
-        console.log('Spark event listener active - waiting for payment');
       } catch (error) {
         console.warn('Could not start Spark event monitoring, falling back to polling:', error);
         // Fallback to polling if events fail
@@ -517,51 +559,86 @@ export default {
     },
 
     /**
-     * Start NWC polling-based payment monitoring
+     * Start NWC payment monitoring using polling
+     * Falls back to listTransactions if lookupInvoice is not supported
      */
     async startNWCPollingMonitor() {
-      let provider = null;
+      let rawProvider = null;
+      let wrappedProvider = null;
 
       try {
-        provider = this.walletStore.getActiveProvider();
-        if (!provider) {
+        rawProvider = this.walletStore.getActiveProvider();
+
+        if (!rawProvider) {
           // Create NWC provider on-the-fly
           const activeWallet = this.walletState.connectedWallets?.find(
             w => w.id === this.walletState.activeWalletId
           );
+
           if (activeWallet?.nwcString) {
-            const nwc = new NostrWebLNProvider({
+            rawProvider = new NostrWebLNProvider({
               nostrWalletConnectUrl: activeWallet.nwcString,
             });
-            await nwc.enable();
-            // Create a minimal provider wrapper
-            provider = {
-              lookupInvoice: async (hash) => {
-                try {
-                  const invoice = await nwc.lookupInvoice({ payment_hash: hash });
-                  return {
-                    paid: invoice?.settled || invoice?.paid || false,
-                    preimage: invoice?.preimage,
-                    amount: invoice?.amount
-                  };
-                } catch {
-                  return { paid: false };
-                }
-              }
-            };
+            await rawProvider.enable();
           }
         }
       } catch (error) {
-        console.warn('Could not get provider for payment monitoring:', error);
+        console.warn('Could not get provider for payment monitoring:', error.message);
         return;
       }
 
-      if (!provider) {
+      if (!rawProvider) {
         console.warn('No provider available for payment monitoring');
         return;
       }
 
-      // Create and start the polling monitor
+      // Wrap the provider with robust payment status detection
+      // Many NWC wallets don't support lookupInvoice, so we use listTransactions as fallback
+      wrappedProvider = {
+        lookupInvoice: async (hash) => {
+          // Try lookupInvoice first (may not be supported by all wallets)
+          try {
+            const invoice = await rawProvider.lookupInvoice({ payment_hash: hash });
+            if (invoice) {
+              const isPaid = this._checkNWCPaymentStatus(invoice);
+              if (isPaid) {
+                return { paid: true, preimage: invoice?.preimage, amount: invoice?.amount };
+              }
+            }
+          } catch (e) {
+            // lookupInvoice not supported or timed out - use fallback
+          }
+
+          // Fallback: Search in recent transactions
+          try {
+            const txResponse = await rawProvider.listTransactions({
+              limit: 50,
+              unpaid: false,
+              type: 'incoming'
+            });
+
+            if (txResponse?.transactions) {
+              const found = txResponse.transactions.find(tx =>
+                tx.payment_hash === hash || tx.paymentHash === hash
+              );
+
+              if (found && this._checkNWCPaymentStatus(found)) {
+                return {
+                  paid: true,
+                  preimage: found.preimage,
+                  amount: Math.abs(found.amount || 0)
+                };
+              }
+            }
+          } catch (listError) {
+            // listTransactions also failed - return not paid
+          }
+
+          return { paid: false };
+        }
+      };
+
+      // Start polling for payment confirmation
       this.paymentMonitor = createPaymentMonitor();
 
       this.paymentMonitor.start({
@@ -570,8 +647,12 @@ export default {
           expires_at: this.generatedInvoice.expires_at,
           amount: this.generatedInvoice.amount
         },
-        provider: provider,
-        onStatusChange: this.handlePaymentStatus
+        provider: wrappedProvider,
+        onStatusChange: (status, data) => {
+          if (!this.isPaymentConfirmed) {
+            this.handlePaymentStatus(status, data);
+          }
+        }
       });
     },
 
@@ -627,7 +708,6 @@ export default {
     },
 
     toggleCurrency() {
-      // const currencies = ['sats', 'btc', this.walletState.preferredFiatCurrency?.toLowerCase() || 'usd'];
       const currencies = ['sats', this.walletState.preferredFiatCurrency?.toLowerCase() || 'usd'];
       const currentIndex = currencies.indexOf(this.currentCurrency);
       const nextIndex = (currentIndex + 1) % currencies.length;
@@ -767,9 +847,17 @@ export default {
           throw new Error('Invalid invoice: missing payment request');
         }
 
+        // Extract payment_hash - try multiple field names used by different wallets
+        let paymentHash = invoice.payment_hash || invoice.paymentHash || invoice.rHash || invoice.r_hash;
+
+        // If payment_hash is not in response, decode it from the bolt11 invoice
+        if (!paymentHash) {
+          paymentHash = this._extractPaymentHashFromBolt11(paymentRequest);
+        }
+
         const processedInvoice = {
           payment_request: paymentRequest,
-          payment_hash: invoice.payment_hash || invoice.paymentHash,
+          payment_hash: paymentHash,
           amount: invoice.amount || this.amountInSats,
           description: invoice.description || this.description || 'BuhoGO Payment',
           expires_at: invoice.expires_at || invoice.expiresAt,
@@ -881,7 +969,7 @@ export default {
       try {
         if (navigator.share) {
           await navigator.share({
-            title: 'Spark Address',
+            title: this.$t('Spark Address'),
             text: this.sparkAddress
           });
 
@@ -892,11 +980,15 @@ export default {
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } else {
+          // Fallback: copy to clipboard
           await this.copySparkAddress();
         }
       } catch (error) {
+        // AbortError means user cancelled the share dialog - not an error
         if (error.name !== 'AbortError') {
           console.error('Failed to share Spark address:', error);
+          // Fallback to copy on share failure
+          await this.copySparkAddress();
         }
       }
     },
@@ -926,14 +1018,15 @@ export default {
     async shareInvoice() {
       if (!this.generatedInvoice) return;
 
-      const shareText = `lightning:${this.generatedInvoice.payment_request}`;
+      // Lightning URI for sharing (most wallets recognize this format)
+      const lightningUri = `lightning:${this.generatedInvoice.payment_request}`;
 
       try {
         if (navigator.share) {
+          // Share API - use 'text' field for the invoice (not 'url' which requires http/https)
           await navigator.share({
-            title: 'Lightning Invoice',
-            text: `Pay ${this.formatInvoiceAmount(this.generatedInvoice.amount)}`,
-            url: shareText
+            title: this.$t('Lightning Invoice'),
+            text: lightningUri
           });
 
           this.$q.notify({
@@ -943,6 +1036,7 @@ export default {
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } else {
+          // Fallback: copy to clipboard
           await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
           this.$q.notify({
             type: 'positive',
@@ -952,8 +1046,26 @@ export default {
           });
         }
       } catch (error) {
+        // AbortError means user cancelled the share dialog - not an error
         if (error.name !== 'AbortError') {
           console.error('Failed to share invoice:', error);
+          // Fallback to copy on share failure
+          try {
+            await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
+            this.$q.notify({
+              type: 'positive',
+              message: this.$t('Invoice copied'),
+              position: 'bottom',
+              actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+            });
+          } catch (copyError) {
+            this.$q.notify({
+              type: 'negative',
+              message: this.$t('Couldn\'t share'),
+              position: 'bottom',
+              actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+            });
+          }
         }
       }
     },
@@ -970,6 +1082,54 @@ export default {
       if (this.$router.currentRoute.value.path !== '/wallet') {
         this.$router.push('/wallet');
       }
+    },
+
+    /**
+     * Extract payment hash from a bolt11 invoice string
+     * Uses @getalby/lightning-tools Invoice decoder
+     * @param {string} bolt11 - The bolt11 invoice string
+     * @returns {string|null} The payment hash in hex format, or null if extraction fails
+     */
+    _extractPaymentHashFromBolt11(bolt11) {
+      try {
+        const invoice = new Invoice({ pr: bolt11 });
+        // The Invoice class provides paymentHash property
+        return invoice.paymentHash || null;
+      } catch (error) {
+        console.warn('[_extractPaymentHashFromBolt11] Failed to decode bolt11:', error.message);
+        return null;
+      }
+    },
+
+    /**
+     * Comprehensive NWC payment status check
+     * Handles various response formats from different NWC wallet implementations
+     * @param {Object} record - Invoice or transaction record from NWC
+     * @returns {boolean} True if payment was received
+     */
+    _checkNWCPaymentStatus(record) {
+      if (!record) return false;
+
+      // Alby SDK v7 uses 'state' field with lowercase values
+      if (record.state === 'settled') return true;
+      if (record.state === 'SETTLED') return true;
+
+      // Legacy/fallback checks for different wallet implementations
+      if (record.settled === true) return true;
+      if (record.paid === true) return true;
+
+      // Status field variants
+      if (record.status === 'SETTLED' || record.status === 'settled') return true;
+      if (record.status === 'complete' || record.status === 'completed') return true;
+
+      // settled_at timestamp (camelCase and snake_case)
+      if (typeof record.settled_at === 'number' && record.settled_at > 0) return true;
+      if (typeof record.settledAt === 'number' && record.settledAt > 0) return true;
+
+      // Preimage presence indicates payment was received
+      if (record.preimage && record.preimage.length > 0) return true;
+
+      return false;
     }
   }
 }
@@ -1175,18 +1335,19 @@ export default {
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 320px;
+  max-width: min(320px, calc(100vw - 48px)); /* Never exceed viewport minus padding */
   -webkit-tap-highlight-color: transparent;
 }
 
 .qr-wrapper {
   background: #FFF;
   border-radius: 16px;
-  padding: 1.25rem;
+  padding: clamp(0.75rem, 3vw, 1.25rem); /* Responsive padding */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
   border: 1px solid rgba(0, 0, 0, 0.08);
   width: 100%;
+  box-sizing: border-box;
 }
 
 .qr-container:active .qr-wrapper {
@@ -1198,6 +1359,7 @@ export default {
   height: auto;
   display: block;
   border-radius: 8px;
+  max-width: 100%;
 }
 
 .qr-tap-hint {
@@ -1436,11 +1598,7 @@ export default {
   }
 
   .qr-container {
-    max-width: 280px;
-  }
-
-  .qr-wrapper {
-    padding: 1rem;
+    max-width: calc(100vw - 40px);
   }
 
   .invoice-actions {
@@ -1486,14 +1644,10 @@ export default {
   }
 }
 
-/* Extra small screens (320px and below) */
+/* Extra small screens (360px and below) */
 @media (max-width: 360px) {
   .qr-container {
-    max-width: 220px;
-  }
-
-  .qr-wrapper {
-    padding: 0.75rem;
+    max-width: calc(100vw - 48px);
   }
 
   .invoice-amount {
@@ -1501,7 +1655,7 @@ export default {
   }
 
   .invoice-actions {
-    max-width: 260px;
+    max-width: calc(100vw - 48px);
     flex-direction: column;
   }
 

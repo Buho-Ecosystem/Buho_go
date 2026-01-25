@@ -312,5 +312,9 @@ export default {
   "Contact assigned": "Contact assigned",
   "Failed to assign contact": "Failed to assign contact",
   "See top donors & recent donations": "See top donors & recent donations",
-  "Donations Portal": "Donations Portal"
+  "Donations Portal": "Donations Portal",
+  "Closing in {seconds}s...": "Closing in {seconds}s...",
+  "Close Now": "Close Now",
+  "Unlock Wallet": "Unlock Wallet",
+  "Enter your PIN to unlock your Spark wallet": "Enter your PIN to unlock your Spark wallet"
 }

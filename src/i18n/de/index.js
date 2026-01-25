@@ -286,5 +286,9 @@ export default {
   "Contact assigned": "Kontakt zugewiesen",
   "Failed to assign contact": "Fehler beim Zuweisen des Kontakts",
   "See top donors & recent donations": "Top-Spender & aktuelle Spenden ansehen",
-  "Donations Portal": "Spenden-Portal"
+  "Donations Portal": "Spenden-Portal",
+  "Closing in {seconds}s...": "Schließt in {seconds}s...",
+  "Close Now": "Jetzt schließen",
+  "Unlock Wallet": "Wallet entsperren",
+  "Enter your PIN to unlock your Spark wallet": "Geben Sie Ihre PIN ein, um Ihre Spark Wallet zu entsperren"
 }

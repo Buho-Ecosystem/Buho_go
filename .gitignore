@@ -4,6 +4,8 @@ node_modules
 
 # LLM Stuff
 /.claude
+/Plans WIP
+/cloud_backup.md
 
 # Quasar core related directories
 .quasar
