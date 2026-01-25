@@ -1459,11 +1459,15 @@ export default {
             this.pendingPayment = processedLnurl;
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
-          // For Spark wallets, just pass through - we'll process during payment
+          // Fetch LNURL info for both Spark and NWC wallets
+          const lnurlInfo = await this.fetchLightningAddressInfo(paymentData.data);
+
           if (this.walletStore.isActiveWalletSpark) {
+            // For Spark wallets, include LNURL info for amount handling
             this.pendingPayment = {
               ...paymentData,
-              lightningAddress: paymentData.data
+              lightningAddress: paymentData.data,
+              ...lnurlInfo
             };
           } else {
             // Process Lightning Address for NWC wallets
@@ -1473,7 +1477,6 @@ export default {
             }
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-            console.log('Lightning Address processed:', processedAddress);
             this.pendingPayment = processedAddress;
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
@@ -1903,6 +1906,63 @@ export default {
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
 
       return invoiceData.pr;
+    },
+
+    /**
+     * Fetch LNURL info from a Lightning address
+     * Returns min/max amounts and whether it's a fixed amount
+     */
+    async fetchLightningAddressInfo(address) {
+      try {
+        const [username, domain] = address.split('@');
+        if (!username || !domain) {
+          return {};
+        }
+
+        const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
+        const response = await fetch(endpoint);
+
+        if (!response.ok) {
+          return {};
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'ERROR') {
+          return {};
+        }
+
+        const minSendable = data.minSendable || 1000;
+        const maxSendable = data.maxSendable || 100000000000;
+        const isFixedAmount = minSendable === maxSendable;
+
+        return {
+          minSendable,
+          maxSendable,
+          minSats: Math.ceil(minSendable / 1000),
+          maxSats: Math.floor(maxSendable / 1000),
+          isFixedAmount,
+          fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
+          commentAllowed: data.commentAllowed || 0,
+          description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null
+        };
+      } catch (error) {
+        console.warn('Failed to fetch Lightning address info:', error.message);
+        return {};
+      }
+    },
+
+    /**
+     * Parse LNURL metadata to extract description
+     */
+    parseLnurlMetadata(metadata) {
+      try {
+        const parsed = JSON.parse(metadata);
+        const textEntry = parsed.find(entry => entry[0] === 'text/plain');
+        return textEntry ? textEntry[1] : null;
+      } catch {
+        return null;
+      }
     },
 
     // Helper: Decode LNURL (bech32) to URL
