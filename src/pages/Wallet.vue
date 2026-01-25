@@ -312,6 +312,15 @@
             </div>
 
             <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
+              <!-- Recipient (Lightning Address or Spark Address) -->
+              <div class="detail-item" v-if="pendingPayment.lightningAddress || pendingPayment.sparkAddress">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
+                    $t('To')
+                  }}:</span>
+                <span class="detail-value recipient-address" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
+                    pendingPayment.lightningAddress || pendingPayment.sparkAddress
+                  }}</span>
+              </div>
               <div class="detail-item" v-if="pendingPayment.description">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
                     $t('Description')
@@ -730,15 +739,25 @@ export default {
         return true;
       }
 
-      // Check for LNURL and Lightning Address payments
-      if (this.pendingPayment.type === 'lightning_address' ||
-          this.pendingPayment.type === 'lnurl' ||
-          this.pendingPayment.type === 'lnurl_pay') {
-        // Use isFixedAmount flag if available (from updated lightning.js)
+      // Lightning Address always needs amount input (no embedded amount in address)
+      if (this.pendingPayment.type === 'lightning_address' || this.pendingPayment.lightningAddress) {
+        // Use isFixedAmount flag if available (from NWC processing)
         if (this.pendingPayment.isFixedAmount !== undefined) {
           return !this.pendingPayment.isFixedAmount;
         }
-        // Fallback: check if min equals max
+        // For Spark wallet (no LNURL info fetched yet), always require amount
+        if (!this.pendingPayment.minSendable && !this.pendingPayment.maxSendable) {
+          return true;
+        }
+        // Check if min equals max (fixed amount from LNURL info)
+        return this.pendingPayment.minSendable !== this.pendingPayment.maxSendable;
+      }
+
+      // Check for LNURL payments
+      if (this.pendingPayment.type === 'lnurl' || this.pendingPayment.type === 'lnurl_pay') {
+        if (this.pendingPayment.isFixedAmount !== undefined) {
+          return !this.pendingPayment.isFixedAmount;
+        }
         return this.pendingPayment.minSendable !== this.pendingPayment.maxSendable;
       }
 
@@ -1440,11 +1459,15 @@ export default {
             this.pendingPayment = processedLnurl;
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
-          // For Spark wallets, just pass through - we'll process during payment
+          // Fetch LNURL info for both Spark and NWC wallets
+          const lnurlInfo = await this.fetchLightningAddressInfo(paymentData.data);
+
           if (this.walletStore.isActiveWalletSpark) {
+            // For Spark wallets, include LNURL info for amount handling
             this.pendingPayment = {
               ...paymentData,
-              lightningAddress: paymentData.data
+              lightningAddress: paymentData.data,
+              ...lnurlInfo
             };
           } else {
             // Process Lightning Address for NWC wallets
@@ -1454,7 +1477,6 @@ export default {
             }
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-            console.log('Lightning Address processed:', processedAddress);
             this.pendingPayment = processedAddress;
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
@@ -1884,6 +1906,63 @@ export default {
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
 
       return invoiceData.pr;
+    },
+
+    /**
+     * Fetch LNURL info from a Lightning address
+     * Returns min/max amounts and whether it's a fixed amount
+     */
+    async fetchLightningAddressInfo(address) {
+      try {
+        const [username, domain] = address.split('@');
+        if (!username || !domain) {
+          return {};
+        }
+
+        const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
+        const response = await fetch(endpoint);
+
+        if (!response.ok) {
+          return {};
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'ERROR') {
+          return {};
+        }
+
+        const minSendable = data.minSendable || 1000;
+        const maxSendable = data.maxSendable || 100000000000;
+        const isFixedAmount = minSendable === maxSendable;
+
+        return {
+          minSendable,
+          maxSendable,
+          minSats: Math.ceil(minSendable / 1000),
+          maxSats: Math.floor(maxSendable / 1000),
+          isFixedAmount,
+          fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
+          commentAllowed: data.commentAllowed || 0,
+          description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null
+        };
+      } catch (error) {
+        console.warn('Failed to fetch Lightning address info:', error.message);
+        return {};
+      }
+    },
+
+    /**
+     * Parse LNURL metadata to extract description
+     */
+    parseLnurlMetadata(metadata) {
+      try {
+        const parsed = JSON.parse(metadata);
+        const textEntry = parsed.find(entry => entry[0] === 'text/plain');
+        return textEntry ? textEntry[1] : null;
+      } catch {
+        return null;
+      }
     },
 
     // Helper: Decode LNURL (bech32) to URL
