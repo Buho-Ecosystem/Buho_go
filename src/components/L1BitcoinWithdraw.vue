@@ -7,7 +7,7 @@
         <q-icon name="lab la-bitcoin" size="20px" class="bitcoin-icon" />
         <span class="destination-type">{{ $t('Bitcoin Address') }}</span>
       </div>
-      <div class="destination-address">{{ truncateAddress(destinationAddress) }}</div>
+      <div class="destination-address">{{ truncateAddress(cleanedAddress) }}</div>
     </div>
 
     <!-- Amount Input -->
@@ -54,7 +54,7 @@
         >
           <div class="speed-emoji">🐢</div>
           <div class="speed-name">{{ $t('Economy') }}</div>
-          <div class="speed-time">{{ feeQuote.slow.timeEstimate }}</div>
+          <div class="speed-time">{{ $t(feeQuote.slow.timeEstimate) }}</div>
           <div class="speed-fee">{{ formatAmount(feeQuote.slow.totalFee) }}</div>
         </div>
 
@@ -66,19 +66,60 @@
           <div class="recommended-badge">{{ $t('Recommended') }}</div>
           <div class="speed-emoji">⚡</div>
           <div class="speed-name">{{ $t('Normal') }}</div>
-          <div class="speed-time">{{ feeQuote.medium.timeEstimate }}</div>
+          <div class="speed-time">{{ $t(feeQuote.medium.timeEstimate) }}</div>
           <div class="speed-fee">{{ formatAmount(feeQuote.medium.totalFee) }}</div>
         </div>
 
-        <!-- Fast -->
+        <!-- Fast (Next Block) -->
         <div
           :class="['speed-card', { selected: selectedSpeed === 'fast' }]"
           @click="selectedSpeed = 'fast'"
         >
           <div class="speed-emoji">🚀</div>
           <div class="speed-name">{{ $t('Fast') }}</div>
-          <div class="speed-time">{{ feeQuote.fast.timeEstimate }}</div>
+          <div class="speed-time">{{ $t(feeQuote.fast.timeEstimate) }}</div>
           <div class="speed-fee">{{ formatAmount(feeQuote.fast.totalFee) }}</div>
+        </div>
+
+        <!-- Custom Fee -->
+        <div
+          :class="['speed-card', 'custom-card', { selected: selectedSpeed === 'custom' }]"
+          @click="selectedSpeed = 'custom'"
+        >
+          <div class="speed-emoji">⚙️</div>
+          <div class="speed-name">{{ $t('Custom') }}</div>
+          <div class="speed-time">{{ $t('Set your own') }}</div>
+          <div class="speed-fee" v-if="selectedSpeed === 'custom' && customFeeRate > 0">
+            {{ formatAmount(customNetworkFee) }}
+          </div>
+          <div class="speed-fee" v-else>—</div>
+        </div>
+      </div>
+
+      <!-- Custom Fee Input (shown when custom selected) -->
+      <div v-if="selectedSpeed === 'custom'" class="custom-fee-section">
+        <div class="custom-fee-input-wrapper">
+          <input
+            v-model.number="customFeeRate"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :placeholder="String(feeQuote.medium.feeRate || 1)"
+            class="custom-fee-input"
+            :class="$q.dark.isActive ? 'input-dark' : 'input-light'"
+          />
+          <span class="fee-unit">sat/vB</span>
+        </div>
+        <div class="fee-rate-hints">
+          <span class="hint" @click="customFeeRate = feeQuote.slow.feeRate">
+            {{ $t('Economy') }}: {{ feeQuote.slow.feeRate }}
+          </span>
+          <span class="hint" @click="customFeeRate = feeQuote.medium.feeRate">
+            {{ $t('Normal') }}: {{ feeQuote.medium.feeRate }}
+          </span>
+          <span class="hint" @click="customFeeRate = feeQuote.fast.feeRate">
+            {{ $t('Fast') }}: {{ feeQuote.fast.feeRate }}
+          </span>
         </div>
       </div>
     </div>
@@ -160,7 +201,9 @@ export default {
       isLoadingFeeQuote: false,
       selectedSpeed: 'medium',
       isSending: false,
-      feeQuoteDebounceTimer: null
+      feeQuoteDebounceTimer: null,
+      customFeeRate: 0,
+      TX_VBYTES: 140 // Typical withdrawal transaction size
     };
   },
 
@@ -170,8 +213,49 @@ export default {
   },
 
   computed: {
+    /**
+     * Clean Bitcoin address - strips bitcoin: URI prefix and query params
+     * Defensive handling for BIP21 URIs that might come from QR codes
+     */
+    cleanedAddress() {
+      let address = this.destinationAddress || '';
+      // Strip bitcoin: prefix (BIP21 URI scheme)
+      if (address.toLowerCase().startsWith('bitcoin:')) {
+        address = address.substring(8);
+      }
+      // Remove query parameters (?amount=X&label=Y)
+      return address.split('?')[0];
+    },
+
+    /**
+     * Calculate custom network fee based on user-defined fee rate
+     */
+    customNetworkFee() {
+      if (!this.customFeeRate || this.customFeeRate <= 0) return 0;
+      return Math.ceil(this.customFeeRate * this.TX_VBYTES);
+    },
+
+    /**
+     * Build custom fee object matching the structure of preset fees
+     */
+    customFeeObject() {
+      if (!this.feeQuote) return null;
+      return {
+        serviceFee: Number(this.feeQuote.medium?.serviceFee || 0),
+        networkFee: this.customNetworkFee,
+        totalFee: Number(this.feeQuote.medium?.serviceFee || 0) + this.customNetworkFee,
+        feeQuoteId: this.feeQuote.medium?.feeQuoteId,
+        timeEstimate: this.$t('Custom'),
+        feeRate: this.customFeeRate
+      };
+    },
+
     selectedFee() {
       if (!this.feeQuote || !this.selectedSpeed) return null;
+      // Handle custom fee selection
+      if (this.selectedSpeed === 'custom') {
+        return this.customFeeObject;
+      }
       return this.feeQuote[this.selectedSpeed];
     },
 
@@ -185,6 +269,10 @@ export default {
     },
 
     canSend() {
+      // For custom fee, require a valid fee rate
+      if (this.selectedSpeed === 'custom' && (!this.customFeeRate || this.customFeeRate < 1)) {
+        return false;
+      }
       return (
         this.amountSats > 0 &&
         this.feeQuote &&
@@ -236,7 +324,7 @@ export default {
 
         this.feeQuote = await provider.getWithdrawalFeeQuote(
           this.amountSats,
-          this.destinationAddress
+          this.cleanedAddress
         );
       } catch (error) {
         console.error('Failed to fetch fee quote:', error);
@@ -266,7 +354,7 @@ export default {
 
         const result = await provider.withdrawToL1({
           amountSats: this.amountSats,
-          destinationAddress: this.destinationAddress,
+          destinationAddress: this.cleanedAddress,
           speed: this.selectedSpeed.toUpperCase(),
           feeQuoteId: this.selectedFee.feeQuoteId
         });
@@ -556,8 +644,14 @@ export default {
 
 .speed-options {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 400px) {
+  .speed-options {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .speed-card {
@@ -618,6 +712,85 @@ export default {
   font-size: 12px;
   font-weight: 600;
   color: #15DE72;
+}
+
+/* Custom Card */
+.speed-card.custom-card {
+  border-style: dashed;
+  border-color: rgba(128, 128, 128, 0.3);
+}
+
+.speed-card.custom-card.selected {
+  border-style: solid;
+  border-color: #15DE72;
+}
+
+/* Custom Fee Input Section */
+.custom-fee-section {
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(21, 222, 114, 0.08);
+  border: 1px solid rgba(21, 222, 114, 0.2);
+}
+
+.custom-fee-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.1);
+  margin-bottom: 10px;
+}
+
+.custom-fee-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  font-weight: 600;
+  outline: none;
+  width: 100%;
+  text-align: center;
+}
+
+.custom-fee-input::placeholder {
+  opacity: 0.4;
+}
+
+.custom-fee-input.input-dark {
+  color: #FFFFFF;
+}
+
+.custom-fee-input.input-light {
+  color: #212121;
+}
+
+.fee-unit {
+  font-size: 14px;
+  opacity: 0.6;
+  font-weight: 500;
+}
+
+.fee-rate-hints {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fee-rate-hints .hint {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(128, 128, 128, 0.15);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fee-rate-hints .hint:hover {
+  background: rgba(21, 222, 114, 0.2);
 }
 
 /* Fee Loading */

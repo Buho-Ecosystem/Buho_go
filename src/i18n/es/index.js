@@ -474,5 +474,10 @@ export default {
   "Failed to create wallet": "No se pudo crear la billetera",
   "Failed to restore wallet": "No se pudo restaurar la billetera",
   "Switch": "Cambiar",
-  "Donate": "Donar"
+  "Donate": "Donar",
+  "Next block": "Próximo bloque",
+  "~30 min": "~30 min",
+  "~1 hour": "~1 hora",
+  "Custom": "Personalizado",
+  "Set your own": "Define tu propia"
 }

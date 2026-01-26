@@ -502,5 +502,10 @@ export default {
   "Failed to create wallet": "Failed to create wallet",
   "Failed to restore wallet": "Failed to restore wallet",
   "Switch": "Switch",
-  "Donate": "Donate"
+  "Donate": "Donate",
+  "Next block": "Next block",
+  "~30 min": "~30 min",
+  "~1 hour": "~1 hour",
+  "Custom": "Custom",
+  "Set your own": "Set your own"
 }

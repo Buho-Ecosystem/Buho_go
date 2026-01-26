@@ -567,6 +567,11 @@ export default {
           ? trimmedData.substring(10)
           : trimmedData;
 
+        // Handle bitcoin: URI scheme (BIP21) - strip prefix and query params
+        if (cleanData.toLowerCase().startsWith('bitcoin:')) {
+          cleanData = cleanData.substring(8).split('?')[0];
+        }
+
         // Normalize lightning addresses to lowercase (LN address standard)
         if (cleanData.includes('@') && cleanData.includes('.')) {
           cleanData = cleanData.toLowerCase();

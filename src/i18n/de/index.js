@@ -474,5 +474,10 @@ export default {
   "Failed to create wallet": "Wallet konnte nicht erstellt werden",
   "Failed to restore wallet": "Wallet konnte nicht wiederhergestellt werden",
   "Switch": "Wechseln",
-  "Donate": "Spenden"
+  "Donate": "Spenden",
+  "Next block": "Nächster Block",
+  "~30 min": "~30 Min",
+  "~1 hour": "~1 Stunde",
+  "Custom": "Individuell",
+  "Set your own": "Selbst festlegen"
 }

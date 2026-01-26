@@ -36,7 +36,11 @@ const BITCOIN_L1 = {
   // Minimum deposit amount in satoshis
   MIN_DEPOSIT_SATS: 500,
   // Default mempool API fallback
-  DEFAULT_MEMPOOL_API: 'https://mempool.space/api'
+  DEFAULT_MEMPOOL_API: 'https://mempool.space/api',
+  // Typical withdrawal transaction size in vBytes
+  // P2WPKH input (~68 vB) + P2WPKH output (~31 vB) + overhead (~10 vB) ≈ 110 vB
+  // Adding buffer for potential change output: ~140 vB typical
+  TYPICAL_TX_VBYTES: 140
 };
 
 export class SparkWalletProvider extends WalletProvider {
@@ -1013,8 +1017,37 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Fetch recommended fee rates from mempool.space API
+   * @returns {Promise<{fastestFee: number, halfHourFee: number, hourFee: number, economyFee: number, minimumFee: number}>}
+   */
+  async _fetchMempoolFeeRates() {
+    const apiUrl = fiatRatesService.getApiUrl();
+    // Handle both /api/v1 and /api formats
+    const baseUrl = apiUrl.replace(/\/v1$/, '');
+
+    try {
+      const response = await fetch(`${baseUrl}/v1/fees/recommended`);
+      if (!response.ok) {
+        throw new Error(`Mempool API error: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('Failed to fetch mempool fees, using fallback:', error.message);
+      // Fallback to default mempool.space if custom API fails
+      if (apiUrl !== 'https://mempool.space/api/v1') {
+        const fallbackResponse = await fetch('https://mempool.space/api/v1/fees/recommended');
+        if (fallbackResponse.ok) {
+          return await fallbackResponse.json();
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get fee quote for L1 Bitcoin withdrawal
    * Returns fees for slow/medium/fast speeds with breakdown
+   * Fetches real-time fee rates from mempool.space API
    * @param {number} amountSats - Amount to withdraw in satoshis
    * @param {string} destinationAddress - Bitcoin address to withdraw to
    * @returns {Promise<{slow: Object, medium: Object, fast: Object, expiresAt: number}>}
@@ -1027,24 +1060,38 @@ export class SparkWalletProvider extends WalletProvider {
     }
 
     try {
-      const quote = await this.wallet.getWithdrawalFeeQuote({
-        amountSats: amountSats,
-        withdrawalAddress: destinationAddress
-      });
+      // Fetch both Spark quote and mempool fee rates in parallel
+      const [quote, mempoolFees] = await Promise.all([
+        this.wallet.getWithdrawalFeeQuote({
+          amountSats: amountSats,
+          withdrawalAddress: destinationAddress
+        }),
+        this._fetchMempoolFeeRates()
+      ]);
+
+      // Calculate network fees based on mempool fee rates
+      // Fee = fee_rate (sat/vB) * transaction_size (vB)
+      const txSize = BITCOIN_L1.TYPICAL_TX_VBYTES;
+      const networkFees = {
+        slow: Math.ceil(mempoolFees.hourFee * txSize),
+        medium: Math.ceil(mempoolFees.halfHourFee * txSize),
+        fast: Math.ceil(mempoolFees.fastestFee * txSize)
+      };
 
       // Build user-friendly fee structure with breakdown
-      const buildFeeInfo = (speedQuote, timeEstimate) => ({
+      const buildFeeInfo = (speedQuote, networkFee, timeEstimate, feeRate) => ({
         serviceFee: Number(speedQuote?.userFee || 0),
-        networkFee: Number(speedQuote?.l1BroadcastFee || 0),
-        totalFee: Number(speedQuote?.userFee || 0) + Number(speedQuote?.l1BroadcastFee || 0),
+        networkFee: networkFee,
+        totalFee: Number(speedQuote?.userFee || 0) + networkFee,
         feeQuoteId: quote.feeQuoteId || quote.id,
-        timeEstimate: timeEstimate
+        timeEstimate: timeEstimate,
+        feeRate: feeRate // sat/vB for display
       });
 
       return {
-        slow: buildFeeInfo(quote.slow, '~1 hour'),
-        medium: buildFeeInfo(quote.medium, '~30 min'),
-        fast: buildFeeInfo(quote.fast, '~10 min'),
+        slow: buildFeeInfo(quote.slow, networkFees.slow, '~1 hour', mempoolFees.hourFee),
+        medium: buildFeeInfo(quote.medium, networkFees.medium, '~30 min', mempoolFees.halfHourFee),
+        fast: buildFeeInfo(quote.fast, networkFees.fast, 'Next block', mempoolFees.fastestFee),
         expiresAt: quote.expiry ? Math.floor(new Date(quote.expiry).getTime() / 1000) : Date.now() / 1000 + 60
       };
     } catch (error) {
