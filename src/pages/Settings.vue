@@ -843,6 +843,10 @@
               <span class="example-url">https://mempool.emzy.de/api/v1</span>
               <span class="example-desc">{{ $t('(Alternative)') }}</span>
             </div>
+            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.blocktrainer.de/api/v1'">
+              <span class="example-url">https://mempool.blocktrainer.de/api/v1</span>
+              <span class="example-desc">{{ $t('(Blocktrainer)') }}</span>
+            </div>
           </div>
 
           <div class="rate-status" v-if="fiatRateAge !== null"
@@ -1382,7 +1386,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Connection failed'),
-          caption: error.message,
+          caption: this.$t('Please check your connection and try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -1419,7 +1423,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Reconnection failed'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -1459,7 +1463,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: isInvalidPin ? this.$t('Incorrect PIN') : this.$t('Reconnection failed'),
-          caption: isInvalidPin ? this.$t('Please try again') : error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -1489,7 +1493,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -1551,7 +1555,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Action failed'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -1877,7 +1881,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('API connection failed'),
-          caption: error.message,
+          caption: this.$t('Please check the URL and try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });

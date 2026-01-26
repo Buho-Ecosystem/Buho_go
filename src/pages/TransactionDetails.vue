@@ -837,18 +837,43 @@ export default {
     },
 
     getTransactionTypeLabel() {
+      if (this.isBitcoinTransaction()) {
+        return this.transaction.type === 'incoming' ? this.$t('Bitcoin Deposit') : this.$t('Bitcoin Withdrawal');
+      }
       if (this.transaction.senderNpub) return this.$t('Zap Received');
       return this.transaction.type === 'incoming' ? this.$t('Payment Received') : this.$t('Payment Sent');
     },
 
     getTransactionIconClass() {
+      if (this.isBitcoinTransaction()) return 'tx-status-bitcoin';
       if (this.transaction.senderNpub) return 'tx-status-zap';
       return this.transaction.type === 'incoming' ? 'tx-status-received' : 'tx-status-sent';
     },
 
     getTransactionIcon() {
+      if (this.isBitcoinTransaction()) return 'lab la-bitcoin';
       if (this.transaction.senderNpub) return 'las la-bolt';
       return this.transaction.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
+    },
+
+    /**
+     * Check if transaction is a Bitcoin L1 deposit/withdrawal
+     */
+    isBitcoinTransaction() {
+      if (!this.transaction) return false;
+      // Check rawType or type from Spark SDK
+      const rawType = (this.transaction.rawType || '').toLowerCase();
+      if (rawType.includes('l1') || rawType.includes('deposit') || rawType.includes('withdrawal') ||
+          rawType.includes('coop_exit') || rawType.includes('static_deposit')) {
+        return true;
+      }
+      // Check description/memo
+      const desc = (this.transaction.description || this.transaction.memo || '').toLowerCase();
+      if (desc.includes('bitcoin deposit') || desc.includes('bitcoin withdrawal') ||
+          desc.includes('l1 deposit') || desc.includes('l1 withdrawal')) {
+        return true;
+      }
+      return false;
     },
 
     getAccentClass() {
@@ -1216,6 +1241,10 @@ export default {
 
 .hero-icon-container.tx-status-zap {
   background: linear-gradient(135deg, #15DE72, #78D53C);
+}
+
+.hero-icon-container.tx-status-bitcoin {
+  background: linear-gradient(135deg, #F7931A, #D97706);
 }
 
 .hero-info {

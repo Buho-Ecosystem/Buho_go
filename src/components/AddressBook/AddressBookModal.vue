@@ -67,7 +67,8 @@
               toggle-color="primary"
               :options="[
                 { label: 'Lightning', value: 'lightning', icon: 'las la-bolt' },
-                { label: 'Spark', value: 'spark', icon: 'las la-fire' }
+                { label: 'Spark', value: 'spark', icon: 'las la-fire' },
+                { label: 'Bitcoin', value: 'bitcoin', icon: 'lab la-bitcoin' }
               ]"
               class="address-type-toggle"
               :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
@@ -79,7 +80,7 @@
 
           <div class="input-wrapper">
             <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ formData.addressType === 'spark' ? $t('Spark Address') : $t('Lightning Address') }}
+              {{ addressTypeLabel }}
             </div>
             <input
               v-model="formData.address"
@@ -91,7 +92,7 @@
               maxlength="150"
             />
             <div v-if="formData.address && !isAddressValid" class="input-error">
-              {{ formData.addressType === 'spark' ? $t('Invalid Spark address (should start with spark1 or sp1)') : $t('Invalid Lightning address format') }}
+              {{ addressErrorMessage }}
             </div>
           </div>
 
@@ -211,16 +212,40 @@ export default {
       return !!this.entry
     },
 
+    addressTypeLabel() {
+      const labels = {
+        lightning: this.$t('Lightning Address'),
+        spark: this.$t('Spark Address'),
+        bitcoin: this.$t('Bitcoin Address')
+      }
+      return labels[this.formData.addressType] || labels.lightning
+    },
+
     addressPlaceholder() {
-      return this.formData.addressType === 'spark'
-        ? 'spark1... or sp1...'
-        : 'user@domain.com'
+      const placeholders = {
+        lightning: 'user@domain.com',
+        spark: 'spark1... or sp1...',
+        bitcoin: 'bc1... or 1... or 3...'
+      }
+      return placeholders[this.formData.addressType] || placeholders.lightning
+    },
+
+    addressErrorMessage() {
+      const messages = {
+        lightning: this.$t('Invalid Lightning address format'),
+        spark: this.$t('Invalid Spark address (should start with spark1 or sp1)'),
+        bitcoin: this.$t('Invalid Bitcoin address format')
+      }
+      return messages[this.formData.addressType] || messages.lightning
     },
 
     isAddressValid() {
       if (!this.formData.address.trim()) return true // Don't show error for empty
       if (this.formData.addressType === 'spark') {
         return this.isValidSparkAddress(this.formData.address)
+      }
+      if (this.formData.addressType === 'bitcoin') {
+        return this.isValidBitcoinAddress(this.formData.address)
       }
       return this.isValidLightningAddress(this.formData.address)
     },
@@ -310,6 +335,22 @@ export default {
              legacyPrefixes.some(p => trimmed.startsWith(p))
     },
 
+    isValidBitcoinAddress(address) {
+      if (!address) return false
+      const trimmed = address.trim()
+      // Mainnet: bc1 (bech32/bech32m native segwit), 1 (P2PKH legacy), 3 (P2SH)
+      // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
+      const mainnetBech32Regex = /^bc1[a-zA-HJ-NP-Z0-9]{39,62}$/i
+      const mainnetLegacyRegex = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/
+      const testnetBech32Regex = /^tb1[a-zA-HJ-NP-Z0-9]{39,62}$/i
+      const testnetLegacyRegex = /^[mn2][a-km-zA-HJ-NP-Z1-9]{25,34}$/
+
+      return mainnetBech32Regex.test(trimmed) ||
+             mainnetLegacyRegex.test(trimmed) ||
+             testnetBech32Regex.test(trimmed) ||
+             testnetLegacyRegex.test(trimmed)
+    },
+
     async saveEntry() {
       if (!this.isFormValid) return
 
@@ -384,6 +425,13 @@ export default {
         return {
           title: this.$t('Invalid Spark address'),
           caption: this.$t('Spark addresses start with spark1 or sp1')
+        }
+      }
+
+      if (msg.includes('Invalid Bitcoin')) {
+        return {
+          title: this.$t('Invalid Bitcoin address'),
+          caption: this.$t('Bitcoin addresses start with bc1, 1, or 3')
         }
       }
 

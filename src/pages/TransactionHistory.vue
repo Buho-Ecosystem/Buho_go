@@ -113,12 +113,215 @@
       </div>
     </div>
 
-    <!-- Transaction List -->
+    <!-- Pending Bitcoin Deposits - Integrated with TX List Style -->
+    <div v-if="pendingBitcoinDeposits.length > 0" class="pending-deposits-list">
+      <!-- Section Header -->
+      <div class="pending-list-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
+        <span class="header-text">
+          {{ $t('Bitcoin Deposits') }}
+          <span v-if="pendingBitcoinDeposits.length > 1" class="deposit-count">({{ pendingBitcoinDeposits.length }})</span>
+        </span>
+        <span v-if="claimableDeposits.length > 0" class="header-badge">
+          {{ claimableDeposits.length }} {{ $t('ready') }}
+        </span>
+      </div>
+
+      <!-- Deposit Entries - Matching TX Card Style -->
+      <div
+        v-for="deposit in pendingBitcoinDeposits"
+        :key="deposit.txId"
+        class="deposit-tx-card"
+        :class="$q.dark.isActive ? 'deposit-tx-card-dark' : 'deposit-tx-card-light'"
+        @click="deposit.confirmed ? initiateClaimDeposit(deposit) : null"
+      >
+        <!-- Left: Bitcoin Icon -->
+        <div class="tx-avatar">
+          <div class="direction-icon bitcoin-deposit" :class="{ 'claimable': deposit.confirmed }">
+            <q-icon name="lab la-bitcoin" size="22px" />
+          </div>
+        </div>
+
+        <!-- Center: Info -->
+        <div class="tx-info">
+          <div class="tx-primary" :class="$q.dark.isActive ? 'tx_primary_dark' : 'tx_primary_light'">
+            {{ $t('Bitcoin Deposit') }}
+          </div>
+          <div class="tx-secondary deposit-status" :class="deposit.confirmed ? 'status-ready' : 'status-pending'">
+            <template v-if="deposit.confirmed">
+              <q-icon name="las la-check-circle" size="14px" class="status-icon" />
+              {{ $t('Ready to claim') }}
+            </template>
+            <template v-else>
+              <span class="conf-dots">
+                <span class="dot" :class="{ active: deposit.confirmations >= 1 }"></span>
+                <span class="dot" :class="{ active: deposit.confirmations >= 2 }"></span>
+                <span class="dot" :class="{ active: deposit.confirmations >= 3 }"></span>
+              </span>
+              {{ deposit.confirmations }}/3 {{ $t('confirmations') }}
+            </template>
+          </div>
+        </div>
+
+        <!-- Right: Amount & Action -->
+        <div class="tx-amounts deposit-actions">
+          <div class="amount-sats positive" :class="$q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light'">
+            {{ formatAmount(deposit.amount) }}
+          </div>
+          <q-btn
+            v-if="deposit.confirmed"
+            size="sm"
+            no-caps
+            unelevated
+            class="claim-action-btn"
+            :loading="claimingTxId === deposit.txId"
+            @click.stop="initiateClaimDeposit(deposit)"
+          >
+            {{ $t('Claim') }}
+          </q-btn>
+          <div v-else class="amount-fiat confirming-text" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+            {{ $t('Confirming...') }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Claim Confirmation - iOS Action Sheet Style -->
+    <q-dialog v-model="showClaimDialog" position="bottom" transition-show="slide-up" transition-hide="slide-down">
+      <q-card class="claim-action-sheet" :class="$q.dark.isActive ? 'sheet-dark' : 'sheet-light'">
+        <!-- Handle Bar -->
+        <div class="sheet-handle">
+          <div class="handle-bar"></div>
+        </div>
+
+        <!-- Amount Display -->
+        <div class="claim-amount-display">
+          <div class="claim-amount-value" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+            +{{ formatAmount(netClaimAmount) }}
+          </div>
+          <div class="claim-amount-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
+            {{ $t('will be added to your wallet') }}
+          </div>
+        </div>
+
+        <!-- Fee Summary -->
+        <div class="claim-fee-summary" :class="$q.dark.isActive ? 'summary-dark' : 'summary-light'">
+          <div class="fee-line">
+            <span class="fee-label">{{ $t('Deposit') }}</span>
+            <span class="fee-value">{{ formatAmount(claimingDeposit?.amount || 0) }}</span>
+          </div>
+          <div class="fee-line deduction">
+            <span class="fee-label">{{ $t('Network fee') }}</span>
+            <span class="fee-value">-{{ formatAmount(claimFeeAmount) }}</span>
+          </div>
+        </div>
+
+        <!-- High Fee Notice -->
+        <div v-if="isHighClaimFee" class="high-fee-notice">
+          <q-icon name="las la-exclamation-circle" size="16px" />
+          <span>{{ $t('High fee relative to deposit') }}</span>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="claim-sheet-actions">
+          <q-btn
+            unelevated
+            no-caps
+            class="claim-confirm-btn"
+            :loading="isClaimingDeposit"
+            @click="confirmClaimDeposit"
+          >
+            {{ $t('Add to Wallet') }}
+          </q-btn>
+          <q-btn
+            flat
+            no-caps
+            class="claim-cancel-btn"
+            :class="$q.dark.isActive ? 'cancel-dark' : 'cancel-light'"
+            @click="cancelClaim"
+          >
+            {{ $t('Cancel') }}
+          </q-btn>
+        </div>
+
+        <!-- Return to Sender Option -->
+        <div class="refund-option">
+          <q-btn
+            flat
+            no-caps
+            dense
+            class="refund-link"
+            :class="$q.dark.isActive ? 'refund-dark' : 'refund-light'"
+            @click="showRefundConfirmation"
+          >
+            {{ $t("Don't want it? Return to sender") }}
+          </q-btn>
+        </div>
+      </q-card>
+    </q-dialog>
+
+    <!-- Refund Confirmation Dialog -->
+    <q-dialog v-model="showRefundDialog" persistent>
+      <q-card class="refund-dialog" :class="$q.dark.isActive ? 'dialog-dark' : 'dialog-light'">
+        <q-card-section class="refund-header">
+          <q-icon name="las la-undo-alt" size="48px" class="refund-icon" />
+          <div class="refund-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+            {{ $t('Return this Bitcoin?') }}
+          </div>
+        </q-card-section>
+
+        <q-card-section class="refund-body">
+          <p :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('This will send the Bitcoin back to whoever sent it to you.') }}
+          </p>
+          <p :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('You will not receive any sats from this deposit.') }}
+          </p>
+          <div class="refund-amount-box" :class="$q.dark.isActive ? 'box-dark' : 'box-light'">
+            <span class="refund-amount-label">{{ $t('Amount being returned') }}</span>
+            <span class="refund-amount-value">{{ formatAmount(claimingDeposit?.amount || 0) }}</span>
+          </div>
+        </q-card-section>
+
+        <q-card-actions class="refund-actions">
+          <q-btn
+            flat
+            no-caps
+            class="refund-keep-btn"
+            :class="$q.dark.isActive ? 'keep-dark' : 'keep-light'"
+            @click="showRefundDialog = false"
+          >
+            {{ $t('Keep it') }}
+          </q-btn>
+          <q-btn
+            unelevated
+            no-caps
+            class="refund-confirm-btn"
+            :loading="isRefundingDeposit"
+            @click="confirmRefundDeposit"
+          >
+            {{ $t('Yes, return it') }}
+          </q-btn>
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Bitcoin Claim Success Animation -->
+    <PaymentConfirmation
+      v-model="showClaimSuccess"
+      :amount="claimSuccessAmount"
+      :label="$t('Bitcoin Claimed')"
+      accent-color="orange"
+      :auto-close-delay="4"
+      @closed="onClaimSuccessClosed"
+    />
+
+    <!-- Transaction List with Pull-to-Refresh -->
     <q-scroll-area
       class="transaction-content"
       :class="$q.dark.isActive ? 'transaction_content_dark' : 'transaction_content_light'"
       v-if="!isLoading && filteredTransactions.length > 0"
     >
+      <q-pull-to-refresh @refresh="onPullToRefresh" color="primary">
       <div class="transaction-groups">
         <div
           v-for="group in groupedTransactions"
@@ -175,7 +378,7 @@
                        :style="{ backgroundColor: getContactForTransaction(tx).color }">
                     {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
                   </div>
-                  <div v-else class="direction-icon" :class="tx.type">
+                  <div v-else class="direction-icon" :class="getIndicatorClass(tx)">
                     <q-icon :name="getTransactionIcon(tx)" size="20px"/>
                   </div>
                 </div>
@@ -280,6 +483,30 @@
           </q-slide-transition>
         </div>
       </div>
+
+      <!-- Load More Button -->
+      <div v-if="hasMoreTransactions && activeFilter === 'all'" class="load-more-section">
+        <q-btn
+          flat
+          no-caps
+          :loading="isLoadingMore"
+          class="load-more-btn"
+          :class="$q.dark.isActive ? 'load-more-dark' : 'load-more-light'"
+          @click="loadMoreTransactions"
+        >
+          <q-icon name="las la-plus-circle" size="18px" class="q-mr-sm" />
+          {{ $t('Load More') }}
+        </q-btn>
+      </div>
+
+      <!-- End of List Indicator -->
+      <div v-else-if="!hasMoreTransactions && transactions.length > 20" class="end-of-list">
+        <span :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+          {{ $t('All transactions loaded') }}
+        </span>
+      </div>
+
+      </q-pull-to-refresh>
     </q-scroll-area>
 
     <!-- Loading State -->
@@ -314,22 +541,13 @@
       />
     </div>
 
-    <!-- Floating Refresh Button -->
-    <q-page-sticky position="bottom-right" :offset="[18, 18]">
-      <q-btn
-        fab
-        icon="las la-sync-alt"
-        @click="refreshTransactions"
-        :loading="isRefreshing"
-        :class="$q.dark.isActive ? 'refresh_fab_dark' : 'refresh_fab_light'"
-      />
-    </q-page-sticky>
   </q-page>
 </template>
 
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import LoadingScreen from '../components/LoadingScreen.vue';
+import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
@@ -341,7 +559,8 @@ import { groupMicropayments } from '../composables/useTransactionGrouping';
 export default {
   name: 'TransactionHistoryPage',
   components: {
-    LoadingScreen
+    LoadingScreen,
+    PaymentConfirmation
   },
   data() {
     return {
@@ -367,13 +586,34 @@ export default {
       fiatRates: {},
       loadingFiatRates: true,
       // Batching state
+      isLoadingMore: false,
       batchSize: 20,
       currentOffset: 0,
       isFetchingMore: false,
       hasMoreTransactions: true,
-      backgroundFetchAborted: false
+      backgroundFetchAborted: false,
+      // Pending Bitcoin deposits
+      pendingBitcoinDeposits: [],
+      claimingTxId: null,
+      showClaimDialog: false,
+      claimingDeposit: null,
+      claimFeeQuote: null,
+      isClaimingDeposit: false,
+      // Claim success animation
+      showClaimSuccess: false,
+      claimSuccessAmount: 0,
+      // Track the deposit txId being claimed for reliable matching
+      lastClaimedDepositTxId: null,
+      // Refund dialog state
+      showRefundDialog: false,
+      isRefundingDeposit: false
     }
   },
+
+  // Constants for Bitcoin L1 handling
+  BITCOIN_REQUIRED_CONFIRMATIONS: 3,
+  CLAIMED_TX_STORAGE_LIMIT: 100,
+  CLAIM_MATCH_TIME_WINDOW_SECONDS: 300,
   computed: {
     filteredTransactions() {
       const now = new Date();
@@ -487,6 +727,26 @@ export default {
 
     netAmount() {
       return this.totalReceived - this.totalSent;
+    },
+
+    // Claim dialog computed properties
+    netClaimAmount() {
+      if (!this.claimingDeposit || !this.claimFeeQuote) return 0;
+      return this.claimFeeQuote.creditAmountSats || 0;
+    },
+
+    claimFeeAmount() {
+      if (!this.claimingDeposit || !this.claimFeeQuote) return 0;
+      return Math.max(0, this.claimingDeposit.amount - (this.claimFeeQuote.creditAmountSats || 0));
+    },
+
+    isHighClaimFee() {
+      if (!this.claimingDeposit || !this.claimFeeQuote) return false;
+      return this.claimFeeAmount > (this.claimingDeposit.amount * 0.5);
+    },
+
+    claimableDeposits() {
+      return this.pendingBitcoinDeposits.filter(d => d.confirmed);
     }
   },
   async created() {
@@ -500,6 +760,7 @@ export default {
 
     this.initializeTransactionHistory();
     this.loadFiatRates();
+    this.loadPendingDeposits();
   },
 
   beforeUnmount() {
@@ -558,20 +819,11 @@ export default {
     },
 
     shouldShowDescription(tx) {
-      if (!tx) {
-        console.log('shouldShowDescription: no tx');
-        return false;
-      }
+      if (!tx) return false;
       const desc = tx.description || tx.memo;
-      if (!desc) {
-        console.log('shouldShowDescription: no description/memo for tx', tx.id);
-        return false;
-      }
-      if (desc === 'Lightning transaction') {
-        console.log('shouldShowDescription: default Lightning transaction text for tx', tx.id);
-        return false;
-      }
-      console.log('shouldShowDescription: showing description for tx', tx.id, '-', desc);
+      if (!desc) return false;
+      // Skip generic default descriptions
+      if (desc === 'Lightning transaction') return false;
       return true;
     },
 
@@ -954,8 +1206,43 @@ export default {
         type: 'positive',
         message: this.$t('Up to date'),
         position: 'bottom',
+        timeout: 1500,
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
+    },
+
+    /**
+     * Pull-to-refresh handler
+     */
+    async onPullToRefresh(done) {
+      try {
+        // Abort any ongoing background fetch
+        this.backgroundFetchAborted = true;
+        await this.loadTransactions();
+      } finally {
+        done();
+      }
+    },
+
+    /**
+     * Load more transactions (next batch)
+     */
+    async loadMoreTransactions() {
+      if (this.isLoadingMore || !this.hasMoreTransactions) return;
+
+      this.isLoadingMore = true;
+      try {
+        const provider = await this.walletStore.getProvider();
+        if (provider.isSpark && provider.isSpark()) {
+          await this.loadSparkTransactionsBatch();
+        } else {
+          await this.loadNWCTransactionsBatch();
+        }
+      } catch (error) {
+        console.error('Error loading more transactions:', error);
+      } finally {
+        this.isLoadingMore = false;
+      }
     },
 
     async processZapTransactions() {
@@ -1044,6 +1331,10 @@ export default {
     },
 
     getTransactionTypeText(tx) {
+      // Check for Bitcoin (L1) transactions
+      if (this.isBitcoinTransaction(tx)) {
+        return tx.type === 'incoming' ? this.$t('Bitcoin Deposit') : this.$t('Bitcoin Withdrawal');
+      }
       if (tx.senderNpub && this.nostrProfiles[tx.senderNpub]) {
         return this.$t('Received');
       }
@@ -1051,13 +1342,93 @@ export default {
     },
 
     getTransactionIconClass(tx) {
+      if (this.isBitcoinTransaction(tx)) return 'tx-icon-bitcoin';
       if (tx.senderNpub) return 'tx-icon-zap';
       return tx.type === 'incoming' ? 'tx-icon-received' : 'tx-icon-sent';
     },
 
     getTransactionIcon(tx) {
+      if (this.isBitcoinTransaction(tx)) return 'lab la-bitcoin';
       if (tx.senderNpub) return 'las la-bolt';
       return tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
+    },
+
+    /**
+     * Get indicator class for transaction avatar
+     * Bitcoin deposits: orange (bitcoin-deposit)
+     * Bitcoin withdrawals: gray (outgoing)
+     * Regular: green (incoming) or gray (outgoing)
+     */
+    getIndicatorClass(tx) {
+      if (this.isBitcoinTransaction(tx)) {
+        // Bitcoin deposits show with orange indicator
+        // Bitcoin withdrawals treated as regular outgoing (gray)
+        return tx.type === 'incoming' ? 'bitcoin-deposit' : 'outgoing';
+      }
+      return tx.type;
+    },
+
+    /**
+     * Check if transaction is a Bitcoin L1 deposit/withdrawal
+     */
+    isBitcoinTransaction(tx) {
+      if (!tx) return false;
+
+      // Check if this transaction ID was marked as a Bitcoin claim
+      const claimedIds = this.getClaimedBitcoinTxIds();
+      if (claimedIds.includes(tx.id)) {
+        return true;
+      }
+
+      // Check rawType or type from Spark SDK
+      const rawType = (tx.rawType || '').toLowerCase();
+      if (rawType.includes('l1') || rawType.includes('deposit') || rawType.includes('withdrawal') ||
+          rawType.includes('coop_exit') || rawType.includes('static_deposit') ||
+          rawType.includes('coop_close') || rawType.includes('claim')) {
+        return true;
+      }
+
+      // Check description/memo
+      const desc = (tx.description || tx.memo || '').toLowerCase();
+      if (desc.includes('bitcoin deposit') || desc.includes('bitcoin withdrawal') ||
+          desc.includes('l1 deposit') || desc.includes('l1 withdrawal') ||
+          desc.includes('on-chain') || desc.includes('onchain')) {
+        return true;
+      }
+
+      return false;
+    },
+
+    /**
+     * Get list of transaction IDs that were claimed Bitcoin deposits
+     */
+    getClaimedBitcoinTxIds() {
+      try {
+        const stored = localStorage.getItem('buhoGO_claimed_bitcoin_txs');
+        return stored ? JSON.parse(stored) : [];
+      } catch {
+        return [];
+      }
+    },
+
+    /**
+     * Mark a transaction ID as a claimed Bitcoin deposit
+     */
+    markAsClaimedBitcoin(txId) {
+      if (!txId) return;
+
+      try {
+        const ids = this.getClaimedBitcoinTxIds();
+        if (!ids.includes(txId)) {
+          ids.push(txId);
+          // Keep only last N entries to prevent storage bloat
+          const limit = this.$options.CLAIMED_TX_STORAGE_LIMIT || 100;
+          const trimmed = ids.slice(-limit);
+          localStorage.setItem('buhoGO_claimed_bitcoin_txs', JSON.stringify(trimmed));
+        }
+      } catch (error) {
+        console.error('Failed to store claimed Bitcoin tx:', error);
+      }
     },
 
     getAmountClass(tx) {
@@ -1165,6 +1536,214 @@ export default {
 
     viewTransaction(tx) {
       this.$router.push(`/transaction/${tx.id}`);
+    },
+
+    // ==========================================
+    // Pending Bitcoin Deposits Methods
+    // ==========================================
+
+    async loadPendingDeposits() {
+      if (!this.walletStore.isActiveWalletSpark) return;
+
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        if (provider?.getPendingDeposits) {
+          this.pendingBitcoinDeposits = await provider.getPendingDeposits();
+        }
+      } catch (error) {
+        console.warn('Failed to load pending deposits:', error);
+      }
+    },
+
+    async initiateClaimDeposit(deposit) {
+      // Validate deposit is confirmed before proceeding
+      if (!deposit || !deposit.confirmed) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Deposit not ready'),
+          caption: this.$t('Please wait for more confirmations'),
+          position: 'bottom'
+        });
+        return;
+      }
+
+      this.claimingTxId = deposit.txId;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        const quote = await provider.getClaimFeeQuote(deposit.txId, deposit.outputIndex);
+
+        this.claimingDeposit = deposit;
+        this.claimFeeQuote = quote;
+        this.showClaimDialog = true;
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t get fee quote'),
+          position: 'bottom'
+        });
+      } finally {
+        this.claimingTxId = null;
+      }
+    },
+
+    async confirmClaimDeposit() {
+      if (!this.claimingDeposit || !this.claimFeeQuote) return;
+
+      this.isClaimingDeposit = true;
+      const claimedAmount = this.claimFeeQuote.creditAmountSats || this.claimingDeposit.amount;
+      const claimedTxId = this.claimingDeposit.txId;
+
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        await provider.claimDeposit(
+          this.claimingDeposit.txId,
+          this.claimFeeQuote, // Pass the full quote with creditAmountSats and signature
+          this.claimingDeposit.outputIndex
+        );
+
+        // Close claim dialog first
+        this.showClaimDialog = false;
+
+        // Show success animation
+        this.claimSuccessAmount = claimedAmount;
+        this.showClaimSuccess = true;
+
+        // Remove from pending list
+        this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(
+          d => d.txId !== claimedTxId
+        );
+
+        // Refresh wallet balance and transactions
+        await this.walletStore.refreshActiveWallet();
+        await this.loadTransactions();
+
+        // Try to find and mark the new Bitcoin transaction
+        this.markRecentBitcoinClaim(claimedAmount, claimedTxId);
+
+      } catch (error) {
+        console.error('Claim failed:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Claim failed'),
+          caption: this.$t('Please try again'),
+          position: 'bottom'
+        });
+      } finally {
+        this.isClaimingDeposit = false;
+        this.claimingDeposit = null;
+        this.claimFeeQuote = null;
+      }
+    },
+
+    /**
+     * Find and mark a recently claimed Bitcoin deposit transaction
+     * Uses multiple strategies for reliable matching
+     */
+    markRecentBitcoinClaim(amount, depositTxId) {
+      const now = Math.floor(Date.now() / 1000);
+      const timeWindow = this.$options.CLAIM_MATCH_TIME_WINDOW_SECONDS || 300;
+
+      // Strategy 1: Find transaction that references the deposit txId in description/rawType
+      let matchedTx = this.transactions.find(tx =>
+        tx.type === 'incoming' &&
+        (now - tx.settled_at) < timeWindow &&
+        (
+          (tx.rawType && tx.rawType.toLowerCase().includes('deposit')) ||
+          (tx.rawType && tx.rawType.toLowerCase().includes('claim')) ||
+          (tx.description && tx.description.toLowerCase().includes(depositTxId?.slice(0, 8)))
+        )
+      );
+
+      // Strategy 2: Find most recent incoming tx matching exact amount (no variance)
+      if (!matchedTx && amount) {
+        matchedTx = this.transactions.find(tx =>
+          tx.type === 'incoming' &&
+          tx.amount === amount &&
+          (now - tx.settled_at) < timeWindow &&
+          !this.getClaimedBitcoinTxIds().includes(tx.id)
+        );
+      }
+
+      // Strategy 3: Find most recent incoming tx with similar amount (within 1% for fees)
+      if (!matchedTx && amount) {
+        const tolerance = Math.max(10, amount * 0.01);
+        matchedTx = this.transactions.find(tx =>
+          tx.type === 'incoming' &&
+          Math.abs(tx.amount - amount) <= tolerance &&
+          (now - tx.settled_at) < timeWindow &&
+          !this.getClaimedBitcoinTxIds().includes(tx.id)
+        );
+      }
+
+      if (matchedTx) {
+        this.markAsClaimedBitcoin(matchedTx.id);
+      }
+    },
+
+    cancelClaim() {
+      this.showClaimDialog = false;
+      this.claimingDeposit = null;
+      this.claimFeeQuote = null;
+    },
+
+    onClaimSuccessClosed() {
+      this.showClaimSuccess = false;
+      this.claimSuccessAmount = 0;
+    },
+
+    // ==========================================
+    // Refund Methods
+    // ==========================================
+
+    showRefundConfirmation() {
+      // Close the claim dialog and show refund confirmation
+      this.showClaimDialog = false;
+      this.showRefundDialog = true;
+    },
+
+    async confirmRefundDeposit() {
+      if (!this.claimingDeposit) return;
+
+      this.isRefundingDeposit = true;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        await provider.refundDeposit(
+          this.claimingDeposit.txId,
+          this.claimingDeposit.outputIndex
+        );
+
+        // Close dialog
+        this.showRefundDialog = false;
+
+        // Remove from pending list
+        this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(
+          d => d.txId !== this.claimingDeposit.txId
+        );
+
+        // Show success notification
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Bitcoin returned'),
+          caption: this.$t('Sent back to the original sender'),
+          position: 'bottom',
+          icon: 'las la-check-circle'
+        });
+
+        // Clean up state
+        this.claimingDeposit = null;
+        this.claimFeeQuote = null;
+
+      } catch (error) {
+        console.error('Refund failed:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Could not return Bitcoin'),
+          caption: this.$t('Please try again'),
+          position: 'bottom'
+        });
+      } finally {
+        this.isRefundingDeposit = false;
+      }
     }
   }
 }
@@ -1622,6 +2201,10 @@ export default {
   background: linear-gradient(135deg, #15DE72, #43B65B);
 }
 
+.tx-icon-bitcoin {
+  background: linear-gradient(135deg, #F7931A, #D97706);
+}
+
 .transaction-details {
   flex: 1;
   min-width: 0;
@@ -1798,13 +2381,13 @@ export default {
 /* Avatar/Icon Section */
 .tx-avatar {
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
 }
 
 .contact-avatar {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1813,25 +2396,29 @@ export default {
   font-weight: 600;
   color: white;
   font-family: Fustat, sans-serif;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .direction-icon {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.25rem;
+  font-size: 18px;
   color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
+/* Incoming - iOS Green */
 .direction-icon.incoming {
-  background: linear-gradient(135deg, #15DE72, #059573);
+  background: #34C759;
 }
 
+/* Outgoing - iOS Gray */
 .direction-icon.outgoing {
-  background: linear-gradient(135deg, #6B7280, #4B5563);
+  background: #8E8E93;
 }
 
 /* Info Section */
@@ -1944,7 +2531,7 @@ export default {
 
 .amount_sats_dark.positive,
 .amount_sats_light.positive {
-  color: #15DE72 !important;
+  color: #34C759 !important;
 }
 
 .amount_sats_dark.negative {
@@ -1956,7 +2543,7 @@ export default {
 }
 
 .amount-sats.positive {
-  color: #15DE72 !important;
+  color: #34C759 !important;
 }
 
 .amount-sats.positive::before {
@@ -2253,25 +2840,501 @@ export default {
   font-weight: 500 !important;
 }
 
-/* Floating Action Button */
-.refresh_fab_dark {
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
-  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.3) !important;
+/* Load More Section */
+.load-more-section {
+  display: flex;
+  justify-content: center;
+  padding: 16px 16px 32px;
 }
 
-.refresh_fab_light {
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3) !important;
+.load-more-btn {
+  font-family: Fustat, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 24px;
+  border-radius: 20px;
 }
 
-.refresh_fab_dark:hover {
-  background: linear-gradient(135deg, #059573, #047857) !important;
-  box-shadow: 0 6px 16px rgba(21, 222, 114, 0.4) !important;
+.load-more-dark {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.refresh_fab_light:hover {
-  background: linear-gradient(135deg, #059573, #047857) !important;
-  box-shadow: 0 6px 16px rgba(5, 149, 115, 0.4) !important;
+.load-more-dark:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.load-more-light {
+  color: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.load-more-light:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #000;
+}
+
+/* End of List Indicator */
+.end-of-list {
+  display: flex;
+  justify-content: center;
+  padding: 16px 16px 32px;
+  font-family: Fustat, sans-serif;
+  font-size: 13px;
+}
+
+/* ==========================================
+   Pending Bitcoin Deposits - TX List Style
+   ========================================== */
+.pending-deposits-list {
+  margin-bottom: 0;
+}
+
+.pending-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: Fustat, sans-serif;
+}
+
+.pending-list-header .header-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pending-list-header .deposit-count {
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.pending-list-header .header-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: #34C759;
+  color: white;
+}
+
+.pending-list-header.header-dark {
+  color: #F7931A;
+  background: rgba(247, 147, 26, 0.08);
+  border-bottom: 1px solid rgba(247, 147, 26, 0.15);
+}
+
+.pending-list-header.header-light {
+  color: #D97706;
+  background: rgba(247, 147, 26, 0.06);
+  border-bottom: 1px solid rgba(247, 147, 26, 0.12);
+}
+
+/* Deposit Card - Matching TX Card Style */
+.deposit-tx-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  min-height: 72px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+.deposit-tx-card-dark {
+  border-bottom: 1px solid rgba(247, 147, 26, 0.12);
+  background: rgba(247, 147, 26, 0.03);
+}
+
+.deposit-tx-card-light {
+  border-bottom: 1px solid rgba(247, 147, 26, 0.1);
+  background: rgba(247, 147, 26, 0.02);
+}
+
+.deposit-tx-card-dark:hover {
+  background: rgba(247, 147, 26, 0.08);
+}
+
+.deposit-tx-card-light:hover {
+  background: rgba(247, 147, 26, 0.05);
+}
+
+.deposit-tx-card:last-child {
+  border-bottom: none;
+}
+
+/* Bitcoin Deposit Icon - Orange */
+.direction-icon.bitcoin-deposit {
+  background: #F7931A;
+}
+
+/* Claimable state - subtle green ring, no animation */
+.direction-icon.bitcoin-deposit.claimable {
+  box-shadow: 0 0 0 2px #34C759, 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* Deposit Status Styling */
+.deposit-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.deposit-status.status-ready {
+  color: #34C759;
+}
+
+.deposit-status.status-pending {
+  color: #F7931A;
+}
+
+.deposit-status .status-icon {
+  margin-right: 2px;
+}
+
+/* Confirmation Dots */
+.conf-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 6px;
+}
+
+.conf-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(247, 147, 26, 0.25);
+  transition: all 0.3s ease;
+}
+
+.conf-dots .dot.active {
+  background: #F7931A;
+  box-shadow: 0 0 6px rgba(247, 147, 26, 0.5);
+}
+
+/* Deposit Actions */
+.deposit-actions {
+  align-items: flex-end !important;
+}
+
+.claim-action-btn {
+  background: #34C759 !important;
+  color: white !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 6px 14px !important;
+  border-radius: 8px !important;
+  min-height: 28px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: all 0.2s ease;
+}
+
+.claim-action-btn:hover {
+  background: #2DB84D !important;
+}
+
+.confirming-text {
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* ==========================================
+   iOS Action Sheet - Claim Confirmation
+   ========================================== */
+.claim-action-sheet {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 20px 20px 0 0;
+  margin: 0;
+}
+
+.claim-action-sheet.sheet-dark {
+  background: #1C1C1E;
+}
+
+.claim-action-sheet.sheet-light {
+  background: #FFFFFF;
+}
+
+/* Handle Bar */
+.sheet-handle {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 8px;
+}
+
+.handle-bar {
+  width: 36px;
+  height: 5px;
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+
+/* Amount Display */
+.claim-amount-display {
+  text-align: center;
+  padding: 16px 24px 24px;
+}
+
+.claim-amount-value {
+  font-size: 42px;
+  font-weight: 700;
+  font-family: Fustat, 'SF Pro Display', sans-serif;
+  letter-spacing: -1px;
+  color: #34C759;
+  line-height: 1.1;
+}
+
+.claim-amount-label {
+  font-size: 15px;
+  margin-top: 8px;
+  font-family: Fustat, sans-serif;
+}
+
+/* Fee Summary */
+.claim-fee-summary {
+  margin: 0 20px 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+.claim-fee-summary.summary-dark {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.claim-fee-summary.summary-light {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.fee-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-family: Fustat, sans-serif;
+}
+
+.fee-line .fee-label {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.fee-line .fee-value {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.fee-line.deduction .fee-value {
+  color: #FF6B6B;
+}
+
+/* High Fee Notice */
+.high-fee-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 20px 16px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(255, 107, 107, 0.1);
+  color: #FF6B6B;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: Fustat, sans-serif;
+}
+
+/* Action Buttons */
+.claim-sheet-actions {
+  padding: 8px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.claim-confirm-btn {
+  width: 100%;
+  height: 54px;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: 600;
+  font-family: Fustat, sans-serif;
+  background: #34C759 !important;
+  color: white !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.claim-confirm-btn:hover {
+  background: #2DB84D !important;
+}
+
+.claim-cancel-btn {
+  width: 100%;
+  height: 50px;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: Fustat, sans-serif;
+}
+
+.claim-cancel-btn.cancel-dark {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.claim-cancel-btn.cancel-light {
+  color: rgba(0, 0, 0, 0.5);
+}
+
+/* Refund Option Link */
+.refund-option {
+  text-align: center;
+  padding: 0 20px 20px;
+}
+
+.refund-link {
+  font-size: 13px;
+  font-family: Fustat, sans-serif;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.refund-link.refund-dark {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.refund-link.refund-light {
+  color: rgba(0, 0, 0, 0.4);
+}
+
+/* Refund Confirmation Dialog */
+.refund-dialog {
+  width: 320px;
+  max-width: 90vw;
+  border-radius: 20px;
+}
+
+.refund-dialog.dialog-dark {
+  background: #1C1C1E;
+}
+
+.refund-dialog.dialog-light {
+  background: #FFFFFF;
+}
+
+.refund-header {
+  text-align: center;
+  padding: 28px 24px 16px;
+}
+
+.refund-icon {
+  color: #F7931A;
+  margin-bottom: 12px;
+}
+
+.refund-title {
+  font-size: 20px;
+  font-weight: 600;
+  font-family: Fustat, sans-serif;
+}
+
+.refund-body {
+  padding: 0 24px 16px;
+  text-align: center;
+}
+
+.refund-body p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: Fustat, sans-serif;
+}
+
+.refund-amount-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-top: 16px;
+}
+
+.refund-amount-box.box-dark {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.refund-amount-box.box-light {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.refund-amount-label {
+  font-size: 13px;
+  opacity: 0.7;
+  font-family: Fustat, sans-serif;
+}
+
+.refund-amount-value {
+  font-size: 15px;
+  font-weight: 600;
+  font-family: Fustat, sans-serif;
+}
+
+.refund-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 20px 24px;
+}
+
+.refund-keep-btn {
+  width: 100%;
+  height: 50px;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: Fustat, sans-serif;
+  background: #34C759 !important;
+  color: white !important;
+}
+
+.refund-confirm-btn {
+  width: 100%;
+  height: 50px;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: Fustat, sans-serif;
+  background: #8E8E93 !important;
+  color: white !important;
+}
+
+/* Mobile Responsive */
+@media (max-width: 375px) {
+  .claim-amount-value {
+    font-size: 36px;
+  }
+
+  .claim-amount-label {
+    font-size: 14px;
+  }
+
+  .claim-confirm-btn {
+    height: 50px;
+    font-size: 16px;
+  }
+
+  .claim-cancel-btn {
+    height: 46px;
+    font-size: 15px;
+  }
 }
 
 /* Responsive Design */

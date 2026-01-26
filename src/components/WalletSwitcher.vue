@@ -227,7 +227,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -251,7 +251,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Reconnection failed'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })

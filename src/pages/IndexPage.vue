@@ -397,7 +397,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t ? this.$t('Connection failed') : 'Connection failed',
-            caption: error.message,
+            caption: this.$t ? this.$t('Please check your connection and try again') : 'Please check your connection and try again',
             position: 'bottom',
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -480,7 +480,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t ? this.$t('Invalid QR code') : 'Invalid QR code',
-            caption: error.message,
+            caption: this.$t ? this.$t('Please try a different code') : 'Please try a different code',
             position: 'bottom',
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });

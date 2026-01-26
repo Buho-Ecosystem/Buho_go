@@ -17,6 +17,7 @@ import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../provider
 const STORAGE_KEYS = {
   WALLET_STORE: 'buhoGO_wallet_store',
   LEGACY_STATE: 'buhoGO_wallet_state',
+  SESSION_PIN: 'buhoGO_session_pin', // sessionStorage only - per tab, cleared on close
 };
 
 /**
@@ -387,18 +388,84 @@ export const useWalletStore = defineStore('wallet', {
         // Load exchange rates
         await this.loadExchangeRates();
 
-        // Auto-connect to active wallet (NWC only - Spark needs PIN)
+        // Try to restore session PIN from sessionStorage (survives page reload)
+        this._restoreSessionPin();
+
+        // Auto-connect to active wallet
         if (this.activeWalletId) {
           const activeWallet = this.wallets.find(w => w.id === this.activeWalletId);
-          if (activeWallet && activeWallet.type !== WALLET_TYPES.SPARK) {
-            await this.connectWallet(this.activeWalletId).catch((err) => {
-              console.warn('Auto-connect failed:', err.message);
-            });
+          if (activeWallet) {
+            if (activeWallet.type === WALLET_TYPES.SPARK) {
+              // Spark wallet: auto-connect if session PIN is available
+              if (this.sessionPin) {
+                await this.connectSparkWallet(this.activeWalletId, this.sessionPin).catch((err) => {
+                  console.warn('Spark auto-connect failed:', err.message);
+                  // Don't clear PIN on failure - might be temporary network issue
+                });
+              }
+            } else {
+              // NWC wallet: auto-connect
+              await this.connectWallet(this.activeWalletId).catch((err) => {
+                console.warn('Auto-connect failed:', err.message);
+              });
+            }
           }
         }
       } catch (error) {
         console.error('Wallet store initialization error:', error);
         this.lastError = error.message;
+      }
+    },
+
+    // ==========================================
+    // Session PIN Management (survives page reload within tab)
+    // ==========================================
+
+    /**
+     * Store session PIN in both Pinia state and sessionStorage
+     * sessionStorage survives page reloads but clears when tab closes
+     */
+    _setSessionPin(pin) {
+      this.sessionPin = pin;
+      if (pin) {
+        try {
+          sessionStorage.setItem(STORAGE_KEYS.SESSION_PIN, pin);
+        } catch (e) {
+          console.warn('Could not store session PIN:', e);
+        }
+      } else {
+        sessionStorage.removeItem(STORAGE_KEYS.SESSION_PIN);
+      }
+    },
+
+    /**
+     * Restore session PIN from sessionStorage if available
+     * Called during initialization or when Pinia state is lost (HMR)
+     */
+    _restoreSessionPin() {
+      if (!this.sessionPin) {
+        try {
+          const stored = sessionStorage.getItem(STORAGE_KEYS.SESSION_PIN);
+          if (stored) {
+            this.sessionPin = stored;
+            return true;
+          }
+        } catch (e) {
+          console.warn('Could not restore session PIN:', e);
+        }
+      }
+      return !!this.sessionPin;
+    },
+
+    /**
+     * Clear session PIN from both Pinia state and sessionStorage
+     */
+    _clearSessionPin() {
+      this.sessionPin = null;
+      try {
+        sessionStorage.removeItem(STORAGE_KEYS.SESSION_PIN);
+      } catch (e) {
+        // Ignore errors
       }
     },
 
@@ -482,8 +549,8 @@ export const useWalletStore = defineStore('wallet', {
           wallet.isActive = true;
         }
 
-        // Store PIN in session for immediate use
-        this.sessionPin = walletData.pin;
+        // Store PIN in session for immediate use (survives page reload)
+        this._setSessionPin(walletData.pin);
 
         // Connect the wallet
         await this.connectSparkWallet(wallet.id, walletData.pin);
@@ -525,9 +592,9 @@ export const useWalletStore = defineStore('wallet', {
         // Initialize with mnemonic
         await provider.initializeWithMnemonic(mnemonic);
 
-        // Store provider and session PIN
+        // Store provider and session PIN (survives page reload)
         this.providers[walletId] = provider;
-        this.sessionPin = pin;
+        this._setSessionPin(pin);
 
         // Update connection state
         this.connectionStates[walletId] = {
@@ -575,8 +642,8 @@ export const useWalletStore = defineStore('wallet', {
         pin
       );
 
-      // Store PIN and connect
-      this.sessionPin = pin;
+      // Store PIN and connect (survives page reload)
+      this._setSessionPin(pin);
       await this.connectSparkWallet(sparkWallet.id, pin);
     },
 
@@ -600,7 +667,7 @@ export const useWalletStore = defineStore('wallet', {
         };
       }
 
-      this.sessionPin = null;
+      this._clearSessionPin();
     },
 
     /**
@@ -646,7 +713,7 @@ export const useWalletStore = defineStore('wallet', {
 
       // Update wallet
       sparkWallet.connectionData.encryptedMnemonic = newEncryptedMnemonic;
-      this.sessionPin = newPin;
+      this._setSessionPin(newPin);
 
       await this.persistState();
     },
@@ -822,7 +889,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Clear session PIN if removing Spark wallet
         if (wallet.type === WALLET_TYPES.SPARK) {
-          this.sessionPin = null;
+          this._clearSessionPin();
         }
 
         // Handle active wallet removal
@@ -1123,12 +1190,24 @@ export const useWalletStore = defineStore('wallet', {
         return provider;
       }
 
+      // Try to restore session PIN from sessionStorage if not in memory
+      // This handles cases where Pinia state was lost (HMR, etc.)
+      if (!this.sessionPin) {
+        this._restoreSessionPin();
+      }
+
       // Try to connect using session PIN
       if (this.sessionPin) {
-        await this.connectSparkWallet(wallet.id, this.sessionPin);
-        provider = this.providers[wallet.id];
-        if (provider && provider.isConnected) {
-          return provider;
+        try {
+          await this.connectSparkWallet(wallet.id, this.sessionPin);
+          provider = this.providers[wallet.id];
+          if (provider && provider.isConnected) {
+            return provider;
+          }
+        } catch (error) {
+          // If connection fails with stored PIN, it might be corrupted
+          // Clear it and let user re-enter
+          console.warn('Auto-reconnect failed:', error.message);
         }
       }
 
@@ -1170,7 +1249,7 @@ export const useWalletStore = defineStore('wallet', {
       this.balances = {};
       this.walletInfos = {};
       this.providers = {};
-      this.sessionPin = null;
+      this._clearSessionPin();
 
       await this.persistState();
     },

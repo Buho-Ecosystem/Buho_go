@@ -151,15 +151,14 @@ export function parsePaymentDestination(input) {
     };
   }
 
-  // Bitcoin on-chain address (not supported by Spark Lightning, but detect it)
+  // Bitcoin on-chain address (supported by Spark wallets for L1 withdrawals)
   if (normalized.startsWith('bc1') || normalized.startsWith('tb1') ||
       normalized.startsWith('1') || normalized.startsWith('3')) {
     return {
       type: 'bitcoin_address',
       address: cleaned,
-      valid: true,
-      supported: false,
-      message: 'On-chain Bitcoin addresses are not supported. Use Lightning or Spark addresses.'
+      valid: true
+      // Note: UI will check if active wallet supports L1 withdrawals
     };
   }
 

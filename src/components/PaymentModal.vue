@@ -170,7 +170,7 @@ export default {
       default: null
     }
   },
-  emits: ['update:modelValue', 'payment-sent'],
+  emits: ['update:modelValue', 'payment-sent', 'bitcoin-payment-requested'],
   data() {
     return {
       displayAmount: '',
@@ -219,22 +219,41 @@ export default {
       return this.contactAddressType === 'spark'
     },
 
+    isBitcoinContact() {
+      return this.contactAddressType === 'bitcoin'
+    },
+
     contactTypeIcon() {
-      return this.isSparkContact ? 'las la-fire' : 'las la-bolt'
+      const icons = {
+        lightning: 'las la-bolt',
+        spark: 'las la-fire',
+        bitcoin: 'lab la-bitcoin'
+      }
+      return icons[this.contactAddressType] || icons.lightning
     },
 
     contactTypeLabel() {
-      return this.isSparkContact ? 'Spark' : 'Lightning'
+      const labels = {
+        lightning: 'Lightning',
+        spark: 'Spark',
+        bitcoin: 'Bitcoin'
+      }
+      return labels[this.contactAddressType] || labels.lightning
     },
 
     contactTypeBadgeClass() {
-      return this.isSparkContact ? 'badge-spark' : 'badge-lightning'
+      const classes = {
+        lightning: 'badge-lightning',
+        spark: 'badge-spark',
+        bitcoin: 'badge-bitcoin'
+      }
+      return classes[this.contactAddressType] || classes.lightning
     },
 
     // Check if payment is possible with current wallet
     canPayContact() {
-      if (this.isSparkContact) {
-        // Spark addresses can only be paid from Spark wallets
+      if (this.isSparkContact || this.isBitcoinContact) {
+        // Spark and Bitcoin addresses can only be paid from Spark wallets
         return this.isActiveWalletSpark
       }
       // Lightning addresses can be paid from both wallet types
@@ -391,14 +410,32 @@ export default {
 
       // Check if payment is possible with current wallet
       if (!this.canPayContact) {
+        const message = this.isBitcoinContact
+          ? this.$t('Cannot send to Bitcoin address')
+          : this.$t('Cannot pay Spark address')
+        const caption = this.isBitcoinContact
+          ? this.$t('Switch to your Spark wallet to send Bitcoin')
+          : this.$t('Switch to your Spark wallet to pay Spark addresses')
+
         this.$q.notify({
           type: 'warning',
-          message: this.$t('Cannot pay Spark address'),
-          caption: this.$t('Switch to your Spark wallet to pay Spark addresses'),
+          message,
+          caption,
           position: 'bottom',
           timeout: 4000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
+        return
+      }
+
+      // Bitcoin contacts require the L1 withdrawal flow
+      if (this.isBitcoinContact) {
+        this.$emit('bitcoin-payment-requested', {
+          contact: this.contact,
+          address: this.contactAddress,
+          amount: this.amountInSats
+        })
+        this.closeModal()
         return
       }
 
@@ -794,7 +831,12 @@ export default {
 }
 
 .badge-spark {
-  background: linear-gradient(135deg, #EF4444, #DC2626);
+  background: linear-gradient(135deg, #15DE72, #059573);
+  color: white;
+}
+
+.badge-bitcoin {
+  background: linear-gradient(135deg, #F7931A, #E67E00);
   color: white;
 }
 

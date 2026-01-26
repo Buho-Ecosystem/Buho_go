@@ -229,7 +229,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to generate wallet'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom'
         });
         this.$router.push('/');
@@ -346,7 +346,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to create wallet'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom'
         });
         this.currentStep = 3;

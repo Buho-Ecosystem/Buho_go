@@ -359,7 +359,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to restore wallet'),
-          caption: error.message,
+          caption: this.$t('Please check your backup phrase and try again'),
           position: 'bottom'
         });
         this.currentStep = 2;

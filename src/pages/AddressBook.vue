@@ -48,6 +48,7 @@
       v-model="showPayment"
       :contact="selectedContact"
       @payment-sent="handlePaymentSent"
+      @bitcoin-payment-requested="handleBitcoinPaymentRequested"
     />
   </q-page>
 </template>
@@ -105,8 +106,27 @@ export default {
     },
 
     showPaymentModal(contact) {
+      // Bitcoin contacts need the L1 withdrawal flow - navigate directly to Wallet
+      if (contact.addressType === 'bitcoin') {
+        this.navigateToBitcoinWithdrawal(contact)
+        return
+      }
+
+      // Lightning and Spark contacts use PaymentModal
       this.selectedContact = contact
       this.showPayment = true
+    },
+
+    navigateToBitcoinWithdrawal(contact) {
+      const address = contact.address || contact.lightningAddress
+      this.$router.push({
+        path: '/wallet',
+        query: {
+          action: 'bitcoin_withdrawal',
+          address: address,
+          contactName: contact.name
+        }
+      })
     },
 
     handleEntrySaved() {
@@ -121,6 +141,15 @@ export default {
         message: this.$t('Sent'),
         position: 'bottom',
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      })
+    },
+
+    handleBitcoinPaymentRequested(paymentData) {
+      // Fallback handler if PaymentModal is opened with a Bitcoin contact
+      this.selectedContact = null
+      this.navigateToBitcoinWithdrawal({
+        name: paymentData.contact?.name,
+        address: paymentData.address
       })
     }
   }

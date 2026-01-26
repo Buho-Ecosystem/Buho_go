@@ -12,6 +12,22 @@
       <q-avatar square size="30px">
         <img src="buho_logo.svg" alt="Logo" class="app-logo">
       </q-avatar>
+
+      <!-- Pending Bitcoin Deposits Chip (in header) -->
+      <transition name="btc-banner-fade">
+        <div
+          v-if="isSparkWallet && pendingBitcoinDeposits.length > 0"
+          class="btc-incoming-chip"
+          :class="$q.dark.isActive ? 'btc-chip-dark' : 'btc-chip-light'"
+          @click="openReceiveModalBitcoin"
+        >
+          <q-icon name="lab la-bitcoin" size="14px" class="btc-chip-icon" />
+          <span class="btc-chip-text">
+            {{ pendingBitcoinDeposits.some(d => d.confirmed) ? $t('Ready to claim') : $t('Incoming') }}
+          </span>
+        </div>
+      </transition>
+
       <q-space/>
       <q-btn
         flat
@@ -191,8 +207,10 @@
 
     <!-- Receive Modal -->
     <ReceiveModal
+      ref="receiveModal"
       v-model="showReceiveModal"
       @invoice-created="onInvoiceCreated"
+      @bitcoin-deposits-updated="handleBitcoinDepositsUpdated"
     />
 
     <!-- Send Modal -->
@@ -291,14 +309,27 @@
 
     <!-- Payment Confirmation Dialog -->
     <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px;">
+      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px; max-width: 95vw;">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
-          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{ $t('Confirm Payment') }}</div>
+          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ pendingPayment?.bitcoinAddress ? $t('Send Bitcoin') : $t('Confirm Payment') }}
+          </div>
           <q-btn flat round dense icon="las la-times" v-close-popup
                  :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"/>
         </q-card-section>
 
-        <q-card-section class="payment-content" v-if="pendingPayment">
+        <!-- Bitcoin Withdrawal UI -->
+        <q-card-section v-if="pendingPayment?.bitcoinAddress" class="bitcoin-withdraw-section">
+          <L1BitcoinWithdraw
+            :destination-address="pendingPayment.bitcoinAddress"
+            :available-balance="walletState.balance"
+            @withdrawal-complete="handleBitcoinWithdrawalComplete"
+            @withdrawal-error="handleBitcoinWithdrawalError"
+          />
+        </q-card-section>
+
+        <!-- Regular Payment Confirmation -->
+        <q-card-section class="payment-content" v-else-if="pendingPayment">
           <div class="payment-info">
             <div class="payment-amount">
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
@@ -637,6 +668,7 @@ import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
+import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
 
 export default {
   name: 'WalletPage',
@@ -644,7 +676,8 @@ export default {
     LoadingScreen,
     ReceiveModal,
     SendModal,
-    PinEntryDialog
+    PinEntryDialog,
+    L1BitcoinWithdraw
   },
   setup() {
     const walletStore = useWalletStore();
@@ -722,7 +755,10 @@ export default {
         addressType: 'lightning',
         name: '',
         notes: ''
-      }
+      },
+      // L1 Bitcoin pending deposits
+      pendingBitcoinDeposits: [],
+      bitcoinDepositPollingInterval: null
     };
   },
   computed: {
@@ -730,6 +766,9 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       ) || null;
+    },
+    isSparkWallet() {
+      return this.walletStore.isActiveWalletSpark;
     },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
@@ -796,6 +835,8 @@ export default {
   },
   async created() {
     this.initializeWallet();
+    // Check for Bitcoin withdrawal from contacts
+    this.handleBitcoinWithdrawalFromQuery();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -810,6 +851,8 @@ export default {
     if (this.qrScanner) {
       this.qrScanner.destroy();
     }
+    // Stop L1 Bitcoin deposit polling
+    this.stopBitcoinDepositPolling();
   },
   watch: {
     'sendForm.input': {
@@ -848,6 +891,184 @@ export default {
       // Initialize the store to ensure we have the latest wallet data
       await this.walletStore.initialize();
       this.showWalletSwitcher = true;
+    },
+
+    // ==========================================
+    // L1 Bitcoin Deposit Methods
+    // ==========================================
+
+    /**
+     * Open receive modal with Bitcoin tab selected
+     */
+    openReceiveModalBitcoin() {
+      this.showReceiveModal = true;
+      // The ReceiveModal will receive this via a prop or event
+      this.$nextTick(() => {
+        // Emit event to set bitcoin mode
+        this.$refs.receiveModal?.setReceiveMode?.('bitcoin');
+      });
+    },
+
+    /**
+     * Check for pending Bitcoin deposits (for banner display)
+     */
+    async checkPendingBitcoinDeposits() {
+      if (!this.isSparkWallet) return;
+
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        if (!provider?.getPendingDeposits) return;
+
+        const newDeposits = await provider.getPendingDeposits();
+
+        // Detect changes and show notifications
+        this.detectDepositChanges(newDeposits);
+
+        this.pendingBitcoinDeposits = newDeposits;
+      } catch (error) {
+        // Silently ignore - wallet may be locked
+      }
+    },
+
+    /**
+     * Detect deposit changes and trigger notifications
+     */
+    detectDepositChanges(newDeposits) {
+      const previousTxIds = new Set(this.pendingBitcoinDeposits.map(d => d.txId));
+      const previousConfirmed = new Map(this.pendingBitcoinDeposits.map(d => [d.txId, d.confirmed]));
+
+      for (const deposit of newDeposits) {
+        // New deposit detected (not seen before)
+        if (!previousTxIds.has(deposit.txId)) {
+          this.notifyNewDeposit(deposit);
+        }
+        // Deposit became claimable (was not confirmed, now is)
+        else if (deposit.confirmed && !previousConfirmed.get(deposit.txId)) {
+          this.notifyDepositReady(deposit);
+        }
+      }
+    },
+
+    /**
+     * Show notification for new deposit detected
+     */
+    notifyNewDeposit(deposit) {
+      this.$q.notify({
+        type: 'info',
+        icon: 'lab la-bitcoin',
+        message: this.$t('Bitcoin detected'),
+        caption: `${deposit.amount.toLocaleString()} sats ${this.$t('confirming')}`,
+        position: 'top',
+        timeout: 5000,
+        actions: [{
+          label: this.$t('View'),
+          color: 'white',
+          handler: () => this.openReceiveModalBitcoin()
+        }]
+      });
+    },
+
+    /**
+     * Show notification when deposit is ready to claim
+     */
+    notifyDepositReady(deposit) {
+      this.$q.notify({
+        type: 'positive',
+        icon: 'las la-check-circle',
+        message: this.$t('Ready to claim'),
+        caption: `${deposit.amount.toLocaleString()} sats`,
+        position: 'top',
+        timeout: 8000,
+        actions: [{
+          label: this.$t('Claim'),
+          color: 'white',
+          handler: () => this.openReceiveModalBitcoin()
+        }]
+      });
+    },
+
+    /**
+     * Start polling for pending Bitcoin deposits
+     */
+    startBitcoinDepositPolling() {
+      if (!this.isSparkWallet) return;
+
+      // Initial check
+      this.checkPendingBitcoinDeposits();
+
+      // Poll every 5 minutes
+      this.bitcoinDepositPollingInterval = setInterval(() => {
+        this.checkPendingBitcoinDeposits();
+      }, 300000);
+    },
+
+    /**
+     * Stop Bitcoin deposit polling
+     */
+    stopBitcoinDepositPolling() {
+      if (this.bitcoinDepositPollingInterval) {
+        clearInterval(this.bitcoinDepositPollingInterval);
+        this.bitcoinDepositPollingInterval = null;
+      }
+    },
+
+    /**
+     * Handle deposits updated from ReceiveModal
+     */
+    handleBitcoinDepositsUpdated(deposits) {
+      this.pendingBitcoinDeposits = deposits;
+    },
+
+    /**
+     * Handle successful Bitcoin withdrawal
+     */
+    handleBitcoinWithdrawalComplete(result) {
+      this.showPaymentConfirmation = false;
+      this.pendingPayment = null;
+
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Bitcoin withdrawal initiated'),
+        caption: this.$t('Your withdrawal is being processed'),
+        position: 'bottom',
+        timeout: 4000,
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
+
+      // Refresh balance
+      this.updateWalletBalance();
+    },
+
+    /**
+     * Handle Bitcoin withdrawal error
+     */
+    handleBitcoinWithdrawalError(error) {
+      // Error notification is already shown by the component
+      console.error('Bitcoin withdrawal error:', error);
+    },
+
+    /**
+     * Handle Bitcoin withdrawal request from query params (from contacts)
+     */
+    handleBitcoinWithdrawalFromQuery() {
+      const query = this.$route.query;
+      if (query.action === 'bitcoin_withdrawal' && query.address) {
+        // Wait for wallet to be loaded
+        this.$nextTick(() => {
+          setTimeout(() => {
+            // Set up pending payment for Bitcoin withdrawal
+            this.pendingPayment = {
+              type: 'bitcoin_address',
+              bitcoinAddress: query.address,
+              contactName: query.contactName || null
+            };
+            this.showPaymentConfirmation = true;
+
+            // Clear query params
+            this.$router.replace({ query: {} });
+          }, 500);
+        });
+      }
     },
 
     async switchToWallet(walletId) {
@@ -912,6 +1133,9 @@ export default {
         // Initialize wallet store
         await this.walletStore.initialize();
 
+        // Start L1 Bitcoin deposit polling for banner (after wallet store is ready)
+        this.startBitcoinDepositPolling();
+
         this.loadingText = 'Loading fiat rates...';
         await this.loadFiatRates();
 
@@ -960,6 +1184,9 @@ export default {
         // Refresh balance after unlock
         await this.updateWalletBalance();
 
+        // Check for pending Bitcoin deposits immediately after unlock
+        this.checkPendingBitcoinDeposits();
+
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet unlocked'),
@@ -1007,11 +1234,18 @@ export default {
 
         // Check if active wallet is Spark
         if (this.walletStore.isActiveWalletSpark) {
-          const provider = this.walletStore.getActiveProvider();
-          if (provider) {
+          // Try to get connected provider, auto-reconnects if session PIN available
+          try {
+            const provider = await this.walletStore.ensureSparkConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+          } catch (err) {
+            // Silently fail for background refresh - user will see locked state
+            // Don't spam console with expected "PIN required" messages
+            if (!err.message?.includes('PIN')) {
+              console.warn('Balance refresh skipped:', err.message);
+            }
           }
           return;
         }
@@ -1317,7 +1551,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Invalid payment request'),
-          caption: error.message,
+          caption: this.$t('Please check the format and try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -1388,7 +1622,9 @@ export default {
       const labels = {
         'lightning_invoice': 'Lightning Invoice',
         'lnurl_pay': 'LNURL Payment',
-        'lightning_address': 'Lightning Address'
+        'lightning_address': 'Lightning Address',
+        'spark_address': 'Spark Transfer',
+        'bitcoin_address': 'Bitcoin Withdrawal'
       };
       return labels[payment.type] || 'Lightning Payment';
     },
@@ -1485,6 +1721,15 @@ export default {
             ...paymentData,
             sparkAddress: paymentData.data
           };
+        } else if (paymentData.type === 'bitcoin_address' && paymentData.data) {
+          // Bitcoin L1 withdrawal (Spark only)
+          if (!this.walletStore.isActiveWalletSpark) {
+            throw new Error('Bitcoin withdrawals require a Spark wallet');
+          }
+          this.pendingPayment = {
+            ...paymentData,
+            bitcoinAddress: paymentData.data
+          };
         } else {
           this.pendingPayment = paymentData;
         }
@@ -1495,7 +1740,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Payment failed'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -1728,7 +1973,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Payment failed'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -1764,12 +2009,13 @@ export default {
       }
 
       // LNURL - decode and fetch invoice, then pay
+      // Note: LNURL invoices already have amount encoded, so don't pass amountSats
       if (this.pendingPayment.lnurl) {
         const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
         return await provider.payInvoice({
           invoice,
-          preferSpark: true,
-          amountSats: amount // LNURL invoices may need amount passed
+          preferSpark: true
+          // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
       }
 
@@ -1852,7 +2098,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to save contact'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom'
         });
       }
@@ -2054,7 +2300,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t create invoice'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -3793,5 +4039,55 @@ export default {
 
 .save-input-light :deep(.q-field__native) {
   color: #212121 !important;
+}
+
+/* Bitcoin Incoming Chip (Header) */
+.btc-incoming-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin-left: 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: Fustat, sans-serif;
+}
+
+.btc-incoming-chip:active {
+  transform: scale(0.95);
+}
+
+.btc-chip-dark {
+  background: rgba(247, 147, 26, 0.2);
+  border: 1px solid rgba(247, 147, 26, 0.4);
+}
+
+.btc-chip-light {
+  background: rgba(247, 147, 26, 0.12);
+  border: 1px solid rgba(247, 147, 26, 0.3);
+}
+
+.btc-chip-icon {
+  color: #F7931A;
+}
+
+.btc-chip-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #F7931A;
+  white-space: nowrap;
+}
+
+/* Animation for chip */
+.btc-banner-fade-enter-active,
+.btc-banner-fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.btc-banner-fade-enter-from,
+.btc-banner-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-10px);
 }
 </style>

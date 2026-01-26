@@ -58,7 +58,8 @@
             toggle-color="primary"
             :options="[
               { label: $t('Invoice'), value: 'lightning', icon: 'las la-file-invoice' },
-              { label: $t('Address'), value: 'spark', icon: 'las la-qrcode' }
+              { label: $t('Address'), value: 'spark', icon: 'las la-qrcode' },
+              { label: $t('Bitcoin'), value: 'bitcoin', icon: 'lab la-bitcoin' }
             ]"
             class="type-toggle"
             :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
@@ -69,6 +70,9 @@
           <div class="mode-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             <template v-if="receiveMode === 'spark'">
               {{ $t('Spark-to-Spark only, zero fees') }}
+            </template>
+            <template v-else-if="receiveMode === 'bitcoin'">
+              {{ $t('From any Bitcoin wallet (takes ~10-60 min)') }}
             </template>
             <template v-else>
               {{ $t('One-time request with amount') }}
@@ -130,6 +134,14 @@
             </div>
           </div>
         </div>
+
+        <!-- Bitcoin (L1) Receive View -->
+        <L1BitcoinReceive
+          v-if="showBitcoinReceiveView"
+          :qr-options="qrOptions"
+          @deposit-claimed="handleBitcoinDepositClaimed"
+          @deposits-updated="handleBitcoinDepositsUpdated"
+        />
 
         <!-- QR Code Display -->
         <div class="qr-display-section" v-if="generatedInvoice">
@@ -228,7 +240,7 @@
         </div>
 
         <!-- Amount Section (only for invoice creation, not for static address views) -->
-        <div class="amount-section" v-else-if="!showSparkAddressView">
+        <div class="amount-section" v-else-if="!showSparkAddressView && !showBitcoinReceiveView">
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency"
                :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
@@ -257,7 +269,7 @@
         </div>
 
         <!-- Description Section (only for invoice creation) -->
-        <div class="description-section" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
+        <div class="description-section" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView && !showBitcoinReceiveView">
           <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
             {{ $t('Description (optional)') }}
           </div>
@@ -275,7 +287,7 @@
       </q-card-section>
 
       <!-- Footer (only for invoice creation) -->
-      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
+      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView && !showBitcoinReceiveView">
         <q-btn
           class="create-invoice-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -314,12 +326,14 @@ import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
 import PaymentConfirmation from './PaymentConfirmation.vue';
+import L1BitcoinReceive from './L1BitcoinReceive.vue';
 
 export default {
   name: 'ReceiveModal',
   components: {
     VueQrcode,
-    PaymentConfirmation
+    PaymentConfirmation,
+    L1BitcoinReceive
   },
   setup() {
     const walletStore = useWalletStore();
@@ -331,7 +345,7 @@ export default {
       default: false
     }
   },
-  emits: ['update:modelValue', 'invoice-created'],
+  emits: ['update:modelValue', 'invoice-created', 'bitcoin-deposits-updated'],
   data() {
     return {
       displayAmount: '',
@@ -343,7 +357,7 @@ export default {
       amountInSats: 0,
       isAmountFocused: false,
       showAddressView: false,
-      receiveMode: 'lightning', // 'lightning' or 'spark'
+      receiveMode: 'lightning', // 'lightning', 'spark', or 'bitcoin'
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
@@ -385,6 +399,9 @@ export default {
     },
     showSparkAddressView() {
       return this.isSparkWallet && this.receiveMode === 'spark' && !this.generatedInvoice;
+    },
+    showBitcoinReceiveView() {
+      return this.isSparkWallet && this.receiveMode === 'bitcoin' && !this.generatedInvoice;
     },
     paymentStatusClass() {
       switch (this.paymentStatus) {
@@ -493,6 +510,44 @@ export default {
     closeModal() {
       this.stopPaymentMonitor();
       this.show = false;
+    },
+
+    /**
+     * Set receive mode programmatically (for parent component access)
+     * @param {string} mode - 'lightning', 'spark', or 'bitcoin'
+     */
+    setReceiveMode(mode) {
+      if (['lightning', 'spark', 'bitcoin'].includes(mode)) {
+        this.receiveMode = mode;
+      }
+    },
+
+    /**
+     * Handle Bitcoin deposit claimed - show confirmation
+     */
+    handleBitcoinDepositClaimed(result) {
+      // Show success confirmation similar to Lightning payments
+      this.confirmedAmount = result.amount;
+      this.confirmedFiatAmount = this.calculateFiatAmount(result.amount);
+      this.showPaymentConfirmation = true;
+    },
+
+    /**
+     * Handle Bitcoin deposits list updated
+     */
+    handleBitcoinDepositsUpdated(deposits) {
+      // Emit event for parent components (Wallet.vue) to update banner
+      this.$emit('bitcoin-deposits-updated', deposits);
+    },
+
+    /**
+     * Calculate fiat amount for confirmation display
+     */
+    calculateFiatAmount(sats) {
+      const rate = this.walletState.exchangeRates?.['usd'] || 65000;
+      const btc = sats / 100000000;
+      const fiat = btc * rate;
+      return `$${fiat.toFixed(2)}`;
     },
 
     /**
@@ -883,7 +938,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t create invoice'),
-          caption: error.message,
+          caption: this.$t('Please try again'),
           position: 'bottom',
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -1805,6 +1860,17 @@ export default {
   font-weight: 500;
   padding: 0.625rem 1rem;
   min-height: 40px;
+}
+
+.type-toggle :deep(.q-btn__content) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.type-toggle :deep(.q-btn__content .q-icon) {
+  margin: 0;
 }
 
 .toggle-dark {
