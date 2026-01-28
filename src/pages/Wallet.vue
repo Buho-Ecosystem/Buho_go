@@ -340,7 +340,6 @@
           <q-btn
             flat
             :label="$t('Send Payment')"
-            color="primary"
             no-caps
             @click="confirmPayment"
             :loading="isSendingPayment"

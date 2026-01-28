@@ -883,7 +883,7 @@
 
     <!-- View Mnemonic Dialog -->
     <q-dialog v-model="showViewMnemonicDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <q-card class="dialog-card seed-phrase-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('View Seed Phrase') }}
@@ -900,31 +900,63 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <!-- PIN Entry -->
-          <div v-if="!viewedMnemonic">
-            <div class="mnemonic-warning" :class="$q.dark.isActive ? 'warning-dark' : 'warning-light'">
-              <q-icon name="las la-exclamation-triangle" class="warning-icon"/>
-              <div class="warning-text">
-                {{ $t('Never share your seed phrase. Anyone with it can access your funds.') }}
+          <!-- PIN Entry State -->
+          <div v-if="!viewedMnemonic" class="seed-pin-entry">
+            <!-- Icon Header -->
+            <div class="seed-icon-header">
+              <div class="seed-icon-circle" :class="$q.dark.isActive ? 'seed-icon-circle-dark' : 'seed-icon-circle-light'">
+                <q-icon name="las la-key" size="32px" color="primary"/>
               </div>
             </div>
 
-            <q-input
-              v-model="sparkPinInput"
-              type="password"
-              :label="$t('Enter your PIN')"
-              maxlength="6"
-              mask="######"
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-              borderless
-              input-class="q-px-md text-center"
-              class="q-mt-md"
-              dense
-            />
+            <!-- Warning Box -->
+            <div class="seed-warning-box">
+              <div class="seed-warning-icon-wrap">
+                <q-icon name="las la-exclamation-triangle" size="20px"/>
+              </div>
+              <div class="seed-warning-content">
+                <div class="seed-warning-title">{{ $t('Keep it secret') }}</div>
+                <div class="seed-warning-text">{{ $t('Never share your seed phrase. Anyone with it can access your funds.') }}</div>
+              </div>
+            </div>
+
+            <!-- Info Box -->
+            <div class="seed-info-box" :class="$q.dark.isActive ? 'seed-info-box-dark' : 'seed-info-box-light'">
+              <div class="seed-info-icon-wrap">
+                <q-icon name="las la-sync-alt" size="20px"/>
+              </div>
+              <div class="seed-info-content">
+                <div class="seed-info-title" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">{{ $t('Wallet recovery') }}</div>
+                <div class="seed-info-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Use this phrase to restore your Spark wallet on another device or if you lose access.') }}</div>
+              </div>
+            </div>
+
+            <!-- PIN Input -->
+            <div class="seed-pin-section">
+              <div class="seed-pin-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Enter your PIN to continue') }}</div>
+              <q-input
+                v-model="sparkPinInput"
+                type="password"
+                :placeholder="$t('6-digit PIN')"
+                maxlength="6"
+                mask="######"
+                :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+                borderless
+                input-class="q-px-md text-center seed-pin-input"
+                dense
+              />
+            </div>
           </div>
 
-          <!-- Mnemonic Display -->
+          <!-- Mnemonic Display State -->
           <div v-else class="mnemonic-display">
+            <!-- Revealed Warning Banner -->
+            <div class="seed-revealed-banner">
+              <q-icon name="las la-eye" size="18px"/>
+              <span>{{ $t('Your seed phrase is now visible') }}</span>
+            </div>
+
+            <!-- Mnemonic Grid -->
             <div class="mnemonic-grid">
               <div
                 v-for="(word, index) in viewedMnemonic.split(' ')"
@@ -935,6 +967,12 @@
                 <span class="word-number">{{ index + 1 }}</span>
                 <span class="word-text">{{ word }}</span>
               </div>
+            </div>
+
+            <!-- Bottom Warning -->
+            <div class="seed-bottom-warning">
+              <q-icon name="las la-shield-alt" size="16px"/>
+              <span>{{ $t('Store in a safe place. Never share online.') }}</span>
             </div>
           </div>
         </q-card-section>
@@ -949,7 +987,7 @@
           <q-btn
             v-if="!viewedMnemonic"
             flat
-            :label="$t('View')"
+            :label="$t('View Seed Phrase')"
             @click="viewMnemonic"
             :loading="isViewingMnemonic"
             :disable="!sparkPinInput || sparkPinInput.length < 6"
@@ -963,7 +1001,7 @@
 
     <!-- Change PIN Dialog -->
     <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <q-card class="dialog-card pin-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Change PIN') }}
@@ -980,43 +1018,56 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <q-input
-            v-model="sparkPinInput"
-            type="password"
-            :label="$t('Current PIN')"
-            maxlength="6"
-            mask="######"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            borderless
-            input-class="q-px-md"
-            class="q-mb-md"
-            dense
-          />
+          <div class="pin-inputs-section">
+            <q-input
+              v-model="sparkPinInput"
+              type="password"
+              :placeholder="$t('Current PIN')"
+              maxlength="6"
+              mask="######"
+              :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
+              borderless
+              input-class="text-center pin-input-field"
+              dense
+            />
 
-          <q-input
-            v-model="sparkNewPin"
-            type="password"
-            :label="$t('New PIN')"
-            maxlength="6"
-            mask="######"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            borderless
-            input-class="q-px-md"
-            class="q-mb-md"
-            dense
-          />
+            <q-input
+              v-model="sparkNewPin"
+              type="password"
+              :placeholder="$t('New PIN')"
+              maxlength="6"
+              mask="######"
+              :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
+              borderless
+              input-class="text-center pin-input-field"
+              dense
+            />
 
-          <q-input
-            v-model="sparkConfirmNewPin"
-            type="password"
-            :label="$t('Confirm New PIN')"
-            maxlength="6"
-            mask="######"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            borderless
-            input-class="q-px-md"
-            dense
-          />
+            <q-input
+              v-model="sparkConfirmNewPin"
+              type="password"
+              :placeholder="$t('Confirm New PIN')"
+              maxlength="6"
+              mask="######"
+              :class="[
+                $q.dark.isActive ? 'pin-input-dark' : 'pin-input-light',
+                sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin ? 'pin-input-error' : ''
+              ]"
+              borderless
+              input-class="text-center pin-input-field"
+              dense
+              :error="sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin"
+              :error-message="$t('PINs do not match')"
+            />
+          </div>
+
+          <div class="pin-format-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('PIN must be 6 digits') }}
+          </div>
+
+          <div class="pin-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-6'">
+            {{ $t('If you forget your PIN, restore your wallet with your seed phrase.') }}
+          </div>
         </q-card-section>
 
         <q-card-actions align="right" class="dialog-actions">
@@ -3586,6 +3637,84 @@ export default {
   color: white;
 }
 
+/* PIN Dialog Styles */
+.pin-dialog {
+  max-width: 360px;
+  width: 100%;
+}
+
+.pin-inputs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pin-input-dark {
+  border-radius: 12px;
+  background: #171717;
+  border: 1px solid #2A342A;
+  color: #FFF;
+}
+
+.pin-input-dark .q-field__native,
+.pin-input-dark .q-field__input {
+  color: #FFF !important;
+}
+
+.pin-input-dark .q-field__native::placeholder {
+  color: #6B7280 !important;
+}
+
+.pin-input-light {
+  border-radius: 12px;
+  background: #F8F8F8;
+  border: 1px solid #E5E5E5;
+  color: #212121;
+}
+
+.pin-input-light .q-field__native,
+.pin-input-light .q-field__input {
+  color: #212121 !important;
+}
+
+.pin-input-light .q-field__native::placeholder {
+  color: #9CA3AF !important;
+}
+
+.pin-input-dark:focus-within {
+  border-color: #059573;
+}
+
+.pin-input-light:focus-within {
+  border-color: #059573;
+}
+
+.pin-input-error {
+  border-color: #EF4444 !important;
+}
+
+.pin-input-field {
+  font-size: 18px;
+  letter-spacing: 0.3em;
+  font-weight: 500;
+  padding: 14px 16px;
+}
+
+.pin-format-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 8px;
+}
+
+.pin-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.4;
+  margin-top: 12px;
+}
+
 .delete-icon {
   background: linear-gradient(135deg, #EF4444, #DC2626);
   color: white;
@@ -3707,53 +3836,183 @@ export default {
 }
 
 /* View Mnemonic Dialog */
-.mnemonic-warning {
+.seed-phrase-dialog {
+  max-width: 420px;
+  width: 100%;
+}
+
+.seed-pin-entry {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.seed-icon-header {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0 0.25rem;
+}
+
+.seed-icon-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.seed-icon-circle-dark {
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.seed-icon-circle-light {
+  background: rgba(21, 222, 114, 0.08);
+}
+
+/* Warning Box - Red */
+.seed-warning-box {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.06) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.seed-warning-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #EF4444;
+}
+
+.seed-warning-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.seed-warning-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #EF4444;
+}
+
+.seed-warning-text {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  color: #F87171;
+  line-height: 1.4;
+}
+
+/* Info Box - Green/Neutral */
+.seed-info-box {
+  display: flex;
   gap: 0.75rem;
   padding: 1rem;
   border-radius: 12px;
 }
 
-.warning-dark {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+.seed-info-box-dark {
+  background: rgba(21, 222, 114, 0.06);
+  border: 1px solid rgba(21, 222, 114, 0.15);
 }
 
-.warning-light {
-  background: #FEF2F2;
-  border: 1px solid #FECACA;
+.seed-info-box-light {
+  background: rgba(21, 222, 114, 0.05);
+  border: 1px solid rgba(21, 222, 114, 0.2);
 }
 
-.warning-icon {
-  color: #EF4444;
-  font-size: 20px;
+.seed-info-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(21, 222, 114, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  color: #15DE72;
 }
 
-.warning-text {
+.seed-info-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.seed-info-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.seed-info-text {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 13px;
-  color: #EF4444;
   line-height: 1.4;
 }
 
+/* PIN Section */
+.seed-pin-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.seed-pin-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  text-align: center;
+}
+
+.seed-pin-input {
+  font-size: 18px;
+  letter-spacing: 0.5em;
+  font-weight: 600;
+}
+
+/* Mnemonic Display State */
 .mnemonic-display {
-  padding: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.seed-revealed-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #F59E0B;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .mnemonic-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .mnemonic-word {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 12px;
+  padding: 0.625rem 0.75rem;
+  border-radius: 10px;
 }
 
 .word-dark {
@@ -3775,14 +4034,33 @@ export default {
 }
 
 .word-text {
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
   font-size: 12px;
   color: #15DE72;
+  font-weight: 500;
+}
+
+.seed-bottom-warning {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #EF4444;
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 @media (max-width: 480px) {
   .mnemonic-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .seed-phrase-dialog {
+    max-width: 100%;
   }
 }
 

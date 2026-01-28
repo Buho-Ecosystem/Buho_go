@@ -567,7 +567,7 @@ export default {
 .dialog_add_btn_dark {
   border-radius: 24px !important;
   background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #FFF !important;
+  color: #0C0C0C !important;
   font-weight: 600 !important;
   box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;
   font-family: Fustat, 'Inter', sans-serif !important;
@@ -576,7 +576,7 @@ export default {
 .dialog_add_btn_light {
   border-radius: 24px !important;
   background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #FFF !important;
+  color: #0C0C0C !important;
   font-weight: 600 !important;
   box-shadow: 0px 4px 8px 0px rgba(159, 159, 159, 0.25) !important;
   font-family: Fustat, 'Inter', sans-serif !important;
