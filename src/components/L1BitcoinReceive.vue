@@ -32,7 +32,7 @@
 
     <!-- Info Note - Subtle -->
     <div class="info-note" :class="$q.dark.isActive ? 'note-dark' : 'note-light'">
-      {{ $t('Minimum') }}: {{ minDepositAmount }} sats
+      {{ $t('Minimum') }}: {{ formatAmount(minDepositAmount) }}
     </div>
 
     <!-- Pending Deposits -->
@@ -181,6 +181,7 @@
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { useWalletStore } from 'src/stores/wallet';
+import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
 
 export default {
   name: 'L1BitcoinReceive',
@@ -426,8 +427,8 @@ export default {
     },
 
     formatAmount(sats) {
-      if (!sats && sats !== 0) return '0 sats';
-      return `${sats.toLocaleString()} sats`;
+      if (!sats && sats !== 0) return formatAmountUtil(0, this.walletStore.useBip177Format);
+      return formatAmountUtil(sats, this.walletStore.useBip177Format);
     },
 
     async copyAddress() {

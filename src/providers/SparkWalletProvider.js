@@ -760,7 +760,9 @@ export class SparkWalletProvider extends WalletProvider {
 
       // Request invoice
       const amountMs = amountSats * 1000;
-      let callbackUrl = `${lnurlData.callback}?amount=${amountMs}`;
+      // Use & if callback already has query params, otherwise use ?
+      const separator = lnurlData.callback.includes('?') ? '&' : '?';
+      let callbackUrl = `${lnurlData.callback}${separator}amount=${amountMs}`;
 
       if (comment && lnurlData.commentAllowed > 0) {
         const truncatedComment = comment.substring(0, lnurlData.commentAllowed);
@@ -1004,11 +1006,24 @@ export class SparkWalletProvider extends WalletProvider {
         amount: Number(result.creditAmountSats || result.amount || 0)
       };
     } catch (error) {
+      const errorMsg = error.message?.toLowerCase() || '';
+
+      // TRANSFER_LOCKED means the claim is already being processed (race condition with background stream)
+      // This is not a failure - the claim will complete successfully
+      if (errorMsg.includes('transfer_locked') || errorMsg.includes('leaf') && errorMsg.includes('locked')) {
+        console.log('Claim already in progress (TRANSFER_LOCKED), will complete shortly');
+        return {
+          success: true,
+          processing: true,
+          amount: Number(quoteData.creditAmountSats || 0)
+        };
+      }
+
       // Provide friendly error messages
-      if (error.message?.toLowerCase().includes('fee')) {
+      if (errorMsg.includes('fee')) {
         throw new Error('Claim fee has changed. Please try again.');
       }
-      if (error.message?.toLowerCase().includes('confirm')) {
+      if (errorMsg.includes('confirm')) {
         throw new Error('Deposit needs more confirmations. Please wait.');
       }
       this.setError(error);

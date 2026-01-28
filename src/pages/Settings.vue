@@ -1331,17 +1331,7 @@ export default {
     },
 
     formatBalance(balance) {
-      switch (this.denominationCurrency) {
-        case 'btc':
-          return (balance / 100000000).toFixed(8) + ' BTC'
-        case 'usd':
-          const usdValue = (balance / 100000000) * (this.exchangeRates.usd || 65000)
-          return '$' + usdValue.toFixed(2)
-        case 'sats':
-        case 'bitcoin':
-        default:
-          return formatAmount(balance, this.useBip177Format)
-      }
+      return formatAmount(balance, this.useBip177Format)
     },
 
     getWalletAvatarClass(wallet) {

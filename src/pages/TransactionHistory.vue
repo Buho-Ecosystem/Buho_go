@@ -1595,7 +1595,7 @@ export default {
 
       try {
         const provider = await this.walletStore.ensureSparkConnected();
-        await provider.claimDeposit(
+        const result = await provider.claimDeposit(
           this.claimingDeposit.txId,
           this.claimFeeQuote, // Pass the full quote with creditAmountSats and signature
           this.claimingDeposit.outputIndex
@@ -1604,9 +1604,20 @@ export default {
         // Close claim dialog first
         this.showClaimDialog = false;
 
-        // Show success animation
-        this.claimSuccessAmount = claimedAmount;
-        this.showClaimSuccess = true;
+        // If claim is processing (race condition with background stream), show info message
+        if (result.processing) {
+          this.$q.notify({
+            type: 'info',
+            message: this.$t('Claim processing'),
+            caption: this.$t('Your sats will arrive shortly'),
+            position: 'bottom',
+            timeout: 3000
+          });
+        } else {
+          // Show success animation for immediate success
+          this.claimSuccessAmount = claimedAmount;
+          this.showClaimSuccess = true;
+        }
 
         // Remove from pending list
         this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(

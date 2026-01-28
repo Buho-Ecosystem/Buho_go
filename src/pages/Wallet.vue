@@ -134,77 +134,6 @@
       </div>
     </div>
 
-    <!-- Send Dialog -->
-    <q-dialog v-model="showSendDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
-          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
-              $t('Send Lightning Payment')
-            }}
-          </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"/>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <!-- Payment Input -->
-          <div class="payment-input-section">
-            <q-input
-              v-model="sendForm.input"
-              outlined
-              :label="$t('Payment Details')"
-              :placeholder="$t('Invoice, LNURL, or Lightning Address')"
-              type="textarea"
-              rows="3"
-              :class="$q.dark.isActive ? 'payment_input_dark' : 'payment_input_light'"
-            />
-
-            <div class="input-actions">
-              <q-btn
-                flat
-                color="primary"
-                icon="las la-qrcode"
-                :label="$t('Scan QR')"
-                @click="showQRScanner = true"
-                :class="$q.dark.isActive ? 'scan_btn_dark' : 'scan_btn_light'"
-                no-caps
-              />
-              <q-btn
-                flat
-                color="primary"
-                icon="las la-paste"
-                :label="$t('Paste')"
-                @click="pasteFromClipboard"
-                :class="$q.dark.isActive ? 'paste_btn_dark' : 'paste_btn_light'"
-                no-caps
-              />
-            </div>
-          </div>
-
-          <!-- Payment Type Indicator -->
-          <div class="payment-type-section" v-if="paymentData"
-               :class="$q.dark.isActive ? 'payment_type_dark' : 'payment_type_light'">
-            <div class="type-indicator">
-              <q-icon name="las la-bolt" class="type-icon"/>
-              <span class="type-label" :class="$q.dark.isActive ? 'type_label_dark' : 'type_label_light'">{{
-                  getPaymentTypeLabel()
-                }}</span>
-            </div>
-          </div>
-
-          <!-- Amount Input for LNURL/Lightning Address -->
-          <div class="amount-section" v-if="requiresAmount()"
-               :class="$q.dark.isActive ? 'amount_section_dark' : 'amount_section_light'">
-            <div class="amount-limits" v-if="getAmountLimits()"
-                 :class="$q.dark.isActive ? 'amount_limits_dark' : 'amount_limits_light'">
-              <q-icon name="las la-info-circle" class="limits-icon"/>
-              <span>{{ $t('Amount') }}: {{ formatAmountInline(getAmountLimits().min) }} - {{ formatAmountInline(getAmountLimits().max) }}</span>
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
-
     <!-- Receive Modal -->
     <ReceiveModal
       ref="receiveModal"
@@ -422,170 +351,6 @@
       </q-card>
     </q-dialog>
 
-    <!-- Receive Dialog -->
-    <q-dialog v-model="showReceiveDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
-          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
-              $t('Receive Lightning Payment')
-            }}
-          </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"/>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <!-- Invoice Form -->
-          <div class="invoice-form" v-if="!generatedInvoice">
-            <q-input
-              v-model="receiveForm.amount"
-              outlined
-              :label="$t('Amount')"
-              type="number"
-              min="1"
-              :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
-              :rules="[val => val > 0 || $t('Amount must be greater than 0')]"
-            />
-
-            <q-input
-              v-model="receiveForm.description"
-              outlined
-              :label="$t('Description (optional)')"
-              :placeholder="$t('What is this payment for?')"
-              :class="$q.dark.isActive ? 'description_input_dark' : 'description_input_light'"
-            />
-
-            <q-btn
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark create-invoice-btn' : 'dialog_add_btn_light create-invoice-btn'"
-              @click="createInvoice"
-              :loading="isCreatingInvoice"
-              :disable="!receiveForm.amount || receiveForm.amount <= 0"
-              no-caps
-              unelevated
-            >
-              {{ $t('Create Invoice') }}
-            </q-btn>
-          </div>
-
-          <!-- Invoice Result -->
-          <div class="invoice-result" v-else>
-            <!-- Payment Success State -->
-            <div class="payment-success" v-if="invoicePaid"
-                 :class="$q.dark.isActive ? 'payment_success_dark' : 'payment_success_light'">
-              <q-icon name="las la-check-circle" size="64px" color="positive" class="success-icon"/>
-              <div class="success-text" :class="$q.dark.isActive ? 'success_text_dark' : 'success_text_light'">
-                {{ $t('Payment Received!') }}
-              </div>
-              <div class="success-amount" :class="$q.dark.isActive ? 'success_amount_dark' : 'success_amount_light'">
-                {{ formatBalance(receiveForm.amount) }}
-              </div>
-            </div>
-
-            <!-- Compact Invoice Display (waiting for payment) -->
-            <div class="compact-invoice" v-else-if="waitingForPayment">
-              <!-- QR Code Section -->
-              <div class="qr-code-section compact"
-                   :class="$q.dark.isActive ? 'qr_code_section_dark' : 'qr_code_section_light'">
-                <vue-qrcode
-                  :value="generatedInvoice.paymentRequest"
-                  :options="{ width: 200, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
-                  class="qr-code"
-                />
-              </div>
-
-              <!-- Invoice Info -->
-              <div class="invoice-info-compact"
-                   :class="$q.dark.isActive ? 'invoice_info_compact_dark' : 'invoice_info_compact_light'">
-                <div class="amount-compact" :class="$q.dark.isActive ? 'amount_compact_dark' : 'amount_compact_light'">
-                  {{ parseInt(receiveForm.amount).toLocaleString() }}
-                </div>
-                <div class="description-compact" v-if="receiveForm.description"
-                     :class="$q.dark.isActive ? 'description_compact_dark' : 'description_compact_light'">
-                  {{ receiveForm.description }}
-                </div>
-
-                <div class="waiting-indicator-compact"
-                     :class="$q.dark.isActive ? 'waiting_indicator_compact_dark' : 'waiting_indicator_compact_light'">
-                  <q-spinner-dots color="primary" size="18px"/>
-                  <span class="waiting-text-compact"
-                        :class="$q.dark.isActive ? 'waiting_text_compact_dark' : 'waiting_text_compact_light'">{{
-                      $t('Waiting for payment...')
-                    }}</span>
-                </div>
-              </div>
-
-              <!-- Copy Button -->
-              <q-btn
-                flat
-                color="primary"
-                icon="las la-copy"
-                :label="$t('Copy Invoice')"
-                @click="copyInvoice"
-                :class="$q.dark.isActive ? 'copy_invoice_btn_compact_dark' : 'copy_invoice_btn_compact_light'"
-                no-caps
-              />
-            </div>
-
-            <!-- Static Invoice Display (fallback) -->
-            <div class="static-invoice" v-else>
-              <!-- QR Code Section -->
-              <div class="qr-code-section" :class="$q.dark.isActive ? 'qr_code_section_dark' : 'qr_code_section_light'">
-                <vue-qrcode
-                  :value="generatedInvoice.paymentRequest"
-                  :options="{ width: 240, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } }"
-                  class="qr-code"
-                />
-              </div>
-
-              <!-- Amount Display -->
-              <div class="amount-section">
-                <div class="amount-value" :class="$q.dark.isActive ? 'amount_value_dark' : 'amount_value_light'">
-                  {{ parseInt(receiveForm.amount).toLocaleString() }}
-                </div>
-                <div class="description-text" v-if="receiveForm.description"
-                     :class="$q.dark.isActive ? 'description_text_dark' : 'description_text_light'">
-                  {{ receiveForm.description }}
-                </div>
-              </div>
-
-              <!-- Copy Button -->
-              <q-btn
-                outline
-                color="primary"
-                icon="las la-copy"
-                :label="$t('Copy')"
-                @click="copyInvoice"
-                :class="$q.dark.isActive ? 'copy_invoice_btn_dark' : 'copy_invoice_btn_light'"
-                no-caps
-                unelevated
-              />
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
-
-    <!-- QR Scanner Dialog -->
-    <q-dialog v-model="showQRScanner" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
-          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">{{
-              $t('Scan Lightning Invoice')
-            }}
-          </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"/>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <div class="qr-scanner-container"
-               :class="$q.dark.isActive ? 'qr_scanner_container_dark' : 'qr_scanner_container_light'">
-            <qrcode-capture @detect="handleQRScan"/>
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
-
     <!-- Save Contact Dialog -->
     <q-dialog v-model="showSaveContactDialog" persistent class="save-contact-dialog">
       <q-card class="save-contact-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
@@ -712,15 +477,6 @@ export default {
       maxSlideDistance: 0,
       parsedInvoice: null,
       lightningAddress: '',
-      sendForm: {
-        input: '',
-        amount: '',
-        comment: ''
-      },
-      receiveForm: {
-        amount: '',
-        description: ''
-      },
       generatedInvoice: null,
       refreshInterval: null,
       pulseInterval: null,
@@ -732,11 +488,7 @@ export default {
       currentDisplayMode: 'bitcoin',
       isSwitchingCurrency: false,
       shouldPulse: false,
-      showSendDialog: false,
-      showReceiveDialog: false,
-      showQRScanner: false,
       paymentData: null,
-      isCreatingInvoice: false,
       invoicePaid: false,
       isSendingPayment: false,
       fiatRatesLoaded: false,
@@ -855,16 +607,6 @@ export default {
     this.stopBitcoinDepositPolling();
   },
   watch: {
-    'sendForm.input': {
-      handler: 'processPaymentInput',
-      immediate: false
-    },
-    showReceiveDialog(newVal) {
-      if (!newVal) {
-        this.resetReceiveForm();
-      }
-    },
-
     'walletState.balance': {
       handler: 'updateSecondaryValue',
       immediate: true
@@ -1493,71 +1235,6 @@ export default {
 
     // Payment processing methods
 
-    async processPaymentInput() {
-      this.paymentData = null;
-      this.parsedInvoice = null;
-      this.sendForm.amount = '';
-      this.sendForm.comment = '';
-
-      if (!this.sendForm.input.trim()) return;
-
-      try {
-        console.log('Processing payment input:', this.sendForm.input);
-
-        const validation = LightningPaymentService.validatePaymentInput(this.sendForm.input);
-        if (!validation.valid) {
-          throw new Error(validation.error);
-        }
-
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet) {
-          throw new Error('No active wallet found');
-        }
-
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        this.paymentData = await lightningService.processPaymentInput(this.sendForm.input.trim());
-
-        console.log('Payment data processed:', this.paymentData);
-
-        if (this.paymentData.type === 'lightning_invoice') {
-          try {
-            const nwc = new NostrWebLNProvider({
-              nostrWalletConnectUrl: activeWallet.nwcString,
-            });
-            await nwc.enable();
-
-            const invoiceDetails = await nwc.getInfo();
-            console.log('Invoice details from NWC:', invoiceDetails);
-
-            this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
-            console.log('Parsed invoice:', this.parsedInvoice);
-
-          } catch (error) {
-            console.warn('Could not get detailed invoice info:', error);
-            this.parsedInvoice = this.parseInvoiceManually(this.sendForm.input.trim());
-          }
-        }
-
-        if (this.paymentData.type === 'lightning_invoice' && this.paymentData.amount === 0) {
-          this.paymentData.requiresAmount = true;
-        }
-
-        if (this.paymentData.type === 'lightning_invoice') {
-          this.showPaymentConfirmation = true;
-        }
-
-      } catch (error) {
-        console.error('Error processing payment input:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Invalid payment request'),
-          caption: this.$t('Please check the format and try again'),
-          position: 'bottom',
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-      }
-    },
-
     parseInvoiceManually(invoice) {
       try {
         const cleanInvoice = invoice.replace(/^lightning:/i, '');
@@ -1644,21 +1321,6 @@ export default {
         min: Math.floor(this.paymentData.minSendable / 1000),
         max: Math.floor(this.paymentData.maxSendable / 1000)
       };
-    },
-
-    async pasteFromClipboard() {
-      try {
-        const text = await navigator.clipboard.readText();
-        this.sendForm.input = text;
-      } catch (error) {
-        console.error('Failed to read clipboard:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t access clipboard'),
-          position: 'bottom',
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-      }
     },
 
     async onPaymentDetected(paymentData) {
@@ -1941,7 +1603,6 @@ export default {
         this.pendingPayment = null;
         this.paymentAmount = '';
         this.paymentComment = '';
-        this.sendForm.input = '';
         this.estimatedFee = null;
         this.isEstimatingFee = false;
 
@@ -2247,68 +1908,6 @@ export default {
       return new TextDecoder().decode(new Uint8Array(bytes));
     },
 
-    async createInvoice() {
-      if (!this.receiveForm.amount || this.receiveForm.amount <= 0) return;
-
-      this.isCreatingInvoice = true;
-
-      try {
-        const invoiceData = {
-          amount: parseInt(this.receiveForm.amount),
-          description: this.receiveForm.description || 'BuhoGO Payment'
-        };
-
-        console.log('Creating invoice:', invoiceData);
-
-        let invoice;
-
-        if (this.walletStore.isActiveWalletSpark) {
-          // Spark wallet - ensure connected and use provider
-          const provider = await this.walletStore.ensureSparkConnected();
-
-          const result = await provider.createInvoice(invoiceData);
-          invoice = {
-            paymentRequest: result.paymentRequest,
-            paymentHash: result.paymentHash,
-            amount: invoiceData.amount,
-            description: invoiceData.description
-          };
-        } else {
-          // NWC wallet
-          const activeWallet = this.getActiveWallet();
-          if (!activeWallet?.nwcString) {
-            throw new Error('No active NWC wallet found');
-          }
-
-          const nwc = new NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
-          await nwc.enable();
-
-          invoice = await nwc.makeInvoice(invoiceData);
-        }
-
-        console.log('Invoice created:', invoice);
-
-        this.generatedInvoice = invoice;
-        this.currentInvoicePaymentHash = invoice.paymentHash;
-        this.waitingForPayment = true;
-        this.startInvoiceMonitoring();
-
-      } catch (error) {
-        console.error('Failed to create invoice:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t create invoice'),
-          caption: this.$t('Please try again'),
-          position: 'bottom',
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-      } finally {
-        this.isCreatingInvoice = false;
-      }
-    },
-
     async updateSecondaryValue() {
       if (this.walletState.balance !== undefined) {
         this.secondaryValue = await this.getSecondaryValue(this.walletState.balance);
@@ -2416,43 +2015,6 @@ export default {
       this.currentInvoicePaymentHash = invoice.paymentHash;
       this.waitingForPayment = true;
       this.startInvoiceMonitoring();
-    },
-
-    resetReceiveForm() {
-      this.receiveForm.amount = '';
-      this.receiveForm.description = '';
-      this.generatedInvoice = null;
-      this.waitingForPayment = false;
-      this.invoicePaid = false;
-      this.currentInvoicePaymentHash = null;
-      this.stopInvoiceMonitoring();
-    },
-
-    async handleQRScan(result) {
-      this.showQRScanner = false;
-      this.sendForm.input = result;
-    },
-
-    async copyInvoice() {
-      if (!this.generatedInvoice) return;
-
-      try {
-        await navigator.clipboard.writeText(this.generatedInvoice.paymentRequest);
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Invoice copied'),
-          position: 'bottom',
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-      } catch (error) {
-        console.error('Failed to copy invoice:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-      }
     }
   }
 };

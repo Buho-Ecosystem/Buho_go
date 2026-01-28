@@ -24,7 +24,7 @@
           @focus="isAmountFocused = true"
           @blur="isAmountFocused = false"
         />
-        <span class="currency-label">sats</span>
+        <span class="currency-label">{{ currencyLabel }}</span>
       </div>
       <div class="balance-row">
         <span class="balance-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
@@ -175,6 +175,7 @@
 
 <script>
 import { useWalletStore } from 'src/stores/wallet';
+import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
 
 export default {
   name: 'L1BitcoinWithdraw',
@@ -225,6 +226,13 @@ export default {
       }
       // Remove query parameters (?amount=X&label=Y)
       return address.split('?')[0];
+    },
+
+    /**
+     * Currency label for amount input - respects user format preference
+     */
+    currencyLabel() {
+      return this.walletStore.useBip177Format ? '₿' : 'sats';
     },
 
     /**
@@ -416,8 +424,8 @@ export default {
     },
 
     formatAmount(sats) {
-      if (!sats && sats !== 0) return '0 sats';
-      return `${sats.toLocaleString()} sats`;
+      if (!sats && sats !== 0) return formatAmountUtil(0, this.walletStore.useBip177Format);
+      return formatAmountUtil(sats, this.walletStore.useBip177Format);
     },
 
     getUserFriendlyError(error) {
