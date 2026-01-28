@@ -17,6 +17,7 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 - Full control over your Bitcoin with PIN-protected encryption
 - Zero-fee instant transfers to other Spark users
 - Standard Lightning Network payments with minimal fees
+- On-chain Bitcoin (L1) deposits and withdrawals
 
 **NWC Connected Wallet**
 - Connect any Nostr Wallet Connect compatible wallet
@@ -34,6 +35,8 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 | Receive Lightning | Yes | Yes |
 | Spark-to-Spark Transfers | Yes | No |
 | Zero-Fee Transfers | Yes | No |
+| Receive On-Chain Bitcoin (L1) | Yes | No |
+| Send to On-Chain Address (L1) | Yes | No |
 
 ### Additional Features
 
@@ -68,6 +71,14 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 ### Transaction History
 
 <img src="public/Spark_images/TX_List_1.png" alt="Transactions Expanded" width="280"> <img src="public/Spark_images/TX_List_closed.png" alt="Transactions Collapsed" width="280">
+
+### On-Chain Bitcoin (L1)
+
+<img src="public/L1_images/L1_Claim_recive.png" alt="L1 Receive Address" width="280"> <img src="public/L1_images/L1_Incoming_Detected.png" alt="L1 Incoming Detected" width="280"> <img src="public/L1_images/L1_Claim_it_final.png" alt="L1 Claim Deposit" width="280">
+
+### Settings
+
+<img src="public/Settings_images/Settings_Show_Seed.png" alt="Show Seed Phrase" width="280"> <img src="public/Settings_images/Settings_Change_Pin.png" alt="Change PIN" width="280">
 
 <br>
 
@@ -130,6 +141,7 @@ BuhoGO accepts multiple payment formats:
 - **Lightning Address**: Email-like format `name@domain.com`
 - **LNURL**: Encoded payment requests starting with `lnurl...`
 - **Spark Address**: Strings starting with `sp1...` (Spark wallets only)
+- **Bitcoin Address (L1)**: On-chain addresses starting with `bc1...` (Spark wallets only)
 
 Simply scan a QR code or paste the payment destination and the app handles the rest.
 

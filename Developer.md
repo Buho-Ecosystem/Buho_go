@@ -11,11 +11,12 @@ Back to [README](README.md) | For users: [User Guide](Guide.md)
 1. [Architecture Overview](#architecture-overview)
 2. [Project Structure](#project-structure)
 3. [Wallet Provider System](#wallet-provider-system)
-4. [State Management](#state-management)
-5. [Key Components](#key-components)
-6. [Adding Features](#adding-features)
-7. [Styling Guidelines](#styling-guidelines)
-8. [Testing](#testing)
+4. [L1 Bitcoin Integration](#l1-bitcoin-integration)
+5. [State Management](#state-management)
+6. [Key Components](#key-components)
+7. [Adding Features](#adding-features)
+8. [Styling Guidelines](#styling-guidelines)
+9. [Testing](#testing)
 
 <br>
 
@@ -64,6 +65,8 @@ src/
       AddressBookEntry.vue
       AddressBookList.vue
       AddressBookModal.vue
+    L1BitcoinReceive.vue   # On-chain Bitcoin deposit UI
+    L1BitcoinWithdraw.vue  # On-chain Bitcoin withdrawal UI
     MnemonicDisplay.vue    # Seed phrase display
     MnemonicVerify.vue     # Seed phrase verification
     PaymentModal.vue       # Payment confirmation dialog
@@ -131,6 +134,16 @@ class WalletProvider {
   getSparkAddress()
   transferToSparkAddress(sparkAddress, amount)
   payLightningAddress(lightningAddress, amountSats, comment)
+
+  // L1 Bitcoin (Spark-only)
+  getL1DepositAddress()                    // Get Bitcoin deposit address
+  getPendingDeposits()                     // Check for incoming deposits
+  getClaimFeeQuote(txId, outputIndex)      // Get claim fee quote
+  claimDeposit(txId, quoteData, outputIndex)  // Claim confirmed deposit
+  refundDeposit(txId, outputIndex)         // Return deposit to sender
+  getWithdrawalFeeQuote(amountSats, address)  // Get withdrawal fees
+  withdrawToL1({ amountSats, destinationAddress, speed })  // Withdraw to L1
+  getWithdrawalStatus(requestId)           // Check withdrawal status
 }
 ```
 
@@ -147,6 +160,12 @@ await provider.transferToSparkAddress('sp1...', 10000)
 
 // Pay Lightning address (fetches invoice via LNURL)
 await provider.payLightningAddress('user@domain.com', 5000, 'Payment note')
+
+// L1 Bitcoin Operations
+const address = await provider.getL1DepositAddress()  // Returns bc1p...
+const deposits = await provider.getPendingDeposits()   // Check for incoming deposits
+await provider.claimDeposit(txId, quoteData)           // Claim a confirmed deposit
+await provider.withdrawToL1({ amountSats, destinationAddress, speed })  // Withdraw to L1
 ```
 
 ### NWCWalletProvider
@@ -181,6 +200,133 @@ const result = parsePaymentDestination('lnbc10u1...')
 
 const result = parsePaymentDestination('sp1qw3...')
 // Returns: { type: 'spark_address', address: 'sp1qw3...' }
+```
+
+<br>
+
+## L1 Bitcoin Integration
+
+Spark wallets support on-chain Bitcoin (Layer 1) deposits and withdrawals. This section covers the technical implementation.
+
+### Architecture
+
+```
+On-Chain Bitcoin
+       |
+       v
+Bitcoin Network (mempool.space API for monitoring)
+       |
+       v
+Spark SDK (deposit address, claim, withdraw)
+       |
+       v
+L1BitcoinReceive.vue / L1BitcoinWithdraw.vue
+       |
+       v
+Spark Balance (available for Lightning)
+```
+
+### L1 Constants
+
+Defined in `SparkWalletProvider.js`:
+
+```javascript
+const BITCOIN_L1 = {
+  REQUIRED_CONFIRMATIONS: 3,    // Confirmations before claim
+  MIN_DEPOSIT_SATS: 500,        // Minimum deposit amount
+  DEFAULT_MEMPOOL_API: 'https://mempool.space/api',
+  TYPICAL_TX_VBYTES: 140        // For fee estimation
+}
+```
+
+### Deposit Flow (Receiving On-Chain)
+
+1. **Get Deposit Address**
+   ```javascript
+   const address = await provider.getL1DepositAddress()
+   // Returns: bc1p... (P2TR/Taproot address)
+   // Address is static and reusable
+   ```
+
+2. **Monitor for Deposits**
+   ```javascript
+   const deposits = await provider.getPendingDeposits()
+   // Returns: [{ txId, outputIndex, amount, confirmations, confirmed }]
+   // Uses mempool.space API to check address UTXOs
+   ```
+
+3. **Get Claim Fee Quote**
+   ```javascript
+   const quote = await provider.getClaimFeeQuote(txId, outputIndex)
+   // Returns: { creditAmountSats, signature, ... }
+   // creditAmountSats = deposit amount - network fee
+   ```
+
+4. **Claim Deposit**
+   ```javascript
+   const result = await provider.claimDeposit(txId, quoteData, outputIndex)
+   // Deposit claimed, balance updated
+   ```
+
+5. **Refund Option**
+   ```javascript
+   await provider.refundDeposit(txId, outputIndex)
+   // Returns deposit to original sender
+   ```
+
+### Withdrawal Flow (Sending On-Chain)
+
+1. **Get Fee Quote**
+   ```javascript
+   const quote = await provider.getWithdrawalFeeQuote(amountSats, destinationAddress)
+   // Returns: { slow, medium, fast, expiresAt }
+   // Each speed includes: { networkFee, totalFee, estimatedTime }
+   ```
+
+2. **Execute Withdrawal**
+   ```javascript
+   const result = await provider.withdrawToL1({
+     amountSats: 100000,
+     destinationAddress: 'bc1q...',
+     speed: 'MEDIUM',           // 'SLOW', 'MEDIUM', or 'FAST'
+     feeQuoteId: quote.feeQuoteId
+   })
+   // Returns: { requestId, status, amount }
+   ```
+
+3. **Check Status**
+   ```javascript
+   const status = await provider.getWithdrawalStatus(requestId)
+   // Returns: { id, status, txId, completedAt }
+   // Status: 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'
+   ```
+
+### L1 Components
+
+**L1BitcoinReceive.vue**
+- Displays Bitcoin deposit address with QR code
+- Polls for pending deposits every 30 seconds
+- Shows confirmation progress (0/3 → 3/3)
+- Claim dialog with fee breakdown
+- High-fee warning when fee > 50% of deposit
+
+**L1BitcoinWithdraw.vue**
+- Address input with validation
+- Amount entry with balance check
+- Fee speed selector (Slow/Medium/Fast)
+- Real-time fee estimation from mempool.space
+- Withdrawal confirmation dialog
+
+### Address Validation
+
+```javascript
+// Bitcoin address patterns supported for withdrawal
+const patterns = {
+  p2pkh: /^1[a-km-zA-HJ-NP-Z1-9]{25,34}$/,      // Legacy
+  p2sh: /^3[a-km-zA-HJ-NP-Z1-9]{25,34}$/,       // SegWit compatible
+  bech32: /^bc1q[a-z0-9]{38,58}$/,               // Native SegWit
+  bech32m: /^bc1p[a-z0-9]{58}$/                  // Taproot
+}
 ```
 
 <br>
@@ -446,7 +592,20 @@ Review the [User Guide](Guide.md) to understand expected user flows before testi
 - [ ] Send to Spark address
 - [ ] Receive to Spark address
 - [ ] View seed phrase (requires PIN)
+- [ ] Change PIN
 - [ ] Delete wallet
+
+**L1 Bitcoin (Spark Only)**
+- [ ] View Bitcoin deposit address
+- [ ] Copy/share deposit address
+- [ ] Detect incoming deposit
+- [ ] Track confirmation progress
+- [ ] Claim confirmed deposit
+- [ ] High-fee warning displays correctly
+- [ ] Refund/return deposit to sender
+- [ ] Withdraw to Bitcoin address
+- [ ] Fee speed selection (Slow/Medium/Fast)
+- [ ] Withdrawal status tracking
 
 **NWC Wallet**
 - [ ] Connect with valid NWC string

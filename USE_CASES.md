@@ -10,6 +10,8 @@ Back to [README](README.md) | [User Guide](Guide.md)
 |--------------|------------------|
 | Send money to a friend | Send → Enter their address → Send |
 | Receive money | Receive → Share QR or address |
+| Receive from an exchange | Receive → Bitcoin tab → Share L1 address |
+| Withdraw to hardware wallet | Send → Enter Bitcoin address → Choose fee → Send |
 | Save contacts | Address Book → Add contact |
 | Check my balance | Main screen shows it |
 | See past payments | Transaction history |
@@ -95,6 +97,64 @@ Back to [README](README.md) | [User Guide](Guide.md)
 4. Watch your balance grow over time
 
 **Why it works:** Self-custody means you own it completely. No exchange accounts, no withdrawal limits, no third parties.
+
+
+## On-Chain Bitcoin (L1) Scenarios
+
+### Withdrawing from an Exchange
+
+**The situation:** You bought Bitcoin on an exchange and want to move it to your own wallet.
+
+**With BuhoGO:**
+1. Open BuhoGO and tap "Receive"
+2. Switch to the "Bitcoin" tab
+3. Copy your Bitcoin address (starts with `bc1p...`)
+4. In your exchange, paste the address and confirm withdrawal
+5. Wait for 3 confirmations (~30 minutes)
+6. Tap "Claim" to add funds to your wallet
+
+**Why it works:** Your Spark wallet has a real Bitcoin address. Once claimed, funds are immediately available for Lightning payments — no channel management needed.
+
+
+### Moving to Cold Storage
+
+**The situation:** You want to move some Bitcoin to a hardware wallet or cold storage for long-term saving.
+
+**With BuhoGO:**
+1. Get your hardware wallet's receive address
+2. Open BuhoGO, tap "Send"
+3. Scan or paste the Bitcoin address
+4. Enter the amount and choose fee speed
+5. Confirm the withdrawal
+
+**Why it works:** Direct on-chain withdrawal to any Bitcoin address. Your hardware wallet receives real Bitcoin on the blockchain.
+
+
+### Receiving a Large Payment
+
+**The situation:** Someone wants to send you a significant amount of Bitcoin but doesn't have a Lightning wallet.
+
+**With BuhoGO:**
+1. Open BuhoGO, tap "Receive", switch to "Bitcoin" tab
+2. Share your address or QR code
+3. They send from any Bitcoin wallet or exchange
+4. After 3 confirmations, claim the deposit
+5. Funds are now ready for instant Lightning payments
+
+**Why it works:** Bridges the gap between on-chain Bitcoin and Lightning. Receive from anywhere, spend instantly.
+
+
+### Consolidating Bitcoin
+
+**The situation:** You have Bitcoin in multiple places and want to consolidate into one wallet.
+
+**With BuhoGO:**
+1. Get your BuhoGO Bitcoin address (Receive → Bitcoin tab)
+2. Send from each source to this address
+3. Claim each deposit as it confirms
+4. All funds unified in one Lightning-enabled wallet
+
+**Why it works:** One address, multiple deposits. Each becomes instantly spendable on Lightning once claimed.
 
 
 ## Business Scenarios

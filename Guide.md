@@ -13,11 +13,12 @@ Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 3. [Connecting an NWC Wallet](#connecting-an-nwc-wallet)
 4. [Receiving Bitcoin](#receiving-bitcoin)
 5. [Sending Bitcoin](#sending-bitcoin)
-6. [Transaction History](#transaction-history)
-7. [Managing Contacts](#managing-contacts)
-8. [Switching Wallets](#switching-wallets)
-9. [Settings and Preferences](#settings-and-preferences)
-10. [Troubleshooting](#troubleshooting)
+6. [On-Chain Bitcoin (L1)](#on-chain-bitcoin-l1)
+7. [Transaction History](#transaction-history)
+8. [Managing Contacts](#managing-contacts)
+9. [Switching Wallets](#switching-wallets)
+10. [Settings and Preferences](#settings-and-preferences)
+11. [Troubleshooting](#troubleshooting)
 
 <br>
 
@@ -34,6 +35,7 @@ Best for users who want full control over their Bitcoin.
 - Zero-fee transfers to other Spark users
 - Works offline for viewing balance
 - Single seed phrase backs up everything
+- On-chain Bitcoin (L1) receive and send support
 
 **Considerations**
 - Requires secure backup of seed phrase
@@ -214,6 +216,82 @@ Review these details carefully before confirming.
 
 <br>
 
+## On-Chain Bitcoin (L1)
+
+Spark wallets support receiving and sending on-chain Bitcoin (Layer 1). This allows you to interact directly with the Bitcoin blockchain.
+
+### Receiving On-Chain Bitcoin
+
+Use this when someone wants to send you Bitcoin from an exchange, hardware wallet, or any on-chain source.
+
+<img src="public/L1_images/L1_Claim_recive.png" alt="L1 Receive Address" width="280">
+
+1. Tap the "Receive" button on the wallet screen
+2. Switch to the "Bitcoin" tab
+3. Share your Bitcoin address (starts with `bc1p...`)
+4. The sender can scan the QR code or copy the address
+
+**Important Notes:**
+- Your Bitcoin address is reusable — you can receive multiple deposits to the same address
+- Deposits require 3 confirmations before they can be claimed (typically 30 minutes)
+- There is a small network fee when claiming deposits
+
+### Tracking Incoming Deposits
+
+When Bitcoin is sent to your address, you'll see it appear as a pending deposit.
+
+<img src="public/L1_images/L1_Incoming_Detected.png" alt="L1 Incoming Detected" width="280"> <img src="public/L1_images/L1_Claim_Pending.png" alt="L1 Claim Pending" width="280">
+
+The deposit shows:
+- Amount received
+- Confirmation progress (0/3, 1/3, 2/3, 3/3)
+- Status indicator
+
+You can also see pending deposits in your transaction list.
+
+<img src="public/L1_images/L1_incoming_Pending_txKList.png" alt="L1 Pending in Transaction List" width="280">
+
+### Claiming Deposits
+
+Once a deposit has 3 confirmations, you can claim it to add the funds to your Spark balance.
+
+<img src="public/L1_images/L1_Claim_it_final.png" alt="L1 Claim Deposit" width="280">
+
+1. Tap "Claim" on the confirmed deposit
+2. Review the fee breakdown:
+   - **Deposit amount**: Total Bitcoin received
+   - **Network fee**: Fee to claim the deposit
+   - **Net amount**: What you'll receive in your wallet
+3. Tap "Add to Wallet" to confirm
+
+The claimed Bitcoin is instantly available in your Spark wallet for Lightning payments or Spark transfers.
+
+**High Fee Warning**: If the network fee is more than 50% of your deposit, you'll see a warning. Consider waiting for lower fees or returning the deposit to the sender.
+
+### Returning a Deposit
+
+If the claim fee is too high relative to your deposit amount, you can return the Bitcoin to the sender instead.
+
+<img src="public/L1_images/L1_Return_Not_Accept_L1.png" alt="L1 Return to Sender" width="280">
+
+### Sending On-Chain Bitcoin (Withdrawals)
+
+You can send Bitcoin from your Spark wallet to any on-chain Bitcoin address.
+
+1. Tap the "Send" button
+2. Enter or scan a Bitcoin address (starts with `bc1...`, `3...`, or `1...`)
+3. Enter the amount
+4. Choose your fee speed:
+   - **Slow**: Lower fee, may take longer to confirm
+   - **Medium**: Balanced fee and speed
+   - **Fast**: Higher fee, faster confirmation
+5. Review the total (amount + network fee)
+6. Confirm the withdrawal
+
+**Note**: On-chain withdrawals take time to confirm on the Bitcoin network. You can track the status in your transaction history.
+
+<br>
+
 ## Transaction History
 
 Your transaction history shows all payments sent and received. Access it by tapping "Transactions" on the main wallet screen.
@@ -297,7 +375,11 @@ For Spark wallets, additional options are available:
 
 **View Seed Phrase**: Requires PIN entry. Use this to verify your backup.
 
+<img src="public/Settings_images/Settings_Show_Seed.png" alt="Show Seed Phrase" width="280">
+
 **Change PIN**: Update your wallet PIN.
+
+<img src="public/Settings_images/Settings_Change_Pin.png" alt="Change PIN" width="280">
 
 **Delete Wallet**: Permanently removes the Spark wallet. Make sure you have your seed phrase backed up before deleting.
 
@@ -349,6 +431,22 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 - Check your wallet provider for any restrictions
 - Verify the payment destination is valid
 
+### On-Chain Bitcoin (L1) Issues
+
+**Deposit Not Showing**
+- Deposits may take a few minutes to appear after being broadcast
+- Tap "Check for deposits" to manually refresh
+- Ensure the sender used the correct address
+
+**Cannot Claim Deposit**
+- Wait for 3 confirmations (check the confirmation counter)
+- If the fee is too high, wait for lower network fees or return to sender
+
+**Withdrawal Pending for a Long Time**
+- On-chain transactions can take time during high network activity
+- Check the transaction status in your history
+- If you selected "Slow" speed, it may take longer to confirm
+
 ### General Issues
 
 **App Crashes on Launch**
@@ -371,6 +469,7 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 | Lightning Address | `satoshi@wallet.com` | Reusable address, similar to email |
 | Spark Address | `sp1qw3e...` | Spark network address for zero-fee transfers |
 | LNURL | `lnurl1dp68...` | Encoded URL for various Lightning operations |
+| Bitcoin Address (L1) | `bc1p...`, `bc1q...` | On-chain Bitcoin address (Spark only) |
 
 <br>
 
