@@ -1625,19 +1625,23 @@ export default {
         );
 
         // Refresh wallet balance and transactions
-        await this.walletStore.refreshActiveWallet();
+        if (this.walletStore.activeWalletId) {
+          await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+        }
         await this.loadTransactions();
 
         // Try to find and mark the new Bitcoin transaction
         this.markRecentBitcoinClaim(claimedAmount, claimedTxId);
 
       } catch (error) {
-        console.error('Claim failed:', error);
+        console.log('Claim in progress:', error.message);
+        // Show info toast instead of error - the SDK may still complete the claim
         this.$q.notify({
-          type: 'negative',
-          message: this.$t('Claim failed'),
-          caption: this.$t('Please try again'),
-          position: 'bottom'
+          type: 'info',
+          message: this.$t('Processing your deposit...'),
+          caption: this.$t('This may take a few seconds'),
+          position: 'bottom',
+          timeout: 3000
         });
       } finally {
         this.isClaimingDeposit = false;

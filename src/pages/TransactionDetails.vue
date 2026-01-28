@@ -378,66 +378,84 @@
     </div>
 
     <!-- Contact Picker Modal -->
-    <q-dialog v-model="showContactPicker">
-      <q-card style="min-width: 350px; max-width: 500px"
-              :class="$q.dark.isActive ? 'contact_picker_card_dark' : 'contact_picker_card_light'">
-        <q-card-section>
-          <div class="text-h6" :class="$q.dark.isActive ? 'picker_title_dark' : 'picker_title_light'">
+    <q-dialog v-model="showContactPicker" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="contact-picker-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Select Contact') }}
           </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            v-close-popup
+            class="close-btn"
+            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+          />
         </q-card-section>
 
-        <q-card-section>
+        <q-card-section class="q-pt-none">
           <q-input
             v-model="contactSearch"
             :placeholder="$t('Search contacts...')"
             dense
-            :class="$q.dark.isActive ? 'search_input_dark' : 'search_input_light'"
+            borderless
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            input-class="q-px-md"
           >
             <template v-slot:prepend>
-              <q-icon name="las la-search"/>
+              <q-icon name="las la-search" class="q-ml-sm" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
             </template>
           </q-input>
         </q-card-section>
 
-        <q-scroll-area style="height: 300px">
-          <q-list>
+        <q-scroll-area style="height: 280px" class="q-px-md">
+          <q-list class="contact-list">
             <q-item
               v-for="contact in filteredContacts"
               :key="contact.id"
               clickable
+              v-ripple
               @click="assignContact(contact)"
-              :class="$q.dark.isActive ? 'contact_item_dark' : 'contact_item_light'"
+              class="contact-item"
+              :class="$q.dark.isActive ? 'contact-item-dark' : 'contact-item-light'"
             >
               <q-item-section avatar>
-                <div class="picker-contact-avatar"
-                     :style="{ backgroundColor: contact.color }">
+                <div class="contact-avatar-picker" :style="{ backgroundColor: contact.color }">
                   {{ contact.name.substring(0, 2).toUpperCase() }}
                 </div>
               </q-item-section>
               <q-item-section>
-                <q-item-label :class="$q.dark.isActive ? 'picker_contact_name_dark' : 'picker_contact_name_light'">
+                <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                   {{ contact.name }}
                 </q-item-label>
-                <q-item-label caption :class="$q.dark.isActive ? 'picker_contact_address_dark' : 'picker_contact_address_light'">
-                  {{ contact.address }}
+                <q-item-label caption class="contact-address-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                  {{ truncateAddress(contact.address) }}
                 </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'"/>
               </q-item-section>
             </q-item>
 
-            <q-item v-if="filteredContacts.length === 0" class="empty-contacts">
-              <q-item-section>
-                <q-item-label :class="$q.dark.isActive ? 'empty_text_dark' : 'empty_text_light'">
-                  {{ $t('No contacts found') }}
-                </q-item-label>
-              </q-item-section>
-            </q-item>
+            <div v-if="filteredContacts.length === 0" class="empty-contacts-state">
+              <q-icon name="las la-users" size="48px" :class="$q.dark.isActive ? 'text-grey-7' : 'text-grey-5'"/>
+              <div class="empty-contacts-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                {{ $t('No contacts found') }}
+              </div>
+            </div>
           </q-list>
         </q-scroll-area>
 
-        <q-card-actions align="right">
-          <q-btn flat :label="$t('Cancel')" v-close-popup
-                 :class="$q.dark.isActive ? 'cancel_btn_dark' : 'cancel_btn_light'"/>
+        <q-card-actions class="dialog-actions q-px-md q-pb-md">
+          <q-btn
+            flat
+            :label="$t('Cancel')"
+            v-close-popup
+            class="full-width"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+          />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -1561,7 +1579,87 @@ export default {
   font-family: Fustat, sans-serif;
 }
 
-/* Removed old contact styles - using Settings card pattern now */
+/* Contact Picker Dialog */
+.contact-picker-dialog {
+  width: 100%;
+  max-width: 380px;
+  border-radius: 24px;
+}
+
+.contact-picker-dialog .dialog-header {
+  padding: 20px 20px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.contact-picker-dialog .dialog-title {
+  flex: 1;
+}
+
+.contact-picker-dialog .close-btn {
+  width: 32px;
+  height: 32px;
+  margin-right: -8px;
+}
+
+.contact-list {
+  padding: 0;
+}
+
+.contact-item {
+  border-radius: 12px;
+  margin-bottom: 8px;
+  padding: 12px;
+}
+
+.contact-item-dark {
+  background: #171717;
+}
+
+.contact-item-dark:hover {
+  background: #1F1F1F;
+}
+
+.contact-item-light {
+  background: #F8F8F8;
+}
+
+.contact-item-light:hover {
+  background: #F0F0F0;
+}
+
+.contact-avatar-picker {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  font-family: Fustat, sans-serif;
+}
+
+.contact-address-caption {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+}
+
+.empty-contacts-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 12px;
+}
+
+.empty-contacts-text {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+}
 
 /* Tags Section */
 .tags-content {

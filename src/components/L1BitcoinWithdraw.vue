@@ -400,7 +400,9 @@ export default {
         });
 
         // Refresh wallet balance
-        await this.walletStore.refreshActiveWallet();
+        if (this.walletStore.activeWalletId) {
+          await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+        }
 
       } catch (error) {
         console.error('Withdrawal failed:', error);

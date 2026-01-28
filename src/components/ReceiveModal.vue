@@ -736,7 +736,9 @@ export default {
           });
 
           // Refresh wallet balance in background
-          this.walletStore.refreshActiveWallet();
+          if (this.walletStore.activeWalletId) {
+            this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+          }
           break;
 
         case PaymentStatus.EXPIRED:
