@@ -30,11 +30,6 @@
       <q-icon name="las la-copy" size="14px" class="pill-copy" />
     </div>
 
-    <!-- Info Note - Subtle -->
-    <div class="info-note" :class="$q.dark.isActive ? 'note-dark' : 'note-light'">
-      {{ $t('Minimum') }}: {{ formatAmount(minDepositAmount) }}
-    </div>
-
     <!-- Pending Deposits -->
     <div v-if="pendingDeposits.length > 0" class="deposits-section">
       <div class="section-header">
@@ -642,27 +637,6 @@ export default {
 
 .pill-copy {
   opacity: 0.4;
-}
-
-/* ==========================================
-   Info Note - Subtle
-   ========================================== */
-.info-note {
-  text-align: center;
-  font-size: 12px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  margin: 0 auto;
-}
-
-.note-dark {
-  color: rgba(255, 255, 255, 0.5);
-  background: rgba(247, 147, 26, 0.08);
-}
-
-.note-light {
-  color: rgba(0, 0, 0, 0.5);
-  background: rgba(247, 147, 26, 0.06);
 }
 
 /* ==========================================
