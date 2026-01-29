@@ -3,7 +3,8 @@ import { defineStore } from 'pinia'
 // Address type constants
 export const ADDRESS_TYPES = {
   LIGHTNING: 'lightning',
-  SPARK: 'spark'
+  SPARK: 'spark',
+  BITCOIN: 'bitcoin'
 }
 
 export const useAddressBookStore = defineStore('addressBook', {
@@ -76,6 +77,10 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     sparkEntries: (state) => {
       return state.entries.filter(entry => entry.addressType === 'spark')
+    },
+
+    bitcoinEntries: (state) => {
+      return state.entries.filter(entry => entry.addressType === 'bitcoin')
     }
   },
 
@@ -117,9 +122,12 @@ export const useAddressBookStore = defineStore('addressBook', {
 
         // Validate address format based on type
         if (!this.isValidAddress(newEntry.address, newEntry.addressType)) {
-          throw new Error(addressType === 'spark'
-            ? 'Invalid Spark address format'
-            : 'Invalid Lightning address format')
+          const errorMessages = {
+            spark: 'Invalid Spark address format',
+            bitcoin: 'Invalid Bitcoin address format',
+            lightning: 'Invalid Lightning address format'
+          }
+          throw new Error(errorMessages[addressType] || 'Invalid address format')
         }
 
         // Check for duplicates
@@ -168,9 +176,12 @@ export const useAddressBookStore = defineStore('addressBook', {
           updatedEntry.lightningAddress = addressType === 'lightning' ? newAddress.trim() : ''
 
           if (!this.isValidAddress(updatedEntry.address, addressType)) {
-            throw new Error(addressType === 'spark'
-              ? 'Invalid Spark address format'
-              : 'Invalid Lightning address format')
+            const errorMessages = {
+              spark: 'Invalid Spark address format',
+              bitcoin: 'Invalid Bitcoin address format',
+              lightning: 'Invalid Lightning address format'
+            }
+            throw new Error(errorMessages[addressType] || 'Invalid address format')
           }
 
           // Check for duplicates
@@ -260,6 +271,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (type === 'spark') {
         return this.isValidSparkAddress(address)
       }
+      if (type === 'bitcoin') {
+        return this.isValidBitcoinAddress(address)
+      }
       return this.isValidLightningAddress(address)
     },
 
@@ -281,10 +295,27 @@ export const useAddressBookStore = defineStore('addressBook', {
              legacyPrefixes.some(p => trimmed.startsWith(p))
     },
 
+    // Validate Bitcoin address format (on-chain L1)
+    isValidBitcoinAddress(address) {
+      const trimmed = address.trim()
+      // Mainnet: bc1 (bech32/bech32m native segwit), 1 (P2PKH legacy), 3 (P2SH)
+      // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
+      const mainnetBech32Regex = /^bc1[a-zA-HJ-NP-Z0-9]{39,62}$/i
+      const mainnetLegacyRegex = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/
+      const testnetBech32Regex = /^tb1[a-zA-HJ-NP-Z0-9]{39,62}$/i
+      const testnetLegacyRegex = /^[mn2][a-km-zA-HJ-NP-Z1-9]{25,34}$/
+
+      return mainnetBech32Regex.test(trimmed) ||
+             mainnetLegacyRegex.test(trimmed) ||
+             testnetBech32Regex.test(trimmed) ||
+             testnetLegacyRegex.test(trimmed)
+    },
+
     // Detect address type from input
     detectAddressType(address) {
       if (!address) return null
       const trimmed = address.trim().toLowerCase()
+
       // Check for Spark address (new and legacy formats)
       const sparkNewPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1']
       const sparkLegacyPrefixes = ['sp1', 'tsp1', 'sprt1']
@@ -293,9 +324,17 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (isSpark) {
         return 'spark'
       }
+
+      // Check for Bitcoin address (on-chain L1)
+      if (this.isValidBitcoinAddress(address)) {
+        return 'bitcoin'
+      }
+
+      // Check for Lightning address
       if (this.isValidLightningAddress(address)) {
         return 'lightning'
       }
+
       return null
     },
 

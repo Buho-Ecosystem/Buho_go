@@ -58,7 +58,8 @@
             toggle-color="primary"
             :options="[
               { label: $t('Invoice'), value: 'lightning', icon: 'las la-file-invoice' },
-              { label: $t('Address'), value: 'spark', icon: 'las la-qrcode' }
+              { label: $t('Address'), value: 'spark', icon: 'las la-qrcode' },
+              { label: $t('Bitcoin'), value: 'bitcoin', icon: 'lab la-bitcoin' }
             ]"
             class="type-toggle"
             :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
@@ -69,6 +70,9 @@
           <div class="mode-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             <template v-if="receiveMode === 'spark'">
               {{ $t('Spark-to-Spark only, zero fees') }}
+            </template>
+            <template v-else-if="receiveMode === 'bitcoin'">
+              {{ $t('From any Bitcoin wallet (takes ~10-60 min)') }}
             </template>
             <template v-else>
               {{ $t('One-time request with amount') }}
@@ -130,6 +134,14 @@
             </div>
           </div>
         </div>
+
+        <!-- Bitcoin (L1) Receive View -->
+        <L1BitcoinReceive
+          v-if="showBitcoinReceiveView"
+          :qr-options="qrOptions"
+          @deposit-claimed="handleBitcoinDepositClaimed"
+          @deposits-updated="handleBitcoinDepositsUpdated"
+        />
 
         <!-- QR Code Display -->
         <div class="qr-display-section" v-if="generatedInvoice">
@@ -228,7 +240,7 @@
         </div>
 
         <!-- Amount Section (only for invoice creation, not for static address views) -->
-        <div class="amount-section" v-else-if="!showSparkAddressView">
+        <div class="amount-section" v-else-if="!showSparkAddressView && !showBitcoinReceiveView">
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency"
                :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
@@ -257,7 +269,7 @@
         </div>
 
         <!-- Description Section (only for invoice creation) -->
-        <div class="description-section" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
+        <div class="description-section" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView && !showBitcoinReceiveView">
           <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
             {{ $t('Description (optional)') }}
           </div>
@@ -275,7 +287,7 @@
       </q-card-section>
 
       <!-- Footer (only for invoice creation) -->
-      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView">
+      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView && !showBitcoinReceiveView">
         <q-btn
           class="create-invoice-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -314,12 +326,14 @@ import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
 import PaymentConfirmation from './PaymentConfirmation.vue';
+import L1BitcoinReceive from './L1BitcoinReceive.vue';
 
 export default {
   name: 'ReceiveModal',
   components: {
     VueQrcode,
-    PaymentConfirmation
+    PaymentConfirmation,
+    L1BitcoinReceive
   },
   setup() {
     const walletStore = useWalletStore();
@@ -331,7 +345,7 @@ export default {
       default: false
     }
   },
-  emits: ['update:modelValue', 'invoice-created'],
+  emits: ['update:modelValue', 'invoice-created', 'bitcoin-deposits-updated'],
   data() {
     return {
       displayAmount: '',
@@ -343,7 +357,7 @@ export default {
       amountInSats: 0,
       isAmountFocused: false,
       showAddressView: false,
-      receiveMode: 'lightning', // 'lightning' or 'spark'
+      receiveMode: 'lightning', // 'lightning', 'spark', or 'bitcoin'
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
@@ -380,11 +394,17 @@ export default {
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
     },
+    isLNBitsWallet() {
+      return this.walletStore.isActiveWalletLNBits;
+    },
     sparkAddress() {
       return this.walletStore.activeSparkAddress;
     },
     showSparkAddressView() {
       return this.isSparkWallet && this.receiveMode === 'spark' && !this.generatedInvoice;
+    },
+    showBitcoinReceiveView() {
+      return this.isSparkWallet && this.receiveMode === 'bitcoin' && !this.generatedInvoice;
     },
     paymentStatusClass() {
       switch (this.paymentStatus) {
@@ -496,6 +516,44 @@ export default {
     },
 
     /**
+     * Set receive mode programmatically (for parent component access)
+     * @param {string} mode - 'lightning', 'spark', or 'bitcoin'
+     */
+    setReceiveMode(mode) {
+      if (['lightning', 'spark', 'bitcoin'].includes(mode)) {
+        this.receiveMode = mode;
+      }
+    },
+
+    /**
+     * Handle Bitcoin deposit claimed - show confirmation
+     */
+    handleBitcoinDepositClaimed(result) {
+      // Show success confirmation similar to Lightning payments
+      this.confirmedAmount = result.amount;
+      this.confirmedFiatAmount = this.calculateFiatAmount(result.amount);
+      this.showPaymentConfirmation = true;
+    },
+
+    /**
+     * Handle Bitcoin deposits list updated
+     */
+    handleBitcoinDepositsUpdated(deposits) {
+      // Emit event for parent components (Wallet.vue) to update banner
+      this.$emit('bitcoin-deposits-updated', deposits);
+    },
+
+    /**
+     * Calculate fiat amount for confirmation display
+     */
+    calculateFiatAmount(sats) {
+      const rate = this.walletState.exchangeRates?.['usd'] || 65000;
+      const btc = sats / 100000000;
+      const fiat = btc * rate;
+      return `$${fiat.toFixed(2)}`;
+    },
+
+    /**
      * Stop the payment monitor if running
      */
     stopPaymentMonitor() {
@@ -518,7 +576,7 @@ export default {
 
     /**
      * Start monitoring for payment confirmation
-     * Uses event-based for Spark (instant), polling for NWC
+     * Uses event-based for Spark (instant), polling for LNBits/NWC
      */
     async startPaymentMonitor() {
       if (!this.generatedInvoice?.payment_hash) {
@@ -531,6 +589,8 @@ export default {
 
       if (this.isSparkWallet) {
         await this.startSparkEventMonitor();
+      } else if (this.isLNBitsWallet) {
+        await this.startLNBitsPollingMonitor();
       } else {
         await this.startNWCPollingMonitor();
       }
@@ -657,6 +717,57 @@ export default {
     },
 
     /**
+     * Start LNBits payment monitoring using polling
+     * Uses the LNBits API to check payment status
+     */
+    async startLNBitsPollingMonitor() {
+      let rawProvider = null;
+
+      try {
+        rawProvider = this.walletStore.getActiveProvider();
+      } catch (error) {
+        console.warn('Could not get LNBits provider for payment monitoring:', error.message);
+        return;
+      }
+
+      if (!rawProvider) {
+        console.warn('No LNBits provider available for payment monitoring');
+        return;
+      }
+
+      // Wrap the LNBits provider with the expected interface
+      const wrappedProvider = {
+        lookupInvoice: async (hash) => {
+          try {
+            // LNBits lookupInvoice expects a string payment hash
+            const result = await rawProvider.lookupInvoice(hash);
+            return result;
+          } catch (error) {
+            console.warn('LNBits lookupInvoice error:', error.message);
+            return { paid: false };
+          }
+        }
+      };
+
+      // Start polling for payment confirmation
+      this.paymentMonitor = createPaymentMonitor();
+
+      this.paymentMonitor.start({
+        invoice: {
+          payment_hash: this.generatedInvoice.payment_hash,
+          expires_at: this.generatedInvoice.expires_at,
+          amount: this.generatedInvoice.amount
+        },
+        provider: wrappedProvider,
+        onStatusChange: (status, data) => {
+          if (!this.isPaymentConfirmed) {
+            this.handlePaymentStatus(status, data);
+          }
+        }
+      });
+    },
+
+    /**
      * Handle payment status updates from monitor
      */
     handlePaymentStatus(status, data) {
@@ -681,7 +792,9 @@ export default {
           });
 
           // Refresh wallet balance in background
-          this.walletStore.refreshActiveWallet();
+          if (this.walletStore.activeWalletId) {
+            this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+          }
           break;
 
         case PaymentStatus.EXPIRED:
@@ -690,7 +803,7 @@ export default {
             type: 'warning',
             message: this.$t('Invoice expired'),
             caption: this.$t('Please create a new invoice'),
-            position: 'bottom',
+            
             timeout: 4000,
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -808,8 +921,10 @@ export default {
 
         let invoice;
 
-        // Check if active wallet is Spark or NWC
-        if (this.isSparkWallet) {
+        const walletType = this.walletStore.activeWalletType;
+
+        // Check wallet type and use appropriate provider
+        if (walletType === 'spark') {
           // Use Spark wallet provider
           const provider = this.walletStore.getActiveProvider();
           if (!provider) {
@@ -824,8 +939,23 @@ export default {
             description: invoiceParams.description,
             expires_at: result.expiresAt
           };
+        } else if (walletType === 'lnbits') {
+          // Use LNBits wallet provider
+          const provider = this.walletStore.getActiveProvider();
+          if (!provider) {
+            throw new Error('LNBits wallet not connected');
+          }
+
+          const result = await provider.createInvoice(invoiceParams);
+          invoice = {
+            paymentRequest: result.paymentRequest,
+            payment_hash: result.paymentHash,
+            amount: this.amountInSats,
+            description: invoiceParams.description,
+            expires_at: result.expiresAt
+          };
         } else {
-          // Use NWC for non-Spark wallets
+          // Use NWC for NWC wallets
           const activeWallet = this.walletState.connectedWallets?.find(
             w => w.id === this.walletState.activeWalletId
           );
@@ -870,7 +1000,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Invoice ready'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -883,8 +1013,8 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t create invoice'),
-          caption: error.message,
-          position: 'bottom',
+          caption: this.$t('Please try again'),
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -902,7 +1032,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Invoice copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -910,7 +1040,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -929,14 +1059,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Address copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -950,14 +1080,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Spark address copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -976,7 +1106,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Shared'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } else {
@@ -1032,7 +1162,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Shared'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } else {
@@ -1041,7 +1171,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Invoice copied'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
@@ -1055,14 +1185,14 @@ export default {
             this.$q.notify({
               type: 'positive',
               message: this.$t('Invoice copied'),
-              position: 'bottom',
+              
               actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
             });
           } catch (copyError) {
             this.$q.notify({
               type: 'negative',
               message: this.$t('Couldn\'t share'),
-              position: 'bottom',
+              
               actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
             });
           }
@@ -1805,6 +1935,17 @@ export default {
   font-weight: 500;
   padding: 0.625rem 1rem;
   min-height: 40px;
+}
+
+.type-toggle :deep(.q-btn__content) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.type-toggle :deep(.q-btn__content .q-icon) {
+  margin: 0;
 }
 
 .toggle-dark {

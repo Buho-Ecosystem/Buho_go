@@ -101,7 +101,7 @@ export default {
           type: 'positive',
           message: this.$t('Seed phrase copied'),
           caption: this.$t('Clear your clipboard after pasting'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -113,7 +113,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }

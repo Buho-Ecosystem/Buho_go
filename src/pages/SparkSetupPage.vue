@@ -229,8 +229,8 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to generate wallet'),
-          caption: error.message,
-          position: 'bottom'
+          caption: this.$t('Please try again'),
+          
         });
         this.$router.push('/');
       } finally {
@@ -337,7 +337,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet created successfully'),
-          position: 'bottom'
+          
         });
 
         this.$router.push('/wallet');
@@ -346,8 +346,8 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to create wallet'),
-          caption: error.message,
-          position: 'bottom'
+          caption: this.$t('Please try again'),
+          
         });
         this.currentStep = 3;
         this.pinMode = 'create';

@@ -5,11 +5,11 @@
     :loading-text="loadingText"
   />
 
-  <q-page class="wallet-connect-page flex flex-center" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+  <q-page class="lnbits-setup-page flex flex-center" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
     <div class="container">
 
       <q-card
-        class="connect-card"
+        class="setup-card"
         :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
         v-if="!showScanner"
       >
@@ -48,27 +48,30 @@
         </q-card-section>
 
         <q-card-section class="q-pt-none">
-          <div class="nwc-logo-container">
-            <div class="nwc-logo-bg">
-              <img
-                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/nwc-logo%282%29-SauOakNKbFy43ZsU4o8BRAXRgPrbcJ.png"
-                alt="NWC Logo"
-                class="nwc-logo"
-              >
+          <div class="lnbits-logo-container">
+            <div class="lnbits-logo-bg">
+              <!-- LNBits Lightning Bolt (official) -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="50" height="60" viewBox="0 0 502 902" fill="none">
+                <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
+              </svg>
             </div>
           </div>
 
           <div class="welcome-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Connect Your Wallet') }}
+            {{ $t('Connect LNBits') }}
           </div>
 
           <div class="welcome-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Enter your wallet\'s connection link or scan a QR code to get started') }}
+            {{ $t('Enter your LNBits server details') }}
           </div>
 
+          <!-- Server URL Input -->
+          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Server URL') }}
+          </div>
           <q-input
-            v-model="nwcString"
-            :placeholder="$t('Paste your wallet connection link here')"
+            v-model="serverUrl"
+            :placeholder="$t('https://your.lnbits.server')"
             :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
             input-class="q-px-md"
             borderless
@@ -76,16 +79,62 @@
             class="q-mb-md"
           />
 
+          <!-- Wallet ID Input -->
+          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Wallet ID') }}
+          </div>
+          <q-input
+            v-model="walletId"
+            :placeholder="$t('e.g. 7459bdd6e60346bcade5db10fcba648b')"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            input-class="q-px-md"
+            borderless
+            dense
+            class="q-mb-md"
+          />
+
+          <!-- Admin Key Input -->
+          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Admin Key') }}
+          </div>
+          <q-input
+            v-model="adminKey"
+            :placeholder="$t('Paste your admin key here')"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            input-class="q-px-md"
+            borderless
+            dense
+            class="q-mb-md"
+            :type="showAdminKey ? 'text' : 'password'"
+          >
+            <template v-slot:append>
+              <q-btn
+                flat
+                round
+                dense
+                :icon="showAdminKey ? 'las la-eye-slash' : 'las la-eye'"
+                @click="showAdminKey = !showAdminKey"
+                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+              />
+            </template>
+          </q-input>
+
+          <!-- Error Message -->
+          <div v-if="errorMessage" class="error-message q-mb-md">
+            {{ errorMessage }}
+          </div>
+
           <div class="button-row">
             <q-btn
               class="connect-btn-inline"
               :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
               :loading="isConnecting"
-              @click="connectWallet"
+              @click="validateAndConnect"
+              :disable="!serverUrl || !walletId || !adminKey"
               no-caps
               unelevated
             >
-              <span v-if="!isConnecting">{{ $t('Connect Wallet') }}</span>
+              <span v-if="!isConnecting">{{ $t('Connect') }}</span>
               <template v-slot:loading>
                 <q-spinner-dots class="q-mr-sm"/>
                 {{ $t('Connecting...') }}
@@ -100,15 +149,20 @@
               no-caps
             >
               <q-icon name="las la-qrcode" class="q-mr-sm"/>
-              {{ $t('Scan QR') }}
+              {{ $t('Scan') }}
             </q-btn>
+          </div>
+
+          <div class="help-text q-mt-md" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Find wallet ID and admin key in LNBits under API Info') }}
           </div>
         </q-card-section>
 
       </q-card>
 
+      <!-- QR Scanner Card -->
       <q-card
-        class="connect-card"
+        class="setup-card"
         :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
         v-else
       >
@@ -128,7 +182,7 @@
                 {{ $t('Scan QR Code') }}
               </div>
               <div class="scanner-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-                {{ $t('Point your camera at the QR code from your wallet app') }}
+                {{ scanMode === 'url' ? $t('Scan your LNBits server URL') : $t('Scan your admin key') }}
               </div>
             </div>
             <div class="header-spacer"></div>
@@ -165,11 +219,6 @@
               <p class="loading-text">{{ $t('Starting camera...') }}</p>
             </div>
 
-            <div v-if="isScanning" class="scan-overlay">
-              <q-spinner-dots color="#15DE72" size="2em"/>
-              <p class="scan-overlay-text">{{ $t('Scanning NWC QR code...') }}</p>
-            </div>
-
             <!-- Scanning Frame -->
             <div v-if="!cameraError && !cameraLoading" class="scanning-frame">
               <div class="frame-corner top-left"></div>
@@ -192,7 +241,7 @@
         </q-card-section>
       </q-card>
 
-      <!-- Add Wallet Name Dialog -->
+      <!-- Wallet Name Dialog -->
       <q-dialog v-model="showNameDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
         <q-card class="name-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <q-card-section class="dialog-header">
@@ -211,9 +260,25 @@
           </q-card-section>
 
           <q-card-section class="dialog-content">
+            <!-- Wallet Info Preview -->
+            <div class="wallet-preview q-mb-md" :class="$q.dark.isActive ? 'preview-dark' : 'preview-light'">
+              <div class="preview-row">
+                <span class="preview-label">{{ $t('Server') }}</span>
+                <span class="preview-value">{{ displayServerUrl }}</span>
+              </div>
+              <div class="preview-row">
+                <span class="preview-label">{{ $t('Wallet ID') }}</span>
+                <span class="preview-value preview-id">{{ validatedWalletId }}</span>
+              </div>
+              <div class="preview-row">
+                <span class="preview-label">{{ $t('Balance') }}</span>
+                <span class="preview-value">{{ validatedBalance }} sats</span>
+              </div>
+            </div>
+
             <q-input
               v-model="walletName"
-              :placeholder="$t('My Lightning Wallet')"
+              :placeholder="validatedWalletName || $t('My LNBits Wallet')"
               :rules="[val => !!val || $t('Wallet name is required')]"
               autofocus
               :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
@@ -237,8 +302,8 @@
             />
             <q-btn
               unelevated
-              :label="$t('Continue')"
-              @click="proceedWithConnection"
+              :label="$t('Add Wallet')"
+              @click="addWallet"
               :disable="!walletName"
               class="continue-action-btn"
               :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -252,58 +317,59 @@
 </template>
 
 <script>
-import { NostrWebLNProvider } from "@getalby/sdk";
 import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
-import {useWalletStore} from '../stores/wallet'
-import {mapActions} from 'pinia'
-
-// Error handling wrapper for async operations
-const safeAsync = (fn) => {
-  return async (...args) => {
-    try {
-      return await fn(...args)
-    } catch (error) {
-      console.error('Async operation failed:', error)
-      throw error
-    }
-  }
-}
+import { useWalletStore } from '../stores/wallet'
+import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
+import { mapActions } from 'pinia'
 
 export default {
-  name: 'WalletConnectPage',
+  name: 'LNBitsSetupPage',
   components: {
     LoadingScreen,
   },
   data() {
     return {
-      nwcString: '',
+      serverUrl: '',
+      walletId: '',
+      adminKey: '',
+      showAdminKey: false,
       isConnecting: false,
+      errorMessage: '',
       showScanner: false,
-      isScanning: false,
-      scanError: null,
-      showNameDialog: false,
-      walletName: '',
-      showLoadingScreen: true,
-      loadingText: 'Initializing BuhoGO...',
+      scanMode: 'url', // 'url', 'walletId', or 'key'
       cameraError: false,
       cameraErrorMessage: '',
       cameraLoading: true,
       qrScanner: null,
-      videoElement: null
+      showNameDialog: false,
+      walletName: '',
+      showLoadingScreen: false,
+      loadingText: '',
+      // Validated data from server
+      validatedServerUrl: '',
+      validatedWalletId: '',
+      validatedWalletName: '',
+      validatedBalance: 0,
     }
   },
-  mounted() {
-    this.initializeApp();
+  computed: {
+    displayServerUrl() {
+      try {
+        const url = new URL(this.validatedServerUrl);
+        return url.hostname;
+      } catch {
+        return this.validatedServerUrl;
+      }
+    }
   },
   beforeUnmount() {
     this.stopQrScanner();
   },
   methods: {
-    ...mapActions(useWalletStore, ['addWallet']),
+    ...mapActions(useWalletStore, ['addLNBitsWallet']),
 
     goBack() {
-      // Navigate back to welcome page
       if (window.history.length > 1) {
         this.$router.back();
       } else {
@@ -311,44 +377,79 @@ export default {
       }
     },
 
-    async initializeApp() {
+    async validateAndConnect() {
+      if (!this.serverUrl.trim() || !this.walletId.trim() || !this.adminKey.trim()) {
+        this.errorMessage = this.$t('Please fill in all fields');
+        return;
+      }
+
+      this.isConnecting = true;
+      this.errorMessage = '';
+
       try {
-        // Check for existing wallet state
-        const existingState = localStorage.getItem('buhoGO_wallet_store');
-        if (existingState) {
-          this.loadingText = 'Checking wallet state...';
+        // Validate credentials
+        const validation = await LNBitsWalletProvider.validateCredentials(
+          this.serverUrl.trim(),
+          this.walletId.trim(),
+          this.adminKey.trim()
+        );
 
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        // Store validated data
+        this.validatedServerUrl = validation.serverUrl;
+        this.validatedWalletId = validation.walletInfo.id;
+        this.validatedWalletName = validation.walletInfo.name;
+        this.validatedBalance = validation.walletInfo.balance;
+        this.walletName = validation.walletInfo.name;
 
-          try {
-            const walletInfo = JSON.parse(existingState);
-            if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
-              this.loadingText = 'Loading wallet...';
-              await new Promise(resolve => setTimeout(resolve, 800));
-              this.$router.push('/wallet');
-              return;
-            }
-          } catch (parseError) {
-            console.warn('Failed to parse wallet state, clearing:', parseError);
-            localStorage.removeItem('buhoGO_wallet_store');
-          }
-        }
+        // Show name dialog
+        this.showNameDialog = true;
 
-        this.showLoadingScreen = false;
       } catch (error) {
-        console.error('Error initializing app:', error);
+        console.error('LNBits validation failed:', error);
+        this.errorMessage = error.message || this.$t('Connection failed');
+      } finally {
+        this.isConnecting = false;
+      }
+    },
+
+    async addWallet() {
+      if (!this.walletName.trim()) return;
+
+      this.showNameDialog = false;
+      this.showLoadingScreen = true;
+      this.loadingText = this.$t('Adding wallet...');
+
+      try {
+        await this.addLNBitsWallet({
+          name: this.walletName.trim(),
+          serverUrl: this.validatedServerUrl,
+          walletId: this.validatedWalletId,
+          adminKey: this.adminKey.trim(),
+        });
+
+        this.loadingText = this.$t('Loading wallet...');
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        this.$router.push('/wallet');
+      } catch (error) {
+        console.error('Failed to add LNBits wallet:', error);
         this.showLoadingScreen = false;
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to add wallet'),
+          caption: error.message,
+          
+        });
       }
     },
 
     async openScanner() {
       this.showScanner = true;
+      this.scanMode = !this.serverUrl ? 'url' : 'key';
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
-      this.isScanning = false;
-      
-      // Wait for the next tick to ensure the video element is rendered
+
       await this.$nextTick();
       await this.startQrScanner();
     },
@@ -359,53 +460,6 @@ export default {
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
-      this.isScanning = false;
-    },
-
-    async connectWallet() {
-      if (!this.nwcString.trim()) return
-
-      this.showNameDialog = true
-    },
-
-    async proceedWithConnection() {
-      if (!this.walletName.trim()) return
-
-      this.showLoadingScreen = true;
-      this.loadingText = 'Connecting to wallet...';
-
-      this.isConnecting = true
-      this.showNameDialog = false
-
-      try {
-        this.loadingText = 'Verifying connection...';
-
-        await this.addWallet({
-          name: this.walletName,
-          nwcUrl: this.nwcString
-        })
-
-        this.walletName = ''
-
-        this.loadingText = 'Loading wallet interface...';
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        this.$router.push('/wallet')
-      } catch (error) {
-        console.error('Error connecting wallet:', error);
-        if (this.$q && this.$q.notify) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t ? this.$t('Connection failed') : 'Connection failed',
-            caption: this.$t ? this.$t('Please check your connection and try again') : 'Please check your connection and try again',
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        }
-      } finally {
-        this.isConnecting = false;
-        this.showLoadingScreen = false;
-      }
     },
 
     async startQrScanner() {
@@ -414,31 +468,26 @@ export default {
           throw new Error('Video element not found');
         }
 
-        this.videoElement = this.$refs.videoElement;
-        
-        // Check if QrScanner has camera support
         const hasCamera = await QrScanner.hasCamera();
         if (!hasCamera) {
           throw new Error('No camera found on this device.');
         }
 
-        // Create QR scanner instance
         this.qrScanner = new QrScanner(
-          this.videoElement,
-          (result) => this.handleNWCScan(result.data),
+          this.$refs.videoElement,
+          (result) => this.handleQrScan(result.data),
           {
             returnDetailedScanResult: false,
             highlightScanRegion: true,
             highlightCodeOutline: true,
-            preferredCamera: 'environment' // Use back camera if available
+            preferredCamera: 'environment'
           }
         );
 
-        // Start scanning
         await this.qrScanner.start();
         this.cameraLoading = false;
         this.cameraError = false;
-        
+
       } catch (error) {
         console.error('Error starting QR scanner:', error);
         this.onCameraError(error);
@@ -453,69 +502,91 @@ export default {
       }
     },
 
-    async handleNWCScan(qrData) {
-      this.isScanning = true;
-      this.scanError = null;
-      console.log('QR Code detected:', qrData);
-      
-      try {
-        if (!qrData || typeof qrData !== 'string') {
-          throw new Error(this.$t ? this.$t('No QR code detected') : 'No QR code detected');
+    handleQrScan(qrData) {
+      if (!qrData) return;
+
+      const data = qrData.trim();
+
+      // Check if it's a URL (could contain wallet params)
+      if (data.startsWith('http://') || data.startsWith('https://')) {
+        try {
+          const url = new URL(data);
+          // Check for LNBits wallet URL format: /wallet?usr=...&wal=...
+          const walParam = url.searchParams.get('wal');
+          if (walParam) {
+            // Extract server URL without query params
+            this.serverUrl = `${url.protocol}//${url.host}`;
+            this.walletId = walParam;
+            this.closeScanner();
+            this.$q.notify({
+              type: 'positive',
+              message: this.$t('Server URL and Wallet ID extracted'),
+              caption: this.$t('Please enter your admin key'),
+              
+              timeout: 2000,
+            });
+            return;
+          }
+        } catch {
+          // Not a valid URL with params, use as-is
         }
 
-        // Check if it's an NWC URL
-        if (!qrData.startsWith('nostr+walletconnect://')) {
-          throw new Error(this.$t ? this.$t('Invalid NWC QR code format') : 'Invalid NWC QR code format');
-        }
-
-        const nwcUrl = qrData.trim();
-        this.nwcString = nwcUrl;
+        this.serverUrl = data;
         this.closeScanner();
-        await this.connectWallet();
-
-      } catch (error) {
-        console.error('Error processing QR code:', error);
-        this.scanError = error.message;
-        if (this.$q && this.$q.notify) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t ? this.$t('Invalid QR code') : 'Invalid QR code',
-            caption: this.$t ? this.$t('Please try a different code') : 'Please try a different code',
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        }
-      } finally {
-        this.isScanning = false;
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Server URL scanned'),
+          
+          timeout: 1500,
+        });
+        return;
       }
+
+      // Check if it looks like a wallet ID (32 char hex)
+      if (data.length === 32 && /^[a-f0-9]+$/i.test(data) && !this.walletId) {
+        this.walletId = data;
+        this.closeScanner();
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Wallet ID scanned'),
+          
+          timeout: 1500,
+        });
+        return;
+      }
+
+      // Otherwise treat as admin key (32+ chars)
+      if (data.length >= 32) {
+        this.adminKey = data;
+        this.closeScanner();
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Admin key scanned'),
+          
+          timeout: 1500,
+        });
+        return;
+      }
+
+      this.$q.notify({
+        type: 'warning',
+        message: this.$t('Unrecognized QR code'),
+        caption: this.$t('Expected a URL, wallet ID, or admin key'),
+        
+      });
     },
 
     onCameraError(error) {
-      console.error('Camera error:', error);
       this.cameraError = true;
       this.cameraLoading = false;
 
       if (error.name === 'NotAllowedError') {
-        this.cameraErrorMessage = this.$t ? this.$t('Camera access denied. Please allow camera permissions and try again.') : 'Camera access denied. Please allow camera permissions and try again.';
+        this.cameraErrorMessage = this.$t('Camera access denied. Please allow camera permissions.');
       } else if (error.name === 'NotFoundError') {
-        this.cameraErrorMessage = this.$t ? this.$t('No camera found on this device.') : 'No camera found on this device.';
-      } else if (error.name === 'NotSupportedError') {
-        this.cameraErrorMessage = this.$t ? this.$t('Camera not supported on this device.') : 'Camera not supported on this device.';
-      } else if (error.name === 'NotReadableError') {
-        this.cameraErrorMessage = this.$t ? this.$t('Camera is already in use by another application.') : 'Camera is already in use by another application.';
+        this.cameraErrorMessage = this.$t('No camera found on this device.');
       } else {
-        this.cameraErrorMessage = this.$t ? this.$t('Unable to access camera. Please check your permissions.') : 'Unable to access camera. Please check your permissions.';
+        this.cameraErrorMessage = this.$t('Unable to access camera.');
       }
-    },
-
-    onCameraReady() {
-      this.cameraError = false;
-      this.cameraLoading = false;
-      this.cameraErrorMessage = '';
-    },
-
-    onCameraOff() {
-      this.cameraLoading = true;
     },
 
     async retryCamera() {
@@ -523,13 +594,13 @@ export default {
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
       await this.startQrScanner();
-    }
+    },
   }
 }
 </script>
 
 <style scoped>
-.wallet-connect-page {
+.lnbits-setup-page {
   min-height: 100vh;
   padding: 1rem;
 }
@@ -601,122 +672,83 @@ export default {
 }
 
 @keyframes gradientShift {
-  0%, 100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
-/* Scanner Header */
-.scanner-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  text-align: left;
-}
-
-.back_btn_dark {
-  color: #FFF;
-}
-
-.back_btn_light {
-  color: #6D6D6D;
-}
-
-.scanner-title-container {
-  flex: 1;
-}
-
-.scanner-title {
-  font-family: Fustat, 'Inter', sans-serif;
-  margin-bottom: 0.5rem;
-}
-
-.scanner-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.header-spacer {
-  width: 40px;
-}
-
-/* NWC Logo */
-.nwc-logo-container {
+/* LNBits Logo */
+.lnbits-logo-container {
   display: flex;
   justify-content: center;
   margin: 2rem 0 1.5rem;
 }
 
-.nwc-logo-bg {
+.lnbits-logo-bg {
   width: 100px;
   height: 100px;
-  background: linear-gradient(135deg, #059573, #15DE72, #78D53C);
+  background: linear-gradient(135deg, #1a1a2e, #2d2d44);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
-  box-shadow: 0 4px 16px rgba(21, 222, 114, 0.3);
+  box-shadow: 0 4px 16px rgba(255, 31, 225, 0.3);
   position: relative;
   overflow: hidden;
 }
 
-.nwc-logo-bg::before {
+.lnbits-logo-bg::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent);
+  background: linear-gradient(135deg, rgba(255, 31, 225, 0.1), transparent);
   border-radius: 50%;
 }
 
-.nwc-logo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  position: relative;
+.lnbits-logo-bg svg {
   z-index: 1;
-  filter: brightness(1.1) contrast(1.1);
 }
 
 /* Typography */
 .welcome-title {
   text-align: center;
   margin-bottom: 0.75rem;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .welcome-subtitle {
   text-align: center;
-  margin-bottom: 2rem;
-  max-width: 320px;
-  margin-left: auto;
-  margin-right: auto;
+  margin-bottom: 1.5rem;
+  font-size: 14px;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .view_title_dark {
   color: #B0B0B0;
 }
 
-/* Input Styling */
-.nwc-input {
-  margin-bottom: 1.5rem;
+/* Input Labels */
+.input-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
 }
 
-.nwc-input :deep(.q-field__control) {
-  border-radius: 20px;
-  padding: 0.75rem 1rem;
+/* Error Message */
+.error-message {
+  color: #FF4B4B;
   font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
-}
-
-.nwc-input :deep(.q-field__native) {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  text-align: center;
+  padding: 0.5rem;
+  background: rgba(255, 75, 75, 0.1);
+  border-radius: 8px;
 }
 
 /* Button Styling */
@@ -745,7 +777,36 @@ export default {
   min-width: 0;
 }
 
-/* QR Scanner */
+/* Help Text */
+.help-text {
+  text-align: center;
+  font-size: 12px;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+/* Scanner Styles */
+.scanner-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  text-align: left;
+}
+
+.scanner-title-container {
+  flex: 1;
+}
+
+.scanner-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  margin-bottom: 0.5rem;
+}
+
+.scanner-subtitle {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .qr-scanner-container {
   height: 280px;
   display: flex;
@@ -755,6 +816,16 @@ export default {
   overflow: hidden;
   position: relative;
   border: 2px solid;
+}
+
+.scanner-dark {
+  background: #171717;
+  border-color: #2A342A;
+}
+
+.scanner-light {
+  background: #F8F9FA;
+  border-color: #E5E7EB;
 }
 
 .camera-error,
@@ -788,40 +859,6 @@ export default {
   margin-top: 0.5rem;
 }
 
-.scanner-dark {
-  background: #171717;
-  border-color: #2A342A;
-}
-
-.scanner-light {
-  background: #F8F9FA;
-  border-color: #E5E7EB;
-}
-
-.scan-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(12, 12, 12, 0.8);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  backdrop-filter: blur(4px);
-}
-
-.scan-overlay-text {
-  color: white;
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0.5rem 0 0;
-}
-
-/* Scanning Frame */
 .scanning-frame {
   position: absolute;
   top: 50%;
@@ -837,38 +874,14 @@ export default {
   position: absolute;
   width: 30px;
   height: 30px;
-  border: 3px solid #15DE72;
+  border: 3px solid #FF1FE1;
 }
 
-.frame-corner.top-left {
-  top: 0;
-  left: 0;
-  border-right: none;
-  border-bottom: none;
-}
+.frame-corner.top-left { top: 0; left: 0; border-right: none; border-bottom: none; }
+.frame-corner.top-right { top: 0; right: 0; border-left: none; border-bottom: none; }
+.frame-corner.bottom-left { bottom: 0; left: 0; border-right: none; border-top: none; }
+.frame-corner.bottom-right { bottom: 0; right: 0; border-left: none; border-top: none; }
 
-.frame-corner.top-right {
-  top: 0;
-  right: 0;
-  border-left: none;
-  border-bottom: none;
-}
-
-.frame-corner.bottom-left {
-  bottom: 0;
-  left: 0;
-  border-right: none;
-  border-top: none;
-}
-
-.frame-corner.bottom-right {
-  bottom: 0;
-  right: 0;
-  border-left: none;
-  border-top: none;
-}
-
-/* Footer */
 .card-footer {
   padding: 1rem;
 }
@@ -894,9 +907,6 @@ export default {
   align-items: center;
   padding: 1.5rem;
   border-bottom: 1px solid;
-}
-
-.dialog-header {
   border-bottom-color: #2A342A;
 }
 
@@ -909,14 +919,45 @@ export default {
   padding: 1.5rem;
 }
 
-.wallet-name-input {
-  margin-bottom: 1rem;
+/* Wallet Preview */
+.wallet-preview {
+  padding: 1rem;
+  border-radius: 12px;
 }
 
-.wallet-name-input :deep(.q-field__control) {
-  border-radius: 20px;
-  padding: 0.75rem 1rem;
+.preview-dark {
+  background: #1A1A1A;
+}
+
+.preview-light {
+  background: #F5F5F5;
+}
+
+.preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+}
+
+.preview-label {
   font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  color: #888;
+}
+
+.preview-value {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.preview-id {
+  font-family: monospace;
+  font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .input-hint {
@@ -948,7 +989,7 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .wallet-connect-page {
+  .lnbits-setup-page {
     padding: 0.75rem;
   }
 
@@ -956,25 +997,23 @@ export default {
     max-width: 100%;
   }
 
-  .card-header {
-    padding: 1.25rem 1rem 0.75rem;
-  }
-
-  .nwc-logo-bg {
+  .lnbits-logo-bg {
     width: 80px;
     height: 80px;
-    padding: 1.25rem;
+  }
+
+  .lnbits-logo-bg svg {
+    width: 42px;
+    height: 50px;
   }
 
   .welcome-title {
     font-size: 20px;
-    margin-bottom: 0.5rem;
   }
 
   .welcome-subtitle {
-    font-size: 12px;
-    margin-bottom: 1.5rem;
-    max-width: 280px;
+    font-size: 13px;
+    margin-bottom: 1.25rem;
   }
 
   .button-row {
@@ -996,39 +1035,9 @@ export default {
     height: 180px;
   }
 
-  .frame-corner {
-    width: 25px;
-    height: 25px;
-  }
-
-  .scanner-header {
-    align-items: center;
-  }
-
-  .scanner-title {
-    font-size: 18px;
-  }
-
-  .scanner-subtitle {
-    font-size: 11px;
-  }
-
   .name-dialog {
     max-width: 350px;
     margin: 1rem;
-  }
-
-  .dialog-header,
-  .dialog-content {
-    padding: 1.25rem;
-  }
-
-  .dialog-actions {
-    padding: 1rem 1.25rem 1.25rem;
-  }
-
-  .input-hint {
-    font-size: 11px;
   }
 }
 </style>

@@ -75,7 +75,11 @@ export default defineConfig((/* ctx */) => {
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework
     framework: {
       config: {
-        dark: true
+        dark: true,
+        notify: {
+          position: 'top',
+          timeout: 2500
+        }
       },
 
       // iconSet: 'material-icons', // Quasar icon set

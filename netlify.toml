@@ -4,6 +4,13 @@ to = "/.well-known/:splat"
 status = 200
 force = true
 
+# Let static assets 404 properly instead of returning index.html
+[[redirects]]
+from = "/assets/*"
+to = "/assets/:splat"
+status = 200
+
+# SPA catch-all for routes
 [[redirects]]
 from = "/*"
 to = "/index.html"

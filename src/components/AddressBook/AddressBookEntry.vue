@@ -131,15 +131,28 @@ export default {
       return notes.slice(0, 40) + '...'
     },
     addressTypeIcon() {
-      return this.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'
+      const icons = {
+        lightning: 'las la-bolt',
+        spark: 'las la-fire',
+        bitcoin: 'lab la-bitcoin'
+      }
+      return icons[this.addressType] || icons.lightning
     },
     addressTypeLabel() {
-      return this.addressType === 'spark' ? 'Spark' : 'Lightning'
+      const labels = {
+        lightning: 'Lightning',
+        spark: 'Spark',
+        bitcoin: 'Bitcoin'
+      }
+      return labels[this.addressType] || labels.lightning
     },
     addressTypeBadgeClass() {
-      return this.addressType === 'spark'
-        ? 'badge-spark'
-        : 'badge-lightning'
+      const classes = {
+        lightning: 'badge-lightning',
+        spark: 'badge-spark',
+        bitcoin: 'badge-bitcoin'
+      }
+      return classes[this.addressType] || classes.lightning
     }
   },
   mounted() {
@@ -157,14 +170,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Address copied'),
-          position: 'bottom',
+          
           timeout: 2000
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom'
+          
         })
       }
     }
@@ -273,6 +286,11 @@ export default {
 
 .badge-spark {
   background: linear-gradient(135deg, #15DE72, #059573);
+  color: white;
+}
+
+.badge-bitcoin {
+  background: linear-gradient(135deg, #F7931A, #E67E00);
   color: white;
 }
 

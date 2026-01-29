@@ -2,7 +2,7 @@
 
 **Bitcoin Lightning Wallet for Web and Mobile**
 
-BuhoGO is an open-source wallet application that makes Bitcoin Lightning payments accessible to everyone. Whether you prefer full self-custody with Spark or want to connect your existing wallet via NWC, BuhoGO provides a clean, intuitive interface for everyday Bitcoin transactions.
+BuhoGO is an open-source wallet application that makes Bitcoin Lightning payments accessible to everyone. Whether you prefer full self-custody with Spark, want to connect your existing wallet via NWC, or use your own LNBits instance, BuhoGO provides a clean, intuitive interface for everyday Bitcoin transactions.
 
 [Live App](https://go.mybuho.de) | [Report Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
 
@@ -10,30 +10,40 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 
 ## Features
 
-### Two Wallet Options
+### Three Wallet Options
 
 **Spark Wallet (Self-Custodial)**
 - Generate a new wallet with 12-word seed phrase
 - Full control over your Bitcoin with PIN-protected encryption
 - Zero-fee instant transfers to other Spark users
 - Standard Lightning Network payments with minimal fees
+- On-chain Bitcoin (L1) deposits and withdrawals
 
 **NWC Connected Wallet**
 - Connect any Nostr Wallet Connect compatible wallet
-- Use your existing Lightning setup (LNBits, Alby, Primal, Buho etc.)
+- Use your existing Lightning setup (Alby, Primal, Buho etc.)
 - Multiple NWC wallets supported simultaneously
 - No seed phrase management required
 
+**LNBits Wallet**
+- Connect directly to your LNBits instance
+- Full wallet control via Admin API key
+- Self-hosted or use public LNBits servers
+- Multiple LNBits wallets supported simultaneously
+
 ### Payment Capabilities
 
-| Feature | Spark | NWC |
-|---------|-------|-----|
-| Pay Lightning Invoices | Yes | Yes |
-| Pay Lightning Addresses | Yes | Yes |
-| Pay LNURL Requests | Yes | Yes |
-| Receive Lightning | Yes | Yes |
-| Spark-to-Spark Transfers | Yes | No |
-| Zero-Fee Transfers | Yes | No |
+| Feature | Spark | NWC | LNBits |
+|---------|-------|-----|--------|
+| Pay Lightning Invoices | Yes | Yes | Yes |
+| Pay Lightning Addresses | Yes | Yes | Yes |
+| Pay LNURL Requests | Yes | Yes | Yes |
+| Receive Lightning | Yes | Yes | Yes |
+| Spark-to-Spark Transfers | Yes | No | No |
+| Zero-Fee Transfers | Yes | No | No |
+| Receive On-Chain Bitcoin (L1) | Yes | No | No |
+| Send to On-Chain Address (L1) | Yes | No | No |
+| Fee Estimation | Yes | No | No |
 
 ### Additional Features
 
@@ -68,6 +78,14 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 ### Transaction History
 
 <img src="public/Spark_images/TX_List_1.png" alt="Transactions Expanded" width="280"> <img src="public/Spark_images/TX_List_closed.png" alt="Transactions Collapsed" width="280">
+
+### On-Chain Bitcoin (L1)
+
+<img src="public/L1_images/L1_Claim_recive.png" alt="L1 Receive Address" width="280"> <img src="public/L1_images/L1_Incoming_Detected.png" alt="L1 Incoming Detected" width="280"> <img src="public/L1_images/L1_Claim_it_final.png" alt="L1 Claim Deposit" width="280">
+
+### Settings
+
+<img src="public/Settings_images/Settings_Show_Seed.png" alt="Show Seed Phrase" width="280"> <img src="public/Settings_images/Settings_Change_Pin.png" alt="Change PIN" width="280">
 
 <br>
 
@@ -122,6 +140,16 @@ See [Setting Up a Spark Wallet](Guide.md#setting-up-a-spark-wallet) for detailed
 
 See [Connecting an NWC Wallet](Guide.md#connecting-an-nwc-wallet) for detailed instructions.
 
+### Option C: Connect an LNBits Wallet
+
+1. Open the app and select "Connect Wallet" then "LNBits"
+2. Enter your LNBits server URL
+3. Enter your LNBits wallet ID
+4. Enter your Admin API key (from LNBits wallet settings)
+5. Your wallet is now connected
+
+See [Connecting an LNBits Wallet](Guide.md#connecting-an-lnbits-wallet) for detailed instructions.
+
 ### Making Payments
 
 BuhoGO accepts multiple payment formats:
@@ -130,6 +158,7 @@ BuhoGO accepts multiple payment formats:
 - **Lightning Address**: Email-like format `name@domain.com`
 - **LNURL**: Encoded payment requests starting with `lnurl...`
 - **Spark Address**: Strings starting with `sp1...` (Spark wallets only)
+- **Bitcoin Address (L1)**: On-chain addresses starting with `bc1...` (Spark wallets only)
 
 Simply scan a QR code or paste the payment destination and the app handles the rest.
 
@@ -173,6 +202,7 @@ For detailed architecture documentation, see the [Developer Guide](Developer.md#
 | Build Tool | Vite |
 | Lightning (Spark) | @buildonspark/spark-sdk |
 | Lightning (NWC) | @getalby/sdk |
+| Lightning (LNBits) | LNBits REST API |
 | Mobile | Capacitor (iOS/Android) |
 
 <br>

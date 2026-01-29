@@ -7,6 +7,7 @@
 
 import { SparkWalletProvider } from './SparkWalletProvider';
 import { NWCWalletProvider } from './NWCWalletProvider';
+import { LNBitsWalletProvider } from './LNBitsWalletProvider';
 import { WalletProvider } from './WalletProvider';
 
 /**
@@ -45,6 +46,22 @@ export function createWalletProvider(wallet) {
         ...wallet
       });
 
+    case 'lnbits':
+      if (!wallet.connectionData?.serverUrl || !wallet.connectionData?.adminKey) {
+        throw new Error('LNBits wallet requires serverUrl and adminKey');
+      }
+      if (!wallet.connectionData?.walletId) {
+        throw new Error('LNBits wallet requires walletId');
+      }
+      return new LNBitsWalletProvider(wallet.id, {
+        name: wallet.name,
+        serverUrl: wallet.connectionData.serverUrl,
+        walletId: wallet.connectionData.walletId,
+        adminKey: wallet.connectionData.adminKey,
+        metadata: wallet.metadata,
+        ...wallet
+      });
+
     default:
       throw new Error(`Unknown wallet type: ${type}`);
   }
@@ -63,6 +80,11 @@ export function inferWalletType(wallet) {
   // Check for Spark-specific properties
   if (wallet.connectionData?.encryptedMnemonic) {
     return 'spark';
+  }
+
+  // Check for LNBits-specific properties
+  if (wallet.connectionData?.serverUrl && wallet.connectionData?.walletId && wallet.connectionData?.adminKey) {
+    return 'lnbits';
   }
 
   // Check for NWC-specific properties
@@ -151,15 +173,14 @@ export function parsePaymentDestination(input) {
     };
   }
 
-  // Bitcoin on-chain address (not supported by Spark Lightning, but detect it)
+  // Bitcoin on-chain address (supported by Spark wallets for L1 withdrawals)
   if (normalized.startsWith('bc1') || normalized.startsWith('tb1') ||
       normalized.startsWith('1') || normalized.startsWith('3')) {
     return {
       type: 'bitcoin_address',
       address: cleaned,
-      valid: true,
-      supported: false,
-      message: 'On-chain Bitcoin addresses are not supported. Use Lightning or Spark addresses.'
+      valid: true
+      // Note: UI will check if active wallet supports L1 withdrawals
     };
   }
 
@@ -171,7 +192,8 @@ export function parsePaymentDestination(input) {
  */
 export const WALLET_TYPES = {
   SPARK: 'spark',
-  NWC: 'nwc'
+  NWC: 'nwc',
+  LNBITS: 'lnbits'
 };
 
 /**

@@ -11,17 +11,18 @@ Back to [README](README.md) | For users: [User Guide](Guide.md)
 1. [Architecture Overview](#architecture-overview)
 2. [Project Structure](#project-structure)
 3. [Wallet Provider System](#wallet-provider-system)
-4. [State Management](#state-management)
-5. [Key Components](#key-components)
-6. [Adding Features](#adding-features)
-7. [Styling Guidelines](#styling-guidelines)
-8. [Testing](#testing)
+4. [L1 Bitcoin Integration](#l1-bitcoin-integration)
+5. [State Management](#state-management)
+6. [Key Components](#key-components)
+7. [Adding Features](#adding-features)
+8. [Styling Guidelines](#styling-guidelines)
+9. [Testing](#testing)
 
 <br>
 
 ## Architecture Overview
 
-BuhoGO is built with Vue.js 3 and the Quasar Framework. The application follows a provider pattern for wallet operations, allowing different wallet types (Spark, NWC) to implement a common interface.
+BuhoGO is built with Vue.js 3 and the Quasar Framework. The application follows a provider pattern for wallet operations, allowing different wallet types (Spark, NWC, LNBits) to implement a common interface.
 
 ### Core Technologies
 
@@ -34,6 +35,7 @@ BuhoGO is built with Vue.js 3 and the Quasar Framework. The application follows 
 | Build | Vite | Fast development and builds |
 | Lightning (Spark) | @buildonspark/spark-sdk | Self-custodial wallet |
 | Lightning (NWC) | @getalby/sdk | Wallet connect protocol |
+| Lightning (LNBits) | LNBits REST API | Direct API integration |
 
 ### Data Flow
 
@@ -47,10 +49,10 @@ Vue Component
 Pinia Store (wallet.js, addressBook.js)
     |
     v
-Wallet Provider (SparkWalletProvider, NWCWalletProvider)
+Wallet Provider (SparkWalletProvider, NWCWalletProvider, LNBitsWalletProvider)
     |
     v
-External SDK (@buildonspark/spark-sdk or @getalby/sdk)
+External SDK/API (@buildonspark/spark-sdk, @getalby/sdk, or LNBits REST API)
 ```
 
 <br>
@@ -64,6 +66,8 @@ src/
       AddressBookEntry.vue
       AddressBookList.vue
       AddressBookModal.vue
+    L1BitcoinReceive.vue   # On-chain Bitcoin deposit UI
+    L1BitcoinWithdraw.vue  # On-chain Bitcoin withdrawal UI
     MnemonicDisplay.vue    # Seed phrase display
     MnemonicVerify.vue     # Seed phrase verification
     PaymentModal.vue       # Payment confirmation dialog
@@ -84,6 +88,7 @@ src/
     WalletProvider.js      # Abstract base class
     SparkWalletProvider.js # Spark wallet implementation
     NWCWalletProvider.js   # NWC wallet implementation
+    LNBitsWalletProvider.js # LNBits wallet implementation
     WalletFactory.js       # Provider creation utilities
 
   stores/
@@ -110,7 +115,7 @@ The provider pattern abstracts wallet operations so components do not need to kn
 ```javascript
 class WalletProvider {
   // Identity
-  getType()              // Returns 'spark' or 'nwc'
+  getType()              // Returns 'spark', 'nwc', or 'lnbits'
   isSpark()              // Boolean check
 
   // Connection
@@ -131,6 +136,16 @@ class WalletProvider {
   getSparkAddress()
   transferToSparkAddress(sparkAddress, amount)
   payLightningAddress(lightningAddress, amountSats, comment)
+
+  // L1 Bitcoin (Spark-only)
+  getL1DepositAddress()                    // Get Bitcoin deposit address
+  getPendingDeposits()                     // Check for incoming deposits
+  getClaimFeeQuote(txId, outputIndex)      // Get claim fee quote
+  claimDeposit(txId, quoteData, outputIndex)  // Claim confirmed deposit
+  refundDeposit(txId, outputIndex)         // Return deposit to sender
+  getWithdrawalFeeQuote(amountSats, address)  // Get withdrawal fees
+  withdrawToL1({ amountSats, destinationAddress, speed })  // Withdraw to L1
+  getWithdrawalStatus(requestId)           // Check withdrawal status
 }
 ```
 
@@ -147,6 +162,12 @@ await provider.transferToSparkAddress('sp1...', 10000)
 
 // Pay Lightning address (fetches invoice via LNURL)
 await provider.payLightningAddress('user@domain.com', 5000, 'Payment note')
+
+// L1 Bitcoin Operations
+const address = await provider.getL1DepositAddress()  // Returns bc1p...
+const deposits = await provider.getPendingDeposits()   // Check for incoming deposits
+await provider.claimDeposit(txId, quoteData)           // Claim a confirmed deposit
+await provider.withdrawToL1({ amountSats, destinationAddress, speed })  // Withdraw to L1
 ```
 
 ### NWCWalletProvider
@@ -165,6 +186,49 @@ const balance = await provider.getBalance()
 await provider.payInvoice({ invoice: 'lnbc...' })
 ```
 
+### LNBitsWalletProvider
+
+Connects directly to LNBits via REST API:
+
+```javascript
+// Connection uses server URL and admin key
+const provider = new LNBitsWalletProvider(walletId, {
+  serverUrl: 'https://demo.lnbits.com',
+  walletId: 'abc123...',  // LNBits internal wallet ID
+  adminKey: 'xyz789...'   // Admin API key for full access
+})
+await provider.connect()
+
+// Standard operations
+const balance = await provider.getBalance()  // Returns balance in sats
+await provider.payInvoice({ invoice: 'lnbc...' })
+const invoice = await provider.createInvoice({ amount: 1000, description: 'Test' })
+
+// Decode invoice (LNBits-specific)
+const decoded = await provider.decodeInvoice('lnbc...')
+```
+
+**API Endpoints Used:**
+- `GET /api/v1/wallet` - Get wallet info and balance
+- `POST /api/v1/payments` - Create invoice or pay invoice
+- `GET /api/v1/payments/{hash}` - Check payment status
+- `GET /api/v1/payments` - List transactions
+- `POST /api/v1/payments/decode` - Decode invoice
+
+**Authentication:**
+All requests include the `X-Api-Key` header with the Admin API key.
+
+**Static Validation Method:**
+```javascript
+// Validate credentials before adding wallet
+const result = await LNBitsWalletProvider.validateCredentials(
+  serverUrl,
+  walletId,
+  adminKey
+)
+// Returns: { valid: true, serverUrl, walletInfo: { name, balance, id } }
+```
+
 ### WalletFactory
 
 Utility functions for provider creation and payment parsing:
@@ -181,6 +245,133 @@ const result = parsePaymentDestination('lnbc10u1...')
 
 const result = parsePaymentDestination('sp1qw3...')
 // Returns: { type: 'spark_address', address: 'sp1qw3...' }
+```
+
+<br>
+
+## L1 Bitcoin Integration
+
+Spark wallets support on-chain Bitcoin (Layer 1) deposits and withdrawals. This section covers the technical implementation.
+
+### Architecture
+
+```
+On-Chain Bitcoin
+       |
+       v
+Bitcoin Network (mempool.space API for monitoring)
+       |
+       v
+Spark SDK (deposit address, claim, withdraw)
+       |
+       v
+L1BitcoinReceive.vue / L1BitcoinWithdraw.vue
+       |
+       v
+Spark Balance (available for Lightning)
+```
+
+### L1 Constants
+
+Defined in `SparkWalletProvider.js`:
+
+```javascript
+const BITCOIN_L1 = {
+  REQUIRED_CONFIRMATIONS: 3,    // Confirmations before claim
+  MIN_DEPOSIT_SATS: 500,        // Minimum deposit amount
+  DEFAULT_MEMPOOL_API: 'https://mempool.space/api',
+  TYPICAL_TX_VBYTES: 140        // For fee estimation
+}
+```
+
+### Deposit Flow (Receiving On-Chain)
+
+1. **Get Deposit Address**
+   ```javascript
+   const address = await provider.getL1DepositAddress()
+   // Returns: bc1p... (P2TR/Taproot address)
+   // Address is static and reusable
+   ```
+
+2. **Monitor for Deposits**
+   ```javascript
+   const deposits = await provider.getPendingDeposits()
+   // Returns: [{ txId, outputIndex, amount, confirmations, confirmed }]
+   // Uses mempool.space API to check address UTXOs
+   ```
+
+3. **Get Claim Fee Quote**
+   ```javascript
+   const quote = await provider.getClaimFeeQuote(txId, outputIndex)
+   // Returns: { creditAmountSats, signature, ... }
+   // creditAmountSats = deposit amount - network fee
+   ```
+
+4. **Claim Deposit**
+   ```javascript
+   const result = await provider.claimDeposit(txId, quoteData, outputIndex)
+   // Deposit claimed, balance updated
+   ```
+
+5. **Refund Option**
+   ```javascript
+   await provider.refundDeposit(txId, outputIndex)
+   // Returns deposit to original sender
+   ```
+
+### Withdrawal Flow (Sending On-Chain)
+
+1. **Get Fee Quote**
+   ```javascript
+   const quote = await provider.getWithdrawalFeeQuote(amountSats, destinationAddress)
+   // Returns: { slow, medium, fast, expiresAt }
+   // Each speed includes: { networkFee, totalFee, estimatedTime }
+   ```
+
+2. **Execute Withdrawal**
+   ```javascript
+   const result = await provider.withdrawToL1({
+     amountSats: 100000,
+     destinationAddress: 'bc1q...',
+     speed: 'MEDIUM',           // 'SLOW', 'MEDIUM', or 'FAST'
+     feeQuoteId: quote.feeQuoteId
+   })
+   // Returns: { requestId, status, amount }
+   ```
+
+3. **Check Status**
+   ```javascript
+   const status = await provider.getWithdrawalStatus(requestId)
+   // Returns: { id, status, txId, completedAt }
+   // Status: 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'
+   ```
+
+### L1 Components
+
+**L1BitcoinReceive.vue**
+- Displays Bitcoin deposit address with QR code
+- Polls for pending deposits every 30 seconds
+- Shows confirmation progress (0/3 → 3/3)
+- Claim dialog with fee breakdown
+- High-fee warning when fee > 50% of deposit
+
+**L1BitcoinWithdraw.vue**
+- Address input with validation
+- Amount entry with balance check
+- Fee speed selector (Slow/Medium/Fast)
+- Real-time fee estimation from mempool.space
+- Withdrawal confirmation dialog
+
+### Address Validation
+
+```javascript
+// Bitcoin address patterns supported for withdrawal
+const patterns = {
+  p2pkh: /^1[a-km-zA-HJ-NP-Z1-9]{25,34}$/,      // Legacy
+  p2sh: /^3[a-km-zA-HJ-NP-Z1-9]{25,34}$/,       // SegWit compatible
+  bech32: /^bc1q[a-z0-9]{38,58}$/,               // Native SegWit
+  bech32m: /^bc1p[a-z0-9]{58}$/                  // Taproot
+}
 ```
 
 <br>
@@ -225,8 +416,20 @@ refreshBalance(walletId)
 activeWallet          // Current wallet object
 activeBalance         // Balance for active wallet
 isActiveWalletSpark   // Boolean check
+isActiveWalletNWC     // Boolean check
+isActiveWalletLNBits  // Boolean check
 activeSparkAddress    // Spark address (if Spark wallet)
 hasSparkWallet        // Whether any Spark wallet exists
+```
+
+**Wallet Types**
+```javascript
+// WALLET_TYPES constant from WalletFactory.js
+WALLET_TYPES = {
+  SPARK: 'spark',
+  NWC: 'nwc',
+  LNBITS: 'lnbits'
+}
 ```
 
 ### AddressBook Store (`stores/addressBook.js`)
@@ -435,40 +638,6 @@ All components should support both themes using Quasar's dark mode detection:
 
 Review the [User Guide](Guide.md) to understand expected user flows before testing.
 
-### Manual Testing Checklist
-
-**Spark Wallet**
-- [ ] Create new wallet with seed phrase
-- [ ] Verify seed phrase backup flow
-- [ ] PIN creation and unlock
-- [ ] Create Lightning invoice
-- [ ] Pay Lightning invoice
-- [ ] Send to Spark address
-- [ ] Receive to Spark address
-- [ ] View seed phrase (requires PIN)
-- [ ] Delete wallet
-
-**NWC Wallet**
-- [ ] Connect with valid NWC string
-- [ ] Connect with QR scan
-- [ ] View balance
-- [ ] Create invoice
-- [ ] Pay invoice
-- [ ] Disconnect wallet
-- [ ] Multiple wallets switching
-
-**Address Book**
-- [ ] Add Lightning address contact
-- [ ] Add Spark address contact
-- [ ] Edit contact
-- [ ] Delete contact
-- [ ] Search contacts
-- [ ] Pay from contact (both types)
-
-**Cross-Wallet**
-- [ ] NWC cannot pay Spark addresses (shows warning)
-- [ ] Spark can pay Lightning addresses
-- [ ] Wallet switching maintains state
 
 ### Running the App Locally
 
@@ -566,6 +735,21 @@ Web Crypto API requires secure context (HTTPS or localhost). For local developme
 - Verify NWC URL is complete and valid
 - Check wallet provider service is running
 - Try generating fresh NWC connection string
+
+### LNBits Connection Issues
+
+- Verify server URL includes protocol (`https://`)
+- Check API key is valid
+- Ensure LNBits server is accessible
+- For self-hosted: verify CORS is configured correctly
+- Check server logs for detailed error messages
+
+### LNBits Payment Failed
+
+- Verify wallet has sufficient balance
+- Check LNBits backend has liquidity
+- Invoice may have expired - request new one
+- Server may be experiencing issues - check status
 
 <br>
 
