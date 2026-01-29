@@ -11,20 +11,21 @@ Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 1. [Choosing Your Wallet Type](#choosing-your-wallet-type)
 2. [Setting Up a Spark Wallet](#setting-up-a-spark-wallet)
 3. [Connecting an NWC Wallet](#connecting-an-nwc-wallet)
-4. [Receiving Bitcoin](#receiving-bitcoin)
-5. [Sending Bitcoin](#sending-bitcoin)
-6. [On-Chain Bitcoin (L1)](#on-chain-bitcoin-l1)
-7. [Transaction History](#transaction-history)
-8. [Managing Contacts](#managing-contacts)
-9. [Switching Wallets](#switching-wallets)
-10. [Settings and Preferences](#settings-and-preferences)
-11. [Troubleshooting](#troubleshooting)
+4. [Connecting an LNBits Wallet](#connecting-an-lnbits-wallet)
+5. [Receiving Bitcoin](#receiving-bitcoin)
+6. [Sending Bitcoin](#sending-bitcoin)
+7. [On-Chain Bitcoin (L1)](#on-chain-bitcoin-l1)
+8. [Transaction History](#transaction-history)
+9. [Managing Contacts](#managing-contacts)
+10. [Switching Wallets](#switching-wallets)
+11. [Settings and Preferences](#settings-and-preferences)
+12. [Troubleshooting](#troubleshooting)
 
 <br>
 
 ## Choosing Your Wallet Type
 
-BuhoGO supports two types of wallets. Choose the one that fits your needs. See the [feature comparison table](README.md#payment-capabilities) for a quick overview.
+BuhoGO supports three types of wallets. Choose the one that fits your needs. See the [feature comparison table](README.md#payment-capabilities) for a quick overview.
 
 ### Spark Wallet
 
@@ -47,7 +48,7 @@ Best for users who want full control over their Bitcoin.
 Best for users who already have a Lightning wallet they want to use.
 
 **Advantages**
-- Connect your existing wallet (Alby, Mutiny, etc.)
+- Connect your existing wallet (Alby, Primal, etc.)
 - No seed phrase to manage
 - Multiple wallets supported
 - Quick setup with QR code
@@ -56,6 +57,22 @@ Best for users who already have a Lightning wallet they want to use.
 - Depends on external wallet availability
 - Features limited by connected wallet capabilities
 - Cannot send to Spark addresses
+
+### LNBits Wallet
+
+Best for users who run their own LNBits instance or want direct API access.
+
+**Advantages**
+- Connect to any LNBits server
+- Full control via Admin API key
+- Self-hosted option for maximum privacy
+- Multiple wallets supported
+- Works with any LNBits-compatible backend
+
+**Considerations**
+- Requires LNBits server URL and Admin API key
+- Cannot send to Spark addresses
+- No fee estimation (fees handled by LNBits backend)
 
 <br>
 
@@ -145,6 +162,52 @@ You can connect multiple NWC wallets:
 1. Go to Settings
 2. Tap "Add Wallet"
 3. Follow the same connection steps
+
+<br>
+
+## Connecting an LNBits Wallet
+
+### What is LNBits?
+
+LNBits is an open-source Lightning accounts system that can run on top of various Lightning backends. It provides a simple API for wallet operations and can be self-hosted or used via public instances.
+
+### Getting Your LNBits Credentials
+
+1. Log in to your LNBits instance (e.g., `https://demo.lnbits.com` or your self-hosted server)
+2. Open your wallet
+3. Click on "API Info" in the wallet menu
+4. Copy the following:
+   - **Server URL**: The base URL of your LNBits instance
+   - **Admin Key**: Your wallet's Admin API key (required for full access)
+
+**Important**: The Admin Key gives full access to your wallet. Never share it publicly.
+
+### Connecting in BuhoGO
+
+1. Open BuhoGO and tap "Connect Wallet"
+2. Select "LNBits" from the wallet options
+3. Enter a name for your wallet
+4. Enter your LNBits server URL (e.g., `https://demo.lnbits.com`)
+5. Enter your Admin API key
+6. Tap "Connect"
+
+Your wallet balance will appear once connected successfully.
+
+### Supported LNBits Features
+
+- **Check Balance**: View your current wallet balance
+- **Send Payments**: Pay Lightning invoices and Lightning addresses
+- **Receive Payments**: Generate Lightning invoices
+- **Transaction History**: View past payments and receipts
+
+### Adding More LNBits Wallets
+
+You can connect multiple LNBits wallets (from same or different servers):
+
+1. Go to Settings
+2. Tap "Add Wallet"
+3. Select "LNBits"
+4. Follow the same connection steps
 
 <br>
 
@@ -430,6 +493,29 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 - Some NWC connections have spending limits
 - Check your wallet provider for any restrictions
 - Verify the payment destination is valid
+
+### LNBits Wallet Issues
+
+**Connection Failed**
+- Verify your server URL is correct and accessible
+- Ensure you're using HTTPS (required except for localhost)
+- Check that your Admin API key is valid
+- Try accessing your LNBits server directly in a browser
+
+**Invalid API Key**
+- Make sure you copied the complete Admin Key (not Invoice Key)
+- Admin Key is required for full wallet access
+- Generate a new key in LNBits if needed
+
+**Balance Not Updating**
+- Pull down to refresh the wallet
+- Check your LNBits server is online
+- Verify the wallet hasn't been deleted on the server
+
+**Payment Failed**
+- Check your LNBits wallet has sufficient balance
+- Verify the recipient's invoice is valid and not expired
+- Check the LNBits server logs for detailed error messages
 
 ### On-Chain Bitcoin (L1) Issues
 

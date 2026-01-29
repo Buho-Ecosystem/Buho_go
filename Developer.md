@@ -22,7 +22,7 @@ Back to [README](README.md) | For users: [User Guide](Guide.md)
 
 ## Architecture Overview
 
-BuhoGO is built with Vue.js 3 and the Quasar Framework. The application follows a provider pattern for wallet operations, allowing different wallet types (Spark, NWC) to implement a common interface.
+BuhoGO is built with Vue.js 3 and the Quasar Framework. The application follows a provider pattern for wallet operations, allowing different wallet types (Spark, NWC, LNBits) to implement a common interface.
 
 ### Core Technologies
 
@@ -35,6 +35,7 @@ BuhoGO is built with Vue.js 3 and the Quasar Framework. The application follows 
 | Build | Vite | Fast development and builds |
 | Lightning (Spark) | @buildonspark/spark-sdk | Self-custodial wallet |
 | Lightning (NWC) | @getalby/sdk | Wallet connect protocol |
+| Lightning (LNBits) | LNBits REST API | Direct API integration |
 
 ### Data Flow
 
@@ -48,10 +49,10 @@ Vue Component
 Pinia Store (wallet.js, addressBook.js)
     |
     v
-Wallet Provider (SparkWalletProvider, NWCWalletProvider)
+Wallet Provider (SparkWalletProvider, NWCWalletProvider, LNBitsWalletProvider)
     |
     v
-External SDK (@buildonspark/spark-sdk or @getalby/sdk)
+External SDK/API (@buildonspark/spark-sdk, @getalby/sdk, or LNBits REST API)
 ```
 
 <br>
@@ -87,6 +88,7 @@ src/
     WalletProvider.js      # Abstract base class
     SparkWalletProvider.js # Spark wallet implementation
     NWCWalletProvider.js   # NWC wallet implementation
+    LNBitsWalletProvider.js # LNBits wallet implementation
     WalletFactory.js       # Provider creation utilities
 
   stores/
@@ -113,7 +115,7 @@ The provider pattern abstracts wallet operations so components do not need to kn
 ```javascript
 class WalletProvider {
   // Identity
-  getType()              // Returns 'spark' or 'nwc'
+  getType()              // Returns 'spark', 'nwc', or 'lnbits'
   isSpark()              // Boolean check
 
   // Connection
@@ -182,6 +184,49 @@ await provider.connect()
 // Standard operations work identically
 const balance = await provider.getBalance()
 await provider.payInvoice({ invoice: 'lnbc...' })
+```
+
+### LNBitsWalletProvider
+
+Connects directly to LNBits via REST API:
+
+```javascript
+// Connection uses server URL and admin key
+const provider = new LNBitsWalletProvider(walletId, {
+  serverUrl: 'https://demo.lnbits.com',
+  walletId: 'abc123...',  // LNBits internal wallet ID
+  adminKey: 'xyz789...'   // Admin API key for full access
+})
+await provider.connect()
+
+// Standard operations
+const balance = await provider.getBalance()  // Returns balance in sats
+await provider.payInvoice({ invoice: 'lnbc...' })
+const invoice = await provider.createInvoice({ amount: 1000, description: 'Test' })
+
+// Decode invoice (LNBits-specific)
+const decoded = await provider.decodeInvoice('lnbc...')
+```
+
+**API Endpoints Used:**
+- `GET /api/v1/wallet` - Get wallet info and balance
+- `POST /api/v1/payments` - Create invoice or pay invoice
+- `GET /api/v1/payments/{hash}` - Check payment status
+- `GET /api/v1/payments` - List transactions
+- `POST /api/v1/payments/decode` - Decode invoice
+
+**Authentication:**
+All requests include the `X-Api-Key` header with the Admin API key.
+
+**Static Validation Method:**
+```javascript
+// Validate credentials before adding wallet
+const result = await LNBitsWalletProvider.validateCredentials(
+  serverUrl,
+  walletId,
+  adminKey
+)
+// Returns: { valid: true, serverUrl, walletInfo: { name, balance, id } }
 ```
 
 ### WalletFactory
@@ -371,8 +416,20 @@ refreshBalance(walletId)
 activeWallet          // Current wallet object
 activeBalance         // Balance for active wallet
 isActiveWalletSpark   // Boolean check
+isActiveWalletNWC     // Boolean check
+isActiveWalletLNBits  // Boolean check
 activeSparkAddress    // Spark address (if Spark wallet)
 hasSparkWallet        // Whether any Spark wallet exists
+```
+
+**Wallet Types**
+```javascript
+// WALLET_TYPES constant from WalletFactory.js
+WALLET_TYPES = {
+  SPARK: 'spark',
+  NWC: 'nwc',
+  LNBITS: 'lnbits'
+}
 ```
 
 ### AddressBook Store (`stores/addressBook.js`)
@@ -581,53 +638,6 @@ All components should support both themes using Quasar's dark mode detection:
 
 Review the [User Guide](Guide.md) to understand expected user flows before testing.
 
-### Manual Testing Checklist
-
-**Spark Wallet**
-- [ ] Create new wallet with seed phrase
-- [ ] Verify seed phrase backup flow
-- [ ] PIN creation and unlock
-- [ ] Create Lightning invoice
-- [ ] Pay Lightning invoice
-- [ ] Send to Spark address
-- [ ] Receive to Spark address
-- [ ] View seed phrase (requires PIN)
-- [ ] Change PIN
-- [ ] Delete wallet
-
-**L1 Bitcoin (Spark Only)**
-- [ ] View Bitcoin deposit address
-- [ ] Copy/share deposit address
-- [ ] Detect incoming deposit
-- [ ] Track confirmation progress
-- [ ] Claim confirmed deposit
-- [ ] High-fee warning displays correctly
-- [ ] Refund/return deposit to sender
-- [ ] Withdraw to Bitcoin address
-- [ ] Fee speed selection (Slow/Medium/Fast)
-- [ ] Withdrawal status tracking
-
-**NWC Wallet**
-- [ ] Connect with valid NWC string
-- [ ] Connect with QR scan
-- [ ] View balance
-- [ ] Create invoice
-- [ ] Pay invoice
-- [ ] Disconnect wallet
-- [ ] Multiple wallets switching
-
-**Address Book**
-- [ ] Add Lightning address contact
-- [ ] Add Spark address contact
-- [ ] Edit contact
-- [ ] Delete contact
-- [ ] Search contacts
-- [ ] Pay from contact (both types)
-
-**Cross-Wallet**
-- [ ] NWC cannot pay Spark addresses (shows warning)
-- [ ] Spark can pay Lightning addresses
-- [ ] Wallet switching maintains state
 
 ### Running the App Locally
 
@@ -725,6 +735,21 @@ Web Crypto API requires secure context (HTTPS or localhost). For local developme
 - Verify NWC URL is complete and valid
 - Check wallet provider service is running
 - Try generating fresh NWC connection string
+
+### LNBits Connection Issues
+
+- Verify server URL includes protocol (`https://`)
+- Check API key is valid
+- Ensure LNBits server is accessible
+- For self-hosted: verify CORS is configured correctly
+- Check server logs for detailed error messages
+
+### LNBits Payment Failed
+
+- Verify wallet has sufficient balance
+- Check LNBits backend has liquidity
+- Invoice may have expired - request new one
+- Server may be experiencing issues - check status
 
 <br>
 
