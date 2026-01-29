@@ -51,6 +51,20 @@ export class SparkWalletProvider extends WalletProvider {
     this.mnemonic = null;
     this.sparkAddress = null;
     this.network = walletData.network || 'MAINNET';
+
+    // Sync state tracking for UI feedback
+    this.isSyncing = false;
+    this.syncReason = null;
+  }
+
+  /**
+   * Set syncing state for UI feedback
+   * @param {boolean} syncing - Whether wallet is currently syncing
+   * @param {string|null} reason - Reason for sync (e.g., 'claiming_deposit')
+   */
+  setSyncing(syncing, reason = null) {
+    this.isSyncing = syncing;
+    this.syncReason = reason;
   }
 
   getType() {
@@ -66,15 +80,13 @@ export class SparkWalletProvider extends WalletProvider {
   // ==========================================
 
   /**
-   * Calculate recommended max fee for Lightning payments
-   * Uses a generous margin to account for routing fees
+   * Calculate fallback max fee for Lightning payments
+   * Only used when SDK fee estimation fails
    * @param {number} amountSats - Payment amount in satoshis
-   * @returns {number} Recommended max fee in satoshis
+   * @returns {number} Recommended max fee in satoshis (1% with min 21 sats)
    */
   static calculateRecommendedFee(amountSats) {
-    const minFee = 10; // Minimum 10 sats
-    const percentFee = Math.ceil(amountSats * 0.01); // 1% of amount
-    return Math.max(minFee, percentFee);
+    return Math.max(21, Math.ceil(amountSats * 0.01));
   }
 
   /**
@@ -298,24 +310,23 @@ export class SparkWalletProvider extends WalletProvider {
       // Decode invoice to check if it's a zero-amount invoice
       // This prevents errors from passing amountSats to fixed-amount invoices
       const invoiceInfo = SparkWalletProvider.decodeInvoiceAmount(invoice);
-      const invoiceAmount = invoiceInfo.amount || amountSats || 10000;
+      const invoiceAmount = invoiceInfo.amount || amountSats || 10000; // Fallback for fee calculation
 
-      // Get actual fee estimate from SDK first
+      // Use provided maxFee or get estimate from Spark SDK
+      // Following Spark docs: getLightningSendFeeEstimate() + small buffer
       let effectiveMaxFee = maxFee;
 
       if (!effectiveMaxFee) {
         try {
           const feeEstimate = await this.getLightningSendFeeEstimate(invoice, amountSats);
-          // Use estimated fee + 50% buffer to ensure payment succeeds
-          effectiveMaxFee = Math.ceil(feeEstimate.estimatedFeeSats * 1.5);
-        } catch {
-          // Fallback to calculated fee if estimate fails
-          effectiveMaxFee = SparkWalletProvider.calculateRecommendedFee(invoiceAmount);
+          // Spark docs recommend: feeEstimate + 5 sats buffer
+          effectiveMaxFee = feeEstimate.estimatedFeeSats + 10; // Using 10 for extra safety
+        } catch (error) {
+          console.warn('Spark fee estimation failed:', error.message);
+          // Fallback: use 1% of amount with minimum 21 sats
+          effectiveMaxFee = Math.max(21, Math.ceil(invoiceAmount * 0.01));
         }
       }
-
-      // Ensure minimum fee of 10 sats
-      effectiveMaxFee = Math.max(effectiveMaxFee, 10);
 
       // Build payment parameters
       const paymentParams = {
@@ -366,8 +377,11 @@ export class SparkWalletProvider extends WalletProvider {
 
       const estimate = await this.wallet.getLightningSendFeeEstimate(estimateParams);
 
+      // SDK returns fee as direct number (per Spark docs)
+      const feeSats = typeof estimate === 'number' ? estimate : (estimate?.feeSats || estimate?.estimatedFeeSats || 0);
+
       return {
-        estimatedFeeSats: estimate?.feeSats || estimate?.estimatedFeeSats || 0,
+        estimatedFeeSats: feeSats,
         invoice: invoice
       };
     } catch (error) {
@@ -987,10 +1001,12 @@ export class SparkWalletProvider extends WalletProvider {
    * @param {string} txId - Transaction ID of the deposit
    * @param {object} quoteData - Quote data from getClaimFeeQuote()
    * @param {number} outputIndex - Output index (default 0)
-   * @returns {Promise<{success: boolean, amount: number}>}
+   * @returns {Promise<{success: boolean, amount: number, processing?: boolean, message?: string}>}
    */
   async claimDeposit(txId, quoteData, outputIndex = 0) {
     this._ensureConnected();
+
+    this.setSyncing(true, 'claiming_deposit');
 
     try {
       // SDK: claimStaticDeposit({ transactionId, creditAmountSats, sspSignature, outputIndex })
@@ -1001,20 +1017,23 @@ export class SparkWalletProvider extends WalletProvider {
         sspSignature: quoteData.signature
       });
 
+      this.setSyncing(false);
       return {
         success: true,
         amount: Number(result.creditAmountSats || result.amount || 0)
       };
     } catch (error) {
+      this.setSyncing(false);
       const errorMsg = error.message?.toLowerCase() || '';
 
       // TRANSFER_LOCKED means the claim is already being processed (race condition with background stream)
       // This is not a failure - the claim will complete successfully
-      if (errorMsg.includes('transfer_locked') || errorMsg.includes('leaf') && errorMsg.includes('locked')) {
+      if (errorMsg.includes('transfer_locked') || (errorMsg.includes('leaf') && errorMsg.includes('locked'))) {
         console.log('Claim already in progress (TRANSFER_LOCKED), will complete shortly');
         return {
           success: true,
           processing: true,
+          message: 'Claim is being processed. Your balance will update shortly.',
           amount: Number(quoteData.creditAmountSats || 0)
         };
       }

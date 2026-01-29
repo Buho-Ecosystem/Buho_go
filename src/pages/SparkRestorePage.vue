@@ -282,7 +282,7 @@ export default {
           type: 'negative',
           message: this.$t('Invalid seed phrase'),
           caption: this.$t('Please verify your words are correct'),
-          position: 'bottom'
+          
         });
       } finally {
         this.isValidating = false;
@@ -350,7 +350,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet restored successfully'),
-          position: 'bottom'
+          
         });
 
         this.$router.push('/wallet');
@@ -360,7 +360,7 @@ export default {
           type: 'negative',
           message: this.$t('Failed to restore wallet'),
           caption: this.$t('Please check your backup phrase and try again'),
-          position: 'bottom'
+          
         });
         this.currentStep = 2;
         this.pinMode = 'create';

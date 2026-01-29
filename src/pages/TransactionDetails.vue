@@ -575,7 +575,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact assigned'),
-          position: 'bottom',
+          
           timeout: 2000
         });
       } catch (error) {
@@ -583,7 +583,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to assign contact'),
-          position: 'bottom'
+          
         });
       }
     },
@@ -594,7 +594,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact removed'),
-          position: 'bottom',
+          
           timeout: 2000
         });
       } catch (error) {
@@ -602,7 +602,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to remove contact'),
-          position: 'bottom'
+          
         });
       }
     },
@@ -626,7 +626,7 @@ export default {
             this.$q.notify({
               type: 'warning',
               message: this.$t('Maximum 2 tags allowed per transaction'),
-              position: 'bottom',
+              
               timeout: 2000
             });
             return;
@@ -641,7 +641,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to update tags'),
-          position: 'bottom'
+          
         });
       }
     },
@@ -711,7 +711,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load details'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -728,6 +728,8 @@ export default {
         // Check wallet type and fetch accordingly
         if (this.walletStore.isActiveWalletSpark) {
           await this.fetchSparkTransaction(txId);
+        } else if (this.walletStore.isActiveWalletLNBits) {
+          await this.fetchLNBitsTransaction(txId);
         } else {
           await this.fetchNWCTransaction(txId);
         }
@@ -805,6 +807,45 @@ export default {
           this.transaction.payment_request = this.transaction.payment_request || this.transaction.invoice || null;
           console.log('NWC Transaction loaded with description:', this.transaction.description);
         }
+      }
+    },
+
+    async fetchLNBitsTransaction(txId) {
+      const activeWallet = this.walletStore.activeWallet;
+      if (!activeWallet) {
+        throw new Error('No active LNBits wallet found');
+      }
+
+      let provider = this.walletStore.providers[activeWallet.id];
+      if (!provider) {
+        await this.walletStore.connectLNBitsWallet(activeWallet.id);
+        provider = this.walletStore.providers[activeWallet.id];
+      }
+
+      if (!provider) {
+        throw new Error('Could not connect to LNBits wallet');
+      }
+
+      if (this.showLoadingScreen) {
+        this.loadingText = 'Fetching transaction data...';
+      }
+
+      const transactions = await provider.getTransactions({ limit: 100, offset: 0 });
+      const found = transactions.find(tx => tx.id === txId);
+
+      if (found) {
+        // Normalize LNBits transaction to expected format
+        this.transaction = {
+          id: found.id,
+          type: found.type === 'receive' ? 'incoming' : 'outgoing',
+          amount: found.amount,
+          description: found.description || '',
+          memo: found.description || '',
+          settled_at: found.timestamp,
+          fee: found.fee || 0,
+          status: found.status || 'completed'
+        };
+        console.log('LNBits Transaction loaded with description:', this.transaction.description);
       }
     },
 
@@ -1022,7 +1063,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -1030,7 +1071,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }

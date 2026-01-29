@@ -341,7 +341,7 @@ export default {
           type: 'negative',
           message: userMessage.title,
           caption: userMessage.description,
-          position: 'bottom'
+          
         });
         this.feeQuote = null;
       } finally {
@@ -382,7 +382,7 @@ export default {
           type: 'positive',
           message: this.$t('Bitcoin sent'),
           caption: txId ? this.$t('Tap to view transaction') : this.$t('Your withdrawal is being processed'),
-          position: 'bottom',
+          
           timeout: 6000,
           actions: txId ? [{
             icon: 'las la-external-link-alt',
@@ -411,7 +411,7 @@ export default {
           type: 'negative',
           message: userMessage.title,
           caption: userMessage.description,
-          position: 'bottom'
+          
         });
         this.$emit('withdrawal-error', error);
       } finally {

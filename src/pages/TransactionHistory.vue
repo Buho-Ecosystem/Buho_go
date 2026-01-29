@@ -1007,7 +1007,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -1029,6 +1029,8 @@ export default {
 
       if (this.walletStore.isActiveWalletSpark) {
         await this.loadSparkTransactionsBatch();
+      } else if (this.walletStore.isActiveWalletLNBits) {
+        await this.loadLNBitsTransactionsBatch();
       } else {
         await this.loadNWCTransactionsBatch();
       }
@@ -1056,6 +1058,8 @@ export default {
 
           if (this.walletStore.isActiveWalletSpark) {
             await this.loadSparkTransactionsBatch();
+          } else if (this.walletStore.isActiveWalletLNBits) {
+            await this.loadLNBitsTransactionsBatch();
           } else {
             await this.loadNWCTransactionsBatch();
           }
@@ -1096,7 +1100,7 @@ export default {
           type: 'warning',
           message: this.$t('Wallet locked'),
           caption: this.$t('Please unlock your Spark wallet to view transactions'),
-          position: 'bottom',
+          
           timeout: 3000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -1194,6 +1198,58 @@ export default {
       }
     },
 
+    async loadLNBitsTransactionsBatch() {
+      // Ensure LNBits wallet is connected
+      const activeWallet = this.walletStore.activeWallet;
+      if (!activeWallet) {
+        throw new Error('No active LNBits wallet found');
+      }
+
+      let provider = this.walletStore.providers[activeWallet.id];
+      if (!provider) {
+        // Try to connect
+        await this.walletStore.connectLNBitsWallet(activeWallet.id);
+        provider = this.walletStore.providers[activeWallet.id];
+      }
+
+      if (!provider) {
+        throw new Error('Could not connect to LNBits wallet');
+      }
+
+      // Fetch batch with current offset
+      const lnbitsTransactions = await provider.getTransactions({
+        limit: this.batchSize,
+        offset: this.currentOffset
+      });
+
+      if (!lnbitsTransactions || lnbitsTransactions.length === 0) {
+        this.hasMoreTransactions = false;
+        return;
+      }
+
+      // Normalize and append to transactions array
+      const normalizedTransactions = lnbitsTransactions.map(tx => ({
+        id: tx.id,
+        type: tx.type === 'receive' ? 'incoming' : 'outgoing',
+        amount: tx.amount || 0,
+        description: tx.description || '',
+        memo: tx.description || '',
+        settled_at: tx.timestamp || null,
+        fee: tx.fee || 0,
+        status: tx.status || 'completed'
+      }));
+
+      console.log(`LNBits batch loaded: ${normalizedTransactions.length} transactions`);
+
+      this.transactions.push(...normalizedTransactions);
+      this.currentOffset += this.batchSize;
+
+      // Check if we got fewer transactions than requested (end of list)
+      if (lnbitsTransactions.length < this.batchSize) {
+        this.hasMoreTransactions = false;
+      }
+    },
+
     async refreshTransactions() {
       // Abort any ongoing background fetch
       this.backgroundFetchAborted = true;
@@ -1205,7 +1261,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Up to date'),
-        position: 'bottom',
+        
         timeout: 1500,
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
@@ -1562,7 +1618,7 @@ export default {
           type: 'warning',
           message: this.$t('Deposit not ready'),
           caption: this.$t('Please wait for more confirmations'),
-          position: 'bottom'
+          
         });
         return;
       }
@@ -1579,7 +1635,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t get fee quote'),
-          position: 'bottom'
+          
         });
       } finally {
         this.claimingTxId = null;
@@ -1610,7 +1666,7 @@ export default {
             type: 'info',
             message: this.$t('Claim processing'),
             caption: this.$t('Your sats will arrive shortly'),
-            position: 'bottom',
+            
             timeout: 3000
           });
         } else {
@@ -1640,7 +1696,7 @@ export default {
           type: 'info',
           message: this.$t('Processing your deposit...'),
           caption: this.$t('This may take a few seconds'),
-          position: 'bottom',
+          
           timeout: 3000
         });
       } finally {
@@ -1740,7 +1796,7 @@ export default {
           type: 'positive',
           message: this.$t('Bitcoin returned'),
           caption: this.$t('Sent back to the original sender'),
-          position: 'bottom',
+          
           icon: 'las la-check-circle'
         });
 
@@ -1754,7 +1810,7 @@ export default {
           type: 'negative',
           message: this.$t('Could not return Bitcoin'),
           caption: this.$t('Please try again'),
-          position: 'bottom'
+          
         });
       } finally {
         this.isRefundingDeposit = false;

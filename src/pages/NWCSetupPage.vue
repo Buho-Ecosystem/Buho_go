@@ -5,11 +5,11 @@
     :loading-text="loadingText"
   />
 
-  <q-page class="wallet-connect-page flex flex-center" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+  <q-page class="nwc-setup-page flex flex-center" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
     <div class="container">
 
       <q-card
-        class="connect-card"
+        class="setup-card"
         :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
         v-if="!showScanner"
       >
@@ -50,25 +50,35 @@
         <q-card-section class="q-pt-none">
           <div class="nwc-logo-container">
             <div class="nwc-logo-bg">
-              <img
-                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/nwc-logo%282%29-SauOakNKbFy43ZsU4o8BRAXRgPrbcJ.png"
-                alt="NWC Logo"
-                class="nwc-logo"
-              >
+              <!-- NWC Logo -->
+              <svg width="50" height="50" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_setup_grad)"/>
+                <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
+                <defs>
+                  <linearGradient id="nwc_setup_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#FFCA4A"/>
+                    <stop offset="1" stop-color="#F7931A"/>
+                  </linearGradient>
+                </defs>
+              </svg>
             </div>
           </div>
 
           <div class="welcome-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Connect Your Wallet') }}
+            {{ $t('Connect NWC Wallet') }}
           </div>
 
           <div class="welcome-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Enter your wallet\'s connection link or scan a QR code to get started') }}
+            {{ $t('Link your existing Lightning wallet via Nostr Wallet Connect') }}
           </div>
 
+          <!-- Wallet Name Input -->
+          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Wallet Name') }}
+          </div>
           <q-input
-            v-model="nwcString"
-            :placeholder="$t('Paste your wallet connection link here')"
+            v-model="walletName"
+            :placeholder="$t('e.g. My Lightning Wallet')"
             :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
             input-class="q-px-md"
             borderless
@@ -76,16 +86,38 @@
             class="q-mb-md"
           />
 
+          <!-- NWC Connection String Input -->
+          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('NWC Connection String') }}
+          </div>
+          <q-input
+            v-model="nwcString"
+            :placeholder="$t('nostr+walletconnect://...')"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            input-class="q-px-md"
+            borderless
+            dense
+            type="textarea"
+            autogrow
+            class="q-mb-sm nwc-textarea"
+          />
+
+          <!-- Error Message -->
+          <div v-if="errorMessage" class="error-message q-mb-md">
+            {{ errorMessage }}
+          </div>
+
           <div class="button-row">
             <q-btn
               class="connect-btn-inline"
               :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
               :loading="isConnecting"
-              @click="connectWallet"
+              @click="validateAndConnect"
+              :disable="!walletName || !nwcString"
               no-caps
               unelevated
             >
-              <span v-if="!isConnecting">{{ $t('Connect Wallet') }}</span>
+              <span v-if="!isConnecting">{{ $t('Connect') }}</span>
               <template v-slot:loading>
                 <q-spinner-dots class="q-mr-sm"/>
                 {{ $t('Connecting...') }}
@@ -100,15 +132,20 @@
               no-caps
             >
               <q-icon name="las la-qrcode" class="q-mr-sm"/>
-              {{ $t('Scan QR') }}
+              {{ $t('Scan') }}
             </q-btn>
+          </div>
+
+          <div class="help-text q-mt-md" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Get your NWC string from your Lightning wallet\'s settings') }}
           </div>
         </q-card-section>
 
       </q-card>
 
+      <!-- QR Scanner Card -->
       <q-card
-        class="connect-card"
+        class="setup-card"
         :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
         v-else
       >
@@ -128,7 +165,7 @@
                 {{ $t('Scan QR Code') }}
               </div>
               <div class="scanner-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-                {{ $t('Point your camera at the QR code from your wallet app') }}
+                {{ $t('Scan your NWC connection QR code') }}
               </div>
             </div>
             <div class="header-spacer"></div>
@@ -161,13 +198,8 @@
 
             <!-- Loading State -->
             <div v-if="cameraLoading && !cameraError" class="camera-loading">
-              <q-spinner-dots color="#15DE72" size="2em"/>
+              <q-spinner-dots color="#F7931A" size="2em"/>
               <p class="loading-text">{{ $t('Starting camera...') }}</p>
-            </div>
-
-            <div v-if="isScanning" class="scan-overlay">
-              <q-spinner-dots color="#15DE72" size="2em"/>
-              <p class="scan-overlay-text">{{ $t('Scanning NWC QR code...') }}</p>
             </div>
 
             <!-- Scanning Frame -->
@@ -192,109 +224,35 @@
         </q-card-section>
       </q-card>
 
-      <!-- Add Wallet Name Dialog -->
-      <q-dialog v-model="showNameDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-        <q-card class="name-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-          <q-card-section class="dialog-header">
-            <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-              {{ $t('Name Your Wallet') }}
-            </div>
-            <q-btn
-              flat
-              round
-              dense
-              icon="close"
-              v-close-popup
-              class="close-btn"
-              :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-            />
-          </q-card-section>
-
-          <q-card-section class="dialog-content">
-            <q-input
-              v-model="walletName"
-              :placeholder="$t('My Lightning Wallet')"
-              :rules="[val => !!val || $t('Wallet name is required')]"
-              autofocus
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-              borderless
-              input-class="q-px-md"
-              dense
-              hide-bottom-space
-            />
-            <div class="input-hint" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Choose a name to easily identify this wallet') }}
-            </div>
-          </q-card-section>
-
-          <q-card-actions align="right" class="dialog-actions">
-            <q-btn
-              flat
-              :label="$t('Cancel')"
-              v-close-popup
-              class="cancel-action-btn"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-            />
-            <q-btn
-              unelevated
-              :label="$t('Continue')"
-              @click="proceedWithConnection"
-              :disable="!walletName"
-              class="continue-action-btn"
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-              no-caps
-            />
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
     </div>
   </q-page>
 </template>
 
 <script>
-import { NostrWebLNProvider } from "@getalby/sdk";
 import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
-import {useWalletStore} from '../stores/wallet'
-import {mapActions} from 'pinia'
-
-// Error handling wrapper for async operations
-const safeAsync = (fn) => {
-  return async (...args) => {
-    try {
-      return await fn(...args)
-    } catch (error) {
-      console.error('Async operation failed:', error)
-      throw error
-    }
-  }
-}
+import { useWalletStore } from '../stores/wallet'
+import { mapActions } from 'pinia'
 
 export default {
-  name: 'WalletConnectPage',
+  name: 'NWCSetupPage',
   components: {
     LoadingScreen,
   },
   data() {
     return {
+      walletName: '',
       nwcString: '',
       isConnecting: false,
+      errorMessage: '',
       showScanner: false,
-      isScanning: false,
-      scanError: null,
-      showNameDialog: false,
-      walletName: '',
-      showLoadingScreen: true,
-      loadingText: 'Initializing BuhoGO...',
       cameraError: false,
       cameraErrorMessage: '',
       cameraLoading: true,
       qrScanner: null,
-      videoElement: null
+      showLoadingScreen: false,
+      loadingText: '',
     }
-  },
-  mounted() {
-    this.initializeApp();
   },
   beforeUnmount() {
     this.stopQrScanner();
@@ -303,7 +261,6 @@ export default {
     ...mapActions(useWalletStore, ['addWallet']),
 
     goBack() {
-      // Navigate back to welcome page
       if (window.history.length > 1) {
         this.$router.back();
       } else {
@@ -311,33 +268,69 @@ export default {
       }
     },
 
-    async initializeApp() {
+    validateNwcString(nwcString) {
+      if (!nwcString || !nwcString.trim()) {
+        return this.$t('NWC string is required');
+      }
+
+      const trimmed = nwcString.trim();
+
+      if (!trimmed.startsWith('nostr+walletconnect://')) {
+        return this.$t('Must start with nostr+walletconnect://');
+      }
+
       try {
-        // Check for existing wallet state
-        const existingState = localStorage.getItem('buhoGO_wallet_store');
-        if (existingState) {
-          this.loadingText = 'Checking wallet state...';
+        const url = new URL(trimmed.replace('nostr+walletconnect://', 'https://'));
+        const relay = url.searchParams.get('relay');
+        const secret = url.searchParams.get('secret');
 
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          try {
-            const walletInfo = JSON.parse(existingState);
-            if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
-              this.loadingText = 'Loading wallet...';
-              await new Promise(resolve => setTimeout(resolve, 800));
-              this.$router.push('/wallet');
-              return;
-            }
-          } catch (parseError) {
-            console.warn('Failed to parse wallet state, clearing:', parseError);
-            localStorage.removeItem('buhoGO_wallet_store');
-          }
+        if (!relay) {
+          return this.$t('Missing relay parameter');
         }
+        if (!secret) {
+          return this.$t('Missing secret parameter');
+        }
+      } catch {
+        return this.$t('Invalid connection string format');
+      }
 
-        this.showLoadingScreen = false;
+      return true;
+    },
+
+    async validateAndConnect() {
+      if (!this.walletName.trim()) {
+        this.errorMessage = this.$t('Wallet name is required');
+        return;
+      }
+
+      const validation = this.validateNwcString(this.nwcString);
+      if (validation !== true) {
+        this.errorMessage = validation;
+        return;
+      }
+
+      this.isConnecting = true;
+      this.errorMessage = '';
+
+      try {
+        this.showLoadingScreen = true;
+        this.loadingText = this.$t('Connecting to wallet...');
+
+        await this.addWallet({
+          name: this.walletName.trim(),
+          nwcUrl: this.nwcString.trim()
+        });
+
+        this.loadingText = this.$t('Loading wallet...');
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        this.$router.push('/wallet');
       } catch (error) {
-        console.error('Error initializing app:', error);
+        console.error('Failed to connect NWC wallet:', error);
         this.showLoadingScreen = false;
+        this.errorMessage = error.message || this.$t('Connection failed');
+      } finally {
+        this.isConnecting = false;
       }
     },
 
@@ -346,9 +339,7 @@ export default {
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
-      this.isScanning = false;
-      
-      // Wait for the next tick to ensure the video element is rendered
+
       await this.$nextTick();
       await this.startQrScanner();
     },
@@ -359,53 +350,6 @@ export default {
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
-      this.isScanning = false;
-    },
-
-    async connectWallet() {
-      if (!this.nwcString.trim()) return
-
-      this.showNameDialog = true
-    },
-
-    async proceedWithConnection() {
-      if (!this.walletName.trim()) return
-
-      this.showLoadingScreen = true;
-      this.loadingText = 'Connecting to wallet...';
-
-      this.isConnecting = true
-      this.showNameDialog = false
-
-      try {
-        this.loadingText = 'Verifying connection...';
-
-        await this.addWallet({
-          name: this.walletName,
-          nwcUrl: this.nwcString
-        })
-
-        this.walletName = ''
-
-        this.loadingText = 'Loading wallet interface...';
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        this.$router.push('/wallet')
-      } catch (error) {
-        console.error('Error connecting wallet:', error);
-        if (this.$q && this.$q.notify) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t ? this.$t('Connection failed') : 'Connection failed',
-            caption: this.$t ? this.$t('Please check your connection and try again') : 'Please check your connection and try again',
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        }
-      } finally {
-        this.isConnecting = false;
-        this.showLoadingScreen = false;
-      }
     },
 
     async startQrScanner() {
@@ -414,31 +358,26 @@ export default {
           throw new Error('Video element not found');
         }
 
-        this.videoElement = this.$refs.videoElement;
-        
-        // Check if QrScanner has camera support
         const hasCamera = await QrScanner.hasCamera();
         if (!hasCamera) {
           throw new Error('No camera found on this device.');
         }
 
-        // Create QR scanner instance
         this.qrScanner = new QrScanner(
-          this.videoElement,
-          (result) => this.handleNWCScan(result.data),
+          this.$refs.videoElement,
+          (result) => this.handleQrScan(result.data),
           {
             returnDetailedScanResult: false,
             highlightScanRegion: true,
             highlightCodeOutline: true,
-            preferredCamera: 'environment' // Use back camera if available
+            preferredCamera: 'environment'
           }
         );
 
-        // Start scanning
         await this.qrScanner.start();
         this.cameraLoading = false;
         this.cameraError = false;
-        
+
       } catch (error) {
         console.error('Error starting QR scanner:', error);
         this.onCameraError(error);
@@ -453,69 +392,43 @@ export default {
       }
     },
 
-    async handleNWCScan(qrData) {
-      this.isScanning = true;
-      this.scanError = null;
-      console.log('QR Code detected:', qrData);
-      
-      try {
-        if (!qrData || typeof qrData !== 'string') {
-          throw new Error(this.$t ? this.$t('No QR code detected') : 'No QR code detected');
-        }
+    handleQrScan(qrData) {
+      if (!qrData) return;
 
-        // Check if it's an NWC URL
-        if (!qrData.startsWith('nostr+walletconnect://')) {
-          throw new Error(this.$t ? this.$t('Invalid NWC QR code format') : 'Invalid NWC QR code format');
-        }
+      const data = qrData.trim();
 
-        const nwcUrl = qrData.trim();
-        this.nwcString = nwcUrl;
+      // Check if it's a valid NWC string
+      if (data.startsWith('nostr+walletconnect://')) {
+        this.nwcString = data;
         this.closeScanner();
-        await this.connectWallet();
-
-      } catch (error) {
-        console.error('Error processing QR code:', error);
-        this.scanError = error.message;
-        if (this.$q && this.$q.notify) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t ? this.$t('Invalid QR code') : 'Invalid QR code',
-            caption: this.$t ? this.$t('Please try a different code') : 'Please try a different code',
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        }
-      } finally {
-        this.isScanning = false;
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('NWC connection string scanned'),
+          
+          timeout: 1500,
+        });
+        return;
       }
+
+      this.$q.notify({
+        type: 'warning',
+        message: this.$t('Invalid QR code'),
+        caption: this.$t('Expected a NWC connection string'),
+        
+      });
     },
 
     onCameraError(error) {
-      console.error('Camera error:', error);
       this.cameraError = true;
       this.cameraLoading = false;
 
       if (error.name === 'NotAllowedError') {
-        this.cameraErrorMessage = this.$t ? this.$t('Camera access denied. Please allow camera permissions and try again.') : 'Camera access denied. Please allow camera permissions and try again.';
+        this.cameraErrorMessage = this.$t('Camera access denied. Please allow camera permissions.');
       } else if (error.name === 'NotFoundError') {
-        this.cameraErrorMessage = this.$t ? this.$t('No camera found on this device.') : 'No camera found on this device.';
-      } else if (error.name === 'NotSupportedError') {
-        this.cameraErrorMessage = this.$t ? this.$t('Camera not supported on this device.') : 'Camera not supported on this device.';
-      } else if (error.name === 'NotReadableError') {
-        this.cameraErrorMessage = this.$t ? this.$t('Camera is already in use by another application.') : 'Camera is already in use by another application.';
+        this.cameraErrorMessage = this.$t('No camera found on this device.');
       } else {
-        this.cameraErrorMessage = this.$t ? this.$t('Unable to access camera. Please check your permissions.') : 'Unable to access camera. Please check your permissions.';
+        this.cameraErrorMessage = this.$t('Unable to access camera.');
       }
-    },
-
-    onCameraReady() {
-      this.cameraError = false;
-      this.cameraLoading = false;
-      this.cameraErrorMessage = '';
-    },
-
-    onCameraOff() {
-      this.cameraLoading = true;
     },
 
     async retryCamera() {
@@ -523,13 +436,13 @@ export default {
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
       await this.startQrScanner();
-    }
+    },
   }
 }
 </script>
 
 <style scoped>
-.wallet-connect-page {
+.nwc-setup-page {
   min-height: 100vh;
   padding: 1rem;
 }
@@ -601,47 +514,8 @@ export default {
 }
 
 @keyframes gradientShift {
-  0%, 100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
-/* Scanner Header */
-.scanner-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  text-align: left;
-}
-
-.back_btn_dark {
-  color: #FFF;
-}
-
-.back_btn_light {
-  color: #6D6D6D;
-}
-
-.scanner-title-container {
-  flex: 1;
-}
-
-.scanner-title {
-  font-family: Fustat, 'Inter', sans-serif;
-  margin-bottom: 0.5rem;
-}
-
-.scanner-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.header-spacer {
-  width: 40px;
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
 /* NWC Logo */
@@ -654,13 +528,12 @@ export default {
 .nwc-logo-bg {
   width: 100px;
   height: 100px;
-  background: linear-gradient(135deg, #059573, #15DE72, #78D53C);
+  background: linear-gradient(135deg, #1a1a2e, #2d2d44);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
-  box-shadow: 0 4px 16px rgba(21, 222, 114, 0.3);
+  box-shadow: 0 4px 16px rgba(247, 147, 26, 0.3);
   position: relative;
   overflow: hidden;
 }
@@ -672,51 +545,60 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent);
+  background: linear-gradient(135deg, rgba(247, 147, 26, 0.1), transparent);
   border-radius: 50%;
 }
 
-.nwc-logo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  position: relative;
+.nwc-logo-bg svg {
   z-index: 1;
-  filter: brightness(1.1) contrast(1.1);
 }
 
 /* Typography */
 .welcome-title {
   text-align: center;
   margin-bottom: 0.75rem;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .welcome-subtitle {
   text-align: center;
-  margin-bottom: 2rem;
-  max-width: 320px;
-  margin-left: auto;
-  margin-right: auto;
+  margin-bottom: 1.5rem;
+  font-size: 14px;
+  font-family: Fustat, 'Inter', sans-serif;
 }
 
 .view_title_dark {
   color: #B0B0B0;
 }
 
-/* Input Styling */
-.nwc-input {
-  margin-bottom: 1.5rem;
+/* Input Labels */
+.input-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
 }
 
-.nwc-input :deep(.q-field__control) {
-  border-radius: 20px;
-  padding: 0.75rem 1rem;
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
+/* NWC Textarea */
+.nwc-textarea :deep(textarea) {
+  min-height: 60px;
+  max-height: 120px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.nwc-input :deep(.q-field__native) {
+/* Error Message */
+.error-message {
+  color: #FF4B4B;
   font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  text-align: center;
+  padding: 0.5rem;
+  background: rgba(255, 75, 75, 0.1);
+  border-radius: 8px;
 }
 
 /* Button Styling */
@@ -745,7 +627,36 @@ export default {
   min-width: 0;
 }
 
-/* QR Scanner */
+/* Help Text */
+.help-text {
+  text-align: center;
+  font-size: 12px;
+  font-family: Fustat, 'Inter', sans-serif;
+}
+
+/* Scanner Styles */
+.scanner-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  text-align: left;
+}
+
+.scanner-title-container {
+  flex: 1;
+}
+
+.scanner-title {
+  font-family: Fustat, 'Inter', sans-serif;
+  margin-bottom: 0.5rem;
+}
+
+.scanner-subtitle {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .qr-scanner-container {
   height: 280px;
   display: flex;
@@ -755,6 +666,16 @@ export default {
   overflow: hidden;
   position: relative;
   border: 2px solid;
+}
+
+.scanner-dark {
+  background: #171717;
+  border-color: #2A342A;
+}
+
+.scanner-light {
+  background: #F8F9FA;
+  border-color: #E5E7EB;
 }
 
 .camera-error,
@@ -788,40 +709,6 @@ export default {
   margin-top: 0.5rem;
 }
 
-.scanner-dark {
-  background: #171717;
-  border-color: #2A342A;
-}
-
-.scanner-light {
-  background: #F8F9FA;
-  border-color: #E5E7EB;
-}
-
-.scan-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(12, 12, 12, 0.8);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  backdrop-filter: blur(4px);
-}
-
-.scan-overlay-text {
-  color: white;
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0.5rem 0 0;
-}
-
-/* Scanning Frame */
 .scanning-frame {
   position: absolute;
   top: 50%;
@@ -837,38 +724,14 @@ export default {
   position: absolute;
   width: 30px;
   height: 30px;
-  border: 3px solid #15DE72;
+  border: 3px solid #F7931A;
 }
 
-.frame-corner.top-left {
-  top: 0;
-  left: 0;
-  border-right: none;
-  border-bottom: none;
-}
+.frame-corner.top-left { top: 0; left: 0; border-right: none; border-bottom: none; }
+.frame-corner.top-right { top: 0; right: 0; border-left: none; border-bottom: none; }
+.frame-corner.bottom-left { bottom: 0; left: 0; border-right: none; border-top: none; }
+.frame-corner.bottom-right { bottom: 0; right: 0; border-left: none; border-top: none; }
 
-.frame-corner.top-right {
-  top: 0;
-  right: 0;
-  border-left: none;
-  border-bottom: none;
-}
-
-.frame-corner.bottom-left {
-  bottom: 0;
-  left: 0;
-  border-right: none;
-  border-top: none;
-}
-
-.frame-corner.bottom-right {
-  bottom: 0;
-  right: 0;
-  border-left: none;
-  border-top: none;
-}
-
-/* Footer */
 .card-footer {
   padding: 1rem;
 }
@@ -881,74 +744,9 @@ export default {
   font-weight: 500;
 }
 
-/* Dialog Styling */
-.name-dialog {
-  width: 100%;
-  max-width: 400px;
-  border-radius: 24px;
-}
-
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid;
-}
-
-.dialog-header {
-  border-bottom-color: #2A342A;
-}
-
-.close-btn {
-  width: 32px;
-  height: 32px;
-}
-
-.dialog-content {
-  padding: 1.5rem;
-}
-
-.wallet-name-input {
-  margin-bottom: 1rem;
-}
-
-.wallet-name-input :deep(.q-field__control) {
-  border-radius: 20px;
-  padding: 0.75rem 1rem;
-  font-family: Fustat, 'Inter', sans-serif;
-}
-
-.input-hint {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 0.5rem;
-}
-
-.dialog-actions {
-  padding: 1rem 1.5rem 1.5rem;
-  gap: 0.75rem;
-}
-
-.cancel-action-btn {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.continue-action-btn {
-  height: 40px;
-  border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  padding: 0 1.5rem;
-}
-
 /* Responsive Design */
 @media (max-width: 480px) {
-  .wallet-connect-page {
+  .nwc-setup-page {
     padding: 0.75rem;
   }
 
@@ -956,25 +754,23 @@ export default {
     max-width: 100%;
   }
 
-  .card-header {
-    padding: 1.25rem 1rem 0.75rem;
-  }
-
   .nwc-logo-bg {
     width: 80px;
     height: 80px;
-    padding: 1.25rem;
+  }
+
+  .nwc-logo-bg svg {
+    width: 42px;
+    height: 42px;
   }
 
   .welcome-title {
     font-size: 20px;
-    margin-bottom: 0.5rem;
   }
 
   .welcome-subtitle {
-    font-size: 12px;
-    margin-bottom: 1.5rem;
-    max-width: 280px;
+    font-size: 13px;
+    margin-bottom: 1.25rem;
   }
 
   .button-row {
@@ -994,41 +790,6 @@ export default {
   .scanning-frame {
     width: 180px;
     height: 180px;
-  }
-
-  .frame-corner {
-    width: 25px;
-    height: 25px;
-  }
-
-  .scanner-header {
-    align-items: center;
-  }
-
-  .scanner-title {
-    font-size: 18px;
-  }
-
-  .scanner-subtitle {
-    font-size: 11px;
-  }
-
-  .name-dialog {
-    max-width: 350px;
-    margin: 1rem;
-  }
-
-  .dialog-header,
-  .dialog-content {
-    padding: 1.25rem;
-  }
-
-  .dialog-actions {
-    padding: 1rem 1.25rem 1.25rem;
-  }
-
-  .input-hint {
-    font-size: 11px;
   }
 }
 </style>

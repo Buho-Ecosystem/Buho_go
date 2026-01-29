@@ -170,14 +170,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Address copied'),
-          position: 'bottom',
+          
           timeout: 2000
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom'
+          
         })
       }
     }

@@ -89,7 +89,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load contacts'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -139,7 +139,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Sent'),
-        position: 'bottom',
+        
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },

@@ -274,7 +274,7 @@ export default {
           type: 'negative',
           message: userMessage.title,
           caption: userMessage.description,
-          position: 'bottom'
+          
         });
       } finally {
         this.isLoadingAddress = false;
@@ -324,6 +324,34 @@ export default {
       }
     },
 
+    /**
+     * Poll for balance update after a processing claim
+     * Used when TRANSFER_LOCKED indicates background processing
+     */
+    startBalancePolling() {
+      let attempts = 0;
+      const maxAttempts = 10;
+      const intervalMs = 3000; // 3 seconds
+
+      const poll = setInterval(async () => {
+        attempts++;
+
+        try {
+          // Refresh wallet balance
+          if (this.walletStore.activeWalletId) {
+            await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+          }
+        } catch (error) {
+          console.warn('Balance poll error:', error.message);
+        }
+
+        // Stop after max attempts
+        if (attempts >= maxAttempts) {
+          clearInterval(poll);
+        }
+      }, intervalMs);
+    },
+
     async initiateClaimDeposit(deposit) {
       // Step 1: Get fee quote
       try {
@@ -350,7 +378,7 @@ export default {
           type: 'negative',
           message: userMessage.title,
           caption: userMessage.description,
-          position: 'bottom'
+          
         });
       }
     },
@@ -377,12 +405,33 @@ export default {
           this.claimingDeposit.outputIndex
         );
 
-        // Success
+        // Handle processing state (TRANSFER_LOCKED - claim is being processed in background)
+        if (result.processing) {
+          this.$q.notify({
+            type: 'info',
+            message: this.$t('Claim is being processed'),
+            caption: this.$t('Your balance will update shortly'),
+            icon: 'las la-sync'
+          });
+
+          // Remove from pending list (it will complete in background)
+          this.pendingDeposits = this.pendingDeposits.filter(
+            d => d.txId !== this.claimingDeposit.txId
+          );
+
+          // Start polling for balance update
+          this.startBalancePolling();
+
+          this.$emit('deposit-claimed', result);
+          this.showClaimDialog = false;
+          return;
+        }
+
+        // Immediate success
         this.$q.notify({
           type: 'positive',
           message: this.$t('Bitcoin added to wallet'),
-          caption: `+${this.formatAmount(result.amount)}`,
-          position: 'bottom'
+          caption: `+${this.formatAmount(result.amount)}`
         });
 
         // Remove claimed deposit from list
@@ -404,8 +453,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: userMessage.title,
-          caption: userMessage.description,
-          position: 'bottom'
+          caption: userMessage.description
         });
       } finally {
         this.isClaimingDeposit = false;
@@ -436,13 +484,13 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Address copied'),
-          position: 'bottom'
+          
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to copy'),
-          position: 'bottom'
+          
         });
       }
     },

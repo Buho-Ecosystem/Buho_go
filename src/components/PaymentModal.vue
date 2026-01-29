@@ -421,7 +421,7 @@ export default {
           type: 'warning',
           message,
           caption,
-          position: 'bottom',
+          
           timeout: 4000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -466,7 +466,7 @@ export default {
           type: 'negative',
           message: this.getPaymentErrorMessage(error),
           caption: this.getPaymentErrorCaption(error),
-          position: 'bottom',
+          
           timeout: 5000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -496,9 +496,10 @@ export default {
     async sendLightningPayment() {
       const walletStore = useWalletStore()
       const address = this.contactAddress
+      const walletType = walletStore.activeWalletType
 
       // Use Spark wallet if active
-      if (this.isActiveWalletSpark) {
+      if (walletType === 'spark') {
         const provider = walletStore.getActiveProvider()
 
         if (!provider) {
@@ -525,6 +526,37 @@ export default {
           const invoice = await this.fetchLNURLInvoice(address, this.amountInSats)
           const result = await provider.payInvoice({ invoice })
           console.log('Spark LNURL payment result:', result)
+          return result
+        } else {
+          throw new Error('UNSUPPORTED_PAYMENT_TYPE')
+        }
+      }
+
+      // Use LNBits wallet if active
+      if (walletType === 'lnbits') {
+        const provider = walletStore.getActiveProvider()
+
+        if (!provider) {
+          throw new Error('LNBITS_NOT_CONNECTED')
+        }
+
+        // Determine payment type and route accordingly
+        if (this.isLightningInvoice(address)) {
+          // Pay BOLT11 invoice
+          const result = await provider.payInvoice({ invoice: address })
+          console.log('LNBits invoice payment result:', result)
+          return result
+        } else if (this.isLightningAddress(address)) {
+          // Pay Lightning address - fetch invoice first
+          const invoice = await this.fetchLightningAddressInvoice(address, this.amountInSats, this.comment)
+          const result = await provider.payInvoice({ invoice })
+          console.log('LNBits Lightning address payment result:', result)
+          return result
+        } else if (this.isLNURL(address)) {
+          // Handle LNURL - fetch invoice and pay
+          const invoice = await this.fetchLNURLInvoice(address, this.amountInSats)
+          const result = await provider.payInvoice({ invoice })
+          console.log('LNBits LNURL payment result:', result)
           return result
         } else {
           throw new Error('UNSUPPORTED_PAYMENT_TYPE')
@@ -598,6 +630,54 @@ export default {
       return invoiceData.pr
     },
 
+    async fetchLightningAddressInvoice(address, amountSats, comment) {
+      const [username, domain] = address.split('@')
+      if (!username || !domain) {
+        throw new Error('Invalid Lightning address')
+      }
+
+      // Fetch LNURL endpoint info
+      const endpoint = `https://${domain}/.well-known/lnurlp/${username}`
+      const response = await fetch(endpoint)
+
+      if (!response.ok) {
+        throw new Error('Failed to resolve Lightning address')
+      }
+
+      const data = await response.json()
+      if (data.status === 'ERROR') {
+        throw new Error(data.reason || 'Lightning address error')
+      }
+
+      // Validate amount bounds
+      const minSats = Math.ceil((data.minSendable || 1000) / 1000)
+      const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000)
+      if (amountSats < minSats || amountSats > maxSats) {
+        throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`)
+      }
+
+      // Build callback URL with amount (and comment if allowed)
+      const amountMsats = amountSats * 1000
+      let callbackUrl = `${data.callback}${data.callback.includes('?') ? '&' : '?'}amount=${amountMsats}`
+
+      if (comment && data.commentAllowed && comment.length <= data.commentAllowed) {
+        callbackUrl += `&comment=${encodeURIComponent(comment)}`
+      }
+
+      // Request the invoice
+      const invoiceResponse = await fetch(callbackUrl)
+      if (!invoiceResponse.ok) {
+        throw new Error('Failed to get invoice from Lightning address')
+      }
+
+      const invoiceData = await invoiceResponse.json()
+      if (invoiceData.status === 'ERROR') {
+        throw new Error(invoiceData.reason || 'Invoice generation failed')
+      }
+
+      return invoiceData.pr
+    },
+
     decodeLNURL(lnurl) {
       // Remove prefix if present
       const input = lnurl.toLowerCase().replace('lightning:', '')
@@ -644,6 +724,8 @@ export default {
           return this.$t('No wallet connected')
         case 'SPARK_NOT_CONNECTED':
           return this.$t('Spark wallet not unlocked')
+        case 'LNBITS_NOT_CONNECTED':
+          return this.$t('LNBits wallet not connected')
         case 'INSUFFICIENT_BALANCE':
           return this.$t('Insufficient balance')
         case 'PAYMENT_FAILED':

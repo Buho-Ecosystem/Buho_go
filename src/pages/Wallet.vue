@@ -62,7 +62,21 @@
         :class="$q.dark.isActive ? 'wallet-badge-dark' : 'wallet-badge-light'"
         @click="openWalletManagement"
       >
-        <q-icon name="las la-wallet" size="12px" class="wallet-badge-icon" />
+        <!-- Spark Logo -->
+        <svg v-if="activeWallet.type === 'spark'" width="12" height="11" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
+        </svg>
+        <!-- NWC Logo -->
+        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+          <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
+          <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
+        </svg>
+        <!-- LNBits Logo -->
+        <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+          <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
+        </svg>
+        <!-- Default wallet icon -->
+        <q-icon v-else name="las la-wallet" size="12px" class="wallet-badge-icon" />
         <span class="wallet-badge-text">{{ activeWallet.name }}</span>
       </div>
 
@@ -184,8 +198,28 @@
             >
               <!-- Avatar -->
               <div class="switch-avatar">
-                <div class="switch-avatar-circle" :class="getWalletColorClass(wallet)">
-                  <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-wallet'" size="20px" />
+                <div class="switch-avatar-circle switch-avatar-black">
+                  <!-- Spark Logo -->
+                  <svg v-if="wallet.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
+                  </svg>
+                  <!-- NWC Logo -->
+                  <svg v-else-if="wallet.type === 'nwc'" width="20" height="20" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_switch_grad)"/>
+                    <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
+                    <defs>
+                      <linearGradient id="nwc_switch_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#FFCA4A"/>
+                        <stop offset="1" stop-color="#F7931A"/>
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <!-- LNBits Logo -->
+                  <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
+                  </svg>
+                  <!-- Default wallet icon -->
+                  <q-icon v-else name="las la-wallet" size="20px" />
                 </div>
                 <div
                   class="switch-status-dot"
@@ -199,9 +233,22 @@
                   {{ wallet.name }}
                 </div>
                 <div class="switch-meta-row">
-                  <div class="switch-type-badge" :class="wallet.type === 'spark' ? 'type-spark' : 'type-nwc'">
-                    <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-plug'" size="9px" />
-                    <span>{{ wallet.type === 'spark' ? 'Spark' : 'NWC' }}</span>
+                  <div class="switch-type-badge" :class="getWalletTypeBadgeClass(wallet.type)">
+                    <!-- Spark mini logo -->
+                    <svg v-if="wallet.type === 'spark'" width="9" height="9" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
+                    </svg>
+                    <!-- NWC mini logo -->
+                    <svg v-else-if="wallet.type === 'nwc'" width="9" height="9" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
+                      <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
+                    </svg>
+                    <!-- LNBits mini logo -->
+                    <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
+                    </svg>
+                    <q-icon v-else name="las la-wallet" size="9px" />
+                    <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
                   <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
                 </div>
@@ -562,13 +609,19 @@ export default {
       }
       return true;
     },
-    // Show fee estimate for Spark wallet Lightning payments (not Spark-to-Spark transfers)
+    // Show fee estimate row only when we have actual fee data to display
+    // - Spark wallet: Show when we have an estimate OR it's a free Spark transfer
+    // - NWC/LNBits: Never show (no fee estimation available)
     showFeeEstimate() {
       if (!this.pendingPayment) return false;
       if (!this.walletStore.isActiveWalletSpark) return false;
-      // Show for Lightning invoice, Lightning address, or LNURL payments
-      const paymentTypes = ['lightning_invoice', 'invoice', 'lightning_address', 'lnurl', 'lnurl_pay'];
-      return paymentTypes.includes(this.pendingPayment.type) || this.pendingPayment.sparkAddress;
+
+      // Show "Free" for Spark-to-Spark transfers
+      if (this.pendingPayment.sparkAddress) return true;
+
+      // Show when estimating or when we have an actual estimate
+      // Don't show empty row when fee is null (e.g., LNURL before invoice is fetched)
+      return this.isEstimatingFee || this.estimatedFee !== null;
     },
     // Computed properties from Pinia store for wallet switcher
     storeWallets() {
@@ -771,7 +824,7 @@ export default {
         type: 'positive',
         message: this.$t('Bitcoin withdrawal initiated'),
         caption: this.$t('Your withdrawal is being processed'),
-        position: 'bottom',
+        
         timeout: 4000,
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
@@ -836,7 +889,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet switched'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -850,7 +903,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -865,6 +918,34 @@ export default {
       const colors = ['wallet-green', 'wallet-blue', 'wallet-purple', 'wallet-orange', 'wallet-red'];
       const index = wallet.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
       return colors[index];
+    },
+    getWalletIcon(type) {
+      switch (type) {
+        case 'spark': return 'las la-fire';
+        case 'lnbits': return 'las la-server';
+        default: return 'las la-wallet';
+      }
+    },
+    getWalletBadgeIcon(type) {
+      switch (type) {
+        case 'spark': return 'las la-fire';
+        case 'lnbits': return 'las la-server';
+        default: return 'las la-plug';
+      }
+    },
+    getWalletTypeLabel(type) {
+      switch (type) {
+        case 'spark': return 'Spark';
+        case 'lnbits': return 'LNBits';
+        default: return 'NWC';
+      }
+    },
+    getWalletTypeBadgeClass(type) {
+      switch (type) {
+        case 'spark': return 'type-spark';
+        case 'lnbits': return 'type-lnbits';
+        default: return 'type-nwc';
+      }
     },
     async initializeWallet() {
       try {
@@ -931,7 +1012,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet unlocked'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -947,7 +1028,7 @@ export default {
         type: 'warning',
         message: this.$t('Wallet locked'),
         caption: this.$t('Some features require PIN unlock'),
-        position: 'bottom',
+        
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
@@ -987,6 +1068,30 @@ export default {
             if (!err.message?.includes('PIN')) {
               console.warn('Balance refresh skipped:', err.message);
             }
+          }
+          return;
+        }
+
+        // Check if active wallet is LNBits
+        if (this.walletStore.isActiveWalletLNBits) {
+          try {
+            const provider = this.walletStore.getActiveProvider();
+            if (provider) {
+              const balanceResult = await provider.getBalance();
+              this.walletState.balance = balanceResult.balance;
+
+              // Update wallet in store
+              const activeWallet = this.walletState.connectedWallets.find(
+                w => w.id === this.walletState.activeWalletId
+              );
+              if (activeWallet) {
+                activeWallet.balance = balanceResult.balance;
+              }
+
+              localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+            }
+          } catch (err) {
+            console.warn('LNBits balance refresh failed:', err.message);
           }
           return;
         }
@@ -1338,8 +1443,9 @@ export default {
             description: parsedInvoice.description
           };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
-          // For Spark wallets, just pass through - we'll process during payment
-          if (this.walletStore.isActiveWalletSpark) {
+          const walletType = this.walletStore.activeWalletType;
+          // For Spark and LNBits wallets, just pass through - we'll process during payment
+          if (walletType === 'spark' || walletType === 'lnbits') {
             this.pendingPayment = {
               ...paymentData,
               lnurl: paymentData.data
@@ -1356,11 +1462,12 @@ export default {
             this.pendingPayment = processedLnurl;
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
-          // Fetch LNURL info for both Spark and NWC wallets
+          // Fetch LNURL info for all wallet types
           const lnurlInfo = await this.fetchLightningAddressInfo(paymentData.data);
+          const walletType = this.walletStore.activeWalletType;
 
-          if (this.walletStore.isActiveWalletSpark) {
-            // For Spark wallets, include LNURL info for amount handling
+          if (walletType === 'spark' || walletType === 'lnbits') {
+            // For Spark and LNBits wallets, include LNURL info for amount handling
             this.pendingPayment = {
               ...paymentData,
               lightningAddress: paymentData.data,
@@ -1402,7 +1509,7 @@ export default {
           type: 'negative',
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1453,7 +1560,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Payment received'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
@@ -1584,8 +1691,11 @@ export default {
         let result;
 
         // Route payment based on wallet type
-        if (this.walletStore.isActiveWalletSpark) {
+        const walletType = this.walletStore.activeWalletType;
+        if (walletType === 'spark') {
           result = await this.sendSparkPayment(amount, comment);
+        } else if (walletType === 'lnbits') {
+          result = await this.sendLNBitsPayment(amount, comment);
         } else {
           result = await this.sendNWCPayment(amount, comment);
         }
@@ -1610,7 +1720,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Sent'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -1634,7 +1744,7 @@ export default {
           type: 'negative',
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -1659,7 +1769,8 @@ export default {
         return await provider.payInvoice({
           invoice: this.pendingPayment.invoice,
           preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
-          amountSats: isZeroAmountInvoice ? amount : null // Only pass amount for zero-amount invoices
+          amountSats: isZeroAmountInvoice ? amount : null, // Only pass amount for zero-amount invoices
+          maxFee: this.estimatedFee || undefined // Pass UI-displayed fee estimate
         });
       }
 
@@ -1674,7 +1785,8 @@ export default {
         const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
         return await provider.payInvoice({
           invoice,
-          preferSpark: true
+          preferSpark: true,
+          maxFee: this.estimatedFee || undefined // Pass UI-displayed fee estimate
           // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
       }
@@ -1690,6 +1802,38 @@ export default {
 
       const lightningService = new LightningPaymentService(activeWallet.nwcString);
       return await lightningService.sendPayment(this.pendingPayment, amount, comment);
+    },
+
+    async sendLNBitsPayment(amount, comment) {
+      const provider = await this.walletStore.getProvider(this.walletStore.activeWalletId);
+      if (!provider) {
+        throw new Error('LNBits wallet not connected');
+      }
+
+      // Lightning invoice payment
+      if (this.pendingPayment.invoice) {
+        return await provider.payInvoice({
+          invoice: this.pendingPayment.invoice
+        });
+      }
+
+      // Lightning address - fetch invoice first then pay
+      if (this.pendingPayment.lightningAddress) {
+        const invoice = await this.fetchLightningAddressInvoice(
+          this.pendingPayment.lightningAddress,
+          amount,
+          comment
+        );
+        return await provider.payInvoice({ invoice });
+      }
+
+      // LNURL - fetch invoice then pay
+      if (this.pendingPayment.lnurl) {
+        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
+        return await provider.payInvoice({ invoice });
+      }
+
+      throw new Error('Unsupported payment type for LNBits wallet');
     },
 
     // Helper: Check if input is a Lightning invoice
@@ -1734,7 +1878,7 @@ export default {
           this.$q.notify({
             type: 'warning',
             message: this.$t('Please enter a name'),
-            position: 'bottom'
+            
           });
           return;
         }
@@ -1750,7 +1894,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact saved'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -1759,7 +1903,7 @@ export default {
           type: 'negative',
           message: this.$t('Failed to save contact'),
           caption: this.$t('Please try again'),
-          position: 'bottom'
+          
         });
       }
     },
@@ -1859,6 +2003,61 @@ export default {
     },
 
     /**
+     * Fetch a Lightning invoice from a Lightning address
+     * @param {string} address - Lightning address (user@domain)
+     * @param {number} amountSats - Amount in satoshis
+     * @param {string} [comment] - Optional comment
+     * @returns {Promise<string>} Lightning invoice (bolt11)
+     */
+    async fetchLightningAddressInvoice(address, amountSats, comment) {
+      const [username, domain] = address.split('@');
+      if (!username || !domain) {
+        throw new Error('Invalid Lightning address');
+      }
+
+      // Fetch LNURL endpoint info
+      const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
+      const response = await fetch(endpoint);
+
+      if (!response.ok) {
+        throw new Error('Failed to resolve Lightning address');
+      }
+
+      const data = await response.json();
+      if (data.status === 'ERROR') {
+        throw new Error(data.reason || 'Lightning address error');
+      }
+
+      // Validate amount bounds
+      const minSats = Math.ceil((data.minSendable || 1000) / 1000);
+      const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
+      if (amountSats < minSats || amountSats > maxSats) {
+        throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
+      }
+
+      // Build callback URL with amount (and comment if allowed)
+      const amountMsats = amountSats * 1000;
+      let callbackUrl = `${data.callback}${data.callback.includes('?') ? '&' : '?'}amount=${amountMsats}`;
+
+      if (comment && data.commentAllowed && comment.length <= data.commentAllowed) {
+        callbackUrl += `&comment=${encodeURIComponent(comment)}`;
+      }
+
+      // Request the invoice
+      const invoiceResponse = await fetch(callbackUrl);
+      if (!invoiceResponse.ok) {
+        throw new Error('Failed to get invoice from Lightning address');
+      }
+
+      const invoiceData = await invoiceResponse.json();
+      if (invoiceData.status === 'ERROR') {
+        throw new Error(invoiceData.reason || 'Invoice generation failed');
+      }
+
+      return invoiceData.pr;
+    },
+
+    /**
      * Parse LNURL metadata to extract description
      */
     parseLnurlMetadata(metadata) {
@@ -1920,58 +2119,66 @@ export default {
     },
 
     async updateFeeEstimate() {
-      // Only estimate fees for Spark wallet Lightning payments
-      if (!this.pendingPayment || !this.walletStore.isActiveWalletSpark) {
+      // Reset fee state
+      this.estimatedFee = null;
+      this.isEstimatingFee = false;
+
+      if (!this.pendingPayment) {
+        return;
+      }
+
+      // === SPARK WALLET: Use SDK fee estimation ===
+      if (this.walletStore.isActiveWalletSpark) {
+        await this.updateSparkFeeEstimate();
+        return;
+      }
+
+      // === NWC WALLET: No fee estimation available ===
+      // Alby SDK / NIP-47 does not provide fee estimation
+      if (this.walletStore.isActiveWalletNWC) {
         this.estimatedFee = null;
-        this.isEstimatingFee = false;
         return;
       }
 
-      // Spark-to-Spark transfers are free
-      if (this.pendingPayment.sparkAddress) {
+      // === LNBITS WALLET: No fee estimation available ===
+      // LNBits API does not provide routing fee estimation
+      if (this.walletStore.isActiveWalletLNBits) {
         this.estimatedFee = null;
-        this.isEstimatingFee = false;
         return;
-      }
-
-      // Only estimate for Lightning invoices
-      if (!this.pendingPayment.invoice) {
-        // For LNURL/Lightning Address, calculate estimated fee based on amount
-        const amount = this.getPaymentAmountForFee();
-        if (amount > 0) {
-          this.estimatedFee = this.calculateRecommendedFee(amount);
-        } else {
-          this.estimatedFee = null;
-        }
-        this.isEstimatingFee = false;
-        return;
-      }
-
-      // Get fee estimate from Spark SDK for Lightning invoices
-      this.isEstimatingFee = true;
-      try {
-        const provider = await this.walletStore.ensureSparkConnected();
-        const estimate = await provider.getLightningSendFeeEstimate(this.pendingPayment.invoice);
-        this.estimatedFee = estimate.estimatedFeeSats;
-      } catch (error) {
-        console.warn('Fee estimation failed:', error.message);
-        // Fall back to calculated fee
-        const amount = this.pendingPayment.amount || this.getPaymentAmountForFee();
-        if (amount > 0) {
-          this.estimatedFee = this.calculateRecommendedFee(amount);
-        } else {
-          this.estimatedFee = null;
-        }
-      } finally {
-        this.isEstimatingFee = false;
       }
     },
 
-    // Calculate recommended fee for Lightning payments (17 basis points, min 5 sats)
-    calculateRecommendedFee(amountSats) {
-      const minFee = 5;
-      const bpsFee = Math.ceil(amountSats * 0.0017);
-      return Math.max(minFee, bpsFee);
+    /**
+     * Spark-specific fee estimation using SDK
+     * Only shows fees when SDK can provide actual estimate
+     */
+    async updateSparkFeeEstimate() {
+      // Spark-to-Spark transfers are free (no fee display needed)
+      if (this.pendingPayment.sparkAddress) {
+        this.estimatedFee = null;
+        return;
+      }
+
+      // For Lightning invoices, get fee estimate from Spark SDK
+      if (this.pendingPayment.invoice) {
+        this.isEstimatingFee = true;
+        try {
+          const provider = await this.walletStore.ensureSparkConnected();
+          const estimate = await provider.getLightningSendFeeEstimate(this.pendingPayment.invoice);
+          this.estimatedFee = estimate.estimatedFeeSats;
+        } catch (error) {
+          console.warn('Spark fee estimation failed:', error.message);
+          // No fallback - don't show estimated fee if SDK fails
+          this.estimatedFee = null;
+        } finally {
+          this.isEstimatingFee = false;
+        }
+        return;
+      }
+
+      // For LNURL/Lightning Address, we cannot estimate fee without the invoice
+      // The fee will be estimated internally when paying (with buffer)
+      this.estimatedFee = null;
     },
 
     getPaymentAmountForFee() {
@@ -3317,6 +3524,10 @@ export default {
   color: white;
 }
 
+.switch-avatar-black {
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
 .wallet-green {
   background: linear-gradient(135deg, #15DE72, #059573);
 }
@@ -3412,11 +3623,15 @@ export default {
 }
 
 .type-spark {
-  background: linear-gradient(135deg, #15DE72, #059573);
+  background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
 }
 
 .type-nwc {
-  background: linear-gradient(135deg, #6B7280, #4B5563);
+  background: linear-gradient(135deg, #FFCA4A, #F7931A);
+}
+
+.type-lnbits {
+  background: linear-gradient(135deg, #FF1FE1, #C919B0);
 }
 
 .switch-tag {

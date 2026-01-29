@@ -572,8 +572,28 @@
               >
                 <!-- Wallet Avatar -->
                 <div class="wallet-avatar">
-                  <div class="wallet-avatar-circle" :class="getWalletAvatarClass(wallet)">
-                    <q-icon :name="getWalletTypeIcon(wallet)" size="22px"/>
+                  <div class="wallet-avatar-circle wallet-avatar-black">
+                    <!-- Spark Logo -->
+                    <svg v-if="wallet.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
+                    </svg>
+                    <!-- NWC Logo -->
+                    <svg v-else-if="wallet.type === 'nwc'" width="20" height="20" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_settings_grad)"/>
+                      <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
+                      <defs>
+                        <linearGradient id="nwc_settings_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
+                          <stop stop-color="#FFCA4A"/>
+                          <stop offset="1" stop-color="#F7931A"/>
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <!-- LNBits Logo -->
+                    <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
+                    </svg>
+                    <!-- Default wallet icon -->
+                    <q-icon v-else name="las la-wallet" size="20px" color="white"/>
                   </div>
                   <div
                     class="wallet-status-dot"
@@ -594,8 +614,21 @@
                     />
                   </div>
                   <div class="wallet-meta-row">
-                    <div class="wallet-type-badge" :class="wallet.type === 'spark' ? 'type-spark' : 'type-nwc'">
-                      <q-icon :name="wallet.type === 'spark' ? 'las la-fire' : 'las la-plug'" size="10px" />
+                    <div class="wallet-type-badge" :class="getTypeBadgeClass(wallet.type)">
+                      <!-- Spark mini logo -->
+                      <svg v-if="wallet.type === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
+                      </svg>
+                      <!-- NWC mini logo -->
+                      <svg v-else-if="wallet.type === 'nwc'" width="10" height="10" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
+                        <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
+                      </svg>
+                      <!-- LNBits mini logo -->
+                      <svg v-else-if="wallet.type === 'lnbits'" width="9" height="10" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
+                      </svg>
+                      <q-icon v-else name="las la-wallet" size="10px" />
                       <span>{{ getWalletTypeLabel(wallet) }}</span>
                     </div>
                     <div v-if="wallet.id === activeWalletId" class="wallet-tag tag-active">{{ $t('Active') }}</div>
@@ -689,7 +722,9 @@
               @click="navigateToCreateSpark"
             >
               <div class="option-icon spark-option-icon">
-                <q-icon name="las la-bolt" size="24px"/>
+                <svg width="24" height="23" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
+                </svg>
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -708,7 +743,9 @@
               @click="navigateToRestoreSpark"
             >
               <div class="option-icon restore-option-icon">
-                <q-icon name="las la-redo-alt" size="24px"/>
+                <svg width="24" height="23" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
+                </svg>
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -724,73 +761,70 @@
             <q-separator class="q-my-md" :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'"/>
           </div>
 
-          <!-- NWC Wallet Section -->
-          <div class="section-label q-mb-sm" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-            {{ $t('Custodial Wallet (NWC)') }}
+          <!-- LNBits Wallet Section -->
+          <div class="wallet-type-section q-mb-md">
+            <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('LNBits Wallet') }}
+            </div>
+
+            <div
+              class="wallet-type-option"
+              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              @click="navigateToLNBits"
+            >
+              <div class="option-icon lnbits-option-icon">
+                <svg width="20" height="24" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
+                </svg>
+              </div>
+              <div class="option-content">
+                <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ $t('Connect LNBits') }}
+                </div>
+                <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ $t('Link via server URL and API key') }}
+                </div>
+              </div>
+              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+            </div>
+
           </div>
 
-          <q-item dense style="padding: 0px">
-            <q-item-section>
-              <q-item-label>{{ $t('Wallet Name') }}</q-item-label>
-              <q-item-label class="q-mt-sm">
-                <q-input
-                  v-model="newWalletName"
-                  :placeholder="$t('Enter a name for your wallet')"
-                  :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-                  :rules="[val => !!val || $t('Wallet name is required')]"
-                  borderless
-                  input-class="q-px-md"
-                  hide-bottom-space
-                  dense
-                />
-              </q-item-label>
-            </q-item-section>
-          </q-item>
+          <!-- NWC Wallet Section -->
+          <div class="wallet-type-section">
+            <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Custodial Wallet (NWC)') }}
+            </div>
 
-          <q-item style="padding: 0px" class="q-mt-sm">
-            <q-item-section>
-              <q-item-label>{{ $t('NWC Connection String') }}</q-item-label>
-              <q-item-label class="q-mt-sm">
-                <q-input
-                  v-model="newWalletNwc"
-                  :placeholder="$t('nostr+walletconnect://...')"
-                  :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-                  :rules="[validateNwcString]"
-                  hide-bottom-space
-                  input-class="q-px-md"
-                  borderless
-                  dense
-                />
-              </q-item-label>
-            </q-item-section>
-          </q-item>
-
-          <div class="input-help">
-            <q-icon name="las la-info-circle" class="help-icon"/>
-            <span :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Get your NWC string from your Lightning wallet\'s settings') }}
-            </span>
+            <div
+              class="wallet-type-option"
+              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              @click="navigateToNWC"
+            >
+              <div class="option-icon nwc-option-icon">
+                <svg width="24" height="24" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_add_grad)"/>
+                  <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
+                  <defs>
+                    <linearGradient id="nwc_add_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#FFCA4A"/>
+                      <stop offset="1" stop-color="#F7931A"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="option-content">
+                <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ $t('Connect NWC Wallet') }}
+                </div>
+                <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ $t('Link via Nostr Wallet Connect') }}
+                </div>
+              </div>
+              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+            </div>
           </div>
         </q-card-section>
-
-        <q-card-actions align="right" class="dialog-actions">
-          <q-btn
-            flat
-            :label="$t('Cancel')"
-            v-close-popup
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
-          <q-btn
-            flat
-            :label="$t('Add Wallet')"
-            @click="addNewWallet"
-            :loading="isAddingWallet"
-            :disable="!isValidNewWallet"
-            class="continue-action-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            no-caps
-          />
-        </q-card-actions>
       </q-card>
     </q-dialog>
 
@@ -1365,7 +1399,7 @@ export default {
         message: value
           ? this.$t('Amount format changed to BIP-177 (₿)')
           : this.$t('Amount format changed to Legacy (sats)'),
-        position: 'bottom',
+        
         timeout: 2000
       })
     },
@@ -1420,7 +1454,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet connected'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1428,7 +1462,7 @@ export default {
           type: 'negative',
           message: this.$t('Connection failed'),
           caption: this.$t('Please check your connection and try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
@@ -1457,7 +1491,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Reconnected'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1465,7 +1499,7 @@ export default {
           type: 'negative',
           message: this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
@@ -1481,7 +1515,7 @@ export default {
         this.$q.notify({
           type: 'warning',
           message: this.$t('Please enter your 6-digit PIN'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
         return
@@ -1496,7 +1530,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet unlocked'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1505,7 +1539,7 @@ export default {
           type: 'negative',
           message: isInvalidPin ? this.$t('Incorrect PIN') : this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
         // Clear PIN on error
@@ -1527,7 +1561,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet switched'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1535,7 +1569,7 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
           caption: this.$t('Please try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -1562,7 +1596,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('NWC connections removed'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -1571,7 +1605,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Spark wallet deleted'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -1580,7 +1614,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Wallet removed'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -1597,7 +1631,7 @@ export default {
           type: 'negative',
           message: this.$t('Action failed'),
           caption: this.$t('Please try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -1666,7 +1700,7 @@ export default {
           type: 'warning',
           message: this.$t('Couldn\'t generate invoice'),
           caption: this.$t('Copy the lightning address instead: {address}', { address: this.donationAddress }),
-          position: 'bottom',
+          
           timeout: 10000,
           actions: [
             {
@@ -1677,7 +1711,7 @@ export default {
                 this.$q.notify({
                   type: 'positive',
                   message: this.$t('Address copied'),
-                  position: 'bottom'
+                  
                 });
               }
             }
@@ -1698,7 +1732,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Invoice copied'),
-        position: 'bottom',
+        
         timeout: 2000
       });
     },
@@ -1780,7 +1814,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN saved'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } else {
@@ -1789,7 +1823,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Incorrect PIN'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           return;
@@ -1804,7 +1838,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN updated'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1838,7 +1872,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Notifications not available'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1913,7 +1947,7 @@ export default {
           message: urlToTest ?
             this.$t('API settings saved') :
             this.$t('Using default API'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -1923,7 +1957,7 @@ export default {
           type: 'negative',
           message: this.$t('API connection failed'),
           caption: this.$t('Please check the URL and try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -1950,7 +1984,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Language updated'),
-        position: 'bottom',
+        
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
@@ -1968,7 +2002,21 @@ export default {
     },
 
     getWalletTypeLabel(wallet) {
-      return wallet.type === 'spark' ? 'Spark' : 'NWC';
+      switch (wallet.type) {
+        case 'spark': return 'Spark';
+        case 'lnbits': return 'LNBits';
+        case 'nwc':
+        default: return 'NWC';
+      }
+    },
+
+    getTypeBadgeClass(type) {
+      switch (type) {
+        case 'spark': return 'type-spark';
+        case 'lnbits': return 'type-lnbits';
+        case 'nwc':
+        default: return 'type-nwc';
+      }
     },
 
     async copySparkAddress() {
@@ -1978,14 +2026,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Spark address copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -2003,7 +2051,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Please enter your PIN'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2017,7 +2065,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Incorrect PIN'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.sparkPinInput = '';
@@ -2044,7 +2092,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Please enter your current PIN'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2054,7 +2102,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('New PIN must be 6 digits'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2064,7 +2112,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('PINs do not match'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2076,7 +2124,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN changed successfully'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.showChangePinDialog = false;
@@ -2084,7 +2132,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: error.message || this.$t('Failed to change PIN'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2120,6 +2168,16 @@ export default {
     navigateToRestoreSpark() {
       this.showAddWalletDialog = false;
       this.$router.push('/spark-restore');
+    },
+
+    navigateToLNBits() {
+      this.showAddWalletDialog = false;
+      this.$router.push('/lnbits-setup');
+    },
+
+    navigateToNWC() {
+      this.showAddWalletDialog = false;
+      this.$router.push('/nwc-setup');
     }
   }
 }
@@ -3159,6 +3217,10 @@ export default {
   background: linear-gradient(135deg, #EF4444, #DC2626);
 }
 
+.wallet-avatar-black {
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
 .wallet-status-dot {
   position: absolute;
   bottom: 0;
@@ -3258,11 +3320,15 @@ export default {
 }
 
 .type-spark {
-  background: linear-gradient(135deg, #15DE72, #059573);
+  background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
 }
 
 .type-nwc {
-  background: linear-gradient(135deg, #6B7280, #4B5563);
+  background: linear-gradient(135deg, #FFCA4A, #F7931A);
+}
+
+.type-lnbits {
+  background: linear-gradient(135deg, #FF1FE1, #C919B0);
 }
 
 .wallet-tag {
@@ -3812,11 +3878,19 @@ export default {
 }
 
 .spark-option-icon {
-  background: linear-gradient(135deg, #F59E0B, #EAB308);
+  background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
 }
 
 .restore-option-icon {
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+  background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
+}
+
+.lnbits-option-icon {
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
+.nwc-option-icon {
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
 }
 
 .option-content {

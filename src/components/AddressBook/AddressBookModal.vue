@@ -370,7 +370,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact saved'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         } else {
@@ -378,7 +378,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact added'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         }
@@ -391,7 +391,7 @@ export default {
           type: 'negative',
           message: errorMessage.title,
           caption: errorMessage.caption,
-          position: 'bottom',
+          
           timeout: 4000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })

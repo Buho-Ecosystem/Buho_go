@@ -542,7 +542,7 @@ export default {
           type: 'negative',
           message: this.$t('Invalid QR code'),
           caption: this.$t('Please try a different code'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
@@ -585,7 +585,7 @@ export default {
             type: 'warning',
             message: this.$t('Spark address detected'),
             caption: this.$t('Switch to Spark wallet to pay this address'),
-            position: 'bottom',
+            
             timeout: 4000,
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -597,7 +597,7 @@ export default {
             type: 'warning',
             message: this.$t('Bitcoin address detected'),
             caption: this.$t('Switch to Spark wallet to send to Bitcoin addresses'),
-            position: 'bottom',
+            
             timeout: 4000,
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -704,7 +704,7 @@ export default {
           this.$q.notify({
             type: 'info',
             message: this.$t('Nothing to paste'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
@@ -713,7 +713,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t access clipboard'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -739,7 +739,7 @@ export default {
           type: 'warning',
           message: this.$t('Cannot pay this contact'),
           caption: this.getContactDisabledReason(contact),
-          position: 'bottom',
+          
           timeout: 3500,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -842,7 +842,7 @@ export default {
           type: 'negative',
           message: this.$t('Invalid payment request'),
           caption: this.$t('Please check the format and try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;

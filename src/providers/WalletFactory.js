@@ -7,6 +7,7 @@
 
 import { SparkWalletProvider } from './SparkWalletProvider';
 import { NWCWalletProvider } from './NWCWalletProvider';
+import { LNBitsWalletProvider } from './LNBitsWalletProvider';
 import { WalletProvider } from './WalletProvider';
 
 /**
@@ -45,6 +46,22 @@ export function createWalletProvider(wallet) {
         ...wallet
       });
 
+    case 'lnbits':
+      if (!wallet.connectionData?.serverUrl || !wallet.connectionData?.adminKey) {
+        throw new Error('LNBits wallet requires serverUrl and adminKey');
+      }
+      if (!wallet.connectionData?.walletId) {
+        throw new Error('LNBits wallet requires walletId');
+      }
+      return new LNBitsWalletProvider(wallet.id, {
+        name: wallet.name,
+        serverUrl: wallet.connectionData.serverUrl,
+        walletId: wallet.connectionData.walletId,
+        adminKey: wallet.connectionData.adminKey,
+        metadata: wallet.metadata,
+        ...wallet
+      });
+
     default:
       throw new Error(`Unknown wallet type: ${type}`);
   }
@@ -63,6 +80,11 @@ export function inferWalletType(wallet) {
   // Check for Spark-specific properties
   if (wallet.connectionData?.encryptedMnemonic) {
     return 'spark';
+  }
+
+  // Check for LNBits-specific properties
+  if (wallet.connectionData?.serverUrl && wallet.connectionData?.walletId && wallet.connectionData?.adminKey) {
+    return 'lnbits';
   }
 
   // Check for NWC-specific properties
@@ -170,7 +192,8 @@ export function parsePaymentDestination(input) {
  */
 export const WALLET_TYPES = {
   SPARK: 'spark',
-  NWC: 'nwc'
+  NWC: 'nwc',
+  LNBITS: 'lnbits'
 };
 
 /**

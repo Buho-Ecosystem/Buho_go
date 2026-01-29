@@ -394,6 +394,9 @@ export default {
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
     },
+    isLNBitsWallet() {
+      return this.walletStore.isActiveWalletLNBits;
+    },
     sparkAddress() {
       return this.walletStore.activeSparkAddress;
     },
@@ -573,7 +576,7 @@ export default {
 
     /**
      * Start monitoring for payment confirmation
-     * Uses event-based for Spark (instant), polling for NWC
+     * Uses event-based for Spark (instant), polling for LNBits/NWC
      */
     async startPaymentMonitor() {
       if (!this.generatedInvoice?.payment_hash) {
@@ -586,6 +589,8 @@ export default {
 
       if (this.isSparkWallet) {
         await this.startSparkEventMonitor();
+      } else if (this.isLNBitsWallet) {
+        await this.startLNBitsPollingMonitor();
       } else {
         await this.startNWCPollingMonitor();
       }
@@ -712,6 +717,57 @@ export default {
     },
 
     /**
+     * Start LNBits payment monitoring using polling
+     * Uses the LNBits API to check payment status
+     */
+    async startLNBitsPollingMonitor() {
+      let rawProvider = null;
+
+      try {
+        rawProvider = this.walletStore.getActiveProvider();
+      } catch (error) {
+        console.warn('Could not get LNBits provider for payment monitoring:', error.message);
+        return;
+      }
+
+      if (!rawProvider) {
+        console.warn('No LNBits provider available for payment monitoring');
+        return;
+      }
+
+      // Wrap the LNBits provider with the expected interface
+      const wrappedProvider = {
+        lookupInvoice: async (hash) => {
+          try {
+            // LNBits lookupInvoice expects a string payment hash
+            const result = await rawProvider.lookupInvoice(hash);
+            return result;
+          } catch (error) {
+            console.warn('LNBits lookupInvoice error:', error.message);
+            return { paid: false };
+          }
+        }
+      };
+
+      // Start polling for payment confirmation
+      this.paymentMonitor = createPaymentMonitor();
+
+      this.paymentMonitor.start({
+        invoice: {
+          payment_hash: this.generatedInvoice.payment_hash,
+          expires_at: this.generatedInvoice.expires_at,
+          amount: this.generatedInvoice.amount
+        },
+        provider: wrappedProvider,
+        onStatusChange: (status, data) => {
+          if (!this.isPaymentConfirmed) {
+            this.handlePaymentStatus(status, data);
+          }
+        }
+      });
+    },
+
+    /**
      * Handle payment status updates from monitor
      */
     handlePaymentStatus(status, data) {
@@ -747,7 +803,7 @@ export default {
             type: 'warning',
             message: this.$t('Invoice expired'),
             caption: this.$t('Please create a new invoice'),
-            position: 'bottom',
+            
             timeout: 4000,
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -865,8 +921,10 @@ export default {
 
         let invoice;
 
-        // Check if active wallet is Spark or NWC
-        if (this.isSparkWallet) {
+        const walletType = this.walletStore.activeWalletType;
+
+        // Check wallet type and use appropriate provider
+        if (walletType === 'spark') {
           // Use Spark wallet provider
           const provider = this.walletStore.getActiveProvider();
           if (!provider) {
@@ -881,8 +939,23 @@ export default {
             description: invoiceParams.description,
             expires_at: result.expiresAt
           };
+        } else if (walletType === 'lnbits') {
+          // Use LNBits wallet provider
+          const provider = this.walletStore.getActiveProvider();
+          if (!provider) {
+            throw new Error('LNBits wallet not connected');
+          }
+
+          const result = await provider.createInvoice(invoiceParams);
+          invoice = {
+            paymentRequest: result.paymentRequest,
+            payment_hash: result.paymentHash,
+            amount: this.amountInSats,
+            description: invoiceParams.description,
+            expires_at: result.expiresAt
+          };
         } else {
-          // Use NWC for non-Spark wallets
+          // Use NWC for NWC wallets
           const activeWallet = this.walletState.connectedWallets?.find(
             w => w.id === this.walletState.activeWalletId
           );
@@ -927,7 +1000,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Invoice ready'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -941,7 +1014,7 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t create invoice'),
           caption: this.$t('Please try again'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -959,7 +1032,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Invoice copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -967,7 +1040,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -986,14 +1059,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Address copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1007,14 +1080,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Spark address copied'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1033,7 +1106,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Shared'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } else {
@@ -1089,7 +1162,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Shared'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } else {
@@ -1098,7 +1171,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Invoice copied'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
@@ -1112,14 +1185,14 @@ export default {
             this.$q.notify({
               type: 'positive',
               message: this.$t('Invoice copied'),
-              position: 'bottom',
+              
               actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
             });
           } catch (copyError) {
             this.$q.notify({
               type: 'negative',
               message: this.$t('Couldn\'t share'),
-              position: 'bottom',
+              
               actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
             });
           }
