@@ -6,6 +6,9 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 
 [Live App](https://go.mybuho.de) | [Report Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
 
+<img width="1024" height="1536" alt="1000008822" src="https://github.com/user-attachments/assets/a4750386-cf4e-49d5-b1d9-8092b59219c9" />
+
+
 <br>
 
 ## Features
