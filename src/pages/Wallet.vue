@@ -45,11 +45,11 @@
         round
         class="float-right"
         :class="$q.dark.isActive ? 'dark-mode-btn-dark' : 'dark-mode-btn-light'"
-        @click="$q.dark.toggle()"
+        @click="showAddressBookQuick = true"
         padding="sm sm"
         style="border-radius: 12px"
-        aria-label="Toggle Dark Mode"
-        :icon="$q.dark.isActive ? 'las la-sun' : 'las la-moon'"
+        aria-label="Address Book"
+        icon="las la-address-book"
       >
       </q-btn>
     </q-toolbar>
@@ -301,6 +301,27 @@
       @transfer-complete="onTransferComplete"
     />
 
+    <!-- Address Book Quick Modal -->
+    <AddressBookQuickModal
+      v-model="showAddressBookQuick"
+      @pay-contact="handlePayContact"
+      @open-batch-send="showBatchSend = true"
+    />
+
+    <!-- Batch Send Modal -->
+    <BatchSendModal
+      v-model="showBatchSend"
+      @batch-completed="handleBatchCompleted"
+    />
+
+    <!-- Contact Payment Modal -->
+    <PaymentModal
+      v-model="showContactPayment"
+      :contact="selectedPayContact"
+      @payment-sent="handleContactPaymentSent"
+      @bitcoin-payment-requested="handleBitcoinPaymentFromContact"
+    />
+
     <!-- Payment Confirmation Dialog -->
     <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px; max-width: 95vw;">
@@ -499,6 +520,9 @@ import SendModal from '../components/SendModal.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
+import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
+import PaymentModal from '../components/PaymentModal.vue';
+import BatchSendModal from '../components/BatchSendModal.vue';
 
 export default {
   name: 'WalletPage',
@@ -508,7 +532,10 @@ export default {
     SendModal,
     PinEntryDialog,
     L1BitcoinWithdraw,
-    InternalTransferModal
+    InternalTransferModal,
+    AddressBookQuickModal,
+    PaymentModal,
+    BatchSendModal
   },
   setup() {
     const walletStore = useWalletStore();
@@ -578,7 +605,14 @@ export default {
       pendingBitcoinDeposits: [],
       bitcoinDepositPollingInterval: null,
       // Internal transfer modal
-      showTransferModal: false
+      showTransferModal: false,
+      // Address Book Quick Modal
+      showAddressBookQuick: false,
+      // Batch Send Modal
+      showBatchSend: false,
+      // Contact Payment Modal
+      showContactPayment: false,
+      selectedPayContact: null
     };
   },
   computed: {
@@ -707,6 +741,75 @@ export default {
       // Initialize the store to ensure we have the latest wallet data
       await this.walletStore.initialize();
       this.showWalletSwitcher = true;
+    },
+
+    /**
+     * Handle pay contact from AddressBookQuickModal
+     */
+    handlePayContact(contact) {
+      this.showAddressBookQuick = false;
+
+      // Bitcoin contacts need L1 withdrawal flow
+      if (contact.addressType === 'bitcoin') {
+        const address = contact.address || contact.lightningAddress;
+        this.pendingPayment = {
+          bitcoinAddress: address,
+          contactName: contact.name
+        };
+        this.showPaymentConfirmation = true;
+        return;
+      }
+
+      // Lightning and Spark contacts use PaymentModal
+      this.selectedPayContact = contact;
+      this.showContactPayment = true;
+    },
+
+    /**
+     * Handle successful contact payment
+     */
+    handleContactPaymentSent() {
+      this.selectedPayContact = null;
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Payment sent'),
+        timeout: 2000
+      });
+      // Refresh balance for active wallet
+      if (this.walletStore.activeWalletId) {
+        this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+      }
+    },
+
+    /**
+     * Handle Bitcoin payment request from contact modal
+     */
+    handleBitcoinPaymentFromContact(paymentData) {
+      this.showContactPayment = false;
+      this.selectedPayContact = null;
+      // Navigate to Bitcoin withdrawal
+      const address = paymentData.address || paymentData.contact?.address;
+      this.pendingPayment = {
+        bitcoinAddress: address,
+        contactName: paymentData.contact?.name
+      };
+      this.showPaymentConfirmation = true;
+    },
+
+    /**
+     * Handle batch send completion
+     */
+    handleBatchCompleted(results) {
+      const succeeded = results.filter(r => r.status === 'success').length;
+      const failed = results.filter(r => r.status === 'failed' || r.status === 'skipped').length;
+
+      this.$q.notify({
+        type: failed === 0 ? 'positive' : 'warning',
+        message: failed === 0
+          ? this.$t('{count} payments sent', { count: succeeded })
+          : this.$t('{sent} sent, {failed} failed', { sent: succeeded, failed }),
+        timeout: 3000
+      });
     },
 
     // ==========================================

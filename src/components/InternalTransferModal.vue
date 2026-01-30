@@ -833,7 +833,7 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
   transition: background .15s;
 }
 .picker-row:hover { background: rgba(128,128,128,.06); }
-.picker-row.selected { background: rgba(34,197,94,.1); }
+.picker-row.selected { background: rgba(21,222,114,.1); }
 .picker-row.disabled { opacity: .4; cursor: not-allowed; }
 .picker-row.disabled:hover { background: transparent; }
 .picker-row .wallet-meta { flex: 1; }

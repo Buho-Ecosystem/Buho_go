@@ -167,6 +167,24 @@
             />
           </q-item-section>
         </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Dark Mode') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ $q.dark.isActive ? $t('On') : $t('Off') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-toggle
+              :model-value="$q.dark.isActive"
+              @update:model-value="$q.dark.toggle()"
+              :color="$q.dark.isActive ? 'green' : 'green-7'"
+            />
+          </q-item-section>
+        </q-item>
       </div>
 
       <!-- DANGER ZONE -->
