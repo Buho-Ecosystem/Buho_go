@@ -1474,6 +1474,33 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Disconnect and remove only LNBits wallets
+     */
+    async disconnectLNBitsWallets() {
+      const lnbitsWallets = this.wallets.filter(w => w.type === WALLET_TYPES.LNBITS);
+
+      // Disconnect each LNBits wallet
+      for (const wallet of lnbitsWallets) {
+        await this.disconnectWallet(wallet.id);
+        // Clean up state for this wallet
+        delete this.connectionStates[wallet.id];
+        delete this.balances[wallet.id];
+        delete this.walletInfos[wallet.id];
+        delete this.providers[wallet.id];
+      }
+
+      // Remove LNBits wallets from the list
+      this.wallets = this.wallets.filter(w => w.type !== WALLET_TYPES.LNBITS);
+
+      // If active wallet was LNBits, switch to first available or null
+      if (!this.wallets.find(w => w.id === this.activeWalletId)) {
+        this.activeWalletId = this.wallets[0]?.id || null;
+      }
+
+      await this.persistState();
+    },
+
+    /**
      * Load exchange rates from fiat service
      */
     async loadExchangeRates() {

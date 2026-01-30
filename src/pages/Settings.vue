@@ -58,7 +58,7 @@
           {{ $t('Spark Wallet') }}
         </div>
         <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-          <q-item clickable v-ripple @click="copySparkAddress">
+          <q-item>
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ $t('Spark Address') }}
@@ -67,8 +67,9 @@
                 {{ truncateAddress(activeSparkAddress) || $t('Not available') }}
               </q-item-label>
             </q-item-section>
-            <q-item-section side>
-              <q-icon name="las la-copy" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            <q-item-section side class="spark-address-actions">
+              <q-btn flat round dense icon="las la-copy" @click="copySparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm" />
+              <q-btn flat round dense icon="las la-share-alt" @click="shareSparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm" />
             </q-item-section>
           </q-item>
           <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
@@ -188,6 +189,14 @@
             </q-item-label>
           </q-item-section>
         </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item clickable v-ripple @click="confirmDisconnectLNBits">
+          <q-item-section>
+            <q-item-label class="danger-text text-center">
+              {{ $t('Remove LNBits Connections') }}
+            </q-item-label>
+          </q-item-section>
+        </q-item>
       </div>
 
       <!-- SUPPORT Section -->
@@ -197,7 +206,7 @@
       <div class="settings-card support-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
         <div class="support-content">
           <div class="support-message" :class="$q.dark.isActive ? 'support-message-dark' : 'support-message-light'">
-            {{ $t('Support us to keep BuhoGO free') }}
+            {{ $t('Fuel BuhoGO to Fly Higher') }}
           </div>
           <div class="donation-row">
             <q-btn
@@ -1196,6 +1205,8 @@ import {useWalletStore} from '../stores/wallet'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
+import {shareContent} from '../utils/share.js'
+import {truncateAddress} from '../utils/addressUtils.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import { version } from '../../package.json'
 
@@ -1367,6 +1378,7 @@ export default {
       'connectWallet',
       'disconnectAll',
       'disconnectNwcWallets',
+      'disconnectLNBitsWallets',
       'updateCurrencyPreferences',
       'loadExchangeRates',
       'getSparkMnemonic',
@@ -1585,6 +1597,16 @@ export default {
       this.showDangerConfirmDialog = true;
     },
 
+    confirmDisconnectLNBits() {
+      this.dangerConfirmTitle = this.$t('Remove LNBits Connections');
+      this.dangerConfirmMessage = this.$t('This will remove all LNBits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNBits wallets later using your credentials.');
+      this.dangerConfirmPhrase = 'I understand';
+      this.dangerConfirmButtonText = this.$t('Remove LNBits');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'disconnectLNBits';
+      this.showDangerConfirmDialog = true;
+    },
+
     async executeDangerAction() {
       if (this.dangerConfirmInput !== this.dangerConfirmPhrase) return;
 
@@ -1596,7 +1618,16 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('NWC connections removed'),
-            
+
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+          this.showDangerConfirmDialog = false;
+        } else if (this.dangerConfirmAction === 'disconnectLNBits') {
+          await this.disconnectLNBitsWallets();
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('LNBits connections removed'),
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -2026,17 +2057,37 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Spark address copied'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to copy'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
+    },
+
+    async shareSparkAddress() {
+      if (!this.activeSparkAddress) return;
+
+      const result = await shareContent({
+        title: this.$t('Spark Address'),
+        text: this.activeSparkAddress
+      });
+
+      if (result.success) {
+        // Share was successful - no notification needed, native share UI provides feedback
+      } else if (result.reason === 'unsupported' || result.reason === 'error') {
+        if (result.reason === 'error') {
+          console.error('Failed to share Spark address:', result.error);
+        }
+        // Fallback to copy if share is not supported or failed
+        await this.copySparkAddress();
+      }
+      // Don't do anything for 'cancelled' - user just closed the dialog
     },
 
     openViewMnemonicDialog() {
@@ -2156,8 +2207,7 @@ export default {
     },
 
     truncateAddress(address) {
-      if (!address || address.length < 20) return address;
-      return `${address.slice(0, 10)}...${address.slice(-8)}`;
+      return truncateAddress(address);
     },
 
     navigateToCreateSpark() {
@@ -2657,6 +2707,29 @@ export default {
 
 .danger-action-btn:disabled {
   opacity: 0.4;
+}
+
+/* Spark Address Actions */
+.spark-address-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+}
+
+.action-icon-dark {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.action-icon-dark:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.action-icon-light {
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.action-icon-light:hover {
+  color: rgba(0, 0, 0, 0.8);
 }
 
 /* App Version */

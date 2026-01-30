@@ -359,7 +359,7 @@ export default {
   "Spark Wallet": "Spark Wallet",
   "Account": "Account",
   "Support": "Support",
-  "Support us to keep BuhoGO free": "Support us to keep BuhoGO free",
+  "Fuel BuhoGO to Fly Higher": "Fuel BuhoGO to Fly Higher",
   "Tap QR to copy invoice": "Tap QR to copy invoice",
   "Open in Wallet": "Open in Wallet",
   "See top donors & recent donations": "See top donors & recent donations",
@@ -650,5 +650,13 @@ export default {
   "Your Bitcoin Lightning Wallet": "Your Bitcoin Lightning Wallet",
   "Self-custody with Spark": "Self-custody with Spark",
   "Link via NWC": "Link via NWC",
-  "Restore from backup": "Restore from backup"
+  "Restore from backup": "Restore from backup",
+  "Lightning": "Lightning",
+  "Spark": "Spark",
+  "Remove LNBits Connections": "Remove LNBits Connections",
+  "Remove LNBits": "Remove LNBits",
+  "This will remove all LNBits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNBits wallets later using your credentials.": "This will remove all LNBits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNBits wallets later using your credentials.",
+  "LNBits connections removed": "LNBits connections removed",
+  "Memo": "Memo",
+  "Waiting...": "Waiting..."
 }

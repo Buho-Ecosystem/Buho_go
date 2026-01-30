@@ -338,7 +338,7 @@ export default {
   "Spark Wallet": "Spark Wallet",
   "Account": "Konto",
   "Support": "Unterstützung",
-  "Support us to keep BuhoGO free": "Unterstützen Sie uns, um BuhoGO kostenlos zu halten",
+  "Fuel BuhoGO to Fly Higher": "Hilf BuhoGO höher zu fliegen",
   "Tap QR to copy invoice": "QR tippen, um Rechnung zu kopieren",
   "Open in Wallet": "In Wallet öffnen",
   "See top donors & recent donations": "Top-Spender und aktuelle Spenden ansehen",
@@ -622,5 +622,13 @@ export default {
   "Your Bitcoin Lightning Wallet": "Deine Bitcoin Lightning Wallet",
   "Self-custody with Spark": "Selbstverwaltung mit Spark",
   "Link via NWC": "Verbinden via NWC",
-  "Restore from backup": "Aus Backup wiederherstellen"
+  "Restore from backup": "Aus Backup wiederherstellen",
+  "Lightning": "Lightning",
+  "Spark": "Spark",
+  "Remove LNBits Connections": "LNBits-Verbindungen entfernen",
+  "Remove LNBits": "LNBits entfernen",
+  "This will remove all LNBits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNBits wallets later using your credentials.": "Dadurch werden alle LNBits-Wallet-Verbindungen entfernt. Ihre Spark-Wallet und NWC-Verbindungen werden nicht betroffen sein. Sie können LNBits-Wallets später mit Ihren Anmeldedaten erneut verbinden.",
+  "LNBits connections removed": "LNBits-Verbindungen entfernt",
+  "Memo": "Notiz",
+  "Waiting...": "Warten..."
 }
