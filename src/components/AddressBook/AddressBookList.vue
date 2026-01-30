@@ -3,7 +3,8 @@
     <!-- Search Bar -->
     <div class="search-section" v-if="entries.length > 0">
       <q-input
-        v-model="searchQuery"
+        :model-value="searchQuery"
+        @update:model-value="setSearchQuery"
         :placeholder="$t('Search contacts...')"
         borderless
         dense

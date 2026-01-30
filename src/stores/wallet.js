@@ -1474,6 +1474,205 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Disconnect and remove only LNBits wallets
+     */
+    async disconnectLNBitsWallets() {
+      const lnbitsWallets = this.wallets.filter(w => w.type === WALLET_TYPES.LNBITS);
+
+      // Disconnect each LNBits wallet
+      for (const wallet of lnbitsWallets) {
+        await this.disconnectWallet(wallet.id);
+        // Clean up state for this wallet
+        delete this.connectionStates[wallet.id];
+        delete this.balances[wallet.id];
+        delete this.walletInfos[wallet.id];
+        delete this.providers[wallet.id];
+      }
+
+      // Remove LNBits wallets from the list
+      this.wallets = this.wallets.filter(w => w.type !== WALLET_TYPES.LNBITS);
+
+      // If active wallet was LNBits, switch to first available or null
+      if (!this.wallets.find(w => w.id === this.activeWalletId)) {
+        this.activeWalletId = this.wallets[0]?.id || null;
+      }
+
+      await this.persistState();
+    },
+
+    // ==========================================
+    // Internal Fund Transfer Methods
+    // ==========================================
+
+    /**
+     * Get wallets available for internal transfers
+     * Returns wallets that can participate in transfers (connected or can be connected)
+     * @returns {Array} Array of wallet objects with transfer capability info
+     */
+    getTransferableWallets() {
+      return this.wallets.map(wallet => {
+        const isConnected = this.connectionStates[wallet.id]?.connected;
+        const balance = this.balances[wallet.id] || 0;
+
+        return {
+          ...wallet,
+          isConnected,
+          balance,
+          canSend: isConnected && balance > 0,
+          canReceive: true // All wallets can receive
+        };
+      });
+    },
+
+    /**
+     * Ensure a wallet is connected for transfer
+     * @param {string} walletId - Wallet ID to connect
+     * @returns {Promise<Object>} Provider instance
+     */
+    async ensureWalletConnectedForTransfer(walletId) {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet) {
+        throw new Error('Wallet not found');
+      }
+
+      // Get current provider
+      let provider = this.getProvider(walletId);
+
+      // Check if provider exists and is actually connected
+      const isActuallyConnected = provider && (
+        (wallet.type === WALLET_TYPES.SPARK && provider.isConnected) ||
+        (wallet.type === WALLET_TYPES.LNBITS && provider.isConnected) ||
+        (wallet.type === WALLET_TYPES.NWC && this.connectionStates[walletId]?.nwcInstance)
+      );
+
+      if (isActuallyConnected) {
+        return provider;
+      }
+
+      // Connect based on wallet type
+      if (wallet.type === WALLET_TYPES.SPARK) {
+        if (!this.sessionPin) {
+          throw new Error('PIN required for Spark wallet');
+        }
+        await this.connectSparkWallet(walletId, this.sessionPin);
+      } else if (wallet.type === WALLET_TYPES.LNBITS) {
+        await this.connectLNBitsWallet(walletId);
+      } else {
+        await this.connectWallet(walletId);
+      }
+
+      // Get the newly connected provider
+      provider = this.getProvider(walletId);
+      if (!provider) {
+        throw new Error(`Failed to connect ${wallet.name}`);
+      }
+
+      return provider;
+    },
+
+    /**
+     * Transfer funds between two wallets
+     * Creates an invoice from destination wallet and pays from source wallet
+     * @param {string} fromWalletId - Source wallet ID
+     * @param {string} toWalletId - Destination wallet ID
+     * @param {number} amountSats - Amount in satoshis
+     * @param {string} [memo] - Optional memo/description
+     * @returns {Promise<Object>} Transfer result
+     */
+    async transferBetweenWallets(fromWalletId, toWalletId, amountSats, memo = '') {
+      if (fromWalletId === toWalletId) {
+        throw new Error('Cannot transfer to the same wallet');
+      }
+
+      if (amountSats <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
+      const fromWallet = this.wallets.find(w => w.id === fromWalletId);
+      const toWallet = this.wallets.find(w => w.id === toWalletId);
+
+      if (!fromWallet || !toWallet) {
+        throw new Error('Wallet not found');
+      }
+
+      // Check balance
+      const sourceBalance = this.balances[fromWalletId] || 0;
+      if (sourceBalance < amountSats) {
+        throw new Error('Insufficient balance');
+      }
+
+      // Ensure both wallets are connected and get providers
+      const fromProvider = await this.ensureWalletConnectedForTransfer(fromWalletId);
+      const toProvider = await this.ensureWalletConnectedForTransfer(toWalletId);
+
+      if (!fromProvider || !toProvider) {
+        throw new Error('Failed to connect wallets');
+      }
+
+      // Step 1: Create invoice from destination wallet
+      let invoice;
+      const transferMemo = memo || `Transfer from ${fromWallet.name}`;
+      const toType = toWallet.type?.toLowerCase() || 'nwc';
+
+      try {
+        if (toType === 'spark' || toType === 'lnbits') {
+          // Spark and LNBits both use createInvoice({ amount, description })
+          const invoiceResult = await toProvider.createInvoice({
+            amount: amountSats,
+            description: transferMemo
+          });
+          invoice = invoiceResult.paymentRequest || invoiceResult.payment_request || invoiceResult.bolt11 || invoiceResult;
+        } else {
+          // NWC wallet (WebLN interface) - makeInvoice expects satoshis
+          // The Alby SDK handles internal conversion to millisats for NIP-47
+          const invoiceResult = await toProvider.makeInvoice({
+            amount: amountSats,
+            description: transferMemo
+          });
+          invoice = invoiceResult.invoice || invoiceResult.paymentRequest || invoiceResult.bolt11;
+        }
+      } catch (invoiceError) {
+        console.error('Invoice creation error:', invoiceError);
+        throw new Error(`Failed to create invoice from ${toWallet.name}: ${invoiceError.message}`);
+      }
+
+      if (!invoice) {
+        throw new Error('Failed to create invoice from destination wallet');
+      }
+
+      // Step 2: Pay invoice from source wallet
+      let paymentResult;
+      const fromType = fromWallet.type?.toLowerCase() || 'nwc';
+
+      try {
+        if (fromType === 'spark' || fromType === 'lnbits') {
+          // Spark and LNBits both use payInvoice({ invoice })
+          paymentResult = await fromProvider.payInvoice({ invoice });
+        } else {
+          // NWC wallet - use sendPayment with just the invoice string
+          paymentResult = await fromProvider.sendPayment(invoice);
+        }
+      } catch (payError) {
+        console.error('Payment error:', payError);
+        throw new Error(`Failed to send payment from ${fromWallet.name}: ${payError.message}`);
+      }
+
+      // Step 3: Refresh balances for both wallets
+      await Promise.all([
+        this.refreshWalletData(fromWalletId),
+        this.refreshWalletData(toWalletId)
+      ]);
+
+      return {
+        success: true,
+        fromWallet: fromWallet.name,
+        toWallet: toWallet.name,
+        amount: amountSats,
+        paymentResult
+      };
+    },
+
+    /**
      * Load exchange rates from fiat service
      */
     async loadExchangeRates() {

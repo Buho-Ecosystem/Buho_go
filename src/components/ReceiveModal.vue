@@ -56,11 +56,7 @@
           <q-btn-toggle
             v-model="receiveMode"
             toggle-color="primary"
-            :options="[
-              { label: $t('Invoice'), value: 'lightning', icon: 'las la-file-invoice' },
-              { label: $t('Address'), value: 'spark', icon: 'las la-qrcode' },
-              { label: $t('Bitcoin'), value: 'bitcoin', icon: 'lab la-bitcoin' }
-            ]"
+            :options="receiveModeOptions"
             class="type-toggle"
             :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
             no-caps
@@ -81,57 +77,61 @@
         </div>
 
         <!-- Spark Address View -->
-        <div v-if="showSparkAddressView && sparkAddress" class="address-view">
-          <div class="address-qr-section">
-            <div class="qr-container" @click="copySparkAddress">
-              <div class="qr-wrapper">
+        <div v-if="showSparkAddressView && sparkAddress" class="spark-address-view">
+          <!-- QR Code Section -->
+          <div class="qr-section">
+            <div class="qr-card" @click="copySparkAddress">
+              <div class="qr-frame">
                 <vue-qrcode
                   :value="sparkAddress"
-                  :options="qrOptions"
+                  :options="sparkQrOptions"
                   class="qr-code"
                 />
               </div>
             </div>
+            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Tap QR to copy address') }}
+            </div>
+          </div>
 
-            <!-- Spark Address Display -->
-            <div
-              class="address-display-box spark-address-box"
-              :class="$q.dark.isActive ? 'address-box-dark' : 'address-box-light'"
+          <!-- Address Display - Compact Pill -->
+          <div
+            class="address-pill"
+            :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
+            @click="copySparkAddress"
+          >
+            <img :src="sparkPillIcon" class="pill-icon-img" />
+            <span class="pill-address">{{ truncateSparkAddress(sparkAddress) }}</span>
+            <q-icon name="las la-copy" size="14px" class="pill-copy" />
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-buttons">
+            <q-btn
+              flat
+              no-caps
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="copySparkAddress"
             >
-              <q-icon name="las la-fire" size="18px" class="address-icon spark-icon" />
-              <span class="address-text-value">{{ truncateSparkAddress(sparkAddress) }}</span>
-              <q-icon name="las la-copy" size="16px" class="copy-icon" />
-            </div>
+              <q-icon name="las la-copy" size="18px" />
+              <span>{{ $t('Copy') }}</span>
+            </q-btn>
+            <q-btn
+              flat
+              no-caps
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="shareSparkAddress"
+            >
+              <q-icon name="las la-share-alt" size="18px" />
+              <span>{{ $t('Share') }}</span>
+            </q-btn>
+          </div>
 
-            <!-- Action Buttons -->
-            <div class="spark-actions">
-              <q-btn
-                flat
-                no-caps
-                class="invoice-action-btn"
-                :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-                @click="copySparkAddress"
-              >
-                <q-icon name="las la-copy" size="20px" class="q-mr-xs"/>
-                {{ $t('Copy') }}
-              </q-btn>
-              <q-btn
-                flat
-                no-caps
-                class="invoice-action-btn"
-                :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-                @click="shareSparkAddress"
-              >
-                <q-icon name="las la-share-alt" size="20px" class="q-mr-xs"/>
-                {{ $t('Share') }}
-              </q-btn>
-            </div>
-
-            <!-- User Hint -->
-            <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-              {{ $t('Share this address to receive zero-fee payments from other Spark wallets.') }}
-            </div>
+          <!-- User Hint -->
+          <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Share this address to receive zero-fee payments from other Spark wallets.') }}
           </div>
         </div>
 
@@ -143,66 +143,61 @@
           @deposits-updated="handleBitcoinDepositsUpdated"
         />
 
-        <!-- QR Code Display -->
-        <div class="qr-display-section" v-if="generatedInvoice">
-          <!-- Payment Status Badge -->
-          <div class="status-badge" :class="paymentStatusClass">
-            <div class="status-dot" :class="paymentStatusDotClass"></div>
-            <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
-          </div>
-
-          <!-- Amount Display -->
-          <div class="invoice-amount-section">
-            <div class="invoice-amount" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+        <!-- Lightning Invoice Display -->
+        <div class="lightning-receive" v-if="generatedInvoice">
+          <!-- Amount Section -->
+          <div class="ln-amount-section">
+            <span class="ln-amount" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
               {{ formatInvoiceAmount(generatedInvoice.amount) }}
-            </div>
-            <div class="invoice-fiat" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            </span>
+            <span class="ln-fiat" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
               {{ formatInvoiceFiat(generatedInvoice.amount) }}
-            </div>
+            </span>
+            <span v-if="generatedInvoice.description && generatedInvoice.description !== 'BuhoGO Payment'"
+                  class="ln-memo" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ generatedInvoice.description }}
+            </span>
           </div>
 
-          <!-- Description/Memo -->
-          <div v-if="generatedInvoice.description && generatedInvoice.description !== 'BuhoGO Payment'"
-               class="invoice-memo"
-               :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ generatedInvoice.description }}
-          </div>
-
-          <!-- QR Code -->
-          <div class="qr-container" @click="copyInvoice">
-            <div class="qr-wrapper">
-              <vue-qrcode
-                :value="generatedInvoice.payment_request"
-                :options="qrOptions"
-                class="qr-code"
-              />
+          <!-- QR Code - Same structure as Spark/Bitcoin -->
+          <div class="qr-section">
+            <div class="qr-card" @click="copyInvoice">
+              <div class="qr-frame">
+                <vue-qrcode
+                  :value="'lightning:' + generatedInvoice.payment_request.toUpperCase()"
+                  :options="invoiceQrOptions"
+                  class="qr-code"
+                />
+              </div>
             </div>
-            <div class="qr-tap-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('Tap to copy invoice') }}
+            <!-- Status -->
+            <div class="ln-status" :class="paymentStatusClass">
+              <div class="ln-status-dot"></div>
+              <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
             </div>
           </div>
 
           <!-- Action Buttons -->
-          <div class="invoice-actions">
+          <div class="action-buttons">
             <q-btn
               flat
               no-caps
-              class="invoice-action-btn"
+              class="action-btn"
               :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="copyInvoice"
             >
-              <q-icon name="las la-copy" size="20px" class="q-mr-xs"/>
-              {{ $t('Copy') }}
+              <q-icon name="las la-copy" size="18px" />
+              <span>{{ $t('Copy') }}</span>
             </q-btn>
             <q-btn
               flat
               no-caps
-              class="invoice-action-btn"
+              class="action-btn"
               :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="shareInvoice"
             >
-              <q-icon name="las la-share-alt" size="20px" class="q-mr-xs"/>
-              {{ $t('Share') }}
+              <q-icon name="las la-share-alt" size="18px" />
+              <span>{{ $t('Share') }}</span>
             </q-btn>
           </div>
         </div>
@@ -325,6 +320,9 @@ import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
+import { shareContent } from '../utils/share';
+import { truncateAddress } from '../utils/addressUtils';
+import { getQrOptions } from '../utils/qrConfig';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
 
@@ -456,6 +454,27 @@ export default {
         margin: 0,
         color: { dark: '#000000', light: '#ffffff' }
       };
+    },
+    receiveModeOptions() {
+      const sparkIcon = this.$q.dark.isActive
+        ? 'img:/Spark/Spark Asterisk White.svg'
+        : 'img:/Spark/Spark Asterisk Black.svg';
+      return [
+        { label: this.$t('Lightning'), value: 'lightning', icon: 'las la-bolt' },
+        { label: this.$t('Spark'), value: 'spark', icon: sparkIcon },
+        { label: this.$t('Bitcoin'), value: 'bitcoin', icon: 'lab la-bitcoin' }
+      ];
+    },
+    sparkPillIcon() {
+      return this.$q.dark.isActive
+        ? '/Spark/Spark Asterisk White.svg'
+        : '/Spark/Spark Asterisk Black.svg';
+    },
+    sparkQrOptions() {
+      return getQrOptions();
+    },
+    invoiceQrOptions() {
+      return getQrOptions();
     }
   },
   watch: {
@@ -1096,37 +1115,30 @@ export default {
     async shareSparkAddress() {
       if (!this.sparkAddress) return;
 
-      try {
-        if (navigator.share) {
-          await navigator.share({
-            title: this.$t('Spark Address'),
-            text: this.sparkAddress
-          });
+      const result = await shareContent({
+        title: this.$t('Spark Address'),
+        text: this.sparkAddress
+      });
 
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Shared'),
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        } else {
-          // Fallback: copy to clipboard
-          await this.copySparkAddress();
-        }
-      } catch (error) {
-        // AbortError means user cancelled the share dialog - not an error
-        if (error.name !== 'AbortError') {
-          console.error('Failed to share Spark address:', error);
-          // Fallback to copy on share failure
-          await this.copySparkAddress();
-        }
+      if (result.success) {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Shared'),
+
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } else if (result.reason === 'unsupported') {
+        // Fallback: copy to clipboard
+        await this.copySparkAddress();
+      } else if (result.reason === 'error') {
+        console.error('Failed to share Spark address:', result.error);
+        await this.copySparkAddress();
       }
+      // Don't do anything for 'cancelled' - user just closed the dialog
     },
 
     truncateSparkAddress(address) {
-      if (!address) return '';
-      if (address.length <= 20) return address;
-      return `${address.slice(0, 10)}...${address.slice(-8)}`;
+      return truncateAddress(address);
     },
 
     formatInvoiceAmount(sats) {
@@ -1151,53 +1163,41 @@ export default {
       // Lightning URI for sharing (most wallets recognize this format)
       const lightningUri = `lightning:${this.generatedInvoice.payment_request}`;
 
-      try {
-        if (navigator.share) {
-          // Share API - use 'text' field for the invoice (not 'url' which requires http/https)
-          await navigator.share({
-            title: this.$t('Lightning Invoice'),
-            text: lightningUri
-          });
+      const result = await shareContent({
+        title: this.$t('Lightning Invoice'),
+        text: lightningUri
+      });
 
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Shared'),
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        } else {
-          // Fallback: copy to clipboard
+      if (result.success) {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Shared'),
+
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } else if (result.reason === 'unsupported' || result.reason === 'error') {
+        if (result.reason === 'error') {
+          console.error('Failed to share invoice:', result.error);
+        }
+        // Fallback: copy to clipboard
+        try {
           await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
           this.$q.notify({
             type: 'positive',
             message: this.$t('Invoice copied'),
-            
+
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        } catch (copyError) {
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t('Couldn\'t share'),
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
-      } catch (error) {
-        // AbortError means user cancelled the share dialog - not an error
-        if (error.name !== 'AbortError') {
-          console.error('Failed to share invoice:', error);
-          // Fallback to copy on share failure
-          try {
-            await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
-            this.$q.notify({
-              type: 'positive',
-              message: this.$t('Invoice copied'),
-              
-              actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-            });
-          } catch (copyError) {
-            this.$q.notify({
-              type: 'negative',
-              message: this.$t('Couldn\'t share'),
-              
-              actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-            });
-          }
-        }
       }
+      // Don't do anything for 'cancelled' - user just closed the dialog
     },
 
     /**
@@ -1341,78 +1341,147 @@ export default {
   opacity: 0.3;
 }
 
-/* QR Display Section */
-.qr-display-section {
+/* ===========================================
+   Shared QR Code Styles - Used by Lightning, Spark, Bitcoin
+   =========================================== */
+.qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+}
+
+.qr-card {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.qr-card:active {
+  transform: scale(0.98);
+}
+
+.qr-frame {
+  background: white;
+  padding: 14px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.qr-frame .qr-code {
+  display: block;
+  border-radius: 8px;
+}
+
+.qr-hint {
+  font-size: 12px;
+  margin-top: 8px;
+  opacity: 0.5;
+}
+
+/* ===========================================
+   Lightning Receive
+   =========================================== */
+.lightning-receive {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2rem 1.5rem;
-  gap: 1.5rem;
-  overflow-y: auto;
+  padding: 0;
 }
 
-/* Status Badge */
-.status-badge {
+/* Amount Section */
+.ln-amount-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 8px 0 16px;
+}
+
+.ln-amount {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.ln-fiat {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  margin-top: 4px;
+}
+
+.ln-memo {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+/* Status */
+.ln-status {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 100px;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 6px 12px;
+  border-radius: 20px;
   background: rgba(255, 212, 59, 0.1);
-  border: 1px solid rgba(255, 212, 59, 0.3);
-  transition: all 0.3s ease;
 }
 
-.status-badge span {
-  font-family: 'Inter', sans-serif;
-  font-size: 13px;
+.ln-status span {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
   font-weight: 500;
   color: #FFD43B;
-  letter-spacing: 0.01em;
-  transition: color 0.3s ease;
 }
 
-.status-dot {
-  width: 8px;
-  height: 8px;
+.ln-status-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #FFD43B;
   animation: pulse 2s ease-in-out infinite;
-  transition: background 0.3s ease;
 }
 
-/* Payment status: Pending (default yellow) */
-.status-pending {
-  background: rgba(255, 212, 59, 0.1);
-  border-color: rgba(255, 212, 59, 0.3);
-}
-.status-pending span { color: #FFD43B; }
-.dot-pending { background: #FFD43B; animation: pulse 2s ease-in-out infinite; }
+/* Status Variants */
+.ln-status.status-pending { background: rgba(255, 212, 59, 0.1); }
+.ln-status.status-pending span { color: #FFD43B; }
+.ln-status.status-pending .ln-status-dot { background: #FFD43B; }
 
-/* Payment status: Confirmed (green) */
-.status-confirmed {
-  background: rgba(21, 222, 114, 0.15);
-  border-color: rgba(21, 222, 114, 0.4);
-}
-.status-confirmed span { color: #15DE72; }
-.dot-confirmed { background: #15DE72; animation: none; }
+.ln-status.status-confirmed { background: rgba(21, 222, 114, 0.1); }
+.ln-status.status-confirmed span { color: #15DE72; }
+.ln-status.status-confirmed .ln-status-dot { background: #15DE72; animation: none; }
 
-/* Payment status: Expired (gray) */
-.status-expired {
-  background: rgba(107, 114, 128, 0.1);
-  border-color: rgba(107, 114, 128, 0.3);
-}
-.status-expired span { color: #6B7280; }
-.dot-expired { background: #6B7280; animation: none; }
+.ln-status.status-expired { background: rgba(107, 114, 128, 0.1); }
+.ln-status.status-expired span { color: #6B7280; }
+.ln-status.status-expired .ln-status-dot { background: #6B7280; animation: none; }
 
-/* Payment status: Error (red) */
-.status-error {
-  background: rgba(255, 75, 75, 0.1);
-  border-color: rgba(255, 75, 75, 0.3);
+.ln-status.status-error { background: rgba(239, 68, 68, 0.1); }
+.ln-status.status-error span { color: #EF4444; }
+.ln-status.status-error .ln-status-dot { background: #EF4444; animation: none; }
+
+/* Responsive - Lightning Amount */
+@media (max-width: 375px) {
+  .ln-amount {
+    font-size: 32px;
+  }
+
+  .ln-fiat {
+    font-size: 13px;
+  }
 }
-.status-error span { color: #FF4B4B; }
-.dot-error { background: #FF4B4B; animation: none; }
+
+@media (max-width: 320px) {
+  .ln-amount {
+    font-size: 28px;
+  }
+}
 
 @keyframes pulse {
   0%, 100% {
@@ -1425,40 +1494,7 @@ export default {
   }
 }
 
-/* Invoice Amount Section */
-.invoice-amount-section {
-  text-align: center;
-  width: 100%;
-}
-
-.invoice-amount {
-  font-family: 'Inter', sans-serif;
-  font-size: 2.5rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-  margin-bottom: 0.5rem;
-}
-
-.invoice-fiat {
-  font-family: 'Inter', sans-serif;
-  font-size: 17px;
-  font-weight: 400;
-  opacity: 0.75;
-}
-
-/* Invoice Memo */
-.invoice-memo {
-  font-family: 'Inter', sans-serif;
-  font-size: 15px;
-  font-weight: 400;
-  text-align: center;
-  opacity: 0.65;
-  max-width: 320px;
-  line-height: 1.4;
-}
-
-/* QR Container */
+/* QR Container - Used by Lightning Address View */
 .qr-container {
   cursor: pointer;
   display: flex;
@@ -1492,63 +1528,42 @@ export default {
   max-width: 100%;
 }
 
-.qr-tap-hint {
-  font-family: 'Inter', sans-serif;
-  font-size: 13px;
-  font-weight: 400;
-  margin-top: 1rem;
-  opacity: 0.6;
-  text-align: center;
-}
-
-/* Invoice Actions */
-.invoice-actions {
+/* Action Buttons - Shared Style */
+.action-buttons {
   display: flex;
-  gap: 0.75rem;
-  width: 100%;
-  max-width: 360px;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 
-.invoice-action-btn {
-  flex: 1;
-  height: 44px;
-  border-radius: 100px;
-  font-family: 'Inter', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  border: 1px solid;
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .action-btn-dark {
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.1);
-  color: #FFF;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .action-btn-dark:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.action-btn-dark:active {
-  transform: scale(0.97);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .action-btn-light {
-  background: transparent;
-  border-color: rgba(15, 20, 25, 0.1);
-  color: #0F1419;
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .action-btn-light:hover {
-  background: rgba(15, 20, 25, 0.03);
+  background: rgba(0, 0, 0, 0.08);
 }
 
-.action-btn-light:active {
-  transform: scale(0.97);
-  background: rgba(15, 20, 25, 0.05);
-}
 
 /* Amount Section */
 .amount-section {
@@ -1714,21 +1729,13 @@ export default {
     padding: 1.5rem 1rem;
   }
 
-  .qr-display-section {
-    padding: 1.5rem 1rem;
-    gap: 1.25rem;
+  .action-buttons {
+    gap: 10px;
   }
 
-  .invoice-amount {
-    font-size: 2rem;
-  }
-
-  .invoice-fiat {
-    font-size: 15px;
-  }
-
-  .qr-container {
-    max-width: calc(100vw - 40px);
+  .action-btn {
+    padding: 8px 14px;
+    font-size: 13px;
   }
 
   .invoice-actions {
@@ -1776,12 +1783,13 @@ export default {
 
 /* Extra small screens (360px and below) */
 @media (max-width: 360px) {
-  .qr-container {
-    max-width: calc(100vw - 48px);
+  .action-buttons {
+    gap: 8px;
   }
 
-  .invoice-amount {
-    font-size: 1.75rem;
+  .action-btn {
+    padding: 8px 12px;
+    font-size: 13px;
   }
 
   .invoice-actions {
@@ -1805,6 +1813,72 @@ export default {
   .address-qr-section {
     padding: 1rem;
   }
+}
+
+/* Spark Address View */
+.spark-address-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  min-height: 0;
+}
+
+/* Address Pill - Shared by Spark */
+.address-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 12px auto 0;
+}
+
+.address-pill:active {
+  transform: scale(0.98);
+}
+
+.pill-dark {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pill-dark:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.pill-light {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.pill-light:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.pill-icon-img {
+  width: 16px;
+  height: 16px;
+}
+
+.pill-address {
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.pill-copy {
+  opacity: 0.4;
+}
+
+.address-hint {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.4;
+  margin-top: 16px;
 }
 
 /* Lightning Address View */

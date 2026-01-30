@@ -30,6 +30,30 @@
       <q-icon name="las la-copy" size="14px" class="pill-copy" />
     </div>
 
+    <!-- Action Buttons -->
+    <div v-if="depositAddress" class="action-buttons">
+      <q-btn
+        flat
+        no-caps
+        class="action-btn"
+        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+        @click="copyAddress"
+      >
+        <q-icon name="las la-copy" size="18px" />
+        <span>{{ $t('Copy') }}</span>
+      </q-btn>
+      <q-btn
+        flat
+        no-caps
+        class="action-btn"
+        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+        @click="shareAddress"
+      >
+        <q-icon name="las la-share-alt" size="18px" />
+        <span>{{ $t('Share') }}</span>
+      </q-btn>
+    </div>
+
     <!-- Pending Deposits -->
     <div v-if="pendingDeposits.length > 0" class="deposits-section">
       <div class="section-header">
@@ -177,6 +201,9 @@
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { useWalletStore } from 'src/stores/wallet';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
+import { shareContent } from 'src/utils/share';
+import { truncateAddress } from 'src/utils/addressUtils';
+import { getQrOptions } from 'src/utils/qrConfig';
 
 export default {
   name: 'L1BitcoinReceive',
@@ -188,11 +215,7 @@ export default {
   props: {
     qrOptions: {
       type: Object,
-      default: () => ({
-        width: 240,
-        margin: 0,
-        color: { dark: '#000000', light: '#ffffff' }
-      })
+      default: () => getQrOptions()
     }
   },
 
@@ -466,9 +489,7 @@ export default {
     },
 
     truncateAddress(address) {
-      if (!address) return '';
-      if (address.length <= 20) return address;
-      return `${address.slice(0, 10)}...${address.slice(-8)}`;
+      return truncateAddress(address);
     },
 
     formatAmount(sats) {
@@ -484,15 +505,35 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Address copied'),
-          
+
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to copy'),
-          
+
         });
       }
+    },
+
+    async shareAddress() {
+      if (!this.depositAddress) return;
+
+      const result = await shareContent({
+        title: this.$t('Bitcoin Address'),
+        text: this.depositAddress
+      });
+
+      if (result.success) {
+        // Share was successful - no notification needed, native share UI provides feedback
+      } else if (result.reason === 'unsupported' || result.reason === 'error') {
+        if (result.reason === 'error') {
+          console.error('Failed to share address:', result.error);
+        }
+        // Fallback to copy if share is not supported or failed
+        await this.copyAddress();
+      }
+      // Don't do anything for 'cancelled' - user just closed the dialog
     },
 
     getUserFriendlyError(error, context = 'general') {
@@ -590,8 +631,8 @@ export default {
 .l1-bitcoin-receive {
   display: flex;
   flex-direction: column;
-  padding: 0 16px;
-  gap: 20px;
+  align-items: center;
+  padding: 0;
 }
 
 /* ==========================================
@@ -621,8 +662,8 @@ export default {
 }
 
 .qr-frame.loading {
-  width: 200px;
-  height: 200px;
+  width: 240px;
+  height: 240px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -635,7 +676,7 @@ export default {
 
 .qr-hint {
   font-size: 12px;
-  margin-top: 10px;
+  margin-top: 8px;
   opacity: 0.5;
 }
 
@@ -650,7 +691,7 @@ export default {
   border-radius: 20px;
   cursor: pointer;
   transition: all 0.2s ease;
-  margin: 0 auto;
+  margin: 12px auto 0;
 }
 
 .address-pill:active {
@@ -685,6 +726,44 @@ export default {
 
 .pill-copy {
   opacity: 0.4;
+}
+
+/* ==========================================
+   Action Buttons
+   ========================================== */
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.action-btn-dark {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.action-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.action-btn-light {
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.action-btn-light:hover {
+  background: rgba(0, 0, 0, 0.08);
 }
 
 /* ==========================================

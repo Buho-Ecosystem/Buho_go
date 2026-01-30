@@ -45,11 +45,11 @@
         round
         class="float-right"
         :class="$q.dark.isActive ? 'dark-mode-btn-dark' : 'dark-mode-btn-light'"
-        @click="$q.dark.toggle()"
+        @click="showAddressBookQuick = true"
         padding="sm sm"
         style="border-radius: 12px"
-        aria-label="Toggle Dark Mode"
-        :icon="$q.dark.isActive ? 'las la-sun' : 'las la-moon'"
+        aria-label="Address Book"
+        icon="las la-address-book"
       >
       </q-btn>
     </q-toolbar>
@@ -269,6 +269,18 @@
         </q-card-section>
 
         <q-card-section class="switcher-footer" :class="$q.dark.isActive ? 'switcher-footer-dark' : 'switcher-footer-light'">
+          <!-- Transfer Funds Button (only show if 2+ wallets) -->
+          <q-btn
+            v-if="storeWallets.length >= 2"
+            flat
+            no-caps
+            class="transfer-funds-btn"
+            :class="$q.dark.isActive ? 'transfer-btn-dark' : 'transfer-btn-light'"
+            @click="openTransferModal"
+          >
+            <q-icon name="las la-exchange-alt" class="q-mr-sm" />
+            {{ $t('Transfer Funds') }}
+          </q-btn>
           <q-btn
             flat
             no-caps
@@ -282,6 +294,33 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <!-- Internal Transfer Modal -->
+    <InternalTransferModal
+      v-model="showTransferModal"
+      @transfer-complete="onTransferComplete"
+    />
+
+    <!-- Address Book Quick Modal -->
+    <AddressBookQuickModal
+      v-model="showAddressBookQuick"
+      @pay-contact="handlePayContact"
+      @open-batch-send="showBatchSend = true"
+    />
+
+    <!-- Batch Send Modal -->
+    <BatchSendModal
+      v-model="showBatchSend"
+      @batch-completed="handleBatchCompleted"
+    />
+
+    <!-- Contact Payment Modal -->
+    <PaymentModal
+      v-model="showContactPayment"
+      :contact="selectedPayContact"
+      @payment-sent="handleContactPaymentSent"
+      @bitcoin-payment-requested="handleBitcoinPaymentFromContact"
+    />
 
     <!-- Payment Confirmation Dialog -->
     <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
@@ -480,6 +519,10 @@ import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
+import InternalTransferModal from '../components/InternalTransferModal.vue';
+import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
+import PaymentModal from '../components/PaymentModal.vue';
+import BatchSendModal from '../components/BatchSendModal.vue';
 
 export default {
   name: 'WalletPage',
@@ -488,7 +531,11 @@ export default {
     ReceiveModal,
     SendModal,
     PinEntryDialog,
-    L1BitcoinWithdraw
+    L1BitcoinWithdraw,
+    InternalTransferModal,
+    AddressBookQuickModal,
+    PaymentModal,
+    BatchSendModal
   },
   setup() {
     const walletStore = useWalletStore();
@@ -556,7 +603,16 @@ export default {
       },
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
-      bitcoinDepositPollingInterval: null
+      bitcoinDepositPollingInterval: null,
+      // Internal transfer modal
+      showTransferModal: false,
+      // Address Book Quick Modal
+      showAddressBookQuick: false,
+      // Batch Send Modal
+      showBatchSend: false,
+      // Contact Payment Modal
+      showContactPayment: false,
+      selectedPayContact: null
     };
   },
   computed: {
@@ -685,6 +741,75 @@ export default {
       // Initialize the store to ensure we have the latest wallet data
       await this.walletStore.initialize();
       this.showWalletSwitcher = true;
+    },
+
+    /**
+     * Handle pay contact from AddressBookQuickModal
+     */
+    handlePayContact(contact) {
+      this.showAddressBookQuick = false;
+
+      // Bitcoin contacts need L1 withdrawal flow
+      if (contact.addressType === 'bitcoin') {
+        const address = contact.address || contact.lightningAddress;
+        this.pendingPayment = {
+          bitcoinAddress: address,
+          contactName: contact.name
+        };
+        this.showPaymentConfirmation = true;
+        return;
+      }
+
+      // Lightning and Spark contacts use PaymentModal
+      this.selectedPayContact = contact;
+      this.showContactPayment = true;
+    },
+
+    /**
+     * Handle successful contact payment
+     */
+    handleContactPaymentSent() {
+      this.selectedPayContact = null;
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Payment sent'),
+        timeout: 2000
+      });
+      // Refresh balance for active wallet
+      if (this.walletStore.activeWalletId) {
+        this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+      }
+    },
+
+    /**
+     * Handle Bitcoin payment request from contact modal
+     */
+    handleBitcoinPaymentFromContact(paymentData) {
+      this.showContactPayment = false;
+      this.selectedPayContact = null;
+      // Navigate to Bitcoin withdrawal
+      const address = paymentData.address || paymentData.contact?.address;
+      this.pendingPayment = {
+        bitcoinAddress: address,
+        contactName: paymentData.contact?.name
+      };
+      this.showPaymentConfirmation = true;
+    },
+
+    /**
+     * Handle batch send completion
+     */
+    handleBatchCompleted(results) {
+      const succeeded = results.filter(r => r.status === 'success').length;
+      const failed = results.filter(r => r.status === 'failed' || r.status === 'skipped').length;
+
+      this.$q.notify({
+        type: failed === 0 ? 'positive' : 'warning',
+        message: failed === 0
+          ? this.$t('{count} payments sent', { count: succeeded })
+          : this.$t('{sent} sent, {failed} failed', { sent: succeeded, failed }),
+        timeout: 3000
+      });
     },
 
     // ==========================================
@@ -912,6 +1037,34 @@ export default {
     goToSettings() {
       this.showWalletSwitcher = false;
       this.$router.push('/settings');
+    },
+
+    // ==========================================
+    // Internal Transfer Methods
+    // ==========================================
+
+    /**
+     * Open the internal transfer modal
+     */
+    openTransferModal() {
+      this.showWalletSwitcher = false;
+      this.showTransferModal = true;
+    },
+
+    /**
+     * Handle successful internal transfer
+     */
+    onTransferComplete(result) {
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Transfer complete'),
+        caption: `${result.amount.toLocaleString()} sats`,
+        timeout: 4000,
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
+
+      // Refresh wallet balance
+      this.updateWalletBalance();
     },
 
     getWalletColorClass(wallet) {
@@ -3675,7 +3828,9 @@ export default {
   padding: 0.75rem 1rem;
   border-top: 1px solid;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  gap: 8px;
 }
 
 .switcher-footer-dark {
@@ -3686,6 +3841,34 @@ export default {
 .switcher-footer-light {
   border-top-color: #E5E7EB;
   background: #F8F9FA;
+}
+
+/* Transfer Funds Button */
+.transfer-funds-btn {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
+  transition: all 0.15s ease;
+}
+
+.transfer-btn-dark {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.transfer-btn-dark:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.transfer-btn-light {
+  color: #16a34a;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.transfer-btn-light:hover {
+  background: rgba(34, 197, 94, 0.15);
 }
 
 .manage-wallets-btn {
