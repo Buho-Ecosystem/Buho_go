@@ -110,14 +110,19 @@
               inputmode="numeric"
               class="amount-input"
               placeholder="0"
-              @input="validateAmount"
+              @input="onAmountInput"
             />
             <span class="amount-unit">sats</span>
           </div>
           <p class="hint">{{ $t('Available') }}: {{ fmt(state.fromWallet?.balance || 0) }}</p>
           <div class="quick-row">
-            <button v-for="p in [25, 50, 75, 100]" :key="p" type="button" class="quick-chip" @click="setPercent(p)">{{ p }}%</button>
+            <button v-for="p in [25, 50, 75]" :key="p" type="button" class="quick-chip" @click="setPercent(p)">{{ p }}%</button>
+            <button type="button" class="quick-chip quick-chip--max" @click="setMax">Max</button>
           </div>
+          <p v-if="state.isMaxAmount" class="fee-hint">
+            <q-icon name="las la-info-circle" size="12px" />
+            {{ $t('Small buffer reserved for network fees. If transfer fails, try lowering the amount.') }}
+          </p>
           <div v-if="state.amountError" class="banner banner--error">
             <q-icon name="las la-exclamation-circle" size="14px" />
             <span>{{ state.amountError }}</span>
@@ -342,7 +347,8 @@ const state = reactive({
   isTransferring: false,
   transferComplete: false,
   transferError: '',
-  isReconnecting: false
+  isReconnecting: false,
+  isMaxAmount: false
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -413,7 +419,32 @@ function pickTo(w) {
 
 function setPercent(p) {
   if (!state.fromWallet) return;
+  state.isMaxAmount = false;
   state.amount = Math.floor((state.fromWallet.balance || 0) * p / 100).toString();
+  validateAmount();
+  haptics.tap();
+}
+
+function setMax() {
+  if (!state.fromWallet) return;
+  const balance = state.fromWallet.balance || 0;
+
+  // Calculate fee buffer based on balance size (all integers)
+  let feeBuffer;
+  if (balance < 100) {
+    // Small balance: reserve ~5% with minimum 1 sat
+    feeBuffer = Math.max(1, Math.ceil(balance * 0.05));
+  } else if (balance < 1000) {
+    // Medium balance: reserve ~2% with minimum 5 sats
+    feeBuffer = Math.max(5, Math.ceil(balance * 0.02));
+  } else {
+    // Large balance: reserve ~1% with minimum 10 sats, max 100 sats
+    feeBuffer = Math.min(100, Math.max(10, Math.ceil(balance * 0.01)));
+  }
+
+  const maxAmount = Math.floor(Math.max(0, balance - feeBuffer));
+  state.amount = maxAmount.toString();
+  state.isMaxAmount = true;
   validateAmount();
   haptics.tap();
 }
@@ -424,6 +455,11 @@ function validateAmount() {
   if (!state.amount || isNaN(n)) return;
   if (n <= 0) state.amountError = 'Amount must be greater than 0';
   else if (n > (state.fromWallet?.balance || 0)) state.amountError = 'Insufficient balance';
+}
+
+function onAmountInput() {
+  state.isMaxAmount = false; // Clear max flag when user manually edits
+  validateAmount();
 }
 
 function goNext() {
@@ -472,6 +508,7 @@ function resetState() {
     isTransferring: false,
     transferComplete: false,
     transferError: '',
+    isMaxAmount: false,
     isReconnecting: false
   });
   Object.keys(connStatus).forEach(k => delete connStatus[k]);
@@ -715,6 +752,24 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 }
 .quick-chip:hover { background: var(--c-bg3); }
 .quick-chip:active { transform: scale(.96); }
+.quick-chip--max {
+  background: rgba(21, 222, 114, 0.15);
+  color: #15DE72;
+  font-weight: 600;
+}
+.quick-chip--max:hover { background: rgba(21, 222, 114, 0.25); }
+.fee-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--c-text2);
+  background: var(--c-bg2);
+  border-radius: 8px;
+}
 
 /* ════════════════════════════════════════════════════════════
    Confirm Step
