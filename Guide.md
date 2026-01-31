@@ -11,50 +11,48 @@ Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 1. [Choosing Your Wallet Type](#choosing-your-wallet-type)
 2. [Setting Up a Spark Wallet](#setting-up-a-spark-wallet)
 3. [Connecting an NWC Wallet](#connecting-an-nwc-wallet)
-4. [Receiving Bitcoin](#receiving-bitcoin)
-5. [Sending Bitcoin](#sending-bitcoin)
-6. [Batch Send](#batch-send)
-7. [Internal Transfer](#internal-transfer)
-8. [Transaction History](#transaction-history)
-9. [Managing Contacts](#managing-contacts)
-10. [Switching Wallets](#switching-wallets)
-11. [Settings and Preferences](#settings-and-preferences)
-12. [Troubleshooting](#troubleshooting)
+4. [Connecting an LNBits Wallet](#connecting-an-lnbits-wallet)
+5. [Receiving Bitcoin](#receiving-bitcoin)
+6. [Sending Bitcoin](#sending-bitcoin)
+7. [Batch Send](#batch-send)
+8. [Internal Transfer](#internal-transfer)
+9. [Transaction History](#transaction-history)
+10. [Managing Contacts](#managing-contacts)
+11. [Switching Wallets](#switching-wallets)
+12. [Settings and Preferences](#settings-and-preferences)
+13. [Troubleshooting](#troubleshooting)
 
 <br>
 
 ## Choosing Your Wallet Type
 
-BuhoGO supports two types of wallets. Choose the one that fits your needs. See the [feature comparison table](README.md#payment-capabilities) for a quick overview.
+BuhoGO supports three wallet types. See the [feature comparison](README.md#payment-capabilities) for details.
 
 ### Spark Wallet
 
-Best for users who want full control over their Bitcoin.
+Full self-custody with your own keys.
 
-**Advantages**
-- Self-custodial: You hold the keys
 - Zero-fee transfers to other Spark users
-- Works offline for viewing balance
+- On-chain Bitcoin (L1) support
 - Single seed phrase backs up everything
-
-**Considerations**
-- Requires secure backup of seed phrase
-- PIN required each session
-- Limited to one Spark wallet per app
+- Requires secure backup and PIN each session
 
 ### NWC Wallet
 
-Best for users who already have a Lightning wallet they want to use.
+Connect your existing Lightning wallet (Alby, Primal, etc.).
 
-**Advantages**
-- Connect your existing wallet (Alby, Mutiny, etc.)
 - No seed phrase to manage
 - Multiple wallets supported
 - Quick setup with QR code
+- Cannot send to Spark addresses
 
-**Considerations**
-- Depends on external wallet availability
-- Features limited by connected wallet capabilities
+### LNBits Wallet
+
+Connect to your own LNBits instance.
+
+- Works with any LNBits server
+- Full control via Admin API key
+- Multiple wallets supported
 - Cannot send to Spark addresses
 
 <br>
@@ -136,13 +134,29 @@ Nostr Wallet Connect (NWC) is a protocol that lets apps communicate with Lightni
 
 Your wallet balance and info will appear once connected.
 
-### Adding More NWC Wallets
+To add more NWC wallets, go to Settings > Add Wallet.
 
-You can connect multiple NWC wallets:
+<br>
 
-1. Go to Settings
-2. Tap "Add Wallet"
-3. Follow the same connection steps
+## Connecting an LNBits Wallet
+
+### Getting Your LNBits Credentials
+
+1. Log in to your LNBits instance
+2. Open your wallet and click "API Info"
+3. Copy your **Server URL**, **Wallet ID** and **Admin API Key**
+
+**Important**: The Admin Key gives full wallet access. Keep it private.
+
+### Connecting in BuhoGO
+
+1. Tap "Connect Wallet" > "LNBits"
+2. Enter a name for your wallet
+3. Enter your LNBits server URL
+4. Enter your Admin API key
+5. Tap "Connect"
+
+To add more LNBits wallets, go to Settings > Add Wallet.
 
 <br>
 
@@ -367,11 +381,11 @@ For Spark wallets, additional options are available:
 
 <img src="public/Spark_images/DeleteWallet.png" alt="Delete Wallet" width="280">
 
-### NWC Wallet Settings
+### NWC/LNBits Wallet Settings
 
 **Rename**: Change the display name for the wallet.
 
-**Disconnect**: Removes the NWC connection. You can reconnect later with the same or different connection string.
+**Disconnect**: Removes the wallet connection. You can reconnect later.
 
 <br>
 
@@ -413,6 +427,18 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 - Check your wallet provider for any restrictions
 - Verify the payment destination is valid
 
+### LNBits Wallet Issues
+
+**Connection Failed**
+- Verify server URL is correct and uses HTTPS
+- Check Admin API key is valid (not Invoice key)
+- Try accessing LNBits server in browser first
+
+**Payment Failed**
+- Check wallet has sufficient balance
+- Verify invoice is valid and not expired
+- Check LNBits server logs for details
+
 ### General Issues
 
 **App Crashes on Launch**
@@ -435,6 +461,7 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 | Lightning Address | `satoshi@wallet.com` | Reusable address, similar to email |
 | Spark Address | `sp1qw3e...` | Spark network address for zero-fee transfers |
 | LNURL | `lnurl1dp68...` | Encoded URL for various Lightning operations |
+| Bitcoin Address (L1) | `bc1p...`, `bc1q...` | On-chain Bitcoin address (Spark only) |
 
 <br>
 
