@@ -649,12 +649,32 @@ const isVisible = computed({
 const themeClass = computed(() => $q.dark.isActive ? 'theme-dark' : 'theme-light')
 
 // ─────────────────────────────────────────────────────────────
-// Computed - Wallet
+// Computed - Wallet & Currency
 // ─────────────────────────────────────────────────────────────
 const isSparkWallet = computed(() => walletStore.isActiveWalletSpark)
 const walletBalance = computed(() => walletStore.balances[walletStore.activeWalletId] || 0)
-const fiatCurrency = computed(() => 'USD') // Could be made configurable
-const btcPrice = computed(() => walletStore.btcPrice || 100000) // Fallback price
+
+// Currency settings from wallet store
+const fiatCurrency = computed(() => walletStore.preferredFiatCurrency || 'USD')
+const exchangeRate = computed(() => {
+  const currency = fiatCurrency.value.toLowerCase()
+  return walletStore.exchangeRates?.[currency] || 0
+})
+
+// Currency symbols map
+const CURRENCY_SYMBOLS = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  CHF: 'CHF',
+  CAD: 'C$',
+  AUD: 'A$'
+}
+
+function getCurrencySymbol(currency) {
+  return CURRENCY_SYMBOLS[currency?.toUpperCase()] || currency || '$'
+}
 
 // ─────────────────────────────────────────────────────────────
 // Computed - Contacts
@@ -697,8 +717,9 @@ const amountPerRecipient = computed(() => {
   if (currency.value === 'sats') {
     return Math.floor(val)
   }
-  // Convert fiat to sats
-  return Math.floor((val / btcPrice.value) * 100000000)
+  // Convert fiat to sats using exchange rate
+  if (!exchangeRate.value) return 0
+  return Math.floor((val / exchangeRate.value) * 100000000)
 })
 
 const totalAmount = computed(() => {
@@ -737,8 +758,10 @@ const canProceedFromAmount = computed(() => {
 })
 
 const fiatEquivalent = computed(() => {
-  const fiatVal = (amountPerRecipient.value / 100000000) * btcPrice.value
-  return `~$${fiatVal.toFixed(2)} ${fiatCurrency.value}`
+  if (!exchangeRate.value) return ''
+  const fiatVal = (amountPerRecipient.value / 100000000) * exchangeRate.value
+  const symbol = getCurrencySymbol(fiatCurrency.value)
+  return `~${symbol}${fiatVal.toFixed(2)}`
 })
 
 const satsEquivalent = computed(() => {
@@ -850,8 +873,10 @@ function formatSats(sats) {
 }
 
 function getFiatValue(sats) {
-  const fiat = (sats / 100000000) * btcPrice.value
-  return `$${fiat.toFixed(2)}`
+  if (!exchangeRate.value) return ''
+  const fiat = (sats / 100000000) * exchangeRate.value
+  const symbol = getCurrencySymbol(fiatCurrency.value)
+  return `${symbol}${fiat.toFixed(2)}`
 }
 
 function getContactAmount(contact) {
@@ -966,11 +991,11 @@ function toggleCurrency() {
   const currentSats = amountPerRecipient.value
   currency.value = currency.value === 'sats' ? 'fiat' : 'sats'
 
-  if (currentSats > 0) {
+  if (currentSats > 0 && exchangeRate.value) {
     if (currency.value === 'sats') {
       amountDisplay.value = currentSats.toString()
     } else {
-      const fiat = (currentSats / 100000000) * btcPrice.value
+      const fiat = (currentSats / 100000000) * exchangeRate.value
       amountDisplay.value = fiat.toFixed(2)
     }
   }
