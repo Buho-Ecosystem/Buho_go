@@ -1085,8 +1085,9 @@ async function fetchLightningAddressInvoice(address, amountSats) {
     throw new Error(`Maximum: ${Math.floor(data.maxSendable / 1000)} sats`)
   }
 
-  // Request invoice
-  const callbackUrl = `${data.callback}?amount=${amountMs}`
+  // Request invoice - use & if callback already has query params
+  const separator = data.callback.includes('?') ? '&' : '?'
+  const callbackUrl = `${data.callback}${separator}amount=${amountMs}`
   const invoiceResponse = await fetch(callbackUrl)
   if (!invoiceResponse.ok) {
     throw new Error('Failed to get invoice')
