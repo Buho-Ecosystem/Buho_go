@@ -235,7 +235,7 @@
 
           <!-- CUSTOM MODE -->
           <template v-else>
-            <!-- Quick Fill Helper -->
+            <!-- DISABLED: Quick Fill Helper - commented out for simplicity
             <div class="quick-fill">
               <input
                 v-model="quickFillAmount"
@@ -255,6 +255,7 @@
                 {{ $t('Fill all') }}
               </q-btn>
             </div>
+            -->
 
             <div class="custom-amounts-list">
               <div
@@ -866,13 +867,14 @@ function updateCustomAmount(contactId, value) {
   customAmounts.value[contactId] = numericValue
 }
 
-function fillAllAmounts() {
-  const amount = quickFillAmount.value.replace(/[^0-9]/g, '')
-  if (!amount) return
-  for (const contact of selectedContacts.value) {
-    customAmounts.value[contact.id] = amount
-  }
-}
+// DISABLED: fillAllAmounts - commented out for simplicity
+// function fillAllAmounts() {
+//   const amount = quickFillAmount.value.replace(/[^0-9]/g, '')
+//   if (!amount) return
+//   for (const contact of selectedContacts.value) {
+//     customAmounts.value[contact.id] = amount
+//   }
+// }
 
 function getTypeLabel(type) {
   const labels = { lightning: 'Lightning', spark: 'Spark', bitcoin: 'Bitcoin' }
