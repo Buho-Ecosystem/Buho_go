@@ -11,10 +11,10 @@ Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 1. [Choosing Your Wallet Type](#choosing-your-wallet-type)
 2. [Setting Up a Spark Wallet](#setting-up-a-spark-wallet)
 3. [Connecting an NWC Wallet](#connecting-an-nwc-wallet)
-4. [Connecting an LNBits Wallet](#connecting-an-lnbits-wallet)
-5. [Receiving Bitcoin](#receiving-bitcoin)
-6. [Sending Bitcoin](#sending-bitcoin)
-7. [On-Chain Bitcoin (L1)](#on-chain-bitcoin-l1)
+4. [Receiving Bitcoin](#receiving-bitcoin)
+5. [Sending Bitcoin](#sending-bitcoin)
+6. [Batch Send](#batch-send)
+7. [Internal Transfer](#internal-transfer)
 8. [Transaction History](#transaction-history)
 9. [Managing Contacts](#managing-contacts)
 10. [Switching Wallets](#switching-wallets)
@@ -25,7 +25,7 @@ Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 
 ## Choosing Your Wallet Type
 
-BuhoGO supports three types of wallets. Choose the one that fits your needs. See the [feature comparison table](README.md#payment-capabilities) for a quick overview.
+BuhoGO supports two types of wallets. Choose the one that fits your needs. See the [feature comparison table](README.md#payment-capabilities) for a quick overview.
 
 ### Spark Wallet
 
@@ -36,7 +36,6 @@ Best for users who want full control over their Bitcoin.
 - Zero-fee transfers to other Spark users
 - Works offline for viewing balance
 - Single seed phrase backs up everything
-- On-chain Bitcoin (L1) receive and send support
 
 **Considerations**
 - Requires secure backup of seed phrase
@@ -48,7 +47,7 @@ Best for users who want full control over their Bitcoin.
 Best for users who already have a Lightning wallet they want to use.
 
 **Advantages**
-- Connect your existing wallet (Alby, Primal, etc.)
+- Connect your existing wallet (Alby, Mutiny, etc.)
 - No seed phrase to manage
 - Multiple wallets supported
 - Quick setup with QR code
@@ -58,22 +57,6 @@ Best for users who already have a Lightning wallet they want to use.
 - Features limited by connected wallet capabilities
 - Cannot send to Spark addresses
 
-### LNBits Wallet
-
-Best for users who run their own LNBits instance or want direct API access.
-
-**Advantages**
-- Connect to any LNBits server
-- Full control via Admin API key
-- Self-hosted option for maximum privacy
-- Multiple wallets supported
-- Works with any LNBits-compatible backend
-
-**Considerations**
-- Requires LNBits server URL and Admin API key
-- Cannot send to Spark addresses
-- No fee estimation (fees handled by LNBits backend)
-
 <br>
 
 ## Setting Up a Spark Wallet
@@ -82,13 +65,13 @@ Best for users who run their own LNBits instance or want direct API access.
 
 Open BuhoGO and tap "Create Wallet" on the welcome screen.
 
-<img src="public/Spark_images/AddNew_Wallet.png" alt="Add New Wallet" width="280">
+<img src="public/Settings_images/BuhoGO_Start_Choose_Wallet.png" alt="Add New Wallet" width="280">
 
 ### Step 2: Save Your Seed Phrase
 
 You will see 12 words displayed on screen. These words are your **only way** to recover your wallet.
 
-<img src="public/Spark_images/CreateSeed_1.png" alt="Create Seed Phrase" width="280">
+<img src="public/Spark_images/CreateSeed_2.png" alt="Create Seed Phrase" width="280">
 
 **Important**:
 - Write these words down on paper in the exact order shown
@@ -102,7 +85,7 @@ You will see 12 words displayed on screen. These words are your **only way** to 
 
 The app will show all 12 words shuffled in random order. You must tap each word in the correct sequence (1-12) to prove you've properly recorded your backup.
 
-<img src="public/Spark_images/CreateSeed_2.png" alt="Verify Seed Phrase" width="280">
+<img src="public/Spark_images/CreateSeed_3.png" alt="Verify Seed Phrase" width="280">
 
 **How it works:**
 - Tap the first word of your seed phrase
@@ -126,8 +109,6 @@ Choose a PIN you can remember but others cannot guess.
 ### Step 5: Done
 
 Your wallet is now ready. You will be taken to the main wallet screen where you can start receiving and sending Bitcoin.
-
-<img src="public/Spark_images/CreateSeed_3.png" alt="Wallet Ready" width="280">
 
 <img src="public/Spark_images/Home_Black.png" alt="Home Dark" width="280"> <img src="public/Spark_images/Home_Light.png" alt="Home Light" width="280">
 
@@ -162,52 +143,6 @@ You can connect multiple NWC wallets:
 1. Go to Settings
 2. Tap "Add Wallet"
 3. Follow the same connection steps
-
-<br>
-
-## Connecting an LNBits Wallet
-
-### What is LNBits?
-
-LNBits is an open-source Lightning accounts system that can run on top of various Lightning backends. It provides a simple API for wallet operations and can be self-hosted or used via public instances.
-
-### Getting Your LNBits Credentials
-
-1. Log in to your LNBits instance (e.g., `https://demo.lnbits.com` or your self-hosted server)
-2. Open your wallet
-3. Click on "API Info" in the wallet menu
-4. Copy the following:
-   - **Server URL**: The base URL of your LNBits instance
-   - **Admin Key**: Your wallet's Admin API key (required for full access)
-
-**Important**: The Admin Key gives full access to your wallet. Never share it publicly.
-
-### Connecting in BuhoGO
-
-1. Open BuhoGO and tap "Connect Wallet"
-2. Select "LNBits" from the wallet options
-3. Enter a name for your wallet
-4. Enter your LNBits server URL (e.g., `https://demo.lnbits.com`)
-5. Enter your Admin API key
-6. Tap "Connect"
-
-Your wallet balance will appear once connected successfully.
-
-### Supported LNBits Features
-
-- **Check Balance**: View your current wallet balance
-- **Send Payments**: Pay Lightning invoices and Lightning addresses
-- **Receive Payments**: Generate Lightning invoices
-- **Transaction History**: View past payments and receipts
-
-### Adding More LNBits Wallets
-
-You can connect multiple LNBits wallets (from same or different servers):
-
-1. Go to Settings
-2. Tap "Add Wallet"
-3. Select "LNBits"
-4. Follow the same connection steps
 
 <br>
 
@@ -279,79 +214,67 @@ Review these details carefully before confirming.
 
 <br>
 
-## On-Chain Bitcoin (L1)
+## Batch Send
 
-Spark wallets support receiving and sending on-chain Bitcoin (Layer 1). This allows you to interact directly with the Bitcoin blockchain.
+Send payments to multiple contacts at once. Great for splitting bills, paying contributors, or distributing funds.
 
-### Receiving On-Chain Bitcoin
+### How to Use
 
-Use this when someone wants to send you Bitcoin from an exchange, hardware wallet, or any on-chain source.
+1. Open Address Book or Quick Contacts
+2. Tap the batch send icon (layer icon)
+3. Select contacts you want to pay
+4. Choose amount mode:
+   - **Same amount**: Everyone gets the same
+   - **Custom amounts**: Set different amounts per contact
+5. Review total and confirm
+6. Watch payments sent one by one
 
-<img src="public/L1_images/L1_Claim_recive.png" alt="L1 Receive Address" width="280">
+### What to Know
 
-1. Tap the "Receive" button on the wallet screen
-2. Switch to the "Bitcoin" tab
-3. Share your Bitcoin address (starts with `bc1p...`)
-4. The sender can scan the QR code or copy the address
+- Payments are sent sequentially
+- Real-time progress for each payment
+- If one fails, the rest continue
+- Retry failed payments after batch completes
+- 1% of balance reserved for fees
 
-**Important Notes:**
-- Your Bitcoin address is reusable — you can receive multiple deposits to the same address
-- Deposits require 3 confirmations before they can be claimed (typically 30 minutes)
-- There is a small network fee when claiming deposits
+### Address Type Support
 
-### Tracking Incoming Deposits
+| Contact Type | Spark Wallet | NWC/LNBits |
+|--------------|--------------|------------|
+| Lightning Address | Yes | Yes |
+| Spark Address | Yes | No |
+| Bitcoin Address | Yes | No |
 
-When Bitcoin is sent to your address, you'll see it appear as a pending deposit.
+Spark and Bitcoin contacts only appear when using a Spark wallet.
 
-<img src="public/L1_images/L1_Incoming_Detected.png" alt="L1 Incoming Detected" width="280"> <img src="public/L1_images/L1_Claim_Pending.png" alt="L1 Claim Pending" width="280">
+<br>
 
-The deposit shows:
-- Amount received
-- Confirmation progress (0/3, 1/3, 2/3, 3/3)
-- Status indicator
+## Internal Transfer
 
-You can also see pending deposits in your transaction list.
+Move funds between your connected wallets without leaving the app.
 
-<img src="public/L1_images/L1_incoming_Pending_txKList.png" alt="L1 Pending in Transaction List" width="280">
+### How to Transfer
 
-### Claiming Deposits
+1. Go to Settings
+2. Tap "Transfer Between Wallets"
+3. Select source wallet (where funds come from)
+4. Select destination wallet (where funds go)
+5. Enter amount
+6. Confirm transfer
 
-Once a deposit has 3 confirmations, you can claim it to add the funds to your Spark balance.
+### How It Works
 
-<img src="public/L1_images/L1_Claim_it_final.png" alt="L1 Claim Deposit" width="280">
+The app creates a Lightning invoice from the destination wallet and pays it from the source wallet.
 
-1. Tap "Claim" on the confirmed deposit
-2. Review the fee breakdown:
-   - **Deposit amount**: Total Bitcoin received
-   - **Network fee**: Fee to claim the deposit
-   - **Net amount**: What you'll receive in your wallet
-3. Tap "Add to Wallet" to confirm
+- Standard Lightning fees apply (typically minimal)
+- Both wallets must support Lightning
+- Spark-to-Spark transfers are instant and free
 
-The claimed Bitcoin is instantly available in your Spark wallet for Lightning payments or Spark transfers.
+### Use Cases
 
-**High Fee Warning**: If the network fee is more than 50% of your deposit, you'll see a warning. Consider waiting for lower fees or returning the deposit to the sender.
-
-### Returning a Deposit
-
-If the claim fee is too high relative to your deposit amount, you can return the Bitcoin to the sender instead.
-
-<img src="public/L1_images/L1_Return_Not_Accept_L1.png" alt="L1 Return to Sender" width="280">
-
-### Sending On-Chain Bitcoin (Withdrawals)
-
-You can send Bitcoin from your Spark wallet to any on-chain Bitcoin address.
-
-1. Tap the "Send" button
-2. Enter or scan a Bitcoin address (starts with `bc1...`, `3...`, or `1...`)
-3. Enter the amount
-4. Choose your fee speed:
-   - **Slow**: Lower fee, may take longer to confirm
-   - **Medium**: Balanced fee and speed
-   - **Fast**: Higher fee, faster confirmation
-5. Review the total (amount + network fee)
-6. Confirm the withdrawal
-
-**Note**: On-chain withdrawals take time to confirm on the Bitcoin network. You can track the status in your transaction history.
+- Move funds from NWC to Spark for zero-fee transfers
+- Consolidate balances from multiple wallets
+- Rebalance between Lightning wallets
 
 <br>
 
@@ -438,11 +361,7 @@ For Spark wallets, additional options are available:
 
 **View Seed Phrase**: Requires PIN entry. Use this to verify your backup.
 
-<img src="public/Settings_images/Settings_Show_Seed.png" alt="Show Seed Phrase" width="280">
-
 **Change PIN**: Update your wallet PIN.
-
-<img src="public/Settings_images/Settings_Change_Pin.png" alt="Change PIN" width="280">
 
 **Delete Wallet**: Permanently removes the Spark wallet. Make sure you have your seed phrase backed up before deleting.
 
@@ -494,45 +413,6 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 - Check your wallet provider for any restrictions
 - Verify the payment destination is valid
 
-### LNBits Wallet Issues
-
-**Connection Failed**
-- Verify your server URL is correct and accessible
-- Ensure you're using HTTPS (required except for localhost)
-- Check that your Admin API key is valid
-- Try accessing your LNBits server directly in a browser
-
-**Invalid API Key**
-- Make sure you copied the complete Admin Key (not Invoice Key)
-- Admin Key is required for full wallet access
-- Generate a new key in LNBits if needed
-
-**Balance Not Updating**
-- Pull down to refresh the wallet
-- Check your LNBits server is online
-- Verify the wallet hasn't been deleted on the server
-
-**Payment Failed**
-- Check your LNBits wallet has sufficient balance
-- Verify the recipient's invoice is valid and not expired
-- Check the LNBits server logs for detailed error messages
-
-### On-Chain Bitcoin (L1) Issues
-
-**Deposit Not Showing**
-- Deposits may take a few minutes to appear after being broadcast
-- Tap "Check for deposits" to manually refresh
-- Ensure the sender used the correct address
-
-**Cannot Claim Deposit**
-- Wait for 3 confirmations (check the confirmation counter)
-- If the fee is too high, wait for lower network fees or return to sender
-
-**Withdrawal Pending for a Long Time**
-- On-chain transactions can take time during high network activity
-- Check the transaction status in your history
-- If you selected "Slow" speed, it may take longer to confirm
-
 ### General Issues
 
 **App Crashes on Launch**
@@ -555,7 +435,6 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 | Lightning Address | `satoshi@wallet.com` | Reusable address, similar to email |
 | Spark Address | `sp1qw3e...` | Spark network address for zero-fee transfers |
 | LNURL | `lnurl1dp68...` | Encoded URL for various Lightning operations |
-| Bitcoin Address (L1) | `bc1p...`, `bc1q...` | On-chain Bitcoin address (Spark only) |
 
 <br>
 
