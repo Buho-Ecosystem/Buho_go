@@ -1107,7 +1107,8 @@ function getActiveWallet() {
 }
 
 function getActiveWalletType() {
-  return getActiveWallet()?.type || WALLET_TYPES.SPARK
+  // Use wallet store's activeWalletType getter - most reliable
+  return walletStore.activeWalletType || null
 }
 
 function getActiveWalletNwcString() {
@@ -1135,6 +1136,14 @@ async function startBatch() {
   const walletType = getActiveWalletType()
   const provider = walletStore.getActiveProvider()
 
+  // Debug log for troubleshooting
+  console.log('[BatchSend] Starting batch with:', {
+    walletType,
+    providerName: provider?.constructor?.name,
+    activeWalletId: walletStore.activeWalletId,
+    storeActiveWalletType: walletStore.activeWalletType
+  })
+
   // Execute payments sequentially
   for (let i = 0; i < paymentResults.value.length; i++) {
     if (isCancelled.value) break
@@ -1145,6 +1154,10 @@ async function startBatch() {
     try {
       if (!provider) {
         throw new Error('Wallet not connected')
+      }
+
+      if (!walletType) {
+        throw new Error('Unknown wallet type')
       }
 
       const address = result.contact.address || result.contact.lightningAddress
