@@ -1597,11 +1597,13 @@ export default {
           };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
           const walletType = this.walletStore.activeWalletType;
-          // For Spark and LNBits wallets, just pass through - we'll process during payment
           if (walletType === 'spark' || walletType === 'lnbits') {
+            // Fetch LNURL endpoint data for amount bounds and fixed amount detection
+            const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
             this.pendingPayment = {
               ...paymentData,
-              lnurl: paymentData.data
+              lnurl: paymentData.data,
+              ...lnurlInfo
             };
           } else {
             // Process LNURL for NWC wallets
@@ -2151,6 +2153,52 @@ export default {
         };
       } catch (error) {
         console.warn('Failed to fetch Lightning address info:', error.message);
+        return {};
+      }
+    },
+
+    /**
+     * Fetch LNURL endpoint info (min/max amounts, fixed amount detection)
+     * Used by Spark and LNBits wallets to get paycode parameters before confirmation.
+     * @param {string} lnurl - The LNURL string (bech32 encoded)
+     * @returns {Promise<Object>} LNURL info with minSendable, maxSendable, isFixedAmount, etc.
+     */
+    async fetchLNURLInfo(lnurl) {
+      try {
+        const url = this.decodeLNURL(lnurl);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          return {};
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'ERROR') {
+          return {};
+        }
+
+        if (data.tag !== 'payRequest') {
+          return {};
+        }
+
+        const minSendable = data.minSendable || 1000;
+        const maxSendable = data.maxSendable || 100000000000;
+        const isFixedAmount = minSendable === maxSendable;
+
+        return {
+          minSendable,
+          maxSendable,
+          minSats: Math.ceil(minSendable / 1000),
+          maxSats: Math.floor(maxSendable / 1000),
+          isFixedAmount,
+          fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
+          commentAllowed: data.commentAllowed || 0,
+          callback: data.callback,
+          description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null
+        };
+      } catch (error) {
+        console.warn('Failed to fetch LNURL info:', error.message);
         return {};
       }
     },
