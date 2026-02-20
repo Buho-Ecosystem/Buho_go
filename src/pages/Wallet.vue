@@ -154,6 +154,7 @@
       v-model="showReceiveModal"
       @invoice-created="onInvoiceCreated"
       @bitcoin-deposits-updated="handleBitcoinDepositsUpdated"
+      @scan-withdraw="handleScanWithdraw"
     />
 
     <!-- Send Modal -->
@@ -327,7 +328,7 @@
       <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px; max-width: 95vw;">
         <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ pendingPayment?.bitcoinAddress ? $t('Send Bitcoin') : $t('Confirm Payment') }}
+            {{ pendingPayment?.type === 'lnurl_withdraw' ? $t('Redeem Sats') : pendingPayment?.bitcoinAddress ? $t('Send Bitcoin') : $t('Confirm Payment') }}
           </div>
           <q-btn flat round dense icon="las la-times" v-close-popup
                  :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"/>
@@ -341,6 +342,59 @@
             @withdrawal-complete="handleBitcoinWithdrawalComplete"
             @withdrawal-error="handleBitcoinWithdrawalError"
           />
+        </q-card-section>
+
+        <!-- LNURL-Withdraw UI -->
+        <q-card-section v-else-if="pendingPayment?.type === 'lnurl_withdraw'" class="payment-content">
+          <div class="payment-info">
+            <div class="payment-amount">
+              <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
+                {{ pendingPayment.isFixedAmount ? formatAmountInline(pendingPayment.fixedAmountSats) : (paymentAmount ? formatAmountInline(parseInt(paymentAmount)) : $t('Enter amount')) }}
+              </div>
+              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+                <span v-if="paymentFiatValue">{{ paymentFiatValue }}</span>
+              </div>
+            </div>
+
+            <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
+              <div class="detail-item" v-if="pendingPayment.defaultDescription">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Description') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ pendingPayment.defaultDescription }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Type') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ $t('Withdrawal') }}</span>
+              </div>
+              <div class="detail-item" v-if="!pendingPayment.isFixedAmount">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Redeemable') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ pendingPayment.minSats }} - {{ pendingPayment.maxSats }} sats</span>
+              </div>
+            </div>
+
+            <!-- Amount input for variable-amount withdraw -->
+            <div v-if="needsWithdrawAmountInput" class="amount-input-section">
+              <q-input
+                v-model="paymentAmount"
+                outlined
+                :label="$t('Amount')"
+                type="number"
+                :min="pendingPayment.minSats"
+                :max="pendingPayment.maxSats"
+                :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
+                :rules="[val => validateWithdrawAmount(val)]"
+                :disable="lnurlWithdrawStatus !== 'idle'"
+              />
+            </div>
+
+            <!-- Status display during processing -->
+            <div v-if="lnurlWithdrawStatus !== 'idle'" class="withdraw-status-section q-mt-md" style="text-align: center;">
+              <q-spinner-dots v-if="lnurlWithdrawStatus !== 'error' && lnurlWithdrawStatus !== 'confirmed'" size="24px" class="q-mr-sm" />
+              <q-icon v-else-if="lnurlWithdrawStatus === 'error'" name="las la-exclamation-circle" size="24px" color="negative" class="q-mr-sm" />
+              <span :class="lnurlWithdrawStatus === 'error' ? 'text-negative' : ($q.dark.isActive ? 'text-grey-4' : 'text-grey-7')">
+                {{ withdrawStatusMessage }}
+              </span>
+            </div>
+          </div>
         </q-card-section>
 
         <!-- Regular Payment Confirmation -->
@@ -419,11 +473,22 @@
           </div>
         </q-card-section>
 
-        <q-card-actions align="right" class="payment-actions"
+        <q-card-actions v-if="pendingPayment?.type !== 'lnurl_withdraw' || lnurlWithdrawStatus === 'idle'" align="right" class="payment-actions"
                         :class="$q.dark.isActive ? 'payment_actions_dark' : 'payment_actions_light'">
           <q-btn flat :label="$t('Cancel')" v-close-popup no-caps
-                 :class="$q.dark.isActive ? 'cancel_btn_dark' : 'cancel_btn_light'"/>
+                 :class="$q.dark.isActive ? 'cancel_btn_dark' : 'cancel_btn_light'"
+                 @click="pendingPayment?.type === 'lnurl_withdraw' ? resetWithdrawState() : null"/>
           <q-btn
+            v-if="pendingPayment?.type === 'lnurl_withdraw'"
+            flat
+            :label="$t('Redeem')"
+            no-caps
+            @click="executeWithdraw"
+            :disable="!canConfirmWithdraw"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+          />
+          <q-btn
+            v-else
             flat
             :label="$t('Send Payment')"
             no-caps
@@ -435,6 +500,16 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- LNURL-Withdraw Success Screen -->
+    <PaymentConfirmation
+      v-model="showWithdrawSuccess"
+      :amount="withdrawConfirmedAmount"
+      :fiat-amount="withdrawConfirmedFiat"
+      label="Sats Received"
+      :auto-close-delay="5"
+      @closed="onWithdrawSuccessClosed"
+    />
 
     <!-- Save Contact Dialog -->
     <q-dialog v-model="showSaveContactDialog" persistent class="save-contact-dialog">
@@ -510,8 +585,11 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService} from '../utils/lightning.js';
+import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
+import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
+import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
 import LoadingScreen from '../components/LoadingScreen.vue';
@@ -535,7 +613,8 @@ export default {
     InternalTransferModal,
     AddressBookQuickModal,
     PaymentModal,
-    BatchSendModal
+    BatchSendModal,
+    PaymentConfirmation
   },
   setup() {
     const walletStore = useWalletStore();
@@ -612,7 +691,16 @@ export default {
       showBatchSend: false,
       // Contact Payment Modal
       showContactPayment: false,
-      selectedPayContact: null
+      selectedPayContact: null,
+      // LNURL-Withdraw state
+      lnurlWithdrawStatus: 'idle',
+      lnurlWithdrawError: null,
+      lnurlWithdrawInvoice: null,
+      withdrawPaymentMonitor: null,
+      withdrawSparkUnsubscribe: null,
+      showWithdrawSuccess: false,
+      withdrawConfirmedAmount: 0,
+      withdrawConfirmedFiat: ''
     };
   },
   computed: {
@@ -626,6 +714,9 @@ export default {
     },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
+
+      // LNURL-withdraw has its own amount handling
+      if (this.pendingPayment.type === 'lnurl_withdraw') return false;
 
       // Spark addresses always need amount input (no embedded amount)
       if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress) {
@@ -691,6 +782,28 @@ export default {
     },
     storeConnectionStates() {
       return this.walletStore.connectionStates || {};
+    },
+    needsWithdrawAmountInput() {
+      if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
+      return !this.pendingPayment.isFixedAmount;
+    },
+    canConfirmWithdraw() {
+      if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
+      if (this.lnurlWithdrawStatus !== 'idle') return false;
+      if (this.pendingPayment.isFixedAmount) return true;
+      const amount = parseInt(this.paymentAmount);
+      return amount >= this.pendingPayment.minSats && amount <= this.pendingPayment.maxSats;
+    },
+    withdrawStatusMessage() {
+      const messages = {
+        'idle': '',
+        'creating': this.$t('Preparing...'),
+        'submitting': this.$t('Requesting funds...'),
+        'monitoring': this.$t('Receiving sats...'),
+        'confirmed': this.$t('Sats received!'),
+        'error': this.lnurlWithdrawError || this.$t('Redeem failed')
+      };
+      return messages[this.lnurlWithdrawStatus] || '';
     }
   },
   async created() {
@@ -713,6 +826,8 @@ export default {
     }
     // Stop L1 Bitcoin deposit polling
     this.stopBitcoinDepositPolling();
+    // Stop withdraw monitor if active
+    this.stopWithdrawMonitor();
   },
   watch: {
     'walletState.balance': {
@@ -1548,6 +1663,292 @@ export default {
       );
     },
 
+    handleScanWithdraw() {
+      this.showReceiveModal = false;
+      this.$nextTick(() => {
+        this.showSendModal = true;
+      });
+    },
+
+    // ========================================================================
+    // LNURL-Withdraw Methods
+    // ========================================================================
+
+    async executeWithdraw() {
+      if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return;
+      if (!this.canConfirmWithdraw) return;
+
+      const amountSats = this.pendingPayment.isFixedAmount
+        ? this.pendingPayment.fixedAmountSats
+        : parseInt(this.paymentAmount);
+      const description = this.pendingPayment.defaultDescription || 'Withdrawal';
+
+      try {
+        // Step 1: Create invoice
+        this.lnurlWithdrawStatus = 'creating';
+        const invoice = await this.createInvoiceForWithdraw(amountSats, description);
+        this.lnurlWithdrawInvoice = invoice;
+
+        // Step 2: Submit callback to withdraw service
+        this.lnurlWithdrawStatus = 'submitting';
+        await this.submitWithdrawCallback(this.pendingPayment, invoice.payment_request);
+
+        // Step 3: Monitor for incoming payment
+        this.lnurlWithdrawStatus = 'monitoring';
+        await this.startWithdrawPaymentMonitor(invoice, amountSats);
+
+      } catch (error) {
+        console.error('Withdraw failed:', error);
+        this.lnurlWithdrawStatus = 'error';
+        this.lnurlWithdrawError = error.message || 'Something went wrong';
+        // Reset to idle after showing error briefly
+        setTimeout(() => {
+          if (this.lnurlWithdrawStatus === 'error') {
+            this.lnurlWithdrawStatus = 'idle';
+            this.lnurlWithdrawError = null;
+          }
+        }, 4000);
+      }
+    },
+
+    async createInvoiceForWithdraw(amountSats, description) {
+      const walletType = this.walletStore.activeWalletType;
+      let result;
+
+      if (walletType === 'spark') {
+        const provider = await this.walletStore.ensureSparkConnected();
+        result = await provider.createInvoice({ amount: amountSats, description });
+      } else if (walletType === 'lnbits') {
+        const provider = this.walletStore.getActiveProvider();
+        if (!provider) throw new Error('No LNbits provider available');
+        result = await provider.createInvoice({ amount: amountSats, description });
+      } else {
+        // NWC - LightningPaymentService uses positional args and returns snake_case
+        const activeWallet = this.getActiveWallet();
+        if (!activeWallet?.nwcString) throw new Error('No active wallet found');
+        const lightningService = new LightningPaymentService(activeWallet.nwcString);
+        result = await lightningService.createInvoice(amountSats, description);
+      }
+
+      // Normalize to snake_case for PaymentMonitor compatibility
+      const paymentRequest = result.payment_request || result.paymentRequest;
+      let paymentHash = result.payment_hash || result.paymentHash || result.rHash || result.r_hash;
+
+      // Fallback: decode payment hash from the bolt11 invoice
+      if (!paymentHash && paymentRequest) {
+        try {
+          const decoded = new Invoice({ pr: paymentRequest });
+          paymentHash = decoded.paymentHash || null;
+        } catch (e) {
+          console.warn('Could not decode payment hash from invoice:', e.message);
+        }
+      }
+
+      return {
+        payment_request: paymentRequest,
+        payment_hash: paymentHash,
+        amount: amountSats,
+        expires_at: result.expires_at || result.expiresAt || Math.floor(Date.now() / 1000) + 3600
+      };
+    },
+
+    async submitWithdrawCallback(withdrawData, bolt11) {
+      const callbackUrl = new URL(withdrawData.callback);
+      callbackUrl.searchParams.set('k1', withdrawData.k1);
+      callbackUrl.searchParams.set('pr', bolt11);
+
+      const response = await fetch(callbackUrl.toString());
+      if (!response.ok) {
+        throw new Error(`Withdraw callback failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.status === 'ERROR') {
+        throw new Error(data.reason || 'Withdraw service rejected the request');
+      }
+
+      // Some services return { status: "OK" }, others just return without error
+      return data;
+    },
+
+    async startWithdrawPaymentMonitor(invoice, amountSats) {
+      const walletType = this.walletStore.activeWalletType;
+
+      if (walletType === 'spark') {
+        // Spark: event-based monitoring
+        try {
+          const provider = await this.walletStore.ensureSparkConnected();
+          this.withdrawSparkUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
+            this.handleWithdrawConfirmed(amountSats);
+          });
+        } catch (error) {
+          console.warn('Spark event monitoring failed, falling back to polling:', error);
+          this.startWithdrawPollingMonitor(invoice, amountSats);
+        }
+      } else if (walletType === 'lnbits') {
+        this.startWithdrawPollingMonitor(invoice, amountSats);
+      } else {
+        // NWC
+        this.startWithdrawNWCPollingMonitor(invoice, amountSats);
+      }
+    },
+
+    startWithdrawPollingMonitor(invoice, amountSats) {
+      const provider = this.walletStore.getActiveProvider();
+      if (!provider) {
+        this.lnurlWithdrawStatus = 'error';
+        this.lnurlWithdrawError = 'No provider available for monitoring';
+        return;
+      }
+
+      this.withdrawPaymentMonitor = createPaymentMonitor();
+      this.withdrawPaymentMonitor.start({
+        invoice,
+        provider: {
+          lookupInvoice: async (hash) => {
+            const result = await provider.lookupInvoice(hash);
+            return result;
+          }
+        },
+        onStatusChange: (status, data) => {
+          if (status === PaymentStatus.CONFIRMED) {
+            this.handleWithdrawConfirmed(data.amount || amountSats);
+          } else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
+            this.lnurlWithdrawStatus = 'error';
+            this.lnurlWithdrawError = data.message || 'Payment monitoring failed';
+          }
+        }
+      });
+    },
+
+    startWithdrawNWCPollingMonitor(invoice, amountSats) {
+      const activeWallet = this.getActiveWallet();
+      if (!activeWallet?.nwcString) {
+        this.lnurlWithdrawStatus = 'error';
+        this.lnurlWithdrawError = 'No active wallet found';
+        return;
+      }
+
+      let rawProvider = this.walletStore.getActiveProvider();
+      if (!rawProvider) {
+        rawProvider = new LightningPaymentService(activeWallet.nwcString);
+      }
+
+      const wrappedProvider = {
+        lookupInvoice: async (hash) => {
+          // Try lookupInvoice first
+          try {
+            const result = await rawProvider.lookupInvoice({ payment_hash: hash, paymentHash: hash });
+            if (result && checkNWCPaymentStatus(result)) {
+              return { paid: true, preimage: result.preimage, amount: result.amount };
+            }
+          } catch (e) {
+            // lookupInvoice not supported - use fallback
+          }
+
+          // Fallback: Search in recent transactions
+          try {
+            const txResponse = await rawProvider.listTransactions({
+              limit: 50,
+              unpaid: false,
+              type: 'incoming'
+            });
+
+            if (txResponse?.transactions) {
+              const found = txResponse.transactions.find(tx =>
+                tx.payment_hash === hash || tx.paymentHash === hash
+              );
+
+              if (found && checkNWCPaymentStatus(found)) {
+                return {
+                  paid: true,
+                  preimage: found.preimage,
+                  amount: Math.abs(found.amount || 0)
+                };
+              }
+            }
+          } catch (listError) {
+            // listTransactions also failed
+          }
+
+          return { paid: false };
+        }
+      };
+
+      this.withdrawPaymentMonitor = createPaymentMonitor();
+      this.withdrawPaymentMonitor.start({
+        invoice,
+        provider: wrappedProvider,
+        onStatusChange: (status, data) => {
+          if (status === PaymentStatus.CONFIRMED) {
+            this.handleWithdrawConfirmed(data.amount || amountSats);
+          } else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
+            this.lnurlWithdrawStatus = 'error';
+            this.lnurlWithdrawError = data.message || 'Payment monitoring failed';
+          }
+        }
+      });
+    },
+
+    async handleWithdrawConfirmed(amount) {
+      this.stopWithdrawMonitor();
+      this.lnurlWithdrawStatus = 'confirmed';
+
+      this.withdrawConfirmedAmount = amount;
+
+      // Calculate fiat value
+      try {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
+        if (fiatAmount !== null) {
+          this.withdrawConfirmedFiat = '≈ ' + fiatRatesService.formatFiatAmount(fiatAmount, currency);
+        }
+      } catch (e) {
+        // Fiat conversion optional
+      }
+
+      this.showPaymentConfirmation = false;
+      this.pendingPayment = null;
+      this.showWithdrawSuccess = true;
+
+      await this.updateWalletBalance();
+    },
+
+    stopWithdrawMonitor() {
+      if (this.withdrawPaymentMonitor) {
+        this.withdrawPaymentMonitor.stop();
+        this.withdrawPaymentMonitor = null;
+      }
+      if (this.withdrawSparkUnsubscribe) {
+        this.withdrawSparkUnsubscribe();
+        this.withdrawSparkUnsubscribe = null;
+      }
+    },
+
+    resetWithdrawState() {
+      this.stopWithdrawMonitor();
+      this.lnurlWithdrawStatus = 'idle';
+      this.lnurlWithdrawError = null;
+      this.lnurlWithdrawInvoice = null;
+      this.withdrawConfirmedAmount = 0;
+      this.withdrawConfirmedFiat = '';
+    },
+
+    onWithdrawSuccessClosed() {
+      this.showWithdrawSuccess = false;
+      this.resetWithdrawState();
+      this.paymentAmount = '';
+    },
+
+    validateWithdrawAmount(val) {
+      if (!this.pendingPayment) return true;
+      const amount = parseInt(val);
+      if (isNaN(amount) || amount <= 0) return 'Amount must be greater than 0';
+      if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
+      if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
+      return true;
+    },
+
     getPaymentTypeLabel() {
       if (!this.paymentData && !this.pendingPayment) return '';
 
@@ -1556,6 +1957,7 @@ export default {
       const labels = {
         'lightning_invoice': 'Lightning Invoice',
         'lnurl_pay': 'LNURL Payment',
+        'lnurl_withdraw': 'Withdrawal',
         'lightning_address': 'Lightning Address',
         'spark_address': 'Spark Transfer',
         'bitcoin_address': 'Bitcoin Withdrawal'
@@ -1596,25 +1998,40 @@ export default {
             description: parsedInvoice.description
           };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
-          const walletType = this.walletStore.activeWalletType;
-          if (walletType === 'spark' || walletType === 'lnbits') {
-            // Fetch LNURL endpoint data for amount bounds and fixed amount detection
-            const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
+          // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
+          const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
+
+          if (lnurlInfo.lnurlType === 'withdrawRequest') {
+            // LNURL-withdraw: set up withdraw flow
+            this.resetWithdrawState();
             this.pendingPayment = {
               ...paymentData,
+              type: 'lnurl_withdraw',
               lnurl: paymentData.data,
-              ...lnurlInfo
+              ...lnurlInfo,
+              amount: lnurlInfo.fixedAmountSats || 0,
+              description: lnurlInfo.defaultDescription
             };
           } else {
-            // Process LNURL for NWC wallets
-            const activeWallet = this.getActiveWallet();
-            if (!activeWallet?.nwcString) {
-              throw new Error('No active wallet found');
+            // LNURL-pay: existing flow
+            const walletType = this.walletStore.activeWalletType;
+            if (walletType === 'spark' || walletType === 'lnbits') {
+              this.pendingPayment = {
+                ...paymentData,
+                lnurl: paymentData.data,
+                ...lnurlInfo
+              };
+            } else {
+              // Process LNURL for NWC wallets
+              const activeWallet = this.getActiveWallet();
+              if (!activeWallet?.nwcString) {
+                throw new Error('No active wallet found');
+              }
+              const lightningService = new LightningPaymentService(activeWallet.nwcString);
+              const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
+              console.log('LNURL processed:', processedLnurl);
+              this.pendingPayment = processedLnurl;
             }
-            const lightningService = new LightningPaymentService(activeWallet.nwcString);
-            const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
-            console.log('LNURL processed:', processedLnurl);
-            this.pendingPayment = processedLnurl;
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
           // Fetch LNURL info for all wallet types
@@ -1757,7 +2174,14 @@ export default {
       if (!this.pendingPayment) return '';
 
       let amount = 0;
-      if (this.needsAmountInput) {
+      if (this.pendingPayment.type === 'lnurl_withdraw') {
+        // LNURL-withdraw: fixed or user-entered amount
+        if (this.pendingPayment.isFixedAmount) {
+          amount = this.pendingPayment.fixedAmountSats || 0;
+        } else {
+          amount = parseInt(this.paymentAmount) || 0;
+        }
+      } else if (this.needsAmountInput) {
         amount = parseInt(this.paymentAmount) || 0;
       } else if (this.pendingPayment.type === 'lnurl' ||
                  this.pendingPayment.type === 'lnurl_pay' ||
@@ -2178,6 +2602,27 @@ export default {
           return {};
         }
 
+        if (data.tag === 'withdrawRequest') {
+          const minWithdrawable = data.minWithdrawable || 1000;
+          const maxWithdrawable = data.maxWithdrawable || 100000000000;
+          const isFixedAmount = minWithdrawable === maxWithdrawable;
+          const minSats = Math.ceil(minWithdrawable / 1000);
+          const maxSats = Math.floor(maxWithdrawable / 1000);
+
+          return {
+            lnurlType: 'withdrawRequest',
+            k1: data.k1,
+            callback: data.callback,
+            minWithdrawable,
+            maxWithdrawable,
+            minSats,
+            maxSats,
+            isFixedAmount,
+            fixedAmountSats: isFixedAmount ? maxSats : null,
+            defaultDescription: data.defaultDescription || 'Withdrawal'
+          };
+        }
+
         if (data.tag !== 'payRequest') {
           return {};
         }
@@ -2187,6 +2632,7 @@ export default {
         const isFixedAmount = minSendable === maxSendable;
 
         return {
+          lnurlType: 'payRequest',
           minSendable,
           maxSendable,
           minSats: Math.ceil(minSendable / 1000),
