@@ -715,5 +715,16 @@ export default {
   "Requires Spark": "Requiere Spark",
   "Unknown type": "Tipo desconocido",
   "Payment failed": "Pago fallido",
-  "Cancelled": "Cancelado"
+  "Cancelled": "Cancelado",
+  "Redeem Sats": "Canjear Sats",
+  "Withdrawal": "Retiro",
+  "Redeem": "Canjear",
+  "Preparing...": "Preparando...",
+  "Requesting funds...": "Solicitando fondos...",
+  "Receiving sats...": "Recibiendo sats...",
+  "Sats received!": "Sats recibidos!",
+  "Redeem failed": "Canje fallido",
+  "Redeemable": "Canjeable",
+  "Enter amount": "Ingrese monto",
+  "Scan to redeem": "Escanear para canjear"
 }

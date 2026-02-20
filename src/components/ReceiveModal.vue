@@ -283,21 +283,34 @@
 
       <!-- Footer (only for invoice creation) -->
       <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView && !showBitcoinReceiveView">
-        <q-btn
-          class="create-invoice-btn"
-          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-          :loading="isCreatingInvoice"
-          @click="createInvoice"
-          :disable="!isValidAmount"
-          no-caps
-          unelevated
-        >
-          <span v-if="!isCreatingInvoice">{{ $t('Create Invoice') }}</span>
-          <template v-slot:loading>
-            <q-spinner-dots class="q-mr-sm"/>
-            {{ $t('Creating...') }}
-          </template>
-        </q-btn>
+        <div class="receive-footer-buttons">
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-qrcode"
+            class="scan-withdraw-btn"
+            :class="$q.dark.isActive ? 'scan-btn-dark' : 'scan-btn-light'"
+            @click="$emit('scan-withdraw')"
+          >
+            <q-tooltip>{{ $t('Scan to redeem') }}</q-tooltip>
+          </q-btn>
+          <q-btn
+            class="create-invoice-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :loading="isCreatingInvoice"
+            @click="createInvoice"
+            :disable="!isValidAmount"
+            no-caps
+            unelevated
+          >
+            <span v-if="!isCreatingInvoice">{{ $t('Create Invoice') }}</span>
+            <template v-slot:loading>
+              <q-spinner-dots class="q-mr-sm"/>
+              {{ $t('Creating...') }}
+            </template>
+          </q-btn>
+        </div>
       </q-card-section>
     </q-card>
   </q-dialog>
@@ -319,7 +332,7 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
-import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
+import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
 import { shareContent } from '../utils/share';
 import { truncateAddress } from '../utils/addressUtils';
 import { getQrOptions } from '../utils/qrConfig';
@@ -343,7 +356,7 @@ export default {
       default: false
     }
   },
-  emits: ['update:modelValue', 'invoice-created', 'bitcoin-deposits-updated'],
+  emits: ['update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw'],
   data() {
     return {
       displayAmount: '',
@@ -679,7 +692,7 @@ export default {
           try {
             const invoice = await rawProvider.lookupInvoice({ payment_hash: hash });
             if (invoice) {
-              const isPaid = this._checkNWCPaymentStatus(invoice);
+              const isPaid = checkNWCPaymentStatus(invoice);
               if (isPaid) {
                 return { paid: true, preimage: invoice?.preimage, amount: invoice?.amount };
               }
@@ -701,7 +714,7 @@ export default {
                 tx.payment_hash === hash || tx.paymentHash === hash
               );
 
-              if (found && this._checkNWCPaymentStatus(found)) {
+              if (found && checkNWCPaymentStatus(found)) {
                 return {
                   paid: true,
                   preimage: found.preimage,
@@ -1231,36 +1244,6 @@ export default {
       }
     },
 
-    /**
-     * Comprehensive NWC payment status check
-     * Handles various response formats from different NWC wallet implementations
-     * @param {Object} record - Invoice or transaction record from NWC
-     * @returns {boolean} True if payment was received
-     */
-    _checkNWCPaymentStatus(record) {
-      if (!record) return false;
-
-      // Alby SDK v7 uses 'state' field with lowercase values
-      if (record.state === 'settled') return true;
-      if (record.state === 'SETTLED') return true;
-
-      // Legacy/fallback checks for different wallet implementations
-      if (record.settled === true) return true;
-      if (record.paid === true) return true;
-
-      // Status field variants
-      if (record.status === 'SETTLED' || record.status === 'settled') return true;
-      if (record.status === 'complete' || record.status === 'completed') return true;
-
-      // settled_at timestamp (camelCase and snake_case)
-      if (typeof record.settled_at === 'number' && record.settled_at > 0) return true;
-      if (typeof record.settledAt === 'number' && record.settledAt > 0) return true;
-
-      // Preimage presence indicates payment was received
-      if (record.preimage && record.preimage.length > 0) return true;
-
-      return false;
-    }
   }
 }
 </script>
@@ -1709,6 +1692,29 @@ export default {
 .receive-footer {
   padding: 1rem 1.5rem 1.5rem;
   flex-shrink: 0;
+}
+
+.receive-footer-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scan-withdraw-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.scan-btn-dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.scan-btn-light {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.5);
 }
 
 .create-invoice-btn {

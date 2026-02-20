@@ -204,6 +204,7 @@ export const PAYMENT_TYPES = {
   LIGHTNING_INVOICE: 'lightning_invoice',
   LIGHTNING_ADDRESS: 'lightning_address',
   LNURL: 'lnurl',
+  LNURL_WITHDRAW: 'lnurl_withdraw',
   BITCOIN_ADDRESS: 'bitcoin_address',
   UNKNOWN: 'unknown'
 };

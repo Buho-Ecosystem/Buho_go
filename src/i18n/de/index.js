@@ -715,5 +715,16 @@ export default {
   "Requires Spark": "Erfordert Spark",
   "Unknown type": "Unbekannter Typ",
   "Payment failed": "Zahlung fehlgeschlagen",
-  "Cancelled": "Abgebrochen"
+  "Cancelled": "Abgebrochen",
+  "Redeem Sats": "Sats einlösen",
+  "Withdrawal": "Auszahlung",
+  "Redeem": "Einlösen",
+  "Preparing...": "Wird vorbereitet...",
+  "Requesting funds...": "Fordere Guthaben an...",
+  "Receiving sats...": "Empfange Sats...",
+  "Sats received!": "Sats erhalten!",
+  "Redeem failed": "Einlösen fehlgeschlagen",
+  "Redeemable": "Einlösbar",
+  "Enter amount": "Betrag eingeben",
+  "Scan to redeem": "Scannen zum Einlösen"
 }
