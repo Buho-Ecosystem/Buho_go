@@ -15,6 +15,8 @@
 
 import { WalletProvider } from './WalletProvider';
 import { SparkWallet } from '@buildonspark/spark-sdk';
+import { Invoice } from '@getalby/lightning-tools';
+import { fiatRatesService } from '../utils/fiatRates.js';
 
 /**
  * Payment status constants matching SDK statuses
@@ -25,6 +27,22 @@ const PAYMENT_STATUS = {
   FAILED: 'failed'
 };
 
+/**
+ * Bitcoin L1 constants
+ */
+const BITCOIN_L1 = {
+  // Number of confirmations required before a deposit can be claimed
+  REQUIRED_CONFIRMATIONS: 3,
+  // Minimum deposit amount in satoshis
+  MIN_DEPOSIT_SATS: 500,
+  // Default mempool API fallback
+  DEFAULT_MEMPOOL_API: 'https://mempool.space/api',
+  // Typical withdrawal transaction size in vBytes
+  // P2WPKH input (~68 vB) + P2WPKH output (~31 vB) + overhead (~10 vB) ≈ 110 vB
+  // Adding buffer for potential change output: ~140 vB typical
+  TYPICAL_TX_VBYTES: 140
+};
+
 export class SparkWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
@@ -33,6 +51,20 @@ export class SparkWalletProvider extends WalletProvider {
     this.mnemonic = null;
     this.sparkAddress = null;
     this.network = walletData.network || 'MAINNET';
+
+    // Sync state tracking for UI feedback
+    this.isSyncing = false;
+    this.syncReason = null;
+  }
+
+  /**
+   * Set syncing state for UI feedback
+   * @param {boolean} syncing - Whether wallet is currently syncing
+   * @param {string|null} reason - Reason for sync (e.g., 'claiming_deposit')
+   */
+  setSyncing(syncing, reason = null) {
+    this.isSyncing = syncing;
+    this.syncReason = reason;
   }
 
   getType() {
@@ -48,15 +80,36 @@ export class SparkWalletProvider extends WalletProvider {
   // ==========================================
 
   /**
-   * Calculate recommended fee based on Spark documentation
-   * Recommendation: max(5 sats, 17 bps × amount)
+   * Calculate fallback max fee for Lightning payments
+   * Only used when SDK fee estimation fails
    * @param {number} amountSats - Payment amount in satoshis
-   * @returns {number} Recommended max fee in satoshis
+   * @returns {number} Recommended max fee in satoshis (1% with min 21 sats)
    */
   static calculateRecommendedFee(amountSats) {
-    const minFee = 5;
-    const bpsFee = Math.ceil(amountSats * 0.0017); // 17 basis points = 0.17%
-    return Math.max(minFee, bpsFee);
+    return Math.max(21, Math.ceil(amountSats * 0.01));
+  }
+
+  /**
+   * Decode a BOLT11 invoice and extract its amount
+   * Returns null if invoice has no amount (zero-amount invoice)
+   * @param {string} invoice - BOLT11 encoded invoice
+   * @returns {{ amount: number|null, isZeroAmount: boolean }}
+   */
+  static decodeInvoiceAmount(invoice) {
+    try {
+      const cleanInvoice = invoice.replace(/^lightning:/i, '');
+      const decoded = new Invoice({ pr: cleanInvoice });
+      const amount = decoded.satoshi || 0;
+      return {
+        amount: amount > 0 ? amount : null,
+        isZeroAmount: amount === 0
+      };
+    } catch (error) {
+      // If decoding fails, assume it has an amount to be safe
+      // (passing amountSats for a fixed-amount invoice causes errors)
+      console.warn('Invoice decode failed, assuming fixed amount:', error.message);
+      return { amount: null, isZeroAmount: false };
+    }
   }
 
   /**
@@ -247,17 +300,33 @@ export class SparkWalletProvider extends WalletProvider {
    * @param {string} options.invoice - BOLT11 encoded Lightning invoice
    * @param {number} [options.maxFee] - Maximum fee in sats (defaults to recommended fee)
    * @param {boolean} [options.preferSpark=false] - When true, uses Spark transfer if invoice contains Spark address
-   * @param {number} [options.amountSats] - Amount for zero-amount invoices (ignored for fixed-amount invoices)
+   * @param {number} [options.amountSats] - Amount for zero-amount invoices (auto-detected, only used if invoice has no amount)
    * @returns {Promise<{id: string, preimage: string, fee: number, status: string}>}
    */
   async payInvoice({ invoice, maxFee, preferSpark = false, amountSats = null }) {
     this._ensureConnected();
 
     try {
-      // Calculate recommended fee if not provided
-      // Use amountSats if provided (for zero-amount invoices), otherwise use a sensible default
-      const feeAmount = amountSats || 10000; // Default to 10k sats for fee calculation if unknown
-      const effectiveMaxFee = maxFee ?? SparkWalletProvider.calculateRecommendedFee(feeAmount);
+      // Decode invoice to check if it's a zero-amount invoice
+      // This prevents errors from passing amountSats to fixed-amount invoices
+      const invoiceInfo = SparkWalletProvider.decodeInvoiceAmount(invoice);
+      const invoiceAmount = invoiceInfo.amount || amountSats || 10000; // Fallback for fee calculation
+
+      // Use provided maxFee or get estimate from Spark SDK
+      // Following Spark docs: getLightningSendFeeEstimate() + small buffer
+      let effectiveMaxFee = maxFee;
+
+      if (!effectiveMaxFee) {
+        try {
+          const feeEstimate = await this.getLightningSendFeeEstimate(invoice, amountSats);
+          // Spark docs recommend: feeEstimate + 5 sats buffer
+          effectiveMaxFee = feeEstimate.estimatedFeeSats + 10; // Using 10 for extra safety
+        } catch (error) {
+          console.warn('Spark fee estimation failed:', error.message);
+          // Fallback: use 1% of amount with minimum 21 sats
+          effectiveMaxFee = Math.max(21, Math.ceil(invoiceAmount * 0.01));
+        }
+      }
 
       // Build payment parameters
       const paymentParams = {
@@ -266,8 +335,9 @@ export class SparkWalletProvider extends WalletProvider {
         preferSpark: preferSpark
       };
 
-      // Add amount for zero-amount invoices
-      if (amountSats && amountSats > 0) {
+      // ONLY add amount for verified zero-amount invoices
+      // Passing amountSatsToSend for fixed-amount invoices causes SDK error
+      if (invoiceInfo.isZeroAmount && amountSats && amountSats > 0) {
         paymentParams.amountSatsToSend = amountSats;
       }
 
@@ -290,27 +360,38 @@ export class SparkWalletProvider extends WalletProvider {
    * Useful for showing users the expected fee before confirming payment
    *
    * @param {string} invoice - BOLT11 encoded Lightning invoice
+   * @param {number} [amountSats] - Amount in sats (required for zero-amount invoices)
    * @returns {Promise<{estimatedFeeSats: number, invoice: string}>}
    */
-  async getLightningSendFeeEstimate(invoice) {
+  async getLightningSendFeeEstimate(invoice, amountSats = null) {
     this._ensureConnected();
 
     try {
-      const estimate = await this.wallet.getLightningSendFeeEstimate({
-        encodedInvoice: invoice
-      });
+      // Build estimate params
+      const estimateParams = { encodedInvoice: invoice };
+
+      // Add amount for zero-amount invoices (required by SDK)
+      if (amountSats && amountSats > 0) {
+        estimateParams.amountSats = amountSats;
+      }
+
+      const estimate = await this.wallet.getLightningSendFeeEstimate(estimateParams);
+
+      // SDK returns fee as direct number (per Spark docs)
+      const feeSats = typeof estimate === 'number' ? estimate : (estimate?.feeSats || estimate?.estimatedFeeSats || 0);
 
       return {
-        estimatedFeeSats: estimate?.feeSats || estimate?.estimatedFeeSats || 0,
+        estimatedFeeSats: feeSats,
         invoice: invoice
       };
     } catch (error) {
       // If fee estimation fails, return a calculated estimate based on recommendation
-      // This provides a fallback rather than failing completely
       console.warn('Fee estimation failed, using calculated estimate:', error.message);
 
-      // Try to decode invoice amount for better estimate (fallback to default)
-      const fallbackFee = SparkWalletProvider.calculateRecommendedFee(10000);
+      // Decode invoice to get actual amount for better fallback
+      const invoiceInfo = SparkWalletProvider.decodeInvoiceAmount(invoice);
+      const fallbackAmount = invoiceInfo.amount || amountSats || 10000;
+      const fallbackFee = SparkWalletProvider.calculateRecommendedFee(fallbackAmount);
 
       return {
         estimatedFeeSats: fallbackFee,
@@ -693,7 +774,9 @@ export class SparkWalletProvider extends WalletProvider {
 
       // Request invoice
       const amountMs = amountSats * 1000;
-      let callbackUrl = `${lnurlData.callback}?amount=${amountMs}`;
+      // Use & if callback already has query params, otherwise use ?
+      const separator = lnurlData.callback.includes('?') ? '&' : '?';
+      let callbackUrl = `${lnurlData.callback}${separator}amount=${amountMs}`;
 
       if (comment && lnurlData.commentAllowed > 0) {
         const truncatedComment = comment.substring(0, lnurlData.commentAllowed);
@@ -711,10 +794,12 @@ export class SparkWalletProvider extends WalletProvider {
         throw new Error(invoiceData.reason || 'Failed to get invoice');
       }
 
-      // Pay the invoice with smart fee calculation based on amount
+      // Pay the invoice - DO NOT pass amountSats because LNURL invoices
+      // already have the amount encoded. Passing it causes SDK error:
+      // "User can only specify amountSatsToSend for 0 amount lightning invoice"
       const result = await this.payInvoice({
         invoice: invoiceData.pr,
-        maxFee: SparkWalletProvider.calculateRecommendedFee(amountSats),
+        // amountSats intentionally omitted - invoice already has amount
         preferSpark: true // Prefer Spark transfer if recipient has Spark address
       });
 
@@ -777,6 +862,422 @@ export class SparkWalletProvider extends WalletProvider {
         if (onDisconnect) this.wallet.off('stream:disconnected', onDisconnect);
       }
     };
+  }
+
+  // ==========================================
+  // L1 Bitcoin Methods (Deposits & Withdrawals)
+  // ==========================================
+
+  /**
+   * Get static Bitcoin deposit address (reusable P2TR address)
+   * This address can be used multiple times to receive on-chain Bitcoin
+   * @returns {Promise<string>} Bitcoin deposit address (bc1p...)
+   */
+  async getL1DepositAddress() {
+    this._ensureConnected();
+
+    // Return cached address if available
+    if (this._cachedL1Address) {
+      return this._cachedL1Address;
+    }
+
+    try {
+      this._cachedL1Address = await this.wallet.getStaticDepositAddress();
+      return this._cachedL1Address;
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get pending Bitcoin deposits at the deposit address
+   * Returns UTXOs that can be claimed once confirmed
+   * @returns {Promise<Array<{txId: string, outputIndex: number, amount: number, confirmations: number, confirmed: boolean}>>}
+   * @throws {Error} If unable to fetch from any mempool API
+   */
+  async getPendingDeposits() {
+    this._ensureConnected();
+
+    const address = await this.getL1DepositAddress();
+
+    // Determine API URLs to try
+    const customUrl = fiatRatesService.getApiUrl().replace(/\/+$/, '').replace(/\/v1$/, '');
+    const fallbackUrl = BITCOIN_L1.DEFAULT_MEMPOOL_API;
+    const urlsToTry = customUrl !== fallbackUrl
+      ? [customUrl, fallbackUrl]
+      : [fallbackUrl];
+
+    let utxos = null;
+    let usedBaseUrl = null;
+    let lastError = null;
+
+    // Try each URL until one succeeds
+    for (const baseUrl of urlsToTry) {
+      try {
+        const response = await fetch(`${baseUrl}/address/${address}/utxo`);
+        if (response.ok) {
+          utxos = await response.json();
+          usedBaseUrl = baseUrl;
+          break;
+        }
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    // If all APIs failed, log error but return empty (graceful degradation)
+    if (utxos === null) {
+      console.error('[L1 Deposit] Failed to fetch UTXOs from mempool API:', lastError?.message || 'Unknown error');
+      // Return empty array rather than throwing to avoid breaking UI
+      return [];
+    }
+
+    // No deposits found (this is different from API error)
+    if (utxos.length === 0) {
+      return [];
+    }
+
+    // Get current block height for confirmation calculation
+    let currentHeight = 0;
+    try {
+      const heightResponse = await fetch(`${usedBaseUrl}/blocks/tip/height`);
+      if (heightResponse.ok) {
+        currentHeight = await heightResponse.json();
+      }
+    } catch (e) {
+      console.warn('[L1 Deposit] Could not fetch block height, confirmations may be inaccurate');
+    }
+
+    // Map to deposit format with proper confirmation status
+    const requiredConfirmations = BITCOIN_L1.REQUIRED_CONFIRMATIONS;
+    const deposits = utxos.map(utxo => {
+      let confirmations = 0;
+      if (utxo.status?.confirmed && utxo.status?.block_height && currentHeight) {
+        confirmations = currentHeight - utxo.status.block_height + 1;
+      }
+
+      return {
+        txId: utxo.txid,
+        outputIndex: utxo.vout,
+        amount: utxo.value,
+        confirmations,
+        confirmed: confirmations >= requiredConfirmations
+      };
+    });
+
+    return deposits;
+  }
+
+  /**
+   * Get fee quote for claiming a Bitcoin deposit (Step 1 of two-step claiming)
+   * Call this before claimDeposit() to show user the fee
+   * @param {string} txId - Transaction ID of the deposit
+   * @param {number} outputIndex - Output index (default 0)
+   * @returns {Promise<{feeAmount: number, feeQuoteId: string, expiresAt: number}>}
+   */
+  async getClaimFeeQuote(txId, outputIndex = 0) {
+    this._ensureConnected();
+
+    try {
+      // SDK: getClaimStaticDepositQuote(transactionId, outputIndex)
+      // Returns: { transactionId, outputIndex, network, creditAmountSats, signature }
+      const quote = await this.wallet.getClaimStaticDepositQuote(txId, outputIndex);
+
+      return {
+        creditAmountSats: Number(quote.creditAmountSats || 0),
+        signature: quote.signature, // This is the sspSignature needed for claiming
+        transactionId: quote.transactionId,
+        outputIndex: quote.outputIndex
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Claim a Bitcoin deposit using quote data
+   * @param {string} txId - Transaction ID of the deposit
+   * @param {object} quoteData - Quote data from getClaimFeeQuote()
+   * @param {number} outputIndex - Output index (default 0)
+   * @returns {Promise<{success: boolean, amount: number, processing?: boolean, message?: string}>}
+   */
+  async claimDeposit(txId, quoteData, outputIndex = 0) {
+    this._ensureConnected();
+
+    this.setSyncing(true, 'claiming_deposit');
+
+    try {
+      // SDK: claimStaticDeposit({ transactionId, creditAmountSats, sspSignature, outputIndex })
+      const result = await this.wallet.claimStaticDeposit({
+        transactionId: txId,
+        outputIndex: outputIndex,
+        creditAmountSats: quoteData.creditAmountSats,
+        sspSignature: quoteData.signature
+      });
+
+      this.setSyncing(false);
+      return {
+        success: true,
+        amount: Number(result.creditAmountSats || result.amount || 0)
+      };
+    } catch (error) {
+      this.setSyncing(false);
+      const errorMsg = error.message?.toLowerCase() || '';
+
+      // TRANSFER_LOCKED means the claim is already being processed (race condition with background stream)
+      // This is not a failure - the claim will complete successfully
+      if (errorMsg.includes('transfer_locked') || (errorMsg.includes('leaf') && errorMsg.includes('locked'))) {
+        console.log('Claim already in progress (TRANSFER_LOCKED), will complete shortly');
+        return {
+          success: true,
+          processing: true,
+          message: 'Claim is being processed. Your balance will update shortly.',
+          amount: Number(quoteData.creditAmountSats || 0)
+        };
+      }
+
+      // Provide friendly error messages
+      if (errorMsg.includes('fee')) {
+        throw new Error('Claim fee has changed. Please try again.');
+      }
+      if (errorMsg.includes('confirm')) {
+        throw new Error('Deposit needs more confirmations. Please wait.');
+      }
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch recommended fee rates from mempool.space API
+   * @returns {Promise<{fastestFee: number, halfHourFee: number, hourFee: number, economyFee: number, minimumFee: number}>}
+   */
+  async _fetchMempoolFeeRates() {
+    const apiUrl = fiatRatesService.getApiUrl();
+    // Handle both /api/v1 and /api formats
+    const baseUrl = apiUrl.replace(/\/v1$/, '');
+
+    try {
+      const response = await fetch(`${baseUrl}/v1/fees/recommended`);
+      if (!response.ok) {
+        throw new Error(`Mempool API error: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('Failed to fetch mempool fees, using fallback:', error.message);
+      // Fallback to default mempool.space if custom API fails
+      if (apiUrl !== 'https://mempool.space/api/v1') {
+        const fallbackResponse = await fetch('https://mempool.space/api/v1/fees/recommended');
+        if (fallbackResponse.ok) {
+          return await fallbackResponse.json();
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get fee quote for L1 Bitcoin withdrawal
+   * Returns fees for slow/medium/fast speeds with breakdown
+   * Fetches real-time fee rates from mempool.space API
+   * @param {number} amountSats - Amount to withdraw in satoshis
+   * @param {string} destinationAddress - Bitcoin address to withdraw to
+   * @returns {Promise<{slow: Object, medium: Object, fast: Object, expiresAt: number}>}
+   */
+  async getWithdrawalFeeQuote(amountSats, destinationAddress) {
+    this._ensureConnected();
+
+    if (!this._isValidBitcoinAddress(destinationAddress)) {
+      throw new Error('Invalid Bitcoin address');
+    }
+
+    try {
+      // Fetch both Spark quote and mempool fee rates in parallel
+      const [quote, mempoolFees] = await Promise.all([
+        this.wallet.getWithdrawalFeeQuote({
+          amountSats: amountSats,
+          withdrawalAddress: destinationAddress
+        }),
+        this._fetchMempoolFeeRates()
+      ]);
+
+      // Calculate network fees based on mempool fee rates
+      // Fee = fee_rate (sat/vB) * transaction_size (vB)
+      const txSize = BITCOIN_L1.TYPICAL_TX_VBYTES;
+      const networkFees = {
+        slow: Math.ceil(mempoolFees.hourFee * txSize),
+        medium: Math.ceil(mempoolFees.halfHourFee * txSize),
+        fast: Math.ceil(mempoolFees.fastestFee * txSize)
+      };
+
+      // Build user-friendly fee structure with breakdown
+      const buildFeeInfo = (speedQuote, networkFee, timeEstimate, feeRate) => ({
+        serviceFee: Number(speedQuote?.userFee || 0),
+        networkFee: networkFee,
+        totalFee: Number(speedQuote?.userFee || 0) + networkFee,
+        feeQuoteId: quote.feeQuoteId || quote.id,
+        timeEstimate: timeEstimate,
+        feeRate: feeRate // sat/vB for display
+      });
+
+      return {
+        slow: buildFeeInfo(quote.slow, networkFees.slow, '~1 hour', mempoolFees.hourFee),
+        medium: buildFeeInfo(quote.medium, networkFees.medium, '~30 min', mempoolFees.halfHourFee),
+        fast: buildFeeInfo(quote.fast, networkFees.fast, 'Next block', mempoolFees.fastestFee),
+        expiresAt: quote.expiry ? Math.floor(new Date(quote.expiry).getTime() / 1000) : Date.now() / 1000 + 60
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Withdraw to L1 Bitcoin address
+   * @param {Object} options - Withdrawal options
+   * @param {number} options.amountSats - Amount to withdraw in satoshis
+   * @param {string} options.destinationAddress - Bitcoin address to withdraw to
+   * @param {string} options.speed - Speed: 'SLOW', 'MEDIUM', or 'FAST'
+   * @param {string} options.feeQuoteId - Fee quote ID from getWithdrawalFeeQuote()
+   * @returns {Promise<{requestId: string, status: string, amount: number}>}
+   */
+  async withdrawToL1({ amountSats, destinationAddress, speed = 'MEDIUM', feeQuoteId }) {
+    this._ensureConnected();
+
+    if (!this._isValidBitcoinAddress(destinationAddress)) {
+      throw new Error('Invalid Bitcoin address');
+    }
+
+    try {
+      const result = await this.wallet.withdraw({
+        amountSats: amountSats,
+        withdrawalAddress: destinationAddress,
+        speed: speed.toUpperCase(),
+        feeQuoteId: feeQuoteId
+      });
+
+      return {
+        requestId: result.id,
+        status: 'pending',
+        amount: amountSats
+      };
+    } catch (error) {
+      // Provide friendly error messages
+      if (error.message?.toLowerCase().includes('balance')) {
+        throw new Error('Insufficient balance for this withdrawal');
+      }
+      if (error.message?.toLowerCase().includes('quote')) {
+        throw new Error('Fee quote expired. Please try again.');
+      }
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check withdrawal status
+   * @param {string} requestId - Withdrawal request ID from withdrawToL1()
+   * @returns {Promise<{id: string, status: string, txId: string|null, completedAt: number|null}>}
+   */
+  async getWithdrawalStatus(requestId) {
+    this._ensureConnected();
+
+    try {
+      const request = await this.wallet.getCoopExitRequest(requestId);
+
+      return {
+        id: request.id,
+        status: this._normalizeWithdrawalStatus(request.status),
+        txId: request.l1TxId || null,
+        completedAt: request.completedAt ? Math.floor(new Date(request.completedAt).getTime() / 1000) : null
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Normalize withdrawal status to user-friendly format
+   */
+  _normalizeWithdrawalStatus(status) {
+    if (!status) return 'pending';
+    const statusStr = String(status).toUpperCase();
+
+    if (statusStr.includes('COMPLETED') || statusStr.includes('FINALIZED')) {
+      return 'completed';
+    }
+    if (statusStr.includes('FAILED') || statusStr.includes('ERROR')) {
+      return 'failed';
+    }
+    if (statusStr.includes('BROADCAST')) {
+      return 'broadcasting';
+    }
+    return 'pending';
+  }
+
+  /**
+   * Validate Bitcoin address format
+   * Supports mainnet (bc1, 1, 3) and testnet (tb1, m, n, 2)
+   */
+  _isValidBitcoinAddress(address) {
+    if (!address || typeof address !== 'string') return false;
+
+    // Mainnet: bc1 (bech32), 1 (P2PKH), 3 (P2SH)
+    // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
+    const mainnetRegex = /^(bc1[a-zA-HJ-NP-Z0-9]{39,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/;
+    const testnetRegex = /^(tb1[a-zA-HJ-NP-Z0-9]{39,62}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/;
+
+    return mainnetRegex.test(address) || testnetRegex.test(address);
+  }
+
+  /**
+   * Get the user's configured mempool explorer URL
+   * Uses fiatRatesService which stores custom mempool URL from Settings
+   * @returns {string} Base URL like https://mempool.space
+   */
+  getMempoolExplorerUrl() {
+    const apiUrl = fiatRatesService.getApiUrl(); // e.g. https://mempool.space/api/v1
+    // Strip /api/v1 suffix to get base URL
+    return apiUrl.replace(/\/api\/v1\/?$/, '');
+  }
+
+  /**
+   * Refund a deposit back to the original sender
+   * Use when claim fee is too high relative to deposit amount
+   *
+   * UI: Exposed via TransactionHistory.vue claim dialog "Return to sender" option
+   *
+   * @param {string} txId - Transaction ID of the deposit
+   * @param {number} outputIndex - Output index (default 0)
+   * @returns {Promise<{success: boolean, txId: string|null}>}
+   */
+  async refundDeposit(txId, outputIndex = 0) {
+    this._ensureConnected();
+
+    try {
+      const result = await this.wallet.refundAndBroadcastStaticDeposit({
+        transactionId: txId,
+        outputIndex: outputIndex
+      });
+
+      return {
+        success: true,
+        txId: result.l1TxId || result.txId || null
+      };
+    } catch (error) {
+      // Provide friendly error messages
+      if (error.message?.toLowerCase().includes('not found')) {
+        throw new Error('Deposit not found or already claimed');
+      }
+      if (error.message?.toLowerCase().includes('confirm')) {
+        throw new Error('Deposit needs more confirmations');
+      }
+      this.setError(error);
+      throw error;
+    }
   }
 
   // ==========================================

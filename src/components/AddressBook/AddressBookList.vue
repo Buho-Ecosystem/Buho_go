@@ -3,7 +3,8 @@
     <!-- Search Bar -->
     <div class="search-section" v-if="entries.length > 0">
       <q-input
-        v-model="searchQuery"
+        :model-value="searchQuery"
+        @update:model-value="setSearchQuery"
         :placeholder="$t('Search contacts...')"
         borderless
         dense
@@ -275,14 +276,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact removed'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t delete contact'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -304,14 +305,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Color updated'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t update color'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -328,14 +329,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contacts cleared'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t clear contacts'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -567,7 +568,7 @@ export default {
 .dialog_add_btn_dark {
   border-radius: 24px !important;
   background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #FFF !important;
+  color: #0C0C0C !important;
   font-weight: 600 !important;
   box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;
   font-family: Fustat, 'Inter', sans-serif !important;
@@ -576,7 +577,7 @@ export default {
 .dialog_add_btn_light {
   border-radius: 24px !important;
   background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #FFF !important;
+  color: #0C0C0C !important;
   font-weight: 600 !important;
   box-shadow: 0px 4px 8px 0px rgba(159, 159, 159, 0.25) !important;
   font-family: Fustat, 'Inter', sans-serif !important;

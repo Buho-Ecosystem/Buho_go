@@ -20,6 +20,7 @@ export const PaymentType = {
   LIGHTNING_INVOICE: 'lightning_invoice',
   LIGHTNING_ADDRESS: 'lightning_address',
   LNURL_PAY: 'lnurl_pay',
+  LNURL_WITHDRAW: 'lnurl_withdraw',
 };
 
 /**
@@ -120,10 +121,10 @@ export class LightningPaymentService {
       return { valid: true, type: PaymentType.LIGHTNING_ADDRESS };
     }
 
-    // Check LNURL
+    // Check LNURL (could be pay or withdraw - determined after fetching endpoint)
     const lowerInput = cleanInput.toLowerCase();
     if (lowerInput.startsWith('lnurl') || lowerInput.startsWith('lightning:lnurl')) {
-      return { valid: true, type: PaymentType.LNURL_PAY };
+      return { valid: true, type: 'lnurl' };
     }
 
     // Check Lightning Invoice

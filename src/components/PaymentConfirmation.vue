@@ -11,21 +11,21 @@
       <div class="confirmation-content">
         <!-- Success Animation -->
         <div class="success-animation" :class="{ 'animate': showAnimation }">
-          <div class="success-circle">
+          <div class="success-circle" :class="accentColor === 'orange' ? 'bitcoin-theme' : ''">
             <svg class="checkmark" viewBox="0 0 52 52">
               <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
               <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
             </svg>
           </div>
-          <div class="pulse-ring"></div>
-          <div class="pulse-ring delay-1"></div>
-          <div class="pulse-ring delay-2"></div>
+          <div class="pulse-ring" :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"></div>
+          <div class="pulse-ring delay-1" :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"></div>
+          <div class="pulse-ring delay-2" :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"></div>
         </div>
 
         <!-- Amount Display -->
         <div class="amount-section" :class="{ 'fade-in': showAmount }">
           <div class="amount-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-            {{ $t('Payment Received') }}
+            {{ label || $t('Payment Received') }}
           </div>
           <div class="amount-value" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
             {{ formatAmount(amount) }}
@@ -90,9 +90,17 @@ export default {
       type: String,
       default: ''
     },
+    label: {
+      type: String,
+      default: '' // Will use 'Payment Received' if empty
+    },
     autoCloseDelay: {
       type: Number,
       default: 5 // seconds
+    },
+    accentColor: {
+      type: String,
+      default: 'green' // 'green' or 'orange' for Bitcoin
     }
   },
   emits: ['update:modelValue', 'closed'],
@@ -191,7 +199,9 @@ export default {
     },
 
     getConfettiStyle(index) {
-      const colors = ['#15DE72', '#FFD43B', '#3B82F6', '#8B5CF6', '#F59E0B']
+      const greenColors = ['#34C759', '#FFD43B', '#3B82F6', '#8B5CF6', '#F59E0B']
+      const orangeColors = ['#F7931A', '#FFD43B', '#34C759', '#FF9500', '#FFCC00']
+      const colors = this.accentColor === 'orange' ? orangeColors : greenColors
       const color = colors[index % colors.length]
       const left = Math.random() * 100
       const animDuration = 2 + Math.random() * 2
@@ -264,12 +274,18 @@ export default {
 .success-circle {
   width: 100px;
   height: 100px;
-  background: linear-gradient(135deg, #15DE72 0%, #059573 100%);
+  background: #34C759;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 32px rgba(21, 222, 114, 0.4);
+  box-shadow: 0 8px 32px rgba(52, 199, 89, 0.4);
+}
+
+/* Bitcoin Orange Theme */
+.success-circle.bitcoin-theme {
+  background: #F7931A;
+  box-shadow: 0 8px 32px rgba(247, 147, 26, 0.4);
 }
 
 .checkmark {
@@ -306,9 +322,13 @@ export default {
   position: absolute;
   width: 100px;
   height: 100px;
-  border: 2px solid rgba(21, 222, 114, 0.5);
+  border: 2px solid rgba(52, 199, 89, 0.5);
   border-radius: 50%;
   animation: pulse-expand 2s ease-out infinite;
+}
+
+.pulse-ring.bitcoin-pulse {
+  border-color: rgba(247, 147, 26, 0.5);
 }
 
 .pulse-ring.delay-1 {

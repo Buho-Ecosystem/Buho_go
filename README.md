@@ -1,10 +1,16 @@
 # BuhoGO
 
-**Bitcoin Lightning Wallet for Web and Mobile**
+**Bitcoin & Lightning Wallet for Web and Mobile**
 
-BuhoGO is an open-source wallet application that makes Bitcoin Lightning payments accessible to everyone. Whether you prefer full self-custody with Spark or want to connect your existing wallet via NWC, BuhoGO provides a clean, intuitive interface for everyday Bitcoin transactions.
+BuhoGO is an open-source wallet application that makes Bitcoin & Lightning payments accessible to everyone. Whether you prefer self-custody with [Spark](https://spark.money) or want to connect your existing wallet via [NWC](https://nwc.dev) or [LNBits](https://lnbits.com), BuhoGO provides a clean, intuitive interface for everyday Bitcoin transactions.
 
 [Live App](https://go.mybuho.de) | [Report Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
+
+<img
+  src="https://github.com/user-attachments/assets/a4750386-cf4e-49d5-b1d9-8092b59219c9"
+  alt="BuhoGO header"
+  width="500"
+/>
 
 <br>
 
@@ -55,7 +61,7 @@ BuhoGO is an open-source wallet application that makes Bitcoin Lightning payment
 
 ### Welcome Screen
 
-<img src="public/Spark_images/Starting_Point_view.png" alt="Welcome Screen" width="280">
+<img src="public/Settings_images/BuhoGO_Start_Choose_Wallet.png" alt="Welcome Screen" width="280">
 
 ### Send and Receive
 

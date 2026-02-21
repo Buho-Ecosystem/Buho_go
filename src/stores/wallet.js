@@ -9,6 +9,7 @@ import { defineStore } from 'pinia';
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { SparkWalletProvider } from '../providers/SparkWalletProvider';
+import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 
 /**
@@ -17,6 +18,7 @@ import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../provider
 const STORAGE_KEYS = {
   WALLET_STORE: 'buhoGO_wallet_store',
   LEGACY_STATE: 'buhoGO_wallet_state',
+  SESSION_PIN: 'buhoGO_session_pin', // sessionStorage only - per tab, cleared on close
 };
 
 /**
@@ -257,6 +259,22 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Check if active wallet is LNBits
+     */
+    isActiveWalletLNBits: (state) => {
+      const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
+      return activeWallet?.type === WALLET_TYPES.LNBITS;
+    },
+
+    /**
+     * Check if active wallet is NWC
+     */
+    isActiveWalletNWC: (state) => {
+      const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
+      return activeWallet?.type === WALLET_TYPES.NWC;
+    },
+
+    /**
      * Get active wallet type
      */
     activeWalletType: (state) => {
@@ -387,18 +405,89 @@ export const useWalletStore = defineStore('wallet', {
         // Load exchange rates
         await this.loadExchangeRates();
 
-        // Auto-connect to active wallet (NWC only - Spark needs PIN)
+        // Try to restore session PIN from sessionStorage (survives page reload)
+        this._restoreSessionPin();
+
+        // Auto-connect to active wallet
         if (this.activeWalletId) {
           const activeWallet = this.wallets.find(w => w.id === this.activeWalletId);
-          if (activeWallet && activeWallet.type !== WALLET_TYPES.SPARK) {
-            await this.connectWallet(this.activeWalletId).catch((err) => {
-              console.warn('Auto-connect failed:', err.message);
-            });
+          if (activeWallet) {
+            if (activeWallet.type === WALLET_TYPES.SPARK) {
+              // Spark wallet: auto-connect if session PIN is available
+              if (this.sessionPin) {
+                await this.connectSparkWallet(this.activeWalletId, this.sessionPin).catch((err) => {
+                  console.warn('Spark auto-connect failed:', err.message);
+                  // Don't clear PIN on failure - might be temporary network issue
+                });
+              }
+            } else if (activeWallet.type === WALLET_TYPES.LNBITS) {
+              // LNBits wallet: auto-connect
+              await this.connectLNBitsWallet(this.activeWalletId).catch((err) => {
+                console.warn('LNBits auto-connect failed:', err.message);
+              });
+            } else {
+              // NWC wallet: auto-connect
+              await this.connectWallet(this.activeWalletId).catch((err) => {
+                console.warn('Auto-connect failed:', err.message);
+              });
+            }
           }
         }
       } catch (error) {
         console.error('Wallet store initialization error:', error);
         this.lastError = error.message;
+      }
+    },
+
+    // ==========================================
+    // Session PIN Management (survives page reload within tab)
+    // ==========================================
+
+    /**
+     * Store session PIN in both Pinia state and sessionStorage
+     * sessionStorage survives page reloads but clears when tab closes
+     */
+    _setSessionPin(pin) {
+      this.sessionPin = pin;
+      if (pin) {
+        try {
+          sessionStorage.setItem(STORAGE_KEYS.SESSION_PIN, pin);
+        } catch (e) {
+          console.warn('Could not store session PIN:', e);
+        }
+      } else {
+        sessionStorage.removeItem(STORAGE_KEYS.SESSION_PIN);
+      }
+    },
+
+    /**
+     * Restore session PIN from sessionStorage if available
+     * Called during initialization or when Pinia state is lost (HMR)
+     */
+    _restoreSessionPin() {
+      if (!this.sessionPin) {
+        try {
+          const stored = sessionStorage.getItem(STORAGE_KEYS.SESSION_PIN);
+          if (stored) {
+            this.sessionPin = stored;
+            return true;
+          }
+        } catch (e) {
+          console.warn('Could not restore session PIN:', e);
+        }
+      }
+      return !!this.sessionPin;
+    },
+
+    /**
+     * Clear session PIN from both Pinia state and sessionStorage
+     */
+    _clearSessionPin() {
+      this.sessionPin = null;
+      try {
+        sessionStorage.removeItem(STORAGE_KEYS.SESSION_PIN);
+      } catch (e) {
+        // Ignore errors
       }
     },
 
@@ -482,8 +571,8 @@ export const useWalletStore = defineStore('wallet', {
           wallet.isActive = true;
         }
 
-        // Store PIN in session for immediate use
-        this.sessionPin = walletData.pin;
+        // Store PIN in session for immediate use (survives page reload)
+        this._setSessionPin(walletData.pin);
 
         // Connect the wallet
         await this.connectSparkWallet(wallet.id, walletData.pin);
@@ -525,9 +614,9 @@ export const useWalletStore = defineStore('wallet', {
         // Initialize with mnemonic
         await provider.initializeWithMnemonic(mnemonic);
 
-        // Store provider and session PIN
+        // Store provider and session PIN (survives page reload)
         this.providers[walletId] = provider;
-        this.sessionPin = pin;
+        this._setSessionPin(pin);
 
         // Update connection state
         this.connectionStates[walletId] = {
@@ -575,8 +664,8 @@ export const useWalletStore = defineStore('wallet', {
         pin
       );
 
-      // Store PIN and connect
-      this.sessionPin = pin;
+      // Store PIN and connect (survives page reload)
+      this._setSessionPin(pin);
       await this.connectSparkWallet(sparkWallet.id, pin);
     },
 
@@ -600,7 +689,7 @@ export const useWalletStore = defineStore('wallet', {
         };
       }
 
-      this.sessionPin = null;
+      this._clearSessionPin();
     },
 
     /**
@@ -646,7 +735,7 @@ export const useWalletStore = defineStore('wallet', {
 
       // Update wallet
       sparkWallet.connectionData.encryptedMnemonic = newEncryptedMnemonic;
-      this.sessionPin = newPin;
+      this._setSessionPin(newPin);
 
       await this.persistState();
     },
@@ -793,6 +882,147 @@ export const useWalletStore = defineStore('wallet', {
       }
     },
 
+    // ==========================================
+    // LNBits Wallet Methods
+    // ==========================================
+
+    /**
+     * Add a new LNBits wallet connection
+     * @param {Object} walletData - Wallet configuration
+     * @param {string} walletData.name - Display name for the wallet
+     * @param {string} walletData.serverUrl - LNBits server URL
+     * @param {string} walletData.adminKey - Admin API key
+     * @returns {Promise<Object>} The created wallet object
+     */
+    async addLNBitsWallet(walletData) {
+      this.isConnecting = true;
+      this.lastError = null;
+
+      try {
+        // Validate input
+        if (!walletData.serverUrl) {
+          throw new Error('LNBits server URL is required');
+        }
+        if (!walletData.walletId) {
+          throw new Error('Wallet ID is required');
+        }
+        if (!walletData.adminKey) {
+          throw new Error('Admin key is required');
+        }
+
+        // Validate credentials and normalize URL
+        const validation = await LNBitsWalletProvider.validateCredentials(
+          walletData.serverUrl,
+          walletData.walletId,
+          walletData.adminKey
+        );
+
+        if (!validation.valid) {
+          throw new Error('Invalid LNBits credentials');
+        }
+
+        // Check for duplicate (same server URL and wallet ID)
+        const existing = this.wallets.find(
+          (w) => w.type === WALLET_TYPES.LNBITS &&
+                 w.connectionData?.serverUrl === validation.serverUrl &&
+                 w.connectionData?.walletId === validation.walletInfo.id
+        );
+        if (existing) {
+          throw new Error('This LNBits wallet is already connected');
+        }
+
+        // Create wallet object
+        const wallet = {
+          id: this.generateWalletId(),
+          type: WALLET_TYPES.LNBITS,
+          name: walletData.name || validation.walletInfo.name || 'LNBits Wallet',
+          isActive: false,
+          isDefault: this.wallets.length === 0,
+          createdAt: Date.now(),
+          lastUsed: Date.now(),
+          connectionData: {
+            serverUrl: validation.serverUrl,
+            walletId: validation.walletInfo.id,
+            adminKey: walletData.adminKey,
+          },
+          metadata: {
+            lnbitsWalletId: validation.walletInfo.id,
+          },
+        };
+
+        // Store wallet data
+        this.wallets.push(wallet);
+        this.balances[wallet.id] = validation.walletInfo.balance;
+
+        // Set as active if first wallet
+        if (this.wallets.length === 1) {
+          this.activeWalletId = wallet.id;
+          wallet.isActive = true;
+        }
+
+        // Connect the wallet
+        await this.connectLNBitsWallet(wallet.id);
+
+        await this.persistState();
+        return wallet;
+      } catch (error) {
+        this.lastError = error.message;
+        throw error;
+      } finally {
+        this.isConnecting = false;
+      }
+    },
+
+    /**
+     * Connect to an LNBits wallet
+     * @param {string} walletId - Wallet ID
+     */
+    async connectLNBitsWallet(walletId) {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet || wallet.type !== WALLET_TYPES.LNBITS) {
+        throw new Error('LNBits wallet not found');
+      }
+
+      try {
+        // Create provider
+        const provider = new LNBitsWalletProvider(walletId, {
+          name: wallet.name,
+          serverUrl: wallet.connectionData.serverUrl,
+          adminKey: wallet.connectionData.adminKey,
+          metadata: wallet.metadata,
+        });
+
+        // Connect
+        await provider.connect();
+
+        // Store provider
+        this.providers[walletId] = provider;
+
+        // Update connection state
+        this.connectionStates[walletId] = {
+          connected: true,
+          lastConnected: Date.now(),
+          error: null,
+        };
+
+        // Get balance
+        const balanceResult = await provider.getBalance();
+        this.balances[walletId] = balanceResult.balance;
+
+        // Get info
+        const info = await provider.getInfo();
+        this.walletInfos[walletId] = info;
+
+      } catch (error) {
+        this.connectionStates[walletId] = {
+          connected: false,
+          lastConnected: Date.now(),
+          error: error.message,
+        };
+        throw error;
+      }
+    },
+
     /**
      * Remove a wallet
      * @param {string} walletId - The wallet ID to remove
@@ -822,7 +1052,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Clear session PIN if removing Spark wallet
         if (wallet.type === WALLET_TYPES.SPARK) {
-          this.sessionPin = null;
+          this._clearSessionPin();
         }
 
         // Handle active wallet removal
@@ -871,6 +1101,8 @@ export const useWalletStore = defineStore('wallet', {
               await this.connectSparkWallet(walletId, this.sessionPin);
             }
             // If no PIN, the UI will prompt for it
+          } else if (wallet.type === WALLET_TYPES.LNBITS) {
+            await this.connectLNBitsWallet(walletId);
           } else {
             await this.connectWallet(walletId);
           }
@@ -886,7 +1118,7 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Connect to a wallet
      * @param {string} walletId - The wallet ID to connect
-     * @returns {Promise<Object>} The NWC instance (for NWC wallets)
+     * @returns {Promise<Object>} The NWC instance (for NWC wallets) or provider
      */
     async connectWallet(walletId) {
       const wallet = this.wallets.find((w) => w.id === walletId);
@@ -903,6 +1135,13 @@ export const useWalletStore = defineStore('wallet', {
         return null;
       }
 
+      // Handle LNBits wallet
+      if (wallet.type === WALLET_TYPES.LNBITS) {
+        await this.connectLNBitsWallet(walletId);
+        return this.providers[walletId];
+      }
+
+      // NWC wallet
       try {
         const nwc = new NostrWebLNProvider({
           nostrWalletConnectUrl: wallet.nwcUrl,
@@ -940,7 +1179,7 @@ export const useWalletStore = defineStore('wallet', {
       const wallet = this.wallets.find(w => w.id === walletId);
       const state = this.connectionStates[walletId];
 
-      if (wallet?.type === WALLET_TYPES.SPARK) {
+      if (wallet?.type === WALLET_TYPES.SPARK || wallet?.type === WALLET_TYPES.LNBITS) {
         const provider = this.providers[walletId];
         if (provider) {
           await provider.disconnect();
@@ -990,7 +1229,23 @@ export const useWalletStore = defineStore('wallet', {
 
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
+        } else if (wallet.type === WALLET_TYPES.LNBITS) {
+          let provider = this.providers[walletId];
+
+          if (!provider || !this.connectionStates[walletId]?.connected) {
+            await this.connectLNBitsWallet(walletId);
+            provider = this.providers[walletId];
+          }
+
+          const [balanceResult, info] = await Promise.all([
+            provider.getBalance(),
+            provider.getInfo()
+          ]);
+
+          this.balances[walletId] = balanceResult.balance;
+          this.walletInfos[walletId] = info;
         } else {
+          // NWC wallet
           let nwc = this.connectionStates[walletId]?.nwcInstance;
 
           if (!nwc || !this.connectionStates[walletId]?.connected) {
@@ -1083,7 +1338,7 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Get provider for a wallet (works for both types)
+     * Get provider for a wallet (works for all types)
      * @param {string} walletId - The wallet ID
      * @returns {Object|null} Provider instance
      */
@@ -1091,7 +1346,7 @@ export const useWalletStore = defineStore('wallet', {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return null;
 
-      if (wallet.type === WALLET_TYPES.SPARK) {
+      if (wallet.type === WALLET_TYPES.SPARK || wallet.type === WALLET_TYPES.LNBITS) {
         return this.providers[walletId] || null;
       }
       return this.connectionStates[walletId]?.nwcInstance || null;
@@ -1123,12 +1378,24 @@ export const useWalletStore = defineStore('wallet', {
         return provider;
       }
 
+      // Try to restore session PIN from sessionStorage if not in memory
+      // This handles cases where Pinia state was lost (HMR, etc.)
+      if (!this.sessionPin) {
+        this._restoreSessionPin();
+      }
+
       // Try to connect using session PIN
       if (this.sessionPin) {
-        await this.connectSparkWallet(wallet.id, this.sessionPin);
-        provider = this.providers[wallet.id];
-        if (provider && provider.isConnected) {
-          return provider;
+        try {
+          await this.connectSparkWallet(wallet.id, this.sessionPin);
+          provider = this.providers[wallet.id];
+          if (provider && provider.isConnected) {
+            return provider;
+          }
+        } catch (error) {
+          // If connection fails with stored PIN, it might be corrupted
+          // Clear it and let user re-enter
+          console.warn('Auto-reconnect failed:', error.message);
         }
       }
 
@@ -1143,6 +1410,10 @@ export const useWalletStore = defineStore('wallet', {
         if (wallet.type === WALLET_TYPES.SPARK) {
           return wallet.connectionData?.encryptedMnemonic;
         }
+        if (wallet.type === WALLET_TYPES.LNBITS) {
+          return wallet.connectionData?.serverUrl && wallet.connectionData?.adminKey;
+        }
+        // NWC wallet
         const isValid = wallet.nwcUrl && wallet.nwcUrl.startsWith('nostr+walletconnect://');
         if (!isValid) {
           console.warn(`Removing invalid wallet: ${wallet.id}`);
@@ -1170,7 +1441,7 @@ export const useWalletStore = defineStore('wallet', {
       this.balances = {};
       this.walletInfos = {};
       this.providers = {};
-      this.sessionPin = null;
+      this._clearSessionPin();
 
       await this.persistState();
     },
@@ -1200,6 +1471,205 @@ export const useWalletStore = defineStore('wallet', {
       }
 
       await this.persistState();
+    },
+
+    /**
+     * Disconnect and remove only LNBits wallets
+     */
+    async disconnectLNBitsWallets() {
+      const lnbitsWallets = this.wallets.filter(w => w.type === WALLET_TYPES.LNBITS);
+
+      // Disconnect each LNBits wallet
+      for (const wallet of lnbitsWallets) {
+        await this.disconnectWallet(wallet.id);
+        // Clean up state for this wallet
+        delete this.connectionStates[wallet.id];
+        delete this.balances[wallet.id];
+        delete this.walletInfos[wallet.id];
+        delete this.providers[wallet.id];
+      }
+
+      // Remove LNBits wallets from the list
+      this.wallets = this.wallets.filter(w => w.type !== WALLET_TYPES.LNBITS);
+
+      // If active wallet was LNBits, switch to first available or null
+      if (!this.wallets.find(w => w.id === this.activeWalletId)) {
+        this.activeWalletId = this.wallets[0]?.id || null;
+      }
+
+      await this.persistState();
+    },
+
+    // ==========================================
+    // Internal Fund Transfer Methods
+    // ==========================================
+
+    /**
+     * Get wallets available for internal transfers
+     * Returns wallets that can participate in transfers (connected or can be connected)
+     * @returns {Array} Array of wallet objects with transfer capability info
+     */
+    getTransferableWallets() {
+      return this.wallets.map(wallet => {
+        const isConnected = this.connectionStates[wallet.id]?.connected;
+        const balance = this.balances[wallet.id] || 0;
+
+        return {
+          ...wallet,
+          isConnected,
+          balance,
+          canSend: isConnected && balance > 0,
+          canReceive: true // All wallets can receive
+        };
+      });
+    },
+
+    /**
+     * Ensure a wallet is connected for transfer
+     * @param {string} walletId - Wallet ID to connect
+     * @returns {Promise<Object>} Provider instance
+     */
+    async ensureWalletConnectedForTransfer(walletId) {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet) {
+        throw new Error('Wallet not found');
+      }
+
+      // Get current provider
+      let provider = this.getProvider(walletId);
+
+      // Check if provider exists and is actually connected
+      const isActuallyConnected = provider && (
+        (wallet.type === WALLET_TYPES.SPARK && provider.isConnected) ||
+        (wallet.type === WALLET_TYPES.LNBITS && provider.isConnected) ||
+        (wallet.type === WALLET_TYPES.NWC && this.connectionStates[walletId]?.nwcInstance)
+      );
+
+      if (isActuallyConnected) {
+        return provider;
+      }
+
+      // Connect based on wallet type
+      if (wallet.type === WALLET_TYPES.SPARK) {
+        if (!this.sessionPin) {
+          throw new Error('PIN required for Spark wallet');
+        }
+        await this.connectSparkWallet(walletId, this.sessionPin);
+      } else if (wallet.type === WALLET_TYPES.LNBITS) {
+        await this.connectLNBitsWallet(walletId);
+      } else {
+        await this.connectWallet(walletId);
+      }
+
+      // Get the newly connected provider
+      provider = this.getProvider(walletId);
+      if (!provider) {
+        throw new Error(`Failed to connect ${wallet.name}`);
+      }
+
+      return provider;
+    },
+
+    /**
+     * Transfer funds between two wallets
+     * Creates an invoice from destination wallet and pays from source wallet
+     * @param {string} fromWalletId - Source wallet ID
+     * @param {string} toWalletId - Destination wallet ID
+     * @param {number} amountSats - Amount in satoshis
+     * @param {string} [memo] - Optional memo/description
+     * @returns {Promise<Object>} Transfer result
+     */
+    async transferBetweenWallets(fromWalletId, toWalletId, amountSats, memo = '') {
+      if (fromWalletId === toWalletId) {
+        throw new Error('Cannot transfer to the same wallet');
+      }
+
+      if (amountSats <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
+      const fromWallet = this.wallets.find(w => w.id === fromWalletId);
+      const toWallet = this.wallets.find(w => w.id === toWalletId);
+
+      if (!fromWallet || !toWallet) {
+        throw new Error('Wallet not found');
+      }
+
+      // Check balance
+      const sourceBalance = this.balances[fromWalletId] || 0;
+      if (sourceBalance < amountSats) {
+        throw new Error('Insufficient balance');
+      }
+
+      // Ensure both wallets are connected and get providers
+      const fromProvider = await this.ensureWalletConnectedForTransfer(fromWalletId);
+      const toProvider = await this.ensureWalletConnectedForTransfer(toWalletId);
+
+      if (!fromProvider || !toProvider) {
+        throw new Error('Failed to connect wallets');
+      }
+
+      // Step 1: Create invoice from destination wallet
+      let invoice;
+      const transferMemo = memo || `Transfer from ${fromWallet.name}`;
+      const toType = toWallet.type?.toLowerCase() || 'nwc';
+
+      try {
+        if (toType === 'spark' || toType === 'lnbits') {
+          // Spark and LNBits both use createInvoice({ amount, description })
+          const invoiceResult = await toProvider.createInvoice({
+            amount: amountSats,
+            description: transferMemo
+          });
+          invoice = invoiceResult.paymentRequest || invoiceResult.payment_request || invoiceResult.bolt11 || invoiceResult;
+        } else {
+          // NWC wallet (WebLN interface) - makeInvoice expects satoshis
+          // The Alby SDK handles internal conversion to millisats for NIP-47
+          const invoiceResult = await toProvider.makeInvoice({
+            amount: amountSats,
+            description: transferMemo
+          });
+          invoice = invoiceResult.invoice || invoiceResult.paymentRequest || invoiceResult.bolt11;
+        }
+      } catch (invoiceError) {
+        console.error('Invoice creation error:', invoiceError);
+        throw new Error(`Failed to create invoice from ${toWallet.name}: ${invoiceError.message}`);
+      }
+
+      if (!invoice) {
+        throw new Error('Failed to create invoice from destination wallet');
+      }
+
+      // Step 2: Pay invoice from source wallet
+      let paymentResult;
+      const fromType = fromWallet.type?.toLowerCase() || 'nwc';
+
+      try {
+        if (fromType === 'spark' || fromType === 'lnbits') {
+          // Spark and LNBits both use payInvoice({ invoice })
+          paymentResult = await fromProvider.payInvoice({ invoice });
+        } else {
+          // NWC wallet - use sendPayment with just the invoice string
+          paymentResult = await fromProvider.sendPayment(invoice);
+        }
+      } catch (payError) {
+        console.error('Payment error:', payError);
+        throw new Error(`Failed to send payment from ${fromWallet.name}: ${payError.message}`);
+      }
+
+      // Step 3: Refresh balances for both wallets
+      await Promise.all([
+        this.refreshWalletData(fromWalletId),
+        this.refreshWalletData(toWalletId)
+      ]);
+
+      return {
+        success: true,
+        fromWallet: fromWallet.name,
+        toWallet: toWallet.name,
+        amount: amountSats,
+        paymentResult
+      };
     },
 
     /**

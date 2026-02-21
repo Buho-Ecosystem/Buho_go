@@ -53,18 +53,21 @@ export class FiatRatesService {
    * Set custom Mempool API URL
    */
   setCustomApiUrl(url) {
-    if (url && !url.endsWith('/')) {
-      url += '/';
+    // Remove trailing slash to ensure consistent URL construction
+    if (url && url.endsWith('/')) {
+      url = url.slice(0, -1);
     }
     this.customApiUrl = url;
     this.saveSettings();
   }
 
   /**
-   * Get the current API URL
+   * Get the current API URL (without trailing slash)
    */
   getApiUrl() {
-    return this.customApiUrl || this.defaultApiUrl;
+    const url = this.customApiUrl || this.defaultApiUrl;
+    // Ensure no trailing slash
+    return url.endsWith('/') ? url.slice(0, -1) : url;
   }
 
   /**

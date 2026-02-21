@@ -541,8 +541,8 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Invalid QR code'),
-          caption: error.message,
-          position: 'bottom',
+          caption: this.$t('Please try a different code'),
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
@@ -567,6 +567,11 @@ export default {
           ? trimmedData.substring(10)
           : trimmedData;
 
+        // Handle bitcoin: URI scheme (BIP21) - strip prefix and query params
+        if (cleanData.toLowerCase().startsWith('bitcoin:')) {
+          cleanData = cleanData.substring(8).split('?')[0];
+        }
+
         // Normalize lightning addresses to lowercase (LN address standard)
         if (cleanData.includes('@') && cleanData.includes('.')) {
           cleanData = cleanData.toLowerCase();
@@ -580,7 +585,19 @@ export default {
             type: 'warning',
             message: this.$t('Spark address detected'),
             caption: this.$t('Switch to Spark wallet to pay this address'),
-            position: 'bottom',
+            
+            timeout: 4000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        }
+
+        // Early warning: NWC wallet cannot send to Bitcoin addresses
+        if (paymentType === 'bitcoin_address' && !this.isActiveWalletSpark) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Bitcoin address detected'),
+            caption: this.$t('Switch to Spark wallet to send to Bitcoin addresses'),
+            
             timeout: 4000,
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -602,7 +619,11 @@ export default {
     determinePaymentType(data) {
       const trimmed = data.trim().toLowerCase();
       // Handle lightning: prefix
-      const cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
+      let cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
+      // Handle bitcoin: URI scheme
+      if (cleanData.startsWith('bitcoin:')) {
+        cleanData = cleanData.substring(8).split('?')[0]; // Remove URI params
+      }
 
       // Spark addresses - Zero fee transfers
       // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
@@ -613,7 +634,22 @@ export default {
           cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
       if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
       if (cleanData.startsWith('lnurl')) return 'lnurl';
+      // Bitcoin on-chain addresses (L1)
+      if (this.isBitcoinAddress(cleanData)) return 'bitcoin_address';
       return 'unknown';
+    },
+
+    /**
+     * Check if address is a valid Bitcoin on-chain address
+     */
+    isBitcoinAddress(address) {
+      if (!address) return false;
+      const normalized = address.trim();
+      // Mainnet: bc1 (bech32/bech32m), 1 (P2PKH), 3 (P2SH)
+      // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
+      const mainnetRegex = /^(bc1[a-zA-HJ-NP-Z0-9]{39,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/i;
+      const testnetRegex = /^(tb1[a-zA-HJ-NP-Z0-9]{39,62}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/i;
+      return mainnetRegex.test(normalized) || testnetRegex.test(normalized);
     },
 
     isSparkAddress(address) {
@@ -637,14 +673,19 @@ export default {
       if (trimmed.startsWith('lightning:')) {
         trimmed = trimmed.substring(10);
       }
+      // Strip bitcoin: URI prefix if present
+      if (trimmed.startsWith('bitcoin:')) {
+        trimmed = trimmed.substring(8).split('?')[0];
+      }
       // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
       const isLightningInvoice = trimmed.startsWith('lnbc') || trimmed.startsWith('lntb') ||
         trimmed.startsWith('lntbs') || trimmed.startsWith('lnbcrt');
       const isLightningAddress = trimmed.includes('@') && trimmed.includes('.');
       const isLnurl = trimmed.startsWith('lnurl');
       const isSparkAddr = this.isSparkAddress(trimmed);
+      const isBitcoinAddr = this.isBitcoinAddress(trimmed);
 
-      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddr;
+      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddr || isBitcoinAddr;
 
       return isValid ? true : this.$t('Invalid payment format');
     },
@@ -663,7 +704,7 @@ export default {
           this.$q.notify({
             type: 'info',
             message: this.$t('Nothing to paste'),
-            position: 'bottom',
+            
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
@@ -672,7 +713,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t access clipboard'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -698,7 +739,7 @@ export default {
           type: 'warning',
           message: this.$t('Cannot pay this contact'),
           caption: this.getContactDisabledReason(contact),
-          position: 'bottom',
+          
           timeout: 3500,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -712,9 +753,17 @@ export default {
       // Update last used timestamp for recent contacts tracking
       await this.addressBookStore.updateLastUsed(contact.id);
 
+      // Map contact address type to payment type
+      const paymentTypeMap = {
+        'spark': 'spark_address',
+        'bitcoin': 'bitcoin_address',
+        'lightning': 'lightning_address'
+      };
+      const paymentType = paymentTypeMap[addressType] || 'lightning_address';
+
       this.$emit('payment-detected', {
         data: address,
-        type: addressType === 'spark' ? 'spark_address' : 'lightning_address'
+        type: paymentType
       });
       this.showContactDialog = false;
       this.closeModal();
@@ -731,23 +780,38 @@ export default {
 
     getContactTypeIcon(contact) {
       const type = this.getContactAddressType(contact);
-      return type === 'spark' ? 'las la-fire' : 'las la-bolt';
+      const icons = {
+        lightning: 'las la-bolt',
+        spark: 'las la-fire',
+        bitcoin: 'lab la-bitcoin'
+      };
+      return icons[type] || icons.lightning;
     },
 
     getContactTypeLabel(contact) {
       const type = this.getContactAddressType(contact);
-      return type === 'spark' ? 'Spark' : 'Lightning';
+      const labels = {
+        lightning: 'Lightning',
+        spark: 'Spark',
+        bitcoin: 'Bitcoin'
+      };
+      return labels[type] || labels.lightning;
     },
 
     getContactTypeBadgeClass(contact) {
       const type = this.getContactAddressType(contact);
-      return type === 'spark' ? 'badge-spark' : 'badge-lightning';
+      const classes = {
+        lightning: 'badge-lightning',
+        spark: 'badge-spark',
+        bitcoin: 'badge-bitcoin'
+      };
+      return classes[type] || classes.lightning;
     },
 
     canPayContact(contact) {
       const type = this.getContactAddressType(contact);
-      if (type === 'spark') {
-        // Spark contacts can only be paid from Spark wallet
+      if (type === 'spark' || type === 'bitcoin') {
+        // Spark and Bitcoin contacts can only be paid from Spark wallet
         return this.isActiveWalletSpark;
       }
       // Lightning contacts can be paid from any wallet
@@ -756,6 +820,10 @@ export default {
 
     getContactDisabledReason(contact) {
       if (!this.canPayContact(contact)) {
+        const type = this.getContactAddressType(contact);
+        if (type === 'bitcoin') {
+          return this.$t('Switch to Spark wallet to send Bitcoin');
+        }
         return this.$t('Switch to Spark wallet to pay this contact');
       }
       return '';
@@ -773,8 +841,8 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Invalid payment request'),
-          caption: error.message,
-          position: 'bottom',
+          caption: this.$t('Please check the format and try again'),
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
@@ -1353,7 +1421,12 @@ export default {
 }
 
 .badge-spark {
-  background: linear-gradient(135deg, #EF4444, #DC2626);
+  background: linear-gradient(135deg, #15DE72, #059573);
+  color: white;
+}
+
+.badge-bitcoin {
+  background: linear-gradient(135deg, #F7931A, #E67E00);
   color: white;
 }
 

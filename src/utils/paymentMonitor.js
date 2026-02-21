@@ -19,10 +19,10 @@ export const PaymentStatus = {
  * Default configuration for payment monitoring
  */
 const DEFAULT_CONFIG = {
-  initialInterval: 2000,     // Start checking after 2 seconds
-  maxInterval: 30000,        // Max 30 seconds between checks
-  backoffMultiplier: 1.5,    // Multiply interval by 1.5 each time
-  maxAttempts: 60,           // Stop after 60 attempts (~15 min with backoff)
+  initialInterval: 1500,     // Start checking after 1.5 seconds
+  maxInterval: 6000,         // Max 6 seconds between checks (more real-time feel)
+  backoffMultiplier: 1.25,   // Gentle backoff
+  maxAttempts: 35,           // Stop after ~3 minutes
   expiryBuffer: 60           // Stop checking 60 seconds before expiry
 };
 
@@ -226,6 +226,37 @@ export class PaymentMonitor {
  */
 export function createPaymentMonitor(config = {}) {
   return new PaymentMonitor(config);
+}
+
+/**
+ * Check NWC payment status across different wallet implementations.
+ * Handles various field names and formats used by different NWC wallets.
+ * @param {Object} record - Transaction or invoice record from NWC
+ * @returns {boolean} Whether the payment is settled/paid
+ */
+export function checkNWCPaymentStatus(record) {
+  if (!record) return false;
+
+  // Alby SDK v7 uses 'state' field with lowercase values
+  if (record.state === 'settled') return true;
+  if (record.state === 'SETTLED') return true;
+
+  // Legacy/fallback checks for different wallet implementations
+  if (record.settled === true) return true;
+  if (record.paid === true) return true;
+
+  // Status field variants
+  if (record.status === 'SETTLED' || record.status === 'settled') return true;
+  if (record.status === 'complete' || record.status === 'completed') return true;
+
+  // settled_at timestamp (camelCase and snake_case)
+  if (typeof record.settled_at === 'number' && record.settled_at > 0) return true;
+  if (typeof record.settledAt === 'number' && record.settledAt > 0) return true;
+
+  // Preimage presence indicates payment was received
+  if (record.preimage && record.preimage.length > 0) return true;
+
+  return false;
 }
 
 export default PaymentMonitor;

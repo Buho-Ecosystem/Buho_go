@@ -24,7 +24,16 @@
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Address Book') }}
       </div>
-      <div class="header-spacer"></div>
+      <q-btn
+        flat
+        round
+        dense
+        icon="las la-layer-group"
+        @click="showBatchSend = true"
+        :class="$q.dark.isActive ? 'batch_btn_dark' : 'batch_btn_light'"
+      >
+        <q-tooltip>{{ $t('Batch Send') }}</q-tooltip>
+      </q-btn>
     </div>
 
     <!-- Content -->
@@ -48,6 +57,13 @@
       v-model="showPayment"
       :contact="selectedContact"
       @payment-sent="handlePaymentSent"
+      @bitcoin-payment-requested="handleBitcoinPaymentRequested"
+    />
+
+    <!-- Batch Send Modal -->
+    <BatchSendModal
+      v-model="showBatchSend"
+      @batch-completed="handleBatchCompleted"
     />
   </q-page>
 </template>
@@ -58,20 +74,23 @@ import { mapActions } from 'pinia'
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import PaymentModal from '../components/PaymentModal.vue'
+import BatchSendModal from '../components/BatchSendModal.vue'
 
 export default {
   name: 'AddressBookPage',
   components: {
     AddressBookList,
     AddressBookModal,
-    PaymentModal
+    PaymentModal,
+    BatchSendModal
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
       showPayment: false,
-      selectedContact: null
+      selectedContact: null,
+      showBatchSend: false
     }
   },
   async created() {
@@ -88,7 +107,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load contacts'),
-          position: 'bottom',
+          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -105,8 +124,27 @@ export default {
     },
 
     showPaymentModal(contact) {
+      // Bitcoin contacts need the L1 withdrawal flow - navigate directly to Wallet
+      if (contact.addressType === 'bitcoin') {
+        this.navigateToBitcoinWithdrawal(contact)
+        return
+      }
+
+      // Lightning and Spark contacts use PaymentModal
       this.selectedContact = contact
       this.showPayment = true
+    },
+
+    navigateToBitcoinWithdrawal(contact) {
+      const address = contact.address || contact.lightningAddress
+      this.$router.push({
+        path: '/wallet',
+        query: {
+          action: 'bitcoin_withdrawal',
+          address: address,
+          contactName: contact.name
+        }
+      })
     },
 
     handleEntrySaved() {
@@ -119,8 +157,30 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Sent'),
-        position: 'bottom',
+        
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      })
+    },
+
+    handleBitcoinPaymentRequested(paymentData) {
+      // Fallback handler if PaymentModal is opened with a Bitcoin contact
+      this.selectedContact = null
+      this.navigateToBitcoinWithdrawal({
+        name: paymentData.contact?.name,
+        address: paymentData.address
+      })
+    },
+
+    handleBatchCompleted(results) {
+      const succeeded = results.filter(r => r.status === 'success').length
+      const failed = results.filter(r => r.status === 'failed' || r.status === 'skipped').length
+
+      this.$q.notify({
+        type: failed === 0 ? 'positive' : 'warning',
+        message: failed === 0
+          ? this.$t('{count} payments sent', { count: succeeded })
+          : this.$t('{sent} sent, {failed} failed', { sent: succeeded, failed }),
+        timeout: 3000
       })
     }
   }
@@ -211,8 +271,27 @@ export default {
   font-family: Fustat, 'Inter', sans-serif;
 }
 
-.header-spacer {
+/* Batch Button */
+.batch_btn_dark {
   width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: #15DE72;
+}
+
+.batch_btn_light {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: #059573;
+}
+
+.batch_btn_dark:hover {
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.batch_btn_light:hover {
+  background: rgba(5, 149, 115, 0.1);
 }
 
 /* Content */

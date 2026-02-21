@@ -227,7 +227,7 @@ body.platform-android {
     border: 1px solid rgba(255, 255, 255, 0.20);
     background: linear-gradient(90deg, #059573 0%, #78D53C 100%);
     box-shadow: 0px 4px 8px 0px rgba(206, 206, 206, 0.25);
-    color: #FFF;
+    color: #0C0C0C;
     font-family: Fustat;
     font-size: 14px;
     font-style: normal;
