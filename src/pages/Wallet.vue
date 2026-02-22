@@ -1480,7 +1480,8 @@ export default {
           return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
         case 'fiat':
           const btcAmount = balance / 100000000;
-          const rate = this.walletState.exchangeRates[this.walletState.preferredFiatCurrency.toLowerCase()] || 65000;
+          const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+          if (!rate) return '--';
           const fiatValue = btcAmount * rate;
           return fiatValue.toFixed(2);
         default:

@@ -1509,7 +1509,7 @@ export default {
       try {
         this.loadingFiatRates = true;
         await fiatRatesService.ensureRatesLoaded();
-        this.fiatRates = fiatRatesService.getRates();
+        this.fiatRates = await fiatRatesService.getRates();
       } catch (error) {
         console.error('Error loading fiat rates:', error);
       } finally {

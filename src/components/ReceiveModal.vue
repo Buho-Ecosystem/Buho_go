@@ -579,7 +579,8 @@ export default {
      * Calculate fiat amount for confirmation display
      */
     calculateFiatAmount(sats) {
-      const rate = this.walletState.exchangeRates?.['usd'] || 65000;
+      const rate = this.walletState.exchangeRates?.['usd'];
+      if (!rate) return '--';
       const btc = sats / 100000000;
       const fiat = btc * rate;
       return `$${fiat.toFixed(2)}`;
@@ -914,7 +915,8 @@ export default {
           this.amountInSats = Math.floor(amount * 100000000);
           break;
         default:
-          const rate = this.walletState.exchangeRates?.[this.currentCurrency] || 65000;
+          const rate = this.walletState.exchangeRates?.[this.currentCurrency];
+          if (!rate) return;
           const btcAmount = amount / rate;
           this.amountInSats = Math.floor(btcAmount * 100000000);
           break;
@@ -1163,7 +1165,8 @@ export default {
       if (!sats || !this.walletState.exchangeRates) return '';
 
       const fiatCurrency = this.walletState.preferredFiatCurrency || 'USD';
-      const rate = this.walletState.exchangeRates[fiatCurrency.toLowerCase()] || 65000;
+      const rate = this.walletState.exchangeRates?.[fiatCurrency.toLowerCase()];
+      if (!rate) return '';
       const btcAmount = sats / 100000000;
       const fiatAmount = btcAmount * rate;
 
