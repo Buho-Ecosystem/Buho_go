@@ -281,7 +281,7 @@ export default {
     async loadFiatRates() {
       try {
         await fiatRatesService.ensureRatesLoaded()
-        this.fiatRates = fiatRatesService.getRates()
+        this.fiatRates = await fiatRatesService.getRates()
       } catch (error) {
         console.error('Error loading fiat rates:', error)
       }
@@ -344,7 +344,8 @@ export default {
           this.amountInSats = Math.floor(amount * 100000000)
           break
         default:
-          const rate = this.fiatRates[this.currentCurrency.toUpperCase()] || 65000
+          const rate = this.fiatRates[this.currentCurrency.toUpperCase()]
+          if (!rate) return
           const btcAmount = amount / rate
           this.amountInSats = Math.floor(btcAmount * 100000000)
           break

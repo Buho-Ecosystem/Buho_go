@@ -345,7 +345,8 @@ export default {
         case 'btc':
           return (balance / 100000000).toFixed(8) + ' BTC'
         case 'usd':
-          const usdValue = (balance / 100000000) * (this.exchangeRates.usd || 65000)
+          if (!this.exchangeRates?.usd) return '--'
+          const usdValue = (balance / 100000000) * this.exchangeRates.usd
           return '$' + usdValue.toFixed(2)
         case 'sats':
         case 'bitcoin':
