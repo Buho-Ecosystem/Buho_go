@@ -807,6 +807,10 @@ export default {
     }
   },
   async created() {
+    // Safety timeout: force-hide loading screen after 15s to prevent permanent black screen
+    setTimeout(() => {
+      this.showLoadingScreen = false;
+    }, 15000);
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
@@ -1240,7 +1244,6 @@ export default {
         this.startPulseAnimation();
 
         this.loadingText = 'Ready!';
-        await new Promise(resolve => setTimeout(resolve, 500));
         this.showLoadingScreen = false;
 
         // Check if Spark wallet needs unlocking
@@ -1248,7 +1251,6 @@ export default {
       } catch (error) {
         console.error('Error initializing wallet:', error);
         this.loadingText = 'Error loading wallet';
-        await new Promise(resolve => setTimeout(resolve, 1000));
         this.showLoadingScreen = false;
       }
     },

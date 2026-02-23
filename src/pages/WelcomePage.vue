@@ -150,6 +150,10 @@ export default {
     }
   },
   mounted() {
+    // Safety timeout: force-hide loading screen after 5s to prevent permanent black screen
+    setTimeout(() => {
+      this.showLoadingScreen = false;
+    }, 5000);
     this.initializeApp();
   },
   methods: {
@@ -160,13 +164,10 @@ export default {
         if (existingState) {
           this.loadingText = 'Checking wallet state...';
 
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
           try {
             const walletInfo = JSON.parse(existingState);
             if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
               this.loadingText = 'Loading wallet...';
-              await new Promise(resolve => setTimeout(resolve, 800));
               this.$router.push('/wallet');
               return;
             }
