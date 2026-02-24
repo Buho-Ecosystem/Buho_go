@@ -24,64 +24,27 @@
               </svg>
             </q-btn>
             <div class="step-indicator" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-              {{ $t('Step') }} {{ currentStep }}/4
+              {{ $t('Almost there') }}
             </div>
           </div>
         </q-card-section>
 
         <!-- Content -->
         <q-card-section class="setup-content">
-          <!-- Step 1: Show Seed Phrase -->
-          <div v-if="currentStep === 1" class="step-content">
-            <div class="step-icon">
-              <div class="icon-bg">
-                <q-icon name="las la-key" size="32px" color="white" />
-              </div>
-            </div>
-            <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ $t('Save Your Seed Phrase') }}
-            </h2>
-            <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('These 12 words are the only way to recover your wallet. Write them down and store them safely.') }}
-            </p>
-
-            <div v-if="isGenerating" class="loading-state">
-              <q-spinner-dots size="40px" color="primary" />
-              <p :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">{{ $t('Generating secure wallet...') }}</p>
-            </div>
-
-            <MnemonicDisplay
-              v-else
-              :words="mnemonicWords"
-              :show-warning="true"
-              :show-copy="true"
-            />
-          </div>
-
-          <!-- Step 2: Verify Seed Phrase -->
-          <div v-else-if="currentStep === 2" class="step-content step-verify">
-            <MnemonicOrderVerify
-              ref="verifyComponent"
-              :mnemonic="mnemonicWords"
-              @verify-success="onVerifySuccess"
-              @show-phrase="goToStep(1)"
-            />
-          </div>
-
-          <!-- Step 3: Set PIN -->
-          <div v-else-if="currentStep === 3" class="step-content step-pin">
+          <!-- Step 1: Set PIN -->
+          <div v-if="currentStep === 1" class="step-content step-pin">
             <div class="step-icon">
               <div class="icon-bg icon-lock">
-                <q-icon name="las la-lock" size="32px" color="white" />
+                <q-icon :name="pinMode === 'create' ? 'las la-lock' : 'las la-check-circle'" size="32px" color="white" />
               </div>
             </div>
             <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ pinMode === 'create' ? $t('Set Your PIN') : $t('Confirm Your PIN') }}
+              {{ pinMode === 'create' ? $t('Secure your wallet') : $t('One more time') }}
             </h2>
             <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
               {{ pinMode === 'create'
-                ? $t('Choose a 6-digit PIN you can remember. You will need it every time you open the app.')
-                : $t('Enter your PIN again to confirm')
+                ? $t('Pick a 6-digit PIN that only you know. It keeps your wallet private on this device.')
+                : $t('Enter the same PIN again to make sure you got it right.')
               }}
             </p>
 
@@ -127,8 +90,8 @@
             </div>
           </div>
 
-          <!-- Step 4: Creating Wallet -->
-          <div v-else-if="currentStep === 4" class="step-content step-creating">
+          <!-- Step 2: Creating Wallet -->
+          <div v-else-if="currentStep === 2" class="step-content step-creating">
             <div class="creating-animation">
               <q-spinner-orbit size="80px" color="primary" />
             </div>
@@ -140,38 +103,17 @@
             </p>
           </div>
         </q-card-section>
-
-        <!-- Footer -->
-        <q-card-section class="setup-footer" v-if="currentStep === 1">
-          <q-btn
-            class="continue-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :disable="!canContinue"
-            :loading="isProcessing"
-            @click="nextStep"
-            no-caps
-            unelevated
-          >
-            {{ getButtonText() }}
-          </q-btn>
-        </q-card-section>
       </q-card>
     </div>
   </q-page>
 </template>
 
 <script>
-import MnemonicDisplay from '../components/MnemonicDisplay.vue';
-import MnemonicOrderVerify from '../components/MnemonicOrderVerify.vue';
 import { useWalletStore } from '../stores/wallet';
 import { SparkWalletProvider } from '../providers/SparkWalletProvider';
 
 export default {
   name: 'SparkSetupPage',
-  components: {
-    MnemonicDisplay,
-    MnemonicOrderVerify,
-  },
   setup() {
     const walletStore = useWalletStore();
     return { walletStore };
@@ -179,10 +121,8 @@ export default {
   data() {
     return {
       currentStep: 1,
-      isGenerating: true,
       isProcessing: false,
       mnemonic: '',
-      mnemonicWords: [],
 
       // PIN
       pinMode: 'create',
@@ -200,29 +140,14 @@ export default {
       creatingStatus: 'Initializing...',
     }
   },
-  computed: {
-    canContinue() {
-      switch (this.currentStep) {
-        case 1:
-          return this.mnemonicWords.length === 12 && !this.isGenerating;
-        default:
-          return true;
-      }
-    }
-  },
-  mounted() {
-    this.generateWallet();
+  async mounted() {
+    await this.generateMnemonic();
   },
   methods: {
-    async generateWallet() {
-      this.isGenerating = true;
+    async generateMnemonic() {
       try {
         const { wallet, mnemonic } = await SparkWalletProvider.createNewWallet('MAINNET');
-
         this.mnemonic = mnemonic;
-        this.mnemonicWords = mnemonic.split(' ');
-
-        // Clean up the test wallet
         wallet.cleanupConnections();
       } catch (error) {
         console.error('Failed to generate wallet:', error);
@@ -230,52 +155,20 @@ export default {
           type: 'negative',
           message: this.$t('Failed to generate wallet'),
           caption: this.$t('Please try again'),
-          
         });
         this.$router.push('/');
-      } finally {
-        this.isGenerating = false;
       }
     },
 
     handleBack() {
-      if (this.currentStep > 1 && this.currentStep < 4) {
-        if (this.currentStep === 3 && this.pinMode === 'confirm') {
-          this.pinMode = 'create';
-          this.currentPin = '';
-          this.firstPin = '';
-          this.pinError = '';
-        } else {
-          this.currentStep--;
-        }
+      if (this.currentStep === 1 && this.pinMode === 'confirm') {
+        this.pinMode = 'create';
+        this.currentPin = '';
+        this.firstPin = '';
+        this.pinError = '';
       } else {
         this.$router.push('/');
       }
-    },
-
-    goToStep(step) {
-      this.currentStep = step;
-    },
-
-    getButtonText() {
-      switch (this.currentStep) {
-        case 1:
-          return this.$t('I Saved It');
-        default:
-          return this.$t('Continue');
-      }
-    },
-
-    nextStep() {
-      if (this.currentStep === 1) {
-        this.currentStep = 2;
-      }
-    },
-
-    onVerifySuccess() {
-      this.currentStep = 3;
-      this.pinMode = 'create';
-      this.currentPin = '';
     },
 
     handlePinKey(key) {
@@ -288,7 +181,6 @@ export default {
       } else if (key !== '' && this.currentPin.length < 6) {
         this.currentPin += key;
 
-        // Auto-proceed when 6 digits entered
         if (this.currentPin.length === 6) {
           this.processPinEntry();
         }
@@ -301,14 +193,11 @@ export default {
         this.currentPin = '';
         this.pinMode = 'confirm';
       } else {
-        // Confirm mode
         if (this.currentPin === this.firstPin) {
           this.createWallet();
         } else {
           this.pinError = this.$t('PINs do not match');
           this.currentPin = '';
-
-          // Shake animation handled by CSS
           setTimeout(() => {
             this.pinError = '';
           }, 2000);
@@ -317,7 +206,7 @@ export default {
     },
 
     async createWallet() {
-      this.currentStep = 4;
+      this.currentStep = 2;
       this.creatingStatus = this.$t('Encrypting wallet...');
 
       try {
@@ -337,7 +226,6 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet created successfully'),
-          
         });
 
         this.$router.push('/wallet');
@@ -347,9 +235,8 @@ export default {
           type: 'negative',
           message: this.$t('Failed to create wallet'),
           caption: this.$t('Please try again'),
-          
         });
-        this.currentStep = 3;
+        this.currentStep = 1;
         this.pinMode = 'create';
         this.currentPin = '';
         this.firstPin = '';
@@ -433,14 +320,6 @@ export default {
   box-shadow: 0 4px 16px rgba(21, 222, 114, 0.3);
 }
 
-.icon-verify {
-  background: linear-gradient(135deg, #059573, #15DE72);
-}
-
-.icon-lock {
-  background: linear-gradient(135deg, #059573, #15DE72);
-}
-
 /* Typography */
 .step-title {
   font-family: Fustat, 'Inter', sans-serif;
@@ -465,21 +344,6 @@ export default {
 
 .view_title {
   color: #6B7280;
-}
-
-/* Loading */
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 3rem 0;
-}
-
-/* Verify Step */
-.step-verify {
-  padding-top: 0;
-  width: 100%;
 }
 
 /* PIN Step */
@@ -606,20 +470,6 @@ export default {
   margin-bottom: 2rem;
 }
 
-/* Footer */
-.setup-footer {
-  padding: 0 1.5rem 1.5rem;
-}
-
-.continue-btn {
-  width: 100%;
-  height: 52px;
-  border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
 /* Responsive */
 @media (max-width: 480px) {
   .spark-setup-page {
@@ -651,14 +501,6 @@ export default {
 
   .numpad-inline {
     gap: 8px;
-  }
-
-  .setup-footer {
-    padding: 0 1rem 1rem;
-  }
-
-  .continue-btn {
-    height: 48px;
   }
 }
 

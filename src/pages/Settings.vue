@@ -73,6 +73,22 @@
             </q-item-section>
           </q-item>
           <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+          <q-item clickable v-ripple @click="openBackupDialog">
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Backup Seed Phrase') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side class="backup-status-side">
+              <span
+                class="backup-status-badge"
+                :class="hasBackedUp ? 'badge-verified' : 'badge-unverified'"
+              >
+                {{ hasBackedUp ? $t('Verified') : $t('Not verified') }}
+              </span>
+            </q-item-section>
+          </q-item>
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
           <q-item clickable v-ripple @click="openViewMnemonicDialog">
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
@@ -137,7 +153,7 @@
         <q-item clickable v-ripple @click="showMempoolDialog = true">
           <q-item-section>
             <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Mempool API') }}
+              {{ $t('Exchange Rate Source') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -857,10 +873,10 @@
 
     <!-- Mempool API Dialog -->
     <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <q-card class="dialog-card mempool-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Mempool API Settings') }}
+            {{ $t('Exchange rate source') }}
           </div>
           <q-btn
             flat
@@ -874,48 +890,105 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="mempool-info" :class="$q.dark.isActive ? 'info-dark' : 'info-light'">
-            <q-icon name="las la-info-circle" class="info-icon"/>
-            <div class="info-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Configure a custom Mempool API URL for enhanced privacy or to use your own instance.') }}
+          <!-- Intro -->
+          <div class="mempool-intro">
+            <div class="mempool-intro-icon" :class="$q.dark.isActive ? 'mempool-intro-icon-dark' : 'mempool-intro-icon-light'">
+              <q-icon name="las la-server" size="24px" />
+            </div>
+            <p class="mempool-intro-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('BuhoGO uses a Mempool server to look up Bitcoin exchange rates. The default works great — or pick your own for extra privacy.') }}
+            </p>
+          </div>
+
+          <!-- URL Input -->
+          <div class="mempool-input-wrap">
+            <div class="mempool-input-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('Server URL') }}
+            </div>
+            <q-input
+              v-model="tempMempoolUrl"
+              :placeholder="$t('https://mempool.space/api/v1')"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              borderless
+              input-class="q-px-md mempool-url-input"
+              dense
+              clearable
+            />
+          </div>
+
+          <!-- Quick-pick servers -->
+          <div class="mempool-servers">
+            <div class="mempool-servers-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Tap to use') }}
+            </div>
+
+            <div
+              class="server-card"
+              :class="[
+                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
+                tempMempoolUrl === 'https://mempool.space/api/v1' || !tempMempoolUrl ? 'server-active' : ''
+              ]"
+              @click="tempMempoolUrl = 'https://mempool.space/api/v1'"
+            >
+              <div class="server-info">
+                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">mempool.space</span>
+                <span class="server-tag tag-default">{{ $t('Default') }}</span>
+              </div>
+              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.space/api/v1</span>
+            </div>
+
+            <div
+              class="server-card"
+              :class="[
+                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
+                tempMempoolUrl === 'https://mempool.emzy.de/api/v1' ? 'server-active' : ''
+              ]"
+              @click="tempMempoolUrl = 'https://mempool.emzy.de/api/v1'"
+            >
+              <div class="server-info">
+                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">emzy.de</span>
+                <span class="server-tag tag-privacy">{{ $t('Privacy') }}</span>
+              </div>
+              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.emzy.de/api/v1</span>
+            </div>
+
+            <div
+              class="server-card"
+              :class="[
+                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
+                tempMempoolUrl === 'https://mempool.blocktrainer.de/api/v1' ? 'server-active' : ''
+              ]"
+              @click="tempMempoolUrl = 'https://mempool.blocktrainer.de/api/v1'"
+            >
+              <div class="server-info">
+                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">Blocktrainer</span>
+                <span class="server-tag tag-community">{{ $t('Community') }}</span>
+              </div>
+              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.blocktrainer.de/api/v1</span>
             </div>
           </div>
 
-          <q-input
-            v-model="tempMempoolUrl"
-            :placeholder="$t('https://your-mempool-instance.com/api/v1')"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            borderless
-            input-class="q-px-md"
-            class="q-mb-sm"
-            dense
-            clearable
-          />
-
-          <div class="url-examples" :class="$q.dark.isActive ? 'examples-dark' : 'examples-light'">
-            <div class="example-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Examples:') }}
-            </div>
-            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.space/api/v1'">
-              <span class="example-url">https://mempool.space/api/v1</span>
-              <span class="example-desc">{{ $t('(Default)') }}</span>
-            </div>
-            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.emzy.de/api/v1'">
-              <span class="example-url">https://mempool.emzy.de/api/v1</span>
-              <span class="example-desc">{{ $t('(Alternative)') }}</span>
-            </div>
-            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.blocktrainer.de/api/v1'">
-              <span class="example-url">https://mempool.blocktrainer.de/api/v1</span>
-              <span class="example-desc">{{ $t('(Blocktrainer)') }}</span>
-            </div>
-          </div>
-
-          <div class="rate-status" v-if="fiatRateAge !== null"
+          <!-- Rate freshness -->
+          <div class="rate-status"
                :class="$q.dark.isActive ? 'status-dark' : 'status-light'">
-            <q-icon :name="fiatRatesStale ? 'las la-exclamation-triangle' : 'las la-check-circle'"
-                    :class="fiatRatesStale ? 'text-orange' : 'text-green'"/>
-            <span :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Last updated') }}: {{ fiatRateAge }} {{ $t('minutes ago') }}
+            <q-icon
+              :name="fiatRateAge === null ? 'las la-hourglass-half' : fiatRatesStale ? 'las la-exclamation-triangle' : 'las la-check-circle'"
+              :class="fiatRateAge === null ? 'text-grey' : fiatRatesStale ? 'text-orange' : 'text-green'"
+              size="16px"
+            />
+            <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              <template v-if="fiatRateAge === null">
+                {{ $t('No exchange rates loaded yet') }}
+              </template>
+              <template v-else-if="fiatRateAge === 0">
+                {{ $t('Exchange rates are up to date') }}
+              </template>
+              <template v-else-if="fiatRatesStale">
+                {{ $t('Rates may be outdated — last fetched {n} min ago', { n: fiatRateAge }) }}
+              </template>
+              <template v-else>
+                {{ $t('Rates up to date — refreshed {n} min ago', { n: fiatRateAge }) }}
+              </template>
             </span>
           </div>
         </q-card-section>
@@ -923,7 +996,7 @@
         <q-card-actions align="right" class="dialog-actions">
           <q-btn
             flat
-            :label="$t('Reset to Default')"
+            :label="$t('Reset')"
             @click="resetMempoolUrl"
             no-caps
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
@@ -1060,12 +1133,128 @@
       </q-card>
     </q-dialog>
 
+    <!-- Backup Seed Phrase Dialog -->
+    <q-dialog v-model="showBackupDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'" persistent>
+      <q-card class="dialog-card backup-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ backupStep === 'pin' ? $t('Backup Seed Phrase') : backupStep === 'show' ? $t('Your Recovery Phrase') : $t('Verify Your Backup') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            icon="las la-times"
+            @click="closeBackupDialog"
+            class="close-btn"
+            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
+          />
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <!-- Step 1: PIN Entry -->
+          <div v-if="backupStep === 'pin'" class="seed-pin-entry">
+            <div class="seed-icon-header">
+              <div class="seed-icon-circle" :class="$q.dark.isActive ? 'seed-icon-circle-dark' : 'seed-icon-circle-light'">
+                <q-icon name="las la-shield-alt" size="32px" color="primary"/>
+              </div>
+            </div>
+
+            <div class="seed-warning-box">
+              <div class="seed-warning-icon-wrap">
+                <q-icon name="las la-exclamation-triangle" size="20px"/>
+              </div>
+              <div class="seed-warning-content">
+                <div class="seed-warning-title">{{ $t('Protect your funds') }}</div>
+                <div class="seed-warning-text">{{ $t('You will see your 12-word recovery phrase and then verify it to confirm your backup.') }}</div>
+              </div>
+            </div>
+
+            <div class="seed-pin-section">
+              <div class="seed-pin-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Enter your PIN to continue') }}</div>
+              <q-input
+                v-model="backupPinInput"
+                type="password"
+                :placeholder="$t('6-digit PIN')"
+                maxlength="6"
+                mask="######"
+                :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+                borderless
+                input-class="q-px-md text-center seed-pin-input"
+                dense
+              />
+            </div>
+          </div>
+
+          <!-- Step 2: Show Recovery Phrase -->
+          <div v-else-if="backupStep === 'show'" class="backup-show-step">
+            <MnemonicDisplay
+              :words="backupMnemonicWords"
+              :show-warning="true"
+              :show-copy="false"
+            />
+          </div>
+
+          <!-- Step 3: Verify Recovery Phrase (12-word order) -->
+          <div v-else-if="backupStep === 'verify'" class="backup-verify-step">
+            <MnemonicOrderVerify
+              ref="backupVerifyComponent"
+              :mnemonic="backupMnemonicWords"
+              @verify-success="onBackupVerified"
+              @show-phrase="backupStep = 'show'"
+            />
+          </div>
+
+          <!-- Alternative: 3-word verification (kept for future use) -->
+          <!--
+          <div v-else-if="backupStep === 'verify'" class="backup-verify-step">
+            <MnemonicVerify
+              ref="backupVerifyComponent"
+              :mnemonic="backupMnemonicWords"
+              @verify-success="onBackupVerified"
+            />
+          </div>
+          -->
+        </q-card-section>
+
+        <q-card-actions v-if="backupStep !== 'verify'" align="right" class="dialog-actions">
+          <q-btn
+            flat
+            :label="$t('Cancel')"
+            @click="closeBackupDialog"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+            no-caps
+          />
+          <q-btn
+            v-if="backupStep === 'pin'"
+            flat
+            :label="$t('Continue')"
+            @click="startBackup"
+            :loading="isLoadingBackup"
+            :disable="!backupPinInput || backupPinInput.length < 6"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+          <q-btn
+            v-if="backupStep === 'show'"
+            flat
+            :label="$t('I\'ve saved it — Verify now')"
+            @click="backupStep = 'verify'"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
     <!-- Change PIN Dialog -->
     <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card pin-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Change PIN') }}
+            {{ $t('Update your PIN') }}
           </div>
           <q-btn
             flat
@@ -1079,55 +1268,71 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="pin-inputs-section">
-            <q-input
-              v-model="sparkPinInput"
-              type="password"
-              :placeholder="$t('Current PIN')"
-              maxlength="6"
-              mask="######"
-              :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
-              borderless
-              input-class="text-center pin-input-field"
-              dense
-            />
-
-            <q-input
-              v-model="sparkNewPin"
-              type="password"
-              :placeholder="$t('New PIN')"
-              maxlength="6"
-              mask="######"
-              :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
-              borderless
-              input-class="text-center pin-input-field"
-              dense
-            />
-
-            <q-input
-              v-model="sparkConfirmNewPin"
-              type="password"
-              :placeholder="$t('Confirm New PIN')"
-              maxlength="6"
-              mask="######"
-              :class="[
-                $q.dark.isActive ? 'pin-input-dark' : 'pin-input-light',
-                sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin ? 'pin-input-error' : ''
-              ]"
-              borderless
-              input-class="text-center pin-input-field"
-              dense
-              :error="sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin"
-              :error-message="$t('PINs do not match')"
-            />
+          <!-- Icon + intro -->
+          <div class="pin-change-intro">
+            <div class="pin-change-icon" :class="$q.dark.isActive ? 'pin-change-icon-dark' : 'pin-change-icon-light'">
+              <q-icon name="las la-exchange-alt" size="24px" />
+            </div>
+            <p class="pin-change-desc" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('Your PIN keeps your wallet private. Pick something memorable that only you know.') }}
+            </p>
           </div>
 
-          <div class="pin-format-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('PIN must be 6 digits') }}
+          <div class="pin-inputs-section">
+            <div class="pin-field-group">
+              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Current PIN') }}</div>
+              <q-input
+                v-model="sparkPinInput"
+                type="password"
+                :placeholder="'------'"
+                maxlength="6"
+                mask="######"
+                :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
+                borderless
+                input-class="text-center pin-input-field"
+                dense
+              />
+            </div>
+
+            <div class="pin-field-group">
+              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('New PIN') }}</div>
+              <q-input
+                v-model="sparkNewPin"
+                type="password"
+                :placeholder="'------'"
+                maxlength="6"
+                mask="######"
+                :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
+                borderless
+                input-class="text-center pin-input-field"
+                dense
+              />
+            </div>
+
+            <div class="pin-field-group">
+              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Repeat new PIN') }}</div>
+              <q-input
+                v-model="sparkConfirmNewPin"
+                type="password"
+                :placeholder="'------'"
+                maxlength="6"
+                mask="######"
+                :class="[
+                  $q.dark.isActive ? 'pin-input-dark' : 'pin-input-light',
+                  sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin ? 'pin-input-error' : ''
+                ]"
+                borderless
+                input-class="text-center pin-input-field"
+                dense
+                :error="sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin"
+                :error-message="$t('Those don\'t match — try again')"
+              />
+            </div>
           </div>
 
           <div class="pin-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-6'">
-            {{ $t('If you forget your PIN, restore your wallet with your seed phrase.') }}
+            <q-icon name="las la-info-circle" size="14px" class="q-mr-xs" />
+            {{ $t('Forgot your PIN? You can restore your wallet using your recovery phrase.') }}
           </div>
         </q-card-section>
 
@@ -1137,10 +1342,11 @@
             :label="$t('Cancel')"
             v-close-popup
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+            no-caps
           />
           <q-btn
             flat
-            :label="$t('Change PIN')"
+            :label="$t('Save new PIN')"
             @click="handleChangePin"
             :loading="isChangingPin"
             :disable="!sparkPinInput || sparkPinInput.length < 6 || !sparkNewPin || sparkNewPin.length < 6 || sparkNewPin !== sparkConfirmNewPin"
@@ -1226,12 +1432,18 @@ import {formatAmount} from '../utils/amountFormatting.js'
 import {shareContent} from '../utils/share.js'
 import {truncateAddress} from '../utils/addressUtils.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
+import MnemonicDisplay from '../components/MnemonicDisplay.vue'
+import MnemonicOrderVerify from '../components/MnemonicOrderVerify.vue'
+// import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { version } from '../../package.json'
 
 export default {
   name: 'SettingsPage',
   components: {
-    VueQrcode
+    VueQrcode,
+    MnemonicDisplay,
+    MnemonicOrderVerify,
+    // MnemonicVerify,
   },
   data() {
     return {
@@ -1282,6 +1494,13 @@ export default {
       viewedMnemonic: '',
       isChangingPin: false,
 
+      // Backup seed phrase dialog
+      showBackupDialog: false,
+      backupStep: 'pin', // 'pin' | 'show' | 'verify'
+      backupPinInput: '',
+      backupMnemonicWords: [],
+      isLoadingBackup: false,
+
       // Spark reconnect dialog
       showSparkReconnectDialog: false,
       sparkReconnectWalletId: null,
@@ -1326,7 +1545,8 @@ export default {
       'sparkWallet',
       'isActiveWalletSpark',
       'activeSparkAddress',
-      'useBip177Format'
+      'useBip177Format',
+      'hasBackedUp'
     ]),
 
     isValidNewWallet() {
@@ -1375,6 +1595,11 @@ export default {
     this.exchangeRateInterval = setInterval(() => {
       this.loadExchangeRates();
     }, 300000); // 5 minutes
+
+    // Handle deep link from backup banner
+    if (this.$route.query.section === 'backup' && this.hasSparkWallet) {
+      this.$nextTick(() => this.openBackupDialog());
+    }
   },
 
   beforeUnmount() {
@@ -1402,7 +1627,8 @@ export default {
       'getSparkMnemonic',
       'changeSparkPin',
       'connectSparkWallet',
-      'updateBip177Preference'
+      'updateBip177Preference',
+      'confirmBackup'
     ]),
 
     async initializeStore() {
@@ -2147,6 +2373,55 @@ export default {
       this.showViewMnemonicDialog = false;
       this.sparkPinInput = '';
       this.viewedMnemonic = '';
+    },
+
+    // ==========================================
+    // Backup Seed Phrase
+    // ==========================================
+
+    openBackupDialog() {
+      this.backupPinInput = '';
+      this.backupMnemonicWords = [];
+      this.backupStep = 'pin';
+      this.isLoadingBackup = false;
+      this.showBackupDialog = true;
+    },
+
+    async startBackup() {
+      if (!this.backupPinInput || this.backupPinInput.length < 6) return;
+
+      this.isLoadingBackup = true;
+      try {
+        const mnemonic = await this.getSparkMnemonic(this.backupPinInput);
+        this.backupMnemonicWords = mnemonic.split(' ');
+        this.backupStep = 'show';
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Incorrect PIN'),
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        this.backupPinInput = '';
+      } finally {
+        this.isLoadingBackup = false;
+      }
+    },
+
+    async onBackupVerified() {
+      await this.confirmBackup();
+      this.showBackupDialog = false;
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Backup verified successfully!'),
+        caption: this.$t('Your recovery phrase has been confirmed.'),
+      });
+    },
+
+    closeBackupDialog() {
+      this.showBackupDialog = false;
+      this.backupPinInput = '';
+      this.backupMnemonicWords = [];
+      this.backupStep = 'pin';
     },
 
     openChangePinDialog() {
@@ -3658,115 +3933,176 @@ export default {
 }
 
 /* Mempool Dialog Styles */
-.mempool-info {
+/* Mempool Dialog */
+.mempool-dialog {
+  width: 100%;
+  max-width: 420px;
+}
+
+.mempool-intro {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1.25rem;
+  text-align: center;
 }
 
-.info-dark {
-  background: #1A1A2E;
-  border: 1px solid #2A342A;
+.mempool-intro-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.info-light {
-  background: #F0FDF4;
-  border: 1px solid #BBF7D0;
-}
-
-.info-icon {
+.mempool-intro-icon-dark {
+  background: rgba(21, 222, 114, 0.1);
   color: #15DE72;
-  font-size: 20px;
-  margin-top: 0.125rem;
-  flex-shrink: 0;
 }
 
-.info-text {
+.mempool-intro-icon-light {
+  background: rgba(5, 149, 115, 0.08);
+  color: #059573;
+}
+
+.mempool-intro-text {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 320px;
 }
 
-.mempool-input {
-  margin-bottom: 1.5rem;
+.mempool-input-wrap {
+  margin-bottom: 1rem;
 }
 
-.mempool-input :deep(.q-field__control) {
-  border-radius: 20px;
-  padding: 0.75rem 1rem;
-  font-family: Fustat, 'Inter', sans-serif;
-}
-
-.url-examples {
-  margin-bottom: 1.5rem;
-}
-
-.examples-dark {
-  background: #171717;
-  border: 1px solid #2A342A;
-}
-
-.examples-light {
-  background: #F8F9FA;
-  border: 1px solid #E5E7EB;
-}
-
-.url-examples {
-  border-radius: 12px;
-  padding: 1rem;
-}
-
-.example-title {
+.mempool-input-label {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 600;
-  margin-bottom: 0.75rem;
+  margin-bottom: 6px;
 }
 
-.example-item {
+.mempool-url-input {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 12px;
+}
+
+/* Server cards */
+.mempool-servers {
+  margin-bottom: 1rem;
+}
+
+.mempool-servers-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.server-card {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.5rem;
-  border-radius: 8px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
   cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
+  transition: all 0.15s ease;
+  margin-bottom: 6px;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.example-item:last-child {
+.server-card:last-child {
   margin-bottom: 0;
 }
 
-.example-item:hover {
-  background: rgba(21, 222, 114, 0.1);
+.server-card-dark {
+  background: #171717;
+  border-color: #2A2A2A;
 }
 
-.example-url {
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 11px;
+.server-card-dark:active {
+  background: #1E1E1E;
+}
+
+.server-card-light {
+  background: #F8F9FA;
+  border-color: #E5E7EB;
+}
+
+.server-card-light:active {
+  background: #F0F1F3;
+}
+
+.server-card.server-active {
+  border-color: #15DE72;
+}
+
+.server-card-dark.server-active {
+  background: rgba(21, 222, 114, 0.06);
+}
+
+.server-card-light.server-active {
+  background: rgba(5, 149, 115, 0.04);
+}
+
+.server-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.server-name {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.server-tag {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 20px;
+}
+
+.tag-default {
+  background: rgba(21, 222, 114, 0.12);
   color: #15DE72;
 }
 
-.example-desc {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 10px;
-  opacity: 0.7;
+.tag-privacy {
+  background: rgba(139, 92, 246, 0.12);
+  color: #A78BFA;
 }
 
+.tag-community {
+  background: rgba(251, 191, 36, 0.12);
+  color: #F59E0B;
+}
+
+.server-url {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 11px;
+}
+
+/* Rate status */
 .rate-status {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
 }
 
 .status-dark {
-  background: #1A1A1A;
+  background: #171717;
 }
 
 .status-light {
@@ -3776,6 +4112,7 @@ export default {
 .rate-status span {
   font-family: Fustat, 'Inter', sans-serif;
   font-size: 12px;
+  line-height: 1.4;
 }
 
 /* Spark Wallet Section Styles */
@@ -3804,6 +4141,19 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.pin-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pin-field-label {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding-left: 4px;
 }
 
 .pin-input-dark {
@@ -4297,5 +4647,81 @@ export default {
 .dialog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:after),
 .dialog_light :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
   border-color: #15DE72 !important;
+}
+
+/* Change PIN Dialog Intro */
+.pin-change-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1.25rem;
+  text-align: center;
+}
+
+.pin-change-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-change-icon-dark {
+  background: rgba(21, 222, 114, 0.1);
+  color: #15DE72;
+}
+
+.pin-change-icon-light {
+  background: rgba(5, 149, 115, 0.08);
+  color: #059573;
+}
+
+.pin-change-desc {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 280px;
+}
+
+/* Backup Status Badge */
+.backup-status-side {
+  flex-direction: row !important;
+  align-items: center;
+}
+
+.backup-status-badge {
+  font-family: Fustat, 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.badge-verified {
+  background: rgba(21, 222, 114, 0.12);
+  color: #15DE72;
+}
+
+.badge-unverified {
+  background: rgba(251, 191, 36, 0.12);
+  color: #F59E0B;
+}
+
+/* Backup Dialog */
+.backup-dialog {
+  width: 100%;
+  max-width: 420px;
+}
+
+.backup-show-step {
+  padding: 0.5rem 0;
+}
+
+.backup-verify-step {
+  padding: 0.5rem 0;
 }
 </style>

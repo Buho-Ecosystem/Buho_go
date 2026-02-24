@@ -134,6 +134,10 @@ export const useWalletStore = defineStore('wallet', {
     exchangeRatesLastUpdate: null,
     exchangeRatesError: null,
 
+    // Seed backup tracking
+    hasBackedUp: false,
+    backupDismissedUntil: null, // timestamp when banner dismissal expires
+
     // UI states
     isLoading: false,
     isConnecting: false,
@@ -267,6 +271,21 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Whether to show the backup reminder banner.
+     * True when: Spark wallet exists, not backed up, has balance > 0, and not recently dismissed.
+     */
+    shouldPromptBackup: (state) => {
+      if (state.hasBackedUp) return false;
+      if (!state.wallets.some(w => w.type === WALLET_TYPES.SPARK)) return false;
+      const sparkWallet = state.wallets.find(w => w.type === WALLET_TYPES.SPARK);
+      if (!sparkWallet) return false;
+      const balance = state.balances[sparkWallet.id] || 0;
+      if (balance <= 0) return false;
+      if (state.backupDismissedUntil && Date.now() < state.backupDismissedUntil) return false;
+      return true;
+    },
+
+    /**
      * Check if active wallet is NWC
      */
     isActiveWalletNWC: (state) => {
@@ -396,6 +415,7 @@ export const useWalletStore = defineStore('wallet', {
             exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
             exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
             exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
+            hasBackedUp: parsed.hasBackedUp || false,
           });
         }
 
@@ -492,6 +512,26 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     // ==========================================
+    // Seed Backup Management
+    // ==========================================
+
+    /**
+     * Mark seed as backed up after user verifies their phrase
+     */
+    async confirmBackup() {
+      this.hasBackedUp = true;
+      this.backupDismissedUntil = null;
+      await this.persistState();
+    },
+
+    /**
+     * Dismiss the backup banner for 4 hours
+     */
+    dismissBackupPrompt() {
+      this.backupDismissedUntil = Date.now() + (4 * 60 * 60 * 1000);
+    },
+
+    // ==========================================
     // Spark Wallet Methods
     // ==========================================
 
@@ -502,6 +542,7 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletData.mnemonic - 12-word seed phrase
      * @param {string} walletData.pin - 6-digit PIN for encryption
      * @param {string} [walletData.network] - 'MAINNET' or 'REGTEST'
+     * @param {boolean} [walletData.isRestore] - True if restoring from existing seed (marks backup as done)
      * @returns {Promise<Object>} The created wallet object
      */
     async addSparkWallet(walletData) {
@@ -569,6 +610,11 @@ export const useWalletStore = defineStore('wallet', {
         if (this.wallets.length === 1) {
           this.activeWalletId = wallet.id;
           wallet.isActive = true;
+        }
+
+        // Restored wallets already have their seed backed up
+        if (walletData.isRestore) {
+          this.hasBackedUp = true;
         }
 
         // Store PIN in session for immediate use (survives page reload)
@@ -1050,9 +1096,11 @@ export const useWalletStore = defineStore('wallet', {
         delete this.balances[walletId];
         delete this.walletInfos[walletId];
 
-        // Clear session PIN if removing Spark wallet
+        // Clear session PIN and backup state if removing Spark wallet
         if (wallet.type === WALLET_TYPES.SPARK) {
           this._clearSessionPin();
+          this.hasBackedUp = false;
+          this.backupDismissedUntil = null;
         }
 
         // Handle active wallet removal
@@ -1441,6 +1489,8 @@ export const useWalletStore = defineStore('wallet', {
       this.balances = {};
       this.walletInfos = {};
       this.providers = {};
+      this.hasBackedUp = false;
+      this.backupDismissedUntil = null;
       this._clearSessionPin();
 
       await this.persistState();
@@ -1759,6 +1809,7 @@ export const useWalletStore = defineStore('wallet', {
           exchangeRates: this.exchangeRates,
           exchangeRatesAvailable: this.exchangeRatesAvailable,
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
+          hasBackedUp: this.hasBackedUp,
         };
         localStorage.setItem(STORAGE_KEYS.WALLET_STORE, JSON.stringify(stateToSave));
 

@@ -53,6 +53,14 @@
       >
       </q-btn>
     </q-toolbar>
+
+    <!-- Backup Reminder Banner -->
+    <BackupBanner
+      :visible="walletStore.shouldPromptBackup"
+      @backup="goToBackup"
+      @dismiss="walletStore.dismissBackupPrompt()"
+    />
+
     <!-- Main Content -->
     <div class="main-content">
       <!-- Wallet Name Badge -->
@@ -601,6 +609,7 @@ import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
+import BackupBanner from '../components/BackupBanner.vue';
 
 export default {
   name: 'WalletPage',
@@ -614,7 +623,8 @@ export default {
     AddressBookQuickModal,
     PaymentModal,
     BatchSendModal,
-    PaymentConfirmation
+    PaymentConfirmation,
+    BackupBanner
   },
   setup() {
     const walletStore = useWalletStore();
@@ -852,6 +862,10 @@ export default {
     }
   },
   methods: {
+    goToBackup() {
+      this.$router.push('/settings?section=backup');
+    },
+
     async openWalletManagement() {
       // Initialize the store to ensure we have the latest wallet data
       await this.walletStore.initialize();

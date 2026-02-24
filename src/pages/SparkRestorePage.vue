@@ -338,7 +338,8 @@ export default {
           name: 'Spark Wallet',
           mnemonic: this.mnemonic,
           pin: this.firstPin,
-          network: 'MAINNET'
+          network: 'MAINNET',
+          isRestore: true
         });
 
         this.restoringStatus = this.$t('Syncing wallet...');
