@@ -411,6 +411,21 @@
         <!-- Regular Payment Confirmation -->
         <q-card-section class="payment-content" v-else-if="pendingPayment">
           <div class="payment-info">
+            <!-- SA Retailer Merchant Info -->
+            <div v-if="pendingPayment.merchant" class="merchant-info">
+              <div class="merchant-info-left">
+                <img :src="pendingPayment.merchant.logo" :alt="pendingPayment.merchant.displayName" class="merchant-logo" />
+                <div class="merchant-text">
+                  <div class="merchant-name">{{ pendingPayment.merchant.displayName }}</div>
+                  <div v-if="pendingPayment.zarAmount" class="merchant-zar">R{{ pendingPayment.zarAmount }}</div>
+                </div>
+              </div>
+              <div v-if="merchantCountdown > 0" class="merchant-countdown" :class="merchantCountdown <= 20 ? 'countdown-urgent' : ''">
+                <q-icon name="las la-clock" size="14px" />
+                {{ Math.floor(merchantCountdown / 60) }}:{{ String(merchantCountdown % 60).padStart(2, '0') }}
+              </div>
+            </div>
+
             <div class="payment-amount">
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
                 {{ formatPaymentAmount() }}
@@ -420,16 +435,36 @@
                 <span v-else-if="pendingPayment && (pendingPayment.amount > 0 || paymentAmount)"
                       class="loading-fiat">{{ $t('Loading...') }}</span>
               </div>
+              <!-- Show ZAR equivalent if user's preferred currency is not ZAR -->
+              <div v-if="pendingPayment.zarAmount && walletState.preferredFiatCurrency !== 'ZAR'"
+                   class="amount-zar-secondary" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+                R{{ pendingPayment.zarAmount }} ZAR
+              </div>
+            </div>
+
+            <!-- Rate staleness warning -->
+            <div v-if="pendingPayment.merchant && ratesStale" class="rate-warning">
+              <q-icon name="las la-exclamation-triangle" size="14px" />
+              {{ $t('Exchange rates may be outdated') }}
             </div>
 
             <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
-              <!-- Recipient (Lightning Address or Spark Address) -->
-              <div class="detail-item" v-if="pendingPayment.lightningAddress || pendingPayment.sparkAddress">
+              <!-- Recipient (Lightning Address or Spark Address) - hide raw address for merchant payments -->
+              <div class="detail-item" v-if="(pendingPayment.lightningAddress || pendingPayment.sparkAddress) && !pendingPayment.merchant">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
                     $t('To')
                   }}:</span>
                 <span class="detail-value recipient-address" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
                     pendingPayment.lightningAddress || pendingPayment.sparkAddress
+                  }}</span>
+              </div>
+              <!-- Show merchant name as recipient for SA retail payments -->
+              <div class="detail-item" v-else-if="pendingPayment.merchant">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
+                    $t('To')
+                  }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
+                    pendingPayment.merchant.displayName
                   }}</span>
               </div>
               <div class="detail-item" v-if="pendingPayment.description">
@@ -614,6 +649,7 @@ import PaymentModal from '../components/PaymentModal.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
+import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 
 export default {
   name: 'WalletPage',
@@ -654,6 +690,8 @@ export default {
       showSendModal: false,
       showPaymentConfirmation: false,
       pendingPayment: null,
+      merchantCountdown: 0,
+      merchantCountdownTimer: null,
       paymentAmount: '',
       paymentComment: '',
       slidePosition: 0,
@@ -735,6 +773,9 @@ export default {
     autoWithdrawResult() {
       const awStore = useAutoWithdrawStore()
       return awStore.lastResult
+    },
+    ratesStale() {
+      return fiatRatesService.areRatesStale();
     },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
@@ -852,6 +893,8 @@ export default {
     this.stopBitcoinDepositPolling();
     // Stop withdraw monitor if active
     this.stopWithdrawMonitor();
+    // Stop merchant countdown if active
+    this.stopMerchantCountdown();
   },
   watch: {
     'walletState.balance': {
@@ -862,6 +905,14 @@ export default {
     currentDisplayMode: {
       handler: 'updateSecondaryValue',
       immediate: true
+    },
+
+    showPaymentConfirmation(open) {
+      if (open && this.pendingPayment?.merchant) {
+        this.startMerchantCountdown();
+      } else {
+        this.stopMerchantCountdown();
+      }
     },
 
     pendingPayment: {
@@ -2004,6 +2055,35 @@ export default {
       this.withdrawConfirmedFiat = '';
     },
 
+    startMerchantCountdown() {
+      this.stopMerchantCountdown();
+      this.merchantCountdown = 90;
+      this.merchantCountdownTimer = setInterval(() => {
+        this.merchantCountdown--;
+        if (this.merchantCountdown <= 0) {
+          this.stopMerchantCountdown();
+          this.showPaymentConfirmation = false;
+          this.pendingPayment = null;
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Payment expired'),
+            caption: this.$t('The merchant QR code has expired. Please scan again.'),
+            icon: 'las la-clock',
+            timeout: 5000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        }
+      }, 1000);
+    },
+
+    stopMerchantCountdown() {
+      if (this.merchantCountdownTimer) {
+        clearInterval(this.merchantCountdownTimer);
+        this.merchantCountdownTimer = null;
+      }
+      this.merchantCountdown = 0;
+    },
+
     onWithdrawSuccessClosed() {
       this.showWithdrawSuccess = false;
       this.resetWithdrawState();
@@ -2124,6 +2204,38 @@ export default {
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
             this.pendingPayment = processedAddress;
+          }
+
+          // Enrich with SA retail merchant context
+          if (paymentData.source === SA_RETAIL_SOURCE && paymentData.merchant) {
+            this.pendingPayment.merchant = paymentData.merchant;
+
+            // Parse ZAR amount from LNURL metadata description
+            const zarAmount = parseZARFromMetadata(this.pendingPayment.description);
+            if (zarAmount) {
+              this.pendingPayment.zarAmount = zarAmount;
+              this.pendingPayment.description = `${paymentData.merchant.displayName} - R${zarAmount}`;
+            } else {
+              this.pendingPayment.description = paymentData.merchant.displayName;
+            }
+
+            // Insufficient balance check
+            const paymentSats = this.pendingPayment.fixedAmountSats ||
+              (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
+                ? Math.floor(this.pendingPayment.minSendable / 1000)
+                : 0);
+            if (paymentSats > 0 && paymentSats > this.walletState.balance) {
+              this.$q.notify({
+                type: 'negative',
+                message: this.$t('Insufficient balance'),
+                caption: this.$t('You need {amount} sats but only have {balance} sats', {
+                  amount: paymentSats,
+                  balance: this.walletState.balance
+                }),
+                actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+              });
+              return;
+            }
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
           // Spark address payment
@@ -3605,6 +3717,85 @@ export default {
 
 .payment-info {
   text-align: center;
+}
+
+/* SA Retailer Merchant Info */
+.merchant-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.merchant-info-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.merchant-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.merchant-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.merchant-name {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.merchant-zar {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #10b981;
+  line-height: 1.3;
+}
+
+.merchant-countdown {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.countdown-urgent {
+  color: #ef4444;
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+@keyframes countdown-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.amount-zar-secondary {
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+  opacity: 0.8;
+}
+
+.rate-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #f59e0b;
+  margin-bottom: 0.75rem;
+  justify-content: center;
 }
 
 .payment-amount {

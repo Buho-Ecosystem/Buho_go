@@ -169,6 +169,21 @@ export class FiatRatesService {
         time: data.time || Math.floor(Date.now() / 1000)
       };
 
+      // Fetch ZAR rate from Alby (Mempool doesn't include ZAR)
+      try {
+        const zarResponse = await fetch('https://getalby.com/api/rates/zar.json', {
+          timeout: 5000
+        });
+        if (zarResponse.ok) {
+          const zarData = await zarResponse.json();
+          if (zarData && zarData.rate_float) {
+            this.rates.ZAR = zarData.rate_float;
+          }
+        }
+      } catch (zarError) {
+        console.warn('Failed to fetch ZAR rate from Alby:', zarError.message);
+      }
+
       this.lastUpdate = new Date();
       this.ratesAvailable = true;
       this.lastError = null;
@@ -279,7 +294,8 @@ export class FiatRatesService {
       CAD: 'C$',
       CHF: 'CHF ',
       AUD: 'A$',
-      JPY: '¥'
+      JPY: '¥',
+      ZAR: 'R'
     };
     
     const symbol = symbols[currency.toUpperCase()] || currency.toUpperCase() + ' ';
