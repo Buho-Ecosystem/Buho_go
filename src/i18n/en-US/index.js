@@ -790,5 +790,9 @@ export default {
   "One more time": "One more time",
   "Those don't match — try again": "Those don't match — try again",
   "Save new PIN": "Save new PIN",
-  "Your PIN keeps your wallet private. Choose something only you know.": "Your PIN keeps your wallet private. Choose something only you know."
+  "Your PIN keeps your wallet private. Choose something only you know.": "Your PIN keeps your wallet private. Choose something only you know.",
+  "Payment expired": "Payment expired",
+  "The merchant QR code has expired. Please scan again.": "The merchant QR code has expired. Please scan again.",
+  "Exchange rates may be outdated": "Exchange rates may be outdated",
+  "You need {amount} sats but only have {balance} sats": "You need {amount} sats but only have {balance} sats"
 }
