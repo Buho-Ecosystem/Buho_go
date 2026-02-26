@@ -137,7 +137,7 @@
         <!-- Left: Bitcoin Icon -->
         <div class="tx-avatar">
           <div class="direction-icon bitcoin-deposit" :class="{ 'claimable': deposit.confirmed }">
-            <q-icon name="lab la-bitcoin" size="22px" />
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 3v2h1V3h2v2.05A5.001 5.001 0 0 1 15.95 15 5.001 5.001 0 0 1 13.5 19.95V22h-2v-2h-1v2h-2v-2H7v-2h1V6H7V4h1.5V2h2v2h1V2h2v2zm-3 4v4h3a2 2 0 1 0 0-4h-3zm0 6v4h3.5a2 2 0 1 0 0-4h-3.5z"/></svg>
           </div>
         </div>
 
@@ -379,7 +379,18 @@
                     {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
                   </div>
                   <div v-else class="direction-icon" :class="getIndicatorClass(tx)">
-                    <q-icon :name="getTransactionIcon(tx)" size="20px"/>
+                    <!-- Auto-Transfer: paper-plane (outgoing, distinct style) -->
+                    <svg v-if="isAutoWithdraw(tx)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+                    <!-- Awaiting Payment: clock -->
+                    <svg v-else-if="isPendingInvoice(tx)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <!-- Bitcoin L1: bitcoin symbol -->
+                    <svg v-else-if="isBitcoinTransaction(tx)" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 3v2h1V3h2v2.05A5.001 5.001 0 0 1 15.95 15 5.001 5.001 0 0 1 13.5 19.95V22h-2v-2h-1v2h-2v-2H7v-2h1V6H7V4h1.5V2h2v2h1V2h2v2zm-3 4v4h3a2 2 0 1 0 0-4h-3zm0 6v4h3.5a2 2 0 1 0 0-4h-3.5z"/></svg>
+                    <!-- Zap/Nostr: lightning bolt -->
+                    <svg v-else-if="tx.senderNpub" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <!-- Received: arrow-down-left -->
+                    <svg v-else-if="tx.type === 'incoming'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7L7 17"/><path d="M7 8v9h9"/></svg>
+                    <!-- Sent: arrow-up-right -->
+                    <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M8 7h9v9"/></svg>
                   </div>
                 </div>
 
@@ -387,7 +398,8 @@
                 <div class="tx-info">
                   <!-- Line 1: Date and Time (always shown) -->
                   <div class="tx-primary" :class="$q.dark.isActive ? 'tx_primary_dark' : 'tx_primary_light'">
-                    <span v-if="tx.status === 'pending'">{{ $t('Sending...') }}</span>
+                    <span v-if="tx.status === 'pending' && tx.type === 'incoming'">{{ $t('Awaiting payment') }}</span>
+                    <span v-else-if="tx.status === 'pending'">{{ $t('Sending...') }}</span>
                     <span v-else>{{ formatHumanDateTime(tx.settled_at) }}</span>
                   </div>
 
@@ -398,18 +410,25 @@
                     {{ getContactForTransaction(tx).name }}
                   </div>
 
-                  <!-- Line 3: Description (if present) -->
-                  <div v-if="shouldShowDescription(tx)"
+                  <!-- Line 3: Auto-withdraw note OR description -->
+                  <div v-if="isAutoWithdraw(tx) && getAutoWithdrawNote(tx)"
+                       class="tx-description aw-note"
+                       :class="$q.dark.isActive ? 'tx_description_dark' : 'tx_description_light'">
+                    {{ getAutoWithdrawNote(tx) }}
+                  </div>
+                  <div v-else-if="shouldShowDescription(tx)"
                        class="tx-description tx-description-italic"
                        :class="$q.dark.isActive ? 'tx_description_dark' : 'tx_description_light'">
                     {{ tx.description || tx.memo }}
                   </div>
 
-                  <!-- Line 4: Tags (if present) -->
-                  <div v-if="getTagsForTransaction(tx).length > 0" class="tx-tags">
-                    <span v-for="tag in getTagsForTransaction(tx)" :key="tag" class="tag-pill">
-                      {{ tag }}
-                    </span>
+                  <!-- Line 4: Tags (skip auto-withdraw tag since icon already indicates it) -->
+                  <div v-if="getTagsForTransaction(tx).filter(t => t !== 'auto-withdraw').length > 0" class="tx-tags">
+                    <template v-for="tag in getTagsForTransaction(tx).filter(t => t !== 'auto-withdraw')" :key="tag">
+                      <span class="tag-pill">
+                        {{ tag }}
+                      </span>
+                    </template>
                   </div>
                 </div>
 
@@ -433,7 +452,7 @@
                 >
                 <div class="group-header-micro" @click="toggleMicropaymentGroup(tx.id)">
                   <div class="group-icon-micro">
-                    <q-icon name="las la-layer-group" size="20px"/>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg>
                   </div>
                   <div class="group-info-micro">
                     <div class="group-primary" :class="$q.dark.isActive ? 'group_primary_dark' : 'group_primary_light'">
@@ -1386,7 +1405,25 @@ export default {
       }
     },
 
+    isPendingInvoice(tx) {
+      return tx.status === 'pending' && tx.type === 'incoming';
+    },
+
+    isAutoWithdraw(tx) {
+      const tags = this.getTagsForTransaction(tx);
+      return tags.includes('auto-withdraw');
+    },
+
+    getAutoWithdrawNote(tx) {
+      if (!tx?.id || !this.metadataStore) return null;
+      try {
+        return this.metadataStore.getNoteForTransaction(tx.id) || null;
+      } catch { return null; }
+    },
+
     getTransactionTypeText(tx) {
+      if (this.isPendingInvoice(tx)) return this.$t('Invoice created');
+      if (this.isAutoWithdraw(tx)) return this.$t('Auto-Transfer');
       // Check for Bitcoin (L1) transactions
       if (this.isBitcoinTransaction(tx)) {
         return tx.type === 'incoming' ? this.$t('Bitcoin Deposit') : this.$t('Bitcoin Withdrawal');
@@ -1398,12 +1435,16 @@ export default {
     },
 
     getTransactionIconClass(tx) {
+      if (this.isPendingInvoice(tx)) return 'tx-icon-pending-invoice';
+      if (this.isAutoWithdraw(tx)) return 'tx-icon-auto-withdraw';
       if (this.isBitcoinTransaction(tx)) return 'tx-icon-bitcoin';
       if (tx.senderNpub) return 'tx-icon-zap';
       return tx.type === 'incoming' ? 'tx-icon-received' : 'tx-icon-sent';
     },
 
     getTransactionIcon(tx) {
+      if (this.isPendingInvoice(tx)) return 'las la-clock';
+      if (this.isAutoWithdraw(tx)) return 'las la-paper-plane';
       if (this.isBitcoinTransaction(tx)) return 'lab la-bitcoin';
       if (tx.senderNpub) return 'las la-bolt';
       return tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
@@ -1411,14 +1452,16 @@ export default {
 
     /**
      * Get indicator class for transaction avatar
+     * Auto-withdraw: indigo (auto-withdraw)
+     * Pending invoices: muted amber (awaiting-payment)
      * Bitcoin deposits: orange (bitcoin-deposit)
      * Bitcoin withdrawals: gray (outgoing)
      * Regular: green (incoming) or gray (outgoing)
      */
     getIndicatorClass(tx) {
+      if (this.isPendingInvoice(tx)) return 'awaiting-payment';
+      if (this.isAutoWithdraw(tx)) return 'auto-withdraw';
       if (this.isBitcoinTransaction(tx)) {
-        // Bitcoin deposits show with orange indicator
-        // Bitcoin withdrawals treated as regular outgoing (gray)
         return tx.type === 'incoming' ? 'bitcoin-deposit' : 'outgoing';
       }
       return tx.type;
@@ -1488,6 +1531,7 @@ export default {
     },
 
     getAmountClass(tx) {
+      if (this.isPendingInvoice(tx)) return 'amount-pending';
       return tx.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
 
@@ -2396,6 +2440,11 @@ export default {
   color: #FF4B4B;
 }
 
+.amount-pending {
+  color: #F59E0B;
+  opacity: 0.7;
+}
+
 .amount_fiat_dark {
   color: #B0B0B0;
   font-size: 0.8rem;
@@ -2492,6 +2541,24 @@ export default {
   background: #8E8E93;
 }
 
+/* Awaiting Payment - Muted amber */
+.direction-icon.awaiting-payment {
+  background: rgba(245, 158, 11, 0.2);
+  color: #F59E0B;
+}
+
+/* Auto-Withdraw - Indigo */
+.direction-icon.auto-withdraw {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818CF8;
+}
+
+/* Auto-withdraw note styling */
+.aw-note {
+  font-style: normal !important;
+  opacity: 0.85;
+}
+
 /* Info Section */
 .tx-info {
   flex: 1;
@@ -2579,6 +2646,12 @@ export default {
   font-size: 0.7rem;
   font-weight: 500;
   font-family: Fustat, sans-serif;
+}
+
+.aw-tag-pill {
+  gap: 4px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #818CF8;
 }
 
 /* Amount Section */

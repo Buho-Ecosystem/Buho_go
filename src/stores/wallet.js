@@ -11,6 +11,7 @@ import { fiatRatesService } from '../utils/fiatRates.js';
 import { SparkWalletProvider } from '../providers/SparkWalletProvider';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
+import { useAutoWithdrawStore } from './autoWithdraw';
 
 /**
  * Storage keys for persistence
@@ -219,23 +220,46 @@ export const useWalletStore = defineStore('wallet', {
       // Spark wallets don't have lightning addresses
       if (activeWallet.type === 'spark') return null;
 
+      // Helper: validate lightning address format (user@domain)
+      const isValidLnAddress = (addr) => {
+        if (!addr || typeof addr !== 'string') return false;
+        const parts = addr.split('@');
+        return parts.length === 2 && parts[0].length > 0 && parts[1].includes('.') && !addr.includes('://');
+      };
+
+      // Helper: extract lud16 from NWC URL string
+      const extractLud16FromUrl = (url) => {
+        if (!url) return null;
+        try {
+          const parsed = new URL(url.replace('nostr+walletconnect://', 'http://'));
+          const lud16Raw = parsed.searchParams.get('lud16');
+          if (lud16Raw && lud16Raw !== 'null' && isValidLnAddress(lud16Raw)) {
+            return lud16Raw;
+          }
+        } catch (e) { /* ignore */ }
+        return null;
+      };
+
       // Check if already in metadata
       if (activeWallet.metadata?.lud16) {
-        return activeWallet.metadata.lud16;
+        const stored = activeWallet.metadata.lud16;
+        // Validate it's actually a clean lightning address
+        if (isValidLnAddress(stored)) {
+          return stored;
+        }
+        // metadata.lud16 might be corrupted (lud16 + NWC URI concatenated)
+        // Extract the lightning address part before any protocol scheme
+        if (stored.includes('@')) {
+          const cleaned = stored.split(/nostr[+\s]/)[0];
+          if (cleaned && isValidLnAddress(cleaned)) {
+            return cleaned;
+          }
+        }
       }
 
       // Extract from nwcUrl for wallets added before lud16 extraction was implemented
-      if (activeWallet.nwcUrl) {
-        try {
-          const nwcUrlParsed = new URL(activeWallet.nwcUrl.replace('nostr+walletconnect://', 'http://'));
-          const lud16Raw = nwcUrlParsed.searchParams.get('lud16');
-          if (lud16Raw && lud16Raw !== 'null') {
-            return lud16Raw;
-          }
-        } catch (e) {
-          // Ignore parsing errors
-        }
-      }
+      const extracted = extractLud16FromUrl(activeWallet.nwcUrl);
+      if (extracted) return extracted;
 
       return null;
     },
@@ -424,6 +448,10 @@ export const useWalletStore = defineStore('wallet', {
 
         // Load exchange rates
         await this.loadExchangeRates();
+
+        // Initialize auto-withdraw store
+        const autoWithdrawStore = useAutoWithdrawStore();
+        await autoWithdrawStore.initialize();
 
         // Try to restore session PIN from sessionStorage (survives page reload)
         this._restoreSessionPin();
@@ -830,8 +858,8 @@ export const useWalletStore = defineStore('wallet', {
         const nwcUrlParsed = new URL(walletData.nwcUrl.replace('nostr+walletconnect://', 'http://'));
         const relays = nwcUrlParsed.searchParams.getAll('relay');
         const lud16Raw = nwcUrlParsed.searchParams.get('lud16');
-        // Handle "null" string as no address
-        const lud16 = (lud16Raw && lud16Raw !== 'null') ? lud16Raw : null;
+        // Handle "null" string as no address, validate it looks like user@domain
+        const lud16 = (lud16Raw && lud16Raw !== 'null' && lud16Raw.includes('@') && !lud16Raw.includes('://')) ? lud16Raw : null;
         console.log('Connecting to NWC with relays:', relays);
         if (lud16) console.log('Lightning address (lud16):', lud16);
 
@@ -1103,6 +1131,10 @@ export const useWalletStore = defineStore('wallet', {
           this.backupDismissedUntil = null;
         }
 
+        // Clean up auto-withdraw config
+        const autoWithdrawStore = useAutoWithdrawStore();
+        await autoWithdrawStore.removeConfig(walletId);
+
         // Handle active wallet removal
         if (this.activeWalletId === walletId) {
           const newActive = this.defaultWallet || this.wallets[0];
@@ -1312,6 +1344,13 @@ export const useWalletStore = defineStore('wallet', {
         // Update last used
         wallet.lastUsed = Date.now();
         await this.persistState();
+
+        // Auto-withdraw check
+        const newBalance = this.balances[walletId];
+        if (newBalance > 0) {
+          const autoWithdrawStore = useAutoWithdrawStore();
+          autoWithdrawStore.checkAndExecute(walletId, newBalance, this);
+        }
       } catch (error) {
         console.error(`Refresh wallet ${walletId} failed:`, error);
         this.connectionStates[walletId] = {
@@ -1492,6 +1531,10 @@ export const useWalletStore = defineStore('wallet', {
       this.hasBackedUp = false;
       this.backupDismissedUntil = null;
       this._clearSessionPin();
+
+      // Clear auto-withdraw configs
+      const autoWithdrawStore = useAutoWithdrawStore();
+      await autoWithdrawStore.clearAll();
 
       await this.persistState();
     },
