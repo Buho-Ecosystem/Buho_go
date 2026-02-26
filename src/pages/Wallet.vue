@@ -86,6 +86,9 @@
         <!-- Default wallet icon -->
         <q-icon v-else name="las la-wallet" size="12px" class="wallet-badge-icon" />
         <span class="wallet-badge-text">{{ activeWallet.name }}</span>
+        <span v-if="isAutoTransferActive" class="aw-indicator">
+          <q-icon name="las la-paper-plane" size="10px" />
+        </span>
       </div>
 
       <!-- Balance Display -->
@@ -610,6 +613,7 @@ import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
+import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 
 export default {
   name: 'WalletPage',
@@ -721,6 +725,16 @@ export default {
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
+    },
+    isAutoTransferActive() {
+      if (!this.activeWallet) return false;
+      const awStore = useAutoWithdrawStore();
+      const config = awStore.getConfig(this.activeWallet.id);
+      return config?.enabled === true;
+    },
+    autoWithdrawResult() {
+      const awStore = useAutoWithdrawStore()
+      return awStore.lastResult
     },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
@@ -859,6 +873,29 @@ export default {
     paymentAmount: {
       handler: 'updatePaymentFiatValue',
       immediate: true
+    },
+
+    autoWithdrawResult(result) {
+      if (!result) return
+      const awStore = useAutoWithdrawStore()
+      if (result.type === 'success') {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Auto-transfer complete'),
+          caption: `${result.amount.toLocaleString()} sats → ${result.destination}`,
+          icon: 'las la-paper-plane',
+          timeout: 4000
+        })
+      } else if (result.type === 'error') {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Auto-transfer failed'),
+          caption: result.message,
+          icon: 'las la-exclamation-circle',
+          timeout: 5000
+        })
+      }
+      awStore.lastResult = null
     }
   },
   methods: {
@@ -1336,6 +1373,9 @@ export default {
           this.loadingText = 'Updating balance...';
         }
 
+        const awStore = useAutoWithdrawStore();
+        const activeWalletId = this.walletStore.activeWalletId;
+
         // Check if active wallet is Spark
         if (this.walletStore.isActiveWalletSpark) {
           // Try to get connected provider, auto-reconnects if session PIN available
@@ -1344,6 +1384,11 @@ export default {
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+            // Auto-withdraw check
+            if (balanceResult.balance > 0 && activeWalletId) {
+              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+            }
           } catch (err) {
             // Silently fail for background refresh - user will see locked state
             // Don't spam console with expected "PIN required" messages
@@ -1371,6 +1416,11 @@ export default {
               }
 
               localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+              // Auto-withdraw check
+              if (balanceResult.balance > 0 && activeWalletId) {
+                awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+              }
             }
           } catch (err) {
             console.warn('LNBits balance refresh failed:', err.message);
@@ -1394,6 +1444,11 @@ export default {
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+          // Auto-withdraw check
+          if (balance.balance > 0 && activeWalletId) {
+            awStore.checkAndExecute(activeWalletId, balance.balance, this.walletStore);
+          }
         }
       } catch (error) {
         console.error('Failed to update balance:', error);
@@ -3091,6 +3146,13 @@ export default {
 .wallet-badge-text {
   font-family: 'Inter', sans-serif;
   letter-spacing: -0.01em;
+}
+
+.aw-indicator {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(99, 102, 241, 0.5);
+  margin-left: 2px;
 }
 
 /* Balance Section */

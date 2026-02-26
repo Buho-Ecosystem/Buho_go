@@ -90,7 +90,8 @@ export const useAddressBookStore = defineStore('addressBook', {
       try {
         const savedEntries = localStorage.getItem('buhoGO_address_book')
         if (savedEntries) {
-          this.entries = JSON.parse(savedEntries)
+          const parsed = JSON.parse(savedEntries)
+          this.entries = Array.isArray(parsed) ? parsed : []
         }
       } catch (error) {
         console.error('Error loading address book:', error)
