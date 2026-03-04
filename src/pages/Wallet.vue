@@ -1868,7 +1868,8 @@ export default {
             ? this.$t('Fiat rates unavailable — switch to sats or refresh the app')
             : this.$t('Invalid amount'),
           icon: 'las la-exclamation-triangle',
-          timeout: 4000
+          timeout: 10000,
+          actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
         });
         return;
       }
@@ -2136,7 +2137,8 @@ export default {
             message: this.$t('Fiat rates unavailable'),
             caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
             icon: 'las la-exclamation-triangle',
-            timeout: 4000
+            timeout: 10000,
+            actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
           });
           return;
         }
@@ -2257,6 +2259,18 @@ export default {
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
           // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
+
+          if (lnurlInfo.error || !lnurlInfo.lnurlType) {
+            this.$q.notify({
+              type: 'negative',
+              message: this.$t('Withdraw link expired or already used'),
+              caption: lnurlInfo.reason || this.$t('Could not retrieve payment details from this link'),
+              icon: 'las la-exclamation-circle',
+              timeout: 10000,
+              actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+            });
+            return;
+          }
 
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
@@ -2878,13 +2892,13 @@ export default {
         const response = await fetch(url);
 
         if (!response.ok) {
-          return {};
+          return { error: true, reason: `Server returned ${response.status}` };
         }
 
         const data = await response.json();
 
         if (data.status === 'ERROR') {
-          return {};
+          return { error: true, reason: data.reason || 'This link is no longer valid' };
         }
 
         if (data.tag === 'withdrawRequest') {
