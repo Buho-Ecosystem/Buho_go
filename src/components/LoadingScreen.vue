@@ -1,5 +1,6 @@
 <template>
   <div
+    v-if="visible"
     class="loading-screen"
     :class="{
       'fade-out': !show,
@@ -77,6 +78,22 @@ export default {
     loadingText: {
       type: String,
       default: 'Loading...'
+    }
+  },
+  data() {
+    return {
+      visible: true
+    }
+  },
+  watch: {
+    show(newVal) {
+      if (!newVal) {
+        setTimeout(() => {
+          this.visible = false;
+        }, 600);
+      } else {
+        this.visible = true;
+      }
     }
   }
 }
