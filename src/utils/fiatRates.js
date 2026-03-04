@@ -284,6 +284,17 @@ export class FiatRatesService {
   }
 
   /**
+   * Synchronous fiat to sats conversion - returns null if rates unavailable
+   */
+  convertFiatToSatsSync(fiatAmount, currency = 'USD') {
+    if (!this.ratesAvailable) return null;
+    const rate = this.rates[currency.toUpperCase()];
+    if (!rate) return null;
+    const btc = fiatAmount / rate;
+    return Math.floor(btc * 100000000);
+  }
+
+  /**
    * Format fiat amount with currency symbol
    */
   formatFiatAmount(amount, currency) {

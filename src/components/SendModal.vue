@@ -342,6 +342,7 @@
 import QrScanner from 'qr-scanner';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
+import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 
 export default {
   name: 'SendModal',
@@ -562,6 +563,36 @@ export default {
         }
 
         let trimmedData = inputData.trim();
+
+        // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
+        if (isSARetailerQR(trimmedData)) {
+          const result = convertToLightningAddress(trimmedData);
+          if (result) {
+            // EMVCo QR converted to lightning address via cryptoqr.net
+            this.$emit('payment-detected', {
+              data: result.lightningAddress,
+              type: 'lightning_address',
+              source: SA_RETAIL_SOURCE,
+              merchant: result.merchant,
+            });
+            this.closeModal();
+            return;
+          }
+          // URL-based SA retailer QR - needs Scanner API (Phase 2)
+          const merchant = getMerchantInfo(trimmedData);
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('SA Retailer QR detected'),
+            caption: merchant
+              ? `${merchant.displayName} - ${this.$t('not yet supported')}`
+              : this.$t('This retailer is not yet supported'),
+            timeout: 4000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }],
+          });
+          this.isProcessing = false;
+          return;
+        }
+
         // Handle lightning: prefix and extract the actual invoice
         let cleanData = trimmedData.toLowerCase().startsWith('lightning:')
           ? trimmedData.substring(10)
