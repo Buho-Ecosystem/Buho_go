@@ -53,6 +53,14 @@
       >
       </q-btn>
     </q-toolbar>
+
+    <!-- Backup Reminder Banner -->
+    <BackupBanner
+      :visible="walletStore.shouldPromptBackup"
+      @backup="goToBackup"
+      @dismiss="walletStore.dismissBackupPrompt()"
+    />
+
     <!-- Main Content -->
     <div class="main-content">
       <!-- Wallet Name Badge -->
@@ -78,6 +86,9 @@
         <!-- Default wallet icon -->
         <q-icon v-else name="las la-wallet" size="12px" class="wallet-badge-icon" />
         <span class="wallet-badge-text">{{ activeWallet.name }}</span>
+        <span v-if="isAutoTransferActive" class="aw-indicator">
+          <q-icon name="las la-paper-plane" size="10px" />
+        </span>
       </div>
 
       <!-- Balance Display -->
@@ -349,10 +360,11 @@
           <div class="payment-info">
             <div class="payment-amount">
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
-                {{ pendingPayment.isFixedAmount ? formatAmountInline(pendingPayment.fixedAmountSats) : (paymentAmount ? formatAmountInline(parseInt(paymentAmount)) : $t('Enter amount')) }}
+                {{ withdrawAmountDisplay }}
               </div>
-              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-                <span v-if="paymentFiatValue">{{ paymentFiatValue }}</span>
+              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
+                   style="cursor: pointer;" @click="toggleWithdrawDenomination">
+                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <q-icon name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
               </div>
             </div>
 
@@ -367,7 +379,7 @@
               </div>
               <div class="detail-item" v-if="!pendingPayment.isFixedAmount">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Redeemable') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ pendingPayment.minSats }} - {{ pendingPayment.maxSats }} sats</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ withdrawRedeemableRange }}</span>
               </div>
             </div>
 
@@ -376,14 +388,23 @@
               <q-input
                 v-model="paymentAmount"
                 outlined
-                :label="$t('Amount')"
+                :label="withdrawDenomination === 'fiat' ? withdrawFiatCurrency : $t('Amount')"
                 type="number"
-                :min="pendingPayment.minSats"
-                :max="pendingPayment.maxSats"
                 :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
                 :rules="[val => validateWithdrawAmount(val)]"
                 :disable="lnurlWithdrawStatus !== 'idle'"
-              />
+              >
+                <template v-slot:append>
+                  <q-btn flat dense round
+                    size="sm"
+                    @click="toggleWithdrawDenomination"
+                    :disable="lnurlWithdrawStatus !== 'idle'"
+                  >
+                    <q-icon name="las la-sync" :class="{ 'denomination-spin': denominationSpinning }" />
+                    <q-tooltip>{{ withdrawDenomination === 'sats' ? withdrawFiatCurrency : 'sats' }}</q-tooltip>
+                  </q-btn>
+                </template>
+              </q-input>
             </div>
 
             <!-- Status display during processing -->
@@ -400,6 +421,21 @@
         <!-- Regular Payment Confirmation -->
         <q-card-section class="payment-content" v-else-if="pendingPayment">
           <div class="payment-info">
+            <!-- SA Retailer Merchant Info -->
+            <div v-if="pendingPayment.merchant" class="merchant-info">
+              <div class="merchant-info-left">
+                <img :src="pendingPayment.merchant.logo" :alt="pendingPayment.merchant.displayName" class="merchant-logo" />
+                <div class="merchant-text">
+                  <div class="merchant-name">{{ pendingPayment.merchant.displayName }}</div>
+                  <div v-if="pendingPayment.zarAmount" class="merchant-zar">R{{ pendingPayment.zarAmount }}</div>
+                </div>
+              </div>
+              <div v-if="merchantCountdown > 0" class="merchant-countdown" :class="merchantCountdown <= 20 ? 'countdown-urgent' : ''">
+                <q-icon name="las la-clock" size="14px" />
+                {{ Math.floor(merchantCountdown / 60) }}:{{ String(merchantCountdown % 60).padStart(2, '0') }}
+              </div>
+            </div>
+
             <div class="payment-amount">
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
                 {{ formatPaymentAmount() }}
@@ -409,16 +445,36 @@
                 <span v-else-if="pendingPayment && (pendingPayment.amount > 0 || paymentAmount)"
                       class="loading-fiat">{{ $t('Loading...') }}</span>
               </div>
+              <!-- Show ZAR equivalent if user's preferred currency is not ZAR -->
+              <div v-if="pendingPayment.zarAmount && walletState.preferredFiatCurrency !== 'ZAR'"
+                   class="amount-zar-secondary" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+                R{{ pendingPayment.zarAmount }} ZAR
+              </div>
+            </div>
+
+            <!-- Rate staleness warning -->
+            <div v-if="pendingPayment.merchant && ratesStale" class="rate-warning">
+              <q-icon name="las la-exclamation-triangle" size="14px" />
+              {{ $t('Exchange rates may be outdated') }}
             </div>
 
             <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
-              <!-- Recipient (Lightning Address or Spark Address) -->
-              <div class="detail-item" v-if="pendingPayment.lightningAddress || pendingPayment.sparkAddress">
+              <!-- Recipient (Lightning Address or Spark Address) - hide raw address for merchant payments -->
+              <div class="detail-item" v-if="(pendingPayment.lightningAddress || pendingPayment.sparkAddress) && !pendingPayment.merchant">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
                     $t('To')
                   }}:</span>
                 <span class="detail-value recipient-address" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
                     pendingPayment.lightningAddress || pendingPayment.sparkAddress
+                  }}</span>
+              </div>
+              <!-- Show merchant name as recipient for SA retail payments -->
+              <div class="detail-item" v-else-if="pendingPayment.merchant">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
+                    $t('To')
+                  }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
+                    pendingPayment.merchant.displayName
                   }}</span>
               </div>
               <div class="detail-item" v-if="pendingPayment.description">
@@ -601,6 +657,9 @@ import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
+import BackupBanner from '../components/BackupBanner.vue';
+import {useAutoWithdrawStore} from '../stores/autoWithdraw';
+import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 
 export default {
   name: 'WalletPage',
@@ -614,7 +673,8 @@ export default {
     AddressBookQuickModal,
     PaymentModal,
     BatchSendModal,
-    PaymentConfirmation
+    PaymentConfirmation,
+    BackupBanner
   },
   setup() {
     const walletStore = useWalletStore();
@@ -640,6 +700,8 @@ export default {
       showSendModal: false,
       showPaymentConfirmation: false,
       pendingPayment: null,
+      merchantCountdown: 0,
+      merchantCountdownTimer: null,
       paymentAmount: '',
       paymentComment: '',
       slidePosition: 0,
@@ -693,6 +755,8 @@ export default {
       showContactPayment: false,
       selectedPayContact: null,
       // LNURL-Withdraw state
+      withdrawDenomination: 'sats', // 'sats' or 'fiat'
+      denominationSpinning: false,
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
@@ -711,6 +775,19 @@ export default {
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
+    },
+    isAutoTransferActive() {
+      if (!this.activeWallet) return false;
+      const awStore = useAutoWithdrawStore();
+      const config = awStore.getConfig(this.activeWallet.id);
+      return config?.enabled === true;
+    },
+    autoWithdrawResult() {
+      const awStore = useAutoWithdrawStore()
+      return awStore.lastResult
+    },
+    ratesStale() {
+      return fiatRatesService.areRatesStale();
     },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
@@ -787,12 +864,62 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       return !this.pendingPayment.isFixedAmount;
     },
+    withdrawFiatCurrency() {
+      return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    withdrawAmountSats() {
+      if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return 0;
+      if (this.pendingPayment.isFixedAmount) return this.pendingPayment.fixedAmountSats;
+      const val = parseFloat(this.paymentAmount);
+      if (!val || val <= 0) return 0;
+      if (this.withdrawDenomination === 'fiat') {
+        return fiatRatesService.convertFiatToSatsSync(val, this.withdrawFiatCurrency) || 0;
+      }
+      return Math.floor(val);
+    },
+    withdrawAmountDisplay() {
+      if (!this.pendingPayment) return '';
+      if (this.pendingPayment.isFixedAmount) {
+        if (this.withdrawDenomination === 'fiat') {
+          const fiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.fixedAmountSats, this.withdrawFiatCurrency);
+          return fiat !== null ? fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency) : this.formatAmountInline(this.pendingPayment.fixedAmountSats);
+        }
+        return this.formatAmountInline(this.pendingPayment.fixedAmountSats);
+      }
+      if (!this.paymentAmount) return this.$t('Enter amount');
+      if (this.withdrawDenomination === 'fiat') {
+        const val = parseFloat(this.paymentAmount);
+        return val > 0 ? fiatRatesService.formatFiatAmount(val, this.withdrawFiatCurrency) : this.$t('Enter amount');
+      }
+      return this.formatAmountInline(parseInt(this.paymentAmount));
+    },
+    withdrawSecondaryDisplay() {
+      const sats = this.withdrawAmountSats;
+      if (!sats) return '';
+      if (this.withdrawDenomination === 'fiat') {
+        return '≈ ' + this.formatAmountInline(sats);
+      }
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, this.withdrawFiatCurrency);
+      if (fiat === null) return '';
+      return '≈ ' + fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency);
+    },
+    withdrawRedeemableRange() {
+      if (!this.pendingPayment) return '';
+      if (this.withdrawDenomination === 'fiat') {
+        const minFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.minSats, this.withdrawFiatCurrency);
+        const maxFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.maxSats, this.withdrawFiatCurrency);
+        if (minFiat !== null && maxFiat !== null) {
+          return `${fiatRatesService.formatFiatAmount(minFiat, this.withdrawFiatCurrency)} - ${fiatRatesService.formatFiatAmount(maxFiat, this.withdrawFiatCurrency)}`;
+        }
+      }
+      return `${this.pendingPayment.minSats} - ${this.pendingPayment.maxSats} sats`;
+    },
     canConfirmWithdraw() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       if (this.lnurlWithdrawStatus !== 'idle') return false;
       if (this.pendingPayment.isFixedAmount) return true;
-      const amount = parseInt(this.paymentAmount);
-      return amount >= this.pendingPayment.minSats && amount <= this.pendingPayment.maxSats;
+      const sats = this.withdrawAmountSats;
+      return sats >= this.pendingPayment.minSats && sats <= this.pendingPayment.maxSats;
     },
     withdrawStatusMessage() {
       const messages = {
@@ -832,6 +959,8 @@ export default {
     this.stopBitcoinDepositPolling();
     // Stop withdraw monitor if active
     this.stopWithdrawMonitor();
+    // Stop merchant countdown if active
+    this.stopMerchantCountdown();
   },
   watch: {
     'walletState.balance': {
@@ -844,6 +973,14 @@ export default {
       immediate: true
     },
 
+    showPaymentConfirmation(open) {
+      if (open && this.pendingPayment?.merchant) {
+        this.startMerchantCountdown();
+      } else {
+        this.stopMerchantCountdown();
+      }
+    },
+
     pendingPayment: {
       handler: 'updatePaymentFiatValue',
       immediate: true,
@@ -853,9 +990,36 @@ export default {
     paymentAmount: {
       handler: 'updatePaymentFiatValue',
       immediate: true
+    },
+
+    autoWithdrawResult(result) {
+      if (!result) return
+      const awStore = useAutoWithdrawStore()
+      if (result.type === 'success') {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Auto-transfer complete'),
+          caption: `${result.amount.toLocaleString()} sats → ${result.destination}`,
+          icon: 'las la-paper-plane',
+          timeout: 4000
+        })
+      } else if (result.type === 'error') {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Auto-transfer failed'),
+          caption: result.message,
+          icon: 'las la-exclamation-circle',
+          timeout: 5000
+        })
+      }
+      awStore.lastResult = null
     }
   },
   methods: {
+    goToBackup() {
+      this.$router.push('/settings?section=backup');
+    },
+
     async openWalletManagement() {
       // Initialize the store to ensure we have the latest wallet data
       await this.walletStore.initialize();
@@ -1324,6 +1488,9 @@ export default {
           this.loadingText = 'Updating balance...';
         }
 
+        const awStore = useAutoWithdrawStore();
+        const activeWalletId = this.walletStore.activeWalletId;
+
         // Check if active wallet is Spark
         if (this.walletStore.isActiveWalletSpark) {
           // Try to get connected provider, auto-reconnects if session PIN available
@@ -1332,6 +1499,11 @@ export default {
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+            // Auto-withdraw check
+            if (balanceResult.balance > 0 && activeWalletId) {
+              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+            }
           } catch (err) {
             // Silently fail for background refresh - user will see locked state
             // Don't spam console with expected "PIN required" messages
@@ -1359,6 +1531,11 @@ export default {
               }
 
               localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+              // Auto-withdraw check
+              if (balanceResult.balance > 0 && activeWalletId) {
+                awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+              }
             }
           } catch (err) {
             console.warn('LNBits balance refresh failed:', err.message);
@@ -1382,6 +1559,11 @@ export default {
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+          // Auto-withdraw check
+          if (balance.balance > 0 && activeWalletId) {
+            awStore.checkAndExecute(activeWalletId, balance.balance, this.walletStore);
+          }
         }
       } catch (error) {
         console.error('Failed to update balance:', error);
@@ -1681,9 +1863,19 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return;
       if (!this.canConfirmWithdraw) return;
 
-      const amountSats = this.pendingPayment.isFixedAmount
-        ? this.pendingPayment.fixedAmountSats
-        : parseInt(this.paymentAmount);
+      const amountSats = this.withdrawAmountSats;
+      if (!amountSats || amountSats <= 0) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.withdrawDenomination === 'fiat'
+            ? this.$t('Fiat rates unavailable — switch to sats or refresh the app')
+            : this.$t('Invalid amount'),
+          icon: 'las la-exclamation-triangle',
+          timeout: 10000,
+          actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+        });
+        return;
+      }
       const description = this.pendingPayment.defaultDescription || 'Withdrawal';
 
       try {
@@ -1935,6 +2127,68 @@ export default {
       this.lnurlWithdrawInvoice = null;
       this.withdrawConfirmedAmount = 0;
       this.withdrawConfirmedFiat = '';
+      this.withdrawDenomination = 'sats';
+    },
+
+    toggleWithdrawDenomination() {
+      this.denominationSpinning = true;
+      setTimeout(() => { this.denominationSpinning = false; }, 500);
+      const currentAmount = parseFloat(this.paymentAmount);
+      if (this.withdrawDenomination === 'sats') {
+        // Switching to fiat — check if rates are available
+        if (!fiatRatesService.ratesAvailable) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Fiat rates unavailable'),
+            caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
+            icon: 'las la-exclamation-triangle',
+            timeout: 10000,
+            actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+          });
+          return;
+        }
+        this.withdrawDenomination = 'fiat';
+        if (currentAmount > 0) {
+          const fiat = fiatRatesService.convertSatsToFiatSync(currentAmount, this.withdrawFiatCurrency);
+          this.paymentAmount = fiat !== null ? fiat.toFixed(2) : '';
+        }
+      } else {
+        // Switching to sats
+        this.withdrawDenomination = 'sats';
+        if (currentAmount > 0) {
+          const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.withdrawFiatCurrency);
+          this.paymentAmount = sats !== null ? sats.toString() : '';
+        }
+      }
+    },
+
+    startMerchantCountdown() {
+      this.stopMerchantCountdown();
+      this.merchantCountdown = 90;
+      this.merchantCountdownTimer = setInterval(() => {
+        this.merchantCountdown--;
+        if (this.merchantCountdown <= 0) {
+          this.stopMerchantCountdown();
+          this.showPaymentConfirmation = false;
+          this.pendingPayment = null;
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Payment expired'),
+            caption: this.$t('The merchant QR code has expired. Please scan again.'),
+            icon: 'las la-clock',
+            timeout: 5000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        }
+      }, 1000);
+    },
+
+    stopMerchantCountdown() {
+      if (this.merchantCountdownTimer) {
+        clearInterval(this.merchantCountdownTimer);
+        this.merchantCountdownTimer = null;
+      }
+      this.merchantCountdown = 0;
     },
 
     onWithdrawSuccessClosed() {
@@ -1945,10 +2199,17 @@ export default {
 
     validateWithdrawAmount(val) {
       if (!this.pendingPayment) return true;
-      const amount = parseInt(val);
+      const amount = parseFloat(val);
       if (isNaN(amount) || amount <= 0) return 'Amount must be greater than 0';
-      if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
-      if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
+      if (this.withdrawDenomination === 'fiat') {
+        const sats = fiatRatesService.convertFiatToSatsSync(amount, this.withdrawFiatCurrency);
+        if (sats === null) return 'Exchange rate unavailable';
+        if (sats < this.pendingPayment.minSats) return `Below minimum (≈ ${this.pendingPayment.minSats} sats)`;
+        if (sats > this.pendingPayment.maxSats) return `Above maximum (≈ ${this.pendingPayment.maxSats} sats)`;
+      } else {
+        if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
+        if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
+      }
       return true;
     },
 
@@ -2004,6 +2265,18 @@ export default {
           // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
 
+          if (lnurlInfo.error || !lnurlInfo.lnurlType) {
+            this.$q.notify({
+              type: 'negative',
+              message: this.$t('Withdraw link expired or already used'),
+              caption: lnurlInfo.reason || this.$t('Could not retrieve payment details from this link'),
+              icon: 'las la-exclamation-circle',
+              timeout: 10000,
+              actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+            });
+            return;
+          }
+
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
             this.resetWithdrawState();
@@ -2057,6 +2330,45 @@ export default {
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
             this.pendingPayment = processedAddress;
+          }
+
+          // Enrich with SA retail merchant context
+          if (paymentData.source === SA_RETAIL_SOURCE && paymentData.merchant) {
+            this.pendingPayment.merchant = paymentData.merchant;
+
+            // Parse ZAR amount from LNURL metadata description
+            const zarAmount = parseZARFromMetadata(this.pendingPayment.description);
+            if (zarAmount) {
+              this.pendingPayment.zarAmount = zarAmount;
+              this.pendingPayment.description = `${paymentData.merchant.displayName} - R${zarAmount}`;
+
+              // Pre-fill amount for merchant payments when min !== max (rate spread).
+              // Use maxSendable to cover the full ZAR amount the merchant expects.
+              if (!this.pendingPayment.fixedAmountSats && this.pendingPayment.maxSendable) {
+                this.paymentAmount = String(Math.floor(this.pendingPayment.maxSendable / 1000));
+              }
+            } else {
+              this.pendingPayment.description = paymentData.merchant.displayName;
+            }
+
+            // Insufficient balance check — use fixedAmountSats, or pre-filled amount
+            const paymentSats = this.pendingPayment.fixedAmountSats ||
+              parseInt(this.paymentAmount) ||
+              (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
+                ? Math.floor(this.pendingPayment.minSendable / 1000)
+                : 0);
+            if (paymentSats > 0 && paymentSats > this.walletState.balance) {
+              this.$q.notify({
+                type: 'negative',
+                message: this.$t('Insufficient balance'),
+                caption: this.$t('You need {amount} sats but only have {balance} sats', {
+                  amount: paymentSats,
+                  balance: this.walletState.balance
+                }),
+                actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+              });
+              return;
+            }
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
           // Spark address payment
@@ -2178,12 +2490,8 @@ export default {
 
       let amount = 0;
       if (this.pendingPayment.type === 'lnurl_withdraw') {
-        // LNURL-withdraw: fixed or user-entered amount
-        if (this.pendingPayment.isFixedAmount) {
-          amount = this.pendingPayment.fixedAmountSats || 0;
-        } else {
-          amount = parseInt(this.paymentAmount) || 0;
-        }
+        // Handled by withdrawSecondaryDisplay computed
+        return '';
       } else if (this.needsAmountInput) {
         amount = parseInt(this.paymentAmount) || 0;
       } else if (this.pendingPayment.type === 'lnurl' ||
@@ -2596,13 +2904,13 @@ export default {
         const response = await fetch(url);
 
         if (!response.ok) {
-          return {};
+          return { error: true, reason: `Server returned ${response.status}` };
         }
 
         const data = await response.json();
 
         if (data.status === 'ERROR') {
-          return {};
+          return { error: true, reason: data.reason || 'This link is no longer valid' };
         }
 
         if (data.tag === 'withdrawRequest') {
@@ -3081,6 +3389,13 @@ export default {
   letter-spacing: -0.01em;
 }
 
+.aw-indicator {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(99, 102, 241, 0.5);
+  margin-left: 2px;
+}
+
 /* Balance Section */
 .balance-section {
   text-align: center;
@@ -3531,6 +3846,94 @@ export default {
 
 .payment-info {
   text-align: center;
+}
+
+/* SA Retailer Merchant Info */
+.merchant-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.merchant-info-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.merchant-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.merchant-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.merchant-name {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.merchant-zar {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #10b981;
+  line-height: 1.3;
+}
+
+.merchant-countdown {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.countdown-urgent {
+  color: #ef4444;
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.denomination-spin {
+  animation: denomination-rotate 0.5s ease-in-out;
+}
+
+@keyframes denomination-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes countdown-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.amount-zar-secondary {
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+  opacity: 0.8;
+}
+
+.rate-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #f59e0b;
+  margin-bottom: 0.75rem;
+  justify-content: center;
 }
 
 .payment-amount {
