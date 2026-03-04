@@ -364,7 +364,7 @@
               </div>
               <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
                    style="cursor: pointer;" @click="toggleWithdrawDenomination">
-                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <q-icon name="las la-exchange-alt" size="12px" /></span>
+                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <q-icon name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
               </div>
             </div>
 
@@ -396,11 +396,11 @@
               >
                 <template v-slot:append>
                   <q-btn flat dense round
-                    icon="las la-exchange-alt"
                     size="sm"
                     @click="toggleWithdrawDenomination"
                     :disable="lnurlWithdrawStatus !== 'idle'"
                   >
+                    <q-icon name="las la-sync" :class="{ 'denomination-spin': denominationSpinning }" />
                     <q-tooltip>{{ withdrawDenomination === 'sats' ? withdrawFiatCurrency : 'sats' }}</q-tooltip>
                   </q-btn>
                 </template>
@@ -756,6 +756,7 @@ export default {
       selectedPayContact: null,
       // LNURL-Withdraw state
       withdrawDenomination: 'sats', // 'sats' or 'fiat'
+      denominationSpinning: false,
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
@@ -2128,6 +2129,8 @@ export default {
     },
 
     toggleWithdrawDenomination() {
+      this.denominationSpinning = true;
+      setTimeout(() => { this.denominationSpinning = false; }, 500);
       const currentAmount = parseFloat(this.paymentAmount);
       if (this.withdrawDenomination === 'sats') {
         // Switching to fiat — check if rates are available
@@ -2336,12 +2339,19 @@ export default {
             if (zarAmount) {
               this.pendingPayment.zarAmount = zarAmount;
               this.pendingPayment.description = `${paymentData.merchant.displayName} - R${zarAmount}`;
+
+              // Pre-fill amount for merchant payments when min !== max (rate spread).
+              // Use maxSendable to cover the full ZAR amount the merchant expects.
+              if (!this.pendingPayment.fixedAmountSats && this.pendingPayment.maxSendable) {
+                this.paymentAmount = String(Math.floor(this.pendingPayment.maxSendable / 1000));
+              }
             } else {
               this.pendingPayment.description = paymentData.merchant.displayName;
             }
 
-            // Insufficient balance check
+            // Insufficient balance check — use fixedAmountSats, or pre-filled amount
             const paymentSats = this.pendingPayment.fixedAmountSats ||
+              parseInt(this.paymentAmount) ||
               (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
@@ -3892,6 +3902,15 @@ export default {
 .countdown-urgent {
   color: #ef4444;
   animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.denomination-spin {
+  animation: denomination-rotate 0.5s ease-in-out;
+}
+
+@keyframes denomination-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 @keyframes countdown-pulse {
