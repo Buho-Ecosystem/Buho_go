@@ -725,6 +725,7 @@ export default {
   "Sats received!": "Sats recibidos!",
   "Redeem failed": "Canje fallido",
   "Redeemable": "Canjeable",
+  "Amount range": "Rango de monto",
   "Enter amount": "Ingrese monto",
   "Scan to redeem": "Escanear para canjear",
   "Payment expired": "Pago expirado",
