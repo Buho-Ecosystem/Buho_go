@@ -1375,6 +1375,7 @@
                 mask="######"
                 :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
                 borderless
+                hide-bottom-space
                 input-class="text-center pin-input-field"
                 dense
               />
@@ -1392,6 +1393,7 @@
                 borderless
                 input-class="text-center pin-input-field"
                 dense
+                hide-bottom-space
               />
             </div>
 
@@ -1407,6 +1409,7 @@
                   $q.dark.isActive ? 'pin-input-dark' : 'pin-input-light',
                   sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin ? 'pin-input-error' : ''
                 ]"
+                hide-bottom-space
                 borderless
                 input-class="text-center pin-input-field"
                 dense
@@ -1960,7 +1963,7 @@ export default {
         message: value
           ? this.$t('Amount format changed to BIP-177 (₿)')
           : this.$t('Amount format changed to Legacy (sats)'),
-        
+
         timeout: 2000
       })
     },
@@ -2015,7 +2018,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet connected'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -2023,7 +2026,7 @@ export default {
           type: 'negative',
           message: this.$t('Connection failed'),
           caption: this.$t('Please check your connection and try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
@@ -2052,7 +2055,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Reconnected'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -2060,7 +2063,7 @@ export default {
           type: 'negative',
           message: this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
@@ -2076,7 +2079,7 @@ export default {
         this.$q.notify({
           type: 'warning',
           message: this.$t('Please enter your 6-digit PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
         return
@@ -2091,7 +2094,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet unlocked'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -2100,7 +2103,7 @@ export default {
           type: 'negative',
           message: isInvalidPin ? this.$t('Incorrect PIN') : this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
         // Clear PIN on error
@@ -2122,7 +2125,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet switched'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -2130,7 +2133,7 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -2185,7 +2188,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Spark wallet deleted'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -2194,7 +2197,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Wallet removed'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -2211,7 +2214,7 @@ export default {
           type: 'negative',
           message: this.$t('Action failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2280,7 +2283,7 @@ export default {
           type: 'warning',
           message: this.$t('Couldn\'t generate invoice'),
           caption: this.$t('Copy the lightning address instead: {address}', { address: this.donationAddress }),
-          
+
           timeout: 10000,
           actions: [
             {
@@ -2291,7 +2294,7 @@ export default {
                 this.$q.notify({
                   type: 'positive',
                   message: this.$t('Address copied'),
-                  
+
                 });
               }
             }
@@ -2312,7 +2315,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Invoice copied'),
-        
+
         timeout: 2000
       });
     },
@@ -2394,7 +2397,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN saved'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } else {
@@ -2403,7 +2406,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Incorrect PIN'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           return;
@@ -2418,7 +2421,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN updated'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -2452,7 +2455,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Notifications not available'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -2527,7 +2530,7 @@ export default {
           message: urlToTest ?
             this.$t('API settings saved') :
             this.$t('Using default API'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -2537,7 +2540,7 @@ export default {
           type: 'negative',
           message: this.$t('API connection failed'),
           caption: this.$t('Please check the URL and try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2564,7 +2567,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Language updated'),
-        
+
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
@@ -2651,7 +2654,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Please enter your PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2665,7 +2668,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Incorrect PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.sparkPinInput = '';
@@ -2741,7 +2744,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Please enter your current PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2751,7 +2754,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('New PIN must be 6 digits'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2761,7 +2764,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('PINs do not match'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2773,7 +2776,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN changed successfully'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.showChangePinDialog = false;
@@ -2781,7 +2784,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: error.message || this.$t('Failed to change PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
