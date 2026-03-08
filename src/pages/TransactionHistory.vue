@@ -2398,7 +2398,7 @@ export default {
 
 .transaction-amount {
   text-align: right;
-  min-width: 90px;
+  /*min-width: 90px;*/
 }
 
 .amount_sats_dark {
@@ -2645,7 +2645,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 90px;
+  /*min-width: 90px;*/
 }
 
 .amount-sats,
