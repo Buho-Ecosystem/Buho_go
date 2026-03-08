@@ -14,6 +14,36 @@ import { LightningAddress, Invoice } from '@getalby/lightning-tools';
 import { bech32 } from 'bech32';
 
 /**
+ * LUD-17 URL scheme prefixes mapped to their LNURL type.
+ * @see https://github.com/lnurl/luds/blob/luds/17.md
+ */
+const LUD17_SCHEMES = {
+  'lnurlp://': 'payRequest',
+  'lnurlw://': 'withdrawRequest',
+  'lnurlc://': 'channelRequest',
+  'keyauth://': 'login',
+};
+
+/**
+ * Resolves a LUD-17 URL scheme to a standard HTTPS (or HTTP for .onion) URL.
+ * Returns null if the input is not a LUD-17 URL.
+ * @param {string} input - The input string to check
+ * @returns {string|null} The resolved URL, or null if not LUD-17
+ */
+export function resolveLUD17URL(input) {
+  const lower = input.toLowerCase();
+  for (const scheme of Object.keys(LUD17_SCHEMES)) {
+    if (lower.startsWith(scheme)) {
+      const rest = input.substring(scheme.length);
+      const host = rest.split('/')[0];
+      const protocol = host.endsWith('.onion') ? 'http://' : 'https://';
+      return protocol + rest;
+    }
+  }
+  return null;
+}
+
+/**
  * Payment type constants for consistent type checking
  */
 export const PaymentType = {
@@ -86,7 +116,7 @@ export class LightningPaymentService {
    */
   isLNURL(input) {
     const lower = input.toLowerCase();
-    return lower.startsWith('lnurl') || lower.startsWith('lightning:lnurl');
+    return lower.startsWith('lnurl') || lower.startsWith('lightning:lnurl') || lower.startsWith('keyauth://');
   }
 
   /**
@@ -533,15 +563,21 @@ export class LightningPaymentService {
   // ============================================================================
 
   /**
-   * Decodes an LNURL from bech32 format to URL
-   * @param {string} lnurl - The bech32-encoded LNURL
+   * Decodes an LNURL to a URL. Supports both bech32 (LUD-01) and URL schemes (LUD-17).
+   * @param {string} lnurl - The LNURL string (bech32-encoded or LUD-17 scheme)
    * @returns {string} The decoded URL
    * @throws {Error} If decoding fails
    */
   decodeLNURL(lnurl) {
+    const clean = lnurl.trim().replace(/^lightning:/i, '');
+
+    // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
+    const lud17Url = resolveLUD17URL(clean);
+    if (lud17Url) return lud17Url;
+
+    // LUD-01: bech32-encoded LNURL
     try {
-      const cleanLnurl = lnurl.toLowerCase().trim();
-      const decoded = bech32.decode(cleanLnurl, 2000);
+      const decoded = bech32.decode(clean.toLowerCase(), 2000);
       const bytes = bech32.fromWords(decoded.words);
       return new TextDecoder().decode(new Uint8Array(bytes));
     } catch (error) {

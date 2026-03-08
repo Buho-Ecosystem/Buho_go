@@ -725,6 +725,7 @@ export default {
   "Sats received!": "Sats erhalten!",
   "Redeem failed": "Einlösen fehlgeschlagen",
   "Redeemable": "Einlösbar",
+  "Amount range": "Betragsbereich",
   "Enter amount": "Betrag eingeben",
   "Scan to redeem": "Scannen zum Einlösen",
   "Payment expired": "Zahlung abgelaufen",

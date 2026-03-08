@@ -370,10 +370,11 @@
           <div class="payment-info">
             <div class="payment-amount">
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
-                {{ pendingPayment.isFixedAmount ? formatAmountInline(pendingPayment.fixedAmountSats) : (paymentAmount ? formatAmountInline(parseInt(paymentAmount)) : $t('Enter amount')) }}
+                {{ withdrawAmountDisplay }}
               </div>
-              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-                <span v-if="paymentFiatValue">{{ paymentFiatValue }}</span>
+              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
+                   style="cursor: pointer;" @click="toggleWithdrawDenomination">
+                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <q-icon name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
               </div>
             </div>
 
@@ -388,7 +389,7 @@
               </div>
               <div class="detail-item" v-if="!pendingPayment.isFixedAmount">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Redeemable') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ pendingPayment.minSats }} - {{ pendingPayment.maxSats }} sats</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ withdrawRedeemableRange }}</span>
               </div>
             </div>
 
@@ -397,14 +398,23 @@
               <q-input
                 v-model="paymentAmount"
                 outlined
-                :label="$t('Amount')"
+                :label="withdrawDenomination === 'fiat' ? withdrawFiatCurrency : $t('Amount')"
                 type="number"
-                :min="pendingPayment.minSats"
-                :max="pendingPayment.maxSats"
                 :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
                 :rules="[val => validateWithdrawAmount(val)]"
                 :disable="lnurlWithdrawStatus !== 'idle'"
-              />
+              >
+                <template v-slot:append>
+                  <q-btn flat dense round
+                    size="sm"
+                    @click="toggleWithdrawDenomination"
+                    :disable="lnurlWithdrawStatus !== 'idle'"
+                  >
+                    <q-icon name="las la-sync" :class="{ 'denomination-spin': denominationSpinning }" />
+                    <q-tooltip>{{ withdrawDenomination === 'sats' ? withdrawFiatCurrency : 'sats' }}</q-tooltip>
+                  </q-btn>
+                </template>
+              </q-input>
             </div>
 
             <!-- Status display during processing -->
@@ -501,6 +511,11 @@
                   <span v-else-if="estimatedFee !== null">{{ formatAmountInline(estimatedFee) }}</span>
                   <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
                 </span>
+              </div>
+              <!-- Amount range for variable-amount payments -->
+              <div class="detail-item" v-if="payAmountRange">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Amount range') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ payAmountRange }}</span>
               </div>
             </div>
 
@@ -641,7 +656,7 @@
 
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
-import {LightningPaymentService} from '../utils/lightning.js';
+import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
@@ -756,6 +771,8 @@ export default {
       showContactPayment: false,
       selectedPayContact: null,
       // LNURL-Withdraw state
+      withdrawDenomination: 'sats', // 'sats' or 'fiat'
+      denominationSpinning: false,
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
@@ -863,12 +880,75 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       return !this.pendingPayment.isFixedAmount;
     },
+    withdrawFiatCurrency() {
+      return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    withdrawAmountSats() {
+      if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return 0;
+      if (this.pendingPayment.isFixedAmount) return this.pendingPayment.fixedAmountSats;
+      const val = parseFloat(this.paymentAmount);
+      if (!val || val <= 0) return 0;
+      if (this.withdrawDenomination === 'fiat') {
+        return fiatRatesService.convertFiatToSatsSync(val, this.withdrawFiatCurrency) || 0;
+      }
+      return Math.floor(val);
+    },
+    withdrawAmountDisplay() {
+      if (!this.pendingPayment) return '';
+      if (this.pendingPayment.isFixedAmount) {
+        if (this.withdrawDenomination === 'fiat') {
+          const fiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.fixedAmountSats, this.withdrawFiatCurrency);
+          return fiat !== null ? fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency) : this.formatAmountInline(this.pendingPayment.fixedAmountSats);
+        }
+        return this.formatAmountInline(this.pendingPayment.fixedAmountSats);
+      }
+      if (!this.paymentAmount) return this.$t('Enter amount');
+      if (this.withdrawDenomination === 'fiat') {
+        const val = parseFloat(this.paymentAmount);
+        return val > 0 ? fiatRatesService.formatFiatAmount(val, this.withdrawFiatCurrency) : this.$t('Enter amount');
+      }
+      return this.formatAmountInline(parseInt(this.paymentAmount));
+    },
+    withdrawSecondaryDisplay() {
+      const sats = this.withdrawAmountSats;
+      if (!sats) return '';
+      if (this.withdrawDenomination === 'fiat') {
+        return '≈ ' + this.formatAmountInline(sats);
+      }
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, this.withdrawFiatCurrency);
+      if (fiat === null) return '';
+      return '≈ ' + fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency);
+    },
+    withdrawRedeemableRange() {
+      if (!this.pendingPayment) return '';
+      if (this.withdrawDenomination === 'fiat') {
+        const minFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.minSats, this.withdrawFiatCurrency);
+        const maxFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.maxSats, this.withdrawFiatCurrency);
+        if (minFiat !== null && maxFiat !== null) {
+          return `${fiatRatesService.formatFiatAmount(minFiat, this.withdrawFiatCurrency)} - ${fiatRatesService.formatFiatAmount(maxFiat, this.withdrawFiatCurrency)}`;
+        }
+      }
+      return `${this.pendingPayment.minSats} - ${this.pendingPayment.maxSats} sats`;
+    },
+    payAmountRange() {
+      if (!this.pendingPayment || !this.needsAmountInput) return '';
+      const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 0);
+      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 0);
+      if (!minSats || !maxSats || minSats === maxSats) return '';
+      const currency = this.withdrawFiatCurrency;
+      const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
+      const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
+      if (minFiat !== null && maxFiat !== null) {
+        return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)} (${minSats} - ${maxSats} sats)`;
+      }
+      return `${minSats} - ${maxSats} sats`;
+    },
     canConfirmWithdraw() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       if (this.lnurlWithdrawStatus !== 'idle') return false;
       if (this.pendingPayment.isFixedAmount) return true;
-      const amount = parseInt(this.paymentAmount);
-      return amount >= this.pendingPayment.minSats && amount <= this.pendingPayment.maxSats;
+      const sats = this.withdrawAmountSats;
+      return sats >= this.pendingPayment.minSats && sats <= this.pendingPayment.maxSats;
     },
     withdrawStatusMessage() {
       const messages = {
@@ -883,6 +963,10 @@ export default {
     }
   },
   async created() {
+    // Safety timeout: force-hide loading screen after 15s to prevent permanent black screen
+    setTimeout(() => {
+      this.showLoadingScreen = false;
+    }, 15000);
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
@@ -1353,7 +1437,6 @@ export default {
         this.startPulseAnimation();
 
         this.loadingText = 'Ready!';
-        await new Promise(resolve => setTimeout(resolve, 500));
         this.showLoadingScreen = false;
 
         // Check if Spark wallet needs unlocking
@@ -1361,7 +1444,6 @@ export default {
       } catch (error) {
         console.error('Error initializing wallet:', error);
         this.loadingText = 'Error loading wallet';
-        await new Promise(resolve => setTimeout(resolve, 1000));
         this.showLoadingScreen = false;
       }
     },
@@ -1810,9 +1892,19 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return;
       if (!this.canConfirmWithdraw) return;
 
-      const amountSats = this.pendingPayment.isFixedAmount
-        ? this.pendingPayment.fixedAmountSats
-        : parseInt(this.paymentAmount);
+      const amountSats = this.withdrawAmountSats;
+      if (!amountSats || amountSats <= 0) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.withdrawDenomination === 'fiat'
+            ? this.$t('Fiat rates unavailable — switch to sats or refresh the app')
+            : this.$t('Invalid amount'),
+          icon: 'las la-exclamation-triangle',
+          timeout: 10000,
+          actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+        });
+        return;
+      }
       const description = this.pendingPayment.defaultDescription || 'Withdrawal';
 
       try {
@@ -2064,6 +2156,39 @@ export default {
       this.lnurlWithdrawInvoice = null;
       this.withdrawConfirmedAmount = 0;
       this.withdrawConfirmedFiat = '';
+      this.withdrawDenomination = 'sats';
+    },
+
+    toggleWithdrawDenomination() {
+      this.denominationSpinning = true;
+      setTimeout(() => { this.denominationSpinning = false; }, 500);
+      const currentAmount = parseFloat(this.paymentAmount);
+      if (this.withdrawDenomination === 'sats') {
+        // Switching to fiat — check if rates are available
+        if (!fiatRatesService.ratesAvailable) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Fiat rates unavailable'),
+            caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
+            icon: 'las la-exclamation-triangle',
+            timeout: 10000,
+            actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+          });
+          return;
+        }
+        this.withdrawDenomination = 'fiat';
+        if (currentAmount > 0) {
+          const fiat = fiatRatesService.convertSatsToFiatSync(currentAmount, this.withdrawFiatCurrency);
+          this.paymentAmount = fiat !== null ? fiat.toFixed(2) : '';
+        }
+      } else {
+        // Switching to sats
+        this.withdrawDenomination = 'sats';
+        if (currentAmount > 0) {
+          const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.withdrawFiatCurrency);
+          this.paymentAmount = sats !== null ? sats.toString() : '';
+        }
+      }
     },
 
     startMerchantCountdown() {
@@ -2103,10 +2228,17 @@ export default {
 
     validateWithdrawAmount(val) {
       if (!this.pendingPayment) return true;
-      const amount = parseInt(val);
+      const amount = parseFloat(val);
       if (isNaN(amount) || amount <= 0) return 'Amount must be greater than 0';
-      if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
-      if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
+      if (this.withdrawDenomination === 'fiat') {
+        const sats = fiatRatesService.convertFiatToSatsSync(amount, this.withdrawFiatCurrency);
+        if (sats === null) return 'Exchange rate unavailable';
+        if (sats < this.pendingPayment.minSats) return `Below minimum (≈ ${this.pendingPayment.minSats} sats)`;
+        if (sats > this.pendingPayment.maxSats) return `Above maximum (≈ ${this.pendingPayment.maxSats} sats)`;
+      } else {
+        if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
+        if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
+      }
       return true;
     },
 
@@ -2161,6 +2293,18 @@ export default {
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
           // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
+
+          if (lnurlInfo.error || !lnurlInfo.lnurlType) {
+            this.$q.notify({
+              type: 'negative',
+              message: this.$t('Withdraw link expired or already used'),
+              caption: lnurlInfo.reason || this.$t('Could not retrieve payment details from this link'),
+              icon: 'las la-exclamation-circle',
+              timeout: 10000,
+              actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+            });
+            return;
+          }
 
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
@@ -2226,12 +2370,19 @@ export default {
             if (zarAmount) {
               this.pendingPayment.zarAmount = zarAmount;
               this.pendingPayment.description = `${paymentData.merchant.displayName} - R${zarAmount}`;
+
+              // Pre-fill amount for merchant payments when min !== max (rate spread).
+              // Use maxSendable to cover the full ZAR amount the merchant expects.
+              if (!this.pendingPayment.fixedAmountSats && this.pendingPayment.maxSendable) {
+                this.paymentAmount = String(Math.floor(this.pendingPayment.maxSendable / 1000));
+              }
             } else {
               this.pendingPayment.description = paymentData.merchant.displayName;
             }
 
-            // Insufficient balance check
+            // Insufficient balance check — use fixedAmountSats, or pre-filled amount
             const paymentSats = this.pendingPayment.fixedAmountSats ||
+              parseInt(this.paymentAmount) ||
               (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
@@ -2368,12 +2519,8 @@ export default {
 
       let amount = 0;
       if (this.pendingPayment.type === 'lnurl_withdraw') {
-        // LNURL-withdraw: fixed or user-entered amount
-        if (this.pendingPayment.isFixedAmount) {
-          amount = this.pendingPayment.fixedAmountSats || 0;
-        } else {
-          amount = parseInt(this.paymentAmount) || 0;
-        }
+        // Handled by withdrawSecondaryDisplay computed
+        return '';
       } else if (this.needsAmountInput) {
         amount = parseInt(this.paymentAmount) || 0;
       } else if (this.pendingPayment.type === 'lnurl' ||
@@ -2622,7 +2769,7 @@ export default {
     // Helper: Check if input is an LNURL
     isLNURL(input) {
       const lower = input.toLowerCase();
-      return lower.startsWith('lnurl');
+      return lower.startsWith('lnurl') || lower.startsWith('keyauth://');
     },
 
     // Helper: Get recipient address from pending payment
@@ -2786,13 +2933,13 @@ export default {
         const response = await fetch(url);
 
         if (!response.ok) {
-          return {};
+          return { error: true, reason: `Server returned ${response.status}` };
         }
 
         const data = await response.json();
 
         if (data.status === 'ERROR') {
-          return {};
+          return { error: true, reason: data.reason || 'This link is no longer valid' };
         }
 
         if (data.tag === 'withdrawRequest') {
@@ -2910,9 +3057,16 @@ export default {
       }
     },
 
-    // Helper: Decode LNURL (bech32) to URL
+    // Helper: Decode LNURL (bech32 LUD-01 or URL scheme LUD-17) to URL
     decodeLNURL(lnurl) {
-      const input = lnurl.toLowerCase().replace('lightning:', '');
+      const clean = lnurl.trim().replace(/^lightning:/i, '');
+
+      // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
+      const lud17Url = resolveLUD17URL(clean);
+      if (lud17Url) return lud17Url;
+
+      // LUD-01: bech32-encoded LNURL
+      const input = clean.toLowerCase();
       const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
       const hrpEnd = input.lastIndexOf('1');
       if (hrpEnd < 1) throw new Error('Invalid LNURL');
@@ -3778,6 +3932,15 @@ export default {
 .countdown-urgent {
   color: #ef4444;
   animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.denomination-spin {
+  animation: denomination-rotate 0.5s ease-in-out;
+}
+
+@keyframes denomination-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 @keyframes countdown-pulse {

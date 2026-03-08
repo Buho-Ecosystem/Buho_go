@@ -164,8 +164,10 @@ export function parsePaymentDestination(input) {
     }
   }
 
-  // LNURL (bech32 encoded)
-  if (normalized.startsWith('lnurl1')) {
+  // LNURL (bech32 LUD-01 or URL scheme LUD-17)
+  if (normalized.startsWith('lnurl1') || normalized.startsWith('lnurlp://') ||
+      normalized.startsWith('lnurlw://') || normalized.startsWith('lnurlc://') ||
+      normalized.startsWith('keyauth://')) {
     return {
       type: 'lnurl',
       lnurl: cleaned,
