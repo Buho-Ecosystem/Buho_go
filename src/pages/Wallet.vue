@@ -502,6 +502,11 @@
                   <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
                 </span>
               </div>
+              <!-- Amount range for variable-amount payments -->
+              <div class="detail-item" v-if="payAmountRange">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Amount range') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ payAmountRange }}</span>
+              </div>
             </div>
 
             <!-- Amount input for LNURL/Lightning Address -->
@@ -913,6 +918,19 @@ export default {
         }
       }
       return `${this.pendingPayment.minSats} - ${this.pendingPayment.maxSats} sats`;
+    },
+    payAmountRange() {
+      if (!this.pendingPayment || !this.needsAmountInput) return '';
+      const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 0);
+      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 0);
+      if (!minSats || !maxSats || minSats === maxSats) return '';
+      const currency = this.withdrawFiatCurrency;
+      const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
+      const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
+      if (minFiat !== null && maxFiat !== null) {
+        return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)} (${minSats} - ${maxSats} sats)`;
+      }
+      return `${minSats} - ${maxSats} sats`;
     },
     canConfirmWithdraw() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;

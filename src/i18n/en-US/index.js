@@ -755,6 +755,7 @@ export default {
   "Sats received!": "Sats received!",
   "Redeem failed": "Redeem failed",
   "Redeemable": "Redeemable",
+  "Amount range": "Amount range",
   "Enter amount": "Enter amount",
   "Scan to redeem": "Scan to redeem",
 
