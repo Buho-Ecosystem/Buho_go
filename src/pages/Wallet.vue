@@ -15,17 +15,18 @@
 
       <!-- Pending Bitcoin Deposits Chip (in header) -->
       <transition name="btc-banner-fade">
-        <div
+        <q-chip
           v-if="isSparkWallet && pendingBitcoinDeposits.length > 0"
-          class="btc-incoming-chip"
+          clickable
+          dense
+          :ripple="false"
+          class="btc-chip"
           :class="$q.dark.isActive ? 'btc-chip-dark' : 'btc-chip-light'"
           @click="openReceiveModalBitcoin"
         >
-          <q-icon name="lab la-bitcoin" size="14px" class="btc-chip-icon" />
-          <span class="btc-chip-text">
-            {{ pendingBitcoinDeposits.some(d => d.confirmed) ? $t('Ready to claim') : $t('Incoming') }}
-          </span>
-        </div>
+          <Icon icon="tabler:currency-bitcoin" width="20" height="20" class="q-mr-xs" />
+          {{ pendingBitcoinDeposits.some(d => d.confirmed) ? $t('Ready to claim') : $t('Incoming') }}
+        </q-chip>
       </transition>
 
       <q-space/>
@@ -37,8 +38,8 @@
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="$router.push('/settings')"
         aria-label="Settings"
-        icon="las la-cog"
       >
+        <Icon icon="tabler:settings" width="18" height="18" />
       </q-btn>
       <q-btn
         flat
@@ -49,8 +50,8 @@
         padding="sm sm"
         style="border-radius: 12px"
         aria-label="Address Book"
-        icon="las la-address-book"
       >
+        <Icon icon="tabler:address-book" width="18" height="18" />
       </q-btn>
     </q-toolbar>
 
@@ -64,32 +65,33 @@
     <!-- Main Content -->
     <div class="main-content">
       <!-- Wallet Name Badge -->
-      <div
+      <q-chip
         v-if="activeWallet"
-        class="wallet-name-badge"
-        :class="$q.dark.isActive ? 'wallet-badge-dark' : 'wallet-badge-light'"
+        clickable
+        outline
+        :ripple="false"
+        class="wallet-chip"
+        :class="$q.dark.isActive ? 'wallet-chip-dark' : 'wallet-chip-light'"
         @click="openWalletManagement"
       >
         <!-- Spark Logo -->
-        <svg v-if="activeWallet.type === 'spark'" width="12" height="11" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+        <svg v-if="activeWallet.type === 'spark'" width="12" height="11" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
         </svg>
         <!-- NWC Logo -->
-        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
           <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
         </svg>
         <!-- LNBits Logo -->
-        <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+        <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
         </svg>
         <!-- Default wallet icon -->
-        <q-icon v-else name="las la-wallet" size="12px" class="wallet-badge-icon" />
-        <span class="wallet-badge-text">{{ activeWallet.name }}</span>
-        <span v-if="isAutoTransferActive" class="aw-indicator">
-          <q-icon name="las la-paper-plane" size="10px" />
-        </span>
-      </div>
+        <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
+        {{ activeWallet.name }}
+        <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
+      </q-chip>
 
       <!-- Balance Display -->
       <div class="balance-section">
@@ -102,7 +104,7 @@
                   }}</span>
                 <!-- Fiat icon on the right -->
                 <span v-if="currentDisplayMode === 'fiat'" class="currency-icon-right">
-                  <q-icon :name="getFiatCurrencyIcon()" size="28px" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
+                  <Icon :icon="getFiatCurrencyIcon()" width="28" height="28" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
                 </span>
               </div>
             </transition>
@@ -125,11 +127,12 @@
           flat
           round
           size="md"
-          icon="las la-history"
           @click="$router.push('/transactions')"
           :class="[$q.dark.isActive ? 'transaction-history-btn-dark' : 'transaction-history-btn-light', { 'pulse': shouldPulse }]"
           aria-label="Transaction History"
-        />
+        >
+          <Icon icon="tabler:history" width="20" height="20" />
+        </q-btn>
       </div>
     </div>
 
@@ -143,7 +146,7 @@
           unelevated
           aria-label="Receive payment"
         >
-          <q-icon name="las la-arrow-down" size="24px"/>
+          <Icon icon="tabler:arrow-down" width="24" height="24" />
           <div class="btn-text">{{ $t('Receive') }}</div>
         </q-btn>
         <q-btn
@@ -153,7 +156,7 @@
           unelevated
           aria-label="Send payment"
         >
-          <q-icon name="las la-arrow-up" size="24px"/>
+          <Icon icon="tabler:arrow-up" width="24" height="24" />
           <div class="btn-text">{{ $t('Send') }}</div>
         </q-btn>
       </div>
@@ -191,8 +194,12 @@
           <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Switch Wallet') }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="switcher-content">
@@ -231,7 +238,7 @@
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
                   <!-- Default wallet icon -->
-                  <q-icon v-else name="las la-wallet" size="20px" />
+                  <Icon v-else icon="tabler:wallet" width="20" height="20" />
                 </div>
                 <div
                   class="switch-status-dot"
@@ -259,7 +266,7 @@
                     <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                     </svg>
-                    <q-icon v-else name="las la-wallet" size="9px" />
+                    <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
                   <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
@@ -270,10 +277,11 @@
               </div>
 
               <!-- Check Icon -->
-              <q-icon
+              <Icon
                 v-if="wallet.id === storeActiveWalletId"
-                name="las la-check-circle"
-                size="20px"
+                icon="tabler:circle-check"
+                width="20"
+                height="20"
                 class="switch-check-icon"
               />
             </div>
@@ -290,7 +298,7 @@
             :class="$q.dark.isActive ? 'transfer-btn-dark' : 'transfer-btn-light'"
             @click="openTransferModal"
           >
-            <q-icon name="las la-exchange-alt" class="q-mr-sm" />
+            <Icon icon="tabler:arrows-exchange" width="20" height="20" class="q-mr-sm" />
             {{ $t('Transfer Funds') }}
           </q-btn>
           <q-btn
@@ -300,7 +308,7 @@
             :class="$q.dark.isActive ? 'manage-btn-dark' : 'manage-btn-light'"
             @click="goToSettings"
           >
-            <q-icon name="las la-cog" class="q-mr-sm" />
+            <Icon icon="tabler:settings" width="20" height="20" class="q-mr-sm" />
             {{ $t('Manage Wallets') }}
           </q-btn>
         </q-card-section>
@@ -341,8 +349,10 @@
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ pendingPayment?.type === 'lnurl_withdraw' ? $t('Redeem Sats') : pendingPayment?.bitcoinAddress ? $t('Send Bitcoin') : $t('Confirm Payment') }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <Icon icon="tabler:x" width="20" height="20" />
+          </q-btn>
         </q-card-section>
 
         <!-- Bitcoin Withdrawal UI -->
@@ -400,7 +410,7 @@
             <!-- Status display during processing -->
             <div v-if="lnurlWithdrawStatus !== 'idle'" class="withdraw-status-section q-mt-md" style="text-align: center;">
               <q-spinner-dots v-if="lnurlWithdrawStatus !== 'error' && lnurlWithdrawStatus !== 'confirmed'" size="24px" class="q-mr-sm" />
-              <q-icon v-else-if="lnurlWithdrawStatus === 'error'" name="las la-exclamation-circle" size="24px" color="negative" class="q-mr-sm" />
+              <Icon v-else-if="lnurlWithdrawStatus === 'error'" icon="tabler:alert-circle" width="24" height="24" style="color: var(--q-negative);" class="q-mr-sm" />
               <span :class="lnurlWithdrawStatus === 'error' ? 'text-negative' : ($q.dark.isActive ? 'text-grey-4' : 'text-grey-7')">
                 {{ withdrawStatusMessage }}
               </span>
@@ -421,7 +431,7 @@
                 </div>
               </div>
               <div v-if="merchantCountdown > 0" class="merchant-countdown" :class="merchantCountdown <= 20 ? 'countdown-urgent' : ''">
-                <q-icon name="las la-clock" size="14px" />
+                <Icon icon="tabler:clock" width="14" height="14" />
                 {{ Math.floor(merchantCountdown / 60) }}:{{ String(merchantCountdown % 60).padStart(2, '0') }}
               </div>
             </div>
@@ -444,7 +454,7 @@
 
             <!-- Rate staleness warning -->
             <div v-if="pendingPayment.merchant && ratesStale" class="rate-warning">
-              <q-icon name="las la-exclamation-triangle" size="14px" />
+              <Icon icon="tabler:alert-triangle" width="14" height="14" />
               {{ $t('Exchange rates may be outdated') }}
             </div>
 
@@ -568,18 +578,19 @@
             flat
             round
             dense
-            icon="las la-times"
             @click="closeSaveContactDialog"
             :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          />
+          >
+            <Icon icon="tabler:x" width="20" height="20" />
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="save-contact-content">
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            <q-icon
-              :name="saveContactData.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'"
-              size="16px"
-              :color="saveContactData.addressType === 'spark' ? 'green' : 'amber'"
+            <Icon
+              :icon="saveContactData.addressType === 'spark' ? 'tabler:flame' : 'tabler:bolt'"
+              width="16" height="16"
+              :style="{ color: saveContactData.addressType === 'spark' ? '#4caf50' : '#ffc107' }"
               class="q-mr-xs"
             />
             <span class="address-preview">{{ truncateAddress(saveContactData.address) }}</span>
@@ -934,7 +945,7 @@ export default {
           type: 'positive',
           message: this.$t('Auto-transfer complete'),
           caption: `${result.amount.toLocaleString()} sats → ${result.destination}`,
-          icon: 'las la-paper-plane',
+          icon: 'send',
           timeout: 4000
         })
       } else if (result.type === 'error') {
@@ -942,7 +953,7 @@ export default {
           type: 'negative',
           message: this.$t('Auto-transfer failed'),
           caption: result.message,
-          icon: 'las la-exclamation-circle',
+          icon: 'error',
           timeout: 5000
         })
       }
@@ -1091,7 +1102,7 @@ export default {
     notifyNewDeposit(deposit) {
       this.$q.notify({
         type: 'info',
-        icon: 'lab la-bitcoin',
+        icon: 'currency_bitcoin',
         message: this.$t('Bitcoin detected'),
         caption: `${deposit.amount.toLocaleString()} sats ${this.$t('confirming')}`,
         position: 'top',
@@ -1110,7 +1121,7 @@ export default {
     notifyDepositReady(deposit) {
       this.$q.notify({
         type: 'positive',
-        icon: 'las la-check-circle',
+        icon: 'check_circle',
         message: this.$t('Ready to claim'),
         caption: `${deposit.amount.toLocaleString()} sats`,
         position: 'top',
@@ -1166,7 +1177,7 @@ export default {
         type: 'positive',
         message: this.$t('Bitcoin withdrawal initiated'),
         caption: this.$t('Your withdrawal is being processed'),
-        
+
         timeout: 4000,
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
@@ -1231,7 +1242,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet switched'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -1245,7 +1256,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1291,16 +1302,16 @@ export default {
     },
     getWalletIcon(type) {
       switch (type) {
-        case 'spark': return 'las la-fire';
-        case 'lnbits': return 'las la-server';
-        default: return 'las la-wallet';
+        case 'spark': return 'tabler:flame';
+        case 'lnbits': return 'tabler:server';
+        default: return 'tabler:wallet';
       }
     },
     getWalletBadgeIcon(type) {
       switch (type) {
-        case 'spark': return 'las la-fire';
-        case 'lnbits': return 'las la-server';
-        default: return 'las la-plug';
+        case 'spark': return 'tabler:flame';
+        case 'lnbits': return 'tabler:server';
+        default: return 'tabler:plug';
       }
     },
     getWalletTypeLabel(type) {
@@ -1382,7 +1393,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet unlocked'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -1398,7 +1409,7 @@ export default {
         type: 'warning',
         message: this.$t('Wallet locked'),
         caption: this.$t('Some features require PIN unlock'),
-        
+
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
@@ -1612,22 +1623,22 @@ export default {
     getFiatCurrencyIcon() {
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const iconMap = {
-        'USD': 'las la-dollar-sign',
-        'EUR': 'las la-euro-sign',
-        'GBP': 'las la-pound-sign',
-        'JPY': 'las la-yen-sign',
-        'CNY': 'las la-yen-sign',
-        'INR': 'las la-rupee-sign',
-        'CAD': 'las la-dollar-sign',
-        'AUD': 'las la-dollar-sign',
-        'CHF': 'las la-dollar-sign',
-        'KRW': 'las la-won-sign',
-        'BRL': 'las la-dollar-sign',
-        'MXN': 'las la-dollar-sign',
-        'RUB': 'las la-ruble-sign',
-        'TRY': 'las la-lira-sign',
+        'USD': 'tabler:currency-dollar',
+        'EUR': 'tabler:currency-euro',
+        'GBP': 'tabler:currency-pound',
+        'JPY': 'tabler:currency-yen',
+        'CNY': 'tabler:currency-yen',
+        'INR': 'tabler:currency-rupee',
+        'CAD': 'tabler:currency-dollar',
+        'AUD': 'tabler:currency-dollar',
+        'CHF': 'tabler:currency-franc',
+        'KRW': 'tabler:currency-won',
+        'BRL': 'tabler:currency-real',
+        'MXN': 'tabler:currency-dollar',
+        'RUB': 'tabler:currency-rubel',
+        'TRY': 'tabler:currency-lira',
       };
-      return iconMap[currency.toUpperCase()] || 'las la-dollar-sign';
+      return iconMap[currency.toUpperCase()] || 'tabler:currency-dollar';
     },
 
     getSecondaryDisplayValue() {
@@ -2068,7 +2079,7 @@ export default {
             type: 'warning',
             message: this.$t('Payment expired'),
             caption: this.$t('The merchant QR code has expired. Please scan again.'),
-            icon: 'las la-clock',
+            icon: 'schedule',
             timeout: 5000,
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
@@ -2263,7 +2274,7 @@ export default {
           type: 'negative',
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -2314,7 +2325,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Payment received'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
@@ -2481,7 +2492,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Sent'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -2505,7 +2516,7 @@ export default {
           type: 'negative',
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2639,7 +2650,7 @@ export default {
           this.$q.notify({
             type: 'warning',
             message: this.$t('Please enter a name'),
-            
+
           });
           return;
         }
@@ -2655,7 +2666,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact saved'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -2664,7 +2675,7 @@ export default {
           type: 'negative',
           message: this.$t('Failed to save contact'),
           caption: this.$t('Please try again'),
-          
+
         });
       }
     },
@@ -3062,6 +3073,8 @@ export default {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 .wallet-page-light {
@@ -3069,6 +3082,8 @@ export default {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Header */
@@ -3192,77 +3207,39 @@ export default {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 2rem 1rem 8rem 1rem;
+  padding: 1rem 1rem 6rem 1rem;
+  overflow: hidden;
+  max-width: 100vw;
 }
 
-/* Wallet Name Badge */
-.wallet-name-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+/* Wallet Chip (q-chip) */
+.wallet-chip {
   margin-bottom: 1rem;
-  border: 1px solid;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.wallet-badge-dark {
-  background: rgba(38, 38, 38, 0.6);
-  border-color: rgba(21, 222, 114, 0.3);
-  color: #a1a1a1;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.wallet-badge-light {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(5, 149, 115, 0.35);
-  color: #6b6b6b;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.wallet-badge-dark:hover {
-  background: rgba(38, 38, 38, 0.8);
-  border-color: rgba(21, 222, 114, 0.6);
-  color: #d4d4d4;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.wallet-badge-light:hover {
-  background: rgba(255, 255, 255, 0.8);
-  border-color: rgba(5, 149, 115, 0.55);
-  color: #3f3f3f;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.wallet-badge-icon {
-  opacity: 0.7;
-  transition: opacity 0.3s ease;
-}
-
-.wallet-badge-dark:hover .wallet-badge-icon {
-  opacity: 1;
-}
-
-.wallet-badge-light:hover .wallet-badge-icon {
-  opacity: 1;
-}
-
-.wallet-badge-text {
-  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Manrope', sans-serif;
   letter-spacing: -0.01em;
+  transition: all 0.2s ease;
 }
 
-.aw-indicator {
-  display: inline-flex;
-  align-items: center;
+.wallet-chip-dark {
+  background: rgba(38, 38, 38, 0.6) !important;
+  border-color: rgba(21, 222, 114, 0.3) !important;
+  color: #a1a1a1 !important;
+}
+
+.wallet-chip-light {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-color: rgba(5, 149, 115, 0.35) !important;
+  color: #6b6b6b !important;
+}
+
+.wallet-chip-icon {
+  opacity: 0.7;
+  margin-right: 4px;
+}
+
+.aw-indicator-icon {
   color: rgba(99, 102, 241, 0.5);
   margin-left: 2px;
 }
@@ -3271,6 +3248,28 @@ export default {
 .balance-section {
   text-align: center;
   margin-bottom: 2rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.balance-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 12px;
+}
+
+.sats-arrow-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(21, 222, 114, 0.2);
+  margin-right: 6px;
+  font-size: 14px;
+  vertical-align: middle;
 }
 
 .balance-container {
@@ -3292,9 +3291,10 @@ export default {
 }
 
 .amount-number {
-  font-size: 4rem;
+  font-size: 2.5rem;
   font-weight: 800;
   line-height: 1;
+  font-family: 'Manrope', sans-serif;
 }
 
 .amount-number-dark {
@@ -3302,7 +3302,7 @@ export default {
 }
 
 .amount-number-light {
-  color: #1f2937;
+  color: #1F2937;
 }
 
 .amount-unit {
@@ -3311,11 +3311,11 @@ export default {
 }
 
 .amount-unit-dark {
-  color: #B0B0B0;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .amount-unit-light {
-  color: #6b7280;
+  color: #6B7280;
 }
 
 .currency-icon-left {
@@ -3345,8 +3345,16 @@ export default {
 }
 
 .balance-secondary {
-  font-size: 1.25rem;
-  font-weight: 400;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.balance-secondary-dark {
+  color: #15DE72;
+}
+
+.balance-secondary-light {
+  color: #059573;
 }
 
 .secondary-amount-display {
@@ -3377,13 +3385,6 @@ export default {
   object-fit: contain;
 }
 
-.balance-secondary-dark {
-  color: #B0B0B0;
-}
-
-.balance-secondary-light {
-  color: #9ca3af;
-}
 
 /* Balance Transitions */
 .balance-fade-enter-active,
@@ -3464,6 +3465,8 @@ export default {
   left: 0;
   right: 0;
   z-index: 50;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .action-buttons {
@@ -4277,7 +4280,7 @@ export default {
   }
 
   .main-content {
-    padding: 1.5rem 1rem 7rem 1rem;
+    padding: 1rem 1rem 5.5rem 1rem;
   }
 
   .amount-number {
@@ -4366,7 +4369,7 @@ export default {
 }
 
 .switcher-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 17px;
   font-weight: 600;
 }
@@ -4375,6 +4378,11 @@ export default {
   padding: 0.5rem;
   max-height: 320px;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.switcher-content::-webkit-scrollbar {
+  display: none;
 }
 
 .wallet-switch-list {
@@ -4497,7 +4505,7 @@ export default {
 }
 
 .switch-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
@@ -4529,7 +4537,7 @@ export default {
   gap: 0.15rem;
   padding: 0.1rem 0.35rem;
   border-radius: 5px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 8px;
   font-weight: 600;
   text-transform: uppercase;
@@ -4550,7 +4558,7 @@ export default {
 }
 
 .switch-tag {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 8px;
   font-weight: 600;
   padding: 0.1rem 0.3rem;
@@ -4566,7 +4574,7 @@ export default {
 
 /* Switch Balance */
 .switch-balance {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
 }
@@ -4607,7 +4615,7 @@ export default {
 
 /* Transfer Funds Button */
 .transfer-funds-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
   border-radius: 10px;
@@ -4634,7 +4642,7 @@ export default {
 }
 
 .manage-wallets-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
   border-radius: 10px;
@@ -4690,7 +4698,7 @@ export default {
 .save-contact-address {
   display: flex;
   align-items: center;
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   padding: 0.75rem;
   border-radius: 8px;
@@ -4762,42 +4770,23 @@ export default {
   color: #212121 !important;
 }
 
-/* Bitcoin Incoming Chip (Header) */
-.btc-incoming-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+/* Bitcoin Incoming Chip (q-chip) */
+.btc-chip {
   margin-left: 12px;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: Fustat, sans-serif;
-}
-
-.btc-incoming-chip:active {
-  transform: scale(0.95);
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #F7931A !important;
 }
 
 .btc-chip-dark {
-  background: rgba(247, 147, 26, 0.2);
-  border: 1px solid rgba(247, 147, 26, 0.4);
+  background: rgba(247, 147, 26, 0.2) !important;
+  border: 1px solid rgba(247, 147, 26, 0.4) !important;
 }
 
 .btc-chip-light {
-  background: rgba(247, 147, 26, 0.12);
-  border: 1px solid rgba(247, 147, 26, 0.3);
-}
-
-.btc-chip-icon {
-  color: #F7931A;
-}
-
-.btc-chip-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: #F7931A;
-  white-space: nowrap;
+  background: rgba(247, 147, 26, 0.12) !important;
+  border: 1px solid rgba(247, 147, 26, 0.3) !important;
 }
 
 /* Animation for chip */

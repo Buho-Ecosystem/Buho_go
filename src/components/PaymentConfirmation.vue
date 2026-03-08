@@ -237,11 +237,35 @@ export default {
 }
 
 .backdrop-dark {
-  background: linear-gradient(180deg, #0C0C0C 0%, #0A1A0F 100%);
+  background: #0C0C0C;
+}
+
+.backdrop-dark::before {
+  content: '';
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(21, 222, 114, 0.08) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .backdrop-light {
-  background: linear-gradient(180deg, #FFFFFF 0%, #F0FDF4 100%);
+  background: #FFFFFF;
+}
+
+.backdrop-light::before {
+  content: '';
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(5, 149, 115, 0.06) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .confirmation-content {
@@ -256,14 +280,14 @@ export default {
 /* Success Animation */
 .success-animation {
   position: relative;
-  width: 120px;
-  height: 120px;
+  width: 140px;
+  height: 140px;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
   transform: scale(0.5);
-  transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .success-animation.animate {
@@ -272,20 +296,20 @@ export default {
 }
 
 .success-circle {
-  width: 100px;
-  height: 100px;
-  background: #34C759;
+  width: 110px;
+  height: 110px;
+  background: linear-gradient(135deg, #15DE72 0%, #059573 100%);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 32px rgba(52, 199, 89, 0.4);
+  box-shadow: 0 12px 40px rgba(21, 222, 114, 0.35), 0 4px 12px rgba(21, 222, 114, 0.2);
 }
 
 /* Bitcoin Orange Theme */
 .success-circle.bitcoin-theme {
-  background: #F7931A;
-  box-shadow: 0 8px 32px rgba(247, 147, 26, 0.4);
+  background: linear-gradient(135deg, #F7931A 0%, #E67E00 100%);
+  box-shadow: 0 12px 40px rgba(247, 147, 26, 0.35), 0 4px 12px rgba(247, 147, 26, 0.2);
 }
 
 .checkmark {
@@ -320,15 +344,15 @@ export default {
 /* Pulse rings */
 .pulse-ring {
   position: absolute;
-  width: 100px;
-  height: 100px;
-  border: 2px solid rgba(52, 199, 89, 0.5);
+  width: 110px;
+  height: 110px;
+  border: 2px solid rgba(21, 222, 114, 0.4);
   border-radius: 50%;
   animation: pulse-expand 2s ease-out infinite;
 }
 
 .pulse-ring.bitcoin-pulse {
-  border-color: rgba(247, 147, 26, 0.5);
+  border-color: rgba(247, 147, 26, 0.4);
 }
 
 .pulse-ring.delay-1 {
@@ -342,10 +366,10 @@ export default {
 @keyframes pulse-expand {
   0% {
     transform: scale(1);
-    opacity: 0.8;
+    opacity: 0.7;
   }
   100% {
-    transform: scale(2);
+    transform: scale(2.2);
     opacity: 0;
   }
 }
@@ -354,8 +378,8 @@ export default {
 .amount-section {
   text-align: center;
   opacity: 0;
-  transform: translateY(20px);
-  transition: all 0.5s ease;
+  transform: translateY(24px);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .amount-section.fade-in {
@@ -364,27 +388,28 @@ export default {
 }
 
 .amount-label {
-  font-family: 'Inter', sans-serif;
-  font-size: 16px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
   font-weight: 500;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
 }
 
 .amount-value {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 3rem;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.02em;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 
 .fiat-value {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
-  font-weight: 400;
+  font-weight: 500;
   margin-top: 0.5rem;
+  opacity: 0.7;
 }
 
 /* Description Section */
@@ -392,8 +417,8 @@ export default {
   text-align: center;
   max-width: 300px;
   opacity: 0;
-  transform: translateY(20px);
-  transition: all 0.5s ease;
+  transform: translateY(24px);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   transition-delay: 0.1s;
 }
 
@@ -403,9 +428,9 @@ export default {
 }
 
 .description-text {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 /* Countdown Section */
@@ -413,10 +438,10 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
   opacity: 0;
-  transform: translateY(20px);
-  transition: all 0.5s ease;
+  transform: translateY(24px);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .countdown-section.fade-in {
@@ -425,35 +450,37 @@ export default {
 }
 
 .countdown-text {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
 }
 
 .close-now-btn {
-  padding: 0.5rem 1.5rem;
-  border-radius: 100px;
-  font-family: 'Inter', sans-serif;
+  padding: 10px 28px;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   transition: all 0.2s ease;
 }
 
 .close-btn-dark {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #FFF;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .close-btn-dark:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .close-btn-light {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.04);
   color: #374151;
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .close-btn-light:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 /* Confetti */
@@ -492,13 +519,13 @@ export default {
   }
 
   .success-animation {
-    width: 100px;
-    height: 100px;
+    width: 120px;
+    height: 120px;
   }
 
   .success-circle {
-    width: 80px;
-    height: 80px;
+    width: 90px;
+    height: 90px;
   }
 
   .checkmark {
@@ -507,8 +534,8 @@ export default {
   }
 
   .pulse-ring {
-    width: 80px;
-    height: 80px;
+    width: 90px;
+    height: 90px;
   }
 }
 </style>

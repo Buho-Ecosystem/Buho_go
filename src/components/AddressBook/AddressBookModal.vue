@@ -17,11 +17,12 @@
           flat
           round
           dense
-          icon="las la-times"
           @click="closeModal"
           class="close-btn"
           :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-        />
+        >
+          <Icon icon="tabler:x" width="20" height="20" />
+        </q-btn>
       </q-card-section>
 
       <!-- Content -->
@@ -51,7 +52,7 @@
               type="text"
               :placeholder="$t('Enter contact name')"
               class="form-input"
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
               ref="nameInput"
               maxlength="50"
             />
@@ -66,9 +67,9 @@
               v-model="formData.addressType"
               toggle-color="primary"
               :options="[
-                { label: 'Lightning', value: 'lightning', icon: 'las la-bolt' },
-                { label: 'Spark', value: 'spark', icon: 'las la-fire' },
-                { label: 'Bitcoin', value: 'bitcoin', icon: 'lab la-bitcoin' }
+                { label: 'Lightning', value: 'lightning', icon: 'bolt' },
+                { label: 'Spark', value: 'spark', icon: 'local_fire_department' },
+                { label: 'Bitcoin', value: 'bitcoin', icon: 'currency_bitcoin' }
               ]"
               class="address-type-toggle"
               :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
@@ -87,7 +88,7 @@
               type="text"
               :placeholder="addressPlaceholder"
               class="form-input"
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
               ref="addressInput"
               maxlength="150"
             />
@@ -105,7 +106,7 @@
               v-model="formData.notes"
               :placeholder="$t('e.g., Monthly rent, Coffee shop...')"
               class="form-input notes-textarea"
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
               maxlength="200"
               rows="2"
             />
@@ -130,7 +131,6 @@
           :loading="isSaving"
           :disable="!isFormValid"
           class="save-btn"
-          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           no-caps
         />
       </q-card-actions>
@@ -154,9 +154,9 @@
             :style="{ backgroundColor: color }"
             @click="selectColor(color)"
           >
-            <q-icon
+            <Icon
               v-if="formData.color === color"
-              name="las la-check"
+              icon="tabler:check"
               class="color-check"
             />
           </div>
@@ -370,7 +370,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact saved'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         } else {
@@ -378,7 +378,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact added'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         }
@@ -391,7 +391,7 @@ export default {
           type: 'negative',
           message: errorMessage.title,
           caption: errorMessage.caption,
-          
+
           timeout: 4000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
@@ -448,7 +448,7 @@ export default {
 .address-modal {
   width: 100%;
   max-width: 480px;
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
 }
 
 .modal-header {
@@ -456,15 +456,11 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid;
-}
-
-.modal-header {
-  border-bottom-color: #2A342A;
+  border-bottom: 1px solid var(--border-card);
 }
 
 .modal-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .close-btn {
@@ -503,20 +499,24 @@ export default {
 
 .preview-initial {
   color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 32px;
   font-weight: 700;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .avatar-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   text-align: center;
 }
 
 .view_title_dark {
-  color: #B0B0B0;
+  color: var(--text-secondary);
+}
+
+.view_title {
+  color: var(--text-muted);
 }
 
 .form-fields {
@@ -532,24 +532,20 @@ export default {
 }
 
 .input-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   text-align: left;
 }
 
-.view_title {
-  color: #6D6D6D;
-}
-
 /* Address Type Toggle */
 .address-type-toggle {
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
 .toggle-dark {
-  background: #171717;
-  border: 1px solid #2A342A;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
 }
 
 .toggle-light {
@@ -558,7 +554,7 @@ export default {
 }
 
 .toggle-dark :deep(.q-btn) {
-  color: #B0B0B0;
+  color: var(--text-secondary);
 }
 
 .toggle-light :deep(.q-btn) {
@@ -572,30 +568,41 @@ export default {
 }
 
 .input-error {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   color: #EF4444;
   margin-top: 0.5rem;
   padding-left: 0.25rem;
 }
 
+/* Form Inputs */
 .form-input {
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1px solid transparent;
-  border-radius: 20px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: var(--radius-lg);
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
 }
 
+.form-input-dark {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.form-input-light {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
 .form-input:focus {
-  border-color: #15DE72;
+  border-color: var(--color-green);
 }
 
 .form-input::placeholder {
-  color: #B0B0B0;
+  color: var(--text-muted);
 }
 
 .notes-textarea {
@@ -616,29 +623,35 @@ export default {
 }
 
 .cancel-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
 
 .save-btn {
   height: 40px;
-  border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: var(--radius-xl);
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 500;
   padding: 0 1.5rem;
+  background: var(--gradient-green);
+  color: #FFF;
+}
+
+.save-btn:disabled {
+  opacity: 0.4;
 }
 
 /* Color Picker */
 .color-picker-card {
   width: 100%;
   max-width: 320px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
 }
 
 .color-picker-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   text-align: center;
 }
@@ -683,7 +696,7 @@ export default {
   .address-modal {
     max-width: 100%;
     margin: 1rem;
-    border-radius: 16px;
+    border-radius: var(--radius-md);
   }
 
   .modal-header,

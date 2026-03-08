@@ -25,9 +25,9 @@
       :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
       @click="copyAddress"
     >
-      <q-icon name="lab la-bitcoin" size="16px" class="pill-icon" />
+      <Icon icon="tabler:currency-bitcoin" width="16" height="16" class="pill-icon" />
       <span class="pill-address">{{ truncateAddress(depositAddress) }}</span>
-      <q-icon name="las la-copy" size="14px" class="pill-copy" />
+      <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
     </div>
 
     <!-- Action Buttons -->
@@ -39,7 +39,7 @@
         :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
         @click="copyAddress"
       >
-        <q-icon name="las la-copy" size="18px" />
+        <Icon icon="tabler:copy" width="18" height="18" />
         <span>{{ $t('Copy') }}</span>
       </q-btn>
       <q-btn
@@ -49,7 +49,7 @@
         :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
         @click="shareAddress"
       >
-        <q-icon name="las la-share-alt" size="18px" />
+        <Icon icon="tabler:share" width="18" height="18" />
         <span>{{ $t('Share') }}</span>
       </q-btn>
     </div>
@@ -65,12 +65,13 @@
           dense
           round
           size="sm"
-          icon="las la-sync"
           :loading="isCheckingDeposits"
           @click="checkDeposits"
           class="refresh-icon"
           :class="{ 'spinning': isCheckingDeposits }"
-        />
+        >
+          <Icon icon="tabler:refresh" width="14" height="14" />
+        </q-btn>
       </div>
 
       <div
@@ -81,7 +82,7 @@
       >
         <!-- Left: Status indicator -->
         <div class="deposit-indicator" :class="deposit.confirmed ? 'ready' : 'pending'">
-          <q-icon :name="deposit.confirmed ? 'las la-check' : 'lab la-bitcoin'" size="18px" />
+          <Icon :icon="deposit.confirmed ? 'tabler:check' : 'tabler:currency-bitcoin'" width="18" height="18" />
         </div>
 
         <!-- Center: Amount & Status -->
@@ -132,7 +133,7 @@
         :loading="isCheckingDeposits"
         @click="checkDeposits"
       >
-        <q-icon name="las la-sync" size="16px" class="q-mr-xs" />
+        <Icon icon="tabler:refresh" width="16" height="16" class="q-mr-xs" />
         {{ $t('Check for deposits') }}
       </q-btn>
     </div>
@@ -167,7 +168,7 @@
 
         <!-- High Fee Warning -->
         <div v-if="isHighFee" class="fee-alert">
-          <q-icon name="las la-exclamation-circle" size="16px" />
+          <Icon icon="tabler:info-circle" width="16" height="16" />
           <span>{{ $t('High fee relative to deposit') }}</span>
         </div>
 
@@ -434,7 +435,7 @@ export default {
             type: 'info',
             message: this.$t('Claim is being processed'),
             caption: this.$t('Your balance will update shortly'),
-            icon: 'las la-sync'
+            icon: 'sync'
           });
 
           // Remove from pending list (it will complete in background)
@@ -719,7 +720,7 @@ export default {
 }
 
 .pill-address {
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.02em;
 }

@@ -99,7 +99,7 @@
               @click="openScanner"
               no-caps
             >
-              <q-icon name="las la-qrcode" class="q-mr-sm"/>
+              <Icon icon="tabler:qrcode" class="q-mr-sm"/>
               {{ $t('Scan QR') }}
             </q-btn>
           </div>
@@ -118,11 +118,12 @@
               flat
               round
               dense
-              icon="las la-arrow-left"
               @click="closeScanner"
               class="back-btn"
               :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
-            />
+            >
+              <Icon icon="tabler:arrow-left" width="20" height="20" />
+            </q-btn>
             <div class="scanner-title-container">
               <div class="scanner-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
                 {{ $t('Scan QR Code') }}
@@ -147,7 +148,7 @@
 
             <!-- Camera Error State -->
             <div v-if="cameraError" class="camera-error">
-              <q-icon name="las la-camera" size="3em" color="grey-5"/>
+              <Icon icon="tabler:camera" :style="{ fontSize: '3em', color: '#9e9e9e' }" />
               <p class="error-text">{{ cameraErrorMessage }}</p>
               <q-btn
                 unelevated
@@ -588,7 +589,7 @@ export default {
 }
 
 .app-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 24px;
   font-weight: 800;
   line-height: 100%;
@@ -630,12 +631,12 @@ export default {
 }
 
 .scanner-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   margin-bottom: 0.5rem;
 }
 
 .scanner-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -711,12 +712,12 @@ export default {
 .nwc-input :deep(.q-field__control) {
   border-radius: 20px;
   padding: 0.75rem 1rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
 }
 
 .nwc-input :deep(.q-field__native) {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Button Styling */
@@ -730,7 +731,7 @@ export default {
   flex: 2;
   height: 52px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
 }
@@ -739,7 +740,7 @@ export default {
   flex: 1;
   height: 52px;
   border-radius: 20px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   min-width: 0;
@@ -771,7 +772,7 @@ export default {
 
 .error-text,
 .loading-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   margin: 1rem 0;
   color: #666;
@@ -781,7 +782,7 @@ export default {
 .retry-btn {
   height: 40px;
   border-radius: 20px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   padding: 0 1.5rem;
@@ -815,7 +816,7 @@ export default {
 
 .scan-overlay-text {
   color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   margin: 0.5rem 0 0;
@@ -876,7 +877,7 @@ export default {
 .cancel-btn {
   height: 48px;
   border-radius: 12px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -916,11 +917,11 @@ export default {
 .wallet-name-input :deep(.q-field__control) {
   border-radius: 20px;
   padding: 0.75rem 1rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .input-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   text-align: center;
   margin-top: 0.5rem;
@@ -932,7 +933,7 @@ export default {
 }
 
 .cancel-action-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -940,7 +941,7 @@ export default {
 .continue-action-btn {
   height: 40px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   padding: 0 1.5rem;

@@ -112,10 +112,11 @@
                 flat
                 round
                 dense
-                :icon="showAdminKey ? 'las la-eye-slash' : 'las la-eye'"
                 @click="showAdminKey = !showAdminKey"
                 :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-              />
+              >
+                <Icon :icon="showAdminKey ? 'tabler:eye-off' : 'tabler:eye'" width="16" height="16" />
+              </q-btn>
             </template>
           </q-input>
 
@@ -148,7 +149,7 @@
               @click="openScanner"
               no-caps
             >
-              <q-icon name="las la-qrcode" class="q-mr-sm"/>
+              <Icon icon="tabler:qrcode-scan" width="16" height="16" class="q-mr-sm" />
               {{ $t('Scan') }}
             </q-btn>
           </div>
@@ -172,11 +173,12 @@
               flat
               round
               dense
-              icon="las la-arrow-left"
               @click="closeScanner"
               class="back-btn"
               :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
-            />
+            >
+              <Icon icon="tabler:chevron-left" width="18" height="18" />
+            </q-btn>
             <div class="scanner-title-container">
               <div class="scanner-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
                 {{ $t('Scan QR Code') }}
@@ -201,7 +203,7 @@
 
             <!-- Camera Error State -->
             <div v-if="cameraError" class="camera-error">
-              <q-icon name="las la-camera" size="3em" color="grey-5"/>
+              <Icon icon="tabler:camera" style="font-size: 3em; color: #9CA3AF;" />
               <p class="error-text">{{ cameraErrorMessage }}</p>
               <q-btn
                 unelevated
@@ -606,13 +608,13 @@ export default {
 }
 
 .bg-dark {
-  background: #0C0C0C;
-  color: #FFF;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .bg-light {
-  background: #F8F8F8;
-  color: #212121;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .container {
@@ -659,7 +661,7 @@ export default {
 }
 
 .app-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 24px;
   font-weight: 800;
   line-height: 100%;
@@ -717,14 +719,14 @@ export default {
   margin-bottom: 0.75rem;
   font-size: 22px;
   font-weight: 700;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .welcome-subtitle {
   text-align: center;
   margin-bottom: 1.5rem;
   font-size: 14px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .view_title_dark {
@@ -733,7 +735,7 @@ export default {
 
 /* Input Labels */
 .input-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
   margin-bottom: 0.5rem;
@@ -743,7 +745,7 @@ export default {
 /* Error Message */
 .error-message {
   color: #FF4B4B;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   text-align: center;
   padding: 0.5rem;
@@ -762,7 +764,7 @@ export default {
   flex: 2;
   height: 52px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
 }
@@ -771,7 +773,7 @@ export default {
   flex: 1;
   height: 52px;
   border-radius: 20px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   min-width: 0;
@@ -781,7 +783,7 @@ export default {
 .help-text {
   text-align: center;
   font-size: 12px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Scanner Styles */
@@ -797,12 +799,12 @@ export default {
 }
 
 .scanner-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   margin-bottom: 0.5rem;
 }
 
 .scanner-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -819,8 +821,8 @@ export default {
 }
 
 .scanner-dark {
-  background: #171717;
-  border-color: #2A342A;
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
 }
 
 .scanner-light {
@@ -842,7 +844,7 @@ export default {
 
 .error-text,
 .loading-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   margin: 1rem 0;
   color: #666;
@@ -852,7 +854,7 @@ export default {
 .retry-btn {
   height: 40px;
   border-radius: 20px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   padding: 0 1.5rem;
@@ -889,7 +891,7 @@ export default {
 .cancel-btn {
   height: 48px;
   border-radius: 12px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -941,19 +943,19 @@ export default {
 }
 
 .preview-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   color: #888;
 }
 
 .preview-value {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
 }
 
 .preview-id {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   max-width: 180px;
   overflow: hidden;
@@ -961,7 +963,7 @@ export default {
 }
 
 .input-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   text-align: center;
   margin-top: 0.5rem;
@@ -973,7 +975,7 @@ export default {
 }
 
 .cancel-action-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -981,7 +983,7 @@ export default {
 .continue-action-btn {
   height: 40px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   padding: 0 1.5rem;

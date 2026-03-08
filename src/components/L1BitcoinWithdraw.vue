@@ -4,7 +4,7 @@
     <div class="destination-section" :class="$q.dark.isActive ? 'section-dark' : 'section-light'">
       <div class="section-label">{{ $t('Sending to') }}</div>
       <div class="destination-display">
-        <q-icon name="lab la-bitcoin" size="20px" class="bitcoin-icon" />
+        <Icon icon="tabler:currency-bitcoin" width="20" height="20" class="bitcoin-icon" />
         <span class="destination-type">{{ $t('Bitcoin Address') }}</span>
       </div>
       <div class="destination-address">{{ truncateAddress(cleanedAddress) }}</div>
@@ -153,7 +153,7 @@
 
     <!-- Insufficient Balance Warning -->
     <div v-if="insufficientBalance" class="warning-message">
-      <q-icon name="las la-exclamation-triangle" size="16px" />
+      <Icon icon="tabler:alert-triangle" width="16" height="16" />
       <span>{{ $t('Insufficient balance') }}</span>
     </div>
 
@@ -385,7 +385,7 @@ export default {
           
           timeout: 6000,
           actions: txId ? [{
-            icon: 'las la-external-link-alt',
+            icon: 'open_in_new',
             color: 'white',
             handler: () => window.open(`${mempoolUrl}/tx/${txId}`, '_blank')
           }] : []
@@ -559,7 +559,7 @@ export default {
 }
 
 .destination-address {
-  font-family: 'SF Mono', 'Roboto Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   opacity: 0.7;
 }

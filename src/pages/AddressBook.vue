@@ -9,30 +9,13 @@
         @click="$router.back()"
         :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
       >
-        <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
-             fill="none">
-          <path
-            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-            fill="white"/>
-        </svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path
-            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-            fill="#6D6D6D"/>
-        </svg>
+        <Icon icon="tabler:chevron-left" width="18" height="18" />
       </q-btn>
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Address Book') }}
       </div>
-      <q-btn
-        flat
-        round
-        dense
-        icon="las la-layer-group"
-        @click="showBatchSend = true"
-        :class="$q.dark.isActive ? 'batch_btn_dark' : 'batch_btn_light'"
-      >
-        <q-tooltip>{{ $t('Batch Send') }}</q-tooltip>
+      <q-btn no-caps unelevated class="add-contact-pill-btn" @click="showAddModal">
+        {{ $t('Add Contact') }}
       </q-btn>
     </div>
 
@@ -107,7 +90,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load contacts'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -157,7 +140,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Sent'),
-        
+
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
@@ -190,15 +173,19 @@ export default {
 <style scoped>
 /* Base Page Styles */
 .address-book-page-dark {
-  background: #171717;
+  background: var(--bg-secondary);
   min-height: 100vh;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 .address-book-page-light {
   background: #F6F6F6;
   min-height: 100vh;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Header Styles */
@@ -207,8 +194,8 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: #0C0C0C;
-  border-bottom: 1px solid #2A342A;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-card);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -246,7 +233,7 @@ export default {
 }
 
 .back_btn_dark:hover {
-  background: #2A342A;
+  background: var(--border-card);
 }
 
 .back_btn_light:hover {
@@ -259,7 +246,7 @@ export default {
   font-weight: 600;
   flex: 1;
   text-align: center;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .main_page_title_light {
@@ -268,30 +255,18 @@ export default {
   font-weight: 600;
   flex: 1;
   text-align: center;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
-/* Batch Button */
-.batch_btn_dark {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  color: #15DE72;
-}
-
-.batch_btn_light {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  color: #059573;
-}
-
-.batch_btn_dark:hover {
-  background: rgba(21, 222, 114, 0.1);
-}
-
-.batch_btn_light:hover {
-  background: rgba(5, 149, 115, 0.1);
+/* Add Contact Pill Button */
+.add-contact-pill-btn {
+  background: var(--gradient-green);
+  color: #FFF;
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Content */
@@ -313,6 +288,11 @@ export default {
 
   .page-content {
     height: calc(100vh - 70px);
+  }
+
+  .add-contact-pill-btn {
+    padding: 5px 14px;
+    font-size: 12px;
   }
 }
 </style>

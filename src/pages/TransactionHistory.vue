@@ -16,17 +16,7 @@
         @click="$router.back()"
         :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
       >
-        <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
-             fill="none">
-          <path
-            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-            fill="white"/>
-        </svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path
-            d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-            fill="#6D6D6D"/>
-        </svg>
+        <Icon icon="tabler:chevron-left" width="18" height="18" />
       </q-btn>
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Transactions') }}
@@ -61,7 +51,7 @@
           :key="tab.name"
           :name="tab.name"
           no-caps
-          class="q-mx-sm"
+          class="q-mx-xs"
           :label="$t(tab.label)"
           :class="activeFilter === tab.name ? ($q.dark.isActive ? 'tab_active_dark' : 'tab_active_light') : ($q.dark.isActive ? 'tab_inactive_dark' : 'tab_inactive_light')"
         />
@@ -69,46 +59,22 @@
     </div>
 
     <!-- Summary Stats -->
-    <div class="stats-section" v-if="activeFilter !== 'all' && filteredTransactions.length > 0"
-         :class="$q.dark.isActive ? 'stats_section_dark' : 'stats_section_light'">
-      <div class="stats-container" :class="$q.dark.isActive ? 'stats_container_dark' : 'stats_container_light'">
-        <div class="stat-item">
-          <div class="stat-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{
-              $t('Received')
-            }}
-          </div>
-          <div class="stat-value positive">
-            {{ formatAmountWithSign(totalReceived, true) }}
-            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
-              +{{ getFiatAmountForStats(totalReceived) }}
-            </div>
-          </div>
+    <div class="stats-section" v-if="activeFilter !== 'all' && filteredTransactions.length > 0">
+      <div class="stats-cards-row">
+        <div class="balance-card-gradient stats-balance-card">
+          <div class="stats-balance-label">{{ activeWalletName }}</div>
+          <div class="stats-balance-fiat">{{ getFiatAmountForStats(totalReceived - totalSent) }}</div>
+          <div class="stats-balance-sats">
+<!--            <Icon icon="tabler:currency-bitcoin" width="12" height="12" style="margin-right: 4px" />-->
+            {{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}</div>
         </div>
-        <div class="stat-divider" :class="$q.dark.isActive ? 'stat_divider_dark' : 'stat_divider_light'"></div>
-        <div class="stat-item">
-          <div class="stat-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{
-              $t('Sent')
-            }}
-          </div>
-          <div class="stat-value negative">
-            {{ formatAmountWithSign(totalSent, false) }}
-            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
-              -{{ getFiatAmountForStats(totalSent) }}
-            </div>
-          </div>
+        <div class="stats-info-card" :class="$q.dark.isActive ? 'stats-info-card-dark' : 'stats-info-card-light'">
+          <div class="stats-info-value positive">{{ formatAmountWithSign(totalReceived, true) }}</div>
+          <div class="stats-info-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{ $t('Received') }}</div>
         </div>
-        <div class="stat-divider" :class="$q.dark.isActive ? 'stat_divider_dark' : 'stat_divider_light'"></div>
-        <div class="stat-item">
-          <div class="stat-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{
-              $t('Net')
-            }}
-          </div>
-          <div class="stat-value" :class="netAmount >= 0 ? 'positive' : 'negative'">
-            {{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}
-            <div class="stat-fiat" :class="$q.dark.isActive ? 'stat_fiat_dark' : 'stat_fiat_light'">
-              {{ netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(netAmount) }}
-            </div>
-          </div>
+        <div class="stats-info-card" :class="$q.dark.isActive ? 'stats-info-card-dark' : 'stats-info-card-light'">
+          <div class="stats-info-value negative">{{ formatAmountWithSign(totalSent, false) }}</div>
+          <div class="stats-info-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{ $t('Sent') }}</div>
         </div>
       </div>
     </div>
@@ -148,7 +114,7 @@
           </div>
           <div class="tx-secondary deposit-status" :class="deposit.confirmed ? 'status-ready' : 'status-pending'">
             <template v-if="deposit.confirmed">
-              <q-icon name="las la-check-circle" size="14px" class="status-icon" />
+              <Icon icon="tabler:circle-check" width="14" height="14" class="status-icon" />
               {{ $t('Ready to claim') }}
             </template>
             <template v-else>
@@ -164,9 +130,9 @@
 
         <!-- Right: Amount & Action -->
         <div class="tx-amounts deposit-actions">
-          <div class="amount-sats positive" :class="$q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light'">
+          <q-chip class="amount-sats positive" :class="$q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light'">
             {{ formatAmount(deposit.amount) }}
-          </div>
+          </q-chip>
           <q-btn
             v-if="deposit.confirmed"
             size="sm"
@@ -217,7 +183,7 @@
 
         <!-- High Fee Notice -->
         <div v-if="isHighClaimFee" class="high-fee-notice">
-          <q-icon name="las la-exclamation-circle" size="16px" />
+          <Icon icon="tabler:alert-circle" width="16" height="16" />
           <span>{{ $t('High fee relative to deposit') }}</span>
         </div>
 
@@ -263,7 +229,7 @@
     <q-dialog v-model="showRefundDialog" persistent>
       <q-card class="refund-dialog" :class="$q.dark.isActive ? 'dialog-dark' : 'dialog-light'">
         <q-card-section class="refund-header">
-          <q-icon name="las la-undo-alt" size="48px" class="refund-icon" />
+          <Icon icon="tabler:arrow-back-up" :style="{ fontSize: '48px' }" class="refund-icon" />
           <div class="refund-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
             {{ $t('Return this Bitcoin?') }}
           </div>
@@ -351,8 +317,8 @@
                   {{ group.netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(group.netAmount) }}
                 </div>
               </div>
-              <q-icon
-                :name="group.expanded ? 'las la-chevron-up' : 'las la-chevron-down'"
+              <Icon
+                :icon="group.expanded ? 'tabler:chevron-up' : 'tabler:chevron-down'"
                 :class="$q.dark.isActive ? 'expand_icon_dark' : 'expand_icon_light'"
               />
             </div>
@@ -388,9 +354,9 @@
                     <!-- Zap/Nostr: lightning bolt -->
                     <svg v-else-if="tx.senderNpub" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                     <!-- Received: arrow-down-left -->
-                    <svg v-else-if="tx.type === 'incoming'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7L7 17"/><path d="M7 8v9h9"/></svg>
+                    <Icon v-else-if="tx.type === 'incoming'" icon="tabler:arrow-down" width="20" height="20" />
                     <!-- Sent: arrow-up-right -->
-                    <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M8 7h9v9"/></svg>
+                    <Icon v-else icon="tabler:arrow-up" width="20" height="20" />
                   </div>
                 </div>
 
@@ -438,9 +404,9 @@
                        :class="[getAmountClass(tx), $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
                     {{ getFormattedAmount(tx) }}
                   </div>
-                  <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+                  <q-chip class="" :class="tx.type === 'incoming' ? 'badge-pill badge-pill-green' : 'badge-pill badge-pill-red'">
                     {{ getFiatAmount(tx) }}
-                  </div>
+                  </q-chip>
                 </div>
                 </div>
 
@@ -467,9 +433,10 @@
                          :class="[tx.transactionType === 'incoming' ? 'positive' : 'negative', $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
                       {{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}
                     </div>
-                    <q-icon
-                      :name="expandedMicropaymentGroups.has(tx.id) ? 'las la-chevron-up' : 'las la-chevron-down'"
-                      size="16px"
+                    <Icon
+                      :icon="expandedMicropaymentGroups.has(tx.id) ? 'tabler:chevron-up' : 'tabler:chevron-down'"
+                      width="16"
+                      height="16"
                       :class="$q.dark.isActive ? 'expand_icon_dark' : 'expand_icon_light'"
                     />
                   </div>
@@ -513,7 +480,7 @@
           :class="$q.dark.isActive ? 'load-more-dark' : 'load-more-light'"
           @click="loadMoreTransactions"
         >
-          <q-icon name="las la-plus-circle" size="18px" class="q-mr-sm" />
+          <Icon icon="tabler:circle-plus" width="18" height="18" class="q-mr-sm" />
           {{ $t('Load More') }}
         </q-btn>
       </div>
@@ -541,7 +508,7 @@
     <div v-if="!isLoading && filteredTransactions.length === 0" class=" full-height"
          :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
       <div class="empty-icon">
-        <q-icon name="las la-receipt" size="4rem" :color="$q.dark.isActive ? '#B0B0B0' : '#D1D5DB'"/>
+        <Icon icon="tabler:receipt" :style="{ fontSize: '4rem', color: $q.dark.isActive ? '#B0B0B0' : '#D1D5DB' }" />
       </div>
       <div class="empty-title" :class="$q.dark.isActive ? 'empty_title_dark' : 'empty_title_light'">
         {{ $t('No transactions found') }}
@@ -552,12 +519,13 @@
         }}
       </div>
       <q-btn
-        :label="$t('Refresh')"
-        icon="las la-sync-alt"
         @click="loadTransactions"
         :class="$q.dark.isActive ? 'btn_dark' : 'btn_light'"
         no-caps
-      />
+      >
+        <Icon icon="tabler:refresh" width="16" height="16" class="q-mr-xs" />
+        {{ $t('Refresh') }}
+      </q-btn>
     </div>
 
   </q-page>
@@ -766,6 +734,10 @@ export default {
 
     claimableDeposits() {
       return this.pendingBitcoinDeposits.filter(d => d.confirmed);
+    },
+
+    activeWalletName() {
+      return this.walletStore?.activeWallet?.name || 'Wallet';
     }
   },
   async created() {
@@ -1026,7 +998,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -1119,7 +1091,7 @@ export default {
           type: 'warning',
           message: this.$t('Wallet locked'),
           caption: this.$t('Please unlock your Spark wallet to view transactions'),
-          
+
           timeout: 3000,
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
@@ -1280,7 +1252,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Up to date'),
-        
+
         timeout: 1500,
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
@@ -1443,11 +1415,11 @@ export default {
     },
 
     getTransactionIcon(tx) {
-      if (this.isPendingInvoice(tx)) return 'las la-clock';
-      if (this.isAutoWithdraw(tx)) return 'las la-paper-plane';
-      if (this.isBitcoinTransaction(tx)) return 'lab la-bitcoin';
-      if (tx.senderNpub) return 'las la-bolt';
-      return tx.type === 'incoming' ? 'las la-arrow-down' : 'las la-arrow-up';
+      if (this.isPendingInvoice(tx)) return 'tabler:clock';
+      if (this.isAutoWithdraw(tx)) return 'tabler:send';
+      if (this.isBitcoinTransaction(tx)) return 'tabler:currency-bitcoin';
+      if (tx.senderNpub) return 'tabler:bolt';
+      return tx.type === 'incoming' ? 'tabler:arrow-down' : 'tabler:arrow-up';
     },
 
     /**
@@ -1662,7 +1634,7 @@ export default {
           type: 'warning',
           message: this.$t('Deposit not ready'),
           caption: this.$t('Please wait for more confirmations'),
-          
+
         });
         return;
       }
@@ -1679,7 +1651,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t get fee quote'),
-          
+
         });
       } finally {
         this.claimingTxId = null;
@@ -1710,7 +1682,7 @@ export default {
             type: 'info',
             message: this.$t('Claim processing'),
             caption: this.$t('Your sats will arrive shortly'),
-            
+
             timeout: 3000
           });
         } else {
@@ -1740,7 +1712,7 @@ export default {
           type: 'info',
           message: this.$t('Processing your deposit...'),
           caption: this.$t('This may take a few seconds'),
-          
+
           timeout: 3000
         });
       } finally {
@@ -1840,8 +1812,8 @@ export default {
           type: 'positive',
           message: this.$t('Bitcoin returned'),
           caption: this.$t('Sent back to the original sender'),
-          
-          icon: 'las la-check-circle'
+
+          icon: 'check_circle'
         });
 
         // Clean up state
@@ -1854,7 +1826,7 @@ export default {
           type: 'negative',
           message: this.$t('Could not return Bitcoin'),
           caption: this.$t('Please try again'),
-          
+
         });
       } finally {
         this.isRefundingDeposit = false;
@@ -1869,13 +1841,17 @@ export default {
 .transaction-history-page-dark {
   background: #171717;
   min-height: 100vh;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 .transaction-history-page-light {
   background: #F6F6F6;
   min-height: 100vh;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Header Styles */
@@ -1941,14 +1917,14 @@ export default {
   color: #F6F6F6;
   font-size: 1.25rem;
   font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .main_page_title_light {
   color: #212121;
   font-size: 1.25rem;
   font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Filter Section */
@@ -1964,37 +1940,44 @@ export default {
 
 .filter_tabs_dark,
 .filter_tabs_light {
-  padding: 0 1rem;
+  padding: 0 0.5rem;
+}
+
+.filter_tabs_dark :deep(.q-tabs__content),
+.filter_tabs_light :deep(.q-tabs__content) {
+  overflow: hidden;
 }
 
 .tab_active_dark {
   background: rgba(21, 222, 114, 0.1) !important;
   color: #15DE72 !important;
-  border-radius: 12px !important;
+  border-radius: 999px !important;
   font-weight: 600 !important;
-  font-family: Fustat, sans-serif !important;
+  font-family: 'Manrope', sans-serif !important;
 }
 
 .tab_active_light {
   background: rgba(5, 149, 115, 0.1) !important;
   color: #059573 !important;
-  border-radius: 12px !important;
+  border-radius: 999px !important;
   font-weight: 600 !important;
-  font-family: Fustat, sans-serif !important;
+  font-family: 'Manrope', sans-serif !important;
 }
 
 .tab_inactive_dark {
   color: #B0B0B0 !important;
   font-weight: 500 !important;
-  font-family: Fustat, sans-serif !important;
-  border-radius: 12px !important;
+  font-family: 'Manrope', sans-serif !important;
+  border-radius: 999px !important;
+  border: 1px solid #2A342A;
 }
 
 .tab_inactive_light {
   color: #6B7280 !important;
   font-weight: 500 !important;
-  font-family: Fustat, sans-serif !important;
-  border-radius: 12px !important;
+  font-family: 'Manrope', sans-serif !important;
+  border-radius: 999px !important;
+  border: 1px solid #E5E7EB;
 }
 
 /* Stats Section */
@@ -2045,7 +2028,7 @@ export default {
   font-weight: 400;
   text-transform: capitalize;
   letter-spacing: 0.025em;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .stat_label_light {
@@ -2055,14 +2038,14 @@ export default {
   font-weight: 400;
   text-transform: capitalize;
   letter-spacing: 0.025em;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .stat-value {
   font-size: 0.875rem;
   font-weight: 700;
   white-space: nowrap;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .stat-value.positive {
@@ -2130,7 +2113,7 @@ export default {
   cursor: pointer;
   transition: background-color 0.15s ease;
   margin: 0 16px 8px 16px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_header_light {
@@ -2144,7 +2127,7 @@ export default {
   transition: background-color 0.15s ease;
   margin: 0 16px 8px 16px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_header_dark:hover {
@@ -2164,7 +2147,7 @@ export default {
   font-weight: 500;
   color: #FFFFFF;
   margin-bottom: 2px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_date_light {
@@ -2172,7 +2155,7 @@ export default {
   font-weight: 500;
   color: #000000;
   margin-bottom: 2px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_summary_dark {
@@ -2181,7 +2164,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_summary_light {
@@ -2190,7 +2173,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group-amount {
@@ -2202,13 +2185,13 @@ export default {
 .group_total_dark {
   font-size: 15px;
   font-weight: 500;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_total_light {
   font-size: 15px;
   font-weight: 500;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group-fiat {
@@ -2336,26 +2319,26 @@ export default {
   font-weight: 500;
   color: #F6F6F6;
   font-size: 0.95rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .transaction_type_light {
   font-weight: 500;
   color: #212121;
   font-size: 0.95rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .transaction_time_dark {
   color: #B0B0B0;
   font-size: 0.8rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .transaction_time_light {
   color: #6B7280;
   font-size: 0.8rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .transaction_description_dark {
@@ -2367,7 +2350,7 @@ export default {
   white-space: nowrap;
   max-width: 200px;
   display: block;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .transaction_description_light {
@@ -2379,7 +2362,7 @@ export default {
   white-space: nowrap;
   max-width: 200px;
   display: block;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .nostr_info_dark {
@@ -2389,7 +2372,7 @@ export default {
   color: #15DE72;
   font-size: 0.7rem;
   font-weight: 500;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .nostr_info_light {
@@ -2399,7 +2382,7 @@ export default {
   color: #059573;
   font-size: 0.7rem;
   font-weight: 500;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .sender-avatar {
@@ -2415,21 +2398,21 @@ export default {
 
 .transaction-amount {
   text-align: right;
-  min-width: 90px;
+  /*min-width: 90px;*/
 }
 
 .amount_sats_dark {
   font-weight: 600;
   font-size: 0.95rem;
   margin-bottom: 0.25rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .amount_sats_light {
   font-weight: 600;
   font-size: 0.95rem;
   margin-bottom: 0.25rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .amount-positive {
@@ -2448,13 +2431,13 @@ export default {
 .amount_fiat_dark {
   color: #B0B0B0;
   font-size: 0.8rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .amount_fiat_light {
   color: #6B7280;
   font-size: 0.8rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Redesigned Transaction Card - Bitcoin Design Guide Pattern */
@@ -2468,7 +2451,7 @@ export default {
   min-height: 72px;
   cursor: pointer;
   transition: background-color 0.15s ease;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .transaction_card_dark {
@@ -2515,30 +2498,31 @@ export default {
   font-size: 1rem;
   font-weight: 600;
   color: white;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .direction-icon {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  color: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-/* Incoming - iOS Green */
+/* Incoming - Green tinted */
 .direction-icon.incoming {
-  background: #34C759;
+  background: rgba(21, 222, 114, 0.15);
+  color: #15DE72;
 }
 
-/* Outgoing - iOS Gray */
+/* Outgoing - Red tinted */
 .direction-icon.outgoing {
-  background: #8E8E93;
+  background: rgba(255, 68, 68, 0.15);
+  color: #FF4444;
 }
 
 /* Awaiting Payment - Muted amber */
@@ -2574,7 +2558,7 @@ export default {
   font-size: 15px;
   font-weight: 500;
   line-height: 1.4;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .tx_primary_dark {
@@ -2591,7 +2575,7 @@ export default {
   font-size: 13px;
   line-height: 1.4;
   margin-top: 2px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .tx_secondary_dark {
@@ -2613,7 +2597,7 @@ export default {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .tx_description_dark {
@@ -2645,7 +2629,7 @@ export default {
   border-radius: 12px;
   font-size: 0.7rem;
   font-weight: 500;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .aw-tag-pill {
@@ -2661,7 +2645,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 90px;
+  /*min-width: 90px;*/
 }
 
 .amount-sats,
@@ -2670,7 +2654,7 @@ export default {
   font-size: 15px;
   font-weight: 500;
   line-height: 1.4;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .amount_sats_dark.positive,
@@ -2703,7 +2687,7 @@ export default {
 .amount_fiat_light {
   font-size: 13px;
   line-height: 1.4;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .amount_fiat_dark {
@@ -2720,7 +2704,7 @@ export default {
 .micropayment_group_light {
   cursor: pointer;
   transition: background-color 0.15s ease;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .micropayment_group_dark {
@@ -2774,7 +2758,7 @@ export default {
   font-size: 15px;
   font-weight: 500;
   line-height: 1.4;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_primary_dark {
@@ -2790,7 +2774,7 @@ export default {
 .group_secondary_light {
   font-size: 13px;
   line-height: 1.4;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   margin-top: 2px;
 }
 
@@ -2815,7 +2799,7 @@ export default {
 .group_items_micro_light {
   display: flex;
   flex-direction: column;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .group_items_micro_dark {
@@ -2859,7 +2843,7 @@ export default {
 .item_time_dark,
 .item_time_light {
   font-size: 0.85rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .item_time_dark {
@@ -2875,7 +2859,7 @@ export default {
 .item_amount_light {
   font-size: 0.85rem;
   font-weight: 500;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .item_amount_dark {
@@ -2919,14 +2903,14 @@ export default {
   margin-top: 1rem;
   color: #B0B0B0;
   font-size: 1rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .loading_text_light {
   margin-top: 1rem;
   color: #6B7280;
   font-size: 1rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .empty-icon {
@@ -2938,7 +2922,7 @@ export default {
   font-weight: 600;
   color: #F6F6F6;
   margin-bottom: 0.5rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .empty_title_light {
@@ -2946,21 +2930,21 @@ export default {
   font-weight: 600;
   color: #212121;
   margin-bottom: 0.5rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .empty_subtitle_dark {
   color: #B0B0B0;
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .empty_subtitle_light {
   color: #6B7280;
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Secondary Buttons */
@@ -2969,7 +2953,7 @@ export default {
   border: 1px solid #2A382A !important;
   background: rgba(255, 255, 255, 0.05) !important;
   color: #FFF !important;
-  font-family: Fustat, sans-serif !important;
+  font-family: 'Manrope', sans-serif !important;
   font-size: 14px !important;
   font-weight: 500 !important;
 }
@@ -2979,7 +2963,7 @@ export default {
   border: 1px solid #E8E8E8 !important;
   background: #F6F6F6 !important;
   color: #212121 !important;
-  font-family: Fustat, sans-serif !important;
+  font-family: 'Manrope', sans-serif !important;
   font-size: 14px !important;
   font-weight: 500 !important;
 }
@@ -2992,7 +2976,7 @@ export default {
 }
 
 .load-more-btn {
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   padding: 10px 24px;
@@ -3024,7 +3008,7 @@ export default {
   display: flex;
   justify-content: center;
   padding: 16px 16px 32px;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
 }
 
@@ -3044,7 +3028,7 @@ export default {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .pending-list-header .header-text {
@@ -3090,7 +3074,7 @@ export default {
   min-height: 72px;
   cursor: pointer;
   transition: background-color 0.15s ease;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .deposit-tx-card-dark {
@@ -3232,7 +3216,7 @@ export default {
 .claim-amount-value {
   font-size: 42px;
   font-weight: 700;
-  font-family: Fustat, 'SF Pro Display', sans-serif;
+  font-family: 'Manrope', sans-serif;
   letter-spacing: -1px;
   color: #34C759;
   line-height: 1.1;
@@ -3241,7 +3225,7 @@ export default {
 .claim-amount-label {
   font-size: 15px;
   margin-top: 8px;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Fee Summary */
@@ -3264,7 +3248,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 6px 0;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .fee-line .fee-label {
@@ -3294,7 +3278,7 @@ export default {
   color: #FF6B6B;
   font-size: 13px;
   font-weight: 500;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Action Buttons */
@@ -3311,7 +3295,7 @@ export default {
   border-radius: 14px;
   font-size: 17px;
   font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
   background: #34C759 !important;
   color: white !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
@@ -3327,7 +3311,7 @@ export default {
   border-radius: 14px;
   font-size: 16px;
   font-weight: 500;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .claim-cancel-btn.cancel-dark {
@@ -3346,7 +3330,7 @@ export default {
 
 .refund-link {
   font-size: 13px;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -3387,7 +3371,7 @@ export default {
 .refund-title {
   font-size: 20px;
   font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .refund-body {
@@ -3399,7 +3383,7 @@ export default {
   margin: 0 0 12px;
   font-size: 14px;
   line-height: 1.5;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .refund-amount-box {
@@ -3422,13 +3406,13 @@ export default {
 .refund-amount-label {
   font-size: 13px;
   opacity: 0.7;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .refund-amount-value {
   font-size: 15px;
   font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .refund-actions {
@@ -3444,7 +3428,7 @@ export default {
   border-radius: 14px;
   font-size: 16px;
   font-weight: 600;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
   background: #34C759 !important;
   color: white !important;
 }
@@ -3455,7 +3439,7 @@ export default {
   border-radius: 14px;
   font-size: 16px;
   font-weight: 500;
-  font-family: Fustat, sans-serif;
+  font-family: 'Manrope', sans-serif;
   background: #8E8E93 !important;
   color: white !important;
 }
@@ -3539,5 +3523,88 @@ export default {
     width: 32px;
     height: 32px;
   }
+}
+
+/* Stats Cards Row */
+.stats-cards-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  overflow-x: hidden;
+  flex-wrap: wrap;
+}
+
+.stats-balance-card {
+  min-width: 0;
+  flex: 1 1 100%;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stats-balance-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+.stats-balance-fiat {
+  font-size: 22px;
+  font-weight: 700;
+  color: #FFF;
+}
+.stats-balance-sats {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+}
+
+.stats-info-card-dark {
+  background: var(--bg-card, #1A1A1A);
+  border: 1px solid var(--border-card, #2A342A);
+  border-radius: 24px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+.stats-info-card-light {
+  background: var(--bg-card, #FFF);
+  border: 1px solid var(--border-card, #EBEBEB);
+  border-radius: 24px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.stats-info-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'Manrope', sans-serif;
+}
+.stats-info-value.positive {
+  color: #15DE72;
+}
+.stats-info-value.negative {
+  color: #FF4444;
+}
+.stats-info-label {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Amount fiat badge override */
+.amount-fiat-badge {
+  margin-top: 2px;
 }
 </style>
