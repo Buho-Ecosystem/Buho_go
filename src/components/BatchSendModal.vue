@@ -21,7 +21,7 @@
               class="step-dot"
               :class="getStepClass(n)"
             >
-              <i v-if="n < step" class="las la-check"></i>
+              <Icon v-if="n < step" icon="tabler:check" />
               <span v-else>{{ n }}</span>
             </div>
           </div>
@@ -32,10 +32,11 @@
           flat
           round
           dense
-          icon="las la-times"
           class="close-btn"
           @click="confirmClose"
-        />
+        >
+          <Icon icon="tabler:x" width="20" height="20" />
+        </q-btn>
       </header>
 
       <!-- Body -->
@@ -74,18 +75,19 @@
 
           <!-- Search -->
           <div class="search-container">
-            <i class="las la-search search-icon"></i>
+            <Icon icon="tabler:search" class="search-icon" />
             <input
               v-model="searchQuery"
               type="text"
               :placeholder="$t('Search contacts...')"
               class="search-input"
             />
-            <i
+            <Icon
               v-if="searchQuery"
-              class="las la-times-circle clear-icon"
+              icon="tabler:circle-x"
+              class="clear-icon"
               @click="searchQuery = ''"
-            ></i>
+            />
           </div>
 
           <!-- Contact List -->
@@ -100,7 +102,7 @@
               <!-- Checkbox -->
               <div class="contact-checkbox">
                 <div class="checkbox-box" :class="{ 'checkbox-checked': isSelected(contact) }">
-                  <i v-if="isSelected(contact)" class="las la-check"></i>
+                  <Icon v-if="isSelected(contact)" icon="tabler:check" />
                 </div>
               </div>
 
@@ -113,8 +115,8 @@
                   <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
                   </svg>
-                  <i v-else-if="contact.addressType === 'bitcoin'" class="lab la-bitcoin"></i>
-                  <i v-else class="las la-bolt"></i>
+                  <Icon v-else-if="contact.addressType === 'bitcoin'" icon="tabler:currency-bitcoin" width="10" height="10" />
+                  <Icon v-else icon="tabler:bolt" width="10" height="10" />
                 </div>
               </div>
 
@@ -122,7 +124,7 @@
               <div class="contact-info">
                 <div class="contact-name">
                   {{ contact.name }}
-                  <i v-if="contact.isFavorite" class="las la-star favorite-star"></i>
+                  <Icon v-if="contact.isFavorite" icon="tabler:star-filled" width="12" height="12" class="favorite-star" />
                 </div>
                 <div class="contact-address">{{ truncateAddress(contact.address || contact.lightningAddress) }}</div>
               </div>
@@ -130,14 +132,14 @@
 
             <!-- Empty State -->
             <div v-if="filteredContacts.length === 0" class="empty-state">
-              <i class="las la-search"></i>
+              <Icon icon="tabler:search" />
               <span>{{ $t('No contacts found') }}</span>
             </div>
           </div>
 
           <!-- Spark-only Contacts Warning -->
           <div v-if="hasSparkOnlySelected && !isSparkWallet" class="warning-banner">
-            <i class="las la-exclamation-triangle"></i>
+            <Icon icon="tabler:alert-triangle" />
             <span>{{ $t('Some contacts require Spark wallet') }}</span>
           </div>
         </section>
@@ -160,8 +162,8 @@
                   <svg v-if="contact.addressType === 'spark'" width="6" height="6" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
                   </svg>
-                  <i v-else-if="contact.addressType === 'bitcoin'" class="lab la-bitcoin"></i>
-                  <i v-else class="las la-bolt"></i>
+                  <Icon v-else-if="contact.addressType === 'bitcoin'" icon="tabler:currency-bitcoin" width="10" height="10" />
+                  <Icon v-else icon="tabler:bolt" width="10" height="10" />
                 </div>
               </div>
               <div v-if="selectedContacts.length > 4" class="mini-avatar-wrap">
@@ -182,7 +184,7 @@
               :class="{ 'mode-active': !customAmountsMode }"
               @click="customAmountsMode = false"
             >
-              <i class="las la-equals"></i>
+              <Icon icon="tabler:equal" />
               <span class="mode-label">{{ $t('Same amount') }}</span>
             </button>
             <button
@@ -190,7 +192,7 @@
               :class="{ 'mode-active': customAmountsMode }"
               @click="customAmountsMode = true"
             >
-              <i class="las la-sliders-h"></i>
+              <Icon icon="tabler:adjustments-horizontal" />
               <span class="mode-label">{{ $t('Custom amounts') }}</span>
             </button>
           </div>
@@ -272,8 +274,8 @@
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
                       </svg>
-                      <i v-else-if="contact.addressType === 'bitcoin'" class="lab la-bitcoin"></i>
-                      <i v-else class="las la-bolt"></i>
+                      <Icon v-else-if="contact.addressType === 'bitcoin'" icon="tabler:currency-bitcoin" width="10" height="10" />
+                      <Icon v-else icon="tabler:bolt" width="10" height="10" />
                     </div>
                   </div>
                   <span class="custom-name">{{ contact.name }}</span>
@@ -303,7 +305,7 @@
           <!-- Balance Card -->
           <div class="balance-card" :class="{ 'balance-warning': isOverSafeLimit, 'balance-error': isOverBalance }">
             <div class="balance-header">
-              <i class="las la-wallet"></i>
+              <Icon icon="tabler:wallet" />
               <span>{{ $t('Wallet Balance') }}</span>
             </div>
             <div class="balance-details">
@@ -327,17 +329,17 @@
 
           <!-- Warning/Error Messages -->
           <div v-if="isOverBalance" class="error-banner">
-            <i class="las la-exclamation-circle"></i>
+            <Icon icon="tabler:alert-circle" />
             <span>{{ $t('Insufficient balance') }}</span>
           </div>
           <div v-else-if="isOverSafeLimit" class="warning-banner">
-            <i class="las la-exclamation-triangle"></i>
+            <Icon icon="tabler:alert-triangle" />
             <span>{{ $t('1% reserved for potential fees') }}</span>
           </div>
 
           <!-- Custom Mode Validation -->
           <div v-if="customAmountsMode && !allContactsHaveAmount && totalAmount > 0" class="info-banner">
-            <i class="las la-info-circle"></i>
+            <Icon icon="tabler:info-circle" />
             <span>{{ $t('Enter amount for all contacts') }}</span>
           </div>
         </section>
@@ -358,8 +360,8 @@
                   <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
                   </svg>
-                  <i v-else-if="contact.addressType === 'bitcoin'" class="lab la-bitcoin"></i>
-                  <i v-else class="las la-bolt"></i>
+                  <Icon v-else-if="contact.addressType === 'bitcoin'" icon="tabler:currency-bitcoin" width="10" height="10" />
+                  <Icon v-else icon="tabler:bolt" width="10" height="10" />
                 </div>
               </div>
               <div class="review-info">
@@ -418,8 +420,8 @@
                   <svg v-if="result.contact.addressType === 'spark'" width="8" height="8" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
                   </svg>
-                  <i v-else-if="result.contact.addressType === 'bitcoin'" class="lab la-bitcoin"></i>
-                  <i v-else class="las la-bolt"></i>
+                  <Icon v-else-if="result.contact.addressType === 'bitcoin'" icon="tabler:currency-bitcoin" width="10" height="10" />
+                  <Icon v-else icon="tabler:bolt" width="10" height="10" />
                 </div>
               </div>
               <div class="exec-info">
@@ -435,10 +437,10 @@
               <div class="exec-amount">{{ formatSats(result.amount) }}</div>
               <div class="exec-icon">
                 <q-spinner-dots v-if="result.status === 'sending'" size="20px" color="green" />
-                <i v-else-if="result.status === 'success'" class="las la-check-circle icon-success"></i>
-                <i v-else-if="result.status === 'failed'" class="las la-times-circle icon-failed"></i>
-                <i v-else-if="result.status === 'skipped'" class="las la-minus-circle icon-skipped"></i>
-                <i v-else class="las la-clock icon-pending"></i>
+                <Icon v-else-if="result.status === 'success'" icon="tabler:circle-check" class="icon-success" />
+                <Icon v-else-if="result.status === 'failed'" icon="tabler:circle-x" class="icon-failed" />
+                <Icon v-else-if="result.status === 'skipped'" icon="tabler:circle-minus" class="icon-skipped" />
+                <Icon v-else icon="tabler:clock" class="icon-pending" />
               </div>
             </div>
           </div>
@@ -460,7 +462,7 @@
           <div class="summary-section">
             <!-- Success Icon -->
             <div class="summary-icon" :class="failedCount > 0 ? 'icon-partial' : 'icon-success'">
-              <i :class="failedCount > 0 ? 'las la-exclamation-circle' : 'las la-check-circle'"></i>
+              <Icon :icon="failedCount > 0 ? 'tabler:alert-circle' : 'tabler:circle-check'" />
             </div>
 
             <!-- Stats -->
@@ -470,11 +472,11 @@
 
             <div class="summary-stats">
               <div class="stat-item stat-success">
-                <i class="las la-check"></i>
+                <Icon icon="tabler:check" />
                 <span>{{ successCount }} {{ $t('sent') }}</span>
               </div>
               <div v-if="failedCount > 0" class="stat-item stat-failed">
-                <i class="las la-times"></i>
+                <Icon icon="tabler:x" />
                 <span>{{ failedCount }} {{ $t('failed') }}</span>
               </div>
             </div>
@@ -573,7 +575,7 @@
   <q-dialog v-model="showConfirmClose" persistent>
     <div class="confirm-dialog" :class="themeClass">
       <div class="confirm-icon">
-        <i class="las la-exclamation-circle"></i>
+        <Icon icon="tabler:alert-circle" />
       </div>
       <h3 class="confirm-title">{{ $t('Cancel Batch?') }}</h3>
       <p class="confirm-message">{{ $t('Your selection will be lost.') }}</p>
@@ -1264,28 +1266,28 @@ function retryFailed() {
    Theme Variables
    ════════════════════════════════════════════════════════════ */
 .theme-dark {
-  --c-bg: #1c1c1e;
-  --c-bg2: #2c2c2e;
-  --c-bg3: #3a3a3c;
-  --c-text: #fff;
-  --c-text2: #a1a1a6;
-  --c-text3: #636366;
-  --c-border: rgba(255,255,255,.08);
-  --c-success: #15DE72;
+  --c-bg: var(--bg-card);
+  --c-bg2: var(--bg-input);
+  --c-bg3: #2A342A;
+  --c-text: var(--text-primary);
+  --c-text2: var(--text-secondary);
+  --c-text3: var(--text-muted);
+  --c-border: var(--border-card);
+  --c-success: var(--color-green);
   --c-warning: #F59E0B;
-  --c-error: #EF4444;
+  --c-error: var(--color-red);
 }
 .theme-light {
-  --c-bg: #fff;
-  --c-bg2: #f2f2f7;
+  --c-bg: var(--bg-card);
+  --c-bg2: var(--bg-input);
   --c-bg3: #e5e5ea;
-  --c-text: #1c1c1e;
-  --c-text2: #8e8e93;
-  --c-text3: #aeaeb2;
-  --c-border: rgba(0,0,0,.06);
-  --c-success: #15DE72;
+  --c-text: var(--text-primary);
+  --c-text2: var(--text-secondary);
+  --c-text3: var(--text-muted);
+  --c-border: var(--border-card);
+  --c-success: var(--color-green);
   --c-warning: #F59E0B;
-  --c-error: #EF4444;
+  --c-error: var(--color-red);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -1294,13 +1296,15 @@ function retryFailed() {
 .batch-modal {
   width: 100%;
   max-width: 500px;
-  border-radius: 20px 20px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-bottom: none;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: 'Fustat', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -1613,7 +1617,7 @@ function retryFailed() {
 .contact-address {
   font-size: 12px;
   color: var(--c-text3);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 /* Empty State */
@@ -1820,7 +1824,7 @@ function retryFailed() {
   font-size: 14px;
   font-weight: 600;
   color: var(--c-text);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .total-row .balance-label,
@@ -1897,7 +1901,7 @@ function retryFailed() {
   font-size: 16px;
   font-weight: 600;
   color: var(--c-text);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .calc-multiply {
@@ -1922,7 +1926,7 @@ function retryFailed() {
   font-size: 18px;
   font-weight: 700;
   color: var(--c-success);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .calc-total-fiat {
@@ -2031,7 +2035,7 @@ function retryFailed() {
   background: transparent;
   font-size: 16px;
   font-weight: 600;
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
   color: var(--c-text);
   text-align: right;
 }
@@ -2068,7 +2072,7 @@ function retryFailed() {
   font-size: 16px;
   font-weight: 700;
   color: var(--c-success);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .custom-total-fiat {
@@ -2130,7 +2134,7 @@ function retryFailed() {
   font-size: 14px;
   font-weight: 600;
   color: var(--c-text);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .balance-sending .balance-value {
@@ -2214,7 +2218,7 @@ function retryFailed() {
 .review-address {
   font-size: 11px;
   color: var(--c-text3);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .review-amount {
@@ -2358,7 +2362,7 @@ function retryFailed() {
   font-size: 13px;
   font-weight: 600;
   color: var(--c-text2);
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .exec-icon {
@@ -2529,9 +2533,9 @@ function retryFailed() {
   padding: 14px;
   font-size: 15px;
   font-weight: 600;
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #000 !important;
-  border-radius: 12px;
+  background: var(--gradient-green) !important;
+  color: #FFF !important;
+  border-radius: var(--radius-md);
 }
 
 .btn-primary:disabled {

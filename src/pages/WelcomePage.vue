@@ -30,7 +30,7 @@
         <q-card-section class="q-pt-none">
           <div class="welcome-icon-container">
             <div class="welcome-icon-bg">
-              <q-icon name="las la-wallet" size="48px" color="white" />
+              <Icon icon="tabler:wallet" width="48" height="48" style="color: white;" />
             </div>
           </div>
 
@@ -60,7 +60,7 @@
                 <div class="choice-btn-title">{{ $t('Create Wallet') }}</div>
                 <div class="choice-btn-desc">{{ $t('Self-custody with Spark') }}</div>
               </div>
-              <q-icon name="las la-angle-right" size="20px" />
+              <Icon icon="tabler:chevron-right" width="16" height="16" />
             </div>
           </q-btn>
 
@@ -89,7 +89,7 @@
                 <div class="choice-btn-title">{{ $t('Connect Wallet') }}</div>
                 <div class="choice-btn-desc">{{ $t('Link via NWC') }}</div>
               </div>
-              <q-icon name="las la-angle-right" size="20px" />
+              <Icon icon="tabler:chevron-right" width="16" height="16" />
             </div>
           </q-btn>
 
@@ -111,7 +111,7 @@
                 <div class="choice-btn-title">{{ $t('LNBits Wallet') }}</div>
                 <div class="choice-btn-desc">{{ $t('Connect via API') }}</div>
               </div>
-              <q-icon name="las la-angle-right" size="20px" />
+              <Icon icon="tabler:chevron-right" width="16" height="16" />
             </div>
           </q-btn>
 
@@ -125,7 +125,7 @@
               :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
               @click="goToSparkRestore"
             >
-              <q-icon name="las la-undo-alt" size="16px" class="q-mr-xs" />
+              <Icon icon="tabler:arrow-back-up" width="14" height="14" class="q-mr-xs" />
               {{ $t('Restore from backup') }}
             </q-btn>
           </div>
@@ -209,13 +209,13 @@ export default {
 }
 
 .bg-dark {
-  background: #0C0C0C;
-  color: #FFF;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .bg-light {
-  background: #F8F8F8;
-  color: #212121;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .container {
@@ -239,7 +239,7 @@ export default {
 }
 
 .app-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 24px;
   font-weight: 800;
   line-height: 100%;
@@ -297,14 +297,14 @@ export default {
   margin-bottom: 0.5rem;
   font-size: 22px;
   font-weight: 700;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .welcome-subtitle {
   text-align: center;
   margin-bottom: 2rem;
   font-size: 14px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .view_title_dark {
@@ -316,7 +316,7 @@ export default {
   height: auto;
   min-height: 72px;
   border-radius: 16px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   padding: 16px;
 }
 
@@ -370,7 +370,7 @@ export default {
 }
 
 .restore-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
 }

@@ -233,7 +233,7 @@ export default {
 }
 
 .verify-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   font-weight: 700;
   line-height: 1.4;
@@ -251,11 +251,11 @@ export default {
 }
 
 .error-title {
-  color: #E53935 !important;
+  color: #EF4444 !important;
 }
 
 .security-reminder {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   line-height: 1.5;
   margin: 0.5rem 0 0;
@@ -265,7 +265,7 @@ export default {
 /* Words Grid */
 .words-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 
@@ -274,73 +274,103 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-radius: 50px;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 999px;
   border: 1.5px solid;
-  font-family: 'SF Mono', 'Menlo', monospace;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
   min-height: 44px;
+  position: relative;
+  overflow: hidden;
+}
+
+.word-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.word-chip:active:not(:disabled)::before {
+  opacity: 1;
 }
 
 /* When chip has badge, align content to left */
 .word-chip.has-badge {
   justify-content: flex-start;
-  padding-left: 6px;
-  padding-right: 16px;
+  padding-left: 5px;
+  padding-right: 12px;
 }
 
 .chip-dark {
   background: #171717;
-  border-color: #333333;
+  border-color: #2A342A;
   color: #FFFFFF;
 }
 
+.chip-dark::before {
+  background: rgba(21, 222, 114, 0.06);
+}
+
 .chip-dark:hover:not(:disabled) {
-  border-color: #444444;
-  background: #1E1E1E;
+  border-color: #3A4A3A;
+  background: #1C1C1C;
 }
 
 .chip-dark:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .chip-light {
   background: #FFFFFF;
-  border-color: #D0D0D0;
-  color: #212121;
+  border-color: #E5E7EB;
+  color: #1F2937;
+}
+
+.chip-light::before {
+  background: rgba(5, 149, 115, 0.04);
 }
 
 .chip-light:hover:not(:disabled) {
-  border-color: #BDBDBD;
-  background: #FAFAFA;
+  border-color: #D1D5DB;
+  background: #F9FAFB;
 }
 
 .chip-light:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 /* Selected State */
-.chip-selected {
-  border-color: #4CAF50 !important;
+.chip-selected.chip-dark {
+  border-color: #15DE72 !important;
+  background: rgba(21, 222, 114, 0.08) !important;
+}
+
+.chip-selected.chip-light {
+  border-color: #059573 !important;
+  background: rgba(5, 149, 115, 0.06) !important;
 }
 
 /* Error State */
 .chip-error {
-  border-color: #E53935 !important;
+  border-color: #EF4444 !important;
+  background: rgba(239, 68, 68, 0.08) !important;
 }
 
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-3px); }
-  40% { transform: translateX(3px); }
-  60% { transform: translateX(-3px); }
-  80% { transform: translateX(3px); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
 }
 
 .chip-error {
@@ -350,24 +380,28 @@ export default {
 /* Word Badge - inside chip on the left */
 .word-badge {
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
   color: #FFFFFF;
 }
 
 .badge-success {
-  background: #4CAF50;
+  background: #15DE72;
+}
+
+.verify-light .badge-success {
+  background: #059573;
 }
 
 .badge-error {
-  background: #E53935;
+  background: #EF4444;
 }
 
 /* Word Text */
@@ -392,10 +426,10 @@ export default {
 .show-again-btn {
   width: 100%;
   height: 48px;
-  border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   -webkit-tap-highlight-color: transparent;
@@ -403,33 +437,33 @@ export default {
 
 .btn-outline-dark {
   background: transparent;
-  border: 1.5px solid #333333;
+  border: 1.5px solid #2A342A;
   color: #FFFFFF;
 }
 
 .btn-outline-dark:hover {
-  border-color: #444444;
-  background: rgba(255, 255, 255, 0.05);
+  border-color: #3A4A3A;
+  background: rgba(21, 222, 114, 0.04);
 }
 
 .btn-outline-light {
   background: transparent;
-  border: 1.5px solid #D0D0D0;
-  color: #212121;
+  border: 1.5px solid #E5E7EB;
+  color: #1F2937;
 }
 
 .btn-outline-light:hover {
-  border-color: #BDBDBD;
-  background: rgba(0, 0, 0, 0.02);
+  border-color: #D1D5DB;
+  background: rgba(5, 149, 115, 0.03);
 }
 
 .continue-btn {
   width: 100%;
   height: 52px;
-  border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* Responsive Design */
@@ -447,25 +481,26 @@ export default {
   }
 
   .words-grid {
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
   }
 
   .word-chip {
-    padding: 8px 14px;
+    padding: 8px 10px;
     font-size: 12px;
     min-height: 40px;
-    gap: 6px;
+    gap: 5px;
   }
 
   .word-chip.has-badge {
-    padding-left: 5px;
-    padding-right: 14px;
+    padding-left: 4px;
+    padding-right: 10px;
   }
 
   .word-badge {
-    width: 28px;
-    height: 28px;
-    font-size: 12px;
+    width: 26px;
+    height: 26px;
+    font-size: 11px;
   }
 
   .show-again-btn {
@@ -496,20 +531,20 @@ export default {
   }
 
   .word-chip {
-    padding: 8px 12px;
+    padding: 8px 10px;
     font-size: 12px;
     min-height: 38px;
-    gap: 6px;
+    gap: 5px;
   }
 
   .word-chip.has-badge {
     padding-left: 4px;
-    padding-right: 12px;
+    padding-right: 10px;
   }
 
   .word-badge {
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     font-size: 11px;
   }
 
@@ -549,20 +584,20 @@ export default {
   }
 
   .word-chip {
-    padding: 6px 10px;
+    padding: 6px 8px;
     font-size: 11px;
     min-height: 34px;
-    gap: 5px;
+    gap: 4px;
   }
 
   .word-chip.has-badge {
     padding-left: 3px;
-    padding-right: 10px;
+    padding-right: 8px;
   }
 
   .word-badge {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     font-size: 10px;
   }
 
@@ -601,21 +636,20 @@ export default {
   }
 
   .word-chip {
-    padding: 5px 8px;
+    padding: 5px 6px;
     font-size: 10px;
     min-height: 30px;
-    gap: 4px;
-    border-radius: 30px;
+    gap: 3px;
   }
 
   .word-chip.has-badge {
     padding-left: 2px;
-    padding-right: 8px;
+    padding-right: 6px;
   }
 
   .word-badge {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     font-size: 9px;
   }
 
@@ -626,13 +660,11 @@ export default {
   .show-again-btn {
     height: 34px;
     font-size: 12px;
-    border-radius: 20px;
   }
 
   .continue-btn {
     height: 38px;
     font-size: 12px;
-    border-radius: 20px;
   }
 }
 </style>

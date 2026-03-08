@@ -1,94 +1,104 @@
 <template>
   <div
-    class="address-entry"
-    :class="$q.dark.isActive ? 'address-entry-dark' : 'address-entry-light'"
+    class="contact-card-entry"
+    :class="$q.dark.isActive ? 'contact-card-dark' : 'contact-card-light'"
     @click="$emit('pay', entry)"
   >
     <!-- Avatar -->
-    <div class="entry-avatar" @click.stop="$emit('change-color', entry)">
-      <div
-        class="avatar-circle"
-        :style="{ backgroundColor: entry.color }"
-      >
-        <span class="avatar-initial">{{ getInitial(entry.name) }}</span>
-      </div>
+    <div
+      class="contact-avatar"
+      :style="{ backgroundColor: entry.color }"
+      @click.stop="$emit('change-color', entry)"
+    >
+      <span class="avatar-initial">{{ getInitial(entry.name) }}</span>
     </div>
 
-    <!-- Favorite Toggle -->
-    <q-btn
-      flat
-      round
-      dense
-      :icon="entry.isFavorite ? 'las la-star' : 'lar la-star'"
-      @click.stop="$emit('toggle-favorite', entry)"
-      class="favorite-btn"
-      :class="entry.isFavorite ? 'favorite-active' : ($q.dark.isActive ? 'favorite-inactive-dark' : 'favorite-inactive-light')"
-      size="sm"
-    >
-      <q-tooltip>{{ entry.isFavorite ? $t('Remove from favorites') : $t('Add to favorites') }}</q-tooltip>
-    </q-btn>
-
     <!-- Entry Details -->
-    <div class="entry-details">
-      <div class="entry-name-row">
-        <div class="entry-name" :class="$q.dark.isActive ? 'entry-name-dark' : 'entry-name-light'">
+    <div class="contact-details">
+      <div class="contact-name-row">
+        <div class="contact-name" :class="$q.dark.isActive ? 'contact-name-dark' : 'contact-name-light'">
           {{ entry.name }}
         </div>
         <div class="address-type-badge" :class="addressTypeBadgeClass">
           <svg v-if="addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
           </svg>
-          <q-icon v-else :name="addressTypeIcon" size="10px" />
+          <Icon v-else :icon="addressTypeIcon" width="10" height="10" />
           <span>{{ addressTypeLabel }}</span>
         </div>
       </div>
-      <div class="entry-address" :class="$q.dark.isActive ? 'entry-address-dark' : 'entry-address-light'">
+      <div class="contact-address" :class="$q.dark.isActive ? 'contact-address-dark' : 'contact-address-light'">
         {{ truncatedAddress }}
       </div>
       <!-- Notes Preview -->
-      <div v-if="entry.notes" class="entry-notes" :class="$q.dark.isActive ? 'entry-notes-dark' : 'entry-notes-light'">
+      <div v-if="entry.notes" class="contact-notes" :class="$q.dark.isActive ? 'contact-notes-dark' : 'contact-notes-light'">
         {{ truncatedNotes }}
       </div>
     </div>
 
-    <!-- Actions -->
-    <div class="entry-actions" :class="{ 'actions-visible': isTouchDevice }">
+    <!-- Actions: Star + 3-dot menu -->
+    <div class="contact-actions">
+      <!-- Star Toggle -->
       <q-btn
         flat
         round
         dense
-        icon="las la-pen"
-        @click.stop="$emit('edit', entry)"
-        class="action-btn"
-        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+        @click.stop="$emit('toggle-favorite', entry)"
+        class="star-btn"
+        :class="entry.isFavorite ? 'is-favorite' : ''"
         size="sm"
       >
-        <q-tooltip>{{ $t('Edit') }}</q-tooltip>
+        <Icon :icon="entry.isFavorite ? 'tabler:star-filled' : 'tabler:star'" width="16" height="16" />
+        <q-tooltip>{{ entry.isFavorite ? $t('Remove from favorites') : $t('Add to favorites') }}</q-tooltip>
       </q-btn>
 
+      <!-- 3-dot Overflow Menu -->
       <q-btn
         flat
         round
         dense
-        icon="las la-copy"
-        @click.stop="copyAddress"
-        class="action-btn"
-        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+        @click.stop
+        class="overflow-menu-btn"
+        :class="$q.dark.isActive ? 'overflow-btn-dark' : 'overflow-btn-light'"
         size="sm"
       >
-        <q-tooltip>{{ $t('Copy') }}</q-tooltip>
-      </q-btn>
+        <Icon icon="tabler:dots-vertical" width="16" height="16" />
+        <q-menu
+          :class="$q.dark.isActive ? 'overflow-menu-dark' : 'overflow-menu-light'"
+          anchor="bottom right"
+          self="top right"
+        >
+          <q-list style="min-width: 160px">
+            <q-item clickable v-close-popup @click.stop="$emit('edit', entry)">
+              <q-item-section avatar style="min-width: 32px;">
+                <Icon icon="tabler:pencil" width="14" height="14" style="color: var(--text-secondary)" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label :class="$q.dark.isActive ? 'menu-label-dark' : 'menu-label-light'">{{ $t('Edit') }}</q-item-label>
+              </q-item-section>
+            </q-item>
 
-      <q-btn
-        flat
-        round
-        dense
-        icon="las la-trash-alt"
-        @click.stop="$emit('delete', entry)"
-        class="action-btn action-btn-danger"
-        size="sm"
-      >
-        <q-tooltip>{{ $t('Delete') }}</q-tooltip>
+            <q-item clickable v-close-popup @click.stop="$emit('copy-address', entry)">
+              <q-item-section avatar style="min-width: 32px;">
+                <Icon icon="tabler:copy" width="14" height="14" style="color: var(--text-secondary)" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label :class="$q.dark.isActive ? 'menu-label-dark' : 'menu-label-light'">{{ $t('Copy Address') }}</q-item-label>
+              </q-item-section>
+            </q-item>
+
+            <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+
+            <q-item clickable v-close-popup @click.stop="$emit('delete', entry)">
+              <q-item-section avatar style="min-width: 32px;">
+                <Icon icon="tabler:trash" width="14" height="14" style="color: #EF4444" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label style="color: #EF4444;">{{ $t('Delete') }}</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-menu>
       </q-btn>
     </div>
   </div>
@@ -103,12 +113,7 @@ export default {
       required: true
     }
   },
-  emits: ['edit', 'delete', 'change-color', 'pay', 'toggle-favorite'],
-  data() {
-    return {
-      isTouchDevice: false
-    }
-  },
+  emits: ['edit', 'delete', 'change-color', 'pay', 'toggle-favorite', 'copy-address'],
   computed: {
     addressType() {
       return this.entry.addressType || 'lightning'
@@ -135,9 +140,9 @@ export default {
     },
     addressTypeIcon() {
       const icons = {
-        lightning: 'las la-bolt',
-        spark: 'las la-fire',
-        bitcoin: 'lab la-bitcoin'
+        lightning: 'tabler:bolt',
+        spark: 'tabler:flame',
+        bitcoin: 'tabler:currency-bitcoin'
       }
       return icons[this.addressType] || icons.lightning
     },
@@ -158,100 +163,86 @@ export default {
       return classes[this.addressType] || classes.lightning
     }
   },
-  mounted() {
-    // Detect touch device
-    this.isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-  },
   methods: {
     getInitial(name) {
       return name ? name.charAt(0).toUpperCase() : '?'
-    },
-
-    async copyAddress() {
-      try {
-        await navigator.clipboard.writeText(this.displayAddress)
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Address copied'),
-          
-          timeout: 2000
-        })
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t copy'),
-          
-        })
-      }
     }
   }
 }
 </script>
 
 <style scoped>
-.address-entry {
+/* Contact Card Entry */
+.contact-card-entry {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  padding: 0.875rem 1rem;
-  border-radius: 12px;
-  cursor: pointer;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
   transition: background 0.15s ease;
+  cursor: pointer;
+  margin-bottom: 4px;
 }
 
-.address-entry-dark {
-  background: #1A1A1A;
+.contact-card-dark {
+  background: var(--bg-card);
 }
 
-.address-entry-light {
+.contact-card-light {
   background: #FFF;
 }
 
-.address-entry-dark:hover {
+.contact-card-dark:hover {
   background: #222;
 }
 
-.address-entry-light:hover {
+.contact-card-light:hover {
   background: #F9FAFB;
 }
 
 /* Avatar */
-.entry-avatar {
-  flex-shrink: 0;
-}
-
-.avatar-circle {
-  width: 44px;
-  height: 44px;
+.contact-avatar {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-weight: 600;
+  font-size: 16px;
+  color: #FFF;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.contact-avatar:hover {
+  transform: scale(1.05);
 }
 
 .avatar-initial {
-  color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 17px;
   font-weight: 600;
 }
 
-/* Entry Details */
-.entry-details {
+/* Details */
+.contact-details {
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
-.entry-name-row {
+.contact-name-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.125rem;
 }
 
-.entry-name {
-  font-family: Fustat, 'Inter', sans-serif;
+.contact-name {
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
   overflow: hidden;
@@ -259,11 +250,11 @@ export default {
   white-space: nowrap;
 }
 
-.entry-name-dark {
-  color: #F6F6F6;
+.contact-name-dark {
+  color: var(--text-primary);
 }
 
-.entry-name-light {
+.contact-name-light {
   color: #212121;
 }
 
@@ -274,7 +265,7 @@ export default {
   gap: 0.2rem;
   padding: 0.125rem 0.4rem;
   border-radius: 6px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
@@ -298,8 +289,8 @@ export default {
 }
 
 /* Address */
-.entry-address {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+.contact-address {
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 400;
   overflow: hidden;
@@ -307,17 +298,17 @@ export default {
   white-space: nowrap;
 }
 
-.entry-address-dark {
-  color: #777;
+.contact-address-dark {
+  color: var(--text-muted);
 }
 
-.entry-address-light {
+.contact-address-light {
   color: #9CA3AF;
 }
 
 /* Notes */
-.entry-notes {
-  font-family: Fustat, 'Inter', sans-serif;
+.contact-notes {
+  font-family: 'Manrope', sans-serif;
   font-size: 11px;
   font-style: italic;
   margin-top: 0.25rem;
@@ -326,115 +317,122 @@ export default {
   white-space: nowrap;
 }
 
-.entry-notes-dark {
-  color: #666;
+.contact-notes-dark {
+  color: #555;
 }
 
-.entry-notes-light {
+.contact-notes-light {
   color: #9CA3AF;
 }
 
-/* Favorite Button */
-.favorite-btn {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-}
-
-.favorite-active {
-  color: #F59E0B;
-}
-
-.favorite-inactive-dark {
-  color: #444;
-}
-
-.favorite-inactive-light {
-  color: #D1D5DB;
-}
-
-.favorite-inactive-dark:hover,
-.favorite-inactive-light:hover {
-  color: #F59E0B;
-}
-
-/* Actions */
-.entry-actions {
+/* Actions (Star + Overflow) */
+.contact-actions {
   display: flex;
-  gap: 0.25rem;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
-.address-entry:hover .entry-actions,
-.entry-actions.actions-visible {
-  opacity: 1;
-}
-
-.action-btn {
+/* Star Button */
+.star-btn {
+  color: var(--text-muted);
+  transition: color 0.15s ease;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+}
+
+.star-btn.is-favorite {
+  color: var(--color-green);
+}
+
+.star-btn:hover {
+  color: var(--color-green);
+}
+
+/* Overflow Menu Button */
+.overflow-menu-btn {
+  width: 32px;
+  height: 32px;
   transition: all 0.15s ease;
 }
 
-.action-btn-dark {
-  color: #666;
+.overflow-btn-dark {
+  color: var(--text-muted);
 }
 
-.action-btn-light {
+.overflow-btn-light {
   color: #9CA3AF;
 }
 
-.action-btn-dark:hover {
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
+.overflow-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
 }
 
-.action-btn-light:hover {
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
+.overflow-btn-light:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #6B7280;
 }
 
-.action-btn-danger {
-  color: #777;
+/* Overflow Menu Styles */
+.overflow-menu-dark :deep(.q-list) {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 4px 0;
 }
 
-.action-btn-danger:hover {
-  background: rgba(239, 68, 68, 0.1) !important;
-  color: #EF4444 !important;
+.overflow-menu-light :deep(.q-list) {
+  background: #FFF;
+  border: 1px solid #E5E7EB;
+  border-radius: var(--radius-md);
+  padding: 4px 0;
 }
 
-/* Responsive - Tablet and smaller */
-@media (max-width: 768px) {
-  .entry-actions {
-    opacity: 1;
-  }
+.menu-label-dark {
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+}
+
+.menu-label-light {
+  color: #212121;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+}
+
+.separator-dark {
+  background: var(--border-card) !important;
+}
+
+.separator-light {
+  background: #F0F0F0 !important;
 }
 
 /* Responsive - Mobile */
 @media (max-width: 480px) {
-  .address-entry {
-    padding: 0.75rem;
-    gap: 0.75rem;
-    border-radius: 10px;
+  .contact-card-entry {
+    padding: 10px 12px;
+    gap: 10px;
+    border-radius: 16px;
   }
 
-  .avatar-circle {
-    width: 40px;
-    height: 40px;
+  .contact-avatar {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
   }
 
   .avatar-initial {
     font-size: 15px;
   }
 
-  .entry-name {
+  .contact-name {
     font-size: 14px;
   }
 
-  .entry-address {
+  .contact-address {
     font-size: 11px;
   }
 
@@ -442,27 +440,16 @@ export default {
     font-size: 8px;
     padding: 0.1rem 0.35rem;
   }
-
-  .entry-actions {
-    opacity: 1;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .action-btn {
-    width: 28px;
-    height: 28px;
-  }
 }
 
 /* Extra small screens */
 @media (max-width: 360px) {
-  .entry-name-row {
+  .contact-name-row {
     flex-wrap: wrap;
     gap: 0.25rem;
   }
 
-  .entry-address {
+  .contact-address {
     font-size: 10px;
   }
 }

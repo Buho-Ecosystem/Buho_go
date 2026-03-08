@@ -214,9 +214,9 @@ export default {
 
 /* Instructions */
 .verify-instructions {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
   text-align: center;
   max-width: 320px;
   margin: 0 auto;
@@ -232,17 +232,18 @@ export default {
 .word-input-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 6px;
 }
 
 .word-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
+  padding-left: 4px;
 }
 
 .label-dark {
-  color: #B0B0B0;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .label-light {
@@ -251,14 +252,16 @@ export default {
 
 .word-input {
   width: 100%;
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 2px solid;
-  font-family: 'SF Mono', 'Menlo', monospace;
+  padding: 14px 18px;
+  border-radius: 20px;
+  border: 1.5px solid;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   outline: none;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
 }
 
 .input-dark {
@@ -269,40 +272,52 @@ export default {
 
 .input-dark:focus {
   border-color: #15DE72;
+  box-shadow: 0 0 0 3px rgba(21, 222, 114, 0.1);
 }
 
 .input-dark::placeholder {
-  color: #6B7280;
+  color: #4B5563;
+  font-weight: 400;
 }
 
 .input-light {
-  background: #F8F8F8;
-  border-color: #EBEBEB;
-  color: #212121;
+  background: #F9FAFB;
+  border-color: #E5E7EB;
+  color: #1F2937;
 }
 
 .input-light:focus {
   border-color: #059573;
+  box-shadow: 0 0 0 3px rgba(5, 149, 115, 0.08);
 }
 
 .input-light::placeholder {
   color: #9CA3AF;
+  font-weight: 400;
 }
 
 /* Input States */
-.input-success {
+.input-success.input-dark {
   border-color: #15DE72 !important;
+  box-shadow: 0 0 0 3px rgba(21, 222, 114, 0.1);
+}
+
+.input-success.input-light {
+  border-color: #059573 !important;
+  box-shadow: 0 0 0 3px rgba(5, 149, 115, 0.08);
 }
 
 .input-error-state {
-  border-color: #ff4444 !important;
+  border-color: #EF4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
 }
 
 .input-error {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
-  color: #ff4444;
-  padding-left: 4px;
+  color: #EF4444;
+  padding-left: 8px;
+  font-weight: 500;
 }
 
 /* Verify Action */
@@ -313,10 +328,10 @@ export default {
 .verify-btn {
   width: 100%;
   height: 52px;
-  border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* Responsive Design */
@@ -327,7 +342,7 @@ export default {
   }
 
   .word-input {
-    padding: 12px 14px;
+    padding: 12px 16px;
     font-size: 14px;
   }
 

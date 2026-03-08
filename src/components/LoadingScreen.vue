@@ -97,11 +97,11 @@ export default {
 }
 
 .loading-screen-dark {
-  background: #0C0C0C;
+  background: var(--bg-primary);
 }
 
 .loading-screen-light {
-  background: #FFF;
+  background: var(--bg-primary);
 }
 
 .loading-screen.fade-out {
@@ -131,7 +131,7 @@ export default {
 }
 
 .app-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 2rem;
   font-weight: 800;
   line-height: 100%;
@@ -176,7 +176,7 @@ export default {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #15DE72;
+  background: var(--color-green);
   animation: dot-bounce 1.4s ease-in-out infinite both;
 }
 
@@ -193,18 +193,18 @@ export default {
 }
 
 .loading-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   line-height: 100%;
 }
 
 .loading-text-dark {
-  color: var(--Shark-300, #B0B0B0);
+  color: var(--text-secondary);
 }
 
 .loading-text-light {
-  color: var(--Shark-600, #5D5D5D);
+  color: var(--text-secondary);
 }
 
 /* Animations */

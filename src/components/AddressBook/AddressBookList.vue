@@ -14,12 +14,12 @@
         @clear="clearSearch"
       >
         <template v-slot:prepend>
-          <q-icon name="las la-search" class="q-ml-sm" />
+          <Icon icon="tabler:search" class="q-ml-sm" />
         </template>
       </q-input>
     </div>
 
-    <!-- Entries List -->
+    <!-- Entries List (sectioned: Favorites + Other Contacts) -->
     <div class="entries-container" v-if="filteredEntries.length > 0">
       <div class="entries-header" :class="$q.dark.isActive ? 'entries-header-dark' : 'entries-header-light'">
         <span class="entries-count">
@@ -39,17 +39,48 @@
       </div>
 
       <q-scroll-area class="entries-scroll" style="height: calc(100vh - 280px);">
-        <div class="entries-list">
-          <AddressBookEntry
-            v-for="entry in filteredEntries"
-            :key="entry.id"
-            :entry="entry"
-            @edit="editEntry"
-            @delete="confirmDeleteEntry"
-            @change-color="changeEntryColor"
-            @pay="payContact"
-            @toggle-favorite="toggleFavorite"
-          />
+        <!-- Favorites Section -->
+        <div v-if="filteredFavorites.length > 0">
+          <div class="section-header">
+            <Icon icon="tabler:star-filled" width="16" height="16" style="color: var(--color-green)" />
+            <span class="section-title">{{ $t('Favorites') }}</span>
+            <span class="section-count">{{ filteredFavorites.length }}</span>
+          </div>
+          <div class="entries-list">
+            <AddressBookEntry
+              v-for="entry in filteredFavorites"
+              :key="entry.id"
+              :entry="entry"
+              @edit="editEntry"
+              @delete="confirmDeleteEntry"
+              @change-color="changeEntryColor"
+              @pay="payContact"
+              @toggle-favorite="toggleFavorite"
+              @copy-address="copyAddress"
+            />
+          </div>
+        </div>
+
+        <!-- Other Contacts Section -->
+        <div v-if="filteredNonFavorites.length > 0">
+          <div class="section-header">
+            <Icon icon="tabler:star" width="16" height="16" style="color: var(--color-green)" />
+            <span class="section-title">{{ $t('Other Contacts') }}</span>
+            <span class="section-count">{{ filteredNonFavorites.length }}</span>
+          </div>
+          <div class="entries-list">
+            <AddressBookEntry
+              v-for="entry in filteredNonFavorites"
+              :key="entry.id"
+              :entry="entry"
+              @edit="editEntry"
+              @delete="confirmDeleteEntry"
+              @change-color="changeEntryColor"
+              @pay="payContact"
+              @toggle-favorite="toggleFavorite"
+              @copy-address="copyAddress"
+            />
+          </div>
         </div>
       </q-scroll-area>
     </div>
@@ -57,7 +88,7 @@
     <!-- Empty State -->
     <div v-else-if="searchQuery && entries.length > 0" class="empty-search"
          :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
-      <q-icon name="las la-search" size="3rem" :color="$q.dark.isActive ? '#B0B0B0' : '#D1D5DB'"/>
+      <Icon icon="tabler:search" :style="{ fontSize: '3rem', color: $q.dark.isActive ? '#B0B0B0' : '#D1D5DB' }" />
       <div class="empty-title" :class="$q.dark.isActive ? 'empty_title_dark' : 'empty_title_light'">
         {{ $t('No contacts found') }}
       </div>
@@ -94,27 +125,14 @@
       </div>
       <q-btn
         unelevated
-        :label="$t('Add Contact')"
         @click="$emit('add-contact')"
         :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-        icon="las la-plus"
         no-caps
-      />
+      >
+        <Icon icon="tabler:plus" width="16" height="16" class="q-mr-xs" />
+        {{ $t('Add Contact') }}
+      </q-btn>
     </div>
-
-    <!-- Floating Add Button -->
-    <q-page-sticky
-      position="bottom-right"
-      :offset="[18, 18]"
-      v-if="entries.length > 0"
-    >
-      <q-btn
-        fab
-        icon="las la-plus"
-        @click="$emit('add-contact')"
-        :class="$q.dark.isActive ? 'fab_dark' : 'fab_light'"
-      />
-    </q-page-sticky>
 
     <!-- Color Picker Dialog -->
     <q-dialog v-model="showColorPicker">
@@ -134,9 +152,9 @@
             :style="{ backgroundColor: color }"
             @click="updateEntryColor(color)"
           >
-            <q-icon
+            <Icon
               v-if="selectedEntry?.color === color"
-              name="las la-check"
+              icon="tabler:check"
               class="color-check"
             />
           </div>
@@ -149,7 +167,7 @@
       <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="delete-header">
           <div class="delete-icon-wrapper">
-            <q-icon name="las la-trash-alt" size="32px" class="delete-icon"/>
+            <Icon icon="tabler:trash" width="32" height="32" class="delete-icon"/>
           </div>
           <div class="delete-title">{{ $t('Delete Contact') }}</div>
           <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
@@ -182,7 +200,7 @@
       <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="delete-header">
           <div class="delete-icon-wrapper">
-            <q-icon name="las la-exclamation-triangle" size="32px" class="delete-icon"/>
+            <Icon icon="tabler:alert-triangle" width="32" height="32" class="delete-icon"/>
           </div>
           <div class="delete-title">{{ $t('Clear All Contacts') }}</div>
           <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
@@ -238,7 +256,15 @@ export default {
       'filteredEntries',
       'searchQuery',
       'colorPalette'
-    ])
+    ]),
+
+    filteredFavorites() {
+      return this.filteredEntries.filter(entry => entry.isFavorite)
+    },
+
+    filteredNonFavorites() {
+      return this.filteredEntries.filter(entry => !entry.isFavorite)
+    }
   },
   methods: {
     ...mapActions(useAddressBookStore, [
@@ -262,6 +288,24 @@ export default {
       this.$emit('pay-contact', entry)
     },
 
+    copyAddress(entry) {
+      const address = entry.address || entry.lightningAddress || ''
+      if (address) {
+        navigator.clipboard.writeText(address).then(() => {
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Address copied'),
+            timeout: 2000
+          })
+        }).catch(() => {
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t('Couldn\'t copy'),
+          })
+        })
+      }
+    },
+
     confirmDeleteEntry(entry) {
       this.entryToDelete = entry
       this.showDeleteDialog = true
@@ -276,14 +320,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact removed'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t delete contact'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -305,14 +349,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Color updated'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t update color'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -329,14 +373,14 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contacts cleared'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t clear contacts'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -378,7 +422,7 @@ export default {
 }
 
 .entries-count {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
@@ -386,25 +430,31 @@ export default {
 }
 
 .clear-all-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   font-weight: 500;
+  border-radius: 20px;
+  padding: 4px 12px;
 }
 
 .clear-all-btn-dark {
   color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .clear-all-btn-light {
   color: #DC2626;
+  border: 1px solid rgba(220, 38, 38, 0.3);
 }
 
 .clear-all-btn-dark:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .clear-all-btn-light:hover {
   background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.5);
 }
 
 .entries-scroll {
@@ -412,7 +462,32 @@ export default {
 }
 
 .entries-list {
-  padding: 0 1rem 1rem;
+  padding: 0 1rem 0.5rem;
+}
+
+/* Section Headers */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 8px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
+}
+
+.section-count {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Empty States */
@@ -445,7 +520,7 @@ export default {
   font-weight: 600;
   color: #F6F6F6;
   margin-bottom: 0.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .empty_title_light {
@@ -453,14 +528,14 @@ export default {
   font-weight: 600;
   color: #212121;
   margin-bottom: 0.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .empty_subtitle_dark {
   color: #B0B0B0;
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   max-width: 280px;
   line-height: 1.4;
 }
@@ -469,30 +544,97 @@ export default {
   color: #6B7280;
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   max-width: 280px;
   line-height: 1.4;
 }
 
-/* Floating Action Button */
-.fab_dark {
+/* Secondary Buttons */
+.btn_dark {
+  border-radius: 20px !important;
+  border: 1px solid #2A382A !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #FFF !important;
+  font-family: 'Manrope', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+.btn_light {
+  border-radius: 20px !important;
+  border: 1px solid #E8E8E8 !important;
+  background: #F6F6F6 !important;
+  color: #212121 !important;
+  font-family: 'Manrope', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+/* Primary Action Buttons */
+.dialog_add_btn_dark {
+  border-radius: 24px !important;
   background: linear-gradient(135deg, #15DE72, #059573) !important;
-  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.3) !important;
+  color: #0C0C0C !important;
+  font-weight: 600 !important;
+  box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;
+  font-family: 'Manrope', sans-serif !important;
 }
 
-.fab_light {
+.dialog_add_btn_light {
+  border-radius: 24px !important;
   background: linear-gradient(135deg, #15DE72, #059573) !important;
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.3) !important;
+  color: #0C0C0C !important;
+  font-weight: 600 !important;
+  box-shadow: 0px 4px 8px 0px rgba(159, 159, 159, 0.25) !important;
+  font-family: 'Manrope', sans-serif !important;
 }
 
-.fab_dark:hover {
-  background: linear-gradient(135deg, #059573, #047857) !important;
-  box-shadow: 0 6px 16px rgba(21, 222, 114, 0.4) !important;
-}
+/* Responsive Design */
+@media (max-width: 480px) {
+  .search-section,
+  .entries-header {
+    padding: 0.75rem;
+  }
 
-.fab_light:hover {
-  background: linear-gradient(135deg, #059573, #047857) !important;
-  box-shadow: 0 6px 16px rgba(5, 149, 115, 0.4) !important;
+  .entries-list {
+    padding: 0 0.75rem 0.5rem;
+  }
+
+  .empty-state,
+  .empty-search {
+    padding: 1.5rem;
+    height: 50vh;
+  }
+
+  .empty-illustration svg {
+    width: 80px;
+    height: 80px;
+  }
+
+  .empty_title_dark,
+  .empty_title_light {
+    font-size: 1.125rem;
+  }
+
+  .empty_subtitle_dark,
+  .empty_subtitle_light {
+    font-size: 0.8125rem;
+    max-width: 240px;
+  }
+
+  .color-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+  }
+
+  .color-option {
+    width: 40px;
+    height: 40px;
+  }
+
+  .section-header {
+    padding: 10px 12px 6px;
+  }
 }
 
 /* Color Picker */
@@ -503,7 +645,7 @@ export default {
 }
 
 .color-picker-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 16px;
   text-align: center;
 }
@@ -543,87 +685,6 @@ export default {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* Secondary Buttons */
-.btn_dark {
-  border-radius: 20px !important;
-  border: 1px solid #2A382A !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  color: #FFF !important;
-  font-family: Fustat, 'Inter', sans-serif !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-}
-
-.btn_light {
-  border-radius: 20px !important;
-  border: 1px solid #E8E8E8 !important;
-  background: #F6F6F6 !important;
-  color: #212121 !important;
-  font-family: Fustat, 'Inter', sans-serif !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-}
-
-/* Primary Action Buttons */
-.dialog_add_btn_dark {
-  border-radius: 24px !important;
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #0C0C0C !important;
-  font-weight: 600 !important;
-  box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;
-  font-family: Fustat, 'Inter', sans-serif !important;
-}
-
-.dialog_add_btn_light {
-  border-radius: 24px !important;
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #0C0C0C !important;
-  font-weight: 600 !important;
-  box-shadow: 0px 4px 8px 0px rgba(159, 159, 159, 0.25) !important;
-  font-family: Fustat, 'Inter', sans-serif !important;
-}
-
-/* Responsive Design */
-@media (max-width: 480px) {
-  .search-section,
-  .entries-header,
-  .entries-list {
-    padding: 0.75rem;
-  }
-
-  .empty-state,
-  .empty-search {
-    padding: 1.5rem;
-    height: 50vh;
-  }
-
-  .empty-illustration svg {
-    width: 80px;
-    height: 80px;
-  }
-
-  .empty_title_dark,
-  .empty_title_light {
-    font-size: 1.125rem;
-  }
-
-  .empty_subtitle_dark,
-  .empty_subtitle_light {
-    font-size: 0.8125rem;
-    max-width: 240px;
-  }
-
-  .color-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
-  }
-
-  .color-option {
-    width: 40px;
-    height: 40px;
-  }
-}
-
 /* Delete Confirmation Dialog */
 .delete-confirm-card {
   width: 100%;
@@ -655,7 +716,7 @@ export default {
 }
 
 .delete-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   font-weight: 700;
   color: #F97316;
@@ -663,7 +724,7 @@ export default {
 }
 
 .delete-message {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -680,13 +741,13 @@ export default {
 }
 
 .cancel-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-weight: 500;
   border-radius: 10px;
 }
 
 .delete-action-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-weight: 600;
   border-radius: 10px;
   background: linear-gradient(135deg, #F97316, #EA580C) !important;

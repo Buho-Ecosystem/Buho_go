@@ -35,7 +35,7 @@
           <div v-if="currentStep === 1" class="step-content">
             <div class="step-icon">
               <div class="icon-bg">
-                <q-icon name="las la-undo-alt" size="32px" color="white" />
+                <Icon icon="tabler:arrow-back-up" width="32" height="32" style="color: white;" />
               </div>
             </div>
             <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
@@ -81,7 +81,7 @@
           <div v-else-if="currentStep === 2" class="step-content step-pin">
             <div class="step-icon">
               <div class="icon-bg icon-lock">
-                <q-icon name="las la-lock" size="32px" color="white" />
+                <Icon icon="tabler:lock" width="32" height="32" style="color: white;" />
               </div>
             </div>
             <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
@@ -123,7 +123,7 @@
                   @click="handlePinKey(key)"
                 >
                   <template v-if="key === 'del'">
-                    <q-icon name="las la-backspace" size="22px" />
+                    <Icon icon="tabler:backspace" width="20" height="20" />
                   </template>
                   <template v-else-if="key === ''">
                     <!-- Empty button -->
@@ -392,11 +392,11 @@ export default {
 }
 
 .bg-dark {
-  background: #0C0C0C;
+  background: var(--bg-primary);
 }
 
 .bg-light {
-  background: #F8F8F8;
+  background: var(--bg-secondary);
 }
 
 .container {
@@ -421,7 +421,7 @@ export default {
 }
 
 .step-indicator {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -458,7 +458,7 @@ export default {
 
 /* Typography */
 .step-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 22px;
   font-weight: 700;
   text-align: center;
@@ -466,7 +466,7 @@ export default {
 }
 
 .step-desc {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   text-align: center;
   max-width: 320px;
@@ -501,13 +501,13 @@ export default {
 }
 
 .word-input-item:has(.input-dark) {
-  background: #171717;
-  border-color: #2A342A;
+  background: var(--bg-input);
+  border-color: var(--border-card);
 }
 
 .word-input-item:has(.input-light) {
-  background: #F8F8F8;
-  border-color: #EBEBEB;
+  background: var(--bg-input);
+  border-color: var(--border-card);
 }
 
 .word-input-item:focus-within {
@@ -515,7 +515,7 @@ export default {
 }
 
 .word-number {
-  font-family: 'SF Mono', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
   min-width: 16px;
@@ -534,7 +534,7 @@ export default {
   background: transparent;
   border: none;
   outline: none;
-  font-family: 'SF Mono', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 500;
   min-width: 0;
@@ -553,7 +553,7 @@ export default {
 }
 
 .mnemonic-error {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   color: #ff4444;
   text-align: center;
@@ -608,7 +608,7 @@ export default {
 }
 
 .pin-error {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   color: #ff4444;
   text-align: center;
@@ -635,7 +635,7 @@ export default {
   height: 64px;
   border-radius: 50%;
   border: none;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 24px;
   font-weight: 500;
   cursor: pointer;
@@ -647,8 +647,8 @@ export default {
 }
 
 .numpad-btn-dark {
-  background: #1A1A1A;
-  color: #FFFFFF;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
 .numpad-btn-dark:hover {
@@ -656,7 +656,7 @@ export default {
 }
 
 .numpad-btn-dark:active {
-  background: #2A342A;
+  background: var(--border-card);
   transform: scale(0.95);
 }
 
@@ -693,7 +693,7 @@ export default {
   width: 100%;
   height: 52px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }

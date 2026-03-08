@@ -2,16 +2,27 @@
 
 @import 'quasar.variables.scss';
 
+/* ─── Mobile-first: prevent horizontal scroll ─── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 /* Safe Area Handling for Mobile Devices */
 html {
   background: #424242;
 }
 
 body {
-  font-family: "Fredoka", "-apple-system", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: 'Manrope', "-apple-system", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
-/* 1) Cross-platform variables with fallbacks */
+
+/* 1) Cross-platform safe area variables */
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -19,13 +30,22 @@ body {
   --safe-left: env(safe-area-inset-left, 0px);
 }
 
-/* Quasar adds platform classes on <body> */
+/*
+ * Android fallback: env(safe-area-inset-top) returns 0 on many Android
+ * WebViews/browsers even with display cutouts. Use a sensible default.
+ * The JS boot/safe-area.js will refine this at runtime.
+ */
 body.platform-android {
-  --safe-bottom: 16px;  /* bump to 24px if needed */
-  --safe-top: 16px;     /* usually not needed, set to 0 if you don't want extra top */
+  --safe-top: env(safe-area-inset-top, 24px);
+  --safe-bottom: env(safe-area-inset-bottom, 16px);
 }
 
-/* 2) Helper classes for safe areas */
+/* 2) Apply safe-area top padding to ALL pages automatically */
+.q-page {
+  padding-top: var(--safe-top);
+}
+
+/* 3) Helper classes for safe areas */
 .safe-area {
   padding-top: var(--safe-top);
   padding-right: var(--safe-right);
@@ -41,7 +61,7 @@ body.platform-android {
   padding-top: var(--safe-top);
 }
 
-/* 3) Target Quasar layout parts */
+/* 4) Target Quasar layout parts */
 .q-header {
   padding-top: env(safe-area-inset-top, 0);
   padding-top: constant(safe-area-inset-top, 0); /* old iOS */
@@ -52,21 +72,16 @@ body.platform-android {
   padding-bottom: max(constant(safe-area-inset-bottom, 0px), 16px);
 }
 
-@font-face {
-    font-family: 'Inter', sans-serif;
-    src: url("../fonts/Inter.ttf");
-}
-
 * {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Manrope', sans-serif;
 }
 
 .q-field__bottom {
-    color: #F94144 !important;
+    color: var(--color-red, #FF4444) !important;
     padding-top: 5px !important;
     padding-left: 0px !important;
     /* Text sm/Regular */
-    font-family: Inter !important;
+    font-family: 'Manrope', sans-serif !important;
     font-size: 14px !important;
     font-style: normal !important;
     font-weight: 400 !important;
@@ -90,11 +105,168 @@ body.platform-android {
     --Button-Gradient: linear-gradient(97deg, #2A382A 0.14%, #020202 10.82%);
     --background-color: 171717;
     /*--dark-text: #FFF;*/
+
+    /* DimPurse Design Tokens — Dark (default) */
+    --bg-primary: #0C0C0C;
+    --bg-secondary: #171717;
+    --bg-card: #1A1A1A;
+    --bg-input: #1E1E1E;
+    --border-card: #2A342A;
+    --text-primary: #FFF;
+    --text-secondary: #B0B0B0;
+    --text-muted: #6D6D6D;
+
+    /* Shared tokens */
+    --color-green: #15DE72;
+    --color-red: #FF4444;
+    --gradient-green: linear-gradient(90deg, #059573 0%, #78D53C 100%);
+    --radius-sm: 8px;
+    --radius-md: 16px;
+    --radius-lg: 20px;
+    --radius-xl: 24px;
+    --radius-pill: 999px;
+
+    /* Monospace */
+    --font-mono: 'SF Mono', 'Monaco', 'Menlo', monospace;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+body.body--light {
+    --bg-primary: #FFF;
+    --bg-secondary: #F5F5F5;
+    --bg-card: #FFF;
+    --bg-input: #F0F0F0;
+    --border-card: #EBEBEB;
+    --text-primary: #212121;
+    --text-secondary: #6D6D6D;
+    --text-muted: #9CA3AF;
+
+    /* Light shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* Utility: hide scrollbar */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 .dark-mode {
     --background-color: #F8F8F8;
     --dark-text: #212121;
+}
+
+/* ─── DimPurse Utility Classes ─── */
+
+/* Pill-shaped amount badges */
+.badge-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    font-family: 'Manrope', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.badge-pill-green {
+    background: rgba(21, 222, 114, 0.15);
+    color: var(--color-green);
+}
+.badge-pill-red {
+    background: rgba(255, 68, 68, 0.15);
+    color: var(--color-red);
+}
+
+/* Circular direction icons */
+.direction-circle {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+.direction-circle-green {
+    background: rgba(21, 222, 114, 0.15);
+    color: var(--color-green);
+}
+.direction-circle-red {
+    background: rgba(255, 68, 68, 0.15);
+    color: var(--color-red);
+}
+
+/* Green gradient balance card */
+.balance-card-gradient {
+    background: var(--gradient-green);
+    border-radius: var(--radius-xl);
+    padding: 16px 20px;
+    color: #FFF;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Outline pill chip buttons */
+.chip-outline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: var(--radius-pill);
+    border: 1.5px solid var(--color-green);
+    background: transparent;
+    color: var(--color-green);
+    font-family: 'Manrope', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.chip-outline:hover {
+    background: rgba(21, 222, 114, 0.08);
+}
+
+/* Detail fields (readonly form fields for tx details) */
+.detail-field {
+    background: var(--bg-input);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    color: var(--text-primary);
+    font-family: 'Manrope', sans-serif;
+    font-size: 14px;
+}
+.detail-field-label {
+    color: var(--text-muted);
+    font-family: 'Manrope', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    margin-bottom: 4px;
+}
+
+/* Stats info card */
+.stats-info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-xl);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 0;
 }
 
 
@@ -104,7 +276,7 @@ body.platform-android {
     background: linear-gradient(90deg, #059573 0%, #78D53C 100%) !important;;
     box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;;
     color: #0C0C0C !important;;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
@@ -116,7 +288,7 @@ body.platform-android {
     background: linear-gradient(90deg, #059573 0%, #78D53C 100%) !important;;
     box-shadow: 0px 4px 8px 0px rgba(206, 206, 206, 0.25) !important;;
     color: #FFF !important;;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
@@ -126,7 +298,7 @@ body.platform-android {
 
 .main_page_title_dark {
     color: #FFF !important;
-    font-family: Fustat !important;;
+    font-family: 'Manrope', sans-serif !important;
     font-size: 24px !important;
     font-style: normal !important;;
     font-weight: 800 !important;;
@@ -135,7 +307,7 @@ body.platform-android {
 
 .main_page_title_light {
     color: #212121 !important;;
-    font-family: Fustat !important;;
+    font-family: 'Manrope', sans-serif !important;
     font-size: 24px !important;
     font-style: normal !important;;
     font-weight: 800 !important;;
@@ -171,7 +343,7 @@ body.platform-android {
 
 .dialog_title_dark {
     color: #FFF;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 24px;
     font-style: normal;
     font-weight: 700;
@@ -180,7 +352,7 @@ body.platform-android {
 
 .dialog_title_light {
     color: #212121;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 24px;
     font-style: normal;
     font-weight: 700;
@@ -215,7 +387,7 @@ body.platform-android {
     background: linear-gradient(90deg, #059573 0%, #78D53C 100%);
     box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25);
     color: #0C0C0C;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
@@ -228,7 +400,7 @@ body.platform-android {
     background: linear-gradient(90deg, #059573 0%, #78D53C 100%);
     box-shadow: 0px 4px 8px 0px rgba(206, 206, 206, 0.25);
     color: #0C0C0C;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
@@ -254,7 +426,7 @@ body.platform-android {
     color: var(--Shark-50, #F6F6F6) !important;
     leading-trim: both;
     text-edge: cap;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
@@ -263,7 +435,7 @@ body.platform-android {
 
 .menu_label_light {
     color: var(--Shark-50, #212121) !important;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 12px;
     font-style: normal;
     font-weight: 400;
@@ -282,21 +454,22 @@ body.platform-android {
 }
 
 
-.card_style_dark {
+/* Aliases — use card_dark_style / card_light_style instead */
+.card_style_dark { /* @deprecated duplicate of card_dark_style */
     border-radius: 24px !important;
-    border: 1px solid #2A342A !important;;
+    border: 1px solid #2A342A !important;
     background: #0C0C0C !important;
 }
 
-.card_style_light {
-    border-radius: 24px !important;;
+.card_style_light { /* @deprecated duplicate of card_light_style */
+    border-radius: 24px !important;
     border: 1px solid #EBEBEB !important;
-    background: #FFF !important;;
+    background: #FFF !important;
 }
 
 .table_header {
     color: var(--Shark-300, #B0B0B0) !important;
-    font-family: Fustat !important;
+    font-family: 'Manrope', sans-serif !important;
     font-size: 12px !important;
     font-style: normal !important;
     font-weight: 400 !important;
@@ -305,7 +478,7 @@ body.platform-android {
 
 .inner_table_header_dark {
     color: #FFF;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 300;
@@ -314,7 +487,7 @@ body.platform-android {
 
 .inner_table_header_light {
     color: #212121;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 300;
@@ -335,7 +508,7 @@ body.platform-android {
 
 .table_col {
     color: #FFF !important;
-    font-family: Fustat !important;
+    font-family: 'Manrope', sans-serif !important;
     font-size: 14px !important;
     font-style: normal !important;
     font-weight: 400 !important;
@@ -353,7 +526,7 @@ body.platform-android {
 
 .q-field--dark .q-field__native, .q-field--dark .q-field__prefix, .q-field--dark .q-field__suffix, .q-field--dark .q-field__input {
     color: #FFF;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
@@ -365,7 +538,7 @@ body.platform-android {
     color: var(--Shark-600, #5D5D5D);
     leading-trim: both;
     text-edge: cap;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 12px;
     font-style: normal;
     font-weight: 400;
@@ -378,7 +551,7 @@ body.platform-android {
 
 .rec_text {
     color: #15DE72;
-    font-family: Fustat;
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 600;
@@ -386,8 +559,8 @@ body.platform-android {
 }
 
 .send_text {
-    color: #FF0000;
-    font-family: Fustat;
+    color: var(--color-red, #FF4444);
+    font-family: 'Manrope', sans-serif;
     font-size: 14px;
     font-style: normal;
     font-weight: 600;
@@ -420,4 +593,9 @@ body.platform-android {
 .back_btn_dark:hover,
 .close_btn_dark:hover {
   background: #2A342A;
+}
+
+.back_btn_light:hover,
+.close_btn_light:hover {
+  background: rgba(0, 0, 0, 0.06);
 }

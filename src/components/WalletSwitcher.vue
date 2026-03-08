@@ -29,7 +29,7 @@
               <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
             </svg>
             <!-- Default wallet icon -->
-            <q-icon v-else name="las la-wallet" size="20px"/>
+            <Icon v-else icon="tabler:wallet" width="20" height="20" />
           </div>
           <div
             class="status-dot-main"
@@ -42,7 +42,7 @@
           </div>
           <div class="wallet-balance" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
             <template v-if="activeWallet && isSparkWalletLocked(activeWallet.id)">
-              <q-icon name="las la-lock" size="11px" class="q-mr-xs"/>
+              <Icon icon="tabler:lock" width="11" height="11" class="q-mr-xs" />
               {{ formatBalanceWithLock(activeWallet.id) }}
             </template>
             <template v-else>
@@ -51,8 +51,10 @@
           </div>
         </div>
       </div>
-      <q-icon
-        name="las la-chevron-down"
+      <Icon
+        icon="tabler:chevron-down"
+        width="16"
+        height="16"
         class="expand-icon"
         :class="{
           'rotated': showSwitcher,
@@ -103,7 +105,7 @@
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
                   <!-- Default wallet icon -->
-                  <q-icon v-else name="las la-wallet" size="18px"/>
+                  <Icon v-else icon="tabler:wallet" width="18" height="18" />
                 </div>
                 <div
                   class="status-dot"
@@ -133,7 +135,7 @@
                     <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                     </svg>
-                    <q-icon v-else name="las la-wallet" size="9px" />
+                    <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getTypeBadgeLabel(wallet.type) }}</span>
                   </div>
                   <div v-if="wallet.isDefault" class="wallet-tag tag-default">{{ $t('Default') }}</div>
@@ -141,7 +143,7 @@
                 </div>
                 <div class="option-balance" :class="$q.dark.isActive ? 'option-balance-dark' : 'option-balance-light'">
                   <template v-if="isSparkWalletLocked(wallet.id)">
-                    <q-icon name="las la-lock" size="10px" class="q-mr-xs locked-icon"/>
+                    <Icon icon="tabler:lock" width="10" height="10" class="q-mr-xs locked-icon" />
                     {{ formatBalanceWithLock(wallet.id) }}
                   </template>
                   <template v-else>
@@ -155,9 +157,11 @@
 
               <!-- Wallet Actions -->
               <div class="option-actions">
-                <q-icon
+                <Icon
                   v-if="wallet.id === activeWalletId"
-                  name="las la-check-circle"
+                  icon="tabler:circle-check"
+                  width="18"
+                  height="18"
                   class="active-check-icon"
                 />
                 <!-- Reconnect button for NWC wallets only -->
@@ -166,22 +170,23 @@
                   flat
                   dense
                   round
-                  icon="las la-sync-alt"
                   @click.stop="reconnectWallet(wallet.id)"
                   class="option-action-btn"
                   :class="$q.dark.isActive ? 'option-action-btn-dark' : 'option-action-btn-light'"
                   size="sm"
-                />
+                >
+                  <Icon icon="tabler:refresh" width="14" height="14" />
+                </q-btn>
                 <!-- Tap to unlock hint for locked Spark wallets -->
-                <q-icon
+                <span
                   v-if="isSparkWalletLocked(wallet.id) && wallet.id !== activeWalletId"
-                  name="las la-unlock-alt"
                   class="unlock-hint-icon"
                   :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-                  size="16px"
+                  style="display: inline-flex;"
                 >
+                  <Icon icon="tabler:lock-open" width="16" height="16" />
                   <q-tooltip>{{ $t('Tap to unlock') }}</q-tooltip>
-                </q-icon>
+                </span>
               </div>
             </div>
           </div>
@@ -195,7 +200,7 @@
               :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="$emit('add-wallet')"
             >
-              <q-icon name="las la-plus" class="q-mr-sm"/>
+              <Icon icon="tabler:plus" width="14" height="14" class="q-mr-sm" />
               {{ $t('Add Wallet') }}
             </q-btn>
 
@@ -206,7 +211,7 @@
               :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="$emit('manage-wallets')"
             >
-              <q-icon name="las la-cog" class="q-mr-sm"/>
+              <Icon icon="tabler:settings" width="14" height="14" class="q-mr-sm" />
               {{ $t('Manage') }}
             </q-btn>
           </div>
@@ -487,7 +492,7 @@ export default {
 }
 
 .wallet-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
@@ -506,7 +511,7 @@ export default {
 }
 
 .wallet-balance {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
   display: flex;
@@ -560,24 +565,11 @@ export default {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   padding: 0.25rem 0;
+  scrollbar-width: none;
 }
 
-/* Scrollbar styling */
 .wallet-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.wallet-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.wallet-list::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.4);
-  border-radius: 3px;
-}
-
-.wallet-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.6);
+  display: none;
 }
 
 /* Wallet Option - iOS style cards */
@@ -671,7 +663,7 @@ export default {
 }
 
 .option-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   overflow: hidden;
@@ -702,7 +694,7 @@ export default {
   gap: 0.15rem;
   padding: 0.1rem 0.35rem;
   border-radius: 5px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 8px;
   font-weight: 600;
   text-transform: uppercase;
@@ -723,7 +715,7 @@ export default {
 }
 
 .wallet-tag {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 8px;
   font-weight: 600;
   padding: 0.1rem 0.3rem;
@@ -744,7 +736,7 @@ export default {
 
 /* Option Balance */
 .option-balance {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
   display: flex;
@@ -773,7 +765,7 @@ export default {
 }
 
 .option-error {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 10px;
   color: #EF4444;
   font-weight: 500;
@@ -840,7 +832,7 @@ export default {
   flex: 1;
   height: 38px;
   border-radius: 10px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-weight: 500;
   font-size: 12px;
   transition: all 0.15s ease;

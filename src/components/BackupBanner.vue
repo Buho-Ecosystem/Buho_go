@@ -7,7 +7,7 @@
     >
       <div class="banner-content">
         <div class="banner-icon">
-          <q-icon name="las la-shield-alt" size="20px" />
+          <Icon icon="tabler:shield-lock" width="20" height="20" />
         </div>
         <div class="banner-text">
           <span class="banner-title">{{ $t('Back up your wallet') }}</span>
@@ -29,12 +29,13 @@
           flat
           round
           dense
-          icon="las la-times"
           size="sm"
           class="banner-dismiss-btn"
           :class="$q.dark.isActive ? 'dismiss-dark' : 'dismiss-light'"
           @click="$emit('dismiss')"
-        />
+        >
+          <Icon icon="tabler:x" width="16" height="16" />
+        </q-btn>
       </div>
     </div>
   </transition>
@@ -102,7 +103,7 @@ export default {
 }
 
 .banner-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
   color: #F59E0B;
@@ -110,7 +111,7 @@ export default {
 }
 
 .banner-desc {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 11px;
   line-height: 1.4;
   color: #D97706;
@@ -132,7 +133,7 @@ export default {
 }
 
 .banner-backup-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   font-weight: 600;
   padding: 4px 12px;
