@@ -664,7 +664,7 @@ export default {
       if (cleanData.startsWith('lnbc') || cleanData.startsWith('lntb') ||
           cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
       if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
-      if (cleanData.startsWith('lnurl')) return 'lnurl';
+      if (cleanData.startsWith('lnurl') || cleanData.startsWith('keyauth://')) return 'lnurl';
       // Bitcoin on-chain addresses (L1)
       if (this.isBitcoinAddress(cleanData)) return 'bitcoin_address';
       return 'unknown';

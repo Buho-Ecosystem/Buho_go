@@ -154,7 +154,7 @@
 <script>
 import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
-import LightningPaymentService from '../utils/lightning.js'
+import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount } from '../utils/amountFormatting.js'
 
@@ -598,7 +598,7 @@ export default {
 
     isLNURL(input) {
       const lower = input.toLowerCase()
-      return lower.startsWith('lnurl')
+      return lower.startsWith('lnurl') || lower.startsWith('keyauth://')
     },
 
     async fetchLNURLInvoice(lnurl, amountSats) {
@@ -680,10 +680,14 @@ export default {
     },
 
     decodeLNURL(lnurl) {
-      // Remove prefix if present
-      const input = lnurl.toLowerCase().replace('lightning:', '')
+      const clean = lnurl.trim().replace(/^lightning:/i, '')
 
-      // Bech32 character set
+      // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
+      const lud17Url = resolveLUD17URL(clean)
+      if (lud17Url) return lud17Url
+
+      // LUD-01: bech32-encoded LNURL
+      const input = clean.toLowerCase()
       const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
       const hrpEnd = input.lastIndexOf('1')
       if (hrpEnd < 1) throw new Error('Invalid LNURL')

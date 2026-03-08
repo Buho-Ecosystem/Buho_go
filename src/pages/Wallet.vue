@@ -645,7 +645,7 @@
 
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
-import {LightningPaymentService} from '../utils/lightning.js';
+import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
@@ -2758,7 +2758,7 @@ export default {
     // Helper: Check if input is an LNURL
     isLNURL(input) {
       const lower = input.toLowerCase();
-      return lower.startsWith('lnurl');
+      return lower.startsWith('lnurl') || lower.startsWith('keyauth://');
     },
 
     // Helper: Get recipient address from pending payment
@@ -3046,9 +3046,16 @@ export default {
       }
     },
 
-    // Helper: Decode LNURL (bech32) to URL
+    // Helper: Decode LNURL (bech32 LUD-01 or URL scheme LUD-17) to URL
     decodeLNURL(lnurl) {
-      const input = lnurl.toLowerCase().replace('lightning:', '');
+      const clean = lnurl.trim().replace(/^lightning:/i, '');
+
+      // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
+      const lud17Url = resolveLUD17URL(clean);
+      if (lud17Url) return lud17Url;
+
+      // LUD-01: bech32-encoded LNURL
+      const input = clean.toLowerCase();
       const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
       const hrpEnd = input.lastIndexOf('1');
       if (hrpEnd < 1) throw new Error('Invalid LNURL');
