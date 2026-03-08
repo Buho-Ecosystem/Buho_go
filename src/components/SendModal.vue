@@ -704,27 +704,54 @@ export default {
     },
 
     async pasteFromClipboard() {
-      try {
-        const clipboardText = await navigator.clipboard.readText();
-        if (clipboardText.trim()) {
-          await this.processPaymentData(clipboardText.trim());
-        } else {
-          this.$q.notify({
-            type: 'info',
-            message: this.$t('Nothing to paste'),
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
+      let clipboardText = '';
+
+      // 1) Try navigator.clipboard.readText (modern API)
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        try {
+          clipboardText = await navigator.clipboard.readText();
+        } catch (e) {
+          console.warn('clipboard.readText() failed:', e);
         }
-      } catch (error) {
-        console.error('Clipboard error:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t access clipboard'),
-          
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
       }
+
+      // 2) Fallback: navigator.clipboard.read() — works on some Android
+      //    devices where readText() is denied but read() is allowed
+      if (!clipboardText && navigator.clipboard && navigator.clipboard.read) {
+        try {
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            if (item.types.includes('text/plain')) {
+              const blob = await item.getType('text/plain');
+              clipboardText = await blob.text();
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn('clipboard.read() failed:', e);
+        }
+      }
+
+      // 3) Success — process the pasted data
+      if (clipboardText && clipboardText.trim()) {
+        await this.processPaymentData(clipboardText.trim());
+        return;
+      }
+
+      // 4) Clipboard API unavailable or empty — fall back to manual input
+      this.showManualDialog = true;
+      this.manualInput = '';
+      this.$nextTick(() => {
+        const input = this.$el?.querySelector('.manual-input input, .manual-input textarea');
+        if (input) input.focus();
+      });
+      this.$q.notify({
+        type: 'info',
+        message: this.$t('Paste into the input field'),
+        caption: this.$t('Long-press the text field and tap Paste'),
+        timeout: 4000,
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
     },
 
     async showContactPicker() {
