@@ -24,8 +24,24 @@
       <!-- Content -->
       <main class="modal-body">
         <!-- Loading State -->
-        <div v-if="isLoading" class="loading-state">
-          <q-spinner-dots size="32px" color="green" />
+        <div v-if="isLoading" class="loading-state" style="padding: 4px 0;">
+          <div
+            v-for="n in 5"
+            :key="'contact-skel-'+n"
+            class="contact-row"
+            :class="themeClass"
+            style="pointer-events: none;"
+          >
+            <q-skeleton type="circle" size="44px" animation="wave" />
+            <div class="row-details" style="flex: 1; min-width: 0;">
+              <q-skeleton type="text" width="50%" height="16px" animation="wave" style="margin-bottom: 4px;" />
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <q-skeleton type="rect" width="50px" height="18px" animation="wave" style="border-radius: 6px;" />
+                <q-skeleton type="text" width="80px" height="13px" animation="wave" />
+              </div>
+            </div>
+            <q-skeleton type="text" width="16px" height="16px" animation="wave" style="border-radius: 4px; flex-shrink: 0;" />
+          </div>
         </div>
 
         <!-- Empty State -->

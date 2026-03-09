@@ -60,7 +60,11 @@ export default defineConfig((/* ctx */) => {
       // polyfillModulePreload: true,
       // distDir
 
-      // extendViteConf (viteConf) {},
+      extendViteConf (viteConf) {
+        // Disable crossorigin attribute on script/link tags — can cause loading issues in Capacitor Android WebView
+        viteConf.build = viteConf.build || {}
+        viteConf.build.crossOriginLoading = false
+      },
       // viteVuePluginOptions: {},
 
       // vitePlugins: [
