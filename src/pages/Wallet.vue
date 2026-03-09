@@ -1,10 +1,4 @@
 <template>
-  <!-- Loading Screen -->
-  <LoadingScreen
-    :show="showLoadingScreen"
-    :loading-text="loadingText"
-  />
-
   <q-page :class="$q.dark.isActive ? 'wallet-page-dark' : 'wallet-page-light'">
     <!-- Header -->
     <q-toolbar>
@@ -62,8 +56,31 @@
       @dismiss="walletStore.dismissBackupPrompt()"
     />
 
+    <!-- Skeleton Loading State -->
+    <div v-if="showLoadingScreen" class="main-content">
+      <!-- Wallet Chip skeleton -->
+      <q-skeleton type="QChip" width="90px" height="28px" animation="wave" style="margin-bottom: 1rem; border-radius: 20px;" />
+
+      <!-- Balance Section skeleton -->
+      <div class="balance-section">
+        <div class="balance-container" style="padding: 1rem;">
+          <div class="balance-amount" style="margin-bottom: 1rem; display: flex; justify-content: center;">
+            <q-skeleton type="text" width="220px" height="40px" animation="wave" style="border-radius: 8px;" />
+          </div>
+          <div style="display: flex; justify-content: center;">
+            <q-skeleton type="text" width="100px" height="16px" animation="wave" style="border-radius: 6px;" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Transaction History Button skeleton -->
+      <div class="transaction-icon-section">
+        <q-skeleton type="circle" size="48px" animation="wave" />
+      </div>
+    </div>
+
     <!-- Main Content -->
-    <div class="main-content">
+    <div v-else class="main-content">
       <!-- Wallet Name Badge -->
       <q-chip
         v-if="activeWallet"
@@ -115,7 +132,7 @@
               <span v-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
-              <span v-else class="loading-secondary">{{ $t('Loading...') }}</span>
+              <span v-else class="loading-secondary">&nbsp;</span>
             </div>
           </transition>
         </div>
@@ -664,7 +681,6 @@ import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../uti
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
-import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
@@ -680,7 +696,6 @@ import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 export default {
   name: 'WalletPage',
   components: {
-    LoadingScreen,
     ReceiveModal,
     SendModal,
     PinEntryDialog,
@@ -734,7 +749,6 @@ export default {
       invoiceCheckInterval: null,
       waitingForPayment: false,
       showLoadingScreen: true,
-      loadingText: 'Loading wallet...',
       currentDisplayMode: 'bitcoin',
       isSwitchingCurrency: false,
       shouldPulse: false,
@@ -1414,7 +1428,6 @@ export default {
     },
     async initializeWallet() {
       try {
-        this.loadingText = 'Loading wallet state...';
         await this.loadWalletState();
 
         // Initialize wallet store
@@ -1423,27 +1436,19 @@ export default {
         // Start L1 Bitcoin deposit polling for banner (after wallet store is ready)
         this.startBitcoinDepositPolling();
 
-        this.loadingText = 'Loading fiat rates...';
         await this.loadFiatRates();
-
-        this.loadingText = 'Fetching transactions...';
         await this.loadTransactions();
-
-        this.loadingText = 'Loading profiles...';
         await this.loadNostrProfiles();
 
-        this.loadingText = 'Starting services...';
         this.startPeriodicRefresh();
         this.startPulseAnimation();
 
-        this.loadingText = 'Ready!';
         this.showLoadingScreen = false;
 
         // Check if Spark wallet needs unlocking
         await this.checkSparkWalletUnlock();
       } catch (error) {
         console.error('Error initializing wallet:', error);
-        this.loadingText = 'Error loading wallet';
         this.showLoadingScreen = false;
       }
     },
@@ -1514,7 +1519,7 @@ export default {
     async updateWalletBalance() {
       try {
         if (this.showLoadingScreen) {
-          this.loadingText = 'Updating balance...';
+          // still initializing
         }
 
         const awStore = useAutoWithdrawStore();
