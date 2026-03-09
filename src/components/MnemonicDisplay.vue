@@ -2,7 +2,7 @@
   <div class="mnemonic-display" :class="$q.dark.isActive ? 'mnemonic-dark' : 'mnemonic-light'">
     <!-- Warning Banner -->
     <div class="warning-banner" v-if="showWarning">
-      <q-icon name="las la-exclamation-triangle" size="20px" class="warning-icon" />
+      <Icon icon="tabler:alert-triangle" width="20" height="20" class="warning-icon" />
       <div class="warning-text">
         {{ $t('Write these words down and store them safely. Anyone with these words can access your funds. Never share them.') }}
       </div>
@@ -35,7 +35,7 @@
         :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
         @click="blurred = !blurred"
       >
-        <q-icon :name="blurred ? 'las la-eye' : 'las la-eye-slash'" size="18px" class="q-mr-xs" />
+        <Icon :icon="blurred ? 'tabler:eye' : 'tabler:eye-off'" width="18" height="18" class="q-mr-xs" />
         {{ blurred ? $t('Show words') : $t('Hide words') }}
       </q-btn>
     </div>
@@ -49,7 +49,7 @@
         :class="$q.dark.isActive ? 'copy-btn-dark' : 'copy-btn-light'"
         @click="copyWords"
       >
-        <q-icon name="las la-copy" size="18px" class="q-mr-sm" />
+        <Icon icon="tabler:copy" width="18" height="18" class="q-mr-sm" />
         {{ copied ? $t('Copied!') : $t('Copy to clipboard') }}
       </q-btn>
     </div>
@@ -148,7 +148,7 @@ export default {
 }
 
 .warning-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   line-height: 1.5;
   color: #FFC107;
@@ -171,17 +171,17 @@ export default {
 }
 
 .word-item-dark {
-  background: #171717;
-  border-color: #2A342A;
+  background: var(--bg-input);
+  border-color: var(--border-card);
 }
 
 .word-item-light {
-  background: #F8F8F8;
-  border-color: #EBEBEB;
+  background: var(--bg-input);
+  border-color: var(--border-card);
 }
 
 .word-number {
-  font-family: 'SF Mono', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
   min-width: 18px;
@@ -196,7 +196,7 @@ export default {
 }
 
 .word-text {
-  font-family: 'SF Mono', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -223,7 +223,7 @@ export default {
 }
 
 .toggle-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
 }
@@ -236,7 +236,7 @@ export default {
 }
 
 .copy-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   padding: 0.5rem 1rem;

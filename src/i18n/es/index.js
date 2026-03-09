@@ -725,6 +725,11 @@ export default {
   "Sats received!": "Sats recibidos!",
   "Redeem failed": "Canje fallido",
   "Redeemable": "Canjeable",
+  "Amount range": "Rango de monto",
   "Enter amount": "Ingrese monto",
-  "Scan to redeem": "Escanear para canjear"
+  "Scan to redeem": "Escanear para canjear",
+  "Payment expired": "Pago expirado",
+  "The merchant QR code has expired. Please scan again.": "El código QR del comercio ha expirado. Escanee de nuevo.",
+  "Exchange rates may be outdated": "Las tasas de cambio pueden estar desactualizadas",
+  "You need {amount} sats but only have {balance} sats": "Necesitas {amount} sats pero solo tienes {balance} sats"
 }

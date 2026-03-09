@@ -725,6 +725,11 @@ export default {
   "Sats received!": "Sats erhalten!",
   "Redeem failed": "Einlösen fehlgeschlagen",
   "Redeemable": "Einlösbar",
+  "Amount range": "Betragsbereich",
   "Enter amount": "Betrag eingeben",
-  "Scan to redeem": "Scannen zum Einlösen"
+  "Scan to redeem": "Scannen zum Einlösen",
+  "Payment expired": "Zahlung abgelaufen",
+  "The merchant QR code has expired. Please scan again.": "Der Händler-QR-Code ist abgelaufen. Bitte erneut scannen.",
+  "Exchange rates may be outdated": "Wechselkurse sind möglicherweise veraltet",
+  "You need {amount} sats but only have {balance} sats": "Du brauchst {amount} Sats, hast aber nur {balance} Sats"
 }

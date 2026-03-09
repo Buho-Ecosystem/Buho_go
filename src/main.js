@@ -7,7 +7,6 @@ import { AppErrorHandler } from './utils/errorHandler'
 
 // Import icon libraries
 import '@quasar/extras/material-icons/material-icons.css'
-import '@quasar/extras/line-awesome/line-awesome.css'
 
 // Import Quasar css
 import 'quasar/src/css/index.sass'

@@ -56,7 +56,7 @@
 
         <!-- Camera Error -->
         <div v-if="cameraError" class="camera-error">
-          <q-icon name="las la-camera-retro" size="4rem" color="grey-4"/>
+          <Icon icon="tabler:camera" style="font-size: 4rem; color: #bdbdbd;" />
           <div class="error-title">{{ $t('Camera Access Required') }}</div>
           <div class="error-subtitle">{{ cameraError }}</div>
           <q-btn
@@ -87,7 +87,7 @@
             @click="showManualInput"
           >
             <div class="btn-content">
-              <q-icon name="las la-keyboard" size="24px" class="btn-icon"/>
+              <Icon icon="tabler:keyboard" width="22" height="22" class="btn-icon" />
               <span class="btn-label">{{ $t('Manual') }}</span>
             </div>
           </q-btn>
@@ -99,7 +99,7 @@
             @click="pasteFromClipboard"
           >
             <div class="btn-content">
-              <q-icon name="las la-clipboard" size="24px" class="btn-icon"/>
+              <Icon icon="tabler:clipboard" width="22" height="22" class="btn-icon" />
               <span class="btn-label">{{ $t('Paste') }}</span>
             </div>
           </q-btn>
@@ -111,7 +111,7 @@
             @click="showContactPicker"
           >
             <div class="btn-content">
-              <q-icon name="las la-address-book" size="24px" class="btn-icon"/>
+              <Icon icon="tabler:address-book" width="22" height="22" class="btn-icon" />
               <span class="btn-label">{{ $t('Contacts') }}</span>
             </div>
           </q-btn>
@@ -126,8 +126,12 @@
           <div class="manual-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Who do you want to pay?') }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="manual-content">
@@ -164,8 +168,12 @@
           <div class="contact-picker-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Choose a contact') }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <!-- Search (only show if 5+ contacts) -->
@@ -179,10 +187,10 @@
             :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
           >
             <template v-slot:prepend>
-              <q-icon name="las la-search" :color="$q.dark.isActive ? 'grey-5' : 'grey-6'" />
+              <Icon icon="tabler:search" :style="{ color: $q.dark.isActive ? '#9e9e9e' : '#757575' }" />
             </template>
             <template v-slot:append v-if="contactSearch">
-              <q-icon name="las la-times" class="cursor-pointer" @click="contactSearch = ''" />
+              <Icon icon="tabler:x" class="cursor-pointer" @click="contactSearch = ''" />
             </template>
           </q-input>
         </q-card-section>
@@ -191,7 +199,7 @@
         <q-card-section class="contact-list-section">
           <!-- Empty State -->
           <div v-if="contacts.length === 0" class="contact-empty-state">
-            <q-icon name="las la-user-friends" size="48px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+            <Icon icon="tabler:users" width="48" height="48" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
             <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('No contacts yet') }}
             </div>
@@ -205,14 +213,14 @@
               :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
               @click="goToAddressBook"
             >
-              <q-icon name="las la-plus" class="q-mr-sm" />
+              <Icon icon="tabler:plus" class="q-mr-sm" />
               {{ $t('Add Contact') }}
             </q-btn>
           </div>
 
           <!-- No Results -->
           <div v-else-if="!hasContactsToShow" class="contact-empty-state">
-            <q-icon name="las la-search" size="48px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+            <Icon icon="tabler:search" width="48" height="48" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
             <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('No matches found') }}
             </div>
@@ -223,7 +231,7 @@
             <!-- Favorites Section -->
             <template v-if="favoriteContacts.length > 0">
               <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
-                <q-icon name="las la-star" size="14px" color="amber" />
+                <Icon icon="tabler:star" width="14" height="14" style="color: #ffc107;" />
                 <span>{{ $t('Favorites') }}</span>
               </div>
               <div
@@ -244,9 +252,9 @@
                     <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
                       {{ contact.name }}
                     </div>
-                    <q-icon name="las la-star" size="12px" color="amber" class="q-ml-xs" />
+                    <Icon icon="tabler:star" width="12" height="12" style="color: #ffc107;" class="q-ml-xs" />
                     <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
-                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <Icon :icon="getContactTypeIcon(contact)" width="10" height="10" />
                       <span>{{ getContactTypeLabel(contact) }}</span>
                     </div>
                   </div>
@@ -254,14 +262,14 @@
                     {{ getContactAddress(contact) }}
                   </div>
                 </div>
-                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+                <Icon icon="tabler:chevron-right" width="20" height="20" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
               </div>
             </template>
 
             <!-- Recent Section -->
             <template v-if="recentContacts.length > 0">
               <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
-                <q-icon name="las la-clock" size="14px" />
+                <Icon icon="tabler:clock" width="14" height="14" />
                 <span>{{ $t('Recent') }}</span>
               </div>
               <div
@@ -283,7 +291,7 @@
                       {{ contact.name }}
                     </div>
                     <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
-                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <Icon :icon="getContactTypeIcon(contact)" width="10" height="10" />
                       <span>{{ getContactTypeLabel(contact) }}</span>
                     </div>
                   </div>
@@ -291,14 +299,14 @@
                     {{ getContactAddress(contact) }}
                   </div>
                 </div>
-                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+                <Icon icon="tabler:chevron-right" width="20" height="20" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
               </div>
             </template>
 
             <!-- All Contacts Section -->
             <template v-if="otherContacts.length > 0">
               <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
-                <q-icon name="las la-user-friends" size="14px" />
+                <Icon icon="tabler:users" width="14" height="14" />
                 <span>{{ $t('All Contacts') }}</span>
               </div>
               <div
@@ -320,7 +328,7 @@
                       {{ contact.name }}
                     </div>
                     <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
-                      <q-icon :name="getContactTypeIcon(contact)" size="10px" />
+                      <Icon :icon="getContactTypeIcon(contact)" width="10" height="10" />
                       <span>{{ getContactTypeLabel(contact) }}</span>
                     </div>
                   </div>
@@ -328,7 +336,7 @@
                     {{ getContactAddress(contact) }}
                   </div>
                 </div>
-                <q-icon name="las la-chevron-right" size="20px" :color="$q.dark.isActive ? 'grey-6' : 'grey-5'" />
+                <Icon icon="tabler:chevron-right" width="20" height="20" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
               </div>
             </template>
           </div>
@@ -342,6 +350,7 @@
 import QrScanner from 'qr-scanner';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
+import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 
 export default {
   name: 'SendModal',
@@ -562,6 +571,36 @@ export default {
         }
 
         let trimmedData = inputData.trim();
+
+        // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
+        if (isSARetailerQR(trimmedData)) {
+          const result = convertToLightningAddress(trimmedData);
+          if (result) {
+            // EMVCo QR converted to lightning address via cryptoqr.net
+            this.$emit('payment-detected', {
+              data: result.lightningAddress,
+              type: 'lightning_address',
+              source: SA_RETAIL_SOURCE,
+              merchant: result.merchant,
+            });
+            this.closeModal();
+            return;
+          }
+          // URL-based SA retailer QR - needs Scanner API (Phase 2)
+          const merchant = getMerchantInfo(trimmedData);
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('SA Retailer QR detected'),
+            caption: merchant
+              ? `${merchant.displayName} - ${this.$t('not yet supported')}`
+              : this.$t('This retailer is not yet supported'),
+            timeout: 4000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }],
+          });
+          this.isProcessing = false;
+          return;
+        }
+
         // Handle lightning: prefix and extract the actual invoice
         let cleanData = trimmedData.toLowerCase().startsWith('lightning:')
           ? trimmedData.substring(10)
@@ -633,7 +672,7 @@ export default {
       if (cleanData.startsWith('lnbc') || cleanData.startsWith('lntb') ||
           cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
       if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
-      if (cleanData.startsWith('lnurl')) return 'lnurl';
+      if (cleanData.startsWith('lnurl') || cleanData.startsWith('keyauth://')) return 'lnurl';
       // Bitcoin on-chain addresses (L1)
       if (this.isBitcoinAddress(cleanData)) return 'bitcoin_address';
       return 'unknown';
@@ -696,27 +735,54 @@ export default {
     },
 
     async pasteFromClipboard() {
-      try {
-        const clipboardText = await navigator.clipboard.readText();
-        if (clipboardText.trim()) {
-          await this.processPaymentData(clipboardText.trim());
-        } else {
-          this.$q.notify({
-            type: 'info',
-            message: this.$t('Nothing to paste'),
-            
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
+      let clipboardText = '';
+
+      // 1) Try navigator.clipboard.readText (modern API)
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        try {
+          clipboardText = await navigator.clipboard.readText();
+        } catch (e) {
+          console.warn('clipboard.readText() failed:', e);
         }
-      } catch (error) {
-        console.error('Clipboard error:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t access clipboard'),
-          
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
       }
+
+      // 2) Fallback: navigator.clipboard.read() — works on some Android
+      //    devices where readText() is denied but read() is allowed
+      if (!clipboardText && navigator.clipboard && navigator.clipboard.read) {
+        try {
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            if (item.types.includes('text/plain')) {
+              const blob = await item.getType('text/plain');
+              clipboardText = await blob.text();
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn('clipboard.read() failed:', e);
+        }
+      }
+
+      // 3) Success — process the pasted data
+      if (clipboardText && clipboardText.trim()) {
+        await this.processPaymentData(clipboardText.trim());
+        return;
+      }
+
+      // 4) Clipboard API unavailable or empty — fall back to manual input
+      this.showManualDialog = true;
+      this.manualInput = '';
+      this.$nextTick(() => {
+        const input = this.$el?.querySelector('.manual-input input, .manual-input textarea');
+        if (input) input.focus();
+      });
+      this.$q.notify({
+        type: 'info',
+        message: this.$t('Paste into the input field'),
+        caption: this.$t('Long-press the text field and tap Paste'),
+        timeout: 4000,
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
     },
 
     async showContactPicker() {
@@ -781,9 +847,9 @@ export default {
     getContactTypeIcon(contact) {
       const type = this.getContactAddressType(contact);
       const icons = {
-        lightning: 'las la-bolt',
-        spark: 'las la-fire',
-        bitcoin: 'lab la-bitcoin'
+        lightning: 'tabler:bolt',
+        spark: 'tabler:flame',
+        bitcoin: 'tabler:currency-bitcoin'
       };
       return icons[type] || icons.lightning;
     },
@@ -943,7 +1009,7 @@ export default {
 
 .processing-text {
   color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   font-weight: 500;
   margin-top: 1rem;
@@ -965,7 +1031,7 @@ export default {
 }
 
 .error-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 20px;
   font-weight: 600;
   color: white;
@@ -974,7 +1040,7 @@ export default {
 
 .error-subtitle {
   color: #9ca3af;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   margin-bottom: 1.5rem;
   line-height: 1.5;
@@ -1083,7 +1149,7 @@ export default {
 }
 
 .btn-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -1095,7 +1161,7 @@ export default {
 
 .manual-card {
   width: 100%;
-  max-width: 500px;
+  max-width: min(500px, 95vw);
   border-radius: 24px;
 }
 
@@ -1107,7 +1173,7 @@ export default {
 }
 
 .manual-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .close-btn {
@@ -1135,6 +1201,7 @@ export default {
 
 /* Dark mode input styling - green instead of blue */
 .manual-input-dark :deep(.q-field__control) {
+  background: var(--bg-input) !important;
   border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
@@ -1157,6 +1224,7 @@ export default {
 
 /* Light mode input styling - green instead of blue */
 .manual-input-light :deep(.q-field__control) {
+  background: var(--bg-input) !important;
   border-color: rgba(0, 0, 0, 0.15) !important;
 }
 
@@ -1248,7 +1316,7 @@ export default {
 }
 
 .contact-picker-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   font-weight: 600;
 }
@@ -1278,14 +1346,14 @@ export default {
 }
 
 .empty-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 16px;
   font-weight: 600;
   margin-top: 1rem;
 }
 
 .empty-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   margin-top: 0.5rem;
   line-height: 1.4;
@@ -1296,7 +1364,7 @@ export default {
   margin-top: 1.25rem;
   height: 44px;
   border-radius: 22px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   padding: 0 1.5rem;
@@ -1314,7 +1382,7 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 0.625rem 1.25rem 0.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1370,7 +1438,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   font-weight: 600;
   color: white;
@@ -1393,7 +1461,7 @@ export default {
 }
 
 .contact-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
@@ -1407,7 +1475,7 @@ export default {
   gap: 0.2rem;
   padding: 0.1rem 0.4rem;
   border-radius: 6px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1431,7 +1499,7 @@ export default {
 }
 
 .contact-address {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;

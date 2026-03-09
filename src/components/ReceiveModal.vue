@@ -40,11 +40,12 @@
               flat
               round
               dense
-              icon="las la-at"
               @click="showLightningAddress"
               class="address-btn"
               :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
-            />
+            >
+              <Icon icon="tabler:at" width="20" height="20" />
+            </q-btn>
           </div>
         </div>
       </q-card-section>
@@ -102,31 +103,25 @@
           >
             <img :src="sparkPillIcon" class="pill-icon-img" />
             <span class="pill-address">{{ truncateSparkAddress(sparkAddress) }}</span>
-            <q-icon name="las la-copy" size="14px" class="pill-copy" />
+            <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
           </div>
 
           <!-- Action Buttons -->
           <div class="action-buttons">
-            <q-btn
-              flat
-              no-caps
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+            <button
+              class="chip-outline"
               @click="copySparkAddress"
             >
-              <q-icon name="las la-copy" size="18px" />
-              <span>{{ $t('Copy') }}</span>
-            </q-btn>
-            <q-btn
-              flat
-              no-caps
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              <Icon icon="tabler:copy" width="14" height="14" />
+              <span>{{ $t('Copy Request') }}</span>
+            </button>
+            <button
+              class="share-btn-gradient"
               @click="shareSparkAddress"
             >
-              <q-icon name="las la-share-alt" size="18px" />
-              <span>{{ $t('Share') }}</span>
-            </q-btn>
+              <Icon icon="tabler:share" width="14" height="14" />
+              <span>{{ $t('Share Invoice') }}</span>
+            </button>
           </div>
 
           <!-- User Hint -->
@@ -179,26 +174,20 @@
 
           <!-- Action Buttons -->
           <div class="action-buttons">
-            <q-btn
-              flat
-              no-caps
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+            <button
+              class="chip-outline"
               @click="copyInvoice"
             >
-              <q-icon name="las la-copy" size="18px" />
-              <span>{{ $t('Copy') }}</span>
-            </q-btn>
-            <q-btn
-              flat
-              no-caps
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              <Icon icon="tabler:copy" width="14" height="14" />
+              <span>{{ $t('Copy Request') }}</span>
+            </button>
+            <button
+              class="share-btn-gradient"
               @click="shareInvoice"
             >
-              <q-icon name="las la-share-alt" size="18px" />
-              <span>{{ $t('Share') }}</span>
-            </q-btn>
+              <Icon icon="tabler:share" width="14" height="14" />
+              <span>{{ $t('Share Invoice') }}</span>
+            </button>
           </div>
         </div>
 
@@ -222,9 +211,9 @@
               :class="$q.dark.isActive ? 'address-box-dark' : 'address-box-light'"
               @click="copyLightningAddress"
             >
-              <q-icon name="las la-at" size="18px" class="address-icon" />
+              <Icon icon="tabler:at" width="18" height="18" class="address-icon" />
               <span class="address-text-value">{{ lightningAddress }}</span>
-              <q-icon name="las la-copy" size="16px" class="copy-icon" />
+              <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
             </div>
 
             <!-- User Hint -->
@@ -240,7 +229,7 @@
           <div class="currency-toggle" @click="toggleCurrency"
                :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
             <span class="currency-label">{{ currentCurrency }}</span>
-            <q-icon name="las la-redo-alt" class="toggle-icon"/>
+            <Icon icon="tabler:refresh" class="toggle-icon"/>
           </div>
 
           <!-- Amount Input -->
@@ -288,11 +277,11 @@
             flat
             round
             dense
-            icon="las la-qrcode"
             class="scan-withdraw-btn"
             :class="$q.dark.isActive ? 'scan-btn-dark' : 'scan-btn-light'"
             @click="$emit('scan-withdraw')"
           >
+            <Icon icon="tabler:qrcode" width="20" height="20" />
             <q-tooltip>{{ $t('Scan to redeem') }}</q-tooltip>
           </q-btn>
           <q-btn
@@ -473,9 +462,9 @@ export default {
         ? 'img:/Spark/Spark Asterisk White.svg'
         : 'img:/Spark/Spark Asterisk Black.svg';
       return [
-        { label: this.$t('Lightning'), value: 'lightning', icon: 'las la-bolt' },
+        { label: this.$t('Lightning'), value: 'lightning', icon: 'bolt' },
         { label: this.$t('Spark'), value: 'spark', icon: sparkIcon },
-        { label: this.$t('Bitcoin'), value: 'bitcoin', icon: 'lab la-bitcoin' }
+        { label: this.$t('Bitcoin'), value: 'bitcoin', icon: 'currency_bitcoin' }
       ];
     },
     sparkPillIcon() {
@@ -1347,9 +1336,9 @@ export default {
 }
 
 .qr-frame {
-  background: white;
+  background: #FFFFFF;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
@@ -1385,7 +1374,7 @@ export default {
 }
 
 .ln-amount {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 36px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -1393,14 +1382,14 @@ export default {
 }
 
 .ln-fiat {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   margin-top: 4px;
 }
 
 .ln-memo {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 400;
   margin-top: 8px;
@@ -1421,7 +1410,7 @@ export default {
 }
 
 .ln-status span {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   font-weight: 500;
   color: #FFD43B;
@@ -1492,8 +1481,8 @@ export default {
 }
 
 .qr-wrapper {
-  background: #FFF;
-  border-radius: 16px;
+  background: #FFFFFF;
+  border-radius: var(--radius-md);
   padding: clamp(0.75rem, 3vw, 1.25rem); /* Responsive padding */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
@@ -1520,6 +1509,26 @@ export default {
   justify-content: center;
   gap: 12px;
   margin-top: 12px;
+}
+
+/* Share Invoice gradient button */
+.share-btn-gradient {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  background: var(--gradient-green);
+  color: #FFF;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.share-btn-gradient:hover {
+  opacity: 0.9;
 }
 
 .action-btn {
@@ -1596,7 +1605,7 @@ export default {
 }
 
 .currency-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
   color: #B0B0B0;
@@ -1622,20 +1631,21 @@ export default {
 }
 
 .currency-symbol {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 2.5rem;
   font-weight: 300;
 }
 
 .amount-input {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 2.75rem;
   font-weight: 300;
   border: none;
   outline: none;
   background: transparent;
   text-align: center;
-  min-width: 200px;
+  min-width: min(200px, 60vw);
+  max-width: 100%;
 }
 
 .amount-input-dark {
@@ -1657,7 +1667,7 @@ export default {
 }
 
 .description-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   margin-bottom: 0.75rem;
   text-align: center;
@@ -1676,8 +1686,10 @@ export default {
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1px solid transparent;
-  border-radius: 20px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
@@ -1724,7 +1736,7 @@ export default {
   width: 100%;
   height: 52px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   transition: all 0.2s ease;
@@ -1872,7 +1884,7 @@ export default {
 }
 
 .pill-address {
-  font-family: 'SF Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.02em;
 }
@@ -1882,7 +1894,7 @@ export default {
 }
 
 .address-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   text-align: center;
   max-width: 280px;
@@ -1953,7 +1965,7 @@ export default {
 }
 
 .address-text-value {
-  font-family: 'SF Mono', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   flex: 1;
   word-break: break-all;
@@ -1967,7 +1979,7 @@ export default {
 }
 
 .address-hint {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   text-align: center;
   line-height: 1.5;
@@ -2013,7 +2025,7 @@ export default {
 }
 
 .type-toggle :deep(.q-btn) {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
   padding: 0.625rem 1rem;
@@ -2060,7 +2072,7 @@ export default {
 }
 
 .mode-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   text-align: center;
 }

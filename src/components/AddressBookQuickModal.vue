@@ -13,10 +13,12 @@
       <!-- Header -->
       <header class="modal-header">
         <div class="header-left">
-          <i class="las la-address-book header-icon"></i>
+          <Icon icon="tabler:address-book" class="header-icon" />
           <h2 class="header-title">{{ $t('Contacts') }}</h2>
         </div>
-        <q-btn flat round dense icon="las la-times" class="close-btn" @click="close" />
+        <q-btn flat round dense class="close-btn" @click="close">
+          <Icon icon="tabler:x" width="20" height="20" />
+        </q-btn>
       </header>
 
       <!-- Content -->
@@ -29,12 +31,12 @@
         <!-- Empty State -->
         <div v-else-if="!hasContacts" class="empty-state">
           <div class="empty-circle">
-            <i class="las la-user-plus"></i>
+            <Icon icon="tabler:user-plus" />
           </div>
           <p class="empty-title">{{ $t('No contacts yet') }}</p>
           <p class="empty-subtitle">{{ $t('Add contacts to quickly send payments') }}</p>
           <q-btn unelevated no-caps class="btn-primary" @click="goToAddressBook">
-            <i class="las la-plus q-mr-sm"></i>
+            <Icon icon="tabler:plus" class="q-mr-sm" />
             {{ $t('Add Contact') }}
           </q-btn>
         </div>
@@ -45,7 +47,7 @@
           <section v-if="favoriteContacts.length > 0" class="horizontal-section">
             <div class="section-header">
               <div class="section-title">
-                <i class="las la-star title-icon title-icon--gold"></i>
+                <Icon icon="tabler:star-filled" width="13" height="13" class="title-icon title-icon--gold" />
                 <span>{{ $t('Favorites') }}</span>
               </div>
               <span class="section-count">{{ favoriteContacts.length }}</span>
@@ -68,7 +70,7 @@
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                       </svg>
-                      <i v-else :class="getTypeIcon(contact.addressType)"></i>
+                      <Icon v-else :icon="getTypeIcon(contact.addressType)" width="10" height="10" />
                     </div>
                   </div>
                   <span class="chip-name">{{ truncateName(contact.name, 9) }}</span>
@@ -81,7 +83,7 @@
           <section v-if="recentContacts.length > 0" class="horizontal-section">
             <div class="section-header">
               <div class="section-title">
-                <i class="las la-clock title-icon title-icon--blue"></i>
+                <Icon icon="tabler:clock" width="13" height="13" class="title-icon title-icon--blue" />
                 <span>{{ $t('Recent') }}</span>
               </div>
               <span class="section-count">{{ recentContacts.length }}</span>
@@ -104,7 +106,7 @@
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                       </svg>
-                      <i v-else :class="getTypeIcon(contact.addressType)"></i>
+                      <Icon v-else :icon="getTypeIcon(contact.addressType)" width="10" height="10" />
                     </div>
                   </div>
                   <span class="chip-name">{{ truncateName(contact.name, 9) }}</span>
@@ -117,7 +119,7 @@
           <section class="vertical-section">
             <div class="section-header">
               <div class="section-title">
-                <i class="las la-users title-icon"></i>
+                <Icon icon="tabler:users" width="13" height="13" class="title-icon" />
                 <span>{{ $t('All Contacts') }}</span>
               </div>
               <span class="section-count">{{ allContacts.length }}</span>
@@ -125,18 +127,19 @@
 
             <!-- Search -->
             <div class="search-bar" :class="themeClass">
-              <i class="las la-search search-icon"></i>
+              <Icon icon="tabler:search" class="search-icon" />
               <input
                 v-model="searchQuery"
                 type="text"
                 :placeholder="$t('Search...')"
                 class="search-input"
               />
-              <i
+              <Icon
                 v-if="searchQuery"
-                class="las la-times-circle clear-icon"
+                icon="tabler:circle-x"
+                class="clear-icon"
                 @click="searchQuery = ''"
-              ></i>
+              />
             </div>
 
             <!-- Contact List -->
@@ -156,7 +159,7 @@
                   <div class="row-details">
                     <div class="row-name">
                       {{ contact.name }}
-                      <i v-if="contact.isFavorite" class="las la-star star-icon"></i>
+                      <Icon v-if="contact.isFavorite" icon="tabler:star-filled" width="12" height="12" class="star-icon" />
                     </div>
                     <div class="row-meta">
                       <span
@@ -170,17 +173,17 @@
                         <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                         </svg>
-                        <i v-else :class="getTypeIcon(contact.addressType)"></i>
+                        <Icon v-else :icon="getTypeIcon(contact.addressType)" width="10" height="10" />
                         <span>{{ contact.addressType || 'lightning' }}</span>
                       </span>
                       <span class="row-address">{{ truncateAddress(contact.address || contact.lightningAddress) }}</span>
                     </div>
                   </div>
-                  <i class="las la-angle-right row-arrow"></i>
+                  <Icon icon="tabler:chevron-right" class="row-arrow" />
                 </button>
               </template>
               <div v-else class="no-results">
-                <i class="las la-search"></i>
+                <Icon icon="tabler:search" />
                 <span>{{ $t('No results') }}</span>
               </div>
             </div>
@@ -191,12 +194,12 @@
       <!-- Footer -->
       <footer class="modal-footer">
         <q-btn flat no-caps class="btn-footer btn-batch" @click="openBatchSend">
-          <i class="las la-layer-group q-mr-sm"></i>
+          <Icon icon="tabler:stack-2" class="q-mr-sm" />
           <span>{{ $t('Batch Send') }}</span>
         </q-btn>
         <q-btn flat no-caps class="btn-footer" @click="goToAddressBook">
           <span>{{ $t('Manage Contacts') }}</span>
-          <i class="las la-external-link-alt q-ml-sm"></i>
+          <Icon icon="tabler:external-link" class="q-ml-sm" />
         </q-btn>
       </footer>
     </q-card>
@@ -275,9 +278,9 @@ function truncateAddress(addr) {
 
 function getTypeIcon(type) {
   const icons = {
-    lightning: 'las la-bolt',
+    lightning: 'tabler:bolt',
     spark: 'spark-logo', // Special case - uses SVG
-    bitcoin: 'lab la-bitcoin'
+    bitcoin: 'tabler:currency-bitcoin'
   };
   return icons[type] || icons.lightning;
 }
@@ -344,22 +347,22 @@ function close() {
    Theme Variables
    ════════════════════════════════════════════════════════════ */
 .theme-dark {
-  --c-bg: #1c1c1e;
-  --c-bg2: #2c2c2e;
-  --c-bg3: #3a3a3c;
-  --c-text: #fff;
-  --c-text2: #a1a1a6;
-  --c-text3: #636366;
-  --c-border: rgba(255,255,255,.08);
+  --c-bg: var(--bg-card);
+  --c-bg2: var(--bg-input);
+  --c-bg3: #2A342A;
+  --c-text: var(--text-primary);
+  --c-text2: var(--text-secondary);
+  --c-text3: var(--text-muted);
+  --c-border: var(--border-card);
 }
 .theme-light {
-  --c-bg: #fff;
-  --c-bg2: #f2f2f7;
+  --c-bg: var(--bg-card);
+  --c-bg2: var(--bg-input);
   --c-bg3: #e5e5ea;
-  --c-text: #1c1c1e;
-  --c-text2: #8e8e93;
-  --c-text3: #aeaeb2;
-  --c-border: rgba(0,0,0,.06);
+  --c-text: var(--text-primary);
+  --c-text2: var(--text-secondary);
+  --c-text3: var(--text-muted);
+  --c-border: var(--border-card);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -368,13 +371,15 @@ function close() {
 .modal-card {
   width: 100%;
   max-width: 500px;
-  border-radius: 20px 20px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-bottom: none;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: 'Fustat', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -439,9 +444,9 @@ function close() {
   padding: 12px 24px;
   font-size: 15px;
   font-weight: 600;
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
+  background: var(--gradient-green) !important;
   color: #fff !important;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -510,8 +515,8 @@ function close() {
   transition: transform .15s, box-shadow .15s;
   flex-shrink: 0;
 }
-.contact-chip.theme-dark { background: #2a2a2c; }
-.contact-chip.theme-light { background: #f5f5f7; }
+.contact-chip.theme-dark { background: var(--bg-input); }
+.contact-chip.theme-light { background: var(--bg-input); }
 .contact-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .contact-chip:active { transform: scale(0.96); }
 
@@ -576,8 +581,8 @@ function close() {
   padding: 11px 14px;
   border-radius: 12px;
 }
-.search-bar.theme-dark { background: #2a2a2c; }
-.search-bar.theme-light { background: #f0f0f2; }
+.search-bar.theme-dark { background: var(--bg-input); }
+.search-bar.theme-light { background: var(--bg-input); }
 .search-icon { font-size: 16px; color: var(--c-text3); }
 .search-input {
   flex: 1;
@@ -620,8 +625,8 @@ function close() {
   transition: background .15s, transform .1s;
   font-family: inherit;
 }
-.contact-row.theme-dark { background: #2a2a2c; }
-.contact-row.theme-light { background: #f5f5f7; }
+.contact-row.theme-dark { background: var(--bg-input); }
+.contact-row.theme-light { background: var(--bg-input); }
 .contact-row:hover.theme-dark { background: #333; }
 .contact-row:hover.theme-light { background: #ebebed; }
 .contact-row:active { transform: scale(0.98); }
@@ -672,7 +677,7 @@ function close() {
 .type-badge--spark svg { flex-shrink: 0; }
 .row-address {
   font-size: 13px;
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   color: var(--c-text3);
   white-space: nowrap;
   overflow: hidden;

@@ -10,7 +10,7 @@
         class="back-btn"
         :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
       >
-        <q-icon name="las la-arrow-left" size="20px"/>
+        <Icon icon="tabler:chevron-left" width="18" height="18" />
       </q-btn>
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Settings') }}
@@ -36,7 +36,7 @@
             </q-item-label>
           </q-item-section>
           <q-item-section side>
-            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
           </q-item-section>
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
@@ -47,7 +47,7 @@
             </q-item-label>
           </q-item-section>
           <q-item-section side>
-            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
           </q-item-section>
         </q-item>
       </div>
@@ -68,8 +68,28 @@
               </q-item-label>
             </q-item-section>
             <q-item-section side class="spark-address-actions">
-              <q-btn flat round dense icon="las la-copy" @click="copySparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm" />
-              <q-btn flat round dense icon="las la-share-alt" @click="shareSparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm" />
+              <q-btn flat round dense @click="copySparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm">
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </q-btn>
+              <q-btn flat round dense @click="shareSparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm">
+                <Icon icon="tabler:share" width="16" height="16" />
+              </q-btn>
+            </q-item-section>
+          </q-item>
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+          <q-item clickable v-ripple @click="openBackupDialog">
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Backup Seed Phrase') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side class="backup-status-side">
+              <span
+                class="backup-status-badge"
+                :class="hasBackedUp ? 'badge-verified' : 'badge-unverified'"
+              >
+                {{ hasBackedUp ? $t('Verified') : $t('Not verified') }}
+              </span>
             </q-item-section>
           </q-item>
           <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
@@ -80,7 +100,7 @@
               </q-item-label>
             </q-item-section>
             <q-item-section side>
-              <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
             </q-item-section>
           </q-item>
           <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
@@ -91,7 +111,7 @@
               </q-item-label>
             </q-item-section>
             <q-item-section side>
-              <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
             </q-item-section>
           </q-item>
         </div>
@@ -114,7 +134,7 @@
             </div>
           </q-item-section>
           <q-item-section side>
-            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
           </q-item-section>
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
@@ -130,14 +150,14 @@
             </div>
           </q-item-section>
           <q-item-section side>
-            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
           </q-item-section>
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
         <q-item clickable v-ripple @click="showMempoolDialog = true">
           <q-item-section>
             <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Mempool API') }}
+              {{ $t('Exchange Rate Source') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -146,7 +166,7 @@
             </div>
           </q-item-section>
           <q-item-section side>
-            <q-icon name="las la-chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"/>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
           </q-item-section>
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
@@ -187,6 +207,64 @@
         </q-item>
       </div>
 
+      <!-- AUTO-WITHDRAW Section -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Auto-Transfer') }}
+      </div>
+
+      <!-- Empty state when no wallets -->
+      <div v-if="wallets.length === 0" class="aw-empty-state" :class="$q.dark.isActive ? 'aw-empty-dark' : 'aw-empty-light'">
+        <Icon icon="tabler:send" width="32" height="32" class="aw-empty-icon" />
+        <div class="aw-empty-text">{{ $t('Connect a wallet to set up automatic transfers') }}</div>
+      </div>
+
+      <!-- Wallet cards -->
+      <div v-else class="aw-wallet-list">
+        <div
+          v-for="wallet in wallets"
+          :key="'aw-' + wallet.id"
+          class="aw-wallet-card"
+          :class="$q.dark.isActive ? 'aw-card-dark' : 'aw-card-light'"
+          @click="openAutoWithdrawConfig(wallet)"
+        >
+          <div class="aw-wallet-row">
+            <div class="aw-wallet-avatar" :class="'aw-avatar-' + (wallet.type || 'nwc')">
+              <!-- Spark -->
+              <svg v-if="wallet.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
+              </svg>
+              <!-- NWC -->
+              <svg v-else-if="wallet.type === 'nwc'" width="16" height="16" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646-2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="white"/>
+                <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="white"/>
+              </svg>
+              <!-- LNBits -->
+              <svg v-else-if="wallet.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
+              </svg>
+              <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
+            </div>
+            <div class="aw-wallet-info">
+              <div class="aw-wallet-name" :class="$q.dark.isActive ? 'aw-name-dark' : 'aw-name-light'">
+                {{ wallet.name }}
+              </div>
+              <div v-if="getAutoWithdrawConfig(wallet.id)?.enabled" class="aw-wallet-summary" :class="$q.dark.isActive ? 'aw-summary-dark' : 'aw-summary-light'">
+                {{ Number(getAutoWithdrawConfig(wallet.id).thresholdSats).toLocaleString() }} {{ $t('sats') }} &rarr; {{ truncateAutoWithdrawDest(wallet.id) }}
+              </div>
+            </div>
+            <div class="aw-wallet-status">
+              <span
+                class="aw-status-pill"
+                :class="getAutoWithdrawConfig(wallet.id)?.enabled ? 'aw-pill-active' : 'aw-pill-inactive'"
+              >
+                {{ getAutoWithdrawConfig(wallet.id)?.enabled ? $t('Active') : $t('Off') }}
+              </span>
+              <Icon icon="tabler:chevron-right" width="16" height="16" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- DANGER ZONE -->
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
         {{ $t('Account') }}
@@ -199,16 +277,16 @@
             </q-item-label>
           </q-item-section>
         </q-item>
-        <q-separator v-if="hasSparkWallet" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item clickable v-ripple @click="confirmDisconnectNwc">
+        <q-separator v-if="hasSparkWallet && hasNwcWallets" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item v-if="hasNwcWallets" clickable v-ripple @click="confirmDisconnectNwc">
           <q-item-section>
             <q-item-label class="danger-text text-center">
               {{ $t('Remove NWC Connections') }}
             </q-item-label>
           </q-item-section>
         </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item clickable v-ripple @click="confirmDisconnectLNBits">
+        <q-separator v-if="hasLnbitsWallets && (hasSparkWallet || hasNwcWallets)" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item v-if="hasLnbitsWallets" clickable v-ripple @click="confirmDisconnectLNBits">
           <q-item-section>
             <q-item-label class="danger-text text-center">
               {{ $t('Remove LNBits Connections') }}
@@ -282,8 +360,12 @@
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Support BuhoGO') }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
         <q-card-section class="donation-dialog-content">
           <q-input
@@ -315,8 +397,12 @@
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Donate') }} {{ formatSats(donationInvoiceAmount) }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
         <q-card-section class="donation-invoice-content">
           <div class="donation-qr-wrapper" @click="copyDonationInvoice">
@@ -336,7 +422,7 @@
             class="open-wallet-btn action-btn-green"
             @click="openInWallet"
           >
-            <q-icon name="las la-external-link-alt" class="q-mr-sm"/>
+            <Icon icon="tabler:external-link" class="q-mr-sm" />
             {{ $t('Open in Wallet') }}
           </q-btn>
           <div class="donation-portal-section">
@@ -351,7 +437,7 @@
               class="donation-portal-link"
               @click="openSupportPortal"
             >
-              <q-icon name="las la-heart" class="q-mr-xs"/>
+              <Icon icon="tabler:heart" class="q-mr-xs" />
               {{ $t('Donations Portal') }}
             </q-btn>
           </div>
@@ -364,7 +450,7 @@
       <q-card class="danger-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="danger-header">
           <div class="danger-icon-wrapper">
-            <q-icon name="las la-exclamation-triangle" size="32px" class="danger-icon"/>
+            <Icon icon="tabler:alert-triangle" width="32" height="32" class="danger-icon" />
           </div>
           <div class="danger-title">{{ dangerConfirmTitle }}</div>
           <div class="danger-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
@@ -420,11 +506,13 @@
             flat
             round
             dense
-            icon="las la-times"
             v-close-popup
-            class="close-btn"
-            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-          />
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="dialog-content">
@@ -448,8 +536,8 @@
                   {{ language.value }}
                 </div>
               </div>
-              <q-icon
-                name="las la-check"
+              <Icon
+                icon="tabler:check"
                 v-if="$i18n.locale === language.value"
                 class="check-icon"
               />
@@ -470,11 +558,13 @@
             flat
             round
             dense
-            icon="las la-times"
             v-close-popup
-            class="close-btn"
-            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-          />
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="dialog-content">
@@ -498,8 +588,8 @@
                   {{ getCurrencySymbol(currency) }}1 = {{ formatSats(exchangeRates[currency.toLowerCase()]) }}
                 </div>
               </div>
-              <q-icon
-                name="las la-check"
+              <Icon
+                icon="tabler:check"
                 v-if="preferredFiatCurrency === currency"
                 class="check-icon"
               />
@@ -521,11 +611,13 @@
             flat
             round
             dense
-            icon="las la-times"
             v-close-popup
-            class="close-btn"
-            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-          />
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <!-- Scrollable Content -->
@@ -568,15 +660,15 @@
             flat
             @click="showAddWalletDialog = true"
           >
-            <q-icon name="las la-plus-circle" size="20px" class="q-mr-sm"/>
+            <Icon icon="tabler:plus" width="20" height="20" class="q-mr-sm" />
             {{ $t('Add Wallet') }}
           </q-btn>
 
           <!-- Scrollable Wallet List -->
           <div class="wallets-list-container">
             <div v-if="wallets.length === 0" class="no-wallets">
-              <q-icon name="las la-wallet" size="48px" class="no-wallets-icon"
-                      :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-4'"/>
+              <Icon icon="tabler:wallet" width="48" height="48" class="no-wallets-icon"
+                      :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-4'" />
               <div class="no-wallets-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
                 {{ $t('No wallets connected yet') }}
               </div>
@@ -620,7 +712,7 @@
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                     </svg>
                     <!-- Default wallet icon -->
-                    <q-icon v-else name="las la-wallet" size="20px" color="white"/>
+                    <Icon v-else icon="tabler:wallet" width="20" height="20" style="color: white;" />
                   </div>
                   <div
                     class="wallet-status-dot"
@@ -655,7 +747,7 @@
                       <svg v-else-if="wallet.type === 'lnbits'" width="9" height="10" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                       </svg>
-                      <q-icon v-else name="las la-wallet" size="10px" />
+                      <Icon v-else icon="tabler:wallet" width="10" height="10" />
                       <span>{{ getWalletTypeLabel(wallet) }}</span>
                     </div>
                     <div v-if="wallet.id === activeWalletId" class="wallet-tag tag-active">{{ $t('Active') }}</div>
@@ -675,13 +767,13 @@
                     flat
                     round
                     dense
-                    icon="las la-sync-alt"
                     @click="reconnectWallet(wallet.id)"
                     :loading="isReconnecting[wallet.id]"
                     class="wallet-action-btn"
                     :class="$q.dark.isActive ? 'wallet-action-btn-dark' : 'wallet-action-btn-light'"
                     size="sm"
                   >
+                    <Icon icon="tabler:refresh" width="16" height="16" />
                     <q-tooltip>{{ $t('Reconnect') }}</q-tooltip>
                   </q-btn>
 
@@ -690,12 +782,12 @@
                     flat
                     round
                     dense
-                    icon="las la-exchange-alt"
                     @click="handleSwitchWallet(wallet.id)"
                     class="wallet-action-btn"
                     :class="$q.dark.isActive ? 'wallet-action-btn-dark' : 'wallet-action-btn-light'"
                     size="sm"
                   >
+                    <Icon icon="tabler:transfer" width="16" height="16" />
                     <q-tooltip>{{ $t('Switch') }}</q-tooltip>
                   </q-btn>
 
@@ -703,11 +795,11 @@
                     flat
                     round
                     dense
-                    icon="las la-trash-alt"
                     @click="confirmRemoveWallet(wallet.id)"
                     class="wallet-action-btn wallet-action-danger"
                     size="sm"
                   >
+                    <Icon icon="tabler:trash" width="16" height="16" />
                     <q-tooltip>{{ $t('Remove') }}</q-tooltip>
                   </q-btn>
                 </div>
@@ -729,11 +821,13 @@
             flat
             round
             dense
-            icon="las la-times"
             v-close-popup
-            class="close-btn"
-            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-          />
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="dialog-content">
@@ -761,7 +855,7 @@
                   {{ $t('Generate a new seed phrase') }}
                 </div>
               </div>
-              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
             </div>
 
             <div
@@ -782,7 +876,7 @@
                   {{ $t('Import existing seed phrase') }}
                 </div>
               </div>
-              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
             </div>
 
             <q-separator class="q-my-md" :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'"/>
@@ -812,7 +906,7 @@
                   {{ $t('Link via server URL and API key') }}
                 </div>
               </div>
-              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
             </div>
 
           </div>
@@ -848,7 +942,7 @@
                   {{ $t('Link via Nostr Wallet Connect') }}
                 </div>
               </div>
-              <q-icon name="las la-chevron-right" size="18px" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"/>
+              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
             </div>
           </div>
         </q-card-section>
@@ -857,65 +951,124 @@
 
     <!-- Mempool API Dialog -->
     <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <q-card class="dialog-card mempool-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Mempool API Settings') }}
+            {{ $t('Exchange rate source') }}
           </div>
           <q-btn
             flat
             round
             dense
-            icon="las la-times"
             v-close-popup
-            class="close-btn"
-            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-          />
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="mempool-info" :class="$q.dark.isActive ? 'info-dark' : 'info-light'">
-            <q-icon name="las la-info-circle" class="info-icon"/>
-            <div class="info-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Configure a custom Mempool API URL for enhanced privacy or to use your own instance.') }}
+          <!-- Intro -->
+          <div class="mempool-intro">
+            <div class="mempool-intro-icon" :class="$q.dark.isActive ? 'mempool-intro-icon-dark' : 'mempool-intro-icon-light'">
+              <Icon icon="tabler:server" width="24" height="24" />
+            </div>
+            <p class="mempool-intro-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('BuhoGO uses a Mempool server to look up Bitcoin exchange rates. The default works great — or pick your own for extra privacy.') }}
+            </p>
+          </div>
+
+          <!-- URL Input -->
+          <div class="mempool-input-wrap">
+            <div class="mempool-input-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('Server URL') }}
+            </div>
+            <q-input
+              v-model="tempMempoolUrl"
+              :placeholder="$t('https://mempool.space/api/v1')"
+              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+              borderless
+              input-class="q-px-md mempool-url-input"
+              dense
+              clearable
+            />
+          </div>
+
+          <!-- Quick-pick servers -->
+          <div class="mempool-servers">
+            <div class="mempool-servers-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Tap to use') }}
+            </div>
+
+            <div
+              class="server-card"
+              :class="[
+                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
+                tempMempoolUrl === 'https://mempool.space/api/v1' || !tempMempoolUrl ? 'server-active' : ''
+              ]"
+              @click="tempMempoolUrl = 'https://mempool.space/api/v1'"
+            >
+              <div class="server-info">
+                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">mempool.space</span>
+                <span class="server-tag tag-default">{{ $t('Default') }}</span>
+              </div>
+              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.space/api/v1</span>
+            </div>
+
+            <div
+              class="server-card"
+              :class="[
+                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
+                tempMempoolUrl === 'https://mempool.emzy.de/api/v1' ? 'server-active' : ''
+              ]"
+              @click="tempMempoolUrl = 'https://mempool.emzy.de/api/v1'"
+            >
+              <div class="server-info">
+                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">emzy.de</span>
+                <span class="server-tag tag-privacy">{{ $t('Privacy') }}</span>
+              </div>
+              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.emzy.de/api/v1</span>
+            </div>
+
+            <div
+              class="server-card"
+              :class="[
+                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
+                tempMempoolUrl === 'https://mempool.blocktrainer.de/api/v1' ? 'server-active' : ''
+              ]"
+              @click="tempMempoolUrl = 'https://mempool.blocktrainer.de/api/v1'"
+            >
+              <div class="server-info">
+                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">Blocktrainer</span>
+                <span class="server-tag tag-community">{{ $t('Community') }}</span>
+              </div>
+              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.blocktrainer.de/api/v1</span>
             </div>
           </div>
 
-          <q-input
-            v-model="tempMempoolUrl"
-            :placeholder="$t('https://your-mempool-instance.com/api/v1')"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            borderless
-            input-class="q-px-md"
-            class="q-mb-sm"
-            dense
-            clearable
-          />
-
-          <div class="url-examples" :class="$q.dark.isActive ? 'examples-dark' : 'examples-light'">
-            <div class="example-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-              {{ $t('Examples:') }}
-            </div>
-            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.space/api/v1'">
-              <span class="example-url">https://mempool.space/api/v1</span>
-              <span class="example-desc">{{ $t('(Default)') }}</span>
-            </div>
-            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.emzy.de/api/v1'">
-              <span class="example-url">https://mempool.emzy.de/api/v1</span>
-              <span class="example-desc">{{ $t('(Alternative)') }}</span>
-            </div>
-            <div class="example-item" @click="tempMempoolUrl = 'https://mempool.blocktrainer.de/api/v1'">
-              <span class="example-url">https://mempool.blocktrainer.de/api/v1</span>
-              <span class="example-desc">{{ $t('(Blocktrainer)') }}</span>
-            </div>
-          </div>
-
-          <div class="rate-status" v-if="fiatRateAge !== null"
+          <!-- Rate freshness -->
+          <div class="rate-status"
                :class="$q.dark.isActive ? 'status-dark' : 'status-light'">
-            <q-icon :name="fiatRatesStale ? 'las la-exclamation-triangle' : 'las la-check-circle'"
-                    :class="fiatRatesStale ? 'text-orange' : 'text-green'"/>
-            <span :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Last updated') }}: {{ fiatRateAge }} {{ $t('minutes ago') }}
+            <Icon
+              :icon="fiatRateAge === null ? 'tabler:hourglass' : fiatRatesStale ? 'tabler:alert-triangle' : 'tabler:circle-check'"
+              :class="fiatRateAge === null ? 'text-grey' : fiatRatesStale ? 'text-orange' : 'text-green'"
+              width="16" height="16"
+            />
+            <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              <template v-if="fiatRateAge === null">
+                {{ $t('No exchange rates loaded yet') }}
+              </template>
+              <template v-else-if="fiatRateAge === 0">
+                {{ $t('Exchange rates are up to date') }}
+              </template>
+              <template v-else-if="fiatRatesStale">
+                {{ $t('Rates may be outdated — last fetched {n} min ago', { n: fiatRateAge }) }}
+              </template>
+              <template v-else>
+                {{ $t('Rates up to date — refreshed {n} min ago', { n: fiatRateAge }) }}
+              </template>
             </span>
           </div>
         </q-card-section>
@@ -923,7 +1076,7 @@
         <q-card-actions align="right" class="dialog-actions">
           <q-btn
             flat
-            :label="$t('Reset to Default')"
+            :label="$t('Reset')"
             @click="resetMempoolUrl"
             no-caps
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
@@ -953,11 +1106,13 @@
             flat
             round
             dense
-            icon="las la-times"
             @click="closeViewMnemonicDialog"
-            class="close-btn"
-            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-          />
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="dialog-content">
@@ -966,14 +1121,14 @@
             <!-- Icon Header -->
             <div class="seed-icon-header">
               <div class="seed-icon-circle" :class="$q.dark.isActive ? 'seed-icon-circle-dark' : 'seed-icon-circle-light'">
-                <q-icon name="las la-key" size="32px" color="primary"/>
+                <Icon icon="tabler:key" width="32" height="32" style="color: var(--q-primary);" />
               </div>
             </div>
 
             <!-- Warning Box -->
             <div class="seed-warning-box">
               <div class="seed-warning-icon-wrap">
-                <q-icon name="las la-exclamation-triangle" size="20px"/>
+                <Icon icon="tabler:alert-triangle" width="20" height="20" />
               </div>
               <div class="seed-warning-content">
                 <div class="seed-warning-title">{{ $t('Keep it secret') }}</div>
@@ -984,7 +1139,7 @@
             <!-- Info Box -->
             <div class="seed-info-box" :class="$q.dark.isActive ? 'seed-info-box-dark' : 'seed-info-box-light'">
               <div class="seed-info-icon-wrap">
-                <q-icon name="las la-sync-alt" size="20px"/>
+                <Icon icon="tabler:refresh" width="20" height="20" />
               </div>
               <div class="seed-info-content">
                 <div class="seed-info-title" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">{{ $t('Wallet recovery') }}</div>
@@ -1013,7 +1168,7 @@
           <div v-else class="mnemonic-display">
             <!-- Revealed Warning Banner -->
             <div class="seed-revealed-banner">
-              <q-icon name="las la-eye" size="18px"/>
+              <Icon icon="tabler:eye" width="18" height="18" />
               <span>{{ $t('Your seed phrase is now visible') }}</span>
             </div>
 
@@ -1032,7 +1187,7 @@
 
             <!-- Bottom Warning -->
             <div class="seed-bottom-warning">
-              <q-icon name="las la-shield-alt" size="16px"/>
+              <Icon icon="tabler:shield-lock" width="16" height="16" />
               <span>{{ $t('Store in a safe place. Never share online.') }}</span>
             </div>
           </div>
@@ -1060,74 +1215,213 @@
       </q-card>
     </q-dialog>
 
-    <!-- Change PIN Dialog -->
-    <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card pin-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+    <!-- Backup Seed Phrase Dialog -->
+    <q-dialog v-model="showBackupDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'" persistent>
+      <q-card class="dialog-card backup-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Change PIN') }}
+            {{ backupStep === 'pin' ? $t('Backup Seed Phrase') : backupStep === 'show' ? $t('Your Recovery Phrase') : $t('Verify Your Backup') }}
           </div>
           <q-btn
             flat
             round
             dense
-            icon="las la-times"
-            v-close-popup
-            class="close-btn"
-            :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-          />
+            @click="closeBackupDialog"
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <div class="pin-inputs-section">
-            <q-input
-              v-model="sparkPinInput"
-              type="password"
-              :placeholder="$t('Current PIN')"
-              maxlength="6"
-              mask="######"
-              :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
-              borderless
-              input-class="text-center pin-input-field"
-              dense
-            />
+          <!-- Step 1: PIN Entry -->
+          <div v-if="backupStep === 'pin'" class="seed-pin-entry">
+            <div class="seed-icon-header">
+              <div class="seed-icon-circle" :class="$q.dark.isActive ? 'seed-icon-circle-dark' : 'seed-icon-circle-light'">
+                <Icon icon="tabler:shield-lock" width="32" height="32" style="color: var(--q-primary);" />
+              </div>
+            </div>
 
-            <q-input
-              v-model="sparkNewPin"
-              type="password"
-              :placeholder="$t('New PIN')"
-              maxlength="6"
-              mask="######"
-              :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
-              borderless
-              input-class="text-center pin-input-field"
-              dense
-            />
+            <div class="seed-warning-box">
+              <div class="seed-warning-icon-wrap">
+                <Icon icon="tabler:alert-triangle" width="20" height="20" />
+              </div>
+              <div class="seed-warning-content">
+                <div class="seed-warning-title">{{ $t('Protect your funds') }}</div>
+                <div class="seed-warning-text">{{ $t('You will see your 12-word recovery phrase and then verify it to confirm your backup.') }}</div>
+              </div>
+            </div>
 
-            <q-input
-              v-model="sparkConfirmNewPin"
-              type="password"
-              :placeholder="$t('Confirm New PIN')"
-              maxlength="6"
-              mask="######"
-              :class="[
-                $q.dark.isActive ? 'pin-input-dark' : 'pin-input-light',
-                sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin ? 'pin-input-error' : ''
-              ]"
-              borderless
-              input-class="text-center pin-input-field"
-              dense
-              :error="sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin"
-              :error-message="$t('PINs do not match')"
+            <div class="seed-pin-section">
+              <div class="seed-pin-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Enter your PIN to continue') }}</div>
+              <q-input
+                v-model="backupPinInput"
+                type="password"
+                :placeholder="$t('6-digit PIN')"
+                maxlength="6"
+                mask="######"
+                :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+                borderless
+                input-class="q-px-md text-center seed-pin-input"
+                dense
+              />
+            </div>
+          </div>
+
+          <!-- Step 2: Show Recovery Phrase -->
+          <div v-else-if="backupStep === 'show'" class="backup-show-step">
+            <MnemonicDisplay
+              :words="backupMnemonicWords"
+              :show-warning="true"
+              :show-copy="false"
             />
           </div>
 
-          <div class="pin-format-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('PIN must be 6 digits') }}
+          <!-- Step 3: Verify Recovery Phrase (12-word order) -->
+          <div v-else-if="backupStep === 'verify'" class="backup-verify-step">
+            <MnemonicOrderVerify
+              ref="backupVerifyComponent"
+              :mnemonic="backupMnemonicWords"
+              @verify-success="onBackupVerified"
+              @show-phrase="backupStep = 'show'"
+            />
+          </div>
+
+          <!-- Alternative: 3-word verification (kept for future use) -->
+          <!--
+          <div v-else-if="backupStep === 'verify'" class="backup-verify-step">
+            <MnemonicVerify
+              ref="backupVerifyComponent"
+              :mnemonic="backupMnemonicWords"
+              @verify-success="onBackupVerified"
+            />
+          </div>
+          -->
+        </q-card-section>
+
+        <q-card-actions v-if="backupStep !== 'verify'" align="right" class="dialog-actions">
+          <q-btn
+            flat
+            :label="$t('Cancel')"
+            @click="closeBackupDialog"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+            no-caps
+          />
+          <q-btn
+            v-if="backupStep === 'pin'"
+            flat
+            :label="$t('Continue')"
+            @click="startBackup"
+            :loading="isLoadingBackup"
+            :disable="!backupPinInput || backupPinInput.length < 6"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+          <q-btn
+            v-if="backupStep === 'show'"
+            flat
+            :label="$t('I\'ve saved it — Verify now')"
+            @click="backupStep = 'verify'"
+            class="continue-action-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            no-caps
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Change PIN Dialog -->
+    <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="dialog-card pin-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Update your PIN') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            v-close-popup
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <!-- Icon + intro -->
+          <div class="pin-change-intro">
+            <div class="pin-change-icon" :class="$q.dark.isActive ? 'pin-change-icon-dark' : 'pin-change-icon-light'">
+              <Icon icon="tabler:transfer" width="24" height="24" />
+            </div>
+            <p class="pin-change-desc" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('Your PIN keeps your wallet private. Pick something memorable that only you know.') }}
+            </p>
+          </div>
+
+          <div class="pin-inputs-section">
+            <div class="pin-field-group">
+              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Current PIN') }}</div>
+              <q-input
+                v-model="sparkPinInput"
+                type="password"
+                :placeholder="'------'"
+                maxlength="6"
+                mask="######"
+                :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
+                borderless
+                hide-bottom-space
+                input-class="text-center pin-input-field"
+                dense
+              />
+            </div>
+
+            <div class="pin-field-group">
+              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('New PIN') }}</div>
+              <q-input
+                v-model="sparkNewPin"
+                type="password"
+                :placeholder="'------'"
+                maxlength="6"
+                mask="######"
+                :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
+                borderless
+                input-class="text-center pin-input-field"
+                dense
+                hide-bottom-space
+              />
+            </div>
+
+            <div class="pin-field-group">
+              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Repeat new PIN') }}</div>
+              <q-input
+                v-model="sparkConfirmNewPin"
+                type="password"
+                :placeholder="'------'"
+                maxlength="6"
+                mask="######"
+                :class="[
+                  $q.dark.isActive ? 'pin-input-dark' : 'pin-input-light',
+                  sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin ? 'pin-input-error' : ''
+                ]"
+                hide-bottom-space
+                borderless
+                input-class="text-center pin-input-field"
+                dense
+                :error="sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin"
+                :error-message="$t('Those don\'t match — try again')"
+              />
+            </div>
           </div>
 
           <div class="pin-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-6'">
-            {{ $t('If you forget your PIN, restore your wallet with your seed phrase.') }}
+            <Icon icon="tabler:info-circle" width="14" height="14" class="q-mr-xs" />
+            {{ $t('Forgot your PIN? You can restore your wallet using your recovery phrase.') }}
           </div>
         </q-card-section>
 
@@ -1137,10 +1431,11 @@
             :label="$t('Cancel')"
             v-close-popup
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+            no-caps
           />
           <q-btn
             flat
-            :label="$t('Change PIN')"
+            :label="$t('Save new PIN')"
             @click="handleChangePin"
             :loading="isChangingPin"
             :disable="!sparkPinInput || sparkPinInput.length < 6 || !sparkNewPin || sparkNewPin.length < 6 || sparkNewPin !== sparkConfirmNewPin"
@@ -1163,16 +1458,19 @@
             flat
             round
             dense
-            icon="las la-times"
             @click="closeSparkReconnectDialog"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="dialog-content">
           <div class="unlock-info">
             <div class="unlock-icon">
-              <q-icon name="las la-lock" size="48px" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'" />
+              <Icon icon="tabler:lock" width="48" height="48" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'" />
             </div>
             <div class="unlock-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
               {{ $t('Enter your PIN to unlock your Spark wallet') }}
@@ -1215,23 +1513,198 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Auto-Withdraw Config Dialog -->
+    <q-dialog v-model="showAutoWithdrawDialog" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="aw-config-dialog" :class="$q.dark.isActive ? 'dialog_card_dark' : 'dialog_card_light'">
+        <!-- Header -->
+        <q-card-section class="aw-dialog-header">
+          <div class="aw-dialog-icon-wrap" :class="'aw-icon-wrap-' + (awConfigWallet?.type || 'nwc')">
+            <Icon icon="tabler:send" width="28" height="28" />
+          </div>
+          <div class="aw-dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Auto-Transfer') }}
+          </div>
+          <div class="aw-dialog-subtitle" :class="$q.dark.isActive ? 'aw-subtitle-dark' : 'aw-subtitle-light'">
+            {{ $t('Move funds automatically when your balance grows past a threshold') }}
+          </div>
+        </q-card-section>
+
+        <q-card-section class="aw-dialog-body">
+          <!-- Enable toggle -->
+          <div class="aw-toggle-row" :class="$q.dark.isActive ? 'aw-toggle-dark' : 'aw-toggle-light'">
+            <div class="aw-toggle-label">
+              <span class="aw-toggle-text" :class="$q.dark.isActive ? 'aw-name-dark' : 'aw-name-light'">
+                {{ awConfigForm.enabled ? $t('Active') : $t('Inactive') }}
+              </span>
+            </div>
+            <q-toggle
+              v-model="awConfigForm.enabled"
+              :color="awToggleColor"
+            />
+          </div>
+
+          <!-- Threshold -->
+          <div class="aw-field-group">
+            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
+              {{ $t('Threshold') }}
+            </div>
+            <q-input
+              v-model.number="awConfigForm.thresholdSats"
+              type="number"
+              :placeholder="$t('Amount in sats')"
+              borderless
+              dense
+              class="aw-input"
+              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
+              :disable="!awConfigForm.enabled"
+            >
+              <template v-slot:append>
+                <span class="aw-input-suffix" :class="$q.dark.isActive ? 'aw-suffix-dark' : 'aw-suffix-light'">sats</span>
+              </template>
+            </q-input>
+            <div v-if="awConfigForm.thresholdSats > 0 && exchangeRates[preferredFiatCurrency]" class="aw-fiat-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
+              &asymp; {{ formatFiatValue(awConfigForm.thresholdSats) }} {{ preferredFiatCurrency }}
+            </div>
+          </div>
+
+          <!-- Payout type (Spark only) -->
+          <div v-if="awConfigWallet?.type === 'spark'" class="aw-field-group">
+            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
+              {{ $t('Transfer via') }}
+            </div>
+            <div class="aw-payout-pills">
+              <div
+                class="aw-pill-option"
+                :class="[
+                  awConfigForm.payoutType === 'lightning' ? 'aw-pill-selected aw-pill-sel-' + (awConfigWallet?.type || 'nwc') : '',
+                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
+                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
+                ]"
+                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'lightning')"
+              >
+                <Icon icon="tabler:bolt" width="16" height="16" />
+                {{ $t('Lightning') }}
+              </div>
+              <div
+                class="aw-pill-option"
+                :class="[
+                  awConfigForm.payoutType === 'onchain' ? 'aw-pill-selected aw-pill-sel-' + (awConfigWallet?.type || 'nwc') : '',
+                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
+                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
+                ]"
+                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'onchain')"
+              >
+                <Icon icon="tabler:link" width="16" height="16" />
+                {{ $t('On-chain') }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Destination -->
+          <div class="aw-field-group">
+            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
+              {{ awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark' ? $t('Bitcoin address') : $t('Lightning address') }}
+            </div>
+            <q-input
+              v-if="awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark'"
+              v-model="awConfigForm.bitcoinAddress"
+              :placeholder="$t('bc1q...')"
+              borderless
+              dense
+              class="aw-input"
+              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
+              :disable="!awConfigForm.enabled"
+            />
+            <q-input
+              v-else
+              v-model="awConfigForm.lightningAddress"
+              :placeholder="$t('user@example.com')"
+              borderless
+              dense
+              class="aw-input"
+              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
+              :disable="!awConfigForm.enabled"
+            />
+          </div>
+
+          <!-- Fee speed (on-chain only) -->
+          <div v-if="awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark'" class="aw-field-group">
+            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
+              {{ $t('Network fee') }}
+            </div>
+            <div class="aw-fee-cards">
+              <div
+                v-for="speed in feeSpeedOptions"
+                :key="speed.value"
+                class="aw-fee-card"
+                :class="[
+                  awConfigForm.feeSpeed === speed.value ? 'aw-fee-selected aw-fee-sel-' + (awConfigWallet?.type || 'nwc') : '',
+                  $q.dark.isActive ? 'aw-fee-dark' : 'aw-fee-light',
+                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
+                ]"
+                @click="awConfigForm.enabled && (awConfigForm.feeSpeed = speed.value)"
+              >
+                <Icon :icon="speed.icon" width="18" height="18" />
+                <div class="aw-fee-label">{{ speed.label }}</div>
+                <div class="aw-fee-desc" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">{{ speed.desc }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Last transfer info -->
+          <div v-if="awConfigLastTriggered" class="aw-last-transfer" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
+            <Icon icon="tabler:clock" width="14" height="14" />
+            {{ $t('Last transfer') }}: {{ awConfigLastTriggered }}
+          </div>
+        </q-card-section>
+
+        <!-- Actions -->
+        <q-card-actions class="aw-dialog-actions">
+          <q-btn
+            flat
+            :label="$t('Save')"
+            @click="saveAutoWithdrawConfig"
+            :disable="!isAutoWithdrawConfigValid"
+            class="aw-save-btn"
+            :class="'aw-save-' + (awConfigWallet?.type || 'nwc')"
+            no-caps
+          />
+          <q-btn
+            v-if="getAutoWithdrawConfig(awConfigWalletId)"
+            flat
+            :label="$t('Remove rule')"
+            @click="removeAutoWithdrawConfig"
+            class="aw-remove-btn"
+            no-caps
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script>
 import {useWalletStore} from '../stores/wallet'
+import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
 import {shareContent} from '../utils/share.js'
 import {truncateAddress} from '../utils/addressUtils.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
+import MnemonicDisplay from '../components/MnemonicDisplay.vue'
+import MnemonicOrderVerify from '../components/MnemonicOrderVerify.vue'
+// import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { version } from '../../package.json'
 
 export default {
   name: 'SettingsPage',
   components: {
-    VueQrcode
+    VueQrcode,
+    MnemonicDisplay,
+    MnemonicOrderVerify,
+    // MnemonicVerify,
   },
   data() {
     return {
@@ -1282,6 +1755,13 @@ export default {
       viewedMnemonic: '',
       isChangingPin: false,
 
+      // Backup seed phrase dialog
+      showBackupDialog: false,
+      backupStep: 'pin', // 'pin' | 'show' | 'verify'
+      backupPinInput: '',
+      backupMnemonicWords: [],
+      isLoadingBackup: false,
+
       // Spark reconnect dialog
       showSparkReconnectDialog: false,
       sparkReconnectWalletId: null,
@@ -1309,6 +1789,24 @@ export default {
 
       // Wallet removal
       walletToRemove: null,
+
+      // Auto-withdraw
+      showAutoWithdrawDialog: false,
+      awConfigWalletId: null,
+      awConfigWallet: null,
+      awConfigForm: {
+        enabled: false,
+        thresholdSats: 0,
+        payoutType: 'lightning',
+        lightningAddress: '',
+        bitcoinAddress: '',
+        feeSpeed: 'medium',
+      },
+      feeSpeedOptions: [
+        { value: 'low', label: 'Economy', desc: '~1 hour', icon: 'tabler:leaf' },
+        { value: 'medium', label: 'Standard', desc: '~30 min', icon: 'tabler:scale' },
+        { value: 'high', label: 'Priority', desc: 'Next block', icon: 'tabler:rocket' },
+      ],
     }
   },
   computed: {
@@ -1326,9 +1824,16 @@ export default {
       'sparkWallet',
       'isActiveWalletSpark',
       'activeSparkAddress',
-      'useBip177Format'
+      'useBip177Format',
+      'hasBackedUp'
     ]),
 
+    hasNwcWallets() {
+      return this.wallets.some(w => w.type === 'nwc');
+    },
+    hasLnbitsWallets() {
+      return this.wallets.some(w => w.type === 'lnbits');
+    },
     isValidNewWallet() {
       return this.newWalletName.trim() &&
         this.newWalletNwc.trim() &&
@@ -1354,6 +1859,29 @@ export default {
 
     appVersion() {
       return version;
+    },
+
+    awToggleColor() {
+      const type = this.awConfigWallet?.type;
+      if (type === 'spark') return 'grey-8';
+      if (type === 'lnbits') return 'pink-5';
+      return 'amber-7'; // nwc
+    },
+
+    isAutoWithdrawConfigValid() {
+      if (!this.awConfigForm.enabled) return true; // Can save disabled config
+      if (!this.awConfigForm.thresholdSats || this.awConfigForm.thresholdSats <= 0) return false;
+      if (this.awConfigForm.payoutType === 'onchain' && this.awConfigWallet?.type === 'spark') {
+        return !!this.awConfigForm.bitcoinAddress.trim();
+      }
+      return !!this.awConfigForm.lightningAddress.trim();
+    },
+
+    awConfigLastTriggered() {
+      const config = this.getAutoWithdrawConfig(this.awConfigWalletId);
+      if (!config?.lastTriggeredAt) return null;
+      const d = new Date(config.lastTriggeredAt);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
   },
   created() {
@@ -1375,6 +1903,11 @@ export default {
     this.exchangeRateInterval = setInterval(() => {
       this.loadExchangeRates();
     }, 300000); // 5 minutes
+
+    // Handle deep link from backup banner
+    if (this.$route.query.section === 'backup' && this.hasSparkWallet) {
+      this.$nextTick(() => this.openBackupDialog());
+    }
   },
 
   beforeUnmount() {
@@ -1402,7 +1935,8 @@ export default {
       'getSparkMnemonic',
       'changeSparkPin',
       'connectSparkWallet',
-      'updateBip177Preference'
+      'updateBip177Preference',
+      'confirmBackup'
     ]),
 
     async initializeStore() {
@@ -1429,7 +1963,7 @@ export default {
         message: value
           ? this.$t('Amount format changed to BIP-177 (₿)')
           : this.$t('Amount format changed to Legacy (sats)'),
-        
+
         timeout: 2000
       })
     },
@@ -1484,7 +2018,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet connected'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1492,7 +2026,7 @@ export default {
           type: 'negative',
           message: this.$t('Connection failed'),
           caption: this.$t('Please check your connection and try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
@@ -1521,7 +2055,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Reconnected'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1529,7 +2063,7 @@ export default {
           type: 'negative',
           message: this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
@@ -1545,7 +2079,7 @@ export default {
         this.$q.notify({
           type: 'warning',
           message: this.$t('Please enter your 6-digit PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
         return
@@ -1560,7 +2094,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet unlocked'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1569,7 +2103,7 @@ export default {
           type: 'negative',
           message: isInvalidPin ? this.$t('Incorrect PIN') : this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
         // Clear PIN on error
@@ -1591,7 +2125,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet switched'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -1599,7 +2133,7 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -1654,7 +2188,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Spark wallet deleted'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -1663,7 +2197,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Wallet removed'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -1680,7 +2214,7 @@ export default {
           type: 'negative',
           message: this.$t('Action failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -1749,7 +2283,7 @@ export default {
           type: 'warning',
           message: this.$t('Couldn\'t generate invoice'),
           caption: this.$t('Copy the lightning address instead: {address}', { address: this.donationAddress }),
-          
+
           timeout: 10000,
           actions: [
             {
@@ -1760,7 +2294,7 @@ export default {
                 this.$q.notify({
                   type: 'positive',
                   message: this.$t('Address copied'),
-                  
+
                 });
               }
             }
@@ -1781,7 +2315,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Invoice copied'),
-        
+
         timeout: 2000
       });
     },
@@ -1863,7 +2397,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN saved'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } else {
@@ -1872,7 +2406,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Incorrect PIN'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           return;
@@ -1887,7 +2421,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN updated'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1921,7 +2455,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Notifications not available'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1996,7 +2530,7 @@ export default {
           message: urlToTest ?
             this.$t('API settings saved') :
             this.$t('Using default API'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -2006,7 +2540,7 @@ export default {
           type: 'negative',
           message: this.$t('API connection failed'),
           caption: this.$t('Please check the URL and try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2033,7 +2567,7 @@ export default {
       this.$q.notify({
         type: 'positive',
         message: this.$t('Language updated'),
-        
+
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
@@ -2047,7 +2581,7 @@ export default {
 
     // Spark wallet methods
     getWalletTypeIcon(wallet) {
-      return wallet.type === 'spark' ? 'las la-bolt' : 'las la-link';
+      return wallet.type === 'spark' ? 'tabler:bolt' : 'tabler:link';
     },
 
     getWalletTypeLabel(wallet) {
@@ -2120,7 +2654,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Please enter your PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2134,7 +2668,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Incorrect PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.sparkPinInput = '';
@@ -2149,6 +2683,55 @@ export default {
       this.viewedMnemonic = '';
     },
 
+    // ==========================================
+    // Backup Seed Phrase
+    // ==========================================
+
+    openBackupDialog() {
+      this.backupPinInput = '';
+      this.backupMnemonicWords = [];
+      this.backupStep = 'pin';
+      this.isLoadingBackup = false;
+      this.showBackupDialog = true;
+    },
+
+    async startBackup() {
+      if (!this.backupPinInput || this.backupPinInput.length < 6) return;
+
+      this.isLoadingBackup = true;
+      try {
+        const mnemonic = await this.getSparkMnemonic(this.backupPinInput);
+        this.backupMnemonicWords = mnemonic.split(' ');
+        this.backupStep = 'show';
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Incorrect PIN'),
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        this.backupPinInput = '';
+      } finally {
+        this.isLoadingBackup = false;
+      }
+    },
+
+    async onBackupVerified() {
+      await this.confirmBackup();
+      this.showBackupDialog = false;
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Backup verified successfully!'),
+        caption: this.$t('Your recovery phrase has been confirmed.'),
+      });
+    },
+
+    closeBackupDialog() {
+      this.showBackupDialog = false;
+      this.backupPinInput = '';
+      this.backupMnemonicWords = [];
+      this.backupStep = 'pin';
+    },
+
     openChangePinDialog() {
       this.sparkPinInput = '';
       this.sparkNewPin = '';
@@ -2161,7 +2744,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Please enter your current PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2171,7 +2754,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('New PIN must be 6 digits'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2181,7 +2764,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('PINs do not match'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
@@ -2193,7 +2776,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('PIN changed successfully'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.showChangePinDialog = false;
@@ -2201,7 +2784,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: error.message || this.$t('Failed to change PIN'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2246,6 +2829,80 @@ export default {
     navigateToNWC() {
       this.showAddWalletDialog = false;
       this.$router.push('/nwc-setup');
+    },
+
+    // Auto-withdraw methods
+    getAutoWithdrawConfig(walletId) {
+      if (!walletId) return null;
+      const store = useAutoWithdrawStore();
+      return store.getConfig(walletId);
+    },
+
+    truncateAutoWithdrawDest(walletId) {
+      const config = this.getAutoWithdrawConfig(walletId);
+      if (!config) return '';
+      const dest = config.payoutType === 'onchain' ? config.bitcoinAddress : config.lightningAddress;
+      if (!dest) return '';
+      if (dest.includes('@')) return dest;
+      if (dest.length > 16) return `${dest.slice(0, 8)}...${dest.slice(-4)}`;
+      return dest;
+    },
+
+    openAutoWithdrawConfig(wallet) {
+      this.awConfigWalletId = wallet.id;
+      this.awConfigWallet = wallet;
+      const existing = this.getAutoWithdrawConfig(wallet.id);
+      if (existing) {
+        this.awConfigForm = {
+          enabled: existing.enabled,
+          thresholdSats: existing.thresholdSats,
+          payoutType: existing.payoutType || 'lightning',
+          lightningAddress: existing.lightningAddress || '',
+          bitcoinAddress: existing.bitcoinAddress || '',
+          feeSpeed: existing.feeSpeed || 'medium',
+        };
+      } else {
+        this.awConfigForm = {
+          enabled: false,
+          thresholdSats: 0,
+          payoutType: 'lightning',
+          lightningAddress: '',
+          bitcoinAddress: '',
+          feeSpeed: 'medium',
+        };
+      }
+      this.showAutoWithdrawDialog = true;
+    },
+
+    async saveAutoWithdrawConfig() {
+      const store = useAutoWithdrawStore();
+      await store.saveConfig(this.awConfigWalletId, this.awConfigForm);
+      this.showAutoWithdrawDialog = false;
+      this.$q.notify({
+        message: this.$t('Auto-transfer settings saved'),
+        color: 'positive',
+        position: 'top',
+        timeout: 2000,
+      });
+    },
+
+    async removeAutoWithdrawConfig() {
+      const store = useAutoWithdrawStore();
+      await store.removeConfig(this.awConfigWalletId);
+      this.showAutoWithdrawDialog = false;
+      this.$q.notify({
+        message: this.$t('Auto-transfer rule removed'),
+        color: 'info',
+        position: 'top',
+        timeout: 2000,
+      });
+    },
+
+    formatFiatValue(sats) {
+      if (!sats || !this.exchangeRates[this.preferredFiatCurrency]) return '';
+      const btcAmount = sats / 100000000;
+      const fiatValue = btcAmount * this.exchangeRates[this.preferredFiatCurrency];
+      return fiatValue.toFixed(2);
     }
   }
 }
@@ -2256,7 +2913,9 @@ export default {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 .bg-dark {
@@ -2279,11 +2938,11 @@ export default {
 }
 
 .header-dark {
-  border-bottom-color: #2A342A;
+  border-bottom-color: var(--border-card);
 }
 
 .header-light {
-  border-bottom-color: #E5E7EB;
+  border-bottom-color: var(--border-card);
 }
 
 .back-btn {
@@ -2325,7 +2984,7 @@ export default {
 }
 
 .app-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 20px;
   font-weight: 800;
   line-height: 100%;
@@ -2358,7 +3017,7 @@ export default {
 
 /* Section Labels */
 .section-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
@@ -2371,11 +3030,11 @@ export default {
 }
 
 .section-label-dark {
-  color: #666;
+  color: var(--text-muted);
 }
 
 .section-label-light {
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 /* Settings Cards */
@@ -2386,11 +3045,13 @@ export default {
 }
 
 .card-dark {
-  background: #1A1A1A;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
 }
 
 .card-light {
-  background: #FFFFFF;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
@@ -2402,38 +3063,38 @@ export default {
 
 .item-label-dark {
   color: #FFFFFF;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 500;
 }
 
 .item-label-light {
   color: #1F2937;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 500;
 }
 
 .item-caption-dark {
   color: #666;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
 }
 
 .item-caption-light {
   color: #9CA3AF;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
 }
 
 .mono-caption {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
 /* Side Values */
 .side-value {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   margin-right: 4px;
 }
@@ -2459,19 +3120,19 @@ export default {
 
 /* Separators */
 .separator-dark {
-  background: #2A2A2A;
+  background: var(--border-card);
   margin-left: 16px;
 }
 
 .separator-light {
-  background: #F3F4F6;
+  background: var(--border-card);
   margin-left: 16px;
 }
 
 /* Danger Text */
 .danger-text {
   color: #EF4444 !important;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 500;
 }
@@ -2494,7 +3155,7 @@ export default {
 }
 
 .support-message {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -2518,7 +3179,7 @@ export default {
   min-width: 80px;
   height: 36px;
   border-radius: 8px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
 }
@@ -2555,7 +3216,7 @@ export default {
   width: 100%;
   height: 44px;
   border-radius: 10px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
 }
@@ -2596,7 +3257,7 @@ export default {
 }
 
 .donation-qr-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   margin-top: 8px;
   margin-bottom: 16px;
@@ -2606,7 +3267,7 @@ export default {
   width: 100%;
   height: 44px;
   border-radius: 10px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
 }
@@ -2618,13 +3279,13 @@ export default {
 }
 
 .donation-portal-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 11px;
   margin-bottom: 4px;
 }
 
 .donation-portal-link {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
   color: #ff6b9d;
@@ -2665,7 +3326,7 @@ export default {
 }
 
 .danger-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   font-weight: 700;
   color: #EF4444;
@@ -2673,7 +3334,7 @@ export default {
 }
 
 .danger-message {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -2683,7 +3344,7 @@ export default {
 }
 
 .confirm-instruction {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   margin-bottom: 0.75rem;
   text-align: center;
@@ -2710,13 +3371,13 @@ export default {
 }
 
 .cancel-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-weight: 600;
   border-radius: 10px;
 }
 
 .danger-action-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-weight: 600;
   border-radius: 10px;
   background: #EF4444 !important;
@@ -2754,7 +3415,7 @@ export default {
 .app-version {
   display: block;
   text-align: center;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   padding: 2rem 1rem 1rem;
   text-decoration: none;
@@ -2824,14 +3485,14 @@ export default {
 }
 
 .card-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
   margin-bottom: 0.125rem;
 }
 
 .card-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 11px;
   opacity: 0.8;
 }
@@ -2848,7 +3509,7 @@ export default {
 .coming-soon-badge {
   background: linear-gradient(135deg, #F59E0B, #D97706);
   color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   padding: 0.25rem 0.625rem;
@@ -2891,7 +3552,7 @@ export default {
   width: 100%;
   height: 44px;
   border-radius: 18px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-weight: 500;
   font-size: 14px;
   border: 1px solid;
@@ -2931,7 +3592,7 @@ export default {
 }
 
 .disconnect-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -2953,7 +3614,7 @@ export default {
 }
 
 .dialog-header {
-  border-bottom-color: #2A342A;
+  border-bottom-color: var(--border-card);
 }
 
 .close-btn {
@@ -2984,11 +3645,11 @@ export default {
 }
 
 .currency-item-dark {
-  border-color: #2A342A;
+  border-color: var(--border-card);
 }
 
 .currency-item-light {
-  border-color: #F3F4F6;
+  border-color: var(--border-card);
 }
 
 .currency-item-dark:hover {
@@ -3012,12 +3673,12 @@ export default {
 }
 
 .currency-code {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   margin-bottom: 0.25rem;
 }
 
 .currency-rate {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
 }
 
@@ -3045,11 +3706,11 @@ export default {
 }
 
 .language-item-dark {
-  border-color: #2A342A;
+  border-color: var(--border-card);
 }
 
 .language-item-light {
-  border-color: #F3F4F6;
+  border-color: var(--border-card);
 }
 
 .language-item-dark:hover {
@@ -3073,12 +3734,12 @@ export default {
 }
 
 .language-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   margin-bottom: 0.25rem;
 }
 
 .language-code {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
 }
 
@@ -3093,13 +3754,13 @@ export default {
 }
 
 .stats-dark {
-  background: #171717;
-  border: 1px solid #2A342A;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
 }
 
 .stats-light {
-  background: #F8F9FA;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
 }
 
 .stat-item {
@@ -3110,7 +3771,7 @@ export default {
 }
 
 .stat-value {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   margin-bottom: 0.25rem;
 }
 
@@ -3119,7 +3780,7 @@ export default {
 }
 
 .stat-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 10px;
   font-weight: 500;
   text-transform: capitalize;
@@ -3132,18 +3793,18 @@ export default {
 }
 
 .divider-dark {
-  background: #2A342A;
+  background: var(--border-card);
 }
 
 .divider-light {
-  background: #E5E7EB;
+  background: var(--border-card);
 }
 
 /* Wallets List */
 /* Wallets Dialog - Scrollable Layout */
 .wallets-dialog-card {
   width: 100%;
-  max-width: 480px;
+  max-width: min(480px, 95vw);
   max-height: 85vh;
   border-radius: 24px;
   overflow: hidden;
@@ -3160,7 +3821,7 @@ export default {
   width: 100%;
   height: 48px;
   border-radius: 14px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   margin-top: 1rem;
@@ -3193,8 +3854,14 @@ export default {
 .wallets-dialog-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem 1.5rem 1.5rem;
   min-height: 0;
+  scrollbar-width: none;
+}
+
+.wallets-dialog-content::-webkit-scrollbar {
+  display: none;
 }
 
 .wallets-list-container {
@@ -3205,6 +3872,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow: hidden;
 }
 
 .no-wallets {
@@ -3217,14 +3885,14 @@ export default {
 }
 
 .no-wallets-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   margin-top: 0.5rem;
   opacity: 0.5;
 }
 
 .no-wallets-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
@@ -3237,14 +3905,16 @@ export default {
   padding: 0.875rem 1rem;
   border-radius: 12px;
   transition: background 0.15s ease;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .wallet-card-dark {
-  background: #1A1A1A;
+  background: var(--bg-card);
 }
 
 .wallet-card-light {
-  background: #FFF;
+  background: var(--bg-card);
 }
 
 .wallet-card-dark:hover {
@@ -3361,7 +4031,7 @@ export default {
 
 .wallet-name-field :deep(.q-field__native) {
   padding: 0 0.25rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
   line-height: 24px;
@@ -3402,7 +4072,7 @@ export default {
   gap: 0.2rem;
   padding: 0.125rem 0.4rem;
   border-radius: 6px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
@@ -3423,7 +4093,7 @@ export default {
 }
 
 .wallet-tag {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   padding: 0.1rem 0.35rem;
@@ -3439,7 +4109,7 @@ export default {
 
 /* Wallet Balance */
 .wallet-balance-row {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
 }
@@ -3453,7 +4123,7 @@ export default {
 }
 
 .wallet-error-msg {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 10px;
   color: #EF4444;
   font-weight: 500;
@@ -3505,7 +4175,7 @@ export default {
   width: 100%;
   height: 48px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-weight: 400;
   font-size: 14px;
   transition: all 0.2s ease;
@@ -3527,14 +4197,14 @@ export default {
 .nwc-input :deep(.q-field__control) {
   border-radius: 20px;
   padding: 0.75rem 1rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 
 .input-help {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   margin-top: 0.5rem;
 }
@@ -3552,7 +4222,7 @@ export default {
 .continue-action-btn {
   height: 40px;
   border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   padding: 0 1.5rem;
@@ -3658,124 +4328,186 @@ export default {
 }
 
 /* Mempool Dialog Styles */
-.mempool-info {
+/* Mempool Dialog */
+.mempool-dialog {
+  width: 100%;
+  max-width: 420px;
+}
+
+.mempool-intro {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1.25rem;
+  text-align: center;
 }
 
-.info-dark {
-  background: #1A1A2E;
-  border: 1px solid #2A342A;
+.mempool-intro-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.info-light {
-  background: #F0FDF4;
-  border: 1px solid #BBF7D0;
-}
-
-.info-icon {
+.mempool-intro-icon-dark {
+  background: rgba(21, 222, 114, 0.1);
   color: #15DE72;
-  font-size: 20px;
-  margin-top: 0.125rem;
-  flex-shrink: 0;
 }
 
-.info-text {
-  font-family: Fustat, 'Inter', sans-serif;
+.mempool-intro-icon-light {
+  background: rgba(5, 149, 115, 0.08);
+  color: #059573;
+}
+
+.mempool-intro-text {
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 320px;
 }
 
-.mempool-input {
-  margin-bottom: 1.5rem;
+.mempool-input-wrap {
+  margin-bottom: 1rem;
 }
 
-.mempool-input :deep(.q-field__control) {
-  border-radius: 20px;
-  padding: 0.75rem 1rem;
-  font-family: Fustat, 'Inter', sans-serif;
-}
-
-.url-examples {
-  margin-bottom: 1.5rem;
-}
-
-.examples-dark {
-  background: #171717;
-  border: 1px solid #2A342A;
-}
-
-.examples-light {
-  background: #F8F9FA;
-  border: 1px solid #E5E7EB;
-}
-
-.url-examples {
-  border-radius: 12px;
-  padding: 1rem;
-}
-
-.example-title {
-  font-family: Fustat, 'Inter', sans-serif;
+.mempool-input-label {
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   font-weight: 600;
-  margin-bottom: 0.75rem;
+  margin-bottom: 6px;
 }
 
-.example-item {
+.mempool-url-input {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Server cards */
+.mempool-servers {
+  margin-bottom: 1rem;
+}
+
+.mempool-servers-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.server-card {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.5rem;
-  border-radius: 8px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
   cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
+  transition: all 0.15s ease;
+  margin-bottom: 6px;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.example-item:last-child {
+.server-card:last-child {
   margin-bottom: 0;
 }
 
-.example-item:hover {
-  background: rgba(21, 222, 114, 0.1);
+.server-card-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
 }
 
-.example-url {
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 11px;
+.server-card-dark:active {
+  background: #1E1E1E;
+}
+
+.server-card-light {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.server-card-light:active {
+  background: #F0F1F3;
+}
+
+.server-card.server-active {
+  border-color: #15DE72;
+}
+
+.server-card-dark.server-active {
+  background: rgba(21, 222, 114, 0.06);
+}
+
+.server-card-light.server-active {
+  background: rgba(5, 149, 115, 0.04);
+}
+
+.server-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.server-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.server-tag {
+  font-family: 'Manrope', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 20px;
+}
+
+.tag-default {
+  background: rgba(21, 222, 114, 0.12);
   color: #15DE72;
 }
 
-.example-desc {
-  font-family: Fustat, 'Inter', sans-serif;
-  font-size: 10px;
-  opacity: 0.7;
+.tag-privacy {
+  background: rgba(139, 92, 246, 0.12);
+  color: #A78BFA;
 }
 
+.tag-community {
+  background: rgba(251, 191, 36, 0.12);
+  color: #F59E0B;
+}
+
+.server-url {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Rate status */
 .rate-status {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
 }
 
 .status-dark {
-  background: #1A1A1A;
+  background: var(--bg-secondary);
 }
 
 .status-light {
-  background: #F3F4F6;
+  background: var(--bg-secondary);
 }
 
 .rate-status span {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
+  line-height: 1.4;
 }
 
 /* Spark Wallet Section Styles */
@@ -3806,10 +4538,23 @@ export default {
   gap: 12px;
 }
 
+.pin-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pin-field-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding-left: 4px;
+}
+
 .pin-input-dark {
   border-radius: 12px;
-  background: #171717;
-  border: 1px solid #2A342A;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
   color: #FFF;
 }
 
@@ -3824,8 +4569,8 @@ export default {
 
 .pin-input-light {
   border-radius: 12px;
-  background: #F8F8F8;
-  border: 1px solid #E5E5E5;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
   color: #212121;
 }
 
@@ -3858,14 +4603,14 @@ export default {
 }
 
 .pin-format-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   text-align: center;
   margin-top: 8px;
 }
 
 .pin-hint {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   text-align: center;
   line-height: 1.4;
@@ -3883,13 +4628,13 @@ export default {
 
 .delete-text {
   color: #EF4444;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
 
 .spark-address-text {
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
 }
 
@@ -3897,7 +4642,7 @@ export default {
 .spark-type-badge {
   background: linear-gradient(135deg, #15DE72, #059573);
   color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   padding: 0.125rem 0.4rem;
@@ -3909,7 +4654,7 @@ export default {
 .nwc-type-badge {
   background: linear-gradient(135deg, #6B7280, #4B5563);
   color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   padding: 0.125rem 0.4rem;
@@ -3924,7 +4669,7 @@ export default {
 }
 
 .section-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -3945,11 +4690,11 @@ export default {
 }
 
 .option-dark {
-  background: #171717;
+  background: var(--bg-secondary);
 }
 
 .option-light {
-  background: #F8F8F8;
+  background: var(--bg-secondary);
 }
 
 .wallet-type-option:hover {
@@ -3989,14 +4734,14 @@ export default {
 }
 
 .option-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 0.25rem;
 }
 
 .option-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
 }
 
@@ -4064,14 +4809,14 @@ export default {
 }
 
 .seed-warning-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   color: #EF4444;
 }
 
 .seed-warning-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   color: #F87171;
   line-height: 1.4;
@@ -4114,13 +4859,13 @@ export default {
 }
 
 .seed-info-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
 }
 
 .seed-info-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   line-height: 1.4;
 }
@@ -4134,7 +4879,7 @@ export default {
 }
 
 .seed-pin-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   text-align: center;
 }
@@ -4161,7 +4906,7 @@ export default {
   border-radius: 8px;
   background: rgba(251, 191, 36, 0.12);
   color: #F59E0B;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
 }
@@ -4181,17 +4926,17 @@ export default {
 }
 
 .word-dark {
-  background: #171717;
-  border: 1px solid #2A342A;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
 }
 
 .word-light {
-  background: #F8F8F8;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
 }
 
 .word-number {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 10px;
   font-weight: 600;
   color: #6B7280;
@@ -4199,7 +4944,7 @@ export default {
 }
 
 .word-text {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: #15DE72;
   font-weight: 500;
@@ -4214,7 +4959,7 @@ export default {
   border-radius: 8px;
   background: rgba(239, 68, 68, 0.08);
   color: #EF4444;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   font-weight: 500;
 }
@@ -4250,7 +4995,7 @@ export default {
 }
 
 .unlock-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   line-height: 1.5;
   max-width: 280px;
@@ -4297,5 +5042,464 @@ export default {
 .dialog_dark :deep(.q-field--outlined.q-field--focused .q-field__control:after),
 .dialog_light :deep(.q-field--outlined.q-field--focused .q-field__control:after) {
   border-color: #15DE72 !important;
+}
+
+/* Change PIN Dialog Intro */
+.pin-change-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1.25rem;
+  text-align: center;
+}
+
+.pin-change-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-change-icon-dark {
+  background: rgba(21, 222, 114, 0.1);
+  color: #15DE72;
+}
+
+.pin-change-icon-light {
+  background: rgba(5, 149, 115, 0.08);
+  color: #059573;
+}
+
+.pin-change-desc {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 280px;
+}
+
+/* Backup Status Badge */
+.backup-status-side {
+  flex-direction: row !important;
+  align-items: center;
+}
+
+.backup-status-badge {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.badge-verified {
+  background: rgba(21, 222, 114, 0.12);
+  color: #15DE72;
+}
+
+.badge-unverified {
+  background: rgba(251, 191, 36, 0.12);
+  color: #F59E0B;
+}
+
+/* Backup Dialog */
+.backup-dialog {
+  width: 100%;
+  max-width: 420px;
+}
+
+.backup-show-step {
+  padding: 0.5rem 0;
+}
+
+.backup-verify-step {
+  padding: 0.5rem 0;
+}
+
+/* ==========================================
+   Auto-Withdraw — Neobank Style
+   ========================================== */
+
+/* Empty state */
+.aw-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  margin: 0 16px 12px;
+  border-radius: 14px;
+}
+.aw-empty-dark {
+  background: rgba(255, 255, 255, 0.03);
+}
+.aw-empty-light {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.aw-empty-icon {
+  color: rgba(128, 128, 128, 0.4);
+}
+.aw-empty-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: rgba(128, 128, 128, 0.5);
+  text-align: center;
+}
+
+/* Wallet list */
+.aw-wallet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+  margin-bottom: 12px;
+}
+
+.aw-wallet-card {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.aw-card-dark {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+}
+.aw-card-dark:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.aw-card-light {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.aw-card-light:active {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.aw-wallet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.aw-wallet-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.aw-avatar-spark {
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+.aw-avatar-lnbits {
+  background: linear-gradient(135deg, #FF1FE1, #C919B0);
+}
+.aw-avatar-nwc {
+  background: linear-gradient(135deg, #FFCA4A, #F7931A);
+}
+
+.aw-wallet-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aw-wallet-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.aw-name-dark { color: rgba(255, 255, 255, 0.9); }
+.aw-name-light { color: rgba(0, 0, 0, 0.85); }
+
+.aw-wallet-summary {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aw-summary-dark { color: rgba(255, 255, 255, 0.4); }
+.aw-summary-light { color: rgba(0, 0, 0, 0.4); }
+
+.aw-wallet-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.aw-status-pill {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.01em;
+}
+.aw-pill-active {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+}
+.aw-pill-inactive {
+  background: rgba(128, 128, 128, 0.1);
+  color: rgba(128, 128, 128, 0.6);
+}
+
+/* Config dialog */
+.aw-config-dialog {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 20px 20px 0 0 !important;
+}
+
+.aw-dialog-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 20px 12px;
+  text-align: center;
+}
+
+.aw-dialog-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+/* Dialog icon wrap — per wallet type */
+.aw-icon-wrap-spark {
+  background: rgba(30, 30, 30, 0.1);
+  color: #3A3A3A;
+}
+.aw-icon-wrap-lnbits {
+  background: rgba(255, 31, 225, 0.1);
+  color: #FF1FE1;
+}
+.aw-icon-wrap-nwc {
+  background: rgba(247, 147, 26, 0.1);
+  color: #F7931A;
+}
+
+.aw-dialog-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.aw-dialog-subtitle {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 280px;
+}
+.aw-subtitle-dark { color: rgba(255, 255, 255, 0.4); }
+.aw-subtitle-light { color: rgba(0, 0, 0, 0.45); }
+
+.aw-dialog-body {
+  padding: 8px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Toggle row */
+.aw-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+.aw-toggle-dark { background: rgba(255, 255, 255, 0.04); }
+.aw-toggle-light { background: rgba(0, 0, 0, 0.02); }
+
+.aw-toggle-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Field groups */
+.aw-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aw-field-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.aw-label-dark { color: rgba(255, 255, 255, 0.35); }
+.aw-label-light { color: rgba(0, 0, 0, 0.4); }
+
+.aw-input {
+  border-radius: 10px;
+  padding: 2px 12px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+}
+.aw-input-dark { background: var(--bg-input); }
+.aw-input-light { background: var(--bg-input); border: 1px solid var(--border-card); }
+
+.aw-input-suffix {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+}
+.aw-suffix-dark { color: rgba(255, 255, 255, 0.3); }
+.aw-suffix-light { color: rgba(0, 0, 0, 0.3); }
+
+.aw-fiat-hint {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  padding-left: 12px;
+}
+.aw-hint-dark { color: rgba(255, 255, 255, 0.3); }
+.aw-hint-light { color: rgba(0, 0, 0, 0.35); }
+
+/* Payout type pills */
+.aw-payout-pills {
+  display: flex;
+  gap: 8px;
+}
+
+.aw-pill-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.aw-pill-dark {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+}
+.aw-pill-light {
+  background: rgba(0, 0, 0, 0.03);
+  color: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+/* Pill selected — per wallet type */
+.aw-pill-sel-spark.aw-pill-dark { background: rgba(60, 60, 60, 0.3); color: #fff; }
+.aw-pill-sel-spark.aw-pill-light { background: rgba(30, 30, 30, 0.08); color: #1A1A1A; border-color: rgba(30, 30, 30, 0.2); }
+.aw-pill-sel-lnbits.aw-pill-dark { background: rgba(255, 31, 225, 0.15); color: #FF5AEA; }
+.aw-pill-sel-lnbits.aw-pill-light { background: rgba(255, 31, 225, 0.08); color: #C919B0; border-color: rgba(255, 31, 225, 0.25); }
+.aw-pill-sel-nwc.aw-pill-dark { background: rgba(247, 147, 26, 0.15); color: #FFCA4A; }
+.aw-pill-sel-nwc.aw-pill-light { background: rgba(247, 147, 26, 0.1); color: #D97706; border-color: rgba(247, 147, 26, 0.3); }
+.aw-pill-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Fee speed cards */
+.aw-fee-cards {
+  display: flex;
+  gap: 8px;
+}
+
+.aw-fee-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.aw-fee-dark {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+}
+.aw-fee-light {
+  background: rgba(0, 0, 0, 0.03);
+  color: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+/* Fee selected — per wallet type (only Spark has on-chain) */
+.aw-fee-sel-spark.aw-fee-dark { background: rgba(60, 60, 60, 0.3); color: #fff; }
+.aw-fee-sel-spark.aw-fee-light { background: rgba(30, 30, 30, 0.08); color: #1A1A1A; border-color: rgba(30, 30, 30, 0.2); }
+
+.aw-fee-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.aw-fee-desc {
+  font-family: 'Manrope', sans-serif;
+  font-size: 10px;
+}
+
+/* Last transfer */
+.aw-last-transfer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  padding-top: 4px;
+}
+
+/* Dialog actions */
+.aw-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 20px 20px;
+}
+
+.aw-save-btn {
+  width: 100%;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 12px;
+  border-radius: 12px;
+}
+/* Save button — per wallet type */
+.aw-save-spark { background: rgba(30, 30, 30, 0.9); color: #fff; }
+.aw-save-spark:hover { background: rgba(30, 30, 30, 1); }
+.aw-save-lnbits { background: rgba(255, 31, 225, 0.15); color: #FF1FE1; }
+.aw-save-lnbits:hover { background: rgba(255, 31, 225, 0.25); }
+.aw-save-nwc { background: rgba(247, 147, 26, 0.15); color: #D97706; }
+.aw-save-nwc:hover { background: rgba(247, 147, 26, 0.25); }
+
+.aw-remove-btn {
+  width: 100%;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: rgba(239, 68, 68, 0.7);
 }
 </style>

@@ -69,7 +69,7 @@
       <!-- Wallet Mismatch Warning -->
       <q-card-section v-if="!canPayContact" class="warning-section">
         <div class="warning-banner" :class="$q.dark.isActive ? 'warning-dark' : 'warning-light'">
-          <q-icon name="las la-exclamation-triangle" class="warning-icon" />
+          <Icon icon="tabler:alert-triangle" class="warning-icon" />
           <div class="warning-content">
             <div class="warning-title">{{ $t('Spark wallet required') }}</div>
             <div class="warning-text">
@@ -85,7 +85,7 @@
         <div class="currency-toggle" @click="toggleCurrency"
              :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
           <span class="currency-label">{{ currentCurrency }}</span>
-          <q-icon name="las la-redo-alt" class="toggle-icon"/>
+          <Icon icon="tabler:refresh" class="toggle-icon"/>
         </div>
 
         <!-- Amount Input -->
@@ -154,7 +154,7 @@
 <script>
 import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
-import LightningPaymentService from '../utils/lightning.js'
+import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount } from '../utils/amountFormatting.js'
 
@@ -225,9 +225,9 @@ export default {
 
     contactTypeIcon() {
       const icons = {
-        lightning: 'las la-bolt',
-        spark: 'las la-fire',
-        bitcoin: 'lab la-bitcoin'
+        lightning: 'bolt',
+        spark: 'local_fire_department',
+        bitcoin: 'currency_bitcoin'
       }
       return icons[this.contactAddressType] || icons.lightning
     },
@@ -598,7 +598,7 @@ export default {
 
     isLNURL(input) {
       const lower = input.toLowerCase()
-      return lower.startsWith('lnurl')
+      return lower.startsWith('lnurl') || lower.startsWith('keyauth://')
     },
 
     async fetchLNURLInvoice(lnurl, amountSats) {
@@ -680,10 +680,14 @@ export default {
     },
 
     decodeLNURL(lnurl) {
-      // Remove prefix if present
-      const input = lnurl.toLowerCase().replace('lightning:', '')
+      const clean = lnurl.trim().replace(/^lightning:/i, '')
 
-      // Bech32 character set
+      // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
+      const lud17Url = resolveLUD17URL(clean)
+      if (lud17Url) return lud17Url
+
+      // LUD-01: bech32-encoded LNURL
+      const input = clean.toLowerCase()
       const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
       const hrpEnd = input.lastIndexOf('1')
       if (hrpEnd < 1) throw new Error('Invalid LNURL')
@@ -842,8 +846,8 @@ export default {
 }
 
 .contact-card-dark {
-  background: #0C0C0C;
-  border-color: #2A342A;
+  background: var(--bg-card);
+  border-color: var(--border-card);
 }
 
 .contact-card-light {
@@ -867,7 +871,7 @@ export default {
 
 .avatar-initial {
   color: white;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 18px;
   font-weight: 700;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
@@ -886,7 +890,7 @@ export default {
 }
 
 .contact-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 16px;
   font-weight: 600;
   overflow: hidden;
@@ -900,7 +904,7 @@ export default {
   gap: 0.2rem;
   padding: 0.1rem 0.4rem;
   border-radius: 6px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
@@ -958,7 +962,7 @@ export default {
 }
 
 .warning-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   color: #F59E0B;
@@ -966,7 +970,7 @@ export default {
 }
 
 .warning-text {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 12px;
   color: #D97706;
   line-height: 1.4;
@@ -981,7 +985,7 @@ export default {
 }
 
 .contact-address {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   overflow: hidden;
@@ -1042,7 +1046,7 @@ export default {
 }
 
 .currency-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
   color: #B0B0B0;
@@ -1062,14 +1066,15 @@ export default {
 }
 
 .amount-input {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 2.75rem;
   font-weight: 300;
   border: none;
   outline: none;
   background: transparent;
   text-align: center;
-  min-width: 200px;
+  min-width: min(200px, 60vw);
+  max-width: 100%;
 }
 
 .amount-input-dark {
@@ -1085,7 +1090,7 @@ export default {
 }
 
 .fiat-equivalent {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 1.125rem;
   margin-bottom: 1rem;
 }
@@ -1109,7 +1114,7 @@ export default {
 }
 
 .comment-label {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   margin-bottom: 0.75rem;
   text-align: center;
@@ -1128,8 +1133,10 @@ export default {
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1px solid transparent;
-  border-radius: 20px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
@@ -1152,8 +1159,10 @@ export default {
 .send-payment-btn {
   width: 100%;
   height: 52px;
-  border-radius: 24px;
-  font-family: Fustat, 'Inter', sans-serif;
+  border-radius: var(--radius-xl);
+  background: var(--gradient-green);
+  color: #FFF;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 400;
   transition: all 0.2s ease;

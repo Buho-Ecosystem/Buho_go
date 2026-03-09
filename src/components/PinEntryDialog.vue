@@ -40,7 +40,7 @@
         <!-- Lock Icon -->
         <div class="lock-icon-container">
           <div class="lock-icon-bg" :class="hasError ? 'lock-error' : ''">
-            <q-icon :name="mode === 'confirm' ? 'las la-redo-alt' : 'las la-lock'" size="36px" color="white" />
+            <Icon :icon="mode === 'confirm' ? 'tabler:refresh' : 'tabler:lock'" :style="{ fontSize: '36px', color: 'white' }" />
           </div>
         </div>
 
@@ -83,10 +83,10 @@
               :disabled="key === 'ok' && pin.length < pinLength"
             >
               <template v-if="key === 'del'">
-                <q-icon name="las la-backspace" size="24px" />
+                <Icon icon="tabler:backspace" width="24" height="24" />
               </template>
               <template v-else-if="key === 'ok'">
-                <q-icon name="las la-check" size="24px" />
+                <Icon icon="tabler:check" width="24" height="24" />
               </template>
               <template v-else>
                 {{ key }}
@@ -270,11 +270,11 @@ export default {
 }
 
 .header-dark {
-  border-bottom-color: #2A342A;
+  border-bottom-color: var(--border-card);
 }
 
 .header-light {
-  border-bottom-color: #E5E7EB;
+  border-bottom-color: var(--border-card);
 }
 
 .header-content {
@@ -292,7 +292,7 @@ export default {
 .header-title {
   flex: 1;
   text-align: center;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 20px;
   font-weight: 700;
 }
@@ -316,7 +316,7 @@ export default {
 .lock-icon-bg {
   width: 80px;
   height: 80px;
-  background: linear-gradient(135deg, #059573, #15DE72, #78D53C);
+  background: var(--gradient-green);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -326,7 +326,7 @@ export default {
 }
 
 .lock-icon-bg.lock-error {
-  background: linear-gradient(135deg, #ff4444, #ff6666);
+  background: var(--color-red);
   box-shadow: 0 4px 16px rgba(255, 68, 68, 0.3);
   animation: shake 0.5s ease-in-out;
 }
@@ -341,7 +341,7 @@ export default {
 
 /* Subtitle */
 .pin-subtitle {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   text-align: center;
   max-width: 280px;
@@ -371,36 +371,36 @@ export default {
 }
 
 .pin-dot-dark {
-  border-color: #3A3A3A;
+  border-color: var(--border-card);
   background: transparent;
 }
 
 .pin-dot-light {
-  border-color: #D1D5DB;
+  border-color: var(--border-card);
   background: transparent;
 }
 
 .pin-dot.filled {
-  background: linear-gradient(135deg, #059573, #15DE72);
-  border-color: #15DE72;
+  background: var(--color-green);
+  border-color: var(--color-green);
   transform: scale(1.1);
 }
 
 .pin-dot.error {
-  border-color: #ff4444;
+  border-color: var(--color-red);
   animation: shake 0.5s ease-in-out;
 }
 
 .pin-dot.error.filled {
-  background: #ff4444;
-  border-color: #ff4444;
+  background: var(--color-red);
+  border-color: var(--color-red);
 }
 
 /* Error Message */
 .error-message {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
-  color: #ff4444;
+  color: var(--color-red);
   text-align: center;
   min-height: 20px;
 }
@@ -424,7 +424,7 @@ export default {
   height: 72px;
   border-radius: 50%;
   border: none;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 28px;
   font-weight: 500;
   cursor: pointer;
@@ -436,8 +436,8 @@ export default {
 }
 
 .numpad-btn-dark {
-  background: #1A1A1A;
-  color: #FFFFFF;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
 .numpad-btn-dark:hover {
@@ -450,8 +450,8 @@ export default {
 }
 
 .numpad-btn-light {
-  background: #F3F4F6;
-  color: #212121;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
 .numpad-btn-light:hover {
@@ -482,7 +482,7 @@ export default {
 }
 
 .forgot-pin-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
 }

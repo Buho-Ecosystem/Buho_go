@@ -13,10 +13,12 @@
       <!-- Header -->
       <header class="modal-header">
         <div class="header-left">
-          <q-icon name="las la-exchange-alt" size="22px" class="header-icon" />
+          <Icon icon="tabler:arrows-exchange" width="22" height="22" class="header-icon" />
           <h2 class="header-title">{{ $t('Transfer Funds') }}</h2>
         </div>
-        <q-btn flat round dense icon="las la-times" class="close-btn" @click="close" />
+        <q-btn flat round dense class="close-btn" @click="close">
+          <Icon icon="tabler:x" width="20" height="20" />
+        </q-btn>
       </header>
 
       <!-- Step Indicator -->
@@ -50,16 +52,16 @@
                 </div>
               </template>
               <template v-else>
-                <q-icon name="las la-wallet" size="20px" class="placeholder-icon" />
+                <Icon icon="tabler:wallet" width="20" height="20" class="placeholder-icon" />
                 <span class="placeholder-text">{{ $t('Select source wallet') }}</span>
               </template>
-              <q-icon name="las la-chevron-right" size="16px" class="chevron" />
+              <Icon icon="tabler:chevron-right" width="16" height="16" class="chevron" />
             </button>
           </div>
 
           <div class="direction">
             <div class="direction-line"></div>
-            <div class="direction-icon"><q-icon name="las la-arrow-down" size="14px" /></div>
+            <div class="direction-icon"><Icon icon="tabler:arrow-down" width="14" height="14" /></div>
             <div class="direction-line-bottom"></div>
           </div>
 
@@ -74,15 +76,15 @@
                 </div>
               </template>
               <template v-else>
-                <q-icon name="las la-wallet" size="20px" class="placeholder-icon" />
+                <Icon icon="tabler:wallet" width="20" height="20" class="placeholder-icon" />
                 <span class="placeholder-text">{{ $t('Select destination wallet') }}</span>
               </template>
-              <q-icon name="las la-chevron-right" size="16px" class="chevron" />
+              <Icon icon="tabler:chevron-right" width="16" height="16" class="chevron" />
             </button>
           </div>
 
           <div v-if="sameWalletSelected" class="banner banner--warn">
-            <q-icon name="las la-exclamation-triangle" size="16px" />
+            <Icon icon="tabler:alert-triangle" width="16" height="16" />
             <span>{{ $t('Select different wallets') }}</span>
           </div>
         </section>
@@ -95,7 +97,7 @@
               <span class="route-wallet-name">{{ state.fromWallet?.name }}</span>
             </div>
             <div class="route-arrow">
-              <q-icon name="las la-arrow-right" size="14px" />
+              <Icon icon="tabler:arrow-right" width="14" height="14" />
             </div>
             <div class="route-wallet">
               <WalletAvatar :type="state.toWallet?.type" :wallet-id="state.toWallet?.id" size="sm" />
@@ -120,11 +122,11 @@
             <button type="button" class="quick-chip quick-chip--max" @click="setMax">Max</button>
           </div>
           <p v-if="state.isMaxAmount" class="fee-hint">
-            <q-icon name="las la-info-circle" size="12px" />
+            <Icon icon="tabler:info-circle" width="12" height="12" />
             {{ $t('Small buffer reserved for network fees. If transfer fails, try lowering the amount.') }}
           </p>
           <div v-if="state.amountError" class="banner banner--error">
-            <q-icon name="las la-exclamation-circle" size="14px" />
+            <Icon icon="tabler:alert-circle" width="14" height="14" />
             <span>{{ state.amountError }}</span>
           </div>
         </section>
@@ -139,7 +141,7 @@
             </div>
             <div class="flow-connector">
               <div class="connector-line"></div>
-              <div class="connector-arrow"><q-icon name="las la-arrow-right" size="12px" /></div>
+              <div class="connector-arrow"><Icon icon="tabler:arrow-right" width="12" height="12" /></div>
               <div class="connector-line"></div>
             </div>
             <div class="confirm-wallet">
@@ -152,14 +154,14 @@
 
         <!-- Success -->
         <section v-if="state.transferComplete" class="step-panel step-panel--center">
-          <div class="success-ring"><q-icon name="las la-check" size="32px" /></div>
+          <div class="success-ring"><Icon icon="tabler:check" width="32" height="32" /></div>
           <h3 class="success-title">{{ $t('Transfer Complete') }}</h3>
           <p class="success-amount">{{ fmt(parseInt(state.amount)) }}</p>
           <p class="success-route">{{ state.fromWallet?.name }} → {{ state.toWallet?.name }}</p>
         </section>
 
         <div v-if="state.transferError" class="banner banner--error banner--lg">
-          <q-icon name="las la-exclamation-triangle" size="18px" />
+          <Icon icon="tabler:alert-triangle" width="18" height="18" />
           <span>{{ state.transferError }}</span>
         </div>
       </main>
@@ -167,13 +169,13 @@
       <!-- Footer -->
       <footer class="modal-footer">
         <q-btn v-if="state.currentStep > 1 && !state.transferComplete && !state.isTransferring" flat no-caps class="btn-back" @click="goBack">
-          <q-icon name="las la-arrow-left" size="16px" />
+          <Icon icon="tabler:arrow-left" width="16" height="16" />
           <span>{{ $t('Back') }}</span>
         </q-btn>
         <q-space />
         <q-btn v-if="!state.transferComplete" unelevated no-caps class="btn-main" :disable="!canProceed" :loading="state.isTransferring" @click="goNext">
           <span>{{ state.currentStep < 3 ? $t('Continue') : $t('Transfer Now') }}</span>
-          <q-icon v-if="state.currentStep < 3" name="las la-arrow-right" size="16px" />
+          <Icon v-if="state.currentStep < 3" icon="tabler:arrow-right" width="16" height="16" />
         </q-btn>
         <q-btn v-else unelevated no-caps class="btn-main" @click="close">{{ $t('Done') }}</q-btn>
       </footer>
@@ -184,7 +186,9 @@
       <q-card class="picker-card" :class="themeClass">
         <header class="picker-header">
           <h3>{{ $t('Select Source Wallet') }}</h3>
-          <q-btn flat round dense icon="las la-times" v-close-popup />
+          <q-btn flat round dense v-close-popup>
+            <Icon icon="tabler:x" width="20" height="20" />
+          </q-btn>
         </header>
         <div class="picker-list">
           <button
@@ -201,7 +205,7 @@
               <span class="wallet-bal" :class="{ muted: !w.balance }">{{ fmt(w.balance) }}</span>
             </div>
             <StatusDot :status="connStatus[w.id]" />
-            <q-icon v-if="w.id === state.fromWallet?.id" name="las la-check" size="18px" class="check" />
+            <Icon v-if="w.id === state.fromWallet?.id" icon="tabler:check" width="18" height="18" class="check" />
             <span v-else-if="!w.canSend" class="hint-text">{{ $t('No balance') }}</span>
           </button>
         </div>
@@ -213,7 +217,9 @@
       <q-card class="picker-card" :class="themeClass">
         <header class="picker-header">
           <h3>{{ $t('Select Destination Wallet') }}</h3>
-          <q-btn flat round dense icon="las la-times" v-close-popup />
+          <q-btn flat round dense v-close-popup>
+            <Icon icon="tabler:x" width="20" height="20" />
+          </q-btn>
         </header>
         <div class="picker-list">
           <button
@@ -230,7 +236,7 @@
               <span class="wallet-bal">{{ fmt(w.balance) }}</span>
             </div>
             <StatusDot :status="connStatus[w.id]" />
-            <q-icon v-if="w.id === state.toWallet?.id" name="las la-check" size="18px" class="check" />
+            <Icon v-if="w.id === state.toWallet?.id" icon="tabler:check" width="18" height="18" class="check" />
             <span v-else-if="w.id === state.fromWallet?.id" class="hint-text">{{ $t('Source') }}</span>
           </button>
         </div>
@@ -529,22 +535,22 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
    Theme Variables
    ════════════════════════════════════════════════════════════ */
 .theme-dark {
-  --c-bg: #1c1c1e;
-  --c-bg2: #2c2c2e;
-  --c-bg3: #3a3a3c;
-  --c-text: #fff;
-  --c-text2: #8e8e93;
-  --c-text3: #636366;
-  --c-border: rgba(255,255,255,.1);
+  --c-bg: var(--bg-card);
+  --c-bg2: var(--bg-input);
+  --c-bg3: #2A342A;
+  --c-text: var(--text-primary);
+  --c-text2: var(--text-secondary);
+  --c-text3: var(--text-muted);
+  --c-border: var(--border-card);
 }
 .theme-light {
-  --c-bg: #fff;
-  --c-bg2: #f2f2f7;
+  --c-bg: var(--bg-card);
+  --c-bg2: var(--bg-input);
   --c-bg3: #e5e5ea;
-  --c-text: #000;
-  --c-text2: #8e8e93;
-  --c-text3: #aeaeb2;
-  --c-border: rgba(0,0,0,.08);
+  --c-text: var(--text-primary);
+  --c-text2: var(--text-secondary);
+  --c-text3: var(--text-muted);
+  --c-border: var(--border-card);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -553,8 +559,10 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 .modal-card {
   width: 100%;
   max-width: 480px;
-  border-radius: 24px 24px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-bottom: none;
 }
 
 .modal-header {
@@ -816,8 +824,8 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
    ════════════════════════════════════════════════════════════ */
 .modal-footer { display: flex; align-items: center; padding: 16px 20px; padding-bottom: max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--c-border); gap: 12px; }
 .btn-back { display: flex; align-items: center; gap: 4px; padding: 10px 16px; font-size: 15px; font-weight: 500; color: var(--c-text2); }
-.btn-main { display: flex; align-items: center; gap: 6px; padding: 12px 24px; font-size: 15px; font-weight: 600; background: #15DE72 !important; color: #fff !important; border-radius: 12px; }
-.btn-main:hover { background: #059573 !important; }
+.btn-main { display: flex; align-items: center; gap: 6px; padding: 12px 24px; font-size: 15px; font-weight: 600; background: var(--gradient-green) !important; color: #fff !important; border-radius: var(--radius-md); }
+.btn-main:hover { opacity: 0.9; }
 .btn-main:disabled { opacity: .5; }
 
 /* ════════════════════════════════════════════════════════════

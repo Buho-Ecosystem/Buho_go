@@ -15,17 +15,18 @@
 
       <!-- Pending Bitcoin Deposits Chip (in header) -->
       <transition name="btc-banner-fade">
-        <div
+        <q-chip
           v-if="isSparkWallet && pendingBitcoinDeposits.length > 0"
-          class="btc-incoming-chip"
+          clickable
+          dense
+          :ripple="false"
+          class="btc-chip"
           :class="$q.dark.isActive ? 'btc-chip-dark' : 'btc-chip-light'"
           @click="openReceiveModalBitcoin"
         >
-          <q-icon name="lab la-bitcoin" size="14px" class="btc-chip-icon" />
-          <span class="btc-chip-text">
-            {{ pendingBitcoinDeposits.some(d => d.confirmed) ? $t('Ready to claim') : $t('Incoming') }}
-          </span>
-        </div>
+          <Icon icon="tabler:currency-bitcoin" width="20" height="20" class="q-mr-xs" />
+          {{ pendingBitcoinDeposits.some(d => d.confirmed) ? $t('Ready to claim') : $t('Incoming') }}
+        </q-chip>
       </transition>
 
       <q-space/>
@@ -37,8 +38,8 @@
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="$router.push('/settings')"
         aria-label="Settings"
-        icon="las la-cog"
       >
+        <Icon icon="tabler:settings" width="18" height="18" />
       </q-btn>
       <q-btn
         flat
@@ -49,36 +50,48 @@
         padding="sm sm"
         style="border-radius: 12px"
         aria-label="Address Book"
-        icon="las la-address-book"
       >
+        <Icon icon="tabler:address-book" width="18" height="18" />
       </q-btn>
     </q-toolbar>
+
+    <!-- Backup Reminder Banner -->
+    <BackupBanner
+      :visible="walletStore.shouldPromptBackup"
+      @backup="goToBackup"
+      @dismiss="walletStore.dismissBackupPrompt()"
+    />
+
     <!-- Main Content -->
     <div class="main-content">
       <!-- Wallet Name Badge -->
-      <div
+      <q-chip
         v-if="activeWallet"
-        class="wallet-name-badge"
-        :class="$q.dark.isActive ? 'wallet-badge-dark' : 'wallet-badge-light'"
+        clickable
+        outline
+        :ripple="false"
+        class="wallet-chip"
+        :class="$q.dark.isActive ? 'wallet-chip-dark' : 'wallet-chip-light'"
         @click="openWalletManagement"
       >
         <!-- Spark Logo -->
-        <svg v-if="activeWallet.type === 'spark'" width="12" height="11" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+        <svg v-if="activeWallet.type === 'spark'" width="12" height="11" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
         </svg>
         <!-- NWC Logo -->
-        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
           <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
         </svg>
         <!-- LNBits Logo -->
-        <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-badge-icon">
+        <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
         </svg>
         <!-- Default wallet icon -->
-        <q-icon v-else name="las la-wallet" size="12px" class="wallet-badge-icon" />
-        <span class="wallet-badge-text">{{ activeWallet.name }}</span>
-      </div>
+        <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
+        {{ activeWallet.name }}
+        <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
+      </q-chip>
 
       <!-- Balance Display -->
       <div class="balance-section">
@@ -91,7 +104,7 @@
                   }}</span>
                 <!-- Fiat icon on the right -->
                 <span v-if="currentDisplayMode === 'fiat'" class="currency-icon-right">
-                  <q-icon :name="getFiatCurrencyIcon()" size="28px" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
+                  <Icon :icon="getFiatCurrencyIcon()" width="28" height="28" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
                 </span>
               </div>
             </transition>
@@ -114,11 +127,12 @@
           flat
           round
           size="md"
-          icon="las la-history"
           @click="$router.push('/transactions')"
           :class="[$q.dark.isActive ? 'transaction-history-btn-dark' : 'transaction-history-btn-light', { 'pulse': shouldPulse }]"
           aria-label="Transaction History"
-        />
+        >
+          <Icon icon="tabler:history" width="20" height="20" />
+        </q-btn>
       </div>
     </div>
 
@@ -132,7 +146,7 @@
           unelevated
           aria-label="Receive payment"
         >
-          <q-icon name="las la-arrow-down" size="24px"/>
+          <Icon icon="tabler:arrow-down" width="24" height="24" />
           <div class="btn-text">{{ $t('Receive') }}</div>
         </q-btn>
         <q-btn
@@ -142,7 +156,7 @@
           unelevated
           aria-label="Send payment"
         >
-          <q-icon name="las la-arrow-up" size="24px"/>
+          <Icon icon="tabler:arrow-up" width="24" height="24" />
           <div class="btn-text">{{ $t('Send') }}</div>
         </q-btn>
       </div>
@@ -180,8 +194,12 @@
           <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Switch Wallet') }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 class="close-btn" :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="switcher-content">
@@ -220,7 +238,7 @@
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
                   <!-- Default wallet icon -->
-                  <q-icon v-else name="las la-wallet" size="20px" />
+                  <Icon v-else icon="tabler:wallet" width="20" height="20" />
                 </div>
                 <div
                   class="switch-status-dot"
@@ -248,7 +266,7 @@
                     <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                     </svg>
-                    <q-icon v-else name="las la-wallet" size="9px" />
+                    <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
                   <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
@@ -259,10 +277,11 @@
               </div>
 
               <!-- Check Icon -->
-              <q-icon
+              <Icon
                 v-if="wallet.id === storeActiveWalletId"
-                name="las la-check-circle"
-                size="20px"
+                icon="tabler:circle-check"
+                width="20"
+                height="20"
                 class="switch-check-icon"
               />
             </div>
@@ -279,7 +298,7 @@
             :class="$q.dark.isActive ? 'transfer-btn-dark' : 'transfer-btn-light'"
             @click="openTransferModal"
           >
-            <q-icon name="las la-exchange-alt" class="q-mr-sm" />
+            <Icon icon="tabler:arrows-exchange" width="20" height="20" class="q-mr-sm" />
             {{ $t('Transfer Funds') }}
           </q-btn>
           <q-btn
@@ -289,7 +308,7 @@
             :class="$q.dark.isActive ? 'manage-btn-dark' : 'manage-btn-light'"
             @click="goToSettings"
           >
-            <q-icon name="las la-cog" class="q-mr-sm" />
+            <Icon icon="tabler:settings" width="20" height="20" class="q-mr-sm" />
             {{ $t('Manage Wallets') }}
           </q-btn>
         </q-card-section>
@@ -330,8 +349,10 @@
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ pendingPayment?.type === 'lnurl_withdraw' ? $t('Redeem Sats') : pendingPayment?.bitcoinAddress ? $t('Send Bitcoin') : $t('Confirm Payment') }}
           </div>
-          <q-btn flat round dense icon="las la-times" v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"/>
+          <q-btn flat round dense v-close-popup
+                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
+            <Icon icon="tabler:x" width="20" height="20" />
+          </q-btn>
         </q-card-section>
 
         <!-- Bitcoin Withdrawal UI -->
@@ -349,10 +370,11 @@
           <div class="payment-info">
             <div class="payment-amount">
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
-                {{ pendingPayment.isFixedAmount ? formatAmountInline(pendingPayment.fixedAmountSats) : (paymentAmount ? formatAmountInline(parseInt(paymentAmount)) : $t('Enter amount')) }}
+                {{ withdrawAmountDisplay }}
               </div>
-              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-                <span v-if="paymentFiatValue">{{ paymentFiatValue }}</span>
+              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
+                   style="cursor: pointer;" @click="toggleWithdrawDenomination">
+                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <q-icon name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
               </div>
             </div>
 
@@ -367,7 +389,7 @@
               </div>
               <div class="detail-item" v-if="!pendingPayment.isFixedAmount">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Redeemable') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ pendingPayment.minSats }} - {{ pendingPayment.maxSats }} sats</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ withdrawRedeemableRange }}</span>
               </div>
             </div>
 
@@ -376,20 +398,29 @@
               <q-input
                 v-model="paymentAmount"
                 outlined
-                :label="$t('Amount')"
+                :label="withdrawDenomination === 'fiat' ? withdrawFiatCurrency : $t('Amount')"
                 type="number"
-                :min="pendingPayment.minSats"
-                :max="pendingPayment.maxSats"
                 :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
                 :rules="[val => validateWithdrawAmount(val)]"
                 :disable="lnurlWithdrawStatus !== 'idle'"
-              />
+              >
+                <template v-slot:append>
+                  <q-btn flat dense round
+                    size="sm"
+                    @click="toggleWithdrawDenomination"
+                    :disable="lnurlWithdrawStatus !== 'idle'"
+                  >
+                    <q-icon name="las la-sync" :class="{ 'denomination-spin': denominationSpinning }" />
+                    <q-tooltip>{{ withdrawDenomination === 'sats' ? withdrawFiatCurrency : 'sats' }}</q-tooltip>
+                  </q-btn>
+                </template>
+              </q-input>
             </div>
 
             <!-- Status display during processing -->
             <div v-if="lnurlWithdrawStatus !== 'idle'" class="withdraw-status-section q-mt-md" style="text-align: center;">
               <q-spinner-dots v-if="lnurlWithdrawStatus !== 'error' && lnurlWithdrawStatus !== 'confirmed'" size="24px" class="q-mr-sm" />
-              <q-icon v-else-if="lnurlWithdrawStatus === 'error'" name="las la-exclamation-circle" size="24px" color="negative" class="q-mr-sm" />
+              <Icon v-else-if="lnurlWithdrawStatus === 'error'" icon="tabler:alert-circle" width="24" height="24" style="color: var(--q-negative);" class="q-mr-sm" />
               <span :class="lnurlWithdrawStatus === 'error' ? 'text-negative' : ($q.dark.isActive ? 'text-grey-4' : 'text-grey-7')">
                 {{ withdrawStatusMessage }}
               </span>
@@ -400,6 +431,21 @@
         <!-- Regular Payment Confirmation -->
         <q-card-section class="payment-content" v-else-if="pendingPayment">
           <div class="payment-info">
+            <!-- SA Retailer Merchant Info -->
+            <div v-if="pendingPayment.merchant" class="merchant-info">
+              <div class="merchant-info-left">
+                <img :src="pendingPayment.merchant.logo" :alt="pendingPayment.merchant.displayName" class="merchant-logo" />
+                <div class="merchant-text">
+                  <div class="merchant-name">{{ pendingPayment.merchant.displayName }}</div>
+                  <div v-if="pendingPayment.zarAmount" class="merchant-zar">R{{ pendingPayment.zarAmount }}</div>
+                </div>
+              </div>
+              <div v-if="merchantCountdown > 0" class="merchant-countdown" :class="merchantCountdown <= 20 ? 'countdown-urgent' : ''">
+                <Icon icon="tabler:clock" width="14" height="14" />
+                {{ Math.floor(merchantCountdown / 60) }}:{{ String(merchantCountdown % 60).padStart(2, '0') }}
+              </div>
+            </div>
+
             <div class="payment-amount">
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
                 {{ formatPaymentAmount() }}
@@ -409,16 +455,36 @@
                 <span v-else-if="pendingPayment && (pendingPayment.amount > 0 || paymentAmount)"
                       class="loading-fiat">{{ $t('Loading...') }}</span>
               </div>
+              <!-- Show ZAR equivalent if user's preferred currency is not ZAR -->
+              <div v-if="pendingPayment.zarAmount && walletState.preferredFiatCurrency !== 'ZAR'"
+                   class="amount-zar-secondary" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+                R{{ pendingPayment.zarAmount }} ZAR
+              </div>
+            </div>
+
+            <!-- Rate staleness warning -->
+            <div v-if="pendingPayment.merchant && ratesStale" class="rate-warning">
+              <Icon icon="tabler:alert-triangle" width="14" height="14" />
+              {{ $t('Exchange rates may be outdated') }}
             </div>
 
             <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
-              <!-- Recipient (Lightning Address or Spark Address) -->
-              <div class="detail-item" v-if="pendingPayment.lightningAddress || pendingPayment.sparkAddress">
+              <!-- Recipient (Lightning Address or Spark Address) - hide raw address for merchant payments -->
+              <div class="detail-item" v-if="(pendingPayment.lightningAddress || pendingPayment.sparkAddress) && !pendingPayment.merchant">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
                     $t('To')
                   }}:</span>
                 <span class="detail-value recipient-address" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
                     pendingPayment.lightningAddress || pendingPayment.sparkAddress
+                  }}</span>
+              </div>
+              <!-- Show merchant name as recipient for SA retail payments -->
+              <div class="detail-item" v-else-if="pendingPayment.merchant">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
+                    $t('To')
+                  }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
+                    pendingPayment.merchant.displayName
                   }}</span>
               </div>
               <div class="detail-item" v-if="pendingPayment.description">
@@ -445,6 +511,11 @@
                   <span v-else-if="estimatedFee !== null">{{ formatAmountInline(estimatedFee) }}</span>
                   <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
                 </span>
+              </div>
+              <!-- Amount range for variable-amount payments -->
+              <div class="detail-item" v-if="payAmountRange">
+                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Amount range') }}:</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ payAmountRange }}</span>
               </div>
             </div>
 
@@ -522,18 +593,19 @@
             flat
             round
             dense
-            icon="las la-times"
             @click="closeSaveContactDialog"
             :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          />
+          >
+            <Icon icon="tabler:x" width="20" height="20" />
+          </q-btn>
         </q-card-section>
 
         <q-card-section class="save-contact-content">
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            <q-icon
-              :name="saveContactData.addressType === 'spark' ? 'las la-fire' : 'las la-bolt'"
-              size="16px"
-              :color="saveContactData.addressType === 'spark' ? 'green' : 'amber'"
+            <Icon
+              :icon="saveContactData.addressType === 'spark' ? 'tabler:flame' : 'tabler:bolt'"
+              width="16" height="16"
+              :style="{ color: saveContactData.addressType === 'spark' ? '#4caf50' : '#ffc107' }"
               class="q-mr-xs"
             />
             <span class="address-preview">{{ truncateAddress(saveContactData.address) }}</span>
@@ -584,7 +656,7 @@
 
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
-import {LightningPaymentService} from '../utils/lightning.js';
+import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
@@ -601,6 +673,9 @@ import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
+import BackupBanner from '../components/BackupBanner.vue';
+import {useAutoWithdrawStore} from '../stores/autoWithdraw';
+import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 
 export default {
   name: 'WalletPage',
@@ -614,7 +689,8 @@ export default {
     AddressBookQuickModal,
     PaymentModal,
     BatchSendModal,
-    PaymentConfirmation
+    PaymentConfirmation,
+    BackupBanner
   },
   setup() {
     const walletStore = useWalletStore();
@@ -640,6 +716,8 @@ export default {
       showSendModal: false,
       showPaymentConfirmation: false,
       pendingPayment: null,
+      merchantCountdown: 0,
+      merchantCountdownTimer: null,
       paymentAmount: '',
       paymentComment: '',
       slidePosition: 0,
@@ -693,6 +771,8 @@ export default {
       showContactPayment: false,
       selectedPayContact: null,
       // LNURL-Withdraw state
+      withdrawDenomination: 'sats', // 'sats' or 'fiat'
+      denominationSpinning: false,
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
@@ -711,6 +791,19 @@ export default {
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
+    },
+    isAutoTransferActive() {
+      if (!this.activeWallet) return false;
+      const awStore = useAutoWithdrawStore();
+      const config = awStore.getConfig(this.activeWallet.id);
+      return config?.enabled === true;
+    },
+    autoWithdrawResult() {
+      const awStore = useAutoWithdrawStore()
+      return awStore.lastResult
+    },
+    ratesStale() {
+      return fiatRatesService.areRatesStale();
     },
     needsAmountInput() {
       if (!this.pendingPayment) return false;
@@ -787,12 +880,75 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       return !this.pendingPayment.isFixedAmount;
     },
+    withdrawFiatCurrency() {
+      return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    withdrawAmountSats() {
+      if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return 0;
+      if (this.pendingPayment.isFixedAmount) return this.pendingPayment.fixedAmountSats;
+      const val = parseFloat(this.paymentAmount);
+      if (!val || val <= 0) return 0;
+      if (this.withdrawDenomination === 'fiat') {
+        return fiatRatesService.convertFiatToSatsSync(val, this.withdrawFiatCurrency) || 0;
+      }
+      return Math.floor(val);
+    },
+    withdrawAmountDisplay() {
+      if (!this.pendingPayment) return '';
+      if (this.pendingPayment.isFixedAmount) {
+        if (this.withdrawDenomination === 'fiat') {
+          const fiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.fixedAmountSats, this.withdrawFiatCurrency);
+          return fiat !== null ? fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency) : this.formatAmountInline(this.pendingPayment.fixedAmountSats);
+        }
+        return this.formatAmountInline(this.pendingPayment.fixedAmountSats);
+      }
+      if (!this.paymentAmount) return this.$t('Enter amount');
+      if (this.withdrawDenomination === 'fiat') {
+        const val = parseFloat(this.paymentAmount);
+        return val > 0 ? fiatRatesService.formatFiatAmount(val, this.withdrawFiatCurrency) : this.$t('Enter amount');
+      }
+      return this.formatAmountInline(parseInt(this.paymentAmount));
+    },
+    withdrawSecondaryDisplay() {
+      const sats = this.withdrawAmountSats;
+      if (!sats) return '';
+      if (this.withdrawDenomination === 'fiat') {
+        return '≈ ' + this.formatAmountInline(sats);
+      }
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, this.withdrawFiatCurrency);
+      if (fiat === null) return '';
+      return '≈ ' + fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency);
+    },
+    withdrawRedeemableRange() {
+      if (!this.pendingPayment) return '';
+      if (this.withdrawDenomination === 'fiat') {
+        const minFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.minSats, this.withdrawFiatCurrency);
+        const maxFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.maxSats, this.withdrawFiatCurrency);
+        if (minFiat !== null && maxFiat !== null) {
+          return `${fiatRatesService.formatFiatAmount(minFiat, this.withdrawFiatCurrency)} - ${fiatRatesService.formatFiatAmount(maxFiat, this.withdrawFiatCurrency)}`;
+        }
+      }
+      return `${this.pendingPayment.minSats} - ${this.pendingPayment.maxSats} sats`;
+    },
+    payAmountRange() {
+      if (!this.pendingPayment || !this.needsAmountInput) return '';
+      const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 0);
+      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 0);
+      if (!minSats || !maxSats || minSats === maxSats) return '';
+      const currency = this.withdrawFiatCurrency;
+      const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
+      const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
+      if (minFiat !== null && maxFiat !== null) {
+        return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)} (${minSats} - ${maxSats} sats)`;
+      }
+      return `${minSats} - ${maxSats} sats`;
+    },
     canConfirmWithdraw() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       if (this.lnurlWithdrawStatus !== 'idle') return false;
       if (this.pendingPayment.isFixedAmount) return true;
-      const amount = parseInt(this.paymentAmount);
-      return amount >= this.pendingPayment.minSats && amount <= this.pendingPayment.maxSats;
+      const sats = this.withdrawAmountSats;
+      return sats >= this.pendingPayment.minSats && sats <= this.pendingPayment.maxSats;
     },
     withdrawStatusMessage() {
       const messages = {
@@ -832,6 +988,8 @@ export default {
     this.stopBitcoinDepositPolling();
     // Stop withdraw monitor if active
     this.stopWithdrawMonitor();
+    // Stop merchant countdown if active
+    this.stopMerchantCountdown();
   },
   watch: {
     'walletState.balance': {
@@ -844,6 +1002,14 @@ export default {
       immediate: true
     },
 
+    showPaymentConfirmation(open) {
+      if (open && this.pendingPayment?.merchant) {
+        this.startMerchantCountdown();
+      } else {
+        this.stopMerchantCountdown();
+      }
+    },
+
     pendingPayment: {
       handler: 'updatePaymentFiatValue',
       immediate: true,
@@ -853,9 +1019,36 @@ export default {
     paymentAmount: {
       handler: 'updatePaymentFiatValue',
       immediate: true
+    },
+
+    autoWithdrawResult(result) {
+      if (!result) return
+      const awStore = useAutoWithdrawStore()
+      if (result.type === 'success') {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Auto-transfer complete'),
+          caption: `${result.amount.toLocaleString()} sats → ${result.destination}`,
+          icon: 'send',
+          timeout: 4000
+        })
+      } else if (result.type === 'error') {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Auto-transfer failed'),
+          caption: result.message,
+          icon: 'error',
+          timeout: 5000
+        })
+      }
+      awStore.lastResult = null
     }
   },
   methods: {
+    goToBackup() {
+      this.$router.push('/settings?section=backup');
+    },
+
     async openWalletManagement() {
       // Initialize the store to ensure we have the latest wallet data
       await this.walletStore.initialize();
@@ -993,7 +1186,7 @@ export default {
     notifyNewDeposit(deposit) {
       this.$q.notify({
         type: 'info',
-        icon: 'lab la-bitcoin',
+        icon: 'currency_bitcoin',
         message: this.$t('Bitcoin detected'),
         caption: `${deposit.amount.toLocaleString()} sats ${this.$t('confirming')}`,
         position: 'top',
@@ -1012,7 +1205,7 @@ export default {
     notifyDepositReady(deposit) {
       this.$q.notify({
         type: 'positive',
-        icon: 'las la-check-circle',
+        icon: 'check_circle',
         message: this.$t('Ready to claim'),
         caption: `${deposit.amount.toLocaleString()} sats`,
         position: 'top',
@@ -1068,7 +1261,7 @@ export default {
         type: 'positive',
         message: this.$t('Bitcoin withdrawal initiated'),
         caption: this.$t('Your withdrawal is being processed'),
-        
+
         timeout: 4000,
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
@@ -1133,7 +1326,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet switched'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -1147,7 +1340,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -1193,16 +1386,16 @@ export default {
     },
     getWalletIcon(type) {
       switch (type) {
-        case 'spark': return 'las la-fire';
-        case 'lnbits': return 'las la-server';
-        default: return 'las la-wallet';
+        case 'spark': return 'tabler:flame';
+        case 'lnbits': return 'tabler:server';
+        default: return 'tabler:wallet';
       }
     },
     getWalletBadgeIcon(type) {
       switch (type) {
-        case 'spark': return 'las la-fire';
-        case 'lnbits': return 'las la-server';
-        default: return 'las la-plug';
+        case 'spark': return 'tabler:flame';
+        case 'lnbits': return 'tabler:server';
+        default: return 'tabler:plug';
       }
     },
     getWalletTypeLabel(type) {
@@ -1282,7 +1475,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Wallet unlocked'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -1298,7 +1491,7 @@ export default {
         type: 'warning',
         message: this.$t('Wallet locked'),
         caption: this.$t('Some features require PIN unlock'),
-        
+
         actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
@@ -1324,6 +1517,9 @@ export default {
           this.loadingText = 'Updating balance...';
         }
 
+        const awStore = useAutoWithdrawStore();
+        const activeWalletId = this.walletStore.activeWalletId;
+
         // Check if active wallet is Spark
         if (this.walletStore.isActiveWalletSpark) {
           // Try to get connected provider, auto-reconnects if session PIN available
@@ -1332,6 +1528,11 @@ export default {
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+            // Auto-withdraw check
+            if (balanceResult.balance > 0 && activeWalletId) {
+              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+            }
           } catch (err) {
             // Silently fail for background refresh - user will see locked state
             // Don't spam console with expected "PIN required" messages
@@ -1359,6 +1560,11 @@ export default {
               }
 
               localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+              // Auto-withdraw check
+              if (balanceResult.balance > 0 && activeWalletId) {
+                awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+              }
             }
           } catch (err) {
             console.warn('LNBits balance refresh failed:', err.message);
@@ -1382,6 +1588,11 @@ export default {
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+          // Auto-withdraw check
+          if (balance.balance > 0 && activeWalletId) {
+            awStore.checkAndExecute(activeWalletId, balance.balance, this.walletStore);
+          }
         }
       } catch (error) {
         console.error('Failed to update balance:', error);
@@ -1494,22 +1705,22 @@ export default {
     getFiatCurrencyIcon() {
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const iconMap = {
-        'USD': 'las la-dollar-sign',
-        'EUR': 'las la-euro-sign',
-        'GBP': 'las la-pound-sign',
-        'JPY': 'las la-yen-sign',
-        'CNY': 'las la-yen-sign',
-        'INR': 'las la-rupee-sign',
-        'CAD': 'las la-dollar-sign',
-        'AUD': 'las la-dollar-sign',
-        'CHF': 'las la-dollar-sign',
-        'KRW': 'las la-won-sign',
-        'BRL': 'las la-dollar-sign',
-        'MXN': 'las la-dollar-sign',
-        'RUB': 'las la-ruble-sign',
-        'TRY': 'las la-lira-sign',
+        'USD': 'tabler:currency-dollar',
+        'EUR': 'tabler:currency-euro',
+        'GBP': 'tabler:currency-pound',
+        'JPY': 'tabler:currency-yen',
+        'CNY': 'tabler:currency-yen',
+        'INR': 'tabler:currency-rupee',
+        'CAD': 'tabler:currency-dollar',
+        'AUD': 'tabler:currency-dollar',
+        'CHF': 'tabler:currency-franc',
+        'KRW': 'tabler:currency-won',
+        'BRL': 'tabler:currency-real',
+        'MXN': 'tabler:currency-dollar',
+        'RUB': 'tabler:currency-rubel',
+        'TRY': 'tabler:currency-lira',
       };
-      return iconMap[currency.toUpperCase()] || 'las la-dollar-sign';
+      return iconMap[currency.toUpperCase()] || 'tabler:currency-dollar';
     },
 
     getSecondaryDisplayValue() {
@@ -1681,9 +1892,19 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return;
       if (!this.canConfirmWithdraw) return;
 
-      const amountSats = this.pendingPayment.isFixedAmount
-        ? this.pendingPayment.fixedAmountSats
-        : parseInt(this.paymentAmount);
+      const amountSats = this.withdrawAmountSats;
+      if (!amountSats || amountSats <= 0) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.withdrawDenomination === 'fiat'
+            ? this.$t('Fiat rates unavailable — switch to sats or refresh the app')
+            : this.$t('Invalid amount'),
+          icon: 'las la-exclamation-triangle',
+          timeout: 10000,
+          actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+        });
+        return;
+      }
       const description = this.pendingPayment.defaultDescription || 'Withdrawal';
 
       try {
@@ -1935,6 +2156,68 @@ export default {
       this.lnurlWithdrawInvoice = null;
       this.withdrawConfirmedAmount = 0;
       this.withdrawConfirmedFiat = '';
+      this.withdrawDenomination = 'sats';
+    },
+
+    toggleWithdrawDenomination() {
+      this.denominationSpinning = true;
+      setTimeout(() => { this.denominationSpinning = false; }, 500);
+      const currentAmount = parseFloat(this.paymentAmount);
+      if (this.withdrawDenomination === 'sats') {
+        // Switching to fiat — check if rates are available
+        if (!fiatRatesService.ratesAvailable) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Fiat rates unavailable'),
+            caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
+            icon: 'las la-exclamation-triangle',
+            timeout: 10000,
+            actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+          });
+          return;
+        }
+        this.withdrawDenomination = 'fiat';
+        if (currentAmount > 0) {
+          const fiat = fiatRatesService.convertSatsToFiatSync(currentAmount, this.withdrawFiatCurrency);
+          this.paymentAmount = fiat !== null ? fiat.toFixed(2) : '';
+        }
+      } else {
+        // Switching to sats
+        this.withdrawDenomination = 'sats';
+        if (currentAmount > 0) {
+          const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.withdrawFiatCurrency);
+          this.paymentAmount = sats !== null ? sats.toString() : '';
+        }
+      }
+    },
+
+    startMerchantCountdown() {
+      this.stopMerchantCountdown();
+      this.merchantCountdown = 90;
+      this.merchantCountdownTimer = setInterval(() => {
+        this.merchantCountdown--;
+        if (this.merchantCountdown <= 0) {
+          this.stopMerchantCountdown();
+          this.showPaymentConfirmation = false;
+          this.pendingPayment = null;
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Payment expired'),
+            caption: this.$t('The merchant QR code has expired. Please scan again.'),
+            icon: 'schedule',
+            timeout: 5000,
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+        }
+      }, 1000);
+    },
+
+    stopMerchantCountdown() {
+      if (this.merchantCountdownTimer) {
+        clearInterval(this.merchantCountdownTimer);
+        this.merchantCountdownTimer = null;
+      }
+      this.merchantCountdown = 0;
     },
 
     onWithdrawSuccessClosed() {
@@ -1945,10 +2228,17 @@ export default {
 
     validateWithdrawAmount(val) {
       if (!this.pendingPayment) return true;
-      const amount = parseInt(val);
+      const amount = parseFloat(val);
       if (isNaN(amount) || amount <= 0) return 'Amount must be greater than 0';
-      if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
-      if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
+      if (this.withdrawDenomination === 'fiat') {
+        const sats = fiatRatesService.convertFiatToSatsSync(amount, this.withdrawFiatCurrency);
+        if (sats === null) return 'Exchange rate unavailable';
+        if (sats < this.pendingPayment.minSats) return `Below minimum (≈ ${this.pendingPayment.minSats} sats)`;
+        if (sats > this.pendingPayment.maxSats) return `Above maximum (≈ ${this.pendingPayment.maxSats} sats)`;
+      } else {
+        if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
+        if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
+      }
       return true;
     },
 
@@ -2004,6 +2294,18 @@ export default {
           // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
 
+          if (lnurlInfo.error || !lnurlInfo.lnurlType) {
+            this.$q.notify({
+              type: 'negative',
+              message: this.$t('Withdraw link expired or already used'),
+              caption: lnurlInfo.reason || this.$t('Could not retrieve payment details from this link'),
+              icon: 'las la-exclamation-circle',
+              timeout: 10000,
+              actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+            });
+            return;
+          }
+
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
             this.resetWithdrawState();
@@ -2058,6 +2360,45 @@ export default {
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
             this.pendingPayment = processedAddress;
           }
+
+          // Enrich with SA retail merchant context
+          if (paymentData.source === SA_RETAIL_SOURCE && paymentData.merchant) {
+            this.pendingPayment.merchant = paymentData.merchant;
+
+            // Parse ZAR amount from LNURL metadata description
+            const zarAmount = parseZARFromMetadata(this.pendingPayment.description);
+            if (zarAmount) {
+              this.pendingPayment.zarAmount = zarAmount;
+              this.pendingPayment.description = `${paymentData.merchant.displayName} - R${zarAmount}`;
+
+              // Pre-fill amount for merchant payments when min !== max (rate spread).
+              // Use maxSendable to cover the full ZAR amount the merchant expects.
+              if (!this.pendingPayment.fixedAmountSats && this.pendingPayment.maxSendable) {
+                this.paymentAmount = String(Math.floor(this.pendingPayment.maxSendable / 1000));
+              }
+            } else {
+              this.pendingPayment.description = paymentData.merchant.displayName;
+            }
+
+            // Insufficient balance check — use fixedAmountSats, or pre-filled amount
+            const paymentSats = this.pendingPayment.fixedAmountSats ||
+              parseInt(this.paymentAmount) ||
+              (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
+                ? Math.floor(this.pendingPayment.minSendable / 1000)
+                : 0);
+            if (paymentSats > 0 && paymentSats > this.walletState.balance) {
+              this.$q.notify({
+                type: 'negative',
+                message: this.$t('Insufficient balance'),
+                caption: this.$t('You need {amount} sats but only have {balance} sats', {
+                  amount: paymentSats,
+                  balance: this.walletState.balance
+                }),
+                actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+              });
+              return;
+            }
+          }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
           // Spark address payment
           this.pendingPayment = {
@@ -2084,7 +2425,7 @@ export default {
           type: 'negative',
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -2135,7 +2476,7 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Payment received'),
-            
+
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
@@ -2178,12 +2519,8 @@ export default {
 
       let amount = 0;
       if (this.pendingPayment.type === 'lnurl_withdraw') {
-        // LNURL-withdraw: fixed or user-entered amount
-        if (this.pendingPayment.isFixedAmount) {
-          amount = this.pendingPayment.fixedAmountSats || 0;
-        } else {
-          amount = parseInt(this.paymentAmount) || 0;
-        }
+        // Handled by withdrawSecondaryDisplay computed
+        return '';
       } else if (this.needsAmountInput) {
         amount = parseInt(this.paymentAmount) || 0;
       } else if (this.pendingPayment.type === 'lnurl' ||
@@ -2302,7 +2639,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Sent'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -2326,7 +2663,7 @@ export default {
           type: 'negative',
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2432,7 +2769,7 @@ export default {
     // Helper: Check if input is an LNURL
     isLNURL(input) {
       const lower = input.toLowerCase();
-      return lower.startsWith('lnurl');
+      return lower.startsWith('lnurl') || lower.startsWith('keyauth://');
     },
 
     // Helper: Get recipient address from pending payment
@@ -2460,7 +2797,7 @@ export default {
           this.$q.notify({
             type: 'warning',
             message: this.$t('Please enter a name'),
-            
+
           });
           return;
         }
@@ -2476,7 +2813,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact saved'),
-          
+
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
@@ -2485,7 +2822,7 @@ export default {
           type: 'negative',
           message: this.$t('Failed to save contact'),
           caption: this.$t('Please try again'),
-          
+
         });
       }
     },
@@ -2596,13 +2933,13 @@ export default {
         const response = await fetch(url);
 
         if (!response.ok) {
-          return {};
+          return { error: true, reason: `Server returned ${response.status}` };
         }
 
         const data = await response.json();
 
         if (data.status === 'ERROR') {
-          return {};
+          return { error: true, reason: data.reason || 'This link is no longer valid' };
         }
 
         if (data.tag === 'withdrawRequest') {
@@ -2720,9 +3057,16 @@ export default {
       }
     },
 
-    // Helper: Decode LNURL (bech32) to URL
+    // Helper: Decode LNURL (bech32 LUD-01 or URL scheme LUD-17) to URL
     decodeLNURL(lnurl) {
-      const input = lnurl.toLowerCase().replace('lightning:', '');
+      const clean = lnurl.trim().replace(/^lightning:/i, '');
+
+      // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
+      const lud17Url = resolveLUD17URL(clean);
+      if (lud17Url) return lud17Url;
+
+      // LUD-01: bech32-encoded LNURL
+      const input = clean.toLowerCase();
       const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
       const hrpEnd = input.lastIndexOf('1');
       if (hrpEnd < 1) throw new Error('Invalid LNURL');
@@ -2883,6 +3227,8 @@ export default {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 .wallet-page-light {
@@ -2890,6 +3236,8 @@ export default {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Header */
@@ -3013,78 +3361,69 @@ export default {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 2rem 1rem 8rem 1rem;
+  padding: 1rem 1rem 6rem 1rem;
+  overflow: hidden;
+  max-width: 100vw;
 }
 
-/* Wallet Name Badge */
-.wallet-name-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+/* Wallet Chip (q-chip) */
+.wallet-chip {
   margin-bottom: 1rem;
-  border: 1px solid;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.wallet-badge-dark {
-  background: rgba(38, 38, 38, 0.6);
-  border-color: rgba(21, 222, 114, 0.3);
-  color: #a1a1a1;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.wallet-badge-light {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(5, 149, 115, 0.35);
-  color: #6b6b6b;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.wallet-badge-dark:hover {
-  background: rgba(38, 38, 38, 0.8);
-  border-color: rgba(21, 222, 114, 0.6);
-  color: #d4d4d4;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(21, 222, 114, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.wallet-badge-light:hover {
-  background: rgba(255, 255, 255, 0.8);
-  border-color: rgba(5, 149, 115, 0.55);
-  color: #3f3f3f;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(5, 149, 115, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.wallet-badge-icon {
-  opacity: 0.7;
-  transition: opacity 0.3s ease;
-}
-
-.wallet-badge-dark:hover .wallet-badge-icon {
-  opacity: 1;
-}
-
-.wallet-badge-light:hover .wallet-badge-icon {
-  opacity: 1;
-}
-
-.wallet-badge-text {
-  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Manrope', sans-serif;
   letter-spacing: -0.01em;
+  transition: all 0.2s ease;
+}
+
+.wallet-chip-dark {
+  background: rgba(38, 38, 38, 0.6) !important;
+  border-color: rgba(21, 222, 114, 0.3) !important;
+  color: #a1a1a1 !important;
+}
+
+.wallet-chip-light {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-color: rgba(5, 149, 115, 0.35) !important;
+  color: #6b6b6b !important;
+}
+
+.wallet-chip-icon {
+  opacity: 0.7;
+  margin-right: 4px;
+}
+
+.aw-indicator-icon {
+  color: rgba(99, 102, 241, 0.5);
+  margin-left: 2px;
 }
 
 /* Balance Section */
 .balance-section {
   text-align: center;
   margin-bottom: 2rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.balance-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 12px;
+}
+
+.sats-arrow-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(21, 222, 114, 0.2);
+  margin-right: 6px;
+  font-size: 14px;
+  vertical-align: middle;
 }
 
 .balance-container {
@@ -3106,9 +3445,10 @@ export default {
 }
 
 .amount-number {
-  font-size: 4rem;
+  font-size: 2.5rem;
   font-weight: 800;
   line-height: 1;
+  font-family: 'Manrope', sans-serif;
 }
 
 .amount-number-dark {
@@ -3116,7 +3456,7 @@ export default {
 }
 
 .amount-number-light {
-  color: #1f2937;
+  color: #1F2937;
 }
 
 .amount-unit {
@@ -3125,11 +3465,11 @@ export default {
 }
 
 .amount-unit-dark {
-  color: #B0B0B0;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .amount-unit-light {
-  color: #6b7280;
+  color: #6B7280;
 }
 
 .currency-icon-left {
@@ -3159,8 +3499,16 @@ export default {
 }
 
 .balance-secondary {
-  font-size: 1.25rem;
-  font-weight: 400;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.balance-secondary-dark {
+  color: #15DE72;
+}
+
+.balance-secondary-light {
+  color: #059573;
 }
 
 .secondary-amount-display {
@@ -3191,13 +3539,6 @@ export default {
   object-fit: contain;
 }
 
-.balance-secondary-dark {
-  color: #B0B0B0;
-}
-
-.balance-secondary-light {
-  color: #9ca3af;
-}
 
 /* Balance Transitions */
 .balance-fade-enter-active,
@@ -3278,6 +3619,8 @@ export default {
   left: 0;
   right: 0;
   z-index: 50;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .action-buttons {
@@ -3531,6 +3874,94 @@ export default {
 
 .payment-info {
   text-align: center;
+}
+
+/* SA Retailer Merchant Info */
+.merchant-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.merchant-info-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.merchant-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.merchant-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.merchant-name {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.merchant-zar {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #10b981;
+  line-height: 1.3;
+}
+
+.merchant-countdown {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.countdown-urgent {
+  color: #ef4444;
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.denomination-spin {
+  animation: denomination-rotate 0.5s ease-in-out;
+}
+
+@keyframes denomination-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes countdown-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.amount-zar-secondary {
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+  opacity: 0.8;
+}
+
+.rate-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #f59e0b;
+  margin-bottom: 0.75rem;
+  justify-content: center;
 }
 
 .payment-amount {
@@ -4012,7 +4443,7 @@ export default {
   }
 
   .main-content {
-    padding: 1.5rem 1rem 7rem 1rem;
+    padding: 1rem 1rem 5.5rem 1rem;
   }
 
   .amount-number {
@@ -4101,7 +4532,7 @@ export default {
 }
 
 .switcher-title {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 17px;
   font-weight: 600;
 }
@@ -4110,6 +4541,11 @@ export default {
   padding: 0.5rem;
   max-height: 320px;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.switcher-content::-webkit-scrollbar {
+  display: none;
 }
 
 .wallet-switch-list {
@@ -4232,7 +4668,7 @@ export default {
 }
 
 .switch-name {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
@@ -4264,7 +4700,7 @@ export default {
   gap: 0.15rem;
   padding: 0.1rem 0.35rem;
   border-radius: 5px;
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 8px;
   font-weight: 600;
   text-transform: uppercase;
@@ -4285,7 +4721,7 @@ export default {
 }
 
 .switch-tag {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 8px;
   font-weight: 600;
   padding: 0.1rem 0.3rem;
@@ -4301,7 +4737,7 @@ export default {
 
 /* Switch Balance */
 .switch-balance {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
 }
@@ -4342,7 +4778,7 @@ export default {
 
 /* Transfer Funds Button */
 .transfer-funds-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
   border-radius: 10px;
@@ -4369,7 +4805,7 @@ export default {
 }
 
 .manage-wallets-btn {
-  font-family: Fustat, 'Inter', sans-serif;
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
   border-radius: 10px;
@@ -4425,7 +4861,7 @@ export default {
 .save-contact-address {
   display: flex;
   align-items: center;
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   padding: 0.75rem;
   border-radius: 8px;
@@ -4497,42 +4933,23 @@ export default {
   color: #212121 !important;
 }
 
-/* Bitcoin Incoming Chip (Header) */
-.btc-incoming-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+/* Bitcoin Incoming Chip (q-chip) */
+.btc-chip {
   margin-left: 12px;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: Fustat, sans-serif;
-}
-
-.btc-incoming-chip:active {
-  transform: scale(0.95);
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #F7931A !important;
 }
 
 .btc-chip-dark {
-  background: rgba(247, 147, 26, 0.2);
-  border: 1px solid rgba(247, 147, 26, 0.4);
+  background: rgba(247, 147, 26, 0.2) !important;
+  border: 1px solid rgba(247, 147, 26, 0.4) !important;
 }
 
 .btc-chip-light {
-  background: rgba(247, 147, 26, 0.12);
-  border: 1px solid rgba(247, 147, 26, 0.3);
-}
-
-.btc-chip-icon {
-  color: #F7931A;
-}
-
-.btc-chip-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: #F7931A;
-  white-space: nowrap;
+  background: rgba(247, 147, 26, 0.12) !important;
+  border: 1px solid rgba(247, 147, 26, 0.3) !important;
 }
 
 /* Animation for chip */
