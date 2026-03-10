@@ -182,7 +182,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
      * Execute payout from Spark wallet (lightning or on-chain)
      */
     async _executeSparkPayout(walletId, sendAmount, config, walletStore) {
-      const provider = walletStore.providers[walletId]
+      const provider = walletStore.getProvider(walletId)
       if (!provider) throw new Error('Wallet provider not available')
 
       if (config.payoutType === 'onchain') {
@@ -241,7 +241,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
       // Pay via wallet-specific provider
       if (walletType === WALLET_TYPES.LNBITS) {
-        const provider = walletStore.providers[walletId]
+        const provider = walletStore.getProvider(walletId)
         if (!provider) throw new Error('LNBits provider not available')
         const result = await provider.payInvoice({ invoice })
         return { id: result.payment_hash || result.id || null, status: 'completed' }

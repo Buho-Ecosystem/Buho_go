@@ -89,7 +89,7 @@
         </svg>
         <!-- Default wallet icon -->
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
-        {{ activeWallet.name }}
+        {{ walletDisplayName }}
         <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
       </q-chip>
 
@@ -788,6 +788,13 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       ) || null;
+    },
+    walletDisplayName() {
+      if (!this.activeWallet) return '';
+      if (this.activeWallet.type === 'spark') {
+        return this.walletStore.getWalletDisplayName(this.activeWallet.id);
+      }
+      return this.activeWallet.name;
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;

@@ -129,6 +129,13 @@
         </div>
       </q-card-section>
 
+      <!-- Sending from account context (only when accounts exist) -->
+      <q-card-section v-if="sendingFromAccount" class="sending-from-section">
+        <div class="sending-from-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+          {{ $t('Sending from') }} <strong :class="$q.dark.isActive ? 'text-grey-3' : 'text-grey-8'">{{ sendingFromAccount }}</strong>
+        </div>
+      </q-card-section>
+
       <!-- Footer -->
       <q-card-section class="payment-footer">
         <q-btn
@@ -248,6 +255,15 @@ export default {
         bitcoin: 'badge-bitcoin'
       }
       return classes[this.contactAddressType] || classes.lightning
+    },
+
+    // Show "Sending from [Account Name]" when active Spark wallet has accounts
+    sendingFromAccount() {
+      if (!this.activeWallet || this.activeWallet.type !== 'spark') return null
+      const walletStore = useWalletStore()
+      if (!walletStore.hasAccounts(this.activeWallet.id)) return null
+      const displayName = walletStore.getWalletDisplayName(this.activeWallet.id)
+      return displayName
     },
 
     // Check if payment is possible with current wallet
@@ -477,8 +493,8 @@ export default {
     },
 
     async sendSparkPayment(walletStore) {
-      // Get the Spark wallet provider
-      const provider = walletStore.providers[walletStore.activeWalletId]
+      // Get the Spark wallet provider (account-aware)
+      const provider = walletStore.getActiveProvider()
 
       if (!provider) {
         throw new Error('SPARK_NOT_CONNECTED')
@@ -1148,6 +1164,17 @@ export default {
 
 .comment-input::placeholder {
   color: #B0B0B0;
+}
+
+/* Sending from account context */
+.sending-from-section {
+  padding: 0 1.5rem 0;
+  text-align: center;
+}
+
+.sending-from-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
 }
 
 /* Footer */

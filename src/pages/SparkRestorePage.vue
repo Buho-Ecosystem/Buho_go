@@ -24,7 +24,7 @@
               </svg>
             </q-btn>
             <div class="step-indicator" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-              {{ $t('Step') }} {{ currentStep }}/3
+              {{ $t('Step') }} {{ displayStep }}/{{ totalSteps }}
             </div>
           </div>
         </q-card-section>
@@ -75,6 +75,40 @@
             <div v-if="mnemonicError" class="mnemonic-error">
               {{ mnemonicError }}
             </div>
+          </div>
+
+          <!-- Step 1.5: Wallet Name (additional wallet only) -->
+          <div v-else-if="currentStep === 'name'" class="step-content step-name">
+            <div class="step-icon">
+              <div class="icon-bg">
+                <Icon icon="tabler:wallet" width="32" height="32" style="color: white;" />
+              </div>
+            </div>
+            <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+              {{ $t('Name Your Wallet') }}
+            </h2>
+            <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Give your restored Spark wallet a name.') }}
+            </p>
+            <q-input
+              v-model="walletName"
+              :dark="$q.dark.isActive"
+              outlined
+              rounded
+              :label="$t('Wallet name')"
+              class="wallet-name-input"
+              maxlength="30"
+            />
+            <q-btn
+              class="continue-btn q-mt-lg"
+              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+              :disable="!walletName.trim()"
+              @click="proceedFromName"
+              no-caps
+              unelevated
+            >
+              {{ $t('Continue') }}
+            </q-btn>
           </div>
 
           <!-- Step 2: Set PIN -->
@@ -183,6 +217,8 @@ export default {
     return {
       currentStep: 1,
       isValidating: false,
+      isAdditionalWallet: false,
+      walletName: '',
       inputWords: Array(12).fill(''),
       wordInputRefs: [],
       mnemonicError: '',
@@ -203,12 +239,35 @@ export default {
       restoringStatus: 'Initializing...',
     }
   },
+  mounted() {
+    this.isAdditionalWallet = this.walletStore.hasAnySparkWallet;
+    if (this.isAdditionalWallet) {
+      this.walletName = this.walletStore._nextSparkWalletName();
+    }
+  },
   computed: {
     canContinue() {
       return this.inputWords.every(word => word.trim().length > 0);
     },
     mnemonic() {
       return this.inputWords.map(w => w.trim().toLowerCase()).join(' ');
+    },
+    skipPin() {
+      return this.isAdditionalWallet && !!this.walletStore.sessionPin;
+    },
+    totalSteps() {
+      // Seed → (Name) → (PIN) → Restoring
+      // First wallet: 3 steps (seed, pin, restoring)
+      // Additional + unlocked: 3 steps (seed, name, restoring)
+      // Additional + locked: 4 steps (seed, name, pin, restoring)
+      if (!this.isAdditionalWallet) return 3;
+      return this.skipPin ? 3 : 4;
+    },
+    displayStep() {
+      if (this.currentStep === 'name') return 2;
+      if (this.currentStep === 2) return this.isAdditionalWallet ? 3 : 2;
+      if (this.currentStep === 3) return this.totalSteps;
+      return this.currentStep;
     }
   },
   methods: {
@@ -251,11 +310,25 @@ export default {
           this.currentPin = '';
           this.firstPin = '';
           this.pinError = '';
+        } else if (this.isAdditionalWallet) {
+          this.currentStep = 'name';
         } else {
           this.currentStep = 1;
         }
+      } else if (this.currentStep === 'name') {
+        this.currentStep = 1;
       } else if (this.currentStep === 1) {
         this.$router.push('/');
+      }
+    },
+
+    proceedFromName() {
+      if (this.skipPin) {
+        this.restoreWallet();
+      } else {
+        this.currentStep = 2;
+        this.pinMode = 'create';
+        this.currentPin = '';
       }
     },
 
@@ -270,10 +343,14 @@ export default {
         // Clean up test wallet
         wallet.cleanupConnections();
 
-        // Move to PIN step
-        this.currentStep = 2;
-        this.pinMode = 'create';
-        this.currentPin = '';
+        // Move to next step
+        if (this.isAdditionalWallet) {
+          this.currentStep = 'name';
+        } else {
+          this.currentStep = 2;
+          this.pinMode = 'create';
+          this.currentPin = '';
+        }
       } catch (error) {
         console.error('Invalid mnemonic:', error);
         this.mnemonicError = this.$t('Invalid seed phrase. Please check your words and try again.');
@@ -335,9 +412,9 @@ export default {
         this.restoringStatus = this.$t('Connecting to Spark network...');
 
         await this.walletStore.addSparkWallet({
-          name: 'Spark Wallet',
+          name: this.walletName || undefined,
           mnemonic: this.mnemonic,
-          pin: this.firstPin,
+          pin: this.firstPin || undefined,
           network: 'MAINNET',
           isRestore: true
         });
@@ -360,13 +437,18 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to restore wallet'),
-          caption: this.$t('Please check your backup phrase and try again'),
-          
+          caption: error.message?.includes('duplicate')
+            ? this.$t('This wallet is already added')
+            : this.$t('Please check your backup phrase and try again'),
         });
-        this.currentStep = 2;
-        this.pinMode = 'create';
-        this.currentPin = '';
-        this.firstPin = '';
+        if (this.skipPin) {
+          this.currentStep = 'name';
+        } else {
+          this.currentStep = 2;
+          this.pinMode = 'create';
+          this.currentPin = '';
+          this.firstPin = '';
+        }
       }
     }
   }
@@ -558,6 +640,28 @@ export default {
   color: #ff4444;
   text-align: center;
   margin-top: 1rem;
+}
+
+/* Name Step */
+.step-name {
+  justify-content: flex-start;
+  padding-top: 1rem;
+}
+
+.wallet-name-input {
+  width: 100%;
+  max-width: 320px;
+  margin-top: 0.5rem;
+}
+
+.continue-btn {
+  width: 100%;
+  max-width: 320px;
+  height: 52px;
+  border-radius: 24px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* PIN Step */

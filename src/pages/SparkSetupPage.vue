@@ -24,13 +24,47 @@
               </svg>
             </q-btn>
             <div class="step-indicator" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-              {{ $t('Almost there') }}
+              {{ isAdditionalWallet ? $t('Add Spark Wallet') : $t('Almost there') }}
             </div>
           </div>
         </q-card-section>
 
         <!-- Content -->
         <q-card-section class="setup-content">
+          <!-- Wallet Name Step (shown when adding additional Spark wallet) -->
+          <div v-if="currentStep === 0" class="step-content step-name">
+            <div class="step-icon">
+              <div class="icon-bg">
+                <Icon icon="tabler:wallet" width="32" height="32" style="color: white;" />
+              </div>
+            </div>
+            <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+              {{ $t('Name Your Wallet') }}
+            </h2>
+            <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Give your new Spark wallet a name to tell it apart from the others.') }}
+            </p>
+            <q-input
+              v-model="walletName"
+              :dark="$q.dark.isActive"
+              outlined
+              rounded
+              :label="$t('Wallet name')"
+              class="wallet-name-input"
+              maxlength="30"
+            />
+            <q-btn
+              class="continue-btn q-mt-lg"
+              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+              :disable="!walletName.trim()"
+              @click="proceedFromName"
+              no-caps
+              unelevated
+            >
+              {{ $t('Continue') }}
+            </q-btn>
+          </div>
+
           <!-- Step 1: Set PIN -->
           <div v-if="currentStep === 1" class="step-content step-pin">
             <div class="step-icon">
@@ -123,6 +157,8 @@ export default {
       currentStep: 1,
       isProcessing: false,
       mnemonic: '',
+      walletName: '',
+      isAdditionalWallet: false,
 
       // PIN
       pinMode: 'create',
@@ -141,6 +177,12 @@ export default {
     }
   },
   async mounted() {
+    this.isAdditionalWallet = this.walletStore.hasAnySparkWallet;
+    if (this.isAdditionalWallet) {
+      // Additional wallet: show name step, skip PIN (use shared sessionPin)
+      this.walletName = this.walletStore._nextSparkWalletName();
+      this.currentStep = 0;
+    }
     await this.generateMnemonic();
   },
   methods: {
@@ -166,8 +208,20 @@ export default {
         this.currentPin = '';
         this.firstPin = '';
         this.pinError = '';
+      } else if (this.currentStep === 1 && this.isAdditionalWallet) {
+        this.currentStep = 0;
       } else {
         this.$router.push('/');
+      }
+    },
+
+    proceedFromName() {
+      if (this.walletStore.sessionPin) {
+        // Shared PIN available — skip PIN creation, go straight to wallet creation
+        this.createWallet();
+      } else {
+        // Session locked — need PIN entry
+        this.currentStep = 1;
       }
     },
 
@@ -214,9 +268,9 @@ export default {
         this.creatingStatus = this.$t('Connecting to Spark network...');
 
         await this.walletStore.addSparkWallet({
-          name: 'Spark Wallet',
+          name: this.walletName || undefined,
           mnemonic: this.mnemonic,
-          pin: this.firstPin,
+          pin: this.firstPin || undefined,
           network: 'MAINNET'
         });
 
@@ -236,10 +290,14 @@ export default {
           message: this.$t('Failed to create wallet'),
           caption: this.$t('Please try again'),
         });
-        this.currentStep = 1;
-        this.pinMode = 'create';
-        this.currentPin = '';
-        this.firstPin = '';
+        if (this.isAdditionalWallet && this.walletStore.sessionPin) {
+          this.currentStep = 0;
+        } else {
+          this.currentStep = 1;
+          this.pinMode = 'create';
+          this.currentPin = '';
+          this.firstPin = '';
+        }
       }
     }
   }
@@ -344,6 +402,28 @@ export default {
 
 .view_title {
   color: #6B7280;
+}
+
+/* Name Step */
+.step-name {
+  justify-content: flex-start;
+  padding-top: 1rem;
+}
+
+.wallet-name-input {
+  width: 100%;
+  max-width: 320px;
+  margin-top: 0.5rem;
+}
+
+.continue-btn {
+  width: 100%;
+  max-width: 320px;
+  height: 52px;
+  border-radius: 24px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* PIN Step */

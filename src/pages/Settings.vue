@@ -55,7 +55,7 @@
       <!-- SPARK WALLET Section (only if spark wallet exists) -->
       <template v-if="hasSparkWallet">
         <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ $t('Spark Wallet') }}
+          {{ activeSparkWalletName }}
         </div>
         <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
           <q-item>
@@ -86,9 +86,9 @@
             <q-item-section side class="backup-status-side">
               <span
                 class="backup-status-badge"
-                :class="hasBackedUp ? 'badge-verified' : 'badge-unverified'"
+                :class="activeSparkBackedUp ? 'badge-verified' : 'badge-unverified'"
               >
-                {{ hasBackedUp ? $t('Verified') : $t('Not verified') }}
+                {{ activeSparkBackedUp ? $t('Verified') : $t('Not verified') }}
               </span>
             </q-item-section>
           </q-item>
@@ -108,6 +108,22 @@
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ $t('Change PIN') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+          </q-item>
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+
+          <!-- Accounts Section -->
+          <q-item clickable v-ripple @click="openAccountsDialog">
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Accounts') }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ sparkWalletAccountCount }} {{ sparkWalletAccountCount === 1 ? $t('account') : $t('accounts') }}
               </q-item-label>
             </q-item-section>
             <q-item-section side>
@@ -273,7 +289,7 @@
         <q-item v-if="hasSparkWallet" clickable v-ripple @click="confirmDeleteSparkWallet">
           <q-item-section>
             <q-item-label class="danger-text text-center">
-              {{ $t('Delete Spark Wallet') }}
+              {{ $t('Delete Spark Wallets') }}
             </q-item-label>
           </q-item-section>
         </q-item>
@@ -831,8 +847,8 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <!-- Spark Wallet Options (only show if no Spark wallet exists) -->
-          <div v-if="!hasSparkWallet" class="wallet-type-section">
+          <!-- Spark Wallet Options -->
+          <div class="wallet-type-section">
             <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
               {{ $t('Self-Custodial Wallet') }}
             </div>
@@ -849,7 +865,7 @@
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-                  {{ $t('Create Spark Wallet') }}
+                  {{ hasAnySparkWallet ? $t('Add Spark Wallet') : $t('Create Spark Wallet') }}
                 </div>
                 <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
                   {{ $t('Generate a new seed phrase') }}
@@ -1143,7 +1159,7 @@
               </div>
               <div class="seed-info-content">
                 <div class="seed-info-title" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">{{ $t('Wallet recovery') }}</div>
-                <div class="seed-info-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Use this phrase to restore your Spark wallet on another device or if you lose access.') }}</div>
+                <div class="seed-info-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ sparkWalletAccountCount > 1 ? $t('This seed phrase covers all accounts in this wallet. Use it to restore on another device or if you lose access.') : $t('Use this phrase to restore your Spark wallet on another device or if you lose access.') }}</div>
               </div>
             </div>
 
@@ -1447,6 +1463,84 @@
       </q-card>
     </q-dialog>
 
+    <!-- Accounts Management Dialog -->
+    <q-dialog v-model="showAccountsDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="min-width: 340px;">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Accounts') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            @click="showAccountsDialog = false"
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <Icon icon="tabler:x" width="18" height="18" />
+          </q-btn>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <div class="accounts-list">
+            <div
+              v-for="account in sparkWalletAccounts"
+              :key="account.accountNumber"
+              class="account-item"
+              :class="$q.dark.isActive ? 'account-item-dark' : 'account-item-light'"
+            >
+              <div class="account-item-info">
+                <div class="account-item-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                  {{ account.isPrimary ? activeSparkWalletName : account.name }}
+                  <span v-if="account.isPrimary" class="account-primary-badge">{{ $t('Primary') }}</span>
+                </div>
+                <div class="account-item-address mono-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                  {{ truncateAddress(account.sparkAddress) || '—' }}
+                </div>
+              </div>
+              <q-btn
+                v-if="!account.isPrimary"
+                flat
+                round
+                dense
+                size="sm"
+                @click="confirmRemoveAccount(account)"
+                :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'"
+              >
+                <Icon icon="tabler:trash" width="14" height="14" />
+              </q-btn>
+            </div>
+          </div>
+
+          <!-- Add Account -->
+          <div class="add-account-section q-mt-md">
+            <q-input
+              v-model="newAccountName"
+              :dark="$q.dark.isActive"
+              outlined
+              rounded
+              dense
+              :label="$t('Account name')"
+              maxlength="30"
+              class="q-mb-sm"
+            />
+            <q-btn
+              class="full-width"
+              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+              :disable="!newAccountName.trim() || isAddingAccount"
+              :loading="isAddingAccount"
+              @click="handleAddAccount"
+              no-caps
+              unelevated
+              rounded
+            >
+              {{ $t('Add Account') }}
+            </q-btn>
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
     <!-- Spark Reconnect PIN Dialog -->
     <q-dialog v-model="showSparkReconnectDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
@@ -1744,6 +1838,11 @@ export default {
         { value: 'es', label: 'Español' }
       ],
 
+      // Spark accounts
+      showAccountsDialog: false,
+      newAccountName: 'Personal',
+      isAddingAccount: false,
+
       // Spark wallet settings
       showSparkSettingsDialog: false,
       showViewMnemonicDialog: false,
@@ -1821,12 +1920,32 @@ export default {
       'preferredFiatCurrency',
       'exchangeRates',
       'hasSparkWallet',
+      'hasAnySparkWallet',
       'sparkWallet',
+      'sparkWallets',
       'isActiveWalletSpark',
       'activeSparkAddress',
       'useBip177Format',
-      'hasBackedUp'
+      'hasBackedUp',
+      'walletAccounts'
     ]),
+
+    activeSparkWalletName() {
+      return this.sparkWallet?.name || 'Spark Wallet';
+    },
+
+    activeSparkBackedUp() {
+      return this.sparkWallet?.metadata?.hasBackedUp ?? this.hasBackedUp;
+    },
+
+    sparkWalletAccounts() {
+      if (!this.sparkWallet) return [];
+      return this.walletAccounts(this.sparkWallet.id);
+    },
+
+    sparkWalletAccountCount() {
+      return this.sparkWalletAccounts.length;
+    },
 
     hasNwcWallets() {
       return this.wallets.some(w => w.type === 'nwc');
@@ -1936,7 +2055,9 @@ export default {
       'changeSparkPin',
       'connectSparkWallet',
       'updateBip177Preference',
-      'confirmBackup'
+      'confirmBackup',
+      'addAccount',
+      'removeAccount'
     ]),
 
     async initializeStore() {
@@ -2184,14 +2305,27 @@ export default {
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'deleteSparkWallet') {
-          await this.removeWallet(this.sparkWallet.id);
+          const ids = this.sparkWallets.map(w => w.id);
+          for (const id of ids) {
+            await this.removeWallet(id);
+          }
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Spark wallet deleted'),
-
+            message: ids.length > 1
+              ? this.$t('All Spark wallets deleted')
+              : this.$t('Spark wallet deleted'),
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
+        } else if (this.dangerConfirmAction === 'removeAccount') {
+          await this.removeAccount(this.sparkWallet.id, this._accountToRemove.accountNumber);
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Account removed'),
+            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          });
+          this.showDangerConfirmDialog = false;
+          this._accountToRemove = null;
         } else if (this.dangerConfirmAction === 'removeWallet') {
           await this.removeWallet(this.walletToRemove.id);
           this.$q.notify({
@@ -2796,14 +2930,60 @@ export default {
     },
 
     confirmDeleteSparkWallet() {
-      if (!this.sparkWallet) return;
+      if (!this.sparkWallets.length) return;
 
-      this.dangerConfirmTitle = this.$t('Delete Spark Wallet');
-      this.dangerConfirmMessage = this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
+      const count = this.sparkWallets.length;
+      this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
+      this.dangerConfirmMessage = count > 1
+        ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
+        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
       this.dangerConfirmPhrase = 'I understand';
-      this.dangerConfirmButtonText = this.$t('Delete Wallet');
+      this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';
+      this.showDangerConfirmDialog = true;
+    },
+
+    // ==========================================
+    // Spark Accounts
+    // ==========================================
+
+    openAccountsDialog() {
+      this.newAccountName = 'Personal';
+      this.showAccountsDialog = true;
+    },
+
+    async handleAddAccount() {
+      if (!this.sparkWallet || !this.newAccountName.trim()) return;
+
+      this.isAddingAccount = true;
+      try {
+        await this.addAccount(this.sparkWallet.id, this.newAccountName.trim());
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Account added'),
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        this.newAccountName = 'Personal';
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: error.message || this.$t('Failed to add account'),
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+      } finally {
+        this.isAddingAccount = false;
+      }
+    },
+
+    confirmRemoveAccount(account) {
+      this.dangerConfirmTitle = this.$t('Remove Account');
+      this.dangerConfirmMessage = this.$t('This will remove the account "{name}". This cannot be undone.', { name: account.name });
+      this.dangerConfirmPhrase = 'I understand';
+      this.dangerConfirmButtonText = this.$t('Remove');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'removeAccount';
+      this._accountToRemove = account;
       this.showDangerConfirmDialog = true;
     },
 
@@ -5104,6 +5284,57 @@ export default {
 .badge-unverified {
   background: rgba(251, 191, 36, 0.12);
   color: #F59E0B;
+}
+
+/* Accounts Dialog */
+.accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.account-item-dark {
+  background: var(--bg-input);
+}
+
+.account-item-light {
+  background: #F3F4F6;
+}
+
+.account-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-item-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.account-primary-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(21, 222, 114, 0.12);
+  color: #15DE72;
+}
+
+.account-item-address {
+  font-size: 11px;
+  margin-top: 2px;
 }
 
 /* Backup Dialog */
