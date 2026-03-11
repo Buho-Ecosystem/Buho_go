@@ -1,10 +1,4 @@
 <template>
-  <!-- Loading Screen -->
-  <LoadingScreen
-    :show="showLoadingScreen"
-    :loading-text="loadingText"
-  />
-
   <q-page :class="$q.dark.isActive ? 'wallet-page-dark' : 'wallet-page-light'">
     <!-- Header -->
     <q-toolbar>
@@ -62,8 +56,31 @@
       @dismiss="walletStore.dismissBackupPrompt()"
     />
 
+    <!-- Skeleton Loading State -->
+    <div v-if="showLoadingScreen" class="main-content">
+      <!-- Wallet Chip skeleton -->
+      <q-skeleton type="QChip" width="90px" height="28px" animation="wave" style="margin-bottom: 1rem; border-radius: 20px;" />
+
+      <!-- Balance Section skeleton -->
+      <div class="balance-section">
+        <div class="balance-container" style="padding: 1rem;">
+          <div class="balance-amount" style="margin-bottom: 1rem; display: flex; justify-content: center;">
+            <q-skeleton type="text" width="220px" height="40px" animation="wave" style="border-radius: 8px;" />
+          </div>
+          <div style="display: flex; justify-content: center;">
+            <q-skeleton type="text" width="100px" height="16px" animation="wave" style="border-radius: 6px;" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Transaction History Button skeleton -->
+      <div class="transaction-icon-section">
+        <q-skeleton type="circle" size="48px" animation="wave" />
+      </div>
+    </div>
+
     <!-- Main Content -->
-    <div class="main-content">
+    <div v-else class="main-content">
       <!-- Wallet Name Badge -->
       <q-chip
         v-if="activeWallet"
@@ -115,7 +132,7 @@
               <span v-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
-              <span v-else class="loading-secondary">{{ $t('Loading...') }}</span>
+              <span v-else class="loading-secondary">&nbsp;</span>
             </div>
           </transition>
         </div>
@@ -204,16 +221,18 @@
 
         <q-card-section class="switcher-content">
           <div class="wallet-switch-list">
-            <div
+            <template
               v-for="wallet in storeWallets"
               :key="wallet.id"
+            >
+            <div
               class="wallet-switch-card"
               :class="{
                 'wallet-switch-card-active': wallet.id === storeActiveWalletId,
                 'wallet-switch-card-dark': $q.dark.isActive,
                 'wallet-switch-card-light': !$q.dark.isActive
               }"
-              @click="switchToWallet(wallet.id)"
+              @click="walletStore.hasAccounts(wallet.id) ? switchToWalletPrimary(wallet.id) : switchToWallet(wallet.id)"
             >
               <!-- Avatar -->
               <div class="switch-avatar">
@@ -272,19 +291,54 @@
                   <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
-                  {{ formatBalance(storeBalances[wallet.id] || 0) }}
+                  {{ formatBalance(walletStore.hasAccounts(wallet.id) ? walletStore.combinedBalance(wallet.id) : (storeBalances[wallet.id] || 0)) }}
                 </div>
               </div>
 
               <!-- Check Icon -->
               <Icon
-                v-if="wallet.id === storeActiveWalletId"
+                v-if="wallet.id === storeActiveWalletId && !walletStore.hasAccounts(wallet.id)"
                 icon="tabler:circle-check"
                 width="20"
                 height="20"
                 class="switch-check-icon"
               />
             </div>
+
+            <!-- Pocket rows for Spark wallets -->
+            <div v-if="walletStore.hasAccounts(wallet.id)" class="pocket-switch-list">
+              <div
+                v-for="account in walletStore.walletAccounts(wallet.id).filter(a => !a.isPrimary)"
+                :key="`${wallet.id}:${account.accountNumber}`"
+                class="pocket-switch-row"
+                :class="{
+                  'pocket-switch-row-active': walletStore.activeAccountNumber(wallet.id) === account.accountNumber && wallet.id === storeActiveWalletId,
+                  'pocket-switch-row-dark': $q.dark.isActive,
+                  'pocket-switch-row-light': !$q.dark.isActive
+                }"
+                @click.stop="switchToPocket(wallet.id, account.accountNumber)"
+              >
+                <Icon
+                  v-if="walletStore.activeAccountNumber(wallet.id) === account.accountNumber && wallet.id === storeActiveWalletId"
+                  icon="tabler:circle-check-filled"
+                  width="16" height="16"
+                  class="pocket-check-icon"
+                />
+                <Icon
+                  v-else
+                  icon="tabler:circle"
+                  width="16" height="16"
+                  :class="$q.dark.isActive ? 'text-grey-7' : 'text-grey-5'"
+                />
+                <div class="pocket-switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">
+                  {{ account.name }}
+                </div>
+                <div class="pocket-switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
+                  {{ formatBalance(storeBalances[`${wallet.id}:${account.accountNumber}`] || account.cachedBalance || 0) }}
+                </div>
+              </div>
+            </div>
+            </template>
           </div>
         </q-card-section>
 
@@ -664,7 +718,6 @@ import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../uti
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
-import LoadingScreen from '../components/LoadingScreen.vue';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
@@ -680,7 +733,6 @@ import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 export default {
   name: 'WalletPage',
   components: {
-    LoadingScreen,
     ReceiveModal,
     SendModal,
     PinEntryDialog,
@@ -734,7 +786,6 @@ export default {
       invoiceCheckInterval: null,
       waitingForPayment: false,
       showLoadingScreen: true,
-      loadingText: 'Loading wallet...',
       currentDisplayMode: 'bitcoin',
       isSwitchingCurrency: false,
       shouldPulse: false,
@@ -1353,6 +1404,54 @@ export default {
       }
     },
 
+    async switchToWalletPrimary(walletId) {
+      try {
+        const wallet = this.storeWallets.find(w => w.id === walletId);
+        if (walletId !== this.storeActiveWalletId) {
+          await this.walletStore.switchActiveWallet(walletId);
+          this.walletState.activeWalletId = walletId;
+          this.walletState.balance = this.storeBalances[walletId] || 0;
+          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        }
+        const primaryAccNum = wallet?.connectionData?.accountNumber || 1;
+        await this.walletStore.switchAccount(walletId, primaryAccNum);
+        this.showWalletSwitcher = false;
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Switched to {name}', { name: wallet?.name }),
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        await this.checkSparkWalletUnlock();
+        this.updateWalletBalance();
+      } catch (error) {
+        console.error('Error switching wallet:', error);
+      }
+    },
+
+    async switchToPocket(walletId, accountNumber) {
+      try {
+        if (walletId !== this.storeActiveWalletId) {
+          await this.walletStore.switchActiveWallet(walletId);
+          this.walletState.activeWalletId = walletId;
+          this.walletState.balance = this.storeBalances[walletId] || 0;
+          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        }
+        await this.walletStore.switchAccount(walletId, accountNumber);
+        this.showWalletSwitcher = false;
+        const accounts = this.walletStore.walletAccounts(walletId);
+        const account = accounts.find(a => a.accountNumber === accountNumber);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Switched to {name}', { name: account?.name }),
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        await this.checkSparkWalletUnlock();
+        this.updateWalletBalance();
+      } catch (error) {
+        console.error('Error switching pocket:', error);
+      }
+    },
+
     goToSettings() {
       this.showWalletSwitcher = false;
       this.$router.push('/settings');
@@ -1421,7 +1520,6 @@ export default {
     },
     async initializeWallet() {
       try {
-        this.loadingText = 'Loading wallet state...';
         await this.loadWalletState();
 
         // Initialize wallet store
@@ -1430,27 +1528,19 @@ export default {
         // Start L1 Bitcoin deposit polling for banner (after wallet store is ready)
         this.startBitcoinDepositPolling();
 
-        this.loadingText = 'Loading fiat rates...';
         await this.loadFiatRates();
-
-        this.loadingText = 'Fetching transactions...';
         await this.loadTransactions();
-
-        this.loadingText = 'Loading profiles...';
         await this.loadNostrProfiles();
 
-        this.loadingText = 'Starting services...';
         this.startPeriodicRefresh();
         this.startPulseAnimation();
 
-        this.loadingText = 'Ready!';
         this.showLoadingScreen = false;
 
         // Check if Spark wallet needs unlocking
         await this.checkSparkWalletUnlock();
       } catch (error) {
         console.error('Error initializing wallet:', error);
-        this.loadingText = 'Error loading wallet';
         this.showLoadingScreen = false;
       }
     },
@@ -1521,7 +1611,7 @@ export default {
     async updateWalletBalance() {
       try {
         if (this.showLoadingScreen) {
-          this.loadingText = 'Updating balance...';
+          // still initializing
         }
 
         const awStore = useAutoWithdrawStore();
@@ -1536,9 +1626,13 @@ export default {
             this.walletState.balance = balanceResult.balance;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-            // Auto-withdraw check
+            // Auto-withdraw check — use pocket-aware config key
             if (balanceResult.balance > 0 && activeWalletId) {
-              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+              const activeWallet = this.walletStore.wallets.find(w => w.id === activeWalletId);
+              const primaryAccNum = activeWallet?.connectionData?.accountNumber || 1;
+              const activeAccNum = activeWallet?.metadata?.activeAccountNumber || primaryAccNum;
+              const awConfigKey = activeAccNum !== primaryAccNum ? `${activeWalletId}:${activeAccNum}` : activeWalletId;
+              awStore.checkAndExecute(awConfigKey, balanceResult.balance, this.walletStore);
             }
           } catch (err) {
             // Silently fail for background refresh - user will see locked state
@@ -4761,6 +4855,72 @@ export default {
 .switch-check-icon {
   flex-shrink: 0;
   color: #15DE72;
+}
+
+/* Pocket Switch Rows */
+.pocket-switch-list {
+  padding: 0 0.5rem 0.25rem;
+}
+
+.pocket-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.5rem 3.25rem;
+  margin: 0.125rem 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.pocket-switch-row-dark {
+  color: #ccc;
+}
+
+.pocket-switch-row-light {
+  color: #555;
+}
+
+.pocket-switch-row-dark:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pocket-switch-row-light:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.pocket-switch-row-active {
+  background: rgba(21, 222, 114, 0.06);
+}
+
+.pocket-switch-row-active.pocket-switch-row-dark:hover {
+  background: rgba(21, 222, 114, 0.08);
+}
+
+.pocket-switch-row-active.pocket-switch-row-light:hover {
+  background: rgba(21, 222, 114, 0.06);
+}
+
+.pocket-check-icon {
+  color: #15DE72;
+  flex-shrink: 0;
+}
+
+.pocket-switch-name {
+  flex: 1;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pocket-switch-balance {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
 }
 
 /* Switcher Footer */

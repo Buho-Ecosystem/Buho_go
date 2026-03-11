@@ -284,9 +284,11 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Get the first Spark wallet (convenience for single-wallet flows)
+     * Get the active Spark wallet, or fall back to the first one
      */
     sparkWallet: (state) => {
+      const active = state.wallets.find((w) => w.id === state.activeWalletId);
+      if (active?.type === WALLET_TYPES.SPARK) return active;
       return state.wallets.find((w) => w.type === WALLET_TYPES.SPARK) || null;
     },
 
@@ -1024,6 +1026,29 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Rename an account
+     * @param {string} walletId - Wallet ID
+     * @param {number} accountNumber - Account number to rename
+     * @param {string} newName - New name for the account
+     */
+    async renameAccount(walletId, accountNumber, newName) {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return;
+
+      const primaryAccNum = wallet.connectionData?.accountNumber || 1;
+      if (accountNumber === primaryAccNum) {
+        // Rename the wallet itself (primary account = wallet name)
+        wallet.name = newName;
+      } else {
+        const account = wallet.metadata?.accounts?.find(a => a.accountNumber === accountNumber);
+        if (account) {
+          account.name = newName;
+        }
+      }
+      await this.persistState();
+    },
+
+    /**
      * Remove an account from a Spark wallet
      * @param {string} walletId - Wallet ID
      * @param {number} accountNumber - Account number to remove (cannot be primary)
@@ -1099,9 +1124,9 @@ export const useWalletStore = defineStore('wallet', {
         return wallet.name;
       }
 
-      // Additional account active — show "Wallet — Account"
+      // Additional account active — show pocket name only
       const account = accounts.find(a => a.accountNumber === activeAccNum);
-      return account ? `${wallet.name} — ${account.name}` : wallet.name;
+      return account?.name || wallet.name;
     },
 
     /**
@@ -1713,6 +1738,12 @@ export const useWalletStore = defineStore('wallet', {
                 this.walletInfos[compositeKey] = accInfo;
                 account.cachedBalance = accBalance.balance;
                 account.balanceUpdatedAt = Date.now();
+
+                // Auto-withdraw check for this pocket
+                if (accBalance.balance > 0) {
+                  const autoWithdrawStore = useAutoWithdrawStore();
+                  autoWithdrawStore.checkAndExecute(compositeKey, accBalance.balance, this);
+                }
               } catch (err) {
                 console.warn(`Failed to refresh account "${account.name}":`, err.message);
               }

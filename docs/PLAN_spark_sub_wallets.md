@@ -1,10 +1,12 @@
-# Feature Plan: Spark Accounts (Business / Personal)
+# Feature Plan: Spark Pockets (Business / Personal)
 
 ## Overview
 
-Allow a single Spark wallet to have **multiple accounts** derived from the same mnemonic using different `accountNumber` values. The primary use case is a merchant who wants separated Business and Personal funds backed by one seed phrase.
+Allow a single Spark wallet to have **multiple pockets** derived from the same mnemonic using different `accountNumber` values. The primary use case is a merchant who wants separated Business and Personal funds backed by one seed phrase.
 
-**User-facing language:** We call these **"Accounts"** — never "sub-wallets" or "account numbers." Users see "Your Spark Wallet has 2 accounts: Business and Personal." One backup covers everything.
+**User-facing language:** We call these **"Pockets"** — never "sub-wallets", "accounts", or "account numbers." Users see "Your Spark Wallet has 2 pockets: Business and Personal." One backup covers everything. The term "Pocket" is intuitive — people understand pockets in a wallet.
+
+**Internal code:** Variables and methods still use `account` / `accountNumber` (matching the Spark SDK). Only user-facing strings use "Pocket".
 
 ## How it works (Spark SDK)
 
@@ -241,8 +243,8 @@ Add a "Transfer between accounts" shortcut — select source, destination, amoun
 
 ## Resolved decisions
 
-- **Terminology:** "Accounts" (not sub-wallets)
+- **Terminology:** "Pockets" in UI (internally still `account`/`accountNumber` to match Spark SDK)
 - **UI approach:** WalletSwitcher with expandable parent (not pill toggles)
-- **Migration:** None. Feature is invisible until user adds a second account.
-- **Default names:** Primary account keeps its name. Second account defaults to "Personal."
+- **Migration:** None. Feature is invisible until user adds a second pocket.
+- **Default names:** Primary pocket keeps its name. Second pocket defaults to "Personal."
 - **Colors:** Not in v1. Name-only distinction.

@@ -1,10 +1,4 @@
 <template>
-  <!-- Loading Screen -->
-  <LoadingScreen
-    :show="showLoadingScreen"
-    :loading-text="loadingText"
-  />
-
   <q-page :class="$q.dark.isActive ? 'transaction-history-page-dark' : 'transaction-history-page-light'">
     <!-- Header -->
     <div class="" :class="$q.dark.isActive ? 'page_header_dark' : 'page_header_light'">
@@ -281,11 +275,47 @@
       @closed="onClaimSuccessClosed"
     />
 
+    <!-- Skeleton Loading State -->
+    <div v-if="showLoadingScreen || isLoading" class="transaction-content" :class="$q.dark.isActive ? 'transaction_content_dark' : 'transaction_content_light'">
+      <!-- Group Header skeleton -->
+      <div :class="$q.dark.isActive ? 'group_header_dark' : 'group_header_light'" style="pointer-events: none;">
+        <div style="flex: 1;">
+          <q-skeleton type="text" width="100px" height="15px" animation="wave" style="margin-bottom: 4px;" />
+          <q-skeleton type="text" width="80px" height="13px" animation="wave" />
+        </div>
+        <q-skeleton type="text" width="60px" height="15px" animation="wave" />
+      </div>
+
+      <!-- Transaction Card skeletons -->
+      <div
+        v-for="n in 6"
+        :key="'skel-'+n"
+        class="transaction-card"
+        :class="$q.dark.isActive ? 'transaction_card_dark' : 'transaction_card_light'"
+        style="pointer-events: none;"
+      >
+        <!-- Avatar -->
+        <div class="tx-avatar">
+          <q-skeleton type="circle" size="40px" animation="wave" />
+        </div>
+        <!-- Info -->
+        <div class="tx-info">
+          <q-skeleton type="text" width="60%" height="15px" animation="wave" />
+          <q-skeleton type="text" width="40%" height="13px" animation="wave" style="margin-top: 2px;" />
+        </div>
+        <!-- Amounts -->
+        <div class="tx-amounts">
+          <q-skeleton type="text" width="70px" height="15px" animation="wave" />
+          <q-skeleton type="text" width="50px" height="13px" animation="wave" style="margin-left: auto;" />
+        </div>
+      </div>
+    </div>
+
     <!-- Transaction List with Pull-to-Refresh -->
     <q-scroll-area
       class="transaction-content"
       :class="$q.dark.isActive ? 'transaction_content_dark' : 'transaction_content_light'"
-      v-if="!isLoading && filteredTransactions.length > 0"
+      v-else-if="filteredTransactions.length > 0"
     >
       <q-pull-to-refresh @refresh="onPullToRefresh" color="primary">
       <div class="transaction-groups">
@@ -495,17 +525,8 @@
       </q-pull-to-refresh>
     </q-scroll-area>
 
-    <!-- Loading State -->
-    <div v-if="isLoading" class="loading-state"
-         :class="$q.dark.isActive ? 'loading_state_dark' : 'loading_state_light'">
-      <q-spinner-dots :color="$q.dark.isActive ? '#15DE72' : '#059573'" size="3rem"/>
-      <div class="loading-text" :class="$q.dark.isActive ? 'loading_text_dark' : 'loading_text_light'">
-        {{ $t('Loading transactions...') }}
-      </div>
-    </div>
-
     <!-- Empty State -->
-    <div v-if="!isLoading && filteredTransactions.length === 0" class=" full-height"
+    <div v-else-if="filteredTransactions.length === 0" class=" full-height"
          :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
       <div class="empty-icon">
         <Icon icon="tabler:receipt" :style="{ fontSize: '4rem', color: $q.dark.isActive ? '#B0B0B0' : '#D1D5DB' }" />
@@ -533,7 +554,6 @@
 
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
-import LoadingScreen from '../components/LoadingScreen.vue';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
@@ -546,7 +566,6 @@ import { groupMicropayments } from '../composables/useTransactionGrouping';
 export default {
   name: 'TransactionHistoryPage',
   components: {
-    LoadingScreen,
     PaymentConfirmation
   },
   data() {
@@ -563,7 +582,6 @@ export default {
       expandedGroups: new Set(),
       expandedMicropaymentGroups: new Set(),
       showLoadingScreen: true,
-      loadingText: 'Loading transactions...',
       filterTabs: [
         {name: 'all', label: 'All'},
         {name: 'today', label: 'Today'},
@@ -770,14 +788,8 @@ export default {
   methods: {
     async initializeTransactionHistory() {
       try {
-        this.loadingText = 'Loading transaction history...';
         await this.loadTransactions();
-
-        this.loadingText = 'Loading profiles...';
         this.loadNostrProfiles();
-
-        this.loadingText = 'Ready!';
-        await new Promise(resolve => setTimeout(resolve, 300));
         this.showLoadingScreen = false;
       } catch (error) {
         console.error('Error initializing transaction history:', error);
@@ -954,18 +966,10 @@ export default {
       this.resetBatchingState();
 
       try {
-        if (this.showLoadingScreen) {
-          this.loadingText = 'Connecting to wallet...';
-        }
-
         // Load wallet state for fiat currency preference
         const savedState = localStorage.getItem('buhoGO_wallet_state');
         if (savedState) {
           this.walletState = JSON.parse(savedState);
-        }
-
-        if (this.showLoadingScreen) {
-          this.loadingText = 'Fetching transactions...';
         }
 
         // Phase 1: Load first batch (fast, always happens)
@@ -973,15 +977,7 @@ export default {
 
         this.transactions.sort((a, b) => b.settled_at - a.settled_at);
 
-        if (this.showLoadingScreen) {
-          this.loadingText = 'Processing zap transactions...';
-        }
-
         await this.processZapTransactions();
-
-        if (this.showLoadingScreen) {
-          this.loadingText = 'Auto-assigning contacts...';
-        }
 
         // Auto-assign contacts from address book
         await this.autoAssignContacts();

@@ -1,10 +1,4 @@
 <template>
-  <!-- Loading Screen -->
-  <LoadingScreen
-    :show="showLoadingScreen"
-    :loading-text="loadingText"
-  />
-
   <q-page class="transaction-details-page">
     <!-- Header -->
     <div class="page-header">
@@ -39,11 +33,39 @@
       </div>
     </div>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="loading-container">
-      <q-spinner-dots color="green" size="3rem"/>
-      <div class="loading-text">
-        {{ $t('Loading transaction details...') }}
+    <!-- Skeleton Loading State -->
+    <div v-if="loading">
+      <!-- Hero Card skeleton -->
+      <div class="transaction-hero">
+        <div class="hero-card">
+          <div class="hero-content">
+            <!-- Header: icon + type/status -->
+            <div class="hero-header">
+              <q-skeleton type="circle" size="40px" animation="wave" />
+              <div class="hero-info">
+                <q-skeleton type="text" width="120px" height="17px" animation="wave" style="margin-bottom: 4px;" />
+                <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+              </div>
+            </div>
+            <!-- Amounts -->
+            <div class="hero-amounts">
+              <q-skeleton type="text" width="180px" height="28px" animation="wave" style="margin: 0 auto 4px;" />
+              <q-skeleton type="text" width="100px" height="14px" animation="wave" style="margin: 0 auto;" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail Fields skeleton -->
+      <div style="padding: 0 1rem;">
+        <div class="detail-fields-grid">
+          <div v-for="n in 3" :key="'detail-skel-'+n" class="detail-field-group">
+            <q-skeleton type="text" width="30%" height="12px" animation="wave" style="margin-bottom: 6px;" />
+            <div class="detail-field-container">
+              <q-skeleton type="text" width="75%" height="14px" animation="wave" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -416,7 +438,6 @@
 
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
-import LoadingScreen from '../components/LoadingScreen.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
@@ -425,9 +446,7 @@ import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 
 export default {
   name: 'TransactionDetailsPage',
-  components: {
-    LoadingScreen
-  },
+  components: {},
   data() {
     return {
       loading: true,
@@ -439,7 +458,6 @@ export default {
       addressBookStore: null,
       metadataStore: null,
       showLoadingScreen: true,
-      loadingText: 'Loading transaction details...',
       fiatRates: {},
       loadingFiatRates: true,
       // Contact picker
@@ -605,14 +623,8 @@ export default {
 
     async initializeTransactionDetails() {
       try {
-        this.loadingText = 'Loading transaction details...';
         await this.loadTransactionDetails();
-
-        this.loadingText = 'Loading preferences...';
         this.loadDeveloperModePreference();
-
-        this.loadingText = 'Ready!';
-        await new Promise(resolve => setTimeout(resolve, 300));
         this.showLoadingScreen = false;
       } catch (error) {
         console.error('Error initializing transaction details:', error);
@@ -623,10 +635,6 @@ export default {
     async loadTransactionDetails() {
       this.loading = true;
       try {
-        if (this.showLoadingScreen) {
-          this.loadingText = 'Finding transaction...';
-        }
-
         const txId = this.$route.params.id;
 
         // Load wallet state
@@ -644,17 +652,11 @@ export default {
 
         // If not found locally, fetch from wallet
         if (!this.transaction) {
-          if (this.showLoadingScreen) {
-            this.loadingText = 'Fetching from wallet...';
-          }
           await this.fetchTransactionFromWallet(txId);
         }
 
         // Load nostr profile if it's a zap
         if (this.transaction && this.transaction.senderNpub) {
-          if (this.showLoadingScreen) {
-            this.loadingText = 'Loading profile...';
-          }
           await this.loadNostrProfile(this.transaction.senderNpub);
         }
 
@@ -673,10 +675,6 @@ export default {
 
     async fetchTransactionFromWallet(txId) {
       try {
-        if (this.showLoadingScreen) {
-          this.loadingText = 'Connecting to wallet...';
-        }
-
         // Check wallet type and fetch accordingly
         if (this.walletStore.isActiveWalletSpark) {
           await this.fetchSparkTransaction(txId);
@@ -698,10 +696,6 @@ export default {
     async fetchSparkTransaction(txId) {
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected();
-
-      if (this.showLoadingScreen) {
-        this.loadingText = 'Fetching transaction data...';
-      }
 
       const transactions = await provider.getTransactions({ limit: 100, offset: 0 });
       const found = transactions.find(tx => tx.id === txId);
@@ -738,10 +732,6 @@ export default {
 
       await nwc.enable();
 
-      if (this.showLoadingScreen) {
-        this.loadingText = 'Fetching transaction data...';
-      }
-
       const transactionsResponse = await nwc.listTransactions({ limit: 100 });
 
       if (transactionsResponse && transactionsResponse.transactions) {
@@ -776,10 +766,6 @@ export default {
 
       if (!provider) {
         throw new Error('Could not connect to LNBits wallet');
-      }
-
-      if (this.showLoadingScreen) {
-        this.loadingText = 'Fetching transaction data...';
       }
 
       const transactions = await provider.getTransactions({ limit: 100, offset: 0 });

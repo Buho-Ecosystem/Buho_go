@@ -55,9 +55,24 @@
       <!-- SPARK WALLET Section (only if spark wallet exists) -->
       <template v-if="hasSparkWallet">
         <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ activeSparkWalletName }}
+          {{ $t('Spark Wallet') }} — {{ activeSparkWalletName }}
         </div>
         <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+          <!-- Accounts Section — first row -->
+          <q-item clickable v-ripple @click="openAccountsDialog">
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Pockets') }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ sparkWalletAccountCount > 0 ? sparkWalletAccountCount + ' ' + (sparkWalletAccountCount === 1 ? $t('pocket') : $t('pockets')) + ' · ' + $t('tap to manage') : $t('Separate your funds into pockets') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+          </q-item>
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
           <q-item>
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
@@ -108,22 +123,6 @@
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ $t('Change PIN') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-          </q-item>
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-
-          <!-- Accounts Section -->
-          <q-item clickable v-ripple @click="openAccountsDialog">
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Accounts') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ sparkWalletAccountCount }} {{ sparkWalletAccountCount === 1 ? $t('account') : $t('accounts') }}
               </q-item-label>
             </q-item-section>
             <q-item-section side>
@@ -234,46 +233,50 @@
         <div class="aw-empty-text">{{ $t('Connect a wallet to set up automatic transfers') }}</div>
       </div>
 
-      <!-- Wallet cards -->
+      <!-- Wallet cards (expanded with pockets) -->
       <div v-else class="aw-wallet-list">
         <div
-          v-for="wallet in wallets"
-          :key="'aw-' + wallet.id"
+          v-for="entry in awWalletEntries"
+          :key="'aw-' + entry.configKey"
           class="aw-wallet-card"
-          :class="$q.dark.isActive ? 'aw-card-dark' : 'aw-card-light'"
-          @click="openAutoWithdrawConfig(wallet)"
+          :class="[
+            $q.dark.isActive ? 'aw-card-dark' : 'aw-card-light',
+            { 'aw-pocket-card': entry.isPocket }
+          ]"
+          @click="openAutoWithdrawConfig(entry.wallet, entry.configKey, entry.name)"
         >
           <div class="aw-wallet-row">
-            <div class="aw-wallet-avatar" :class="'aw-avatar-' + (wallet.type || 'nwc')">
+            <div class="aw-wallet-avatar" :class="'aw-avatar-' + (entry.type || 'nwc')">
               <!-- Spark -->
-              <svg v-if="wallet.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg v-if="entry.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
               </svg>
               <!-- NWC -->
-              <svg v-else-if="wallet.type === 'nwc'" width="16" height="16" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg v-else-if="entry.type === 'nwc'" width="16" height="16" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646-2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="white"/>
                 <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="white"/>
               </svg>
               <!-- LNBits -->
-              <svg v-else-if="wallet.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg v-else-if="entry.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
               </svg>
               <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
             </div>
             <div class="aw-wallet-info">
               <div class="aw-wallet-name" :class="$q.dark.isActive ? 'aw-name-dark' : 'aw-name-light'">
-                {{ wallet.name }}
+                {{ entry.name }}
+                <span v-if="entry.isPocket" class="aw-pocket-label" :class="$q.dark.isActive ? 'aw-pocket-label-dark' : 'aw-pocket-label-light'">{{ entry.parentName }}</span>
               </div>
-              <div v-if="getAutoWithdrawConfig(wallet.id)?.enabled" class="aw-wallet-summary" :class="$q.dark.isActive ? 'aw-summary-dark' : 'aw-summary-light'">
-                {{ Number(getAutoWithdrawConfig(wallet.id).thresholdSats).toLocaleString() }} {{ $t('sats') }} &rarr; {{ truncateAutoWithdrawDest(wallet.id) }}
+              <div v-if="getAutoWithdrawConfig(entry.configKey)?.enabled" class="aw-wallet-summary" :class="$q.dark.isActive ? 'aw-summary-dark' : 'aw-summary-light'">
+                {{ Number(getAutoWithdrawConfig(entry.configKey).thresholdSats).toLocaleString() }} {{ $t('sats') }} &rarr; {{ truncateAutoWithdrawDest(entry.configKey) }}
               </div>
             </div>
             <div class="aw-wallet-status">
               <span
                 class="aw-status-pill"
-                :class="getAutoWithdrawConfig(wallet.id)?.enabled ? 'aw-pill-active' : 'aw-pill-inactive'"
+                :class="getAutoWithdrawConfig(entry.configKey)?.enabled ? 'aw-pill-active' : 'aw-pill-inactive'"
               >
-                {{ getAutoWithdrawConfig(wallet.id)?.enabled ? $t('Active') : $t('Off') }}
+                {{ getAutoWithdrawConfig(entry.configKey)?.enabled ? $t('Active') : $t('Off') }}
               </span>
               <Icon icon="tabler:chevron-right" width="16" height="16" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
             </div>
@@ -283,7 +286,7 @@
 
       <!-- DANGER ZONE -->
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Account') }}
+        {{ $t('Danger Zone') }}
       </div>
       <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
         <q-item v-if="hasSparkWallet" clickable v-ripple @click="confirmDeleteSparkWallet">
@@ -697,6 +700,9 @@
               <div
                 v-for="wallet in sortedWallets"
                 :key="wallet.id"
+                class="wallet-card-wrapper"
+              >
+              <div
                 class="wallet-card"
                 :class="{
                   'wallet-card-active': wallet.id === activeWalletId,
@@ -767,9 +773,12 @@
                       <span>{{ getWalletTypeLabel(wallet) }}</span>
                     </div>
                     <div v-if="wallet.id === activeWalletId" class="wallet-tag tag-active">{{ $t('Active') }}</div>
+                    <div v-if="wallet.type === 'spark' && hasAccounts(wallet.id)" class="wallet-tag tag-accounts">
+                      {{ wallet.metadata?.accounts?.length || 0 }} {{ (wallet.metadata?.accounts?.length || 0) === 1 ? $t('pocket') : $t('pockets') }}
+                    </div>
                   </div>
                   <div class="wallet-balance-row" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
-                    {{ formatBalance(balances[wallet.id] || 0) }}
+                    {{ formatBalance(wallet.type === 'spark' && hasAccounts(wallet.id) ? combinedBalance(wallet.id) : (balances[wallet.id] || 0)) }}
                   </div>
                   <div v-if="connectionStates[wallet.id]?.error" class="wallet-error-msg">
                     {{ connectionStates[wallet.id].error }}
@@ -820,7 +829,43 @@
                   </q-btn>
                 </div>
               </div>
-            </div>
+
+              <!-- Pockets under Spark wallet (when multi-pocket) -->
+              <div v-if="wallet.type === 'spark' && wallet.metadata?.accounts?.length" class="manage-wallet-accounts">
+                <div
+                  v-for="account in walletAccounts(wallet.id).filter(a => !a.isPrimary)"
+                  :key="account.accountNumber"
+                  class="manage-account-row"
+                  :class="[
+                    $q.dark.isActive ? 'manage-account-row-dark' : 'manage-account-row-light',
+                    { 'manage-account-row-active': wallet.id === activeWalletId && activeAccountNumber(wallet.id) === account.accountNumber }
+                  ]"
+                  @click.stop="handleManagePocketSwitch(wallet.id, account.accountNumber)"
+                >
+                  <Icon
+                    v-if="wallet.id === activeWalletId && activeAccountNumber(wallet.id) === account.accountNumber"
+                    icon="tabler:circle-check-filled"
+                    width="16" height="16"
+                    class="manage-account-check"
+                  />
+                  <Icon
+                    v-else
+                    icon="tabler:circle"
+                    width="16" height="16"
+                    :class="$q.dark.isActive ? 'text-grey-7' : 'text-grey-5'"
+                  />
+                  <div class="manage-account-info">
+                    <span class="manage-account-name" :class="$q.dark.isActive ? 'text-grey-3' : 'text-grey-8'">
+                      {{ account.name }}
+                    </span>
+                  </div>
+                  <div class="manage-account-balance" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ formatBalance(getManageAccountBalance(wallet.id, account)) }}
+                  </div>
+                </div>
+              </div>
+              </div>
+          </div>
           </div>
         </q-card-section>
       </q-card>
@@ -1159,7 +1204,7 @@
               </div>
               <div class="seed-info-content">
                 <div class="seed-info-title" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">{{ $t('Wallet recovery') }}</div>
-                <div class="seed-info-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ sparkWalletAccountCount > 1 ? $t('This seed phrase covers all accounts in this wallet. Use it to restore on another device or if you lose access.') : $t('Use this phrase to restore your Spark wallet on another device or if you lose access.') }}</div>
+                <div class="seed-info-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ sparkWalletAccountCount > 0 ? $t('This seed phrase covers all pockets in this wallet. Use it to restore on another device or if you lose access.') : $t('Use this phrase to restore your Spark wallet on another device or if you lose access.') }}</div>
               </div>
             </div>
 
@@ -1467,8 +1512,14 @@
     <q-dialog v-model="showAccountsDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="min-width: 340px;">
         <q-card-section class="dialog-header">
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Accounts') }}
+          <div>
+            <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+              {{ $t('Pockets') }}
+            </div>
+            <div class="accounts-dialog-subtitle" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ activeSparkWalletName }}
+              <span v-if="sparkWalletAccountCount > 0"> · {{ formatBalance(combinedBalance(sparkWallet.id)) }} {{ $t('total') }}</span>
+            </div>
           </div>
           <q-btn
             flat
@@ -1481,62 +1532,208 @@
           </q-btn>
         </q-card-section>
 
-        <q-card-section class="q-pt-none">
+        <!-- Visual explainer — only show when single pocket (educational) -->
+        <q-card-section v-if="sparkWalletAccountCount === 0" class="q-pt-none q-pb-none">
+          <div class="pockets-explainer" :class="$q.dark.isActive ? 'pockets-explainer-dark' : 'pockets-explainer-light'">
+            <!-- Wallet with pockets illustration -->
+            <svg class="pockets-illustration" viewBox="0 0 280 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Outer wallet shape -->
+              <rect x="10" y="8" width="260" height="84" rx="16" :stroke="$q.dark.isActive ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>
+              <text x="140" y="24" text-anchor="middle" :fill="$q.dark.isActive ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'" font-family="Manrope, sans-serif" font-size="9" font-weight="600" letter-spacing="0.08em">YOUR SPARK WALLET</text>
+
+              <!-- Pocket 1 -->
+              <rect x="22" y="32" width="118" height="50" rx="10" :fill="$q.dark.isActive ? 'rgba(21,222,114,0.08)' : 'rgba(5,149,115,0.06)'" :stroke="$q.dark.isActive ? 'rgba(21,222,114,0.25)' : 'rgba(5,149,115,0.2)'" stroke-width="1"/>
+              <circle cx="40" cy="50" r="6" :fill="$q.dark.isActive ? '#15DE72' : '#059573'" opacity="0.7"/>
+              <path d="M40,46 L38,50.5 L40.5,50.5 L39,54 L42,49.5 L39.5,49.5 L41,46Z" fill="white" opacity="0.9"/>
+              <text x="52" y="52" :fill="$q.dark.isActive ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)'" font-family="Manrope, sans-serif" font-size="10.5" font-weight="600">Business</text>
+              <text x="52" y="66" :fill="$q.dark.isActive ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'" font-family="Manrope, sans-serif" font-size="9">125,000 sats</text>
+
+              <!-- Pocket 2 -->
+              <rect x="148" y="32" width="118" height="50" rx="10" :fill="$q.dark.isActive ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)'" :stroke="$q.dark.isActive ? 'rgba(59,130,246,0.25)' : 'rgba(59,130,246,0.18)'" stroke-width="1"/>
+              <circle cx="166" cy="50" r="6" fill="#3B82F6" opacity="0.7"/>
+              <path d="M166,46 L164,50.5 L166.5,50.5 L165,54 L168,49.5 L165.5,49.5 L167,46Z" fill="white" opacity="0.9"/>
+              <text x="178" y="52" :fill="$q.dark.isActive ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)'" font-family="Manrope, sans-serif" font-size="10.5" font-weight="600">Personal</text>
+              <text x="178" y="66" :fill="$q.dark.isActive ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'" font-family="Manrope, sans-serif" font-size="9">50,000 sats</text>
+            </svg>
+
+            <div class="pockets-explainer-features">
+              <div class="pockets-feature-row" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" :stroke="$q.dark.isActive ? '#15DE72' : '#059573'" stroke-width="1.2"/><path d="M5 8L7 10L11 6" :stroke="$q.dark.isActive ? '#15DE72' : '#059573'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>{{ $t('Separate funds for different purposes') }}</span>
+              </div>
+              <div class="pockets-feature-row" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" :stroke="$q.dark.isActive ? '#15DE72' : '#059573'" stroke-width="1.2"/><path d="M5 8L7 10L11 6" :stroke="$q.dark.isActive ? '#15DE72' : '#059573'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>{{ $t('Each pocket has its own address and balance') }}</span>
+              </div>
+              <div class="pockets-feature-row" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" :stroke="$q.dark.isActive ? '#15DE72' : '#059573'" stroke-width="1.2"/><path d="M5 8L7 10L11 6" :stroke="$q.dark.isActive ? '#15DE72' : '#059573'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>{{ $t('One backup phrase protects everything') }}</span>
+              </div>
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-section :class="sparkWalletAccountCount === 0 ? 'q-pt-sm' : 'q-pt-none'">
+          <!-- Compact info banner for multi-pocket view -->
+          <div v-if="sparkWalletAccountCount > 0" class="pockets-compact-info q-mb-sm" :class="$q.dark.isActive ? 'pockets-compact-info-dark' : 'pockets-compact-info-light'">
+            <Icon icon="tabler:info-circle" width="14" height="14" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
+            <span :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">{{ $t('Tap to switch pocket. One backup covers all.') }}</span>
+          </div>
+
+          <!-- Account list -->
           <div class="accounts-list">
             <div
               v-for="account in sparkWalletAccounts"
               :key="account.accountNumber"
               class="account-item"
-              :class="$q.dark.isActive ? 'account-item-dark' : 'account-item-light'"
+              :class="[
+                $q.dark.isActive ? 'account-item-dark' : 'account-item-light',
+                { 'account-item-active': isActiveAccount(account) }
+              ]"
+              @click="handleAccountSelect(account)"
             >
-              <div class="account-item-info">
-                <div class="account-item-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                  {{ account.isPrimary ? activeSparkWalletName : account.name }}
-                  <span v-if="account.isPrimary" class="account-primary-badge">{{ $t('Primary') }}</span>
-                </div>
-                <div class="account-item-address mono-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                  {{ truncateAddress(account.sparkAddress) || '—' }}
-                </div>
+              <!-- Active indicator -->
+              <div class="account-active-indicator" :class="{ 'visible': isActiveAccount(account) }">
+                <Icon icon="tabler:circle-check-filled" width="18" height="18" />
               </div>
-              <q-btn
-                v-if="!account.isPrimary"
-                flat
-                round
-                dense
-                size="sm"
-                @click="confirmRemoveAccount(account)"
-                :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'"
-              >
-                <Icon icon="tabler:trash" width="14" height="14" />
-              </q-btn>
+              <!-- Inactive placeholder -->
+              <div v-if="!isActiveAccount(account)" class="account-inactive-indicator">
+                <Icon icon="tabler:circle" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-7' : 'text-grey-5'" />
+              </div>
+
+              <div class="account-item-info">
+                <!-- Inline rename mode -->
+                <div v-if="editingAccountNumber === account.accountNumber" class="account-edit-row" @click.stop>
+                  <q-input
+                    v-model="editingAccountName"
+                    :dark="$q.dark.isActive"
+                    outlined
+                    dense
+                    autofocus
+                    maxlength="30"
+                    class="account-name-input"
+                    @keyup.enter="saveAccountName(account)"
+                    @keyup.escape="editingAccountNumber = null"
+                  />
+                  <q-btn flat round dense size="sm" @click="saveAccountName(account)" color="positive">
+                    <Icon icon="tabler:check" width="14" height="14" />
+                  </q-btn>
+                  <q-btn flat round dense size="sm" @click="editingAccountNumber = null">
+                    <Icon icon="tabler:x" width="14" height="14" />
+                  </q-btn>
+                </div>
+
+                <!-- Normal display mode -->
+                <template v-else>
+                  <div class="account-item-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                    {{ account.isPrimary ? activeSparkWalletName : account.name }}
+                    <span v-if="account.isPrimary" class="account-primary-badge">{{ $t('Main') }}</span>
+                  </div>
+                  <div class="account-item-balance" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                    {{ formatBalance(getManageAccountBalance(sparkWallet?.id, account)) }}
+                  </div>
+                </template>
+              </div>
+
+              <!-- Action buttons -->
+              <div class="account-item-actions" @click.stop>
+                <q-btn
+                  flat round dense size="sm"
+                  @click="startRenameAccount(account)"
+                  :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'"
+                >
+                  <Icon icon="tabler:pencil" width="14" height="14" />
+                </q-btn>
+                <q-btn
+                  v-if="!account.isPrimary"
+                  flat round dense size="sm"
+                  @click="confirmRemoveAccount(account)"
+                  :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'"
+                >
+                  <Icon icon="tabler:trash" width="14" height="14" />
+                </q-btn>
+              </div>
             </div>
           </div>
 
-          <!-- Add Account -->
-          <div class="add-account-section q-mt-md">
-            <q-input
-              v-model="newAccountName"
-              :dark="$q.dark.isActive"
-              outlined
-              rounded
-              dense
-              :label="$t('Account name')"
-              maxlength="30"
-              class="q-mb-sm"
-            />
-            <q-btn
-              class="full-width"
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-              :disable="!newAccountName.trim() || isAddingAccount"
-              :loading="isAddingAccount"
-              @click="handleAddAccount"
-              no-caps
-              unelevated
-              rounded
-            >
-              {{ $t('Add Account') }}
-            </q-btn>
+          <!-- Add Pocket button -->
+          <q-btn
+            v-if="sparkWalletAccountCount < 5"
+            class="full-width q-mt-md"
+            :class="$q.dark.isActive ? 'add-pocket-btn-dark' : 'add-pocket-btn-light'"
+            @click="confirmAddAccount"
+            no-caps
+            unelevated
+            rounded
+          >
+            <Icon icon="tabler:plus" width="16" height="16" class="q-mr-xs" />
+            {{ sparkWalletAccountCount === 0 ? $t('Create your first pocket') : $t('Add Pocket') }}
+          </q-btn>
+
+          <!-- Max pockets reached -->
+          <div v-if="sparkWalletAccountCount >= 5" class="pockets-max-info q-mt-sm" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+            {{ $t('Maximum of 5 pockets reached') }}
           </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Add Pocket Dialog -->
+    <q-dialog v-model="showAddAccountConfirm" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="min-width: 320px; max-width: 380px;">
+        <q-card-section class="dialog-header">
+          <div>
+            <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+              {{ $t('New Pocket') }}
+            </div>
+            <div class="accounts-dialog-subtitle" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ activeSparkWalletName }}
+            </div>
+          </div>
+          <q-btn
+            flat round dense
+            v-close-popup
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <Icon icon="tabler:x" width="18" height="18" />
+          </q-btn>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <!-- Name input -->
+          <q-input
+            v-model="newAccountName"
+            :dark="$q.dark.isActive"
+            outlined
+            rounded
+            dense
+            :label="$t('Give it a name')"
+            :placeholder="$t('e.g. Business, Savings, Tips')"
+            maxlength="30"
+            class="q-mb-md"
+            autofocus
+          />
+
+          <!-- Info box -->
+          <div class="add-account-confirm-info q-mb-md" :class="$q.dark.isActive ? 'add-account-confirm-info-dark' : 'add-account-confirm-info-light'">
+            <Icon icon="tabler:shield-check" width="18" height="18" class="add-account-confirm-info-icon" />
+            <span>{{ $t('Same backup phrase and PIN as your other pockets. No extra setup needed.') }}</span>
+          </div>
+
+          <!-- Create button -->
+          <q-btn
+            class="full-width"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            @click="handleAddAccount"
+            :loading="isAddingAccount"
+            :disable="!newAccountName.trim()"
+            no-caps
+            unelevated
+            rounded
+          >
+            <Icon icon="tabler:plus" width="16" height="16" class="q-mr-xs" />
+            {{ $t('Create Pocket') }}
+          </q-btn>
         </q-card-section>
       </q-card>
     </q-dialog>
@@ -1619,6 +1816,9 @@
           <div class="aw-dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Auto-Transfer') }}
           </div>
+          <div class="aw-dialog-entry-name" :class="$q.dark.isActive ? 'aw-subtitle-dark' : 'aw-subtitle-light'">
+            {{ awConfigEntryName }}
+          </div>
           <div class="aw-dialog-subtitle" :class="$q.dark.isActive ? 'aw-subtitle-dark' : 'aw-subtitle-light'">
             {{ $t('Move funds automatically when your balance grows past a threshold') }}
           </div>
@@ -1662,7 +1862,7 @@
             </div>
           </div>
 
-          <!-- Payout type (Spark only) -->
+          <!-- Payout type (Spark only — 3 options) -->
           <div v-if="awConfigWallet?.type === 'spark'" class="aw-field-group">
             <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
               {{ $t('Transfer via') }}
@@ -1671,7 +1871,21 @@
               <div
                 class="aw-pill-option"
                 :class="[
-                  awConfigForm.payoutType === 'lightning' ? 'aw-pill-selected aw-pill-sel-' + (awConfigWallet?.type || 'nwc') : '',
+                  awConfigForm.payoutType === 'spark' ? 'aw-pill-selected aw-pill-sel-spark' : '',
+                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
+                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
+                ]"
+                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'spark')"
+              >
+                <svg width="14" height="13" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
+                </svg>
+                {{ $t('Spark') }}
+              </div>
+              <div
+                class="aw-pill-option"
+                :class="[
+                  awConfigForm.payoutType === 'lightning' ? 'aw-pill-selected aw-pill-sel-spark' : '',
                   $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
                   !awConfigForm.enabled ? 'aw-pill-disabled' : ''
                 ]"
@@ -1683,7 +1897,7 @@
               <div
                 class="aw-pill-option"
                 :class="[
-                  awConfigForm.payoutType === 'onchain' ? 'aw-pill-selected aw-pill-sel-' + (awConfigWallet?.type || 'nwc') : '',
+                  awConfigForm.payoutType === 'onchain' ? 'aw-pill-selected aw-pill-sel-spark' : '',
                   $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
                   !awConfigForm.enabled ? 'aw-pill-disabled' : ''
                 ]"
@@ -1693,15 +1907,30 @@
                 {{ $t('On-chain') }}
               </div>
             </div>
+            <!-- Zero-fee hint for Spark -->
+            <div v-if="awConfigForm.payoutType === 'spark'" class="aw-spark-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
+              <Icon icon="tabler:discount-check" width="14" height="14" />
+              {{ $t('Spark transfers are instant and free') }}
+            </div>
           </div>
 
           <!-- Destination -->
           <div class="aw-field-group">
             <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
-              {{ awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark' ? $t('Bitcoin address') : $t('Lightning address') }}
+              {{ awDestinationLabel }}
             </div>
             <q-input
-              v-if="awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark'"
+              v-if="awConfigForm.payoutType === 'spark' && awConfigWallet?.type === 'spark'"
+              v-model="awConfigForm.sparkAddress"
+              :placeholder="$t('spark1...')"
+              borderless
+              dense
+              class="aw-input"
+              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
+              :disable="!awConfigForm.enabled"
+            />
+            <q-input
+              v-else-if="awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark'"
               v-model="awConfigForm.bitcoinAddress"
               :placeholder="$t('bc1q...')"
               borderless
@@ -1842,6 +2071,9 @@ export default {
       showAccountsDialog: false,
       newAccountName: 'Personal',
       isAddingAccount: false,
+      editingAccountNumber: null,
+      editingAccountName: '',
+      showAddAccountConfirm: false,
 
       // Spark wallet settings
       showSparkSettingsDialog: false,
@@ -1893,12 +2125,14 @@ export default {
       showAutoWithdrawDialog: false,
       awConfigWalletId: null,
       awConfigWallet: null,
+      awConfigEntryName: '',
       awConfigForm: {
         enabled: false,
         thresholdSats: 0,
         payoutType: 'lightning',
         lightningAddress: '',
         bitcoinAddress: '',
+        sparkAddress: '',
         feeSpeed: 'medium',
       },
       feeSpeedOptions: [
@@ -1927,7 +2161,10 @@ export default {
       'activeSparkAddress',
       'useBip177Format',
       'hasBackedUp',
-      'walletAccounts'
+      'walletAccounts',
+      'activeAccountNumber',
+      'hasAccounts',
+      'combinedBalance'
     ]),
 
     activeSparkWalletName() {
@@ -1944,7 +2181,8 @@ export default {
     },
 
     sparkWalletAccountCount() {
-      return this.sparkWalletAccounts.length;
+      // Count only additional pockets (not primary)
+      return this.sparkWallet?.metadata?.accounts?.length || 0;
     },
 
     hasNwcWallets() {
@@ -1980,6 +2218,44 @@ export default {
       return version;
     },
 
+    // Expand wallets into auto-transfer entries — Spark pockets get individual entries
+    awWalletEntries() {
+      const entries = [];
+      for (const wallet of this.wallets) {
+        if (wallet.type === 'spark' && this.hasAccounts(wallet.id)) {
+          // Expand each pocket as its own entry
+          const accounts = this.walletAccounts(wallet.id);
+          for (const account of accounts) {
+            const primaryAccNum = wallet.connectionData?.accountNumber || 1;
+            const configKey = account.accountNumber === primaryAccNum
+              ? wallet.id
+              : `${wallet.id}:${account.accountNumber}`;
+            entries.push({
+              configKey,
+              wallet,
+              account,
+              name: account.isPrimary ? wallet.name : account.name,
+              parentName: wallet.name,
+              isPocket: true,
+              type: wallet.type,
+            });
+          }
+        } else {
+          // Non-pocket wallets — single entry
+          entries.push({
+            configKey: wallet.id,
+            wallet,
+            account: null,
+            name: wallet.name,
+            parentName: null,
+            isPocket: false,
+            type: wallet.type,
+          });
+        }
+      }
+      return entries;
+    },
+
     awToggleColor() {
       const type = this.awConfigWallet?.type;
       if (type === 'spark') return 'grey-8';
@@ -1987,9 +2263,20 @@ export default {
       return 'amber-7'; // nwc
     },
 
+    awDestinationLabel() {
+      if (this.awConfigWallet?.type === 'spark') {
+        if (this.awConfigForm.payoutType === 'spark') return this.$t('Spark address');
+        if (this.awConfigForm.payoutType === 'onchain') return this.$t('Bitcoin address');
+      }
+      return this.$t('Lightning address');
+    },
+
     isAutoWithdrawConfigValid() {
       if (!this.awConfigForm.enabled) return true; // Can save disabled config
       if (!this.awConfigForm.thresholdSats || this.awConfigForm.thresholdSats <= 0) return false;
+      if (this.awConfigForm.payoutType === 'spark' && this.awConfigWallet?.type === 'spark') {
+        return !!this.awConfigForm.sparkAddress?.trim();
+      }
       if (this.awConfigForm.payoutType === 'onchain' && this.awConfigWallet?.type === 'spark') {
         return !!this.awConfigForm.bitcoinAddress.trim();
       }
@@ -2057,7 +2344,9 @@ export default {
       'updateBip177Preference',
       'confirmBackup',
       'addAccount',
-      'removeAccount'
+      'removeAccount',
+      'renameAccount',
+      'switchAccount'
     ]),
 
     async initializeStore() {
@@ -2242,11 +2531,11 @@ export default {
 
     async handleSwitchWallet(walletId) {
       try {
+        const wallet = this.wallets.find(w => w.id === walletId)
         await this.switchActiveWallet(walletId)
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Wallet switched'),
-
+          message: this.$t('Switched to {name}', { name: wallet?.name || 'Wallet' }),
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -2321,7 +2610,7 @@ export default {
           await this.removeAccount(this.sparkWallet.id, this._accountToRemove.accountNumber);
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Account removed'),
+            message: this.$t('Pocket removed'),
             actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
@@ -2950,7 +3239,74 @@ export default {
 
     openAccountsDialog() {
       this.newAccountName = 'Personal';
+      this.editingAccountNumber = null;
       this.showAccountsDialog = true;
+    },
+
+    isActiveAccount(account) {
+      if (!this.sparkWallet) return false;
+      return this.activeAccountNumber(this.sparkWallet.id) === account.accountNumber;
+    },
+
+    async handleAccountSelect(account) {
+      if (!this.sparkWallet) return;
+      if (this.editingAccountNumber) return; // don't switch while editing
+      if (this.isActiveAccount(account)) return; // already active
+      await this.switchAccount(this.sparkWallet.id, account.accountNumber);
+      const name = account.isPrimary ? this.activeSparkWalletName : account.name;
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Switched to {name}', { name }),
+        timeout: 1500,
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
+    },
+
+    async handleManagePocketSwitch(walletId, accountNumber) {
+      const currentActive = this.activeAccountNumber(walletId);
+      if (currentActive === accountNumber) return;
+      // Also switch the wallet if it's not the active one
+      if (walletId !== this.activeWalletId) {
+        await this.switchActiveWallet(walletId);
+      }
+      await this.switchAccount(walletId, accountNumber);
+      const accounts = this.walletAccounts(walletId);
+      const account = accounts.find(a => a.accountNumber === accountNumber);
+      const wallet = this.wallets.find(w => w.id === walletId);
+      const name = account?.isPrimary ? wallet?.name : account?.name;
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Switched to {name}', { name }),
+        timeout: 1500,
+        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+      });
+    },
+
+    startRenameAccount(account) {
+      this.editingAccountNumber = account.accountNumber;
+      this.editingAccountName = account.isPrimary ? this.activeSparkWalletName : account.name;
+    },
+
+    async saveAccountName(account) {
+      if (!this.sparkWallet || !this.editingAccountName.trim()) return;
+      await this.renameAccount(this.sparkWallet.id, account.accountNumber, this.editingAccountName.trim());
+      this.editingAccountNumber = null;
+    },
+
+    getManageAccountBalance(walletId, account) {
+      if (account.isPrimary) {
+        return this.balances[walletId] || 0;
+      }
+      const compositeKey = `${walletId}:${account.accountNumber}`;
+      return this.balances[compositeKey] || account.cachedBalance || 0;
+    },
+
+    confirmAddAccount() {
+      // Smart default name — avoid duplicates
+      const existingNames = this.sparkWalletAccounts.map(a => a.isPrimary ? this.activeSparkWalletName : a.name);
+      const defaults = ['Personal', 'Business', 'Savings', 'Travel', 'Tips'];
+      this.newAccountName = defaults.find(n => !existingNames.includes(n)) || 'Pocket ' + (this.sparkWalletAccountCount + 1);
+      this.showAddAccountConfirm = true;
     },
 
     async handleAddAccount() {
@@ -2959,16 +3315,16 @@ export default {
       this.isAddingAccount = true;
       try {
         await this.addAccount(this.sparkWallet.id, this.newAccountName.trim());
+        this.showAddAccountConfirm = false;
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Account added'),
+          message: this.$t('Pocket "{name}" created', { name: this.newAccountName.trim() }),
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
-        this.newAccountName = 'Personal';
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: error.message || this.$t('Failed to add account'),
+          message: error.message || this.$t('Failed to add pocket'),
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
@@ -2977,8 +3333,18 @@ export default {
     },
 
     confirmRemoveAccount(account) {
-      this.dangerConfirmTitle = this.$t('Remove Account');
-      this.dangerConfirmMessage = this.$t('This will remove the account "{name}". This cannot be undone.', { name: account.name });
+      const balance = this.getManageAccountBalance(this.sparkWallet?.id, account);
+      if (balance > 0) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Transfer funds out of "{name}" before removing it ({balance} sats remaining)', { name: account.name, balance: balance.toLocaleString() }),
+          timeout: 4000,
+          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+        });
+        return;
+      }
+      this.dangerConfirmTitle = this.$t('Remove Pocket');
+      this.dangerConfirmMessage = this.$t('This will remove the pocket "{name}". This cannot be undone.', { name: account.name });
       this.dangerConfirmPhrase = 'I understand';
       this.dangerConfirmButtonText = this.$t('Remove');
       this.dangerConfirmInput = '';
@@ -3021,17 +3387,21 @@ export default {
     truncateAutoWithdrawDest(walletId) {
       const config = this.getAutoWithdrawConfig(walletId);
       if (!config) return '';
-      const dest = config.payoutType === 'onchain' ? config.bitcoinAddress : config.lightningAddress;
+      let dest = '';
+      if (config.payoutType === 'spark') dest = config.sparkAddress;
+      else if (config.payoutType === 'onchain') dest = config.bitcoinAddress;
+      else dest = config.lightningAddress;
       if (!dest) return '';
       if (dest.includes('@')) return dest;
       if (dest.length > 16) return `${dest.slice(0, 8)}...${dest.slice(-4)}`;
       return dest;
     },
 
-    openAutoWithdrawConfig(wallet) {
-      this.awConfigWalletId = wallet.id;
+    openAutoWithdrawConfig(wallet, configKey, entryName) {
+      this.awConfigWalletId = configKey || wallet.id;
       this.awConfigWallet = wallet;
-      const existing = this.getAutoWithdrawConfig(wallet.id);
+      this.awConfigEntryName = entryName || wallet.name;
+      const existing = this.getAutoWithdrawConfig(this.awConfigWalletId);
       if (existing) {
         this.awConfigForm = {
           enabled: existing.enabled,
@@ -3039,6 +3409,7 @@ export default {
           payoutType: existing.payoutType || 'lightning',
           lightningAddress: existing.lightningAddress || '',
           bitcoinAddress: existing.bitcoinAddress || '',
+          sparkAddress: existing.sparkAddress || '',
           feeSpeed: existing.feeSpeed || 'medium',
         };
       } else {
@@ -3048,6 +3419,7 @@ export default {
           payoutType: 'lightning',
           lightningAddress: '',
           bitcoinAddress: '',
+          sparkAddress: '',
           feeSpeed: 'medium',
         };
       }
@@ -4031,6 +4403,30 @@ export default {
   background: rgba(21, 222, 114, 0.08);
 }
 
+.add-pocket-btn-dark {
+  color: #15DE72;
+  border: 1px dashed #2A342A;
+  background: transparent;
+  border-radius: 12px;
+}
+
+.add-pocket-btn-dark:hover {
+  border-color: #15DE72;
+  background: rgba(21, 222, 114, 0.1);
+}
+
+.add-pocket-btn-light {
+  color: #059573;
+  border: 1px dashed #E5E7EB;
+  background: transparent;
+  border-radius: 12px;
+}
+
+.add-pocket-btn-light:hover {
+  border-color: #15DE72;
+  background: rgba(21, 222, 114, 0.08);
+}
+
 .wallets-dialog-content {
   flex: 1;
   overflow-y: auto;
@@ -4078,6 +4474,14 @@ export default {
 }
 
 /* Wallet Card - Clean iOS-style */
+.wallet-card-wrapper {
+  margin-bottom: 0.5rem;
+}
+
+.wallet-card-wrapper:last-child {
+  margin-bottom: 0;
+}
+
 .wallet-card {
   display: flex;
   align-items: center;
@@ -5296,22 +5700,73 @@ export default {
 .account-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 12px;
   border-radius: 12px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .account-item-dark {
   background: var(--bg-input);
 }
 
+.account-item-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .account-item-light {
   background: #F3F4F6;
+}
+
+.account-item-light:hover {
+  background: #E5E7EB;
+}
+
+.account-item-active.account-item-dark {
+  background: rgba(21, 222, 114, 0.08);
+  border: 1px solid rgba(21, 222, 114, 0.2);
+}
+
+.account-item-active.account-item-light {
+  background: rgba(5, 149, 115, 0.06);
+  border: 1px solid rgba(5, 149, 115, 0.15);
+}
+
+.account-active-indicator {
+  flex-shrink: 0;
+  color: #15DE72;
+  display: flex;
+  align-items: center;
+}
+
+.account-inactive-indicator {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  opacity: 0.4;
 }
 
 .account-item-info {
   flex: 1;
   min-width: 0;
+}
+
+.account-item-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.account-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.account-name-input {
+  flex: 1;
 }
 
 .account-item-name {
@@ -5335,6 +5790,217 @@ export default {
 .account-item-address {
   font-size: 11px;
   margin-top: 2px;
+}
+
+/* Accounts dialog subtitle */
+.accounts-dialog-subtitle {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Pockets compact info banner */
+.pockets-compact-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11.5px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.pockets-compact-info-dark {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pockets-compact-info-light {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.pockets-max-info {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* Pockets visual explainer */
+.pockets-explainer {
+  border-radius: 14px;
+  padding: 16px 12px 14px;
+}
+
+.pockets-explainer-dark {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pockets-explainer-light {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.pockets-illustration {
+  width: 100%;
+  height: auto;
+  margin-bottom: 14px;
+}
+
+.pockets-explainer-features {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pockets-feature-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.pockets-feature-row svg {
+  flex-shrink: 0;
+}
+
+/* Account balance in dialog */
+.account-item-balance {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Add Account confirm dialog */
+.add-account-confirm-section {
+  text-align: center;
+  padding-bottom: 8px !important;
+}
+
+.add-account-confirm-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(21, 222, 114, 0.1);
+  color: #15DE72;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.add-account-confirm-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.add-account-confirm-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.add-account-confirm-info-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.add-account-confirm-info-dark {
+  background: rgba(21, 222, 114, 0.06);
+  color: rgba(21, 222, 114, 0.8);
+}
+
+.add-account-confirm-info-light {
+  background: rgba(5, 149, 115, 0.06);
+  color: rgba(5, 149, 115, 0.8);
+}
+
+/* Wallet tag for accounts badge in Manage Wallets */
+.tag-accounts {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3B82F6;
+}
+
+/* Manage Wallets — Account rows under Spark wallets */
+.manage-wallet-accounts {
+  padding: 4px 8px 0 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.manage-account-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  border-radius: 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+}
+
+.manage-account-row-dark {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.manage-account-row-dark:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.manage-account-row-light {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.manage-account-row-light:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.manage-account-row-active.manage-account-row-dark {
+  background: rgba(21, 222, 114, 0.06);
+  border-color: rgba(21, 222, 114, 0.15);
+}
+
+.manage-account-row-active.manage-account-row-light {
+  background: rgba(5, 149, 115, 0.04);
+  border-color: rgba(5, 149, 115, 0.12);
+}
+
+.manage-account-check {
+  color: #15DE72;
+  flex-shrink: 0;
+}
+
+.manage-account-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.manage-account-name {
+  font-weight: 500;
+}
+
+.manage-account-balance {
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 /* Backup Dialog */
@@ -5452,9 +6118,31 @@ export default {
   font-size: 14px;
   font-weight: 600;
   line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .aw-name-dark { color: rgba(255, 255, 255, 0.9); }
 .aw-name-light { color: rgba(0, 0, 0, 0.85); }
+
+.aw-pocket-label {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.aw-pocket-label-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.4);
+}
+.aw-pocket-label-light {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.aw-pocket-card {
+  margin-left: 12px;
+}
 
 .aw-wallet-summary {
   font-family: 'Manrope', sans-serif;
@@ -5536,6 +6224,13 @@ export default {
   font-weight: 700;
 }
 
+.aw-dialog-entry-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
 .aw-dialog-subtitle {
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
@@ -5607,6 +6302,14 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 11px;
   padding-left: 12px;
+}
+.aw-spark-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  margin-top: 6px;
 }
 .aw-hint-dark { color: rgba(255, 255, 255, 0.3); }
 .aw-hint-light { color: rgba(0, 0, 0, 0.35); }
