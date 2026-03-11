@@ -39,82 +39,111 @@
       <q-card-section class="pin-content">
         <!-- Lock Icon -->
         <div class="lock-icon-container">
-          <div class="lock-icon-bg" :class="hasError ? 'lock-error' : ''">
-            <Icon :icon="mode === 'confirm' ? 'tabler:refresh' : 'tabler:lock'" :style="{ fontSize: '36px', color: 'white' }" />
+          <div class="lock-icon-bg" :class="[
+            hasError ? 'lock-error' : '',
+            loading ? 'lock-unlocking' : ''
+          ]">
+            <Icon
+              :icon="loading ? 'tabler:lock-open' : (mode === 'confirm' ? 'tabler:refresh' : 'tabler:lock')"
+              :style="{ fontSize: '36px', color: 'white' }"
+            />
           </div>
         </div>
 
-        <!-- Subtitle -->
-        <div class="pin-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-          {{ subtitle }}
-        </div>
+        <!-- Loading state — shown after PIN submitted while wallet unlocks -->
+        <transition name="fade" mode="out-in">
+          <div v-if="loading" key="loading" class="unlock-loading">
+            <!-- PIN dots stay filled -->
+            <div class="pin-dots-container">
+              <div
+                v-for="i in pinLength"
+                :key="i"
+                class="pin-dot"
+                :class="[$q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light', 'filled']"
+              ></div>
+            </div>
 
-        <!-- PIN Dots Display -->
-        <div class="pin-dots-container" :class="{ 'dots-shake': hasError }">
-          <div
-            v-for="i in pinLength"
-            :key="i"
-            class="pin-dot"
-            :class="[
-              $q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light',
-              pin.length >= i ? 'filled' : '',
-              hasError ? 'error' : ''
-            ]"
-          ></div>
-        </div>
+            <q-spinner-dots size="40px" color="green" />
+            <div class="unlock-loading-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Unlocking your wallet...') }}
+            </div>
+          </div>
 
-        <!-- Error Message -->
-        <div class="error-message-slot" :class="{ 'has-error': errorMessage }">
-          <span v-if="errorMessage" class="error-message">{{ errorMessage }}</span>
-        </div>
+          <!-- Normal PIN entry UI -->
+          <div v-else key="numpad" class="pin-entry-ui">
+            <!-- Subtitle -->
+            <div class="pin-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ subtitle }}
+            </div>
 
-        <!-- Numpad -->
-        <div class="numpad-grid">
-          <template v-for="key in numpadKeys" :key="key || 'empty'">
-            <!-- Empty spacer (enter mode — no OK button) -->
-            <div v-if="key === ''" class="numpad-spacer"></div>
-            <!-- Key button -->
-            <button
-              v-else
-              class="numpad-key"
-              :class="[
-                $q.dark.isActive ? 'numpad-key-dark' : 'numpad-key-light',
-                key === 'del' || key === 'ok' ? 'numpad-key-action' : 'numpad-key-digit',
-                key === 'ok' && pin.length < pinLength ? 'numpad-key-disabled' : '',
-                pressedKey === key ? 'numpad-key-pressed' : ''
-              ]"
-              :disabled="key === 'ok' && pin.length < pinLength"
-              @touchstart.prevent="onTouchStart(key, $event)"
-              @touchend.prevent="onTouchEnd(key)"
-              @touchcancel="onTouchCancel"
-              @click="onClickFallback(key)"
-            >
-              <template v-if="key === 'del'">
-                <Icon icon="tabler:backspace" width="22" height="22" />
+            <!-- PIN Dots Display -->
+            <div class="pin-dots-container" :class="{ 'dots-shake': hasError }">
+              <div
+                v-for="i in pinLength"
+                :key="i"
+                class="pin-dot"
+                :class="[
+                  $q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light',
+                  pin.length >= i ? 'filled' : '',
+                  hasError ? 'error' : ''
+                ]"
+              ></div>
+            </div>
+
+            <!-- Error Message -->
+            <div class="error-message-slot" :class="{ 'has-error': errorMessage }">
+              <span v-if="errorMessage" class="error-message">{{ errorMessage }}</span>
+            </div>
+
+            <!-- Numpad -->
+            <div class="numpad-grid">
+              <template v-for="key in numpadKeys" :key="key || 'empty'">
+                <!-- Empty spacer (enter mode — no OK button) -->
+                <div v-if="key === ''" class="numpad-spacer"></div>
+                <!-- Key button -->
+                <button
+                  v-else
+                  class="numpad-key"
+                  :class="[
+                    $q.dark.isActive ? 'numpad-key-dark' : 'numpad-key-light',
+                    key === 'del' || key === 'ok' ? 'numpad-key-action' : 'numpad-key-digit',
+                    key === 'ok' && pin.length < pinLength ? 'numpad-key-disabled' : '',
+                    pressedKey === key ? 'numpad-key-pressed' : ''
+                  ]"
+                  :disabled="key === 'ok' && pin.length < pinLength"
+                  @touchstart.prevent="onTouchStart(key, $event)"
+                  @touchend.prevent="onTouchEnd(key)"
+                  @touchcancel="onTouchCancel"
+                  @click="onClickFallback(key)"
+                >
+                  <template v-if="key === 'del'">
+                    <Icon icon="tabler:backspace" width="22" height="22" />
+                  </template>
+                  <template v-else-if="key === 'ok'">
+                    <Icon icon="tabler:check" width="22" height="22" />
+                  </template>
+                  <template v-else>
+                    {{ key }}
+                  </template>
+                </button>
               </template>
-              <template v-else-if="key === 'ok'">
-                <Icon icon="tabler:check" width="22" height="22" />
-              </template>
-              <template v-else>
-                {{ key }}
-              </template>
-            </button>
-          </template>
-        </div>
+            </div>
 
-        <!-- Forgot PIN link -->
-        <div v-if="showForgotPin" class="forgot-pin-container">
-          <q-btn
-            flat
-            no-caps
-            dense
-            class="forgot-pin-btn"
-            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-            @click="$emit('forgot-pin')"
-          >
-            {{ $t('Forgot PIN?') }}
-          </q-btn>
-        </div>
+            <!-- Forgot PIN link -->
+            <div v-if="showForgotPin" class="forgot-pin-container">
+              <q-btn
+                flat
+                no-caps
+                dense
+                class="forgot-pin-btn"
+                :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+                @click="$emit('forgot-pin')"
+              >
+                {{ $t('Forgot PIN?') }}
+              </q-btn>
+            </div>
+          </div>
+        </transition>
       </q-card-section>
     </q-card>
   </q-dialog>
@@ -156,6 +185,10 @@ export default {
     errorMessage: {
       type: String,
       default: ''
+    },
+    loading: {
+      type: Boolean,
+      default: false
     }
   },
   emits: ['update:modelValue', 'pin-complete', 'cancel', 'forgot-pin'],
@@ -376,6 +409,21 @@ export default {
   box-shadow: 0 4px 16px rgba(255, 68, 68, 0.3);
 }
 
+.lock-icon-bg.lock-unlocking {
+  box-shadow: 0 4px 24px rgba(21, 222, 114, 0.4);
+}
+
+/* Fade transition between numpad and loading */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 /* Subtitle */
 .pin-subtitle {
   font-family: 'Manrope', sans-serif;
@@ -390,6 +438,32 @@ export default {
 
 .view_title {
   color: #6B7280;
+}
+
+/* PIN entry UI wrapper */
+.pin-entry-ui {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+/* Unlock Loading */
+.unlock-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding-top: 1rem;
+}
+
+.unlock-loading-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
 }
 
 /* PIN Dots */
