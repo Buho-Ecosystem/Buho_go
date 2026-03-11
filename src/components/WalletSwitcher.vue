@@ -992,15 +992,6 @@ export default {
   background: rgba(21, 222, 114, 0.1);
 }
 
-/* Expand Account Icon */
-.expand-account-icon {
-  transition: transform 0.2s ease;
-}
-
-.expand-account-icon.rotated {
-  transform: rotate(180deg);
-}
-
 /* Account List */
 .account-list {
   padding: 0 0.5rem 0.25rem;
@@ -1041,12 +1032,6 @@ export default {
   flex-shrink: 0;
 }
 
-.pocket-count-hint {
-  font-family: 'Manrope', sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-}
-
 .account-name {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
@@ -1055,15 +1040,6 @@ export default {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.account-main-badge {
-  font-size: 9px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(21, 222, 114, 0.12);
-  color: #15DE72;
 }
 
 .account-balance {
