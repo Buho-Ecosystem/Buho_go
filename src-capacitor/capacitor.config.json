@@ -1,5 +1,8 @@
 {
   "appId": "mybuho.buhogo",
   "appName": "BuhoGo",
-  "webDir": "www"
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
 }
