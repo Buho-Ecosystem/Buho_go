@@ -142,6 +142,7 @@ export const useWalletStore = defineStore('wallet', {
     // UI states
     isLoading: false,
     isConnecting: false,
+    walletSwitching: false,
 
     // Error tracking
     lastError: null,
@@ -408,91 +409,31 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Check if a Spark wallet has multiple accounts
+     * Get the Business Spark wallet
      */
-    hasAccounts: (state) => (walletId) => {
-      const wallet = state.wallets.find(w => w.id === walletId);
-      return wallet?.metadata?.accounts?.length > 0;
+    sparkBusinessWallet: (state) => {
+      return state.wallets.find(w =>
+        w.type === WALLET_TYPES.SPARK && w.connectionData?.accountNumber === 1
+      ) || null;
     },
 
     /**
-     * Get all accounts for a Spark wallet (primary + additional)
-     * Returns array of { accountNumber, name, sparkAddress, cachedBalance }
+     * Get the Personal Spark wallet
      */
-    walletAccounts: (state) => (walletId) => {
-      const wallet = state.wallets.find(w => w.id === walletId);
-      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return [];
-
-      const primaryAccountNumber = wallet.connectionData?.accountNumber
-        || SPARK_ACCOUNT_DEFAULTS[wallet.connectionData?.network || 'MAINNET'];
-
-      const primary = {
-        accountNumber: primaryAccountNumber,
-        name: wallet.name,
-        sparkAddress: wallet.metadata?.sparkAddress || null,
-        cachedBalance: wallet.metadata?.cachedBalance || 0,
-        isPrimary: true
-      };
-
-      const additional = (wallet.metadata?.accounts || []).map(a => ({
-        ...a,
-        isPrimary: false
-      }));
-
-      return [primary, ...additional];
+    sparkPersonalWallet: (state) => {
+      return state.wallets.find(w =>
+        w.type === WALLET_TYPES.SPARK && w.connectionData?.accountNumber === 2
+      ) || null;
     },
 
     /**
-     * Get the active account number for a Spark wallet
-     */
-    activeAccountNumber: (state) => (walletId) => {
-      const wallet = state.wallets.find(w => w.id === walletId);
-      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return null;
-      return wallet.metadata?.activeAccountNumber
-        || wallet.connectionData?.accountNumber
-        || SPARK_ACCOUNT_DEFAULTS[wallet.connectionData?.network || 'MAINNET'];
-    },
-
-    /**
-     * Get combined balance of all accounts in a Spark wallet
-     */
-    combinedBalance: (state) => (walletId) => {
-      const wallet = state.wallets.find(w => w.id === walletId);
-      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return 0;
-
-      const primaryBalance = state.balances[walletId] || wallet.metadata?.cachedBalance || 0;
-      const accountBalances = (wallet.metadata?.accounts || []).reduce((sum, a) => {
-        const key = `${walletId}:${a.accountNumber}`;
-        return sum + (state.balances[key] || a.cachedBalance || 0);
-      }, 0);
-
-      return primaryBalance + accountBalances;
-    },
-
-    /**
-     * Get the active Spark address, account-aware
-     * When accounts exist, returns the address of the active account
+     * Get the active Spark address (simple — just the active wallet's address)
      */
     activeSparkAddress: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
-      if (activeWallet?.type !== WALLET_TYPES.SPARK) return null;
-
-      const activeAccNum = activeWallet.metadata?.activeAccountNumber;
-      const primaryAccNum = activeWallet.connectionData?.accountNumber
-        || SPARK_ACCOUNT_DEFAULTS[activeWallet.connectionData?.network || 'MAINNET'];
-
-      // If active account is the primary or not set, use primary address
-      if (!activeAccNum || activeAccNum === primaryAccNum) {
-        return state.walletInfos[state.activeWalletId]?.sparkAddress
-          || activeWallet?.metadata?.sparkAddress
-          || null;
-      }
-
-      // Active account is an additional account
-      const account = activeWallet.metadata?.accounts?.find(a => a.accountNumber === activeAccNum);
-      const compositeKey = `${state.activeWalletId}:${activeAccNum}`;
-      return state.walletInfos[compositeKey]?.sparkAddress
-        || account?.sparkAddress
+      if (activeWallet?.type !== 'spark') return null;
+      return state.walletInfos[state.activeWalletId]?.sparkAddress
+        || activeWallet?.metadata?.sparkAddress
         || null;
     },
   },
@@ -529,6 +470,107 @@ export const useWalletStore = defineStore('wallet', {
             }
             return migrated;
           });
+
+          // Migrate to Business/Personal pair
+          // Find all existing Spark wallets
+          const sparkWallets = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
+
+          if (sparkWallets.length > 0) {
+            // First, migrate pockets (metadata.accounts[]) to top-level wallets
+            for (const wallet of [...sparkWallets]) {
+              if (wallet.metadata?.accounts?.length) {
+                const walletGroupId = wallet.connectionData.walletGroupId
+                  || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                wallet.connectionData.walletGroupId = walletGroupId;
+
+                for (const account of wallet.metadata.accounts) {
+                  const newWalletId = `wallet-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+                  migratedWallets.push({
+                    id: newWalletId,
+                    type: WALLET_TYPES.SPARK,
+                    name: account.name || 'Personal',
+                    isActive: false,
+                    isDefault: false,
+                    createdAt: Date.now(),
+                    lastUsed: Date.now(),
+                    connectionData: {
+                      encryptedMnemonic: wallet.connectionData.encryptedMnemonic,
+                      network: wallet.connectionData.network,
+                      accountNumber: account.accountNumber,
+                      walletGroupId: walletGroupId,
+                    },
+                    metadata: {
+                      sparkAddress: account.sparkAddress || null,
+                      hasBackedUp: wallet.metadata?.hasBackedUp || false,
+                      cachedBalance: account.cachedBalance || 0,
+                    },
+                  });
+
+                  if (parsed.activeWalletId === wallet.id
+                    && wallet.metadata.activeAccountNumber === account.accountNumber) {
+                    parsed.activeWalletId = newWalletId;
+                  }
+                }
+                delete wallet.metadata.accounts;
+                delete wallet.metadata.activeAccountNumber;
+              }
+            }
+
+            // Now ensure Business/Personal pair exists
+            // Re-scan after pocket migration
+            const allSpark = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
+            const hasAccNum1 = allSpark.find(w => w.connectionData?.accountNumber === 1);
+            const hasAccNum2 = allSpark.find(w => w.connectionData?.accountNumber === 2);
+
+            if (hasAccNum1 && !hasAccNum2) {
+              // Has Business (acc 1) but no Personal (acc 2) — create Personal
+              const walletGroupId = hasAccNum1.connectionData.walletGroupId
+                || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+              hasAccNum1.connectionData.walletGroupId = walletGroupId;
+              hasAccNum1.name = 'Business';
+
+              migratedWallets.push({
+                id: `wallet-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+                type: WALLET_TYPES.SPARK,
+                name: 'Personal',
+                isActive: false,
+                isDefault: false,
+                createdAt: Date.now(),
+                lastUsed: Date.now(),
+                connectionData: {
+                  encryptedMnemonic: hasAccNum1.connectionData.encryptedMnemonic,
+                  network: hasAccNum1.connectionData.network,
+                  accountNumber: 2,
+                  walletGroupId: walletGroupId,
+                },
+                metadata: {
+                  sparkAddress: null,
+                  hasBackedUp: hasAccNum1.metadata?.hasBackedUp || false,
+                  cachedBalance: 0,
+                },
+              });
+            } else if (hasAccNum1 && hasAccNum2) {
+              // Both exist — ensure they share a walletGroupId and have correct names
+              const walletGroupId = hasAccNum1.connectionData.walletGroupId
+                || hasAccNum2.connectionData.walletGroupId
+                || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+              hasAccNum1.connectionData.walletGroupId = walletGroupId;
+              hasAccNum2.connectionData.walletGroupId = walletGroupId;
+            }
+
+            // Remove any extra Spark wallets beyond the Business/Personal pair
+            // (from old multi-wallet system with different mnemonics)
+            const finalSpark = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
+            if (finalSpark.length > 2) {
+              const keepGroup = finalSpark.find(w => w.connectionData?.accountNumber === 1)?.connectionData?.walletGroupId;
+              for (let i = migratedWallets.length - 1; i >= 0; i--) {
+                const w = migratedWallets[i];
+                if (w.type === WALLET_TYPES.SPARK && w.connectionData?.walletGroupId !== keepGroup) {
+                  migratedWallets.splice(i, 1);
+                }
+              }
+            }
+          }
 
           this.$patch({
             wallets: migratedWallets,
@@ -643,12 +685,11 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} [walletId] - Specific wallet ID (defaults to active Spark wallet)
      */
     async confirmBackup(walletId) {
-      // Per-wallet backup tracking
-      const wallet = walletId
-        ? this.wallets.find(w => w.id === walletId)
-        : this.activeWallet?.type === WALLET_TYPES.SPARK ? this.activeWallet : this.sparkWallet;
-      if (wallet && wallet.metadata) {
-        wallet.metadata.hasBackedUp = true;
+      // Mark ALL Spark wallets as backed up (they share the same mnemonic)
+      for (const w of this.sparkWallets) {
+        if (w.metadata) {
+          w.metadata.hasBackedUp = true;
+        }
       }
       // Legacy store-level flag
       this.hasBackedUp = true;
@@ -667,118 +708,120 @@ export const useWalletStore = defineStore('wallet', {
     // Spark Wallet Methods
     // ==========================================
 
-    /**
-     * Add a new Spark wallet
-     * @param {Object} walletData - Spark wallet configuration
-     * @param {string} [walletData.name] - Display name (auto-generated if omitted)
-     * @param {string} walletData.mnemonic - 12-word seed phrase
-     * @param {string} [walletData.pin] - 6-digit PIN (required for first wallet, uses shared sessionPin for subsequent)
-     * @param {string} [walletData.network] - 'MAINNET' | 'TESTNET' | 'REGTEST' etc.
-     * @param {number} [walletData.accountNumber] - Spark account derivation index (default per network)
-     * @param {boolean} [walletData.isRestore] - True if restoring from existing seed (marks backup as done)
-     * @returns {Promise<Object>} The created wallet object
-     */
     async addSparkWallet(walletData) {
       this.isConnecting = true;
       this.lastError = null;
+      const onProgress = walletData.onProgress || (() => {});
 
       try {
-        // Validate input
         if (!walletData.mnemonic) {
           throw new Error('Mnemonic is required');
         }
-        // PIN: required for first Spark wallet, use shared sessionPin for subsequent ones
+
+        // Only one Spark wallet pair allowed
+        if (this.hasAnySparkWallet) {
+          throw new Error('Spark wallet already exists');
+        }
+
         const pin = walletData.pin || this.sessionPin;
         if (!pin || pin.length !== 6) {
           throw new Error('A 6-digit PIN is required');
         }
 
-        // Resolve accountNumber: explicit > default for network
         const network = walletData.network || 'MAINNET';
-        const accountNumber = walletData.accountNumber ?? SPARK_ACCOUNT_DEFAULTS[network];
+        const walletGroupId = `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-        // Validate mnemonic by trying to restore wallet
-        const testWallet = await SparkWalletProvider.restoreWallet(
-          walletData.mnemonic,
+        // Encrypt mnemonic with PIN
+        onProgress('encrypting');
+        const encryptedMnemonic = await CryptoUtils.encryptMnemonic(walletData.mnemonic, pin);
+
+        // Store PIN in session
+        this._setSessionPin(pin);
+
+        // Create Business wallet (accountNumber 1)
+        onProgress('business');
+        const businessWallet = await this._createSparkWalletEntry({
+          mnemonic: walletData.mnemonic,
+          encryptedMnemonic,
+          name: 'Business',
           network,
-          accountNumber
-        );
+          accountNumber: 1,
+          walletGroupId,
+          isRestore: walletData.isRestore,
+          pin,
+        });
 
-        // Get Spark address
-        const sparkAddress = await testWallet.getSparkAddress();
+        // Set Business as active and default
+        this.activeWalletId = businessWallet.id;
+        businessWallet.isActive = true;
+        businessWallet.isDefault = true;
 
-        // Clean up test wallet
-        testWallet.cleanupConnections();
+        // Create Personal wallet (accountNumber 2)
+        onProgress('personal');
+        const personalEncrypted = await CryptoUtils.encryptMnemonic(walletData.mnemonic, pin);
+        await this._createSparkWalletEntry({
+          mnemonic: walletData.mnemonic,
+          encryptedMnemonic: personalEncrypted,
+          name: 'Personal',
+          network,
+          accountNumber: 2,
+          walletGroupId,
+          isRestore: walletData.isRestore,
+          pin,
+        });
 
-        // Check for duplicate (same Spark address already exists)
-        const duplicate = this.wallets.find(
-          w => w.type === WALLET_TYPES.SPARK && w.metadata?.sparkAddress === sparkAddress
-        );
-        if (duplicate) {
-          throw new Error(`This seed is already added as "${duplicate.name}"`);
-        }
-
-        // Encrypt mnemonic with shared PIN
-        const encryptedMnemonic = await CryptoUtils.encryptMnemonic(
-          walletData.mnemonic,
-          pin
-        );
-
-        // Auto-generate wallet name if not provided
-        const name = walletData.name || this._nextSparkWalletName();
-
-        // Create wallet object
-        const wallet = {
-          id: this.generateWalletId(),
-          type: WALLET_TYPES.SPARK,
-          name: name,
-          isActive: false,
-          isDefault: this.wallets.length === 0,
-          createdAt: Date.now(),
-          lastUsed: Date.now(),
-          connectionData: {
-            encryptedMnemonic: encryptedMnemonic,
-            network: network,
-            accountNumber: accountNumber,
-          },
-          metadata: {
-            sparkAddress: sparkAddress,
-            hasBackedUp: walletData.isRestore || false,
-          },
-        };
-
-        // Store wallet
-        this.wallets.push(wallet);
-        this.walletInfos[wallet.id] = {
-          sparkAddress: sparkAddress,
-          type: 'spark'
-        };
-
-        // Set as active if first wallet
-        if (this.wallets.length === 1) {
-          this.activeWalletId = wallet.id;
-          wallet.isActive = true;
-        }
-
-        // Legacy store-level backup flag (for pre-migration compat)
+        // Legacy store-level backup flag
         if (walletData.isRestore) {
           this.hasBackedUp = true;
         }
 
-        // Store PIN in session for immediate use (survives page reload)
-        this._setSessionPin(pin);
-
-        // Connect the wallet
-        await this.connectSparkWallet(wallet.id, pin);
-
+        onProgress('done');
         await this.persistState();
-        return wallet;
+        return businessWallet;
       } catch (error) {
         this.lastError = error.message;
         throw error;
       } finally {
         this.isConnecting = false;
       }
+    },
+
+    /**
+     * Internal helper: create and connect a single Spark wallet entry
+     */
+    async _createSparkWalletEntry({ mnemonic, encryptedMnemonic, name, network, accountNumber, walletGroupId, isRestore, pin }) {
+      // Validate mnemonic
+      const testWallet = await SparkWalletProvider.restoreWallet(mnemonic, network, accountNumber);
+      const sparkAddress = await testWallet.getSparkAddress();
+      testWallet.cleanupConnections();
+
+      const wallet = {
+        id: this.generateWalletId(),
+        type: WALLET_TYPES.SPARK,
+        name,
+        isActive: false,
+        isDefault: false,
+        createdAt: Date.now(),
+        lastUsed: Date.now(),
+        connectionData: {
+          encryptedMnemonic,
+          network,
+          accountNumber,
+          walletGroupId,
+        },
+        metadata: {
+          sparkAddress,
+          hasBackedUp: isRestore || false,
+        },
+      };
+
+      this.wallets.push(wallet);
+      this.walletInfos[wallet.id] = { sparkAddress, type: 'spark' };
+
+      // Connect the wallet
+      await this.connectSparkWallet(wallet.id, pin);
+
+      return wallet;
     },
 
     /**
@@ -833,9 +876,6 @@ export const useWalletStore = defineStore('wallet', {
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
 
-        // Also connect additional accounts if any
-        await this._connectWalletAccounts(wallet, mnemonic);
-
       } catch (error) {
         this.connectionStates[walletId] = {
           connected: false,
@@ -843,55 +883,6 @@ export const useWalletStore = defineStore('wallet', {
           error: error.message,
         };
         throw error;
-      }
-    },
-
-    /**
-     * Connect all additional accounts for a Spark wallet
-     * @param {Object} wallet - Wallet object
-     * @param {string} mnemonic - Decrypted mnemonic
-     */
-    async _connectWalletAccounts(wallet, mnemonic) {
-      const accounts = wallet.metadata?.accounts || [];
-      for (const account of accounts) {
-        const compositeKey = `${wallet.id}:${account.accountNumber}`;
-        try {
-          if (this.connectionStates[compositeKey]?.connected) continue;
-
-          const provider = new SparkWalletProvider(compositeKey, {
-            name: account.name,
-            network: wallet.connectionData.network,
-            accountNumber: account.accountNumber,
-          });
-          await provider.initializeWithMnemonic(mnemonic);
-
-          this.providers[compositeKey] = provider;
-          this.connectionStates[compositeKey] = {
-            connected: true,
-            lastConnected: Date.now(),
-            error: null,
-          };
-
-          const balanceResult = await provider.getBalance();
-          this.balances[compositeKey] = balanceResult.balance;
-          account.cachedBalance = balanceResult.balance;
-          account.balanceUpdatedAt = Date.now();
-
-          const info = await provider.getInfo();
-          this.walletInfos[compositeKey] = info;
-
-          // Store spark address from provider
-          if (info?.sparkAddress) {
-            account.sparkAddress = info.sparkAddress;
-          }
-        } catch (err) {
-          console.warn(`Failed to connect account "${account.name}":`, err.message);
-          this.connectionStates[compositeKey] = {
-            connected: false,
-            lastConnected: Date.now(),
-            error: err.message,
-          };
-        }
       }
     },
 
@@ -935,206 +926,11 @@ export const useWalletStore = defineStore('wallet', {
       }
     },
 
-    // ==========================================
-    // Spark Accounts (Business / Personal)
-    // ==========================================
-
-    /**
-     * Add an account to a Spark wallet (same mnemonic, different accountNumber)
-     * @param {string} walletId - Parent wallet ID
-     * @param {string} [name='Personal'] - Account name
-     * @returns {Object} The new account object
-     */
-    async addAccount(walletId, name = 'Personal') {
-      const wallet = this.wallets.find(w => w.id === walletId);
-      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) {
-        throw new Error('Not a Spark wallet');
-      }
-
-      if (!this.sessionPin) {
-        throw new Error('Wallet must be unlocked to add an account');
-      }
-
-      // Determine next accountNumber
-      const primaryAccNum = wallet.connectionData?.accountNumber
-        || SPARK_ACCOUNT_DEFAULTS[wallet.connectionData?.network || 'MAINNET'];
-      const existing = wallet.metadata?.accounts || [];
-      const allAccountNumbers = [primaryAccNum, ...existing.map(a => a.accountNumber)];
-      const nextAccountNumber = Math.max(...allAccountNumbers) + 1;
-
-      // Soft limit
-      if (allAccountNumbers.length >= 5) {
-        throw new Error('Maximum of 5 accounts per wallet');
-      }
-
-      // Decrypt mnemonic and initialize provider
-      const mnemonic = await CryptoUtils.decryptMnemonic(
-        wallet.connectionData.encryptedMnemonic,
-        this.sessionPin
-      );
-
-      const compositeKey = `${walletId}:${nextAccountNumber}`;
-      const provider = new SparkWalletProvider(compositeKey, {
-        name,
-        network: wallet.connectionData.network,
-        accountNumber: nextAccountNumber,
-      });
-      await provider.initializeWithMnemonic(mnemonic);
-
-      // Get Spark address and balance
-      const info = await provider.getInfo();
-      const balanceResult = await provider.getBalance();
-
-      const account = {
-        accountNumber: nextAccountNumber,
-        name,
-        sparkAddress: info?.sparkAddress || null,
-        cachedBalance: balanceResult.balance || 0,
-        balanceUpdatedAt: Date.now()
-      };
-
-      // Store
-      wallet.metadata = wallet.metadata || {};
-      if (!wallet.metadata.accounts) wallet.metadata.accounts = [];
-      wallet.metadata.accounts.push(account);
-
-      this.providers[compositeKey] = provider;
-      this.connectionStates[compositeKey] = {
-        connected: true,
-        lastConnected: Date.now(),
-        error: null,
-      };
-      this.balances[compositeKey] = balanceResult.balance || 0;
-      this.walletInfos[compositeKey] = info;
-
-      await this.persistState();
-      return account;
-    },
-
-    /**
-     * Switch the active account within a Spark wallet
-     * @param {string} walletId - Wallet ID
-     * @param {number} accountNumber - Account number to switch to
-     */
-    async switchAccount(walletId, accountNumber) {
-      const wallet = this.wallets.find(w => w.id === walletId);
-      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return;
-
-      wallet.metadata = wallet.metadata || {};
-      wallet.metadata.activeAccountNumber = accountNumber;
-      await this.persistState();
-    },
-
-    /**
-     * Rename an account
-     * @param {string} walletId - Wallet ID
-     * @param {number} accountNumber - Account number to rename
-     * @param {string} newName - New name for the account
-     */
-    async renameAccount(walletId, accountNumber, newName) {
-      const wallet = this.wallets.find(w => w.id === walletId);
-      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return;
-
-      const primaryAccNum = wallet.connectionData?.accountNumber || 1;
-      if (accountNumber === primaryAccNum) {
-        // Rename the wallet itself (primary account = wallet name)
-        wallet.name = newName;
-      } else {
-        const account = wallet.metadata?.accounts?.find(a => a.accountNumber === accountNumber);
-        if (account) {
-          account.name = newName;
-        }
-      }
-      await this.persistState();
-    },
-
-    /**
-     * Remove an account from a Spark wallet
-     * @param {string} walletId - Wallet ID
-     * @param {number} accountNumber - Account number to remove (cannot be primary)
-     */
-    async removeAccount(walletId, accountNumber) {
-      const wallet = this.wallets.find(w => w.id === walletId);
-      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) {
-        throw new Error('Not a Spark wallet');
-      }
-
-      const primaryAccNum = wallet.connectionData?.accountNumber
-        || SPARK_ACCOUNT_DEFAULTS[wallet.connectionData?.network || 'MAINNET'];
-
-      if (accountNumber === primaryAccNum) {
-        throw new Error('Cannot remove the primary account. Delete the wallet instead.');
-      }
-
-      const accounts = wallet.metadata?.accounts || [];
-      const idx = accounts.findIndex(a => a.accountNumber === accountNumber);
-      if (idx === -1) {
-        throw new Error('Account not found');
-      }
-
-      const account = accounts[idx];
-      const compositeKey = `${walletId}:${accountNumber}`;
-      const balance = this.balances[compositeKey] || account.cachedBalance || 0;
-      if (balance > 0) {
-        throw new Error('Transfer funds before removing this account');
-      }
-
-      // Disconnect and clean up
-      if (this.providers[compositeKey]) {
-        try { await this.providers[compositeKey].cleanup?.(); } catch (e) { /* ignore */ }
-        delete this.providers[compositeKey];
-      }
-      delete this.connectionStates[compositeKey];
-      delete this.balances[compositeKey];
-      delete this.walletInfos[compositeKey];
-
-      // Remove from wallet metadata
-      accounts.splice(idx, 1);
-
-      // If the removed account was active, switch to primary
-      if (wallet.metadata.activeAccountNumber === accountNumber) {
-        wallet.metadata.activeAccountNumber = primaryAccNum;
-      }
-
-      // Clean up auto-withdraw config
-      const autoWithdrawStore = useAutoWithdrawStore();
-      await autoWithdrawStore.removeConfig(compositeKey);
-
-      await this.persistState();
-    },
-
-    /**
-     * Get the display name for the active wallet, including account name when accounts exist
-     * @param {string} walletId - Wallet ID
-     * @returns {string} e.g. "Spark Wallet" or "Spark Wallet — Business"
-     */
-    getWalletDisplayName(walletId) {
-      const wallet = this.wallets.find(w => w.id === walletId);
-      if (!wallet) return '';
-
-      const accounts = wallet.metadata?.accounts;
-      if (!accounts?.length) return wallet.name;
-
-      const activeAccNum = wallet.metadata?.activeAccountNumber;
-      const primaryAccNum = wallet.connectionData?.accountNumber
-        || SPARK_ACCOUNT_DEFAULTS[wallet.connectionData?.network || 'MAINNET'];
-
-      // Primary account active — show wallet name only
-      if (!activeAccNum || activeAccNum === primaryAccNum) {
-        return wallet.name;
-      }
-
-      // Additional account active — show pocket name only
-      const account = accounts.find(a => a.accountNumber === activeAccNum);
-      return account?.name || wallet.name;
-    },
-
     /**
      * Lock all Spark wallets (clear session)
      */
     lockSparkWallet() {
       for (const wallet of this.sparkWallets) {
-        // Disconnect primary
         const provider = this.providers[wallet.id];
         if (provider) {
           provider.disconnect();
@@ -1145,23 +941,7 @@ export const useWalletStore = defineStore('wallet', {
           lastConnected: Date.now(),
           error: null,
         };
-
-        // Disconnect additional accounts
-        for (const account of (wallet.metadata?.accounts || [])) {
-          const compositeKey = `${wallet.id}:${account.accountNumber}`;
-          const accProvider = this.providers[compositeKey];
-          if (accProvider) {
-            accProvider.disconnect();
-            delete this.providers[compositeKey];
-          }
-          this.connectionStates[compositeKey] = {
-            connected: false,
-            lastConnected: Date.now(),
-            error: null,
-          };
-        }
       }
-
       this._clearSessionPin();
     },
 
@@ -1517,16 +1297,23 @@ export const useWalletStore = defineStore('wallet', {
           delete this.providers[walletId];
         }
 
-        // Clean up account providers
-        for (const account of (wallet.metadata?.accounts || [])) {
-          const compositeKey = `${walletId}:${account.accountNumber}`;
-          if (this.providers[compositeKey]) {
-            try { this.providers[compositeKey].disconnect(); } catch (e) { /* ignore */ }
-            delete this.providers[compositeKey];
+        // If this wallet is in a group, also remove all other group members
+        const groupId = wallet.connectionData?.walletGroupId;
+        if (groupId) {
+          const groupMembers = this.wallets.filter(w => w.connectionData?.walletGroupId === groupId && w.id !== walletId);
+          for (const member of groupMembers) {
+            if (this.providers[member.id]) {
+              try { this.providers[member.id].disconnect(); } catch (e) { /* ignore */ }
+              delete this.providers[member.id];
+            }
+            delete this.connectionStates[member.id];
+            delete this.balances[member.id];
+            delete this.walletInfos[member.id];
+            const idx = this.wallets.indexOf(member);
+            if (idx !== -1) this.wallets.splice(idx, 1);
+            const autoWithdrawStore = useAutoWithdrawStore();
+            await autoWithdrawStore.removeConfig(member.id);
           }
-          delete this.connectionStates[compositeKey];
-          delete this.balances[compositeKey];
-          delete this.walletInfos[compositeKey];
         }
 
         // Remove from state
@@ -1576,6 +1363,7 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - The wallet ID to make active
      */
     async switchActiveWallet(walletId) {
+      this.walletSwitching = true;
       try {
         const wallet = this.wallets.find((w) => w.id === walletId);
         if (!wallet) {
@@ -1606,6 +1394,8 @@ export const useWalletStore = defineStore('wallet', {
       } catch (error) {
         this.lastError = error.message;
         throw error;
+      } finally {
+        this.walletSwitching = false;
       }
     },
 
@@ -1723,32 +1513,6 @@ export const useWalletStore = defineStore('wallet', {
 
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
-
-          // Refresh additional accounts
-          for (const account of (wallet.metadata?.accounts || [])) {
-            const compositeKey = `${walletId}:${account.accountNumber}`;
-            const accProvider = this.providers[compositeKey];
-            if (accProvider && this.connectionStates[compositeKey]?.connected) {
-              try {
-                const [accBalance, accInfo] = await Promise.all([
-                  accProvider.getBalance(),
-                  accProvider.getInfo()
-                ]);
-                this.balances[compositeKey] = accBalance.balance;
-                this.walletInfos[compositeKey] = accInfo;
-                account.cachedBalance = accBalance.balance;
-                account.balanceUpdatedAt = Date.now();
-
-                // Auto-withdraw check for this pocket
-                if (accBalance.balance > 0) {
-                  const autoWithdrawStore = useAutoWithdrawStore();
-                  autoWithdrawStore.checkAndExecute(compositeKey, accBalance.balance, this);
-                }
-              } catch (err) {
-                console.warn(`Failed to refresh account "${account.name}":`, err.message);
-              }
-            }
-          }
         } else if (wallet.type === WALLET_TYPES.LNBITS) {
           let provider = this.providers[walletId];
 
@@ -1873,17 +1637,7 @@ export const useWalletStore = defineStore('wallet', {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return null;
 
-      if (wallet.type === WALLET_TYPES.SPARK) {
-        // Account-aware: return the active account's provider if applicable
-        const activeAccNum = wallet.metadata?.activeAccountNumber;
-        const primaryAccNum = wallet.connectionData?.accountNumber || 1;
-        if (activeAccNum && activeAccNum !== primaryAccNum && wallet.metadata?.accounts?.length) {
-          const compositeKey = `${walletId}:${activeAccNum}`;
-          return this.providers[compositeKey] || this.providers[walletId] || null;
-        }
-        return this.providers[walletId] || null;
-      }
-      if (wallet.type === WALLET_TYPES.LNBITS) {
+      if (wallet.type === WALLET_TYPES.SPARK || wallet.type === WALLET_TYPES.LNBITS) {
         return this.providers[walletId] || null;
       }
       return this.connectionStates[walletId]?.nwcInstance || null;
@@ -2285,16 +2039,6 @@ export const useWalletStore = defineStore('wallet', {
      */
     generateWalletId() {
       return `wallet-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-    },
-
-    /**
-     * Generate next auto-incremented Spark wallet name
-     * @returns {string} e.g. 'Spark Wallet', 'Spark Wallet 2', 'Spark Wallet 3'
-     */
-    _nextSparkWalletName() {
-      const existing = this.wallets.filter(w => w.type === WALLET_TYPES.SPARK);
-      if (existing.length === 0) return 'Spark Wallet';
-      return `Spark Wallet ${existing.length + 1}`;
     },
 
     /**

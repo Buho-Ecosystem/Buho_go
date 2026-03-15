@@ -1,44 +1,55 @@
 <template>
-  <transition name="backup-banner">
+  <Transition name="backup-banner">
     <div
       v-if="visible"
-      class="backup-banner"
-      :class="$q.dark.isActive ? 'banner-dark' : 'banner-light'"
+      class="backup-banner-wrapper"
     >
-      <div class="banner-content">
-        <div class="banner-icon">
-          <Icon icon="tabler:shield-lock" width="20" height="20" />
+      <div class="backup-banner" :class="$q.dark.isActive ? 'banner-dark' : 'banner-light'">
+        <div class="banner-shine"></div>
+
+        <div class="banner-body">
+          <div class="banner-left">
+            <div class="logo-block">
+              <img
+                src="/Buho_logo__Sharp_grey.jpg"
+                alt="Buho"
+                class="logo-image"
+              />
+            </div>
+
+            <div class="banner-text">
+              <span class="banner-title" :class="$q.dark.isActive ? 'title-dark' : 'title-light'">
+                {{ $t('Back up your wallet') }}
+              </span>
+              <span class="banner-desc" :class="$q.dark.isActive ? 'desc-dark' : 'desc-light'">
+                {{ $t('Protect your funds by saving your recovery phrase.') }}
+              </span>
+            </div>
+          </div>
+
+          <div class="banner-right">
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="$emit('backup')"
+            >
+              <span>{{ $t('Backup') }}</span>
+              <Icon icon="tabler:chevron-right" width="14" height="14" class="action-arrow" />
+            </button>
+
+            <button
+              class="dismiss-btn"
+              :class="$q.dark.isActive ? 'dismiss-dark' : 'dismiss-light'"
+              @click="$emit('dismiss')"
+              aria-label="Dismiss"
+            >
+              <Icon icon="tabler:x" width="14" height="14" />
+            </button>
+          </div>
         </div>
-        <div class="banner-text">
-          <span class="banner-title">{{ $t('Back up your wallet') }}</span>
-          <span class="banner-desc">{{ $t('Protect your funds by saving your recovery phrase.') }}</span>
-        </div>
-      </div>
-      <div class="banner-actions">
-        <q-btn
-          flat
-          dense
-          no-caps
-          class="banner-backup-btn"
-          :class="$q.dark.isActive ? 'backup-btn-dark' : 'backup-btn-light'"
-          @click="$emit('backup')"
-        >
-          {{ $t('Back up now') }}
-        </q-btn>
-        <q-btn
-          flat
-          round
-          dense
-          size="sm"
-          class="banner-dismiss-btn"
-          :class="$q.dark.isActive ? 'dismiss-dark' : 'dismiss-light'"
-          @click="$emit('dismiss')"
-        >
-          <Icon icon="tabler:x" width="16" height="16" />
-        </q-btn>
       </div>
     </div>
-  </transition>
+  </Transition>
 </template>
 
 <script>
@@ -55,46 +66,92 @@ export default {
 </script>
 
 <style scoped>
+.backup-banner-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 8px;
+}
+
 .backup-banner {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.banner-dark {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+}
+
+.banner-light {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #eff6ff 100%);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Subtle shine sweep */
+.banner-shine {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.04) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.banner-light .banner-shine {
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.5) 30%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(255, 255, 255, 0.5) 70%,
+    transparent 100%
+  );
+}
+
+.banner-body {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  margin: 0 16px 12px;
+  padding: 14px 14px;
 }
 
-.banner-dark {
-  background: rgba(251, 191, 36, 0.1);
-  border: 1px solid rgba(251, 191, 36, 0.2);
-}
-
-.banner-light {
-  background: rgba(251, 191, 36, 0.08);
-  border: 1px solid rgba(251, 191, 36, 0.2);
-}
-
-.banner-content {
+.banner-left {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   flex: 1;
   min-width: 0;
 }
 
-.banner-icon {
+/* Logo */
+.logo-block {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(251, 191, 36, 0.15);
-  color: #F59E0B;
 }
 
+.logo-image {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+/* Text */
 .banner-text {
   display: flex;
   flex-direction: column;
@@ -105,76 +162,166 @@ export default {
 .banner-title {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
-  font-weight: 600;
-  color: #F59E0B;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: 1.3;
+}
+
+.title-dark {
+  color: #e0f2fe;
+}
+
+.title-light {
+  color: #1e3a5f;
 }
 
 .banner-desc {
   font-family: 'Manrope', sans-serif;
   font-size: 11px;
   line-height: 1.4;
-  color: #D97706;
+  letter-spacing: -0.01em;
 }
 
-.banner-dark .banner-desc {
-  color: rgba(251, 191, 36, 0.7);
+.desc-dark {
+  color: rgba(186, 230, 253, 0.6);
 }
 
-.banner-light .banner-desc {
-  color: #B45309;
+.desc-light {
+  color: rgba(30, 64, 175, 0.55);
 }
 
-.banner-actions {
+/* Right side */
+.banner-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
-.banner-backup-btn {
+/* Action button */
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.action-btn-dark {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.action-btn-dark:active {
+  transform: scale(0.97);
+}
+
+.action-btn-light {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.action-btn-light:active {
+  transform: scale(0.97);
+}
+
+/* Dismiss button */
+.dismiss-btn {
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
-}
-
-.backup-btn-dark {
-  background: rgba(251, 191, 36, 0.2);
-  color: #FBBF24;
-}
-
-.backup-btn-dark:hover {
-  background: rgba(251, 191, 36, 0.3);
-}
-
-.backup-btn-light {
-  background: rgba(251, 191, 36, 0.15);
-  color: #D97706;
-}
-
-.backup-btn-light:hover {
-  background: rgba(251, 191, 36, 0.25);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .dismiss-dark {
-  color: rgba(251, 191, 36, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(186, 230, 253, 0.4);
 }
 
 .dismiss-light {
-  color: rgba(180, 83, 9, 0.5);
+  background: rgba(59, 130, 246, 0.06);
+  color: rgba(30, 64, 175, 0.35);
+}
+
+.dismiss-btn:active {
+  transform: scale(0.92);
 }
 
 /* Transition */
-.backup-banner-enter-active,
-.backup-banner-leave-active {
-  transition: all 0.3s ease;
+.backup-banner-enter-active {
+  animation: banner-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.backup-banner-enter-from,
-.backup-banner-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
+.backup-banner-leave-active {
+  animation: banner-leave 0.35s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes banner-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes banner-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .backup-banner-wrapper {
+    padding: 6px;
+  }
+
+  .banner-body {
+    padding: 12px;
+  }
+
+  .logo-image {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+
+  .banner-title {
+    font-size: 12px;
+  }
+
+  .banner-desc {
+    font-size: 10px;
+  }
+
+  .action-btn {
+    padding: 7px 12px;
+    font-size: 11px;
+  }
 }
 </style>

@@ -1,11 +1,11 @@
 <template>
   <q-dialog
     v-model="show"
-    persistent
     maximized
     transition-show="slide-up"
     transition-hide="slide-down"
     class="receive-modal"
+    @before-hide="stopPaymentMonitor"
   >
     <q-card class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <!-- Header -->
@@ -1256,6 +1256,7 @@ export default {
 .receive-header {
   border-bottom: 1px solid;
   padding: 0.75rem 1rem;
+  padding-top: calc(var(--safe-top, 0px) + 0.75rem);
   flex-shrink: 0;
 }
 

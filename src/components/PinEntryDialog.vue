@@ -345,6 +345,7 @@ export default {
 .pin-header {
   border-bottom: 1px solid;
   padding: 0.75rem 1rem;
+  padding-top: calc(var(--safe-top, 0px) + 0.75rem);
   flex-shrink: 0;
 }
 

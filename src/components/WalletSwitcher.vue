@@ -93,7 +93,7 @@
                 'wallet-option-dark': $q.dark.isActive,
                 'wallet-option-light': !$q.dark.isActive
               }"
-              @click="hasAccounts(wallet.id) ? handleWalletSwitch(wallet.id, true) : handleWalletSwitch(wallet.id)"
+              @click="handleWalletSwitch(wallet.id)"
             >
               <!-- Wallet Avatar -->
               <div class="option-avatar">
@@ -159,9 +159,6 @@
                     <Icon icon="tabler:lock" width="10" height="10" class="q-mr-xs locked-icon" />
                     {{ formatBalanceWithLock(wallet.id) }}
                   </template>
-                  <template v-else-if="hasAccounts(wallet.id)">
-                    {{ formatBalance(combinedBalance(wallet.id)) }}
-                  </template>
                   <template v-else>
                     {{ formatBalance(balances[wallet.id] || 0) }}
                   </template>
@@ -174,7 +171,7 @@
               <!-- Wallet Actions -->
               <div class="option-actions">
                 <Icon
-                  v-if="wallet.id === activeWalletId && !hasAccounts(wallet.id)"
+                  v-if="wallet.id === activeWalletId"
                   icon="tabler:circle-check"
                   width="18"
                   height="18"
@@ -206,39 +203,6 @@
               </div>
             </div>
 
-            <!-- Pocket Rows — only additional pockets (primary = the wallet itself) -->
-            <div v-if="hasAccounts(wallet.id)" class="account-list">
-              <div
-                v-for="account in walletAccounts(wallet.id).filter(a => !a.isPrimary)"
-                :key="`${wallet.id}:${account.accountNumber}`"
-                class="account-option"
-                :class="{
-                  'account-option-active': activeAccountNumber(wallet.id) === account.accountNumber && wallet.id === activeWalletId,
-                  'account-option-dark': $q.dark.isActive,
-                  'account-option-light': !$q.dark.isActive
-                }"
-                @click.stop="handleAccountSwitch(wallet.id, account.accountNumber)"
-              >
-                <Icon
-                  v-if="activeAccountNumber(wallet.id) === account.accountNumber && wallet.id === activeWalletId"
-                  icon="tabler:circle-check-filled"
-                  width="16" height="16"
-                  class="account-check-icon"
-                />
-                <Icon
-                  v-else
-                  icon="tabler:circle"
-                  width="16" height="16"
-                  :class="$q.dark.isActive ? 'text-grey-7' : 'text-grey-5'"
-                />
-                <div class="account-name" :class="$q.dark.isActive ? 'option-name-dark' : 'option-name-light'">
-                  {{ account.name }}
-                </div>
-                <div class="account-balance" :class="$q.dark.isActive ? 'option-balance-dark' : 'option-balance-light'">
-                  {{ formatBalance(getAccountBalance(wallet.id, account)) }}
-                </div>
-              </div>
-            </div>
 
             </template>
           </div>
@@ -307,33 +271,16 @@ export default {
       'preferredFiatCurrency',
       'getDisplayBalance',
       'isSparkWalletLocked',
-      'useBip177Format',
-      'hasAccounts',
-      'walletAccounts',
-      'activeAccountNumber',
-      'combinedBalance'
+      'useBip177Format'
     ]),
 
     activeWalletBalance() {
       if (!this.activeWallet) return 0
-      const wid = this.activeWallet.id
-      // If accounts exist, show the active account's balance
-      if (this.hasAccounts(wid)) {
-        const accNum = this.activeAccountNumber(wid)
-        const accounts = this.walletAccounts(wid)
-        const account = accounts.find(a => a.accountNumber === accNum)
-        if (account && !account.isPrimary) {
-          return this.balances[`${wid}:${accNum}`] || account.cachedBalance || 0
-        }
-      }
-      return this.balances[wid] || 0
+      return this.balances[this.activeWallet.id] || 0
     },
 
     activeWalletDisplayName() {
       if (!this.activeWallet) return this.$t('No Wallet')
-      if (this.hasAccounts(this.activeWallet.id)) {
-        return this.getWalletDisplayName(this.activeWallet.id)
-      }
       return this.activeWallet.name
     },
 
@@ -359,48 +306,22 @@ export default {
     ...mapActions(useWalletStore, [
       'switchActiveWallet',
       'connectWallet',
-      'refreshWalletData',
-      'switchAccount',
-      'getWalletDisplayName'
+      'refreshWalletData'
     ]),
 
-    async handleWalletSwitch(walletId, switchToPrimary = false) {
-      const wallet = this.wallets.find(w => w.id === walletId)
-
-      if (switchToPrimary && walletId === this.activeWalletId) {
-        // Already on this wallet — just switch to primary account
-        const primaryAccNum = wallet?.connectionData?.accountNumber || 1
-        if (this.activeAccountNumber(walletId) === primaryAccNum) {
-          this.showSwitcher = false
-          return
-        }
-        await this.switchAccount(walletId, primaryAccNum)
-        this.showSwitcher = false
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Switched to {name}', { name: wallet?.name }),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        })
-        return
-      }
-
+    async handleWalletSwitch(walletId) {
       if (walletId === this.activeWalletId) {
         this.showSwitcher = false
         return
       }
 
+      const wallet = this.wallets.find(w => w.id === walletId)
       try {
         await this.switchActiveWallet(walletId)
-        if (switchToPrimary) {
-          const primaryAccNum = wallet?.connectionData?.accountNumber || 1
-          await this.switchAccount(walletId, primaryAccNum)
-        }
         this.showSwitcher = false
-
         this.$q.notify({
           type: 'positive',
           message: this.$t('Switched to {name}', { name: wallet?.name }),
-
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -408,7 +329,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
           caption: this.$t('Please try again'),
-          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -480,48 +400,6 @@ export default {
         default:
           return formatAmount(balance, this.useBip177Format)
       }
-    },
-
-    /**
-     * Format balance for locked Spark wallets
-     * Shows cached balance if available, otherwise "Locked"
-     */
-    async handleAccountSwitch(walletId, accountNumber) {
-      try {
-        // Switch to this wallet if not already active
-        if (walletId !== this.activeWalletId) {
-          await this.switchActiveWallet(walletId)
-        }
-        // Switch to the account
-        await this.switchAccount(walletId, accountNumber)
-        this.showSwitcher = false
-
-        const accounts = this.walletAccounts(walletId)
-        const account = accounts.find(a => a.accountNumber === accountNumber)
-        const name = account?.isPrimary
-          ? this.wallets.find(w => w.id === walletId)?.name
-          : account?.name
-
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Switched to {name}', { name }),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        })
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t switch pocket'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        })
-      }
-    },
-
-    getAccountBalance(walletId, account) {
-      if (account.isPrimary) {
-        return this.balances[walletId] || account.cachedBalance || 0
-      }
-      const key = `${walletId}:${account.accountNumber}`
-      return this.balances[key] || account.cachedBalance || 0
     },
 
     formatBalanceWithLock(walletId) {
@@ -990,62 +868,6 @@ export default {
 .option-action-btn-light:hover {
   color: #15DE72;
   background: rgba(21, 222, 114, 0.1);
-}
-
-/* Account List */
-.account-list {
-  padding: 0 0.5rem 0.25rem;
-}
-
-.account-option {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.5rem 3.25rem;
-  margin: 0.125rem 0;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.account-option-dark:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.account-option-light:hover {
-  background: #F3F4F6;
-}
-
-.account-option-active.account-option-dark {
-  background: rgba(21, 222, 114, 0.06);
-  border-color: rgba(21, 222, 114, 0.15);
-}
-
-.account-option-active.account-option-light {
-  background: rgba(5, 149, 115, 0.04);
-  border-color: rgba(5, 149, 115, 0.12);
-}
-
-.account-check-icon {
-  color: #15DE72;
-  flex-shrink: 0;
-}
-
-.account-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.account-balance {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
 }
 
 /* Switcher Actions */

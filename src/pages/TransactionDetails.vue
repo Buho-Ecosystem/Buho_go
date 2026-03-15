@@ -1050,7 +1050,7 @@ export default {
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
   position: sticky;
-  top: 0;
+  top: var(--safe-top, 0px);
   z-index: 100;
 }
 

@@ -77,40 +77,6 @@
             </div>
           </div>
 
-          <!-- Step 1.5: Wallet Name (additional wallet only) -->
-          <div v-else-if="currentStep === 'name'" class="step-content step-name">
-            <div class="step-icon">
-              <div class="icon-bg">
-                <Icon icon="tabler:wallet" width="32" height="32" style="color: white;" />
-              </div>
-            </div>
-            <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ $t('Name Your Wallet') }}
-            </h2>
-            <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Give your restored Spark wallet a name.') }}
-            </p>
-            <q-input
-              v-model="walletName"
-              :dark="$q.dark.isActive"
-              outlined
-              rounded
-              :label="$t('Wallet name')"
-              class="wallet-name-input"
-              maxlength="30"
-            />
-            <q-btn
-              class="continue-btn q-mt-lg"
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-              :disable="!walletName.trim()"
-              @click="proceedFromName"
-              no-caps
-              unelevated
-            >
-              {{ $t('Continue') }}
-            </q-btn>
-          </div>
-
           <!-- Step 2: Set PIN -->
           <div v-else-if="currentStep === 2" class="step-content step-pin">
             <div class="step-icon">
@@ -217,8 +183,6 @@ export default {
     return {
       currentStep: 1,
       isValidating: false,
-      isAdditionalWallet: false,
-      walletName: '',
       inputWords: Array(12).fill(''),
       wordInputRefs: [],
       mnemonicError: '',
@@ -240,10 +204,6 @@ export default {
     }
   },
   mounted() {
-    this.isAdditionalWallet = this.walletStore.hasAnySparkWallet;
-    if (this.isAdditionalWallet) {
-      this.walletName = this.walletStore._nextSparkWalletName();
-    }
   },
   computed: {
     canContinue() {
@@ -252,21 +212,10 @@ export default {
     mnemonic() {
       return this.inputWords.map(w => w.trim().toLowerCase()).join(' ');
     },
-    skipPin() {
-      return this.isAdditionalWallet && !!this.walletStore.sessionPin;
-    },
     totalSteps() {
-      // Seed → (Name) → (PIN) → Restoring
-      // First wallet: 3 steps (seed, pin, restoring)
-      // Additional + unlocked: 3 steps (seed, name, restoring)
-      // Additional + locked: 4 steps (seed, name, pin, restoring)
-      if (!this.isAdditionalWallet) return 3;
-      return this.skipPin ? 3 : 4;
+      return 3; // Seed → PIN → Restoring
     },
     displayStep() {
-      if (this.currentStep === 'name') return 2;
-      if (this.currentStep === 2) return this.isAdditionalWallet ? 3 : 2;
-      if (this.currentStep === 3) return this.totalSteps;
       return this.currentStep;
     }
   },
@@ -310,25 +259,11 @@ export default {
           this.currentPin = '';
           this.firstPin = '';
           this.pinError = '';
-        } else if (this.isAdditionalWallet) {
-          this.currentStep = 'name';
         } else {
           this.currentStep = 1;
         }
-      } else if (this.currentStep === 'name') {
-        this.currentStep = 1;
       } else if (this.currentStep === 1) {
         this.$router.push('/');
-      }
-    },
-
-    proceedFromName() {
-      if (this.skipPin) {
-        this.restoreWallet();
-      } else {
-        this.currentStep = 2;
-        this.pinMode = 'create';
-        this.currentPin = '';
       }
     },
 
@@ -343,14 +278,10 @@ export default {
         // Clean up test wallet
         wallet.cleanupConnections();
 
-        // Move to next step
-        if (this.isAdditionalWallet) {
-          this.currentStep = 'name';
-        } else {
-          this.currentStep = 2;
-          this.pinMode = 'create';
-          this.currentPin = '';
-        }
+        // Move to PIN step
+        this.currentStep = 2;
+        this.pinMode = 'create';
+        this.currentPin = '';
       } catch (error) {
         console.error('Invalid mnemonic:', error);
         this.mnemonicError = this.$t('Invalid seed phrase. Please check your words and try again.');
@@ -408,19 +339,21 @@ export default {
       this.restoringStatus = this.$t('Encrypting wallet...');
 
       try {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        this.restoringStatus = this.$t('Connecting to Spark network...');
-
         await this.walletStore.addSparkWallet({
-          name: this.walletName || undefined,
           mnemonic: this.mnemonic,
           pin: this.firstPin || undefined,
           network: 'MAINNET',
-          isRestore: true
+          isRestore: true,
+          onProgress: (step) => {
+            const messages = {
+              encrypting: this.$t('Encrypting wallet...'),
+              business: this.$t('Setting up Business wallet...'),
+              personal: this.$t('Setting up Personal wallet...'),
+              done: this.$t('Almost done...'),
+            };
+            this.restoringStatus = messages[step] || this.restoringStatus;
+          }
         });
-
-        this.restoringStatus = this.$t('Syncing wallet...');
-        await new Promise(resolve => setTimeout(resolve, 500));
 
         this.restoringStatus = this.$t('Wallet restored!');
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -441,14 +374,10 @@ export default {
             ? this.$t('This wallet is already added')
             : this.$t('Please check your backup phrase and try again'),
         });
-        if (this.skipPin) {
-          this.currentStep = 'name';
-        } else {
-          this.currentStep = 2;
-          this.pinMode = 'create';
-          this.currentPin = '';
-          this.firstPin = '';
-        }
+        this.currentStep = 2;
+        this.pinMode = 'create';
+        this.currentPin = '';
+        this.firstPin = '';
       }
     }
   }

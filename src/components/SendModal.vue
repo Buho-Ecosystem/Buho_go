@@ -1,11 +1,11 @@
 <template>
   <q-dialog
     v-model="show"
-    persistent
     maximized
     transition-show="slide-up"
     transition-hide="slide-down"
     class="send-modal"
+    @before-hide="resetState"
   >
     <q-card class="send-card" :class="$q.dark.isActive ? 'send-card-dark' : 'send-card-light'">
       <!-- Header -->
@@ -955,6 +955,7 @@ export default {
 .send-header {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem;
+  padding-top: calc(var(--safe-top, 0px) + 1rem);
   flex-shrink: 0;
   position: relative;
   z-index: 10;

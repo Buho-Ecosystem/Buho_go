@@ -129,13 +129,6 @@
         </div>
       </q-card-section>
 
-      <!-- Sending from account context (only when accounts exist) -->
-      <q-card-section v-if="sendingFromAccount" class="sending-from-section">
-        <div class="sending-from-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-          {{ $t('Sending from') }} <strong :class="$q.dark.isActive ? 'text-grey-3' : 'text-grey-8'">{{ sendingFromAccount }}</strong>
-        </div>
-      </q-card-section>
-
       <!-- Footer -->
       <q-card-section class="payment-footer">
         <q-btn
@@ -257,14 +250,6 @@ export default {
       return classes[this.contactAddressType] || classes.lightning
     },
 
-    // Show "Sending from [Account Name]" when active Spark wallet has accounts
-    sendingFromAccount() {
-      if (!this.activeWallet || this.activeWallet.type !== 'spark') return null
-      const walletStore = useWalletStore()
-      if (!walletStore.hasAccounts(this.activeWallet.id)) return null
-      const displayName = walletStore.getWalletDisplayName(this.activeWallet.id)
-      return displayName
-    },
 
     // Check if payment is possible with current wallet
     canPayContact() {
@@ -810,6 +795,7 @@ export default {
 .payment-header {
   border-bottom: 1px solid;
   padding: 0.75rem 1rem;
+  padding-top: calc(var(--safe-top, 0px) + 0.75rem);
   flex-shrink: 0;
 }
 
