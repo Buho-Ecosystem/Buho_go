@@ -238,6 +238,11 @@ export class NWCWalletProvider extends WalletProvider {
   async lookupInvoice(paymentHash) {
     this._ensureConnected();
 
+    if (!paymentHash) {
+      console.warn('lookupInvoice called without payment hash');
+      return { paid: false };
+    }
+
     // Try direct lookupInvoice first (NIP-47)
     try {
       const invoice = await this.nwc.lookupInvoice({

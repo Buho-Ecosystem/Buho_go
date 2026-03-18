@@ -3304,7 +3304,7 @@ export default {
     onInvoiceCreated(invoice) {
       console.log('Invoice created:', invoice);
       this.generatedInvoice = invoice;
-      this.currentInvoicePaymentHash = invoice.paymentHash;
+      this.currentInvoicePaymentHash = invoice.payment_hash || invoice.paymentHash;
       this.waitingForPayment = true;
       this.startInvoiceMonitoring();
     }
