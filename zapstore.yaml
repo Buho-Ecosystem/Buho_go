@@ -1,34 +1,37 @@
 identifier: de.mybuho.buhogo
-name: Buhogo
+name: BuhoGO
 summary: Bitcoin payments made simple
 description: |
-  BuhoGO is an open-source mobile wallet that makes sending and receiving Bitcoin effortless.
-  Buhogo connects seamlessly to your existing setup through Nostr Wallet Connect (NWC) or LNBits. 
-  As Well you can decide to go with a self custodial Spark Wallet. 
-  
-  Think of it as your universal remote for Bitcoin payments – send, receive, and track with ease. 
-  Whether you're new to Bitcoin or a seasoned user, Buhogo is built to just work.
+  BuhoGO is an open-source Bitcoin and Lightning wallet for mobile.
+  Connect the wallets you already use through Nostr Wallet Connect (NWC) or LNBits, or create and restore a self-custodial Spark wallet inside the app.
+
+  BuhoGO is built for fast everyday payments with a clean interface for sending, receiving, and managing multiple wallets in one place.
+  It works well for first-time Bitcoin users and for people who already have their own setup.
 
   ## Key Features
-  - Lightning-fast Bitcoin payments
-  - Non-custodial and open-source
-  - Connect multiple wallets
-  - Create self custodial Spark wallet
-  - Transaction history & monthly summaries
+  - Open-source wallet with self-custodial Spark support
+  - Connect multiple NWC and LNBits wallets
+  - Create or restore a Spark wallet with seed backup and PIN protection
+  - Pay Lightning invoices, Lightning addresses, LNURL requests, and Spark addresses
+  - Receive with invoices, Lightning addresses, and Spark address QR codes
+  - Spark on-chain receive and Bitcoin withdrawals
+  - Contacts and address book for faster repeat payments
+  - Batch payments to multiple contacts
+  - Easy sats transfers between your connected wallets
+  - Auto-withdraw to move funds automatically once a threshold is reached
+  - Transaction history with fiat conversion
   - Dark and light themes
   - Multi-language support
-  - Pay invoices, Lightning addresses, and LNURL requests, spark addresses
-  - Batch send to friends
-  - Swap between connected wallets
 
-  ## Why Buhogo?
-  Unlike most wallets that lock you into their ecosystem, BuhoGO integrates with what you already use or let you start from scratch in 2 minutes.
-  It’s designed for clarity, speed, and flexibility – a true Bitcoin-first experience.
+  ## Why BuhoGO?
+  Unlike wallets that lock you into a single provider, BuhoGO works with your existing stack or lets you start fresh with Spark in minutes.
+  It is designed for clarity, speed, and flexibility without giving up self-custody.
 repository: https://github.com/Buho-Ecosystem/Buho_go
+pubkey: npub17c2szua46mc8ndp4grvy4z5465x0qxjge8tqx7vyu0vkqr24y2hssuuy6f
 homepage: https://home.mybuho.de/buhogo
 license: MIT
-tags: bitcoin lightning wallet payments nwc nostr android spark 
-icon: public/logo.png
+tags: bitcoin lightning wallet payments nwc nostr android spark lnbits drshift pratik227
+icon: public/Buho_logo__Sharp_grey.jpg
 images:
   - public/dark_img.png
   - public/light.png
@@ -37,7 +40,5 @@ images:
 blossom_servers:
   - https://cdn.zapstore.dev
   - https://blossom.band
-assets:
-  - output/.*\.apk
 remote_metadata:
   - github
