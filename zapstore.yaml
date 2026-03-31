@@ -33,10 +33,11 @@ license: MIT
 tags: bitcoin lightning wallet payments nwc nostr android spark lnbits drshift pratik227
 icon: public/Buho_logo__Sharp_grey.jpg
 images:
-  - public/dark_img.png
-  - public/light.png
-  - public/create_send.png
-  - public/connect_wallet.png
+  - public/Playstore/Buho_go_1_Playstore.png
+  - public/Playstore/Buho_go_1_playstore_light.png
+  - public/Playstore/Buho_go_2_playstore.png
+  - public/Playstore/Buho_go_3_playstore.png
+  - public/Playstore/Buho_go_3_Playstore_light.png
 blossom_servers:
   - https://cdn.zapstore.dev
   - https://blossom.band
