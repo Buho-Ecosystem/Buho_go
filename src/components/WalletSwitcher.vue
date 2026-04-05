@@ -38,7 +38,7 @@
         </div>
         <div class="wallet-details">
           <div class="wallet-name" :class="$q.dark.isActive ? 'wallet-name-dark' : 'wallet-name-light'">
-            {{ activeWallet?.name || $t('No Wallet') }}
+            {{ activeWalletDisplayName }}
           </div>
           <div class="wallet-balance" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
             <template v-if="activeWallet && isSparkWalletLocked(activeWallet.id)">
@@ -46,7 +46,7 @@
               {{ formatBalanceWithLock(activeWallet.id) }}
             </template>
             <template v-else>
-              {{ formatBalance(balances[activeWallet?.id] || 0) }}
+              {{ formatBalance(activeWalletBalance) }}
             </template>
           </div>
         </div>
@@ -70,9 +70,22 @@
         <div class="dropdown-content" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <!-- Wallet List -->
           <div class="wallet-list">
-            <div
-              v-for="wallet in sortedWallets"
+            <template v-for="(group, groupIndex) in groupedWallets" :key="group.type">
+              <div
+                v-if="groupedWallets.length > 1"
+                class="wallet-group-header"
+                :class="[
+                  $q.dark.isActive ? 'group-header-dark' : 'group-header-light',
+                  groupIndex > 0 ? 'group-header-spaced' : ''
+                ]"
+              >
+                {{ group.label }}
+              </div>
+            <template
+              v-for="wallet in group.wallets"
               :key="wallet.id"
+            >
+            <div
               class="wallet-option"
               :class="{
                 'wallet-option-active': wallet.id === activeWalletId,
@@ -189,6 +202,9 @@
                 </span>
               </div>
             </div>
+
+
+            </template>
           </div>
 
           <!-- Actions -->
@@ -256,7 +272,35 @@ export default {
       'getDisplayBalance',
       'isSparkWalletLocked',
       'useBip177Format'
-    ])
+    ]),
+
+    activeWalletBalance() {
+      if (!this.activeWallet) return 0
+      return this.balances[this.activeWallet.id] || 0
+    },
+
+    activeWalletDisplayName() {
+      if (!this.activeWallet) return this.$t('No Wallet')
+      return this.activeWallet.name
+    },
+
+    groupedWallets() {
+      const typeOrder = ['spark', 'nwc', 'lnbits']
+      const typeLabels = { spark: 'Spark', nwc: 'NWC', lnbits: 'LNBits' }
+      const groups = {}
+
+      for (const wallet of this.sortedWallets) {
+        const type = wallet.type || 'nwc'
+        if (!groups[type]) {
+          groups[type] = { type, label: typeLabels[type] || type, wallets: [] }
+        }
+        groups[type].wallets.push(wallet)
+      }
+
+      return typeOrder
+        .filter(t => groups[t])
+        .map(t => groups[t])
+    }
   },
   methods: {
     ...mapActions(useWalletStore, [
@@ -271,14 +315,13 @@ export default {
         return
       }
 
+      const wallet = this.wallets.find(w => w.id === walletId)
       try {
         await this.switchActiveWallet(walletId)
         this.showSwitcher = false
-
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Switched to {name}', {name: this.wallets.find(w => w.id === walletId)?.name}),
-          
+          message: this.$t('Switched to {name}', { name: wallet?.name }),
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
@@ -286,7 +329,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
           caption: this.$t('Please try again'),
-          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
@@ -360,10 +402,6 @@ export default {
       }
     },
 
-    /**
-     * Format balance for locked Spark wallets
-     * Shows cached balance if available, otherwise "Locked"
-     */
     formatBalanceWithLock(walletId) {
       const displayData = this.getDisplayBalance(walletId)
 
@@ -570,6 +608,28 @@ export default {
 
 .wallet-list::-webkit-scrollbar {
   display: none;
+}
+
+/* Wallet Group Headers */
+.wallet-group-header {
+  font-family: 'Manrope', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 1.25rem 0.25rem;
+}
+
+.group-header-spaced {
+  padding-top: 0.75rem;
+}
+
+.group-header-dark {
+  color: #555;
+}
+
+.group-header-light {
+  color: #9CA3AF;
 }
 
 /* Wallet Option - iOS style cards */

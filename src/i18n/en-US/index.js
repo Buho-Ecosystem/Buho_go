@@ -359,7 +359,7 @@ export default {
   "Loading wallet...": "Loading wallet...",
   "General": "General",
   "Spark Wallet": "Spark Wallet",
-  "Account": "Account",
+  "Account": "Pocket",
   "Support": "Support",
   "Fuel BuhoGO to Fly Higher": "Fuel BuhoGO to Fly Higher",
   "Tap QR to copy invoice": "Tap QR to copy invoice",

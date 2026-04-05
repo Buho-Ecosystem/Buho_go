@@ -51,7 +51,7 @@
 
     <!-- Backup Reminder Banner -->
     <BackupBanner
-      :visible="walletStore.shouldPromptBackup"
+      :visible="walletStore.shouldPromptBackup && walletStore.isActiveWalletSpark"
       @backup="goToBackup"
       @dismiss="walletStore.dismissBackupPrompt()"
     />
@@ -106,7 +106,7 @@
         </svg>
         <!-- Default wallet icon -->
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
-        {{ activeWallet.name }}
+        {{ walletDisplayName }}
         <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
       </q-chip>
 
@@ -200,6 +200,7 @@
       :title="$t('Unlock Wallet')"
       :subtitle="$t('Enter your PIN to unlock your Spark wallet')"
       :error-message="pinError"
+      :loading="pinUnlocking"
       @pin-complete="handlePinComplete"
       @cancel="handlePinCancel"
     />
@@ -221,9 +222,11 @@
 
         <q-card-section class="switcher-content">
           <div class="wallet-switch-list">
-            <div
+            <template
               v-for="wallet in storeWallets"
               :key="wallet.id"
+            >
+            <div
               class="wallet-switch-card"
               :class="{
                 'wallet-switch-card-active': wallet.id === storeActiveWalletId,
@@ -302,6 +305,8 @@
                 class="switch-check-icon"
               />
             </div>
+
+            </template>
           </div>
         </q-card-section>
 
@@ -391,7 +396,7 @@
               </div>
               <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
                    style="cursor: pointer;" @click="toggleWithdrawDenomination">
-                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <q-icon name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
+                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <Icon icon="tabler:refresh" width="12" height="12" :class="{ 'denomination-spin': denominationSpinning }" /></span>
               </div>
             </div>
 
@@ -406,7 +411,9 @@
               </div>
               <div class="detail-item" v-if="!pendingPayment.isFixedAmount">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Redeemable') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ withdrawRedeemableRange }}</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'" style="cursor: pointer;" @click="toggleWithdrawDenomination">
+                  {{ withdrawRedeemableRange }} <Icon icon="tabler:refresh" width="12" height="12" :class="{ 'denomination-spin': denominationSpinning }" />
+                </span>
               </div>
             </div>
 
@@ -422,14 +429,11 @@
                 :disable="lnurlWithdrawStatus !== 'idle'"
               >
                 <template v-slot:append>
-                  <q-btn flat dense round
-                    size="sm"
+                  <Icon icon="tabler:refresh" width="18" height="18"
+                    :class="{ 'denomination-spin': denominationSpinning }"
+                    class="denomination-toggle-icon"
                     @click="toggleWithdrawDenomination"
-                    :disable="lnurlWithdrawStatus !== 'idle'"
-                  >
-                    <q-icon name="las la-sync" :class="{ 'denomination-spin': denominationSpinning }" />
-                    <q-tooltip>{{ withdrawDenomination === 'sats' ? withdrawFiatCurrency : 'sats' }}</q-tooltip>
-                  </q-btn>
+                  />
                 </template>
               </q-input>
             </div>
@@ -467,8 +471,9 @@
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
                 {{ formatPaymentAmount() }}
               </div>
-              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-                <span v-if="paymentFiatValue">{{ paymentFiatValue }}</span>
+              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
+                   :style="needsAmountInput ? 'cursor: pointer;' : ''" @click="needsAmountInput ? toggleSendDenomination() : null">
+                <span v-if="paymentFiatValue">{{ paymentFiatValue }} <q-icon v-if="needsAmountInput" name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
                 <span v-else-if="pendingPayment && (pendingPayment.amount > 0 || paymentAmount)"
                       class="loading-fiat">{{ $t('Loading...') }}</span>
               </div>
@@ -541,13 +546,19 @@
               <q-input
                 v-model="paymentAmount"
                 outlined
-                :label="$t('Amount')"
+                :label="sendDenomination === 'fiat' ? preferredFiatCurrency : $t('Amount')"
                 type="number"
-                :min="pendingPayment.minSendable ? Math.floor(pendingPayment.minSendable / 1000) : 1"
-                :max="pendingPayment.maxSendable ? Math.floor(pendingPayment.maxSendable / 1000) : 100000000"
                 :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
                 :rules="[validatePaymentAmount]"
-              />
+              >
+                <template v-slot:append>
+                  <Icon icon="tabler:refresh" width="18" height="18"
+                    :class="{ 'denomination-spin': denominationSpinning }"
+                    class="denomination-toggle-icon"
+                    @click="toggleSendDenomination"
+                  />
+                </template>
+              </q-input>
 
               <q-input
                 v-if="pendingPayment.commentAllowed > 0"
@@ -735,6 +746,7 @@ export default {
       merchantCountdownTimer: null,
       paymentAmount: '',
       paymentComment: '',
+      sendDenomination: 'sats', // 'sats' or 'fiat' — for LNURL/Lightning Address send flow
       slidePosition: 0,
       slideConfirmed: false,
       isSliding: false,
@@ -761,6 +773,7 @@ export default {
       showWalletSwitcher: false,
       showPinDialog: false,
       pinError: '',
+      pinUnlocking: false,
       // Fee estimation for Spark Lightning payments
       estimatedFee: null,
       isEstimatingFee: false,
@@ -802,6 +815,10 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       ) || null;
+    },
+    walletDisplayName() {
+      if (!this.activeWallet) return '';
+      return this.activeWallet.name;
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
@@ -856,10 +873,20 @@ export default {
       return (this.pendingPayment.type === 'lightning_invoice' && this.pendingPayment.amount === 0) ||
              (this.pendingPayment.type === 'invoice' && this.pendingPayment.amount === 0);
     },
+    sendAmountSats() {
+      if (!this.needsAmountInput) return 0;
+      const val = parseFloat(this.paymentAmount);
+      if (!val || val <= 0) return 0;
+      if (this.sendDenomination === 'fiat') {
+        return fiatRatesService.convertFiatToSatsSync(val, this.preferredFiatCurrency) || 0;
+      }
+      return Math.floor(val);
+    },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
       if (this.needsAmountInput) {
-        return this.paymentAmount && this.paymentAmount > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
+        const sats = this.sendAmountSats;
+        return sats > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
       }
       return true;
     },
@@ -894,8 +921,11 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       return !this.pendingPayment.isFixedAmount;
     },
-    withdrawFiatCurrency() {
+    preferredFiatCurrency() {
       return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    withdrawFiatCurrency() {
+      return this.preferredFiatCurrency;
     },
     withdrawAmountSats() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return 0;
@@ -949,11 +979,13 @@ export default {
       const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 0);
       const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 0);
       if (!minSats || !maxSats || minSats === maxSats) return '';
-      const currency = this.withdrawFiatCurrency;
-      const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
-      const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
-      if (minFiat !== null && maxFiat !== null) {
-        return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)} (${minSats} - ${maxSats} sats)`;
+      if (this.sendDenomination === 'fiat') {
+        const currency = this.preferredFiatCurrency;
+        const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
+        const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
+        if (minFiat !== null && maxFiat !== null) {
+          return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)}`;
+        }
       }
       return `${minSats} - ${maxSats} sats`;
     },
@@ -1021,6 +1053,9 @@ export default {
         this.startMerchantCountdown();
       } else {
         this.stopMerchantCountdown();
+      }
+      if (!open) {
+        this.sendDenomination = 'sats';
       }
     },
 
@@ -1468,6 +1503,7 @@ export default {
     async handlePinComplete(pin) {
       try {
         this.pinError = '';
+        this.pinUnlocking = true;
         await this.walletStore.unlockSparkWallet(pin);
         this.showPinDialog = false;
 
@@ -1486,6 +1522,8 @@ export default {
       } catch (error) {
         console.error('PIN unlock failed:', error);
         this.pinError = this.$t('Incorrect PIN. Please try again.');
+      } finally {
+        this.pinUnlocking = false;
       }
     },
 
@@ -2196,6 +2234,36 @@ export default {
       }
     },
 
+    toggleSendDenomination() {
+      this.denominationSpinning = true;
+      setTimeout(() => { this.denominationSpinning = false; }, 500);
+      const currentAmount = parseFloat(this.paymentAmount);
+      if (this.sendDenomination === 'sats') {
+        if (!fiatRatesService.ratesAvailable) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Fiat rates unavailable'),
+            caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
+            icon: 'las la-exclamation-triangle',
+            timeout: 10000,
+            actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+          });
+          return;
+        }
+        this.sendDenomination = 'fiat';
+        if (currentAmount > 0) {
+          const fiat = fiatRatesService.convertSatsToFiatSync(currentAmount, this.preferredFiatCurrency);
+          this.paymentAmount = fiat !== null ? fiat.toFixed(2) : '';
+        }
+      } else {
+        this.sendDenomination = 'sats';
+        if (currentAmount > 0) {
+          const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.preferredFiatCurrency);
+          this.paymentAmount = sats !== null ? sats.toString() : '';
+        }
+      }
+    },
+
     startMerchantCountdown() {
       this.stopMerchantCountdown();
       this.merchantCountdown = 90;
@@ -2495,7 +2563,12 @@ export default {
 
       // Variable amount - user needs to input
       if (this.needsAmountInput) {
-        return this.paymentAmount ? formatAmount(parseInt(this.paymentAmount), this.walletStore.useBip177Format) : 'Enter amount';
+        if (!this.paymentAmount) return 'Enter amount';
+        if (this.sendDenomination === 'fiat') {
+          const val = parseFloat(this.paymentAmount);
+          return val > 0 ? fiatRatesService.formatFiatAmount(val, this.preferredFiatCurrency) : 'Enter amount';
+        }
+        return formatAmount(parseInt(this.paymentAmount), this.walletStore.useBip177Format);
       }
 
       // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
@@ -2527,6 +2600,12 @@ export default {
         // Handled by withdrawSecondaryDisplay computed
         return '';
       } else if (this.needsAmountInput) {
+        // When user is entering in fiat, show sats equivalent instead
+        if (this.sendDenomination === 'fiat') {
+          const sats = this.sendAmountSats;
+          if (sats > 0) return '≈ ' + formatAmount(sats, this.walletStore.useBip177Format);
+          return '';
+        }
         amount = parseInt(this.paymentAmount) || 0;
       } else if (this.pendingPayment.type === 'lnurl' ||
                  this.pendingPayment.type === 'lnurl_pay' ||
@@ -2562,7 +2641,7 @@ export default {
     validatePaymentAmount(amount) {
       if (!this.pendingPayment) return 'No payment details';
 
-      const amountNum = parseInt(amount);
+      const amountNum = parseFloat(amount);
       if (isNaN(amountNum) || amountNum <= 0) {
         return 'Amount must be greater than 0';
       }
@@ -2571,11 +2650,19 @@ export default {
       const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 1);
       const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
 
-      if (amountNum < minSats) {
+      // Convert to sats if user is entering in fiat
+      let satsToValidate = amountNum;
+      if (this.sendDenomination === 'fiat') {
+        const converted = fiatRatesService.convertFiatToSatsSync(amountNum, this.preferredFiatCurrency);
+        if (converted === null) return 'Exchange rate unavailable';
+        satsToValidate = converted;
+      }
+
+      if (satsToValidate < minSats) {
         return `Minimum amount is ${formatAmount(minSats, this.walletStore.useBip177Format)}`;
       }
 
-      if (amountNum > maxSats) {
+      if (satsToValidate > maxSats) {
         return `Maximum amount is ${formatAmount(maxSats, this.walletStore.useBip177Format)}`;
       }
 
@@ -2591,8 +2678,8 @@ export default {
         // Determine the amount to send
         let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
-          // Variable amount - user entered value
-          amount = parseInt(this.paymentAmount);
+          // Variable amount - convert to sats if user entered in fiat
+          amount = this.sendAmountSats;
         } else if (this.pendingPayment.fixedAmountSats) {
           // Fixed-amount LNURL/Lightning Address - use fixedAmountSats from lightning.js
           amount = this.pendingPayment.fixedAmountSats;
@@ -3217,7 +3304,7 @@ export default {
     onInvoiceCreated(invoice) {
       console.log('Invoice created:', invoice);
       this.generatedInvoice = invoice;
-      this.currentInvoicePaymentHash = invoice.paymentHash;
+      this.currentInvoicePaymentHash = invoice.payment_hash || invoice.paymentHash;
       this.waitingForPayment = true;
       this.startInvoiceMonitoring();
     }
@@ -3941,6 +4028,16 @@ export default {
 
 .denomination-spin {
   animation: denomination-rotate 0.5s ease-in-out;
+}
+
+.denomination-toggle-icon {
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.denomination-toggle-icon:hover {
+  opacity: 1;
 }
 
 @keyframes denomination-rotate {

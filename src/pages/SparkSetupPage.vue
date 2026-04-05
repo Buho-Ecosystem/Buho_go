@@ -210,14 +210,19 @@ export default {
       this.creatingStatus = this.$t('Encrypting wallet...');
 
       try {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        this.creatingStatus = this.$t('Connecting to Spark network...');
-
         await this.walletStore.addSparkWallet({
-          name: 'Spark Wallet',
           mnemonic: this.mnemonic,
-          pin: this.firstPin,
-          network: 'MAINNET'
+          pin: this.firstPin || undefined,
+          network: 'MAINNET',
+          onProgress: (step) => {
+            const messages = {
+              encrypting: this.$t('Encrypting wallet...'),
+              business: this.$t('Setting up Business wallet...'),
+              personal: this.$t('Setting up Personal wallet...'),
+              done: this.$t('Almost done...'),
+            };
+            this.creatingStatus = messages[step] || this.creatingStatus;
+          }
         });
 
         this.creatingStatus = this.$t('Wallet created!');

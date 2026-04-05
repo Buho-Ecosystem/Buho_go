@@ -24,7 +24,7 @@
               </svg>
             </q-btn>
             <div class="step-indicator" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-              {{ $t('Step') }} {{ currentStep }}/3
+              {{ $t('Step') }} {{ displayStep }}/{{ totalSteps }}
             </div>
           </div>
         </q-card-section>
@@ -203,12 +203,20 @@ export default {
       restoringStatus: 'Initializing...',
     }
   },
+  mounted() {
+  },
   computed: {
     canContinue() {
       return this.inputWords.every(word => word.trim().length > 0);
     },
     mnemonic() {
       return this.inputWords.map(w => w.trim().toLowerCase()).join(' ');
+    },
+    totalSteps() {
+      return 3; // Seed → PIN → Restoring
+    },
+    displayStep() {
+      return this.currentStep;
     }
   },
   methods: {
@@ -331,19 +339,21 @@ export default {
       this.restoringStatus = this.$t('Encrypting wallet...');
 
       try {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        this.restoringStatus = this.$t('Connecting to Spark network...');
-
         await this.walletStore.addSparkWallet({
-          name: 'Spark Wallet',
           mnemonic: this.mnemonic,
-          pin: this.firstPin,
+          pin: this.firstPin || undefined,
           network: 'MAINNET',
-          isRestore: true
+          isRestore: true,
+          onProgress: (step) => {
+            const messages = {
+              encrypting: this.$t('Encrypting wallet...'),
+              business: this.$t('Setting up Business wallet...'),
+              personal: this.$t('Setting up Personal wallet...'),
+              done: this.$t('Almost done...'),
+            };
+            this.restoringStatus = messages[step] || this.restoringStatus;
+          }
         });
-
-        this.restoringStatus = this.$t('Syncing wallet...');
-        await new Promise(resolve => setTimeout(resolve, 500));
 
         this.restoringStatus = this.$t('Wallet restored!');
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -360,8 +370,9 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to restore wallet'),
-          caption: this.$t('Please check your backup phrase and try again'),
-          
+          caption: error.message?.includes('duplicate')
+            ? this.$t('This wallet is already added')
+            : this.$t('Please check your backup phrase and try again'),
         });
         this.currentStep = 2;
         this.pinMode = 'create';
@@ -558,6 +569,28 @@ export default {
   color: #ff4444;
   text-align: center;
   margin-top: 1rem;
+}
+
+/* Name Step */
+.step-name {
+  justify-content: flex-start;
+  padding-top: 1rem;
+}
+
+.wallet-name-input {
+  width: 100%;
+  max-width: 320px;
+  margin-top: 0.5rem;
+}
+
+.continue-btn {
+  width: 100%;
+  max-width: 320px;
+  height: 52px;
+  border-radius: 24px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* PIN Step */

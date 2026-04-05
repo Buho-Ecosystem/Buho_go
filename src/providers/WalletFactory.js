@@ -31,6 +31,7 @@ export function createWalletProvider(wallet) {
       return new SparkWalletProvider(wallet.id, {
         name: wallet.name,
         network: wallet.connectionData?.network || 'MAINNET',
+        accountNumber: wallet.connectionData?.accountNumber,
         encryptedMnemonic: wallet.connectionData?.encryptedMnemonic,
         ...wallet
       });

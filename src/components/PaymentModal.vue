@@ -250,6 +250,7 @@ export default {
       return classes[this.contactAddressType] || classes.lightning
     },
 
+
     // Check if payment is possible with current wallet
     canPayContact() {
       if (this.isSparkContact || this.isBitcoinContact) {
@@ -477,8 +478,8 @@ export default {
     },
 
     async sendSparkPayment(walletStore) {
-      // Get the Spark wallet provider
-      const provider = walletStore.providers[walletStore.activeWalletId]
+      // Get the Spark wallet provider (account-aware)
+      const provider = walletStore.getActiveProvider()
 
       if (!provider) {
         throw new Error('SPARK_NOT_CONNECTED')
@@ -794,6 +795,7 @@ export default {
 .payment-header {
   border-bottom: 1px solid;
   padding: 0.75rem 1rem;
+  padding-top: calc(var(--safe-top, 0px) + 0.75rem);
   flex-shrink: 0;
 }
 
@@ -1148,6 +1150,17 @@ export default {
 
 .comment-input::placeholder {
   color: #B0B0B0;
+}
+
+/* Sending from account context */
+.sending-from-section {
+  padding: 0 1.5rem 0;
+  text-align: center;
+}
+
+.sending-from-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
 }
 
 /* Footer */

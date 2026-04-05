@@ -1,21 +1,30 @@
 <template>
-  <div class="mnemonic-order-verify" :class="$q.dark.isActive ? 'verify-dark' : 'verify-light'">
-    <!-- Header -->
-    <div class="verify-header">
-      <h3
-        class="verify-title"
-        :class="[
-          $q.dark.isActive ? 'text-white' : 'text-dark',
-          isComplete ? 'success-title' : '',
-          errorMessage ? 'error-title' : ''
-        ]"
-      >
-        {{ headerMessage }}
-      </h3>
-      <!-- Security reminder shown when complete -->
-      <p v-if="isComplete" class="security-reminder" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
-        {{ $t('We cannot recover your phrase if you lose it. Store it safely offline.') }}
-      </p>
+  <div class="mnemonic-order-verify">
+    <!-- Status Message -->
+    <div class="verify-status">
+      <div v-if="isComplete" class="status-success">
+        <div class="status-icon-wrap status-icon-success">
+          <Icon icon="tabler:circle-check" width="24" height="24" />
+        </div>
+        <div class="status-text-wrap">
+          <span class="status-title" :class="$q.dark.isActive ? 'status-title-success-dark' : 'status-title-success-light'">
+            {{ $t('Backup verified') }}
+          </span>
+          <span class="status-desc" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
+            {{ $t('Store your recovery phrase safely offline.') }}
+          </span>
+        </div>
+      </div>
+      <div v-else-if="errorMessage" class="status-error">
+        <div class="status-icon-wrap status-icon-error">
+          <Icon icon="tabler:x" width="18" height="18" />
+        </div>
+        <span class="status-error-text">{{ errorMessage }}</span>
+      </div>
+      <div v-else class="status-default" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+        <Icon icon="tabler:hand-click" width="18" height="18" class="q-mr-xs" />
+        {{ $t('Tap the words in order') }} — {{ selectedOrder.length }}/{{ mnemonic.length }}
+      </div>
     </div>
 
     <!-- Words Grid -->
@@ -32,7 +41,6 @@
         :disabled="isWordSelected(index) || isComplete"
         @click="handleWordTap(index)"
       >
-        <!-- Badge inside chip on the left -->
         <span
           v-if="getWordPosition(index) !== null"
           class="word-badge"
@@ -40,7 +48,7 @@
         >
           {{ getWordPosition(index) }}
         </span>
-        <span class="word-text">{{ item.word }}</span>
+        <span class="word-label">{{ item.word }}</span>
       </button>
     </div>
 
@@ -51,19 +59,17 @@
         :class="$q.dark.isActive ? 'btn-outline-dark' : 'btn-outline-light'"
         @click="$emit('show-phrase')"
       >
-        {{ $t('Show me again') }}
+        <Icon icon="tabler:arrow-back" width="16" height="16" class="q-mr-xs" />
+        {{ $t('Show phrase again') }}
       </button>
 
-      <q-btn
-        class="continue-btn"
-        :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-        :disable="!isComplete"
+      <button
+        v-if="isComplete"
+        class="confirm-btn"
         @click="$emit('verify-success')"
-        no-caps
-        unelevated
       >
-        {{ $t('Continue') }}
-      </q-btn>
+        {{ $t('Complete Backup') }}
+      </button>
     </div>
   </div>
 </template>
@@ -82,21 +88,10 @@ export default {
   data() {
     return {
       shuffledWords: [],
-      selectedOrder: [], // Array of { shuffledIndex, position }
+      selectedOrder: [],
       errorIndex: null,
       errorMessage: '',
       isComplete: false
-    }
-  },
-  computed: {
-    headerMessage() {
-      if (this.isComplete) {
-        return this.$t('Perfect. Make sure to securely store your recovery phrase.')
-      }
-      if (this.errorMessage) {
-        return this.errorMessage
-      }
-      return this.$t('Tap the words in the correct order.')
     }
   },
   watch: {
@@ -109,13 +104,10 @@ export default {
   },
   methods: {
     initializeComponent() {
-      // Create array with word and original index
       const wordsWithIndex = this.mnemonic.map((word, index) => ({
         word,
         originalIndex: index
       }))
-
-      // Shuffle the array using Fisher-Yates algorithm
       this.shuffledWords = this.shuffleArray([...wordsWithIndex])
       this.selectedOrder = []
       this.errorIndex = null
@@ -132,30 +124,27 @@ export default {
     },
 
     handleWordTap(shuffledIndex) {
-      // Clear previous error
       this.errorIndex = null
       this.errorMessage = ''
 
       const tappedWord = this.shuffledWords[shuffledIndex]
-      const expectedPosition = this.selectedOrder.length // 0-indexed expected original index
+      const expectedPosition = this.selectedOrder.length
+      const expectedWord = this.mnemonic[expectedPosition]
 
-      if (tappedWord.originalIndex === expectedPosition) {
-        // Correct word!
+      // Match by word text, not original index — handles duplicate words gracefully
+      if (tappedWord.word === expectedWord) {
         this.selectedOrder.push({
           shuffledIndex,
-          position: expectedPosition + 1 // 1-indexed for display
+          position: expectedPosition + 1
         })
-
         if (this.selectedOrder.length === this.mnemonic.length) {
           this.isComplete = true
         }
       } else {
-        // Wrong word!
         this.errorIndex = shuffledIndex
         const ordinal = this.getOrdinal(expectedPosition + 1)
-        this.errorMessage = this.$t('Sorry, that\'s not the correct {ordinal} word. Give it another try.', { ordinal })
+        this.errorMessage = this.$t('Wrong — expected the {ordinal} word', { ordinal })
 
-        // Clear error after delay
         setTimeout(() => {
           if (this.errorIndex === shuffledIndex) {
             this.errorIndex = null
@@ -167,18 +156,10 @@ export default {
 
     getOrdinal(n) {
       const ordinals = {
-        1: this.$t('1st'),
-        2: this.$t('2nd'),
-        3: this.$t('3rd'),
-        4: this.$t('4th'),
-        5: this.$t('5th'),
-        6: this.$t('6th'),
-        7: this.$t('7th'),
-        8: this.$t('8th'),
-        9: this.$t('9th'),
-        10: this.$t('10th'),
-        11: this.$t('11th'),
-        12: this.$t('12th')
+        1: this.$t('1st'), 2: this.$t('2nd'), 3: this.$t('3rd'),
+        4: this.$t('4th'), 5: this.$t('5th'), 6: this.$t('6th'),
+        7: this.$t('7th'), 8: this.$t('8th'), 9: this.$t('9th'),
+        10: this.$t('10th'), 11: this.$t('11th'), 12: this.$t('12th')
       }
       return ordinals[n] || `${n}th`
     },
@@ -188,26 +169,19 @@ export default {
     },
 
     getWordPosition(shuffledIndex) {
-      // Check if this is the error word
       if (this.errorIndex === shuffledIndex) {
         return this.selectedOrder.length + 1
       }
-
       const selected = this.selectedOrder.find(item => item.shuffledIndex === shuffledIndex)
       return selected ? selected.position : null
     },
 
     getWordState(shuffledIndex) {
-      if (this.errorIndex === shuffledIndex) {
-        return 'chip-error'
-      }
-      if (this.isWordSelected(shuffledIndex)) {
-        return 'chip-selected'
-      }
+      if (this.errorIndex === shuffledIndex) return 'chip-error'
+      if (this.isWordSelected(shuffledIndex)) return 'chip-selected'
       return ''
     },
 
-    // Public method for parent to reset
     reset() {
       this.initializeComponent()
     }
@@ -219,114 +193,143 @@ export default {
 .mnemonic-order-verify {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
   width: 100%;
 }
 
-/* Header */
-.verify-header {
+/* Status Messages */
+.verify-status {
   text-align: center;
+}
+
+.status-default {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-}
-
-.verify-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.4;
-  margin: 0;
-  max-width: 320px;
-  transition: color 0.3s ease;
-}
-
-.success-title {
-  color: #059573 !important;
-}
-
-.verify-dark .success-title {
-  color: #15DE72 !important;
-}
-
-.error-title {
-  color: #EF4444 !important;
-}
-
-.security-reminder {
+  justify-content: center;
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
-  line-height: 1.5;
-  margin: 0.5rem 0 0;
-  max-width: 280px;
+  font-weight: 500;
+  padding: 0.5rem 0;
+}
+
+.status-success {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: rgba(21, 222, 114, 0.08);
+  border: 1px solid rgba(21, 222, 114, 0.15);
+}
+
+.status-icon-wrap {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-icon-success {
+  background: rgba(21, 222, 114, 0.15);
+  color: #15DE72;
+}
+
+.status-text-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.status-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.status-title-success-dark {
+  color: #15DE72;
+}
+
+.status-title-success-light {
+  color: #059573;
+}
+
+.status-desc {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.status-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.status-icon-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+  width: 26px;
+  height: 26px;
+}
+
+.status-error-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #EF4444;
 }
 
 /* Words Grid */
 .words-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
-/* Word Chip - pill shape */
+/* Word Chip */
 .word-chip {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 10px 12px;
-  border-radius: 999px;
+  padding: 10px 10px;
+  border-radius: 10px;
   border: 1.5px solid;
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.15s ease;
   -webkit-tap-highlight-color: transparent;
-  min-height: 44px;
+  min-height: 42px;
   position: relative;
-  overflow: hidden;
 }
 
-.word-chip::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.word-chip:active:not(:disabled)::before {
-  opacity: 1;
-}
-
-/* When chip has badge, align content to left */
 .word-chip.has-badge {
   justify-content: flex-start;
   padding-left: 5px;
-  padding-right: 12px;
+  padding-right: 10px;
 }
 
 .chip-dark {
   background: #171717;
-  border-color: #2A342A;
+  border-color: rgba(255, 255, 255, 0.08);
   color: #FFFFFF;
-}
-
-.chip-dark::before {
-  background: rgba(21, 222, 114, 0.06);
-}
-
-.chip-dark:hover:not(:disabled) {
-  border-color: #3A4A3A;
-  background: #1C1C1C;
 }
 
 .chip-dark:active:not(:disabled) {
   transform: scale(0.97);
+  background: #1e1e1e;
 }
 
 .chip-light {
@@ -335,34 +338,27 @@ export default {
   color: #1F2937;
 }
 
-.chip-light::before {
-  background: rgba(5, 149, 115, 0.04);
-}
-
-.chip-light:hover:not(:disabled) {
-  border-color: #D1D5DB;
+.chip-light:active:not(:disabled) {
+  transform: scale(0.97);
   background: #F9FAFB;
 }
 
-.chip-light:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-/* Selected State */
+/* Selected */
 .chip-selected.chip-dark {
-  border-color: #15DE72 !important;
-  background: rgba(21, 222, 114, 0.08) !important;
+  border-color: rgba(21, 222, 114, 0.3) !important;
+  background: rgba(21, 222, 114, 0.06) !important;
 }
 
 .chip-selected.chip-light {
-  border-color: #059573 !important;
-  background: rgba(5, 149, 115, 0.06) !important;
+  border-color: rgba(5, 149, 115, 0.3) !important;
+  background: rgba(5, 149, 115, 0.04) !important;
 }
 
-/* Error State */
+/* Error */
 .chip-error {
   border-color: #EF4444 !important;
-  background: rgba(239, 68, 68, 0.08) !important;
+  background: rgba(239, 68, 68, 0.06) !important;
+  animation: shake 0.4s ease-in-out;
 }
 
 @keyframes shake {
@@ -373,21 +369,17 @@ export default {
   80% { transform: translateX(4px); }
 }
 
-.chip-error {
-  animation: shake 0.4s ease-in-out;
-}
-
-/* Word Badge - inside chip on the left */
+/* Badge */
 .word-badge {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'Manrope', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #FFFFFF;
 }
@@ -396,20 +388,14 @@ export default {
   background: #15DE72;
 }
 
-.verify-light .badge-success {
-  background: #059573;
-}
-
 .badge-error {
   background: #EF4444;
 }
 
-/* Word Text */
-.word-text {
-  transition: color 0.2s ease;
+.word-label {
+  font-family: 'Manrope', sans-serif;
 }
 
-/* Disabled state */
 .word-chip:disabled {
   cursor: default;
   opacity: 1;
@@ -419,164 +405,93 @@ export default {
 .verify-actions {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 0.5rem;
+  gap: 10px;
+  margin-top: 0.25rem;
 }
 
 .show-again-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  height: 48px;
-  border-radius: 999px;
+  height: 44px;
+  border-radius: 12px;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .btn-outline-dark {
   background: transparent;
-  border: 1.5px solid #2A342A;
-  color: #FFFFFF;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.btn-outline-dark:hover {
-  border-color: #3A4A3A;
-  background: rgba(21, 222, 114, 0.04);
+.btn-outline-dark:active {
+  transform: scale(0.98);
 }
 
 .btn-outline-light {
   background: transparent;
   border: 1.5px solid #E5E7EB;
-  color: #1F2937;
+  color: #6B7280;
 }
 
-.btn-outline-light:hover {
-  border-color: #D1D5DB;
-  background: rgba(5, 149, 115, 0.03);
+.btn-outline-light:active {
+  transform: scale(0.98);
 }
 
-.continue-btn {
+.confirm-btn {
   width: 100%;
-  height: 52px;
-  border-radius: 999px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: #fff;
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
 }
 
-/* Responsive Design */
+.confirm-btn:active {
+  transform: scale(0.97);
+}
+
+/* Responsive */
 @media (max-width: 480px) {
-  .mnemonic-order-verify {
-    gap: 1.25rem;
-  }
-
-  .verify-title {
-    font-size: 16px;
-  }
-
-  .security-reminder {
-    font-size: 12px;
-  }
-
   .words-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    gap: 6px;
   }
 
   .word-chip {
-    padding: 8px 10px;
-    font-size: 12px;
-    min-height: 40px;
-    gap: 5px;
-  }
-
-  .word-chip.has-badge {
-    padding-left: 4px;
-    padding-right: 10px;
-  }
-
-  .word-badge {
-    width: 26px;
-    height: 26px;
-    font-size: 11px;
-  }
-
-  .show-again-btn {
-    height: 44px;
-  }
-
-  .continue-btn {
-    height: 48px;
-  }
-}
-
-@media (max-height: 750px) {
-  .mnemonic-order-verify {
-    gap: 1rem;
-  }
-
-  .verify-title {
-    font-size: 16px;
-  }
-
-  .security-reminder {
-    font-size: 11px;
-    margin-top: 0.25rem;
-  }
-
-  .words-grid {
-    gap: 8px;
-  }
-
-  .word-chip {
-    padding: 8px 10px;
+    padding: 8px 8px;
     font-size: 12px;
     min-height: 38px;
-    gap: 5px;
-  }
-
-  .word-chip.has-badge {
-    padding-left: 4px;
-    padding-right: 10px;
   }
 
   .word-badge {
-    width: 24px;
-    height: 24px;
-    font-size: 11px;
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
   }
 
-  .verify-actions {
-    gap: 10px;
-    margin-top: 0.25rem;
-  }
-
-  .show-again-btn {
-    height: 42px;
-  }
-
-  .continue-btn {
-    height: 46px;
+  .show-again-btn,
+  .confirm-btn {
+    height: 40px;
+    font-size: 13px;
   }
 }
 
-@media (max-height: 650px) {
+@media (max-height: 700px) {
   .mnemonic-order-verify {
-    gap: 0.75rem;
-  }
-
-  .verify-header {
-    gap: 0.25rem;
-  }
-
-  .verify-title {
-    font-size: 15px;
-  }
-
-  .security-reminder {
-    font-size: 10px;
+    gap: 1rem;
   }
 
   .words-grid {
@@ -584,15 +499,9 @@ export default {
   }
 
   .word-chip {
-    padding: 6px 8px;
-    font-size: 11px;
-    min-height: 34px;
-    gap: 4px;
-  }
-
-  .word-chip.has-badge {
-    padding-left: 3px;
-    padding-right: 8px;
+    padding: 7px 8px;
+    font-size: 12px;
+    min-height: 36px;
   }
 
   .word-badge {
@@ -606,63 +515,8 @@ export default {
     margin-top: 0;
   }
 
-  .show-again-btn {
-    height: 38px;
-    font-size: 13px;
-  }
-
-  .continue-btn {
-    height: 42px;
-    font-size: 13px;
-  }
-}
-
-@media (max-height: 550px) {
-  .mnemonic-order-verify {
-    gap: 0.5rem;
-  }
-
-  .verify-title {
-    font-size: 14px;
-  }
-
-  .security-reminder {
-    font-size: 9px;
-    margin-top: 0;
-  }
-
-  .words-grid {
-    gap: 4px;
-  }
-
-  .word-chip {
-    padding: 5px 6px;
-    font-size: 10px;
-    min-height: 30px;
-    gap: 3px;
-  }
-
-  .word-chip.has-badge {
-    padding-left: 2px;
-    padding-right: 6px;
-  }
-
-  .word-badge {
-    width: 20px;
-    height: 20px;
-    font-size: 9px;
-  }
-
-  .verify-actions {
-    gap: 6px;
-  }
-
-  .show-again-btn {
-    height: 34px;
-    font-size: 12px;
-  }
-
-  .continue-btn {
+  .show-again-btn,
+  .confirm-btn {
     height: 38px;
     font-size: 12px;
   }

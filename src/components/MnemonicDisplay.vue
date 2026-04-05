@@ -1,10 +1,12 @@
 <template>
-  <div class="mnemonic-display" :class="$q.dark.isActive ? 'mnemonic-dark' : 'mnemonic-light'">
+  <div class="mnemonic-display">
     <!-- Warning Banner -->
-    <div class="warning-banner" v-if="showWarning">
-      <Icon icon="tabler:alert-triangle" width="20" height="20" class="warning-icon" />
-      <div class="warning-text">
-        {{ $t('Write these words down and store them safely. Anyone with these words can access your funds. Never share them.') }}
+    <div v-if="showWarning" class="display-warning">
+      <div class="display-warning-icon">
+        <Icon icon="tabler:alert-triangle" width="18" height="18" />
+      </div>
+      <div class="display-warning-text">
+        {{ $t('Write these words down and store them safely. Never share them with anyone.') }}
       </div>
     </div>
 
@@ -16,42 +18,29 @@
         class="word-item"
         :class="$q.dark.isActive ? 'word-item-dark' : 'word-item-light'"
       >
-        <span class="word-number" :class="$q.dark.isActive ? 'number-dark' : 'number-light'">
-          {{ index + 1 }}
-        </span>
-        <span class="word-text" :class="blurred ? 'blurred' : ''">
+        <span class="word-number">{{ index + 1 }}</span>
+        <span class="word-text" :class="[blurred ? 'blurred' : '', $q.dark.isActive ? 'word-text-dark' : 'word-text-light']">
           {{ word }}
         </span>
       </div>
     </div>
 
     <!-- Blur Toggle -->
-    <div class="blur-toggle" v-if="allowBlur">
-      <q-btn
-        flat
-        no-caps
-        dense
+    <div v-if="allowBlur" class="blur-toggle">
+      <button
         class="toggle-btn"
-        :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+        :class="$q.dark.isActive ? 'toggle-btn-dark' : 'toggle-btn-light'"
         @click="blurred = !blurred"
       >
-        <Icon :icon="blurred ? 'tabler:eye' : 'tabler:eye-off'" width="18" height="18" class="q-mr-xs" />
+        <Icon :icon="blurred ? 'tabler:eye' : 'tabler:eye-off'" width="16" height="16" />
         {{ blurred ? $t('Show words') : $t('Hide words') }}
-      </q-btn>
+      </button>
     </div>
 
-    <!-- Copy Button -->
-    <div class="copy-section" v-if="showCopy">
-      <q-btn
-        flat
-        no-caps
-        class="copy-btn"
-        :class="$q.dark.isActive ? 'copy-btn-dark' : 'copy-btn-light'"
-        @click="copyWords"
-      >
-        <Icon icon="tabler:copy" width="18" height="18" class="q-mr-sm" />
-        {{ copied ? $t('Copied!') : $t('Copy to clipboard') }}
-      </q-btn>
+    <!-- Bottom Warning -->
+    <div class="display-bottom-warning">
+      <Icon icon="tabler:shield-lock" width="16" height="16" />
+      <span>{{ $t('Store in a safe place. Never share online.') }}</span>
     </div>
   </div>
 </template>
@@ -101,7 +90,6 @@ export default {
           type: 'positive',
           message: this.$t('Seed phrase copied'),
           caption: this.$t('Clear your clipboard after pasting'),
-          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
@@ -113,7 +101,6 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          
           actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
@@ -130,85 +117,76 @@ export default {
   width: 100%;
 }
 
-/* Warning Banner */
-.warning-banner {
+/* Warning Banner — compact, matches verify error/success style */
+.display-warning {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  border-radius: 12px;
-  background: rgba(255, 193, 7, 0.1);
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.15);
 }
 
-.warning-icon {
-  color: #FFC107;
+.display-warning-icon {
   flex-shrink: 0;
-  margin-top: 2px;
+  color: #F59E0B;
 }
 
-.warning-text {
+.display-warning-text {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #FFC107;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #F59E0B;
 }
 
-/* Words Grid */
+/* Words Grid — matches verify grid */
 .words-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
 .word-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid;
 }
 
 .word-item-dark {
-  background: var(--bg-input);
-  border-color: var(--border-card);
+  background: #171717;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .word-item-light {
-  background: var(--bg-input);
-  border-color: var(--border-card);
+  background: #FFFFFF;
+  border-color: #E5E7EB;
 }
 
 .word-number {
-  font-family: var(--font-mono);
+  font-family: 'Manrope', sans-serif;
   font-size: 11px;
-  font-weight: 500;
-  min-width: 18px;
-}
-
-.number-dark {
+  font-weight: 600;
   color: #6B7280;
-}
-
-.number-light {
-  color: #9CA3AF;
+  min-width: 16px;
 }
 
 .word-text {
-  font-family: var(--font-mono);
+  font-family: 'Manrope', sans-serif;
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-weight: 600;
   transition: filter 0.3s ease;
 }
 
-.mnemonic-dark .word-text {
+.word-text-dark {
   color: #FFFFFF;
 }
 
-.mnemonic-light .word-text {
-  color: #212121;
+.word-text-light {
+  color: #1F2937;
 }
 
 .word-text.blurred {
@@ -223,82 +201,63 @@ export default {
 }
 
 .toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 6px 12px;
+  border-radius: 8px;
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Copy Section */
-.copy-section {
+.toggle-btn-dark {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.toggle-btn-light {
+  color: #6B7280;
+}
+
+/* Bottom Warning — matches verify bottom warning */
+.display-bottom-warning {
   display: flex;
+  align-items: center;
   justify-content: center;
-  margin-top: 0.5rem;
-}
-
-.copy-btn {
+  gap: 0.5rem;
+  padding: 0.625rem;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.06);
+  color: #EF4444;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  transition: all 0.2s ease;
 }
 
-.copy-btn-dark {
-  color: #15DE72;
-  background: rgba(21, 222, 114, 0.1);
-}
-
-.copy-btn-dark:hover {
-  background: rgba(21, 222, 114, 0.15);
-}
-
-.copy-btn-light {
-  color: #059573;
-  background: rgba(5, 149, 115, 0.1);
-}
-
-.copy-btn-light:hover {
-  background: rgba(5, 149, 115, 0.15);
-}
-
-/* Responsive Design */
+/* Responsive */
 @media (max-width: 480px) {
   .words-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+    gap: 6px;
   }
 
   .word-item {
-    padding: 10px 12px;
+    padding: 8px 10px;
   }
 
   .word-number {
     font-size: 10px;
-    min-width: 16px;
   }
 
   .word-text {
     font-size: 12px;
   }
 
-  .warning-text {
-    font-size: 12px;
-  }
-
-  .warning-banner {
-    padding: 0.875rem;
-    gap: 0.625rem;
-  }
-}
-
-@media (max-width: 360px) {
-  .word-item {
-    padding: 8px 10px;
-    gap: 6px;
-  }
-
-  .word-text {
+  .display-warning-text {
     font-size: 11px;
   }
 }

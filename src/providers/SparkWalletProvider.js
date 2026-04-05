@@ -43,6 +43,23 @@ const BITCOIN_L1 = {
   TYPICAL_TX_VBYTES: 140
 };
 
+/**
+ * Default Spark account numbers per network.
+ * These match the Spark SDK defaults — always pass explicitly to avoid
+ * breakage if the SDK defaults ever change.
+ * Derivation path: m/8797555'/accountNumber'/keyType'
+ *
+ * Per Spark docs: MAINNET defaults to 1 (legacy compatibility), REGTEST to 0.
+ * TESTNET/SIGNET/LOCAL not specified — using 0 (non-mainnet convention).
+ */
+export const SPARK_ACCOUNT_DEFAULTS = {
+  MAINNET: 1,
+  TESTNET: 0,
+  SIGNET: 0,
+  REGTEST: 0,
+  LOCAL: 0,
+};
+
 export class SparkWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
@@ -51,6 +68,7 @@ export class SparkWalletProvider extends WalletProvider {
     this.mnemonic = null;
     this.sparkAddress = null;
     this.network = walletData.network || 'MAINNET';
+    this.accountNumber = walletData.accountNumber ?? SPARK_ACCOUNT_DEFAULTS[this.network];
 
     // Sync state tracking for UI feedback
     this.isSyncing = false;
@@ -122,6 +140,7 @@ export class SparkWalletProvider extends WalletProvider {
 
       const result = await SparkWallet.initialize({
         mnemonicOrSeed: mnemonic,
+        accountNumber: this.accountNumber,
         options: { network: this.network }
       });
 
@@ -141,12 +160,16 @@ export class SparkWalletProvider extends WalletProvider {
 
   /**
    * Create a new wallet with fresh mnemonic
+   * @param {string} network - Network to use
+   * @param {number} [accountNumber] - Account derivation index (default per network)
    * @returns {Promise<{wallet: SparkWallet, mnemonic: string}>}
    */
-  static async createNewWallet(network = 'MAINNET') {
+  static async createNewWallet(network = 'MAINNET', accountNumber) {
+    const account = accountNumber ?? SPARK_ACCOUNT_DEFAULTS[network];
     try {
       const result = await SparkWallet.initialize({
         mnemonicOrSeed: undefined, // Generate new mnemonic
+        accountNumber: account,
         options: { network }
       });
 
@@ -164,12 +187,15 @@ export class SparkWalletProvider extends WalletProvider {
    * Restore wallet from existing mnemonic (for validation during restore)
    * @param {string} mnemonic
    * @param {string} network
+   * @param {number} [accountNumber] - Account derivation index (default per network)
    * @returns {Promise<SparkWallet>}
    */
-  static async restoreWallet(mnemonic, network = 'MAINNET') {
+  static async restoreWallet(mnemonic, network = 'MAINNET', accountNumber) {
+    const account = accountNumber ?? SPARK_ACCOUNT_DEFAULTS[network];
     try {
       const result = await SparkWallet.initialize({
         mnemonicOrSeed: mnemonic,
+        accountNumber: account,
         options: { network }
       });
 

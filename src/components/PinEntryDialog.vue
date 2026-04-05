@@ -39,75 +39,111 @@
       <q-card-section class="pin-content">
         <!-- Lock Icon -->
         <div class="lock-icon-container">
-          <div class="lock-icon-bg" :class="hasError ? 'lock-error' : ''">
-            <Icon :icon="mode === 'confirm' ? 'tabler:refresh' : 'tabler:lock'" :style="{ fontSize: '36px', color: 'white' }" />
+          <div class="lock-icon-bg" :class="[
+            hasError ? 'lock-error' : '',
+            loading ? 'lock-unlocking' : ''
+          ]">
+            <Icon
+              :icon="loading ? 'tabler:lock-open' : (mode === 'confirm' ? 'tabler:refresh' : 'tabler:lock')"
+              :style="{ fontSize: '36px', color: 'white' }"
+            />
           </div>
         </div>
 
-        <!-- Subtitle -->
-        <div class="pin-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-          {{ subtitle }}
-        </div>
+        <!-- Loading state — shown after PIN submitted while wallet unlocks -->
+        <transition name="fade" mode="out-in">
+          <div v-if="loading" key="loading" class="unlock-loading">
+            <!-- PIN dots stay filled -->
+            <div class="pin-dots-container">
+              <div
+                v-for="i in pinLength"
+                :key="i"
+                class="pin-dot"
+                :class="[$q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light', 'filled']"
+              ></div>
+            </div>
 
-        <!-- PIN Dots Display -->
-        <div class="pin-dots-container">
-          <div
-            v-for="i in pinLength"
-            :key="i"
-            class="pin-dot"
-            :class="[
-              $q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light',
-              pin.length >= i ? 'filled' : '',
-              hasError ? 'error' : ''
-            ]"
-          ></div>
-        </div>
-
-        <!-- Error Message -->
-        <div v-if="errorMessage" class="error-message">
-          {{ errorMessage }}
-        </div>
-
-        <!-- Numpad -->
-        <div class="numpad-container">
-          <div class="numpad-row" v-for="row in numpadRows" :key="row.join('')">
-            <button
-              v-for="key in row"
-              :key="key"
-              class="numpad-btn"
-              :class="[
-                $q.dark.isActive ? 'numpad-btn-dark' : 'numpad-btn-light',
-                key === 'del' || key === 'ok' ? 'numpad-action' : ''
-              ]"
-              @click="handleKeyPress(key)"
-              :disabled="key === 'ok' && pin.length < pinLength"
-            >
-              <template v-if="key === 'del'">
-                <Icon icon="tabler:backspace" width="24" height="24" />
-              </template>
-              <template v-else-if="key === 'ok'">
-                <Icon icon="tabler:check" width="24" height="24" />
-              </template>
-              <template v-else>
-                {{ key }}
-              </template>
-            </button>
+            <q-spinner-dots size="40px" color="green" />
+            <div class="unlock-loading-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ $t('Unlocking your wallet...') }}
+            </div>
           </div>
-        </div>
 
-        <!-- Forgot PIN link -->
-        <div v-if="showForgotPin" class="forgot-pin-container">
-          <q-btn
-            flat
-            no-caps
-            dense
-            class="forgot-pin-btn"
-            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-            @click="$emit('forgot-pin')"
-          >
-            {{ $t('Forgot PIN?') }}
-          </q-btn>
-        </div>
+          <!-- Normal PIN entry UI -->
+          <div v-else key="numpad" class="pin-entry-ui">
+            <!-- Subtitle -->
+            <div class="pin-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+              {{ subtitle }}
+            </div>
+
+            <!-- PIN Dots Display -->
+            <div class="pin-dots-container" :class="{ 'dots-shake': hasError }">
+              <div
+                v-for="i in pinLength"
+                :key="i"
+                class="pin-dot"
+                :class="[
+                  $q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light',
+                  pin.length >= i ? 'filled' : '',
+                  hasError ? 'error' : ''
+                ]"
+              ></div>
+            </div>
+
+            <!-- Error Message -->
+            <div class="error-message-slot" :class="{ 'has-error': errorMessage }">
+              <span v-if="errorMessage" class="error-message">{{ errorMessage }}</span>
+            </div>
+
+            <!-- Numpad -->
+            <div class="numpad-grid">
+              <template v-for="key in numpadKeys" :key="key || 'empty'">
+                <!-- Empty spacer (enter mode — no OK button) -->
+                <div v-if="key === ''" class="numpad-spacer"></div>
+                <!-- Key button -->
+                <button
+                  v-else
+                  class="numpad-key"
+                  :class="[
+                    $q.dark.isActive ? 'numpad-key-dark' : 'numpad-key-light',
+                    key === 'del' || key === 'ok' ? 'numpad-key-action' : 'numpad-key-digit',
+                    key === 'ok' && pin.length < pinLength ? 'numpad-key-disabled' : '',
+                    pressedKey === key ? 'numpad-key-pressed' : ''
+                  ]"
+                  :disabled="key === 'ok' && pin.length < pinLength"
+                  @touchstart.prevent="onTouchStart(key, $event)"
+                  @touchend.prevent="onTouchEnd(key)"
+                  @touchcancel="onTouchCancel"
+                  @click="onClickFallback(key)"
+                >
+                  <template v-if="key === 'del'">
+                    <Icon icon="tabler:backspace" width="22" height="22" />
+                  </template>
+                  <template v-else-if="key === 'ok'">
+                    <Icon icon="tabler:check" width="22" height="22" />
+                  </template>
+                  <template v-else>
+                    {{ key }}
+                  </template>
+                </button>
+              </template>
+            </div>
+
+            <!-- Forgot PIN link -->
+            <div v-if="showForgotPin" class="forgot-pin-container">
+              <q-btn
+                flat
+                no-caps
+                dense
+                class="forgot-pin-btn"
+                :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+                @click="$emit('forgot-pin')"
+              >
+                {{ $t('Forgot PIN?') }}
+              </q-btn>
+            </div>
+          </div>
+        </transition>
       </q-card-section>
     </q-card>
   </q-dialog>
@@ -149,6 +185,10 @@ export default {
     errorMessage: {
       type: String,
       default: ''
+    },
+    loading: {
+      type: Boolean,
+      default: false
     }
   },
   emits: ['update:modelValue', 'pin-complete', 'cancel', 'forgot-pin'],
@@ -156,12 +196,8 @@ export default {
     return {
       pin: '',
       hasError: false,
-      numpadRows: [
-        ['1', '2', '3'],
-        ['4', '5', '6'],
-        ['7', '8', '9'],
-        ['del', '0', 'ok']
-      ]
+      pressedKey: null,
+      touchHandled: false
     }
   },
   computed: {
@@ -172,6 +208,14 @@ export default {
       set(value) {
         this.$emit('update:modelValue', value);
       }
+    },
+    numpadKeys() {
+      return [
+        '1', '2', '3',
+        '4', '5', '6',
+        '7', '8', '9',
+        'del', '0', this.mode === 'enter' ? '' : 'ok'
+      ]
     }
   },
   watch: {
@@ -188,6 +232,41 @@ export default {
     }
   },
   methods: {
+    onTouchStart(key, event) {
+      if (key === 'ok' && this.pin.length < this.pinLength) return;
+      this.pressedKey = key;
+      this.touchHandled = true;
+    },
+
+    onTouchEnd(key) {
+      if (this.pressedKey !== key) {
+        this.pressedKey = null;
+        return;
+      }
+      this.pressedKey = null;
+      this.handleKeyPress(key);
+      this.haptic();
+    },
+
+    onTouchCancel() {
+      this.pressedKey = null;
+    },
+
+    onClickFallback(key) {
+      // Only handle click if touch didn't fire (desktop/mouse)
+      if (this.touchHandled) {
+        this.touchHandled = false;
+        return;
+      }
+      this.handleKeyPress(key);
+    },
+
+    haptic() {
+      if (navigator.vibrate) {
+        navigator.vibrate(8);
+      }
+    },
+
     handleKeyPress(key) {
       if (key === 'del') {
         this.deleteDigit();
@@ -205,7 +284,7 @@ export default {
 
         // Auto-submit when PIN is complete (for 'enter' mode only)
         if (this.pin.length === this.pinLength && this.mode === 'enter') {
-          setTimeout(() => this.submitPin(), 150);
+          setTimeout(() => this.submitPin(), 50);
         }
       }
     },
@@ -226,10 +305,10 @@ export default {
     resetPin() {
       this.pin = '';
       this.hasError = false;
+      this.pressedKey = null;
     },
 
     shakeAndClear() {
-      // Visual shake effect handled by CSS
       setTimeout(() => {
         this.pin = '';
         this.hasError = false;
@@ -266,6 +345,7 @@ export default {
 .pin-header {
   border-bottom: 1px solid;
   padding: 0.75rem 1rem;
+  padding-top: calc(var(--safe-top, 0px) + 0.75rem);
   flex-shrink: 0;
 }
 
@@ -305,38 +385,44 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 2rem 1.5rem;
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
 /* Lock Icon */
 .lock-icon-container {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .lock-icon-bg {
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   background: var(--gradient-green);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(21, 222, 114, 0.3);
+  box-shadow: 0 4px 16px rgba(21, 222, 114, 0.25);
   transition: all 0.3s ease;
 }
 
 .lock-icon-bg.lock-error {
   background: var(--color-red);
   box-shadow: 0 4px 16px rgba(255, 68, 68, 0.3);
-  animation: shake 0.5s ease-in-out;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-10px); }
-  40% { transform: translateX(10px); }
-  60% { transform: translateX(-10px); }
-  80% { transform: translateX(10px); }
+.lock-icon-bg.lock-unlocking {
+  box-shadow: 0 4px 24px rgba(21, 222, 114, 0.4);
+}
+
+/* Fade transition between numpad and loading */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /* Subtitle */
@@ -355,40 +441,69 @@ export default {
   color: #6B7280;
 }
 
+/* PIN entry UI wrapper */
+.pin-entry-ui {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+/* Unlock Loading */
+.unlock-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding-top: 1rem;
+}
+
+.unlock-loading-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
+}
+
 /* PIN Dots */
 .pin-dots-container {
   display: flex;
-  gap: 16px;
-  margin: 1rem 0;
+  gap: 14px;
+  padding: 0.75rem 0;
+}
+
+.dots-shake {
+  animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
 .pin-dot {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   border: 2px solid;
-  transition: all 0.15s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
 }
 
 .pin-dot-dark {
-  border-color: var(--border-card);
+  border-color: #333;
   background: transparent;
 }
 
 .pin-dot-light {
-  border-color: var(--border-card);
+  border-color: #D1D5DB;
   background: transparent;
 }
 
 .pin-dot.filled {
   background: var(--color-green);
   border-color: var(--color-green);
-  transform: scale(1.1);
+  transform: scale(1.15);
 }
 
 .pin-dot.error {
   border-color: var(--color-red);
-  animation: shake 0.5s ease-in-out;
 }
 
 .pin-dot.error.filled {
@@ -396,89 +511,134 @@ export default {
   border-color: var(--color-red);
 }
 
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
 /* Error Message */
+.error-message-slot {
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .error-message {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   color: var(--color-red);
   text-align: center;
-  min-height: 20px;
+  font-weight: 500;
 }
 
-/* Numpad */
-.numpad-container {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 1rem;
+/* Numpad — CSS Grid */
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+  max-width: 280px;
+  margin-top: 0.5rem;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.numpad-row {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-}
-
-.numpad-btn {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
+.numpad-key {
+  aspect-ratio: 1;
   border: none;
+  border-radius: 16px;
   font-family: 'Manrope', sans-serif;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  outline: none;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: none;
 }
 
-.numpad-btn-dark {
-  background: var(--bg-input);
-  color: var(--text-primary);
+/* Dark theme */
+.numpad-key-dark.numpad-key-digit {
+  background: rgba(255, 255, 255, 0.06);
+  color: #F0F0F0;
 }
 
-.numpad-btn-dark:hover {
-  background: #252525;
+.numpad-key-dark.numpad-key-action {
+  background: rgba(255, 255, 255, 0.03);
+  color: #999;
 }
 
-.numpad-btn-dark:active {
-  background: #2A342A;
-  transform: scale(0.95);
+.numpad-key-dark.numpad-key-pressed.numpad-key-digit {
+  background: rgba(21, 222, 114, 0.15);
+  color: #fff;
 }
 
-.numpad-btn-light {
-  background: var(--bg-input);
-  color: var(--text-primary);
+.numpad-key-dark.numpad-key-pressed.numpad-key-action {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
 }
 
-.numpad-btn-light:hover {
-  background: #E5E7EB;
+/* Light theme */
+.numpad-key-light.numpad-key-digit {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1A1A1A;
 }
 
-.numpad-btn-light:active {
-  background: #D1D5DB;
-  transform: scale(0.95);
+.numpad-key-light.numpad-key-action {
+  background: rgba(0, 0, 0, 0.02);
+  color: #888;
 }
 
-.numpad-btn.numpad-action {
-  font-size: 24px;
+.numpad-key-light.numpad-key-pressed.numpad-key-digit {
+  background: rgba(5, 149, 115, 0.12);
+  color: #111;
 }
 
-.numpad-btn:disabled {
-  opacity: 0.3;
+.numpad-key-light.numpad-key-pressed.numpad-key-action {
+  background: rgba(0, 0, 0, 0.08);
+  color: #555;
+}
+
+/* Desktop hover */
+@media (hover: hover) {
+  .numpad-key-dark.numpad-key-digit:hover:not(.numpad-key-disabled) {
+    background: rgba(255, 255, 255, 0.09);
+  }
+  .numpad-key-dark.numpad-key-action:hover:not(.numpad-key-disabled) {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .numpad-key-light.numpad-key-digit:hover:not(.numpad-key-disabled) {
+    background: rgba(0, 0, 0, 0.07);
+  }
+  .numpad-key-light.numpad-key-action:hover:not(.numpad-key-disabled) {
+    background: rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* Empty spacer */
+.numpad-spacer {
+  aspect-ratio: 1;
+}
+
+/* Disabled state */
+.numpad-key-disabled {
+  opacity: 0.25;
   cursor: not-allowed;
-}
-
-.numpad-btn:disabled:active {
-  transform: none;
 }
 
 /* Forgot PIN */
 .forgot-pin-container {
-  margin-top: 1rem;
+  margin-top: 0.75rem;
 }
 
 .forgot-pin-btn {
@@ -487,20 +647,20 @@ export default {
   font-weight: 500;
 }
 
-/* Responsive Design */
+/* Responsive */
 @media (max-width: 480px) {
   .pin-content {
-    padding: 1.5rem 1rem;
-    gap: 1rem;
+    padding: 1.5rem 1.25rem;
+    gap: 0.75rem;
   }
 
   .lock-icon-bg {
-    width: 70px;
-    height: 70px;
+    width: 64px;
+    height: 64px;
   }
 
   .lock-icon-bg .q-icon {
-    font-size: 32px !important;
+    font-size: 30px !important;
   }
 
   .pin-subtitle {
@@ -508,34 +668,21 @@ export default {
     max-width: 260px;
   }
 
-  .pin-dots-container {
-    gap: 12px;
+  .numpad-grid {
+    max-width: 260px;
+    gap: 8px;
   }
 
-  .pin-dot {
-    width: 14px;
-    height: 14px;
-  }
-
-  .numpad-container {
-    gap: 10px;
-  }
-
-  .numpad-row {
-    gap: 12px;
-  }
-
-  .numpad-btn {
-    width: 64px;
-    height: 64px;
+  .numpad-key {
     font-size: 24px;
+    border-radius: 14px;
   }
 }
 
 @media (max-height: 700px) {
   .pin-content {
     padding: 1rem;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   .lock-icon-container {
@@ -543,27 +690,27 @@ export default {
   }
 
   .lock-icon-bg {
-    width: 60px;
-    height: 60px;
+    width: 56px;
+    height: 56px;
   }
 
   .lock-icon-bg .q-icon {
-    font-size: 28px !important;
+    font-size: 26px !important;
   }
 
-  .numpad-btn {
-    width: 56px;
-    height: 56px;
+  .pin-dots-container {
+    padding: 0.5rem 0;
+  }
+
+  .numpad-grid {
+    max-width: 240px;
+    gap: 6px;
+    margin-top: 0.25rem;
+  }
+
+  .numpad-key {
     font-size: 22px;
-  }
-
-  .numpad-row {
-    gap: 10px;
-  }
-
-  .numpad-container {
-    gap: 8px;
-    margin-top: 0.5rem;
+    border-radius: 12px;
   }
 }
 </style>
