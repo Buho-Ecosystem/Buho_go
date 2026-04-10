@@ -15,7 +15,8 @@ export default defineConfig((/* ctx */) => {
       'axios',
       'i18n',
       'iconify',
-      'safe-area'
+      'safe-area',
+      'deep-links'
     ],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css

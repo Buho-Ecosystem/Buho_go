@@ -703,6 +703,7 @@ import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
+import {EventBus} from '../utils/eventBus';
 
 export default {
   name: 'WalletPage',
@@ -1016,6 +1017,9 @@ export default {
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
+    // Listen for deep link events (Android intent filters: lightning:, bitcoin:, lnurlp://, lnurlw://)
+    this._deepLinkHandler = (paymentData) => this.onPaymentDetected(paymentData);
+    EventBus.on('deep-link', this._deepLinkHandler);
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -1036,6 +1040,10 @@ export default {
     this.stopWithdrawMonitor();
     // Stop merchant countdown if active
     this.stopMerchantCountdown();
+    // Clean up deep link listener
+    if (this._deepLinkHandler) {
+      EventBus.off('deep-link', this._deepLinkHandler);
+    }
   },
   watch: {
     'walletState.balance': {
