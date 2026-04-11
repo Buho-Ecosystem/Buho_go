@@ -995,7 +995,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isLoading = false;
@@ -1089,7 +1088,6 @@ export default {
           caption: this.$t('Please unlock your Spark wallet to view transactions'),
 
           timeout: 3000,
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.$router.push('/wallet');
         this.hasMoreTransactions = false;
@@ -1250,7 +1248,6 @@ export default {
         message: this.$t('Up to date'),
 
         timeout: 1500,
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
 

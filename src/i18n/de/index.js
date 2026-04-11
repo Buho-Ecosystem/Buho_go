@@ -1,4 +1,7 @@
 export default {
+  "Danger Zone": "Gefahrenzone",
+  "Features": "Funktionen",
+  "Delete Spark Wallets": "Spark Wallets löschen",
   "Manage Wallets": "Wallets verwalten",
   "wallet": "Wallet",
   "wallets": "Wallets",
@@ -751,5 +754,21 @@ export default {
   "Payment expired": "Zahlung abgelaufen",
   "The merchant QR code has expired. Please scan again.": "Der Händler-QR-Code ist abgelaufen. Bitte erneut scannen.",
   "Exchange rates may be outdated": "Wechselkurse sind möglicherweise veraltet",
-  "You need {amount} sats but only have {balance} sats": "Du brauchst {amount} Sats, hast aber nur {balance} Sats"
+  "You need {amount} sats but only have {balance} sats": "Du brauchst {amount} Sats, hast aber nur {balance} Sats",
+  "Advanced": "Erweitert",
+  "active": "aktiv",
+  "No rules configured": "Keine Regeln konfiguriert",
+  "Copy Request": "Anfrage kopieren",
+  "Share Invoice": "Rechnung teilen",
+  "App Lock": "App-Sperre",
+  "Use Face ID to unlock": "Face ID zum Entsperren verwenden",
+  "Use fingerprint to unlock": "Fingerabdruck zum Entsperren verwenden",
+  "Use device PIN to unlock": "Geräte-PIN zum Entsperren verwenden",
+  "Use biometrics or PIN to unlock": "Biometrie oder PIN zum Entsperren verwenden",
+  "Use device lock to unlock": "Gerätesperre zum Entsperren verwenden",
+  "No screen lock set on this device": "Keine Bildschirmsperre auf diesem Gerät eingerichtet",
+  "App lock enabled": "App-Sperre aktiviert",
+  "App lock disabled": "App-Sperre deaktiviert",
+  "Verify to enable app lock": "Identität bestätigen um App-Sperre zu aktivieren",
+  "Tap to unlock": "Tippen zum Entsperren"
 }

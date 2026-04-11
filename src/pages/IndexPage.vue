@@ -401,7 +401,6 @@ export default {
             message: this.$t ? this.$t('Connection failed') : 'Connection failed',
             caption: this.$t ? this.$t('Please check your connection and try again') : 'Please check your connection and try again',
             
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       } finally {
@@ -484,7 +483,6 @@ export default {
             message: this.$t ? this.$t('Invalid QR code') : 'Invalid QR code',
             caption: this.$t ? this.$t('Please try a different code') : 'Please try a different code',
             
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       } finally {

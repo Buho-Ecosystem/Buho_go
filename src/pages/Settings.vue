@@ -43,6 +43,23 @@
           </q-item-section>
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item clickable v-ripple @click="showAutoTransferDialog = true">
+          <q-item-section side>
+            <Icon icon="tabler:send" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Auto-Transfer') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ awActiveCount > 0 ? awActiveCount + ' ' + $t('active') : $t('No rules configured') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
         <q-item clickable v-ripple @click="$router.push('/address-book')">
           <q-item-section side>
             <Icon icon="tabler:address-book" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
@@ -171,20 +188,6 @@
               </span>
             </q-item-section>
           </q-item>
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <q-item clickable v-ripple @click="openChangePinDialog">
-            <q-item-section side>
-              <Icon icon="tabler:lock-cog" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Change PIN') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-          </q-item>
         </div>
       </template>
 
@@ -238,16 +241,9 @@
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ $t('Features') }}
               </q-item-label>
-              <div class="nwc-methods-row">
-                <span
-                  v-for="method in nwcSupportedMethods"
-                  :key="method"
-                  class="nwc-method-chip"
-                  :class="$q.dark.isActive ? 'nwc-method-chip-dark' : 'nwc-method-chip-light'"
-                >
-                  {{ method }}
-                </span>
-              </div>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ nwcSupportedMethods.join(' · ') }}
+              </q-item-label>
             </q-item-section>
           </q-item>
         </div>
@@ -334,25 +330,6 @@
           </q-item-section>
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item clickable v-ripple @click="showMempoolDialog = true">
-          <q-item-section side>
-            <Icon icon="tabler:chart-line" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Exchange Rate Source') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <div class="side-value" :class="$q.dark.isActive ? 'side-value-dark' : 'side-value-light'">
-              {{ customMempoolUrl ? $t('Custom') : $t('Default') }}
-            </div>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
         <q-item>
           <q-item-section side>
             <Icon icon="tabler:hash" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
@@ -396,66 +373,55 @@
         </q-item>
       </div>
 
-      <!-- AUTO-WITHDRAW Section -->
+      <!-- SECURITY Section -->
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Auto-Transfer') }}
+        {{ $t('Security') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item :class="{ 'opacity-50': !biometricsAvailable }">
+          <q-item-section side>
+            <Icon :icon="biometryIcon" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('App Lock') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ biometryDescription }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-toggle
+              v-model="biometricsEnabled"
+              :color="$q.dark.isActive ? 'green' : 'green-7'"
+              :disable="!biometricsAvailable"
+              @update:model-value="toggleBiometrics"
+            />
+          </q-item-section>
+        </q-item>
       </div>
 
-      <!-- Empty state when no wallets -->
-      <div v-if="wallets.length === 0" class="aw-empty-state" :class="$q.dark.isActive ? 'aw-empty-dark' : 'aw-empty-light'">
-        <Icon icon="tabler:send" width="32" height="32" class="aw-empty-icon" />
-        <div class="aw-empty-text">{{ $t('Connect a wallet to set up automatic transfers') }}</div>
+      <!-- ADVANCED Section -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Advanced') }}
       </div>
-
-      <!-- Wallet cards (expanded with pockets) -->
-      <div v-else class="aw-wallet-list">
-        <div
-          v-for="entry in awWalletEntries"
-          :key="'aw-' + entry.configKey"
-          class="aw-wallet-card"
-          :class="[
-            $q.dark.isActive ? 'aw-card-dark' : 'aw-card-light',
-            { 'aw-pocket-card': entry.isPocket }
-          ]"
-          @click="openAutoWithdrawConfig(entry.wallet, entry.configKey, entry.name)"
-        >
-          <div class="aw-wallet-row">
-            <div class="aw-wallet-avatar" :class="'aw-avatar-' + (entry.type || 'nwc')">
-              <!-- Spark -->
-              <svg v-if="entry.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
-              </svg>
-              <!-- NWC -->
-              <svg v-else-if="entry.type === 'nwc'" width="16" height="16" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646-2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="white"/>
-                <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="white"/>
-              </svg>
-              <!-- LNBits -->
-              <svg v-else-if="entry.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
-              </svg>
-              <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
-            </div>
-            <div class="aw-wallet-info">
-              <div class="aw-wallet-name" :class="$q.dark.isActive ? 'aw-name-dark' : 'aw-name-light'">
-                {{ entry.name }}
-                <span v-if="entry.isPocket" class="aw-pocket-label" :class="$q.dark.isActive ? 'aw-pocket-label-dark' : 'aw-pocket-label-light'">{{ entry.parentName }}</span>
-              </div>
-              <div v-if="getAutoWithdrawConfig(entry.configKey)?.enabled" class="aw-wallet-summary" :class="$q.dark.isActive ? 'aw-summary-dark' : 'aw-summary-light'">
-                {{ Number(getAutoWithdrawConfig(entry.configKey).thresholdSats).toLocaleString() }} {{ $t('sats') }} &rarr; {{ truncateAutoWithdrawDest(entry.configKey) }}
-              </div>
-            </div>
-            <div class="aw-wallet-status">
-              <span
-                class="aw-status-pill"
-                :class="getAutoWithdrawConfig(entry.configKey)?.enabled ? 'aw-pill-active' : 'aw-pill-inactive'"
-              >
-                {{ getAutoWithdrawConfig(entry.configKey)?.enabled ? $t('Active') : $t('Off') }}
-              </span>
-              <Icon icon="tabler:chevron-right" width="16" height="16" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </div>
-          </div>
-        </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item clickable v-ripple @click="showMempoolDialog = true">
+          <q-item-section side>
+            <Icon icon="tabler:chart-line" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Exchange Rate Source') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ customMempoolUrl ? $t('Custom') : $t('Default (mempool.space)') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
       </div>
 
       <!-- DANGER ZONE -->
@@ -1321,7 +1287,7 @@
             </div>
 
             <p class="seed-dialog-desc" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Enter your PIN to reveal your 12-word recovery phrase.') }}
+              {{ $t('Tap below to reveal your 12-word recovery phrase.') }}
             </p>
 
             <div class="seed-warning-box">
@@ -1329,20 +1295,6 @@
                 <Icon icon="tabler:alert-triangle" width="18" height="18" />
               </div>
               <div class="seed-warning-text">{{ $t('Never share your seed phrase. Anyone with it can access your funds.') }}</div>
-            </div>
-
-            <div class="seed-pin-section">
-              <q-input
-                v-model="sparkPinInput"
-                type="password"
-                :placeholder="$t('6-digit PIN')"
-                maxlength="6"
-                mask="######"
-                :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-                borderless
-                input-class="q-px-md text-center seed-pin-input"
-                dense
-              />
             </div>
           </div>
 
@@ -1364,7 +1316,6 @@
             :label="$t('Reveal Phrase')"
             @click="viewMnemonic"
             :loading="isViewingMnemonic"
-            :disable="!sparkPinInput || sparkPinInput.length < 6"
             class="seed-action-btn"
             :class="$q.dark.isActive ? 'seed-action-btn-dark' : 'seed-action-btn-light'"
           />
@@ -1386,7 +1337,7 @@
       <q-card class="dialog-card backup-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ backupStep === 'pin' ? $t('Backup Seed Phrase') : backupStep === 'show' ? $t('Your Recovery Phrase') : $t('Verify Your Backup') }}
+            {{ backupStep === 'show' ? $t('Your Recovery Phrase') : $t('Verify Your Backup') }}
           </div>
           <q-btn
             flat
@@ -1400,50 +1351,8 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <!-- Step 1: PIN Entry -->
-          <div v-if="backupStep === 'pin'" class="seed-pin-entry">
-            <div class="seed-icon-header">
-              <div class="seed-icon-circle" :class="$q.dark.isActive ? 'seed-icon-circle-dark' : 'seed-icon-circle-light'">
-                <Icon icon="tabler:shield-check" width="28" height="28" style="color: var(--q-primary);" />
-              </div>
-            </div>
-
-            <p class="seed-dialog-desc" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Write down your 12-word recovery phrase and verify it to protect your funds.') }}
-            </p>
-
-            <div class="backup-steps-preview" :class="$q.dark.isActive ? 'steps-preview-dark' : 'steps-preview-light'">
-              <div class="step-preview-item">
-                <div class="step-preview-num" :class="$q.dark.isActive ? 'step-num-dark' : 'step-num-light'">1</div>
-                <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">{{ $t('View your 12 words') }}</span>
-              </div>
-              <div class="step-preview-item">
-                <div class="step-preview-num" :class="$q.dark.isActive ? 'step-num-dark' : 'step-num-light'">2</div>
-                <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">{{ $t('Write them down') }}</span>
-              </div>
-              <div class="step-preview-item">
-                <div class="step-preview-num" :class="$q.dark.isActive ? 'step-num-dark' : 'step-num-light'">3</div>
-                <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">{{ $t('Verify the order') }}</span>
-              </div>
-            </div>
-
-            <div class="seed-pin-section">
-              <q-input
-                v-model="backupPinInput"
-                type="password"
-                :placeholder="$t('6-digit PIN')"
-                maxlength="6"
-                mask="######"
-                :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-                borderless
-                input-class="q-px-md text-center seed-pin-input"
-                dense
-              />
-            </div>
-          </div>
-
-          <!-- Step 2: Show Recovery Phrase -->
-          <div v-else-if="backupStep === 'show'" class="backup-show-step">
+          <!-- Step 1: Show Recovery Phrase -->
+          <div v-if="backupStep === 'show'" class="backup-show-step">
             <MnemonicDisplay
               :words="backupMnemonicWords"
               :show-warning="true"
@@ -1464,17 +1373,6 @@
 
         <q-card-actions v-if="backupStep !== 'verify'" class="dialog-actions seed-dialog-actions">
           <q-btn
-            v-if="backupStep === 'pin'"
-            unelevated
-            no-caps
-            :label="$t('Start Backup')"
-            @click="startBackup"
-            :loading="isLoadingBackup"
-            :disable="!backupPinInput || backupPinInput.length < 6"
-            class="seed-action-btn"
-            :class="$q.dark.isActive ? 'seed-action-btn-dark' : 'seed-action-btn-light'"
-          />
-          <q-btn
             v-if="backupStep === 'show'"
             unelevated
             no-caps
@@ -1487,185 +1385,73 @@
       </q-card>
     </q-dialog>
 
-    <!-- Change PIN Dialog -->
-    <q-dialog v-model="showChangePinDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card pin-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
+
+    <!-- Auto-Transfer Wallet List Dialog -->
+    <q-dialog v-model="showAutoTransferDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="wallets-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header wallets-dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Update your PIN') }}
+            {{ $t('Auto-Transfer') }}
           </div>
-          <q-btn
-            flat
-            round
-            dense
-            v-close-popup
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          >
+          <q-btn flat round dense v-close-popup :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
               <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </q-btn>
         </q-card-section>
 
-        <q-card-section class="dialog-content">
-          <!-- Icon + intro -->
-          <div class="pin-change-intro">
-            <div class="pin-change-icon" :class="$q.dark.isActive ? 'pin-change-icon-dark' : 'pin-change-icon-light'">
-              <Icon icon="tabler:transfer" width="24" height="24" />
-            </div>
-            <p class="pin-change-desc" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Your PIN keeps your wallet private. Pick something memorable that only you know.') }}
-            </p>
+        <q-card-section class="wallets-dialog-content">
+          <!-- Empty state -->
+          <div v-if="wallets.length === 0" class="aw-empty-state" :class="$q.dark.isActive ? 'aw-empty-dark' : 'aw-empty-light'" style="padding: 32px 0;">
+            <Icon icon="tabler:send" width="32" height="32" class="aw-empty-icon" />
+            <div class="aw-empty-text">{{ $t('Connect a wallet to set up automatic transfers') }}</div>
           </div>
 
-          <div class="pin-inputs-section">
-            <div class="pin-field-group">
-              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Current PIN') }}</div>
-              <q-input
-                v-model="sparkPinInput"
-                type="password"
-                :placeholder="'------'"
-                maxlength="6"
-                mask="######"
-                :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
-                borderless
-                hide-bottom-space
-                input-class="text-center pin-input-field"
-                dense
-              />
+          <!-- Wallet list -->
+          <div v-else class="aw-dialog-list">
+            <div
+              v-for="entry in awWalletEntries"
+              :key="'awd-' + entry.configKey"
+              class="aw-dialog-item"
+              :class="$q.dark.isActive ? 'aw-dialog-item-dark' : 'aw-dialog-item-light'"
+              @click="openAutoWithdrawFromDialog(entry.wallet, entry.configKey, entry.name)"
+            >
+              <div class="aw-wallet-avatar" :class="'aw-avatar-' + (entry.type || 'nwc')">
+                <!-- Spark -->
+                <svg v-if="entry.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
+                </svg>
+                <!-- NWC -->
+                <svg v-else-if="entry.type === 'nwc'" width="16" height="16" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646-2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="white"/>
+                  <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="white"/>
+                </svg>
+                <!-- LNBits -->
+                <svg v-else-if="entry.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
+                </svg>
+                <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
+              </div>
+              <div class="aw-dialog-item-info">
+                <div class="aw-dialog-item-name" :class="$q.dark.isActive ? 'aw-name-dark' : 'aw-name-light'">
+                  {{ entry.name }}
+                </div>
+                <div v-if="getAutoWithdrawConfig(entry.configKey)?.enabled" class="aw-dialog-item-summary" :class="$q.dark.isActive ? 'aw-summary-dark' : 'aw-summary-light'">
+                  {{ Number(getAutoWithdrawConfig(entry.configKey).thresholdSats).toLocaleString() }} {{ $t('sats') }} &rarr; {{ truncateAutoWithdrawDest(entry.configKey) }}
+                </div>
+              </div>
+              <div class="aw-dialog-item-right">
+                <span
+                  class="aw-status-pill"
+                  :class="getAutoWithdrawConfig(entry.configKey)?.enabled ? 'aw-pill-active' : 'aw-pill-inactive'"
+                >
+                  {{ getAutoWithdrawConfig(entry.configKey)?.enabled ? $t('Active') : $t('Off') }}
+                </span>
+                <Icon icon="tabler:chevron-right" width="16" height="16" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+              </div>
             </div>
-
-            <div class="pin-field-group">
-              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('New PIN') }}</div>
-              <q-input
-                v-model="sparkNewPin"
-                type="password"
-                :placeholder="'------'"
-                maxlength="6"
-                mask="######"
-                :class="$q.dark.isActive ? 'pin-input-dark' : 'pin-input-light'"
-                borderless
-                input-class="text-center pin-input-field"
-                dense
-                hide-bottom-space
-              />
-            </div>
-
-            <div class="pin-field-group">
-              <div class="pin-field-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">{{ $t('Repeat new PIN') }}</div>
-              <q-input
-                v-model="sparkConfirmNewPin"
-                type="password"
-                :placeholder="'------'"
-                maxlength="6"
-                mask="######"
-                :class="[
-                  $q.dark.isActive ? 'pin-input-dark' : 'pin-input-light',
-                  sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin ? 'pin-input-error' : ''
-                ]"
-                hide-bottom-space
-                borderless
-                input-class="text-center pin-input-field"
-                dense
-                :error="sparkConfirmNewPin.length === 6 && sparkNewPin !== sparkConfirmNewPin"
-                :error-message="$t('Those don\'t match — try again')"
-              />
-            </div>
-          </div>
-
-          <div class="pin-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-6'">
-            <Icon icon="tabler:info-circle" width="14" height="14" class="q-mr-xs" />
-            {{ $t('Forgot your PIN? You can restore your wallet using your recovery phrase.') }}
           </div>
         </q-card-section>
-
-        <q-card-actions align="right" class="dialog-actions">
-          <q-btn
-            flat
-            :label="$t('Cancel')"
-            v-close-popup
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-            no-caps
-          />
-          <q-btn
-            flat
-            :label="$t('Save new PIN')"
-            @click="handleChangePin"
-            :loading="isChangingPin"
-            :disable="!sparkPinInput || sparkPinInput.length < 6 || !sparkNewPin || sparkNewPin.length < 6 || sparkNewPin !== sparkConfirmNewPin"
-            class="continue-action-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            no-caps
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-
-    <!-- Spark Reconnect PIN Dialog -->
-    <q-dialog v-model="showSparkReconnectDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Unlock Wallet') }}
-          </div>
-          <q-btn
-            flat
-            round
-            dense
-            @click="closeSparkReconnectDialog"
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <div class="unlock-info">
-            <div class="unlock-icon">
-              <Icon icon="tabler:lock" width="48" height="48" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'" />
-            </div>
-            <div class="unlock-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-              {{ $t('Enter your PIN to unlock your Spark wallet') }}
-            </div>
-          </div>
-
-          <q-input
-            v-model="sparkReconnectPin"
-            type="password"
-            :label="$t('Enter PIN')"
-            maxlength="6"
-            mask="######"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            borderless
-            input-class="q-px-md text-center"
-            class="q-mt-lg"
-            dense
-            autofocus
-            @keyup.enter="handleSparkReconnect"
-          />
-        </q-card-section>
-
-        <q-card-actions align="right" class="dialog-actions">
-          <q-btn
-            flat
-            :label="$t('Cancel')"
-            @click="closeSparkReconnectDialog"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
-          <q-btn
-            flat
-            :label="$t('Unlock')"
-            @click="handleSparkReconnect"
-            :loading="isSparkReconnecting"
-            :disable="!sparkReconnectPin || sparkReconnectPin.length < 6"
-            class="continue-action-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            no-caps
-          />
-        </q-card-actions>
       </q-card>
     </q-dialog>
 
@@ -1878,6 +1664,7 @@ import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
 import {shareContent} from '../utils/share.js'
+import {isBiometricAvailable, authenticate as biometricAuth} from '../utils/biometric.js'
 import {truncateAddress} from '../utils/addressUtils.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import MnemonicDisplay from '../components/MnemonicDisplay.vue'
@@ -1934,25 +1721,16 @@ export default {
       // Spark wallet settings
       showSparkSettingsDialog: false,
       showViewMnemonicDialog: false,
-      showChangePinDialog: false,
-      sparkPinInput: '',
-      sparkNewPin: '',
-      sparkConfirmNewPin: '',
       isViewingMnemonic: false,
       viewedMnemonic: '',
-      isChangingPin: false,
 
       // Backup seed phrase dialog
       showBackupDialog: false,
-      backupStep: 'pin', // 'pin' | 'show' | 'verify'
-      backupPinInput: '',
+      backupStep: 'show', // 'show' | 'verify'
       backupMnemonicWords: [],
       isLoadingBackup: false,
 
       // Spark reconnect dialog
-      showSparkReconnectDialog: false,
-      sparkReconnectWalletId: null,
-      sparkReconnectPin: '',
       isSparkReconnecting: false,
 
       // Donation
@@ -1974,10 +1752,16 @@ export default {
       dangerConfirmAction: null,
       isDangerActionLoading: false,
 
+      // Biometrics / App Lock
+      biometricsEnabled: false,
+      biometricsAvailable: false,
+      biometryType: 'none', // 'fingerprint', 'face', 'device-pin', 'multiple', 'none'
+
       // Wallet removal
       walletToRemove: null,
 
-      // Auto-withdraw
+      // Auto-transfer
+      showAutoTransferDialog: false,
       showAutoWithdrawDialog: false,
       awConfigWalletId: null,
       awConfigWallet: null,
@@ -2029,9 +1813,12 @@ export default {
 
     nwcWalletAlias() {
       if (!this.activeWallet || this.activeWallet.type !== 'nwc') return null;
-      return this.activeWallet.metadata?.alias
+      const alias = this.activeWallet.metadata?.alias
         || this.walletInfos[this.activeWalletId]?.alias
         || null;
+      // Don't show "Unknown" — it's just noise
+      if (!alias || alias === 'Unknown') return null;
+      return alias;
     },
 
     nwcSupportedMethods() {
@@ -2039,7 +1826,7 @@ export default {
       const methods = this.activeWallet.metadata?.methods
         || this.walletInfos[this.activeWalletId]?.methods
         || [];
-      // Show user-friendly labels
+      // Map both snake_case (NWC spec) and camelCase (Alby SDK) to user-friendly labels
       const friendlyNames = {
         'pay_invoice': 'Send',
         'make_invoice': 'Receive',
@@ -2048,8 +1835,27 @@ export default {
         'list_transactions': 'History',
         'get_info': 'Info',
         'multi_pay_invoice': 'Multi-pay',
+        // camelCase variants (Alby SDK format)
+        'payInvoice': 'Send',
+        'sendPayment': 'Send',
+        'payKeysend': 'Keysend',
+        'makeInvoice': 'Receive',
+        'getBalance': 'Balance',
+        'lookupInvoice': 'Lookup',
+        'listTransactions': 'History',
+        'getInfo': 'Info',
+        'multiPayInvoice': 'Multi-pay',
       };
-      return methods.map(m => friendlyNames[m] || m).slice(0, 6);
+      // Deduplicate friendly names (e.g. payInvoice + sendPayment both → "Send")
+      const seen = new Set();
+      return methods
+        .map(m => friendlyNames[m] || m)
+        .filter(label => {
+          if (seen.has(label)) return false;
+          seen.add(label);
+          return true;
+        })
+        .slice(0, 6);
     },
 
     lnbitsServerDomain() {
@@ -2068,6 +1874,28 @@ export default {
 
     activeSparkBackedUp() {
       return this.sparkWallet?.metadata?.hasBackedUp ?? this.hasBackedUp;
+    },
+
+    biometryIcon() {
+      switch (this.biometryType) {
+        case 'face': return 'tabler:face-id'
+        case 'fingerprint': return 'tabler:fingerprint'
+        case 'device-pin': return 'tabler:lock'
+        default: return 'tabler:fingerprint'
+      }
+    },
+
+    biometryDescription() {
+      if (!this.biometricsAvailable) {
+        return this.$t('No screen lock set on this device')
+      }
+      switch (this.biometryType) {
+        case 'face': return this.$t('Use Face ID to unlock')
+        case 'fingerprint': return this.$t('Use fingerprint to unlock')
+        case 'device-pin': return this.$t('Use device PIN to unlock')
+        case 'multiple': return this.$t('Use biometrics or PIN to unlock')
+        default: return this.$t('Use device lock to unlock')
+      }
     },
 
     hasNwcWallets() {
@@ -2120,6 +1948,12 @@ export default {
       return entries;
     },
 
+    awActiveCount() {
+      return this.awWalletEntries.filter(
+        entry => this.getAutoWithdrawConfig(entry.configKey)?.enabled
+      ).length;
+    },
+
     awToggleColor() {
       const type = this.awConfigWallet?.type;
       if (type === 'spark') return 'grey-8';
@@ -2161,6 +1995,7 @@ export default {
     this.loadMempoolSettings();
     this.updateFiatRateStatus();
     this.loadLanguagePreference();
+    this.checkBiometricAvailability();
   },
 
   mounted() {
@@ -2177,6 +2012,11 @@ export default {
     // Handle deep link from backup banner
     if (this.$route.query.section === 'backup' && this.hasSparkWallet) {
       this.$nextTick(() => this.openBackupDialog());
+    }
+
+    // Handle deep link from wallet switcher "Manage Wallets" button
+    if (this.$route.query.section === 'wallets') {
+      this.$nextTick(() => { this.showWalletsDialog = true; });
     }
   },
 
@@ -2203,10 +2043,10 @@ export default {
       'updateCurrencyPreferences',
       'loadExchangeRates',
       'getSparkMnemonic',
-      'changeSparkPin',
       'connectSparkWallet',
       'updateBip177Preference',
       'confirmBackup',
+      'updateBiometricsEnabled',
     ]),
 
     async initializeStore() {
@@ -2253,6 +2093,47 @@ export default {
       return formatAmount(balance, this.useBip177Format)
     },
 
+    async checkBiometricAvailability() {
+      const { available, biometryType } = await isBiometricAvailable()
+      this.biometricsAvailable = available
+      this.biometryType = biometryType
+      // Sync toggle with store
+      const store = useWalletStore()
+      this.biometricsEnabled = store.biometricsEnabled
+    },
+
+    async toggleBiometrics(value) {
+      if (value) {
+        // Check availability first
+        const { available } = await isBiometricAvailable()
+        if (!available) {
+          this.biometricsEnabled = false
+          this.$q.notify({
+            message: this.$t('No screen lock set on this device'),
+            color: 'warning',
+            timeout: 3000
+          })
+          return
+        }
+        // Verify identity before enabling (biometric or device PIN)
+        const passed = await biometricAuth({
+          reason: this.$t('Verify to enable app lock'),
+          title: 'BuhoGO'
+        })
+        if (!passed) {
+          this.biometricsEnabled = false
+          return
+        }
+      }
+      this.biometricsEnabled = value
+      this.updateBiometricsEnabled(value)
+      this.$q.notify({
+        message: value ? this.$t('App lock enabled') : this.$t('App lock disabled'),
+        color: 'positive',
+        timeout: 1500
+      })
+    },
+
     getWalletAvatarClass(wallet) {
       const colors = ['wallet-green', 'wallet-blue', 'wallet-purple', 'wallet-orange', 'wallet-red']
       const index = wallet.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
@@ -2289,7 +2170,6 @@ export default {
           type: 'positive',
           message: this.$t('Wallet connected'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
@@ -2297,7 +2177,6 @@ export default {
           message: this.$t('Connection failed'),
           caption: this.$t('Please check your connection and try again'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isAddingWallet = false
@@ -2307,86 +2186,28 @@ export default {
     async reconnectWallet(walletId) {
       if (this.isReconnecting[walletId]) return
 
-      // Check if this is a Spark wallet
-      const wallet = this.wallets.find(w => w.id === walletId)
-      if (wallet?.type === 'spark') {
-        // Show PIN dialog for Spark wallets
-        this.sparkReconnectWalletId = walletId
-        this.sparkReconnectPin = ''
-        this.showSparkReconnectDialog = true
-        return
-      }
-
-      // NWC wallet - proceed with normal reconnection
       this.isReconnecting[walletId] = true
 
       try {
-        await this.connectWallet(walletId)
+        const wallet = this.wallets.find(w => w.id === walletId)
+        if (wallet?.type === 'spark') {
+          await this.connectSparkWallet(walletId)
+        } else {
+          await this.connectWallet(walletId)
+        }
         this.$q.notify({
           type: 'positive',
           message: this.$t('Reconnected'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isReconnecting[walletId] = false
       }
-    },
-
-    /**
-     * Handle Spark wallet reconnection with PIN
-     */
-    async handleSparkReconnect() {
-      if (!this.sparkReconnectPin || this.sparkReconnectPin.length < 6) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Please enter your 6-digit PIN'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        })
-        return
-      }
-
-      this.isSparkReconnecting = true
-
-      try {
-        await this.connectSparkWallet(this.sparkReconnectWalletId, this.sparkReconnectPin)
-
-        this.showSparkReconnectDialog = false
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Wallet unlocked'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        })
-      } catch (error) {
-        const isInvalidPin = error.message?.toLowerCase().includes('invalid pin')
-        this.$q.notify({
-          type: 'negative',
-          message: isInvalidPin ? this.$t('Incorrect PIN') : this.$t('Reconnection failed'),
-          caption: this.$t('Please try again'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        })
-        // Clear PIN on error
-        this.sparkReconnectPin = ''
-      } finally {
-        this.isSparkReconnecting = false
-      }
-    },
-
-    closeSparkReconnectDialog() {
-      this.showSparkReconnectDialog = false
-      this.sparkReconnectWalletId = null
-      this.sparkReconnectPin = ''
     },
 
     async handleSwitchWallet(walletId) {
@@ -2396,7 +2217,6 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Switched to {name}', { name: wallet?.name || 'Wallet' }),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
@@ -2404,7 +2224,6 @@ export default {
           message: this.$t('Couldn\'t switch wallet'),
           caption: this.$t('Please try again'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -2441,7 +2260,6 @@ export default {
             type: 'positive',
             message: this.$t('NWC connections removed'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'disconnectLNBits') {
@@ -2450,7 +2268,6 @@ export default {
             type: 'positive',
             message: this.$t('LNBits connections removed'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'deleteSparkWallet') {
@@ -2463,7 +2280,6 @@ export default {
             message: ids.length > 1
               ? this.$t('All Spark wallets deleted')
               : this.$t('Spark wallet deleted'),
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'removeWallet') {
@@ -2472,7 +2288,6 @@ export default {
             type: 'positive',
             message: this.$t('Wallet removed'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           this.showDangerConfirmDialog = false;
           this.walletToRemove = null;
@@ -2489,7 +2304,6 @@ export default {
           message: this.$t('Action failed'),
           caption: this.$t('Please try again'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isDangerActionLoading = false;
@@ -2672,7 +2486,6 @@ export default {
           type: 'positive',
           message: this.$t('PIN saved'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } else {
         const pinState = JSON.parse(localStorage.getItem('buhoGO_pin_state'));
@@ -2681,7 +2494,6 @@ export default {
             type: 'negative',
             message: this.$t('Incorrect PIN'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           return;
         }
@@ -2696,7 +2508,6 @@ export default {
           type: 'positive',
           message: this.$t('PIN updated'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -2730,7 +2541,6 @@ export default {
           type: 'negative',
           message: this.$t('Notifications not available'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -2805,7 +2615,6 @@ export default {
             this.$t('API settings saved') :
             this.$t('Using default API'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
       } catch (error) {
@@ -2815,7 +2624,6 @@ export default {
           message: this.$t('API connection failed'),
           caption: this.$t('Please check the URL and try again'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isTestingUrl = false;
@@ -2842,7 +2650,6 @@ export default {
         type: 'positive',
         message: this.$t('Language updated'),
 
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
 
@@ -2883,13 +2690,11 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: successMessage || this.$t('Copied'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to copy'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -2919,35 +2724,21 @@ export default {
     },
 
     openViewMnemonicDialog() {
-      this.sparkPinInput = '';
       this.viewedMnemonic = '';
       this.isViewingMnemonic = false;
       this.showViewMnemonicDialog = true;
     },
 
     async viewMnemonic() {
-      if (!this.sparkPinInput || this.sparkPinInput.length < 6) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Please enter your PIN'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-        return;
-      }
-
       this.isViewingMnemonic = true;
       try {
-        const mnemonic = await this.getSparkMnemonic(this.sparkPinInput);
+        const mnemonic = await this.getSparkMnemonic();
         this.viewedMnemonic = mnemonic;
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Incorrect PIN'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          message: this.$t('Could not retrieve seed phrase'),
         });
-        this.sparkPinInput = '';
       } finally {
         this.isViewingMnemonic = false;
       }
@@ -2955,7 +2746,6 @@ export default {
 
     closeViewMnemonicDialog() {
       this.showViewMnemonicDialog = false;
-      this.sparkPinInput = '';
       this.viewedMnemonic = '';
     },
 
@@ -2963,29 +2753,21 @@ export default {
     // Backup Seed Phrase
     // ==========================================
 
-    openBackupDialog() {
-      this.backupPinInput = '';
+    async openBackupDialog() {
       this.backupMnemonicWords = [];
-      this.backupStep = 'pin';
-      this.isLoadingBackup = false;
-      this.showBackupDialog = true;
-    },
-
-    async startBackup() {
-      if (!this.backupPinInput || this.backupPinInput.length < 6) return;
-
       this.isLoadingBackup = true;
+      this.backupStep = 'show';
+      this.showBackupDialog = true;
+
       try {
-        const mnemonic = await this.getSparkMnemonic(this.backupPinInput);
+        const mnemonic = await this.getSparkMnemonic();
         this.backupMnemonicWords = mnemonic.split(' ');
-        this.backupStep = 'show';
       } catch (error) {
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Incorrect PIN'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          message: this.$t('Could not retrieve seed phrase'),
         });
-        this.backupPinInput = '';
+        this.showBackupDialog = false;
       } finally {
         this.isLoadingBackup = false;
       }
@@ -3003,72 +2785,8 @@ export default {
 
     closeBackupDialog() {
       this.showBackupDialog = false;
-      this.backupPinInput = '';
       this.backupMnemonicWords = [];
-      this.backupStep = 'pin';
-    },
-
-    openChangePinDialog() {
-      this.sparkPinInput = '';
-      this.sparkNewPin = '';
-      this.sparkConfirmNewPin = '';
-      this.showChangePinDialog = true;
-    },
-
-    async handleChangePin() {
-      if (!this.sparkPinInput || this.sparkPinInput.length < 6) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Please enter your current PIN'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-        return;
-      }
-
-      if (!this.sparkNewPin || this.sparkNewPin.length < 6) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('New PIN must be 6 digits'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-        return;
-      }
-
-      if (this.sparkNewPin !== this.sparkConfirmNewPin) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('PINs do not match'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-        return;
-      }
-
-      this.isChangingPin = true;
-      try {
-        await this.changeSparkPin(this.sparkPinInput, this.sparkNewPin);
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('PIN changed successfully'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-        this.showChangePinDialog = false;
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: error.message || this.$t('Failed to change PIN'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-        });
-      } finally {
-        this.isChangingPin = false;
-        this.sparkPinInput = '';
-        this.sparkNewPin = '';
-        this.sparkConfirmNewPin = '';
-      }
+      this.backupStep = 'show';
     },
 
     confirmDeleteSparkWallet() {
@@ -3098,13 +2816,11 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Switched to {name}', { name: wallet?.name }),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to switch wallet'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -3151,6 +2867,14 @@ export default {
       if (dest.includes('@')) return dest;
       if (dest.length > 16) return `${dest.slice(0, 8)}...${dest.slice(-4)}`;
       return dest;
+    },
+
+    openAutoWithdrawFromDialog(wallet, configKey, entryName) {
+      this.showAutoTransferDialog = false;
+      // Small delay to let the list dialog close before opening the config dialog
+      setTimeout(() => {
+        this.openAutoWithdrawConfig(wallet, configKey, entryName);
+      }, 200);
     },
 
     openAutoWithdrawConfig(wallet, configKey, entryName) {
@@ -5947,6 +5671,60 @@ export default {
 .aw-pill-inactive {
   background: rgba(128, 128, 128, 0.1);
   color: rgba(128, 128, 128, 0.6);
+}
+
+/* Auto-Transfer dialog list */
+.aw-dialog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.aw-dialog-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.aw-dialog-item-dark {
+  background: rgba(255, 255, 255, 0.03);
+}
+.aw-dialog-item-dark:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+.aw-dialog-item-light {
+  background: rgba(0, 0, 0, 0.02);
+}
+.aw-dialog-item-light:active {
+  background: rgba(0, 0, 0, 0.05);
+}
+.aw-dialog-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.aw-dialog-item-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aw-dialog-item-summary {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aw-dialog-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* Config dialog */

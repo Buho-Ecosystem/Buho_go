@@ -90,7 +90,6 @@ export default {
           type: 'positive',
           message: this.$t('Seed phrase copied'),
           caption: this.$t('Clear your clipboard after pasting'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
         setTimeout(() => {
@@ -101,7 +100,6 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     }

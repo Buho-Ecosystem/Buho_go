@@ -1,4 +1,7 @@
 export default {
+  "Danger Zone": "Danger Zone",
+  "Features": "Features",
+  "Delete Spark Wallets": "Delete Spark Wallets",
   "Manage Wallets": "Manage Wallets",
   "wallet": "wallet",
   "wallets": "wallets",
@@ -795,5 +798,21 @@ export default {
   "Payment expired": "Payment expired",
   "The merchant QR code has expired. Please scan again.": "The merchant QR code has expired. Please scan again.",
   "Exchange rates may be outdated": "Exchange rates may be outdated",
-  "You need {amount} sats but only have {balance} sats": "You need {amount} sats but only have {balance} sats"
+  "You need {amount} sats but only have {balance} sats": "You need {amount} sats but only have {balance} sats",
+  "Advanced": "Advanced",
+  "active": "active",
+  "No rules configured": "No rules configured",
+  "Copy Request": "Copy Request",
+  "Share Invoice": "Share Invoice",
+  "App Lock": "App Lock",
+  "Use Face ID to unlock": "Use Face ID to unlock",
+  "Use fingerprint to unlock": "Use fingerprint to unlock",
+  "Use device PIN to unlock": "Use device PIN to unlock",
+  "Use biometrics or PIN to unlock": "Use biometrics or PIN to unlock",
+  "Use device lock to unlock": "Use device lock to unlock",
+  "No screen lock set on this device": "No screen lock set on this device",
+  "App lock enabled": "App lock enabled",
+  "App lock disabled": "App lock disabled",
+  "Verify to enable app lock": "Verify to enable app lock",
+  "Tap to unlock": "Tap to unlock"
 }

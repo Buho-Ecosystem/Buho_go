@@ -77,67 +77,8 @@
             </div>
           </div>
 
-          <!-- Step 2: Set PIN -->
-          <div v-else-if="currentStep === 2" class="step-content step-pin">
-            <div class="step-icon">
-              <div class="icon-bg icon-lock">
-                <Icon icon="tabler:lock" width="32" height="32" style="color: white;" />
-              </div>
-            </div>
-            <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ pinMode === 'create' ? $t('Set Your PIN') : $t('Confirm Your PIN') }}
-            </h2>
-            <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ pinMode === 'create'
-                ? $t('Create a 6-digit PIN to protect your wallet')
-                : $t('Enter your PIN again to confirm')
-              }}
-            </p>
-
-            <!-- PIN Dots -->
-            <div class="pin-dots-inline">
-              <div
-                v-for="i in 6"
-                :key="i"
-                class="pin-dot"
-                :class="[
-                  $q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light',
-                  currentPin.length >= i ? 'filled' : '',
-                  pinError ? 'error' : ''
-                ]"
-              ></div>
-            </div>
-
-            <div v-if="pinError" class="pin-error">
-              {{ pinError }}
-            </div>
-
-            <!-- Numpad -->
-            <div class="numpad-inline">
-              <div class="numpad-row" v-for="row in numpadRows" :key="row.join('')">
-                <button
-                  v-for="key in row"
-                  :key="key"
-                  class="numpad-btn"
-                  :class="$q.dark.isActive ? 'numpad-btn-dark' : 'numpad-btn-light'"
-                  @click="handlePinKey(key)"
-                >
-                  <template v-if="key === 'del'">
-                    <Icon icon="tabler:backspace" width="20" height="20" />
-                  </template>
-                  <template v-else-if="key === ''">
-                    <!-- Empty button -->
-                  </template>
-                  <template v-else>
-                    {{ key }}
-                  </template>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 3: Restoring Wallet -->
-          <div v-else-if="currentStep === 3" class="step-content step-creating">
+          <!-- Step 2: Restoring Wallet -->
+          <div v-else-if="currentStep === 2" class="step-content step-creating">
             <div class="creating-animation">
               <q-spinner-orbit size="80px" color="primary" />
             </div>
@@ -187,18 +128,6 @@ export default {
       wordInputRefs: [],
       mnemonicError: '',
 
-      // PIN
-      pinMode: 'create',
-      currentPin: '',
-      firstPin: '',
-      pinError: '',
-      numpadRows: [
-        ['1', '2', '3'],
-        ['4', '5', '6'],
-        ['7', '8', '9'],
-        ['', '0', 'del']
-      ],
-
       // Restoring
       restoringStatus: 'Initializing...',
     }
@@ -213,7 +142,7 @@ export default {
       return this.inputWords.map(w => w.trim().toLowerCase()).join(' ');
     },
     totalSteps() {
-      return 3; // Seed → PIN → Restoring
+      return 2; // Seed → Restoring
     },
     displayStep() {
       return this.currentStep;
@@ -253,18 +182,7 @@ export default {
     },
 
     handleBack() {
-      if (this.currentStep === 2) {
-        if (this.pinMode === 'confirm') {
-          this.pinMode = 'create';
-          this.currentPin = '';
-          this.firstPin = '';
-          this.pinError = '';
-        } else {
-          this.currentStep = 1;
-        }
-      } else if (this.currentStep === 1) {
-        this.$router.push('/');
-      }
+      this.$router.push('/');
     },
 
     async validateAndContinue() {
@@ -274,14 +192,10 @@ export default {
       try {
         // Validate by trying to restore wallet
         const wallet = await SparkWalletProvider.restoreWallet(this.mnemonic, 'MAINNET');
-
-        // Clean up test wallet
         wallet.cleanupConnections();
 
-        // Move to PIN step
-        this.currentStep = 2;
-        this.pinMode = 'create';
-        this.currentPin = '';
+        // Proceed directly to restore
+        await this.restoreWallet();
       } catch (error) {
         console.error('Invalid mnemonic:', error);
         this.mnemonicError = this.$t('Invalid seed phrase. Please check your words and try again.');
@@ -290,58 +204,19 @@ export default {
           type: 'negative',
           message: this.$t('Invalid seed phrase'),
           caption: this.$t('Please verify your words are correct'),
-          
         });
       } finally {
         this.isValidating = false;
       }
     },
 
-    handlePinKey(key) {
-      this.pinError = '';
-
-      if (key === 'del') {
-        if (this.currentPin.length > 0) {
-          this.currentPin = this.currentPin.slice(0, -1);
-        }
-      } else if (key !== '' && this.currentPin.length < 6) {
-        this.currentPin += key;
-
-        // Auto-proceed when 6 digits entered
-        if (this.currentPin.length === 6) {
-          this.processPinEntry();
-        }
-      }
-    },
-
-    processPinEntry() {
-      if (this.pinMode === 'create') {
-        this.firstPin = this.currentPin;
-        this.currentPin = '';
-        this.pinMode = 'confirm';
-      } else {
-        // Confirm mode
-        if (this.currentPin === this.firstPin) {
-          this.restoreWallet();
-        } else {
-          this.pinError = this.$t('PINs do not match');
-          this.currentPin = '';
-
-          setTimeout(() => {
-            this.pinError = '';
-          }, 2000);
-        }
-      }
-    },
-
     async restoreWallet() {
-      this.currentStep = 3;
+      this.currentStep = 2;
       this.restoringStatus = this.$t('Encrypting wallet...');
 
       try {
         await this.walletStore.addSparkWallet({
           mnemonic: this.mnemonic,
-          pin: this.firstPin || undefined,
           network: 'MAINNET',
           isRestore: true,
           onProgress: (step) => {
@@ -374,10 +249,7 @@ export default {
             ? this.$t('This wallet is already added')
             : this.$t('Please check your backup phrase and try again'),
         });
-        this.currentStep = 2;
-        this.pinMode = 'create';
-        this.currentPin = '';
-        this.firstPin = '';
+        this.currentStep = 1;
       }
     }
   }

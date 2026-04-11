@@ -827,7 +827,6 @@ export default {
             caption: this.$t('Please create a new invoice'),
             
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
           break;
 
@@ -1024,7 +1023,6 @@ export default {
           type: 'positive',
           message: this.$t('Invoice ready'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
         // Start monitoring for payment confirmation
@@ -1038,7 +1036,6 @@ export default {
           message: this.$t('Couldn\'t create invoice'),
           caption: this.$t('Please try again'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
         this.generatedInvoice = null;
@@ -1056,7 +1053,6 @@ export default {
           type: 'positive',
           message: this.$t('Invoice copied'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         console.error('Failed to copy invoice:', error);
@@ -1064,7 +1060,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1083,14 +1078,12 @@ export default {
           type: 'positive',
           message: this.$t('Address copied'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1104,14 +1097,12 @@ export default {
           type: 'positive',
           message: this.$t('Spark address copied'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1129,7 +1120,6 @@ export default {
           type: 'positive',
           message: this.$t('Shared'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } else if (result.reason === 'unsupported') {
         // Fallback: copy to clipboard
@@ -1178,7 +1168,6 @@ export default {
           type: 'positive',
           message: this.$t('Shared'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } else if (result.reason === 'unsupported' || result.reason === 'error') {
         if (result.reason === 'error') {
@@ -1191,14 +1180,12 @@ export default {
             type: 'positive',
             message: this.$t('Invoice copied'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         } catch (copyError) {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Couldn\'t share'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       }

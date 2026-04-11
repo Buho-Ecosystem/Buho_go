@@ -151,6 +151,9 @@ export class SparkWalletProvider extends WalletProvider {
       // Cache Spark address
       this.sparkAddress = await this.wallet.getSparkAddress();
 
+      // Enable privacy mode — hides address and transactions from Sparkscan and public APIs
+      this.enablePrivacyMode();
+
       return true;
     } catch (error) {
       this.setError(error);
@@ -228,6 +231,19 @@ export class SparkWalletProvider extends WalletProvider {
     this.wallet = null;
     this.mnemonic = null;
     this.isConnected = false;
+  }
+
+  /**
+   * Enable privacy mode — hides wallet address, balance, and transaction history
+   * from Sparkscan and public API queries. Runs in the background so it doesn't
+   * block wallet initialization.
+   */
+  enablePrivacyMode() {
+    if (!this.wallet) return;
+
+    this.wallet.setPrivacyEnabled(true).catch((error) => {
+      console.warn('Could not enable privacy mode:', error.message);
+    });
   }
 
   async getBalance() {
@@ -633,7 +649,7 @@ export class SparkWalletProvider extends WalletProvider {
         timestamp: this._parseTimestamp(transfer.createdTime || transfer.updatedTime),
         description: transfer.memo || transfer.description || '',
         status: this._normalizeStatus(transfer.status),
-        fee: Number(transfer.fee || 0),
+        fee: Number(transfer.feeSats || transfer.fees || transfer.fee || 0),
         // Determine if this is a Spark-to-Spark transfer (zero fee) vs Lightning
         sparkTransfer: this._isSparkTransfer(transfer),
         // Keep original transfer data for debugging

@@ -552,7 +552,6 @@ export default {
           message: this.$t('Invalid QR code'),
           caption: this.$t('Please try a different code'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }
@@ -595,7 +594,6 @@ export default {
               ? `${merchant.displayName} - ${this.$t('not yet supported')}`
               : this.$t('This retailer is not yet supported'),
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }],
           });
           this.isProcessing = false;
           return;
@@ -626,7 +624,6 @@ export default {
             caption: this.$t('Switch to Spark wallet to pay this address'),
             
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
 
@@ -638,7 +635,6 @@ export default {
             caption: this.$t('Switch to Spark wallet to send to Bitcoin addresses'),
             
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
 
@@ -781,7 +777,6 @@ export default {
         message: this.$t('Paste into the input field'),
         caption: this.$t('Long-press the text field and tap Paste'),
         timeout: 4000,
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
 
@@ -807,7 +802,6 @@ export default {
           caption: this.getContactDisabledReason(contact),
           
           timeout: 3500,
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
       }
@@ -909,7 +903,6 @@ export default {
           message: this.$t('Invalid payment request'),
           caption: this.$t('Please check the format and try again'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }

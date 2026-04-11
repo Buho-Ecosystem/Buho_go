@@ -1,11 +1,14 @@
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
+import { Capacitor } from '@capacitor/core'
+import { App } from '@capacitor/app'
 import { parsePaymentDestination } from '../providers/WalletFactory'
 import { EventBus } from '../utils/eventBus'
 
 /**
  * Deep link handler for Android intent filters.
  *
+ * Only loaded in Capacitor builds (see quasar.config.js).
  * Registers BuhoGO as a handler for lightning:, bitcoin:, lnurlp://, lnurlw://
  * URI schemes so it appears in the Android app chooser alongside other Lightning wallets.
  *
@@ -83,24 +86,9 @@ function handleDeepLink(url, router, walletStore) {
   }
 }
 
-export default boot(async ({ router, store }) => {
-  // Only run on native platforms (Android/iOS) — skip for web/dev
-  let Capacitor
-  try {
-    Capacitor = (await import('@capacitor/core')).Capacitor
-  } catch {
-    return
-  }
+export default boot(async ({ router }) => {
   if (!Capacitor.isNativePlatform()) return
 
-  let App
-  try {
-    App = (await import('@capacitor/app')).App
-  } catch {
-    return
-  }
-
-  // Lazy-load wallet store — we need it to check if a wallet exists
   const { useWalletStore } = await import('../stores/wallet')
   const walletStore = useWalletStore()
 

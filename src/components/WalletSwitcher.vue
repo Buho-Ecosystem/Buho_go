@@ -322,14 +322,12 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Switched to {name}', { name: wallet?.name }),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
           caption: this.$t('Please try again'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -345,7 +343,6 @@ export default {
           type: 'positive',
           message: this.$t('Reconnected'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
@@ -353,7 +350,6 @@ export default {
           message: this.$t('Reconnection failed'),
           caption: this.$t('Please try again'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isReconnecting[walletId] = false

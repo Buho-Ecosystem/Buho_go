@@ -31,67 +31,8 @@
 
         <!-- Content -->
         <q-card-section class="setup-content">
-          <!-- Step 1: Set PIN -->
-          <div v-if="currentStep === 1" class="step-content step-pin">
-            <div class="step-icon">
-              <div class="icon-bg icon-lock">
-                <Icon :icon="pinMode === 'create' ? 'tabler:lock' : 'tabler:circle-check'" width="32" height="32" style="color: white;" />
-              </div>
-            </div>
-            <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-              {{ pinMode === 'create' ? $t('Secure your wallet') : $t('One more time') }}
-            </h2>
-            <p class="step-desc" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ pinMode === 'create'
-                ? $t('Pick a 6-digit PIN that only you know. It keeps your wallet private on this device.')
-                : $t('Enter the same PIN again to make sure you got it right.')
-              }}
-            </p>
-
-            <!-- PIN Dots -->
-            <div class="pin-dots-inline">
-              <div
-                v-for="i in 6"
-                :key="i"
-                class="pin-dot"
-                :class="[
-                  $q.dark.isActive ? 'pin-dot-dark' : 'pin-dot-light',
-                  currentPin.length >= i ? 'filled' : '',
-                  pinError ? 'error' : ''
-                ]"
-              ></div>
-            </div>
-
-            <div v-if="pinError" class="pin-error">
-              {{ pinError }}
-            </div>
-
-            <!-- Numpad -->
-            <div class="numpad-inline">
-              <div class="numpad-row" v-for="row in numpadRows" :key="row.join('')">
-                <button
-                  v-for="key in row"
-                  :key="key"
-                  class="numpad-btn"
-                  :class="$q.dark.isActive ? 'numpad-btn-dark' : 'numpad-btn-light'"
-                  @click="handlePinKey(key)"
-                >
-                  <template v-if="key === 'del'">
-                    <Icon icon="tabler:backspace" width="20" height="20" />
-                  </template>
-                  <template v-else-if="key === ''">
-                    <!-- Empty button -->
-                  </template>
-                  <template v-else>
-                    {{ key }}
-                  </template>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 2: Creating Wallet -->
-          <div v-else-if="currentStep === 2" class="step-content step-creating">
+          <!-- Creating Wallet -->
+          <div v-if="currentStep === 1" class="step-content step-creating">
             <div class="creating-animation">
               <q-spinner-orbit size="80px" color="primary" />
             </div>
@@ -123,28 +64,14 @@ export default {
       currentStep: 1,
       isProcessing: false,
       mnemonic: '',
-
-      // PIN
-      pinMode: 'create',
-      currentPin: '',
-      firstPin: '',
-      pinError: '',
-      numpadRows: [
-        ['1', '2', '3'],
-        ['4', '5', '6'],
-        ['7', '8', '9'],
-        ['', '0', 'del']
-      ],
-
-      // Creating
       creatingStatus: 'Initializing...',
     }
   },
   async mounted() {
-    await this.generateMnemonic();
+    await this.generateAndCreate();
   },
   methods: {
-    async generateMnemonic() {
+    async generateAndCreate() {
       try {
         const { wallet, mnemonic } = await SparkWalletProvider.createNewWallet('MAINNET');
         this.mnemonic = mnemonic;
@@ -157,62 +84,15 @@ export default {
           caption: this.$t('Please try again'),
         });
         this.$router.push('/');
+        return;
       }
-    },
 
-    handleBack() {
-      if (this.currentStep === 1 && this.pinMode === 'confirm') {
-        this.pinMode = 'create';
-        this.currentPin = '';
-        this.firstPin = '';
-        this.pinError = '';
-      } else {
-        this.$router.push('/');
-      }
-    },
-
-    handlePinKey(key) {
-      this.pinError = '';
-
-      if (key === 'del') {
-        if (this.currentPin.length > 0) {
-          this.currentPin = this.currentPin.slice(0, -1);
-        }
-      } else if (key !== '' && this.currentPin.length < 6) {
-        this.currentPin += key;
-
-        if (this.currentPin.length === 6) {
-          this.processPinEntry();
-        }
-      }
-    },
-
-    processPinEntry() {
-      if (this.pinMode === 'create') {
-        this.firstPin = this.currentPin;
-        this.currentPin = '';
-        this.pinMode = 'confirm';
-      } else {
-        if (this.currentPin === this.firstPin) {
-          this.createWallet();
-        } else {
-          this.pinError = this.$t('PINs do not match');
-          this.currentPin = '';
-          setTimeout(() => {
-            this.pinError = '';
-          }, 2000);
-        }
-      }
-    },
-
-    async createWallet() {
-      this.currentStep = 2;
+      // Proceed directly to wallet creation
       this.creatingStatus = this.$t('Encrypting wallet...');
 
       try {
         await this.walletStore.addSparkWallet({
           mnemonic: this.mnemonic,
-          pin: this.firstPin || undefined,
           network: 'MAINNET',
           onProgress: (step) => {
             const messages = {
@@ -241,11 +121,12 @@ export default {
           message: this.$t('Failed to create wallet'),
           caption: this.$t('Please try again'),
         });
-        this.currentStep = 1;
-        this.pinMode = 'create';
-        this.currentPin = '';
-        this.firstPin = '';
+        this.$router.push('/');
       }
+    },
+
+    handleBack() {
+      this.$router.push('/');
     }
   }
 }

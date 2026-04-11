@@ -629,3 +629,60 @@ body.body--dark .q-skeleton::after {
 body.body--light .q-skeleton {
   background: #EBEBEB;
 }
+
+/* ─── Notification Toasts ─── */
+
+/* Position: respect safe area on iOS/Android */
+.q-notifications__list--bottom {
+  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+}
+
+/* Base toast pill */
+.buho-notify {
+  font-family: 'Manrope', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+  border-radius: 14px !important;
+  padding: 10px 14px !important;
+  min-height: 0 !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.18),
+              0 2px 8px rgba(0, 0, 0, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  max-width: calc(100vw - 32px);
+  animation: notifySlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes notifySlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Semantic color backgrounds — BuhoGO palette, semi-transparent for glassmorphism */
+.buho-notify.bg-positive { background: rgba(21, 222, 114, 0.88) !important; }
+.buho-notify.bg-accent   { background: rgba(21, 222, 114, 0.88) !important; }
+.buho-notify.bg-info     { background: rgba(165, 193, 225, 0.92) !important; }
+.buho-notify.bg-negative { background: rgba(255, 68, 68, 0.92) !important; }
+.buho-notify.bg-warning  { background: rgba(247, 147, 26, 0.92) !important; }
+
+/* Progress bar */
+.buho-notify .q-notification__progress {
+  background: rgba(255, 255, 255, 0.3) !important;
+  height: 2px !important;
+}
+
+/* Icon size */
+.buho-notify .q-notification__icon {
+  font-size: 20px !important;
+}
+
+/* Close button */
+.buho-notify .q-notification__actions .q-btn {
+  opacity: 0.7;
+}
+.buho-notify .q-notification__actions .q-btn:active {
+  opacity: 1;
+}
+

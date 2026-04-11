@@ -1,6 +1,6 @@
 {
   "name": "buho-app",
-  "version": "1.8.0",
+  "version": "1.6.0",
   "description": "BuhoGo - A Lightning Wallet for the Web",
   "author": "pratikpatel <pratikpatelpp802@gmail.com> & drshift <keleeweb@tutanota.com>",
   "private": true,
@@ -9,6 +9,7 @@
     "@capacitor/app": "^7.0.0",
     "@capacitor/cli": "^7.0.0",
     "@capacitor/core": "^7.4.3",
-    "@capacitor/ios": "^7.4.3"
+    "@capacitor/ios": "^7.4.3",
+    "@capgo/capacitor-native-biometric": "^8.4.2"
   }
 }

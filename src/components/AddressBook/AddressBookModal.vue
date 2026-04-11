@@ -68,7 +68,7 @@
               toggle-color="primary"
               :options="[
                 { label: 'Lightning', value: 'lightning', icon: 'bolt' },
-                { label: 'Spark', value: 'spark', icon: 'local_fire_department' },
+                { value: 'spark', slot: 'spark' },
                 { label: 'Bitcoin', value: 'bitcoin', icon: 'currency_bitcoin' }
               ]"
               class="address-type-toggle"
@@ -76,7 +76,17 @@
               no-caps
               unelevated
               spread
-            />
+            >
+              <template #spark>
+                <img
+                  width="18" height="18"
+                  :src="sparkIconActive ? '/Spark/Spark Asterisk Black.svg' : ($q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg')"
+                  alt="Spark"
+                  style="margin-right: 6px;"
+                />
+                Spark
+              </template>
+            </q-btn-toggle>
           </div>
 
           <div class="input-wrapper">
@@ -210,6 +220,10 @@ export default {
 
     isEditing() {
       return !!this.entry
+    },
+
+    sparkIconActive() {
+      return this.formData.addressType === 'spark'
     },
 
     addressTypeLabel() {
@@ -371,7 +385,6 @@ export default {
             type: 'positive',
             message: this.$t('Contact saved'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         } else {
           await this.addEntry(entryData)
@@ -379,7 +392,6 @@ export default {
             type: 'positive',
             message: this.$t('Contact added'),
 
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           })
         }
 
@@ -393,7 +405,6 @@ export default {
           caption: errorMessage.caption,
 
           timeout: 4000,
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isSaving = false

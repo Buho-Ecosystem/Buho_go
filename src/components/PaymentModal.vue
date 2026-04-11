@@ -425,7 +425,6 @@ export default {
           caption,
           
           timeout: 4000,
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
         return
       }
@@ -470,7 +469,6 @@ export default {
           caption: this.getPaymentErrorCaption(error),
           
           timeout: 5000,
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } finally {
         this.isSending = false
@@ -762,7 +760,7 @@ export default {
         case 'NO_ACTIVE_WALLET':
           return this.$t('Please connect a wallet first')
         case 'SPARK_NOT_CONNECTED':
-          return this.$t('Please enter your PIN to unlock')
+          return this.$t('Spark wallet not connected. Please try again.')
         case 'INSUFFICIENT_BALANCE':
           return this.$t('You don\'t have enough funds for this payment')
         case 'UNSUPPORTED_PAYMENT_TYPE':

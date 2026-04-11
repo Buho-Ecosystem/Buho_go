@@ -394,7 +394,7 @@ async function reconnectAll() {
   state.isReconnecting = true;
   for (const w of store.wallets) {
     const connected = store.connectionStates[w.id]?.connected;
-    connStatus[w.id] = connected ? 'connected' : (w.type === 'spark' && !store.sessionPin) ? 'pin_required' : 'connecting';
+    connStatus[w.id] = connected ? 'connected' : 'connecting';
   }
   await Promise.allSettled(store.wallets.map(async (w) => {
     if (connStatus[w.id] !== 'connecting') return;

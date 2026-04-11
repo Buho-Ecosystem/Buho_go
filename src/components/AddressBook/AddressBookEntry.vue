@@ -20,9 +20,10 @@
           {{ entry.name }}
         </div>
         <div class="address-type-badge" :class="addressTypeBadgeClass">
-          <svg v-if="addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
-          </svg>
+          <img v-if="addressType === 'spark'" width="10" height="10"
+            :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
+            alt="Spark"
+          />
           <Icon v-else :icon="addressTypeIcon" width="10" height="10" />
           <span>{{ addressTypeLabel }}</span>
         </div>

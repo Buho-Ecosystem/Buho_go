@@ -91,7 +91,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t load contacts'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -141,7 +140,6 @@ export default {
         type: 'positive',
         message: this.$t('Sent'),
 
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
 

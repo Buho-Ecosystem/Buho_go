@@ -19,6 +19,16 @@
           flat
           round
           dense
+          @click="shareTransaction"
+          class="share-btn"
+        >
+          <Icon icon="tabler:share" width="20" height="20" style="color: var(--text-secondary)" />
+          <q-tooltip>{{ $t('Share') }}</q-tooltip>
+        </q-btn>
+        <q-btn
+          flat
+          round
+          dense
           @click="toggleDeveloperMode"
           :class="['dev-toggle', { 'dev-active': showDeveloperMode }]"
         >
@@ -28,6 +38,7 @@
             height="20"
             :class="showDeveloperMode ? 'dev-icon-active' : 'dev-icon-muted'"
           />
+          <div v-if="showDeveloperMode" class="dev-active-dot"></div>
           <q-tooltip>{{ showDeveloperMode ? $t('Hide') : $t('Show') }} {{ $t('Developer Details') }}</q-tooltip>
         </q-btn>
       </div>
@@ -74,10 +85,10 @@
       <!-- Transaction Hero Card -->
       <div class="transaction-hero">
         <div class="hero-card">
-          <!-- Hero Content -->
+          <!-- Hero Content: single row -->
           <div class="hero-content">
-            <!-- Top: Icon + Type + Status -->
-            <div class="hero-header">
+            <!-- Left: Icon + Type + Status -->
+            <div class="hero-left">
               <div class="direction-circle" :class="getDirectionCircleClass()">
                 <Icon :icon="getTransactionIcon()" width="20" height="20"/>
               </div>
@@ -86,21 +97,82 @@
                   {{ getTransactionTypeLabel() }}
                 </div>
                 <div class="hero-status" :class="getStatusClass()">
-                  <Icon :icon="getStatusIcon()" width="14" height="14"/>
+                  <Icon :icon="getStatusIcon()" width="12" height="12"/>
                   {{ getTransactionStatus() }}
                 </div>
               </div>
             </div>
 
-            <!-- Bottom: Amount + Fiat -->
+            <!-- Right: Amount + Fiat -->
             <div class="hero-amounts">
               <div class="hero-amount" :class="getAmountClass()">
                 {{ getFormattedAmount() }}
               </div>
               <div class="hero-fiat">
-                {{ getFiatAmount() }}
+                <q-skeleton v-if="loadingFiatRates" type="text" width="60px" height="14px" />
+                <template v-else>{{ getFiatAmount() }}</template>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transaction Info -->
+      <div class="details-section">
+        <div class="section-label">
+          {{ $t('TRANSACTION DETAILS') }}
+        </div>
+        <div class="detail-fields-grid">
+          <div class="detail-field-group">
+            <div class="detail-field-label">{{ $t('Date & Time') }}</div>
+            <div class="detail-field-container">{{ formatDateTime(transaction.settled_at) }}</div>
+          </div>
+
+          <div v-if="isBitcoinTransaction()" class="detail-field-group">
+            <div class="detail-field-label">{{ $t('Network') }}</div>
+            <div class="detail-field-container">{{ $t('Bitcoin L1 (on-chain)') }}</div>
+          </div>
+
+          <div v-if="getTransactionDescription()" class="detail-field-group">
+            <div class="detail-field-label">{{ $t('Description') }}</div>
+            <div class="detail-field-container">{{ getTransactionDescription() }}</div>
+          </div>
+
+          <div v-if="transaction.memo && transaction.memo !== getTransactionDescription()" class="detail-field-group">
+            <div class="detail-field-label">{{ $t('Memo') }}</div>
+            <div class="detail-field-container">{{ transaction.memo }}</div>
+          </div>
+
+          <div v-if="getExtraComment()" class="detail-field-group">
+            <div class="detail-field-label">{{ $t('Comment') }}</div>
+            <div class="detail-field-container">{{ getExtraComment() }}</div>
+          </div>
+
+          <div v-if="transaction.fee && transaction.fee > 0" class="detail-field-group">
+            <div class="detail-field-label">{{ $t('Fee') }}</div>
+            <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Personal Note -->
+      <div class="details-section">
+        <div class="section-label">
+          {{ $t('NOTE') }}
+        </div>
+        <div class="settings-card detail-card">
+          <div class="note-content">
+            <q-input
+              :model-value="currentNote"
+              @update:model-value="debounceSaveNote"
+              :placeholder="$t('Add a personal note...')"
+              type="textarea"
+              autogrow
+              borderless
+              dense
+              input-class="note-input"
+              maxlength="500"
+            />
           </div>
         </div>
       </div>
@@ -196,44 +268,15 @@
                 :key="tag"
                 @click="toggleTag(tag)"
                 class="tag-option"
-                :class="{ selected: isTagSelected(tag) }"
+                :class="{
+                  selected: isTagSelected(tag),
+                  disabled: currentTags.length >= 2 && !isTagSelected(tag)
+                }"
+                :disabled="currentTags.length >= 2 && !isTagSelected(tag)"
               >
                 {{ tag }}
               </button>
             </div>
-
-            <div v-if="currentTags.length >= 2" class="tag-limit-notice">
-              <Icon icon="tabler:info-circle" class="q-mr-xs" />
-              {{ $t('Maximum 2 tags per transaction') }}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Transaction Info -->
-      <div class="details-section">
-        <div class="section-label">
-          {{ $t('TRANSACTION DETAILS') }}
-        </div>
-        <div class="detail-fields-grid">
-          <div v-if="getTransactionDescription()" class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Description') }}</div>
-            <div class="detail-field-container">{{ getTransactionDescription() }}</div>
-          </div>
-
-          <div v-if="transaction.memo && transaction.memo !== getTransactionDescription()" class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Memo') }}</div>
-            <div class="detail-field-container">{{ transaction.memo }}</div>
-          </div>
-
-          <div class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Date & Time') }}</div>
-            <div class="detail-field-container">{{ formatDateTime(transaction.settled_at) }}</div>
-          </div>
-
-          <div v-if="transaction.fee && transaction.fee > 0" class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Fee') }}</div>
-            <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
           </div>
         </div>
       </div>
@@ -512,12 +555,20 @@ export default {
       return this.metadataStore.getTagsForTransaction(this.transaction.id);
     },
 
+    currentNote() {
+      if (!this.transaction || !this.metadataStore) return '';
+      return this.metadataStore.getNoteForTransaction(this.transaction.id);
+    },
+
     filteredContacts() {
       if (!this.addressBookStore) return [];
+      const entries = [...this.addressBookStore.entries].sort((a, b) => {
+        return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
+      });
       const query = this.contactSearch.toLowerCase();
-      if (!query) return this.addressBookStore.entries;
+      if (!query) return entries;
 
-      return this.addressBookStore.entries.filter(c =>
+      return entries.filter(c =>
         c.name.toLowerCase().includes(query) ||
         c.address.toLowerCase().includes(query)
       );
@@ -525,6 +576,14 @@ export default {
   },
 
   methods: {
+    // Notes
+    debounceSaveNote(value) {
+      clearTimeout(this._noteTimer);
+      this._noteTimer = setTimeout(() => {
+        this.metadataStore.setNoteForTransaction(this.transaction.id, value);
+      }, 500);
+    },
+
     // Contact and Tag methods
     openContactPicker() {
       console.log('Opening contact picker...');
@@ -591,16 +650,7 @@ export default {
           const newTags = currentTags.filter(t => t !== tag);
           await this.metadataStore.setTagsForTransaction(this.transaction.id, newTags);
         } else {
-          // Check if already at limit (2 tags)
-          if (currentTags.length >= 2) {
-            this.$q.notify({
-              type: 'warning',
-              message: this.$t('Maximum 2 tags allowed per transaction'),
-              
-              timeout: 2000
-            });
-            return;
-          }
+          if (currentTags.length >= 2) return;
 
           // Add tag
           const newTags = [...currentTags, tag];
@@ -666,7 +716,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t load details'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.loading = false;
@@ -781,9 +830,9 @@ export default {
           memo: found.description || '',
           settled_at: found.timestamp,
           fee: found.fee || 0,
-          status: found.status || 'completed'
+          status: found.status || 'completed',
+          extra: found.extra || null
         };
-        console.log('LNBits Transaction loaded with description:', this.transaction.description);
       }
     },
 
@@ -824,13 +873,12 @@ export default {
     },
 
     loadDeveloperModePreference() {
-      const saved = localStorage.getItem('buhoGO_developer_mode');
-      this.showDeveloperMode = saved === 'true';
+      // Always start closed — devs can toggle per session
+      this.showDeveloperMode = false;
     },
 
     toggleDeveloperMode() {
       this.showDeveloperMode = !this.showDeveloperMode;
-      localStorage.setItem('buhoGO_developer_mode', this.showDeveloperMode.toString());
     },
 
     getTransactionTypeLabel() {
@@ -912,6 +960,20 @@ export default {
       }
       if (this.transaction.memo && this.transaction.memo.trim() !== '') {
         return this.transaction.memo;
+      }
+      return null;
+    },
+
+    getExtraComment() {
+      if (!this.transaction?.extra) return null;
+      const extra = this.transaction.extra;
+      // LNbits stores LNURL comments in extra.comment
+      if (typeof extra === 'object' && extra.comment) return extra.comment;
+      if (typeof extra === 'string') {
+        try {
+          const parsed = JSON.parse(extra);
+          return parsed.comment || null;
+        } catch { return null; }
       }
       return null;
     },
@@ -1008,7 +1070,6 @@ export default {
           type: 'positive',
           message: this.$t('Copied'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         console.error('Failed to copy to clipboard:', error);
@@ -1016,7 +1077,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
@@ -1025,6 +1085,30 @@ export default {
       if (this.transaction.senderNpub) {
         const nostrUrl = `https://snort.social/p/${this.transaction.senderNpub}`;
         window.open(nostrUrl, '_blank');
+      }
+    },
+
+    async shareTransaction() {
+      if (!this.transaction) return;
+
+      const direction = this.transaction.type === 'incoming' ? 'Received' : 'Sent';
+      const amount = this.getFormattedAmount();
+      const fiat = this.getFiatAmount();
+      const date = this.formatDateTime(this.transaction.settled_at);
+      const desc = this.getTransactionDescription();
+
+      let text = `${direction} ${amount}`;
+      if (fiat && fiat !== '--' && fiat !== '...') text += ` (${fiat})`;
+      text += `\n${date}`;
+      if (desc) text += `\n${desc}`;
+      text += '\n\nvia BuhoGO\nhttps://home.mybuho.de/buhogo';
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ text, url: 'https://home.mybuho.de/buhogo' });
+        } catch { /* user cancelled */ }
+      } else {
+        await this.copyToClipboard(text);
       }
     }
   }
@@ -1108,6 +1192,28 @@ export default {
   color: var(--text-secondary);
 }
 
+.dev-active-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #15DE72;
+}
+
+/* ===== Note Field ===== */
+.note-content {
+  padding: 4px 12px;
+}
+
+.note-input {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
 /* ===== Loading States ===== */
 .loading-container {
   display: flex;
@@ -1143,16 +1249,18 @@ export default {
 }
 
 .hero-content {
-  padding: 20px;
+  padding: 16px 20px;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.hero-header {
+.hero-left {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 /* direction-circle is defined globally in app.css */
@@ -1168,20 +1276,20 @@ export default {
 
 .hero-type {
   font-family: 'Manrope', sans-serif;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.3;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   color: var(--text-primary);
 }
 
 .hero-status {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   color: var(--text-muted);
 }
 
@@ -1195,16 +1303,16 @@ export default {
 
 /* Hero Amounts */
 .hero-amounts {
-  text-align: center;
-  padding-top: 4px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .hero-amount {
   font-family: 'Manrope', sans-serif;
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 700;
-  line-height: 1.2;
-  margin-bottom: 4px;
+  line-height: 1.3;
+  margin-bottom: 2px;
 }
 
 .hero-amount.amount-positive {
@@ -1217,7 +1325,7 @@ export default {
 
 .hero-fiat {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -1459,50 +1567,43 @@ export default {
 
 /* ===== Tags Section ===== */
 .tags-content {
-  padding: 14px 16px;
+  padding: 10px 14px;
 }
 
 .tag-selector {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 6px;
 }
 
 .tag-option {
-  padding: 0.625rem 1.25rem;
-  border-radius: 16px;
-  font-size: 0.875rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
-  border: 2px solid transparent;
-  font-family: 'Manrope', sans-serif;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border-color: var(--bg-input);
-}
-
-.tag-option:hover {
-  background: var(--bg-secondary);
-  border-color: var(--bg-secondary);
-}
-
-.tag-option.selected {
-  background: #78716c;
-  color: white;
-  border-color: #78716c;
-}
-
-.tag-limit-notice {
-  display: flex;
-  align-items: center;
-  margin-top: 1rem;
-  padding: 0.75rem;
-  border-radius: 8px;
-  font-size: 0.8rem;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
   font-family: 'Manrope', sans-serif;
   background: var(--bg-input);
   color: var(--text-secondary);
+  border-color: var(--bg-input);
+}
+
+.tag-option:hover:not(.disabled) {
+  background: var(--bg-secondary);
+  border-color: var(--text-muted);
+}
+
+.tag-option.selected {
+  background: rgba(21, 222, 114, 0.15);
+  color: var(--color-green);
+  border-color: rgba(21, 222, 114, 0.3);
+}
+
+.tag-option.disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 /* ===== Developer Section ===== */
@@ -1640,16 +1741,16 @@ export default {
 /* ===== Responsive Design ===== */
 @media (max-width: 480px) {
   .hero-content {
-    padding: 16px;
-    gap: 12px;
+    padding: 14px 16px;
+    gap: 10px;
   }
 
   .hero-type {
-    font-size: 16px;
+    font-size: 14px;
   }
 
   .hero-amount {
-    font-size: 24px;
+    font-size: 18px;
   }
 
   .profile-section {

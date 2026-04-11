@@ -321,14 +321,12 @@ export default {
           type: 'positive',
           message: this.$t('Contact removed'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t delete contact'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -350,14 +348,12 @@ export default {
           type: 'positive',
           message: this.$t('Color updated'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t update color'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -374,14 +370,12 @@ export default {
           type: 'positive',
           message: this.$t('Contacts cleared'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       } catch (error) {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t clear contacts'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     }

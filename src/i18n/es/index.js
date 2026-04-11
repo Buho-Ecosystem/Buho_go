@@ -1,4 +1,7 @@
 export default {
+  "Danger Zone": "Zona de peligro",
+  "Features": "Funciones",
+  "Delete Spark Wallets": "Eliminar carteras Spark",
   "Manage Wallets": "Gestionar Carteras",
   "wallet": "cartera",
   "wallets": "carteras",
@@ -751,5 +754,21 @@ export default {
   "Payment expired": "Pago expirado",
   "The merchant QR code has expired. Please scan again.": "El código QR del comercio ha expirado. Escanee de nuevo.",
   "Exchange rates may be outdated": "Las tasas de cambio pueden estar desactualizadas",
-  "You need {amount} sats but only have {balance} sats": "Necesitas {amount} sats pero solo tienes {balance} sats"
+  "You need {amount} sats but only have {balance} sats": "Necesitas {amount} sats pero solo tienes {balance} sats",
+  "Advanced": "Avanzado",
+  "active": "activas",
+  "No rules configured": "Sin reglas configuradas",
+  "Copy Request": "Copiar solicitud",
+  "Share Invoice": "Compartir factura",
+  "App Lock": "Bloqueo de App",
+  "Use Face ID to unlock": "Usar Face ID para desbloquear",
+  "Use fingerprint to unlock": "Usar huella digital para desbloquear",
+  "Use device PIN to unlock": "Usar PIN del dispositivo para desbloquear",
+  "Use biometrics or PIN to unlock": "Usar biometría o PIN para desbloquear",
+  "Use device lock to unlock": "Usar bloqueo del dispositivo para desbloquear",
+  "No screen lock set on this device": "No hay bloqueo de pantalla configurado en este dispositivo",
+  "App lock enabled": "Bloqueo de app activado",
+  "App lock disabled": "Bloqueo de app desactivado",
+  "Verify to enable app lock": "Verificar para activar el bloqueo de app",
+  "Tap to unlock": "Toca para desbloquear"
 }

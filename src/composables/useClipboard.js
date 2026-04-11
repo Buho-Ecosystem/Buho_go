@@ -30,7 +30,6 @@ export function useClipboard() {
       $q.notify({
         type: 'positive',
         message: successMessage || t('Copied'),
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
       return true;
     } catch (error) {
@@ -38,7 +37,6 @@ export function useClipboard() {
       $q.notify({
         type: 'negative',
         message: errorMessage || t('Failed to copy'),
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
       return false;
     }
