@@ -6,6 +6,7 @@ const routes = [
       { path: '', component: () => import('pages/WelcomePage.vue') },
       { path: '/spark-setup', component: () => import('pages/SparkSetupPage.vue') },
       { path: '/spark-restore', component: () => import('pages/SparkRestorePage.vue') },
+      { path: '/spark-success', component: () => import('pages/SparkSuccessWizard.vue') },
       { path: '/nwc-setup', component: () => import('pages/NWCSetupPage.vue') },
       { path: '/lnbits-setup', component: () => import('pages/LNBitsSetupPage.vue') },
       { path: '/wallet', component: () => import('pages/Wallet.vue') },

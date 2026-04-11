@@ -233,13 +233,7 @@ export default {
         this.restoringStatus = this.$t('Wallet restored!');
         await new Promise(resolve => setTimeout(resolve, 800));
 
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Wallet restored successfully'),
-          
-        });
-
-        this.$router.push('/wallet');
+        this.$router.replace('/spark-success');
       } catch (error) {
         console.error('Failed to restore wallet:', error);
         this.$q.notify({

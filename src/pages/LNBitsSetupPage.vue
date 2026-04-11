@@ -432,7 +432,7 @@ export default {
         this.loadingText = this.$t('Loading wallet...');
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        this.$router.push('/wallet');
+        this.$router.replace('/spark-success?mode=nwc-lnbits');
       } catch (error) {
         console.error('Failed to add LNBits wallet:', error);
         this.showLoadingScreen = false;

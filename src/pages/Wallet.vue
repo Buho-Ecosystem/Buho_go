@@ -81,9 +81,39 @@
 
     <!-- Main Content -->
     <div v-else class="main-content">
-      <!-- Wallet Name Badge -->
+      <!-- Spark Tab Bar: [Business | Personal | Wallet icon] -->
+      <div v-if="showSparkTabs" class="spark-tabs-wrap">
+        <div class="spark-tabs" :class="$q.dark.isActive ? 'spark-tabs-dark' : 'spark-tabs-light'">
+          <div class="spark-tabs-slider" :class="{ 'spark-tabs-slider--right': isPersonalActive }"></div>
+          <button
+            class="spark-tab"
+            :class="{ 'spark-tab--active': !isPersonalActive }"
+            :disabled="sparkTabSwitching"
+            @click="switchSparkTab(sparkWalletPair[0]?.id)"
+          >
+            <Icon icon="tabler:building-store" width="14" height="14" />
+            <span>{{ sparkWalletPair[0]?.name }}</span>
+          </button>
+          <div class="spark-tab-divider"></div>
+          <button class="spark-tab spark-tab-center" @click="openWalletManagement">
+            <Icon icon="tabler:wallet" width="16" height="16" />
+          </button>
+          <div class="spark-tab-divider"></div>
+          <button
+            class="spark-tab"
+            :class="{ 'spark-tab--active': isPersonalActive }"
+            :disabled="sparkTabSwitching"
+            @click="switchSparkTab(sparkWalletPair[1]?.id)"
+          >
+            <Icon icon="tabler:user" width="14" height="14" />
+            <span>{{ sparkWalletPair[1]?.name }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Non-Spark: Original chip -->
       <q-chip
-        v-if="activeWallet"
+        v-else-if="activeWallet"
         clickable
         outline
         :ripple="false"
@@ -91,12 +121,8 @@
         :class="$q.dark.isActive ? 'wallet-chip-dark' : 'wallet-chip-light'"
         @click="openWalletManagement"
       >
-        <!-- Spark Logo -->
-        <svg v-if="activeWallet.type === 'spark'" width="12" height="11" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
-        </svg>
         <!-- NWC Logo -->
-        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
+        <svg v-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
           <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
         </svg>
@@ -125,10 +151,6 @@
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
-              <!-- Fiat icon on the right -->
-              <span v-if="currentDisplayMode === 'fiat'" class="currency-icon-right">
-                <Icon :icon="getFiatCurrencyIcon()" width="28" height="28" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
-              </span>
             </div>
           </div>
           <transition name="secondary-fade" mode="out-in">
@@ -762,6 +784,9 @@ export default {
   },
   data() {
     return {
+      // Spark tab switching
+      sparkTabSwitching: false,
+
       // Wallet switcher: per-wallet balance loading
       refreshingWalletIds: {},
 
@@ -860,6 +885,18 @@ export default {
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
+    },
+    sparkWalletPair() {
+      return this.walletStore.sparkWallets.sort(
+        (a, b) => (a.connectionData?.accountNumber || 0) - (b.connectionData?.accountNumber || 0)
+      );
+    },
+    showSparkTabs() {
+      return this.walletStore.isActiveWalletSpark && this.sparkWalletPair.length === 2;
+    },
+    isPersonalActive() {
+      const active = this.walletStore.activeWallet;
+      return active?.type === 'spark' && active?.connectionData?.accountNumber === 2;
     },
     isAutoTransferActive() {
       if (!this.activeWallet) return false;
@@ -961,9 +998,7 @@ export default {
         if (!rate) return 0;
         return btcAmount * rate;
       }
-      if (this.walletStore.useBip177Format) {
-        return balance / 100000000;
-      }
+      // BIP-177: display sats as whole integers (1 bitcoin = 1 sat)
       return balance;
     },
 
@@ -971,9 +1006,7 @@ export default {
       if (this.currentDisplayMode === 'fiat') {
         return { minimumFractionDigits: 2, maximumFractionDigits: 2 };
       }
-      if (this.walletStore.useBip177Format) {
-        return { minimumFractionDigits: 0, maximumFractionDigits: 8 };
-      }
+      // Both BIP-177 and legacy: whole integers with thousands grouping
       return { useGrouping: true, maximumFractionDigits: 0 };
     },
 
@@ -1451,6 +1484,24 @@ export default {
             this.$router.replace({ query: {} });
           }, 500);
         });
+      }
+    },
+
+    async switchSparkTab(walletId) {
+      if (walletId === this.storeActiveWalletId || this.sparkTabSwitching) return;
+      this.sparkTabSwitching = true;
+
+      try {
+        await this.walletStore.switchActiveWallet(walletId);
+        this.walletState.activeWalletId = walletId;
+        this.walletState.balance = this.storeBalances[walletId] || 0;
+        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        this.updateWalletBalance();
+      } catch (error) {
+        console.error('Error switching Spark tab:', error);
+        this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t switch wallet') });
+      } finally {
+        this.sparkTabSwitching = false;
       }
     },
 
@@ -3466,6 +3517,113 @@ export default {
 }
 
 /* Wallet Chip (q-chip) */
+/* ===== Spark Tab Bar ===== */
+.spark-tabs-wrap {
+  margin-bottom: 1rem;
+  padding: 0 1rem;
+  width: 100%;
+  max-width: 320px;
+}
+
+.spark-tabs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  padding: 3px;
+  gap: 0;
+}
+
+.spark-tabs-dark {
+  background: #1A1A1A;
+}
+
+.spark-tabs-light {
+  background: #F1F5F9;
+}
+
+.spark-tabs-slider {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 24px);
+  height: calc(100% - 6px);
+  border-radius: 10px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+
+.spark-tabs-slider--right {
+  transform: translateX(calc(100% + 46px));
+}
+
+.spark-tabs-dark .spark-tabs-slider {
+  background: #2A2A2A;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.spark-tabs-light .spark-tabs-slider {
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.spark-tab {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.spark-tab--active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.spark-tab:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.spark-tab-divider {
+  width: 1px;
+  height: 16px;
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.spark-tabs-dark .spark-tab-divider {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.spark-tabs-light .spark-tab-divider {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.spark-tab-center {
+  flex: 0 0 40px;
+  padding: 8px 0;
+  color: var(--text-muted);
+}
+
+.spark-tab-center:hover {
+  color: var(--text-primary);
+}
+
 .wallet-chip {
   margin-bottom: 1rem;
   font-size: 12px;

@@ -373,6 +373,26 @@
         </q-item>
       </div>
 
+      <!-- Onboarding Guide -->
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'" style="margin-top: -8px;">
+        <q-item clickable v-ripple @click="$router.push('/spark-success?full=true')">
+          <q-item-section side>
+            <Icon icon="tabler:school" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Onboarding Guide') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ $t('Learn about all BuhoGO features') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+      </div>
+
       <!-- SECURITY Section -->
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
         {{ $t('Security') }}
@@ -2271,15 +2291,14 @@ export default {
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'deleteSparkWallet') {
-          const ids = this.sparkWallets.map(w => w.id);
-          for (const id of ids) {
-            await this.removeWallet(id);
+          // removeWallet handles the entire wallet group, so one call is enough
+          const firstSpark = this.sparkWallets[0];
+          if (firstSpark) {
+            await this.removeWallet(firstSpark.id);
           }
           this.$q.notify({
             type: 'positive',
-            message: ids.length > 1
-              ? this.$t('All Spark wallets deleted')
-              : this.$t('Spark wallet deleted'),
+            message: this.$t('Spark wallets deleted'),
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'removeWallet') {
