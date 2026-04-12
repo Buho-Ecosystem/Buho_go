@@ -2,8 +2,11 @@
   <q-page class="wizard-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
     <div class="wizard-container">
 
-      <!-- Skip -->
-      <div class="wizard-skip">
+      <!-- Top bar: Logo left, Skip right -->
+      <div class="wizard-topbar">
+        <div class="wizard-logo">
+          <img src="public/buho_logo.svg" alt="Buho" class="wizard-logo-img" />
+        </div>
         <q-btn flat no-caps dense class="skip-btn" @click="goToWallet">
           {{ $t('Skip') }}
         </q-btn>
@@ -23,20 +26,7 @@
       >
         <!-- Spark-specific screens -->
         <template v-if="isSparkMode">
-          <!-- 1: Business Wallet -->
-          <q-carousel-slide name="business" class="wizard-slide">
-            <div class="slide-content">
-              <img src="/Onboarding wizard spark/storyset-ewallet-bro.svg" class="slide-illustration" alt="" />
-              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
-                {{ $t('Your Business Wallet') }}
-              </h2>
-              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('This is your wallet for payments, invoices, and everyday transactions. Think of it as your spending account.') }}
-              </p>
-            </div>
-          </q-carousel-slide>
-
-          <!-- 2: Personal Wallet -->
+          <!-- 1: Personal Wallet -->
           <q-carousel-slide name="personal" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-piggy-bank-bro.svg" class="slide-illustration" alt="" />
@@ -45,6 +35,19 @@
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
                 {{ $t('Your private funds stay separate here. Both wallets share the same recovery words, but each has its own balance.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+
+          <!-- 2: Business Wallet -->
+          <q-carousel-slide name="business" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Onboarding wizard spark/storyset-ewallet-bro.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Your Business Wallet') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Accept payments from customers, manage your sales, and keep your business funds in one place.') }}
               </p>
             </div>
           </q-carousel-slide>
@@ -68,7 +71,7 @@
           <!-- 4: Send & Receive -->
           <q-carousel-slide name="send-receive" class="wizard-slide">
             <div class="slide-content">
-              <img src="/Onboarding wizard spark/storyset-scan-to-pay-bro.svg" class="slide-illustration" alt="" />
+              <img src="/Onboarding wizard spark/storyset-bitcoin-p2p-bro.svg" class="slide-illustration" alt="" />
               <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
                 {{ $t('Send & Receive') }}
               </h2>
@@ -182,7 +185,20 @@
             </div>
           </q-carousel-slide>
 
-          <!-- 12: You're ready! -->
+          <!-- 12: Kiosk Mode -->
+          <q-carousel-slide name="kiosk" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Onboarding wizard spark/storyset-receipt-bro.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Kiosk Mode') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Hand your device to an employee. They can only take payments while your wallet stays locked behind a PIN.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+
+          <!-- 13: You're ready! -->
           <q-carousel-slide name="ready" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-setup-wizard-bro.svg" class="slide-illustration" alt="" />
@@ -269,12 +285,12 @@
  */
 
 // Spark-only intro screens (Business wallet, Personal wallet, Savings)
-const SPARK_INTRO = ['business', 'personal', 'savings']
+const SPARK_INTRO = ['personal', 'business', 'savings']
 
 // All feature screens (shown after Spark intro or standalone for NWC/LNbits)
 const ALL_FEATURES = [
   'send-receive', 'transfer', 'auto-transfer', 'history',
-  'contacts', 'display', 'more-wallets', 'security', 'backup', 'ready'
+  'contacts', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'ready'
 ]
 
 // NWC/LNbits: only features that apply (no internal transfer, auto-transfer, or seed backup)
@@ -288,7 +304,7 @@ export default {
     const mode = this.$route.query.mode || 'spark'
     const isSparkMode = mode !== 'nwc-lnbits'
     return {
-      currentSlide: isSparkMode ? 'business' : 'send-receive',
+      currentSlide: isSparkMode ? 'personal' : 'send-receive',
       showExtended: !isSparkMode || this.$route.query.full === 'true',
       isSparkMode
     }
@@ -326,7 +342,6 @@ export default {
 .wizard-page {
   min-height: 100vh;
   display: flex;
-  align-items: center;
   justify-content: center;
 }
 
@@ -336,32 +351,42 @@ export default {
 .wizard-container {
   width: 100%;
   max-width: 420px;
-  padding: 1rem;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  padding: 0;
+  overflow: hidden;
 }
 
-/* Skip button */
-.wizard-skip {
-  width: 100%;
+/* ── Top bar ── */
+.wizard-topbar {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 0;
+  flex-shrink: 0;
+}
+
+.wizard-logo-img {
+  height: 30px;
+  width: auto;
+  display: block;
 }
 
 .skip-btn {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-muted);
 }
 
-/* Carousel */
+/* ── Carousel (fills all space between topbar and footer) ── */
 .wizard-carousel {
   width: 100%;
+  flex: 1;
+  min-height: 0;
   background: transparent !important;
-  min-height: 380px;
 }
 
 .wizard-slide {
@@ -373,39 +398,48 @@ export default {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 0 1rem;
+  height: 100%;
+  padding: 0 24px;
 }
 
+/* ── Illustration ── */
 .slide-illustration {
-  width: 220px;
-  height: 180px;
-  margin-bottom: 2rem;
+  width: 90%;
+  max-width: 380px;
+  max-height: 42vh;
   object-fit: contain;
+  margin-top: auto;
+  margin-bottom: 0;
+  flex-shrink: 1;
 }
 
+/* Spacer between illustration and text */
 .slide-title {
   font-family: 'Manrope', sans-serif;
   font-size: 24px;
   font-weight: 800;
   line-height: 1.2;
-  margin: 0 0 0.75rem 0;
+  margin: 40px 0 8px 0;
+  flex-shrink: 0;
 }
 
 .slide-text {
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 400;
-  line-height: 1.6;
-  margin: 0;
-  max-width: 320px;
+  line-height: 1.55;
+  margin: 0 0 auto 0;
+  max-width: 310px;
+  flex-shrink: 0;
 }
 
-/* Dot indicators */
+/* ── Dot indicators ── */
 .wizard-dots {
   display: flex;
   justify-content: center;
   gap: 6px;
-  margin: 1.5rem 0;
+  padding: 12px 20px;
+  flex-shrink: 0;
   flex-wrap: wrap;
 }
 
@@ -428,13 +462,14 @@ body.body--light .dot {
   background: linear-gradient(90deg, #059573, #15DE72);
 }
 
-/* Navigation buttons */
+/* ── Navigation buttons ── */
 .wizard-nav {
-  width: 100%;
-  padding: 0 1rem;
+  padding: 0 20px 24px;
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .wizard-btn {
@@ -460,13 +495,19 @@ body.body--light .dot {
   color: var(--text-primary);
 }
 
-/* Responsive */
-@media (max-width: 380px) {
+/* ── Responsive ── */
+@media (max-height: 700px) {
   .slide-illustration {
-    width: 180px;
-    height: 150px;
-    margin-bottom: 1.5rem;
+    max-height: 32vh;
   }
+  .slide-title { font-size: 20px; margin-top: 20px; }
+  .slide-text { font-size: 13px; }
+  .wizard-dots { padding: 8px 20px; }
+  .wizard-nav { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 380px) {
+  .slide-illustration { width: 85%; }
   .slide-title { font-size: 20px; }
   .slide-text { font-size: 14px; }
 }

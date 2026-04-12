@@ -16,6 +16,7 @@ export default defineConfig((ctx) => {
       'i18n',
       'iconify',
       'safe-area',
+      'kiosk',
       ctx.mode.capacitor ? 'deep-links' : ''
     ].filter(Boolean),
 

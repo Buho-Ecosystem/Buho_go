@@ -1095,6 +1095,7 @@ export default {
 .send-actions {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   flex-shrink: 0;
 }
 

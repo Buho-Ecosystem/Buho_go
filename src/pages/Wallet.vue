@@ -828,7 +828,7 @@ export default {
       refreshInterval: null,
       pulseInterval: null,
       showLoadingScreen: true,
-      currentDisplayMode: 'bitcoin',
+      currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
       shouldPulse: false,
       paymentData: null,
@@ -1123,6 +1123,8 @@ export default {
     setTimeout(() => {
       this.showLoadingScreen = false;
     }, 15000);
+    // Restore display currency from user preference
+    this.currentDisplayMode = this.walletStore.defaultDisplayCurrency || 'bitcoin';
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
@@ -1674,7 +1676,7 @@ export default {
 
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Wallet unlocked — upgrade complete'),
+          message: this.$t('Wallet unlocked - upgrade complete'),
         });
       } catch (error) {
         console.error('Migration failed:', error);
@@ -2086,7 +2088,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.withdrawDenomination === 'fiat'
-            ? this.$t('Fiat rates unavailable — switch to sats or refresh the app')
+            ? this.$t('Fiat rates unavailable - switch to sats or refresh the app')
             : this.$t('Invalid amount'),
           icon: 'las la-exclamation-triangle',
           timeout: 10000,
@@ -3871,7 +3873,8 @@ export default {
 
 /* Bottom Actions */
 .bottom-actions {
-  padding: 1rem 1.5rem 2rem 1.5rem;
+  padding: 1rem 1.5rem;
+  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
   position: fixed;
   bottom: 0;
   left: 0;

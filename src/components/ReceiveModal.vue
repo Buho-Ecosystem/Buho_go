@@ -1693,7 +1693,8 @@ export default {
 
 /* Footer */
 .receive-footer {
-  padding: 1rem 1.5rem 1.5rem;
+  padding: 1rem 1.5rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
   flex-shrink: 0;
 }
 
@@ -1782,7 +1783,8 @@ export default {
   }
 
   .receive-footer {
-    padding: 0.75rem 1rem 1.25rem;
+    padding: 0.75rem 1rem;
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
   }
 
   .create-invoice-btn {

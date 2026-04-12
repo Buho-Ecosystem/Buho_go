@@ -160,6 +160,7 @@ export const useWalletStore = defineStore('wallet', {
 
     // User preferences
     preferredFiatCurrency: 'USD',
+    defaultDisplayCurrency: 'bitcoin', // 'bitcoin' or 'fiat' — what the balance shows on app open
     denominationCurrency: 'sats',
     useBip177Format: true, // BIP-177 (₿) vs Legacy (sats) format
 
@@ -181,6 +182,20 @@ export const useWalletStore = defineStore('wallet', {
 
     // Migration: true if existing wallets still use old PIN encryption
     needsPinMigration: false,
+
+    // Kiosk Mode
+    kioskEnabled: false,
+    kioskPin: '',
+    kioskOwnerAccess: false, // true = merchant unlocked, false = locked to POS
+    kioskWalletId: null, // which wallet receives kiosk payments
+
+    // Kiosk — Tipping
+    kioskTipEnabled: false,
+    kioskTipValues: [5, 10, 20], // tip percentages
+    kioskRoundUpEnabled: false,
+
+    // Kiosk — Display
+    kioskDisplayCurrency: 'sats', // 'sats' | 'fiat'
 
     // UI states
     isLoading: false,
@@ -479,6 +494,12 @@ export const useWalletStore = defineStore('wallet', {
         || activeWallet?.metadata?.sparkAddress
         || null;
     },
+
+    /** Kiosk is active and merchant has NOT unlocked */
+    isKioskRestricted: (state) => state.kioskEnabled && !state.kioskOwnerAccess,
+
+    /** The wallet object selected for kiosk payments */
+    kioskWallet: (state) => state.wallets.find((w) => w.id === state.kioskWalletId) || null,
   },
 
   actions: {
@@ -621,6 +642,7 @@ export const useWalletStore = defineStore('wallet', {
             wallets: migratedWallets,
             activeWalletId: parsed.activeWalletId || null,
             preferredFiatCurrency: parsed.preferredFiatCurrency || 'USD',
+            defaultDisplayCurrency: parsed.defaultDisplayCurrency || 'bitcoin',
             denominationCurrency: parsed.denominationCurrency || 'sats',
             useBip177Format: parsed.useBip177Format !== undefined ? parsed.useBip177Format : true,
             exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
@@ -628,6 +650,15 @@ export const useWalletStore = defineStore('wallet', {
             exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
             hasBackedUp: parsed.hasBackedUp || false,
             biometricsEnabled: parsed.biometricsEnabled || false,
+            // Kiosk
+            kioskEnabled: parsed.kioskEnabled || false,
+            kioskPin: parsed.kioskPin || '',
+            kioskOwnerAccess: this.kioskOwnerAccess || false, // preserve if already unlocked this session
+            kioskWalletId: parsed.kioskWalletId || null,
+            kioskTipEnabled: parsed.kioskTipEnabled || false,
+            kioskTipValues: parsed.kioskTipValues || [5, 10, 20],
+            kioskRoundUpEnabled: parsed.kioskRoundUpEnabled || false,
+            kioskDisplayCurrency: parsed.kioskDisplayCurrency || 'sats',
           });
         }
 
@@ -2014,6 +2045,7 @@ export const useWalletStore = defineStore('wallet', {
           wallets: this.wallets,
           activeWalletId: this.activeWalletId,
           preferredFiatCurrency: this.preferredFiatCurrency,
+          defaultDisplayCurrency: this.defaultDisplayCurrency,
           denominationCurrency: this.denominationCurrency,
           useBip177Format: this.useBip177Format,
           exchangeRates: this.exchangeRates,
@@ -2021,6 +2053,14 @@ export const useWalletStore = defineStore('wallet', {
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
           hasBackedUp: this.hasBackedUp,
           biometricsEnabled: this.biometricsEnabled,
+          // Kiosk
+          kioskEnabled: this.kioskEnabled,
+          kioskPin: this.kioskPin,
+          kioskWalletId: this.kioskWalletId,
+          kioskTipEnabled: this.kioskTipEnabled,
+          kioskTipValues: this.kioskTipValues,
+          kioskRoundUpEnabled: this.kioskRoundUpEnabled,
+          kioskDisplayCurrency: this.kioskDisplayCurrency,
         };
         localStorage.setItem(STORAGE_KEYS.WALLET_STORE, JSON.stringify(stateToSave));
 
@@ -2074,6 +2114,83 @@ export const useWalletStore = defineStore('wallet', {
       this.$reset();
       localStorage.removeItem(STORAGE_KEYS.WALLET_STORE);
       localStorage.removeItem(STORAGE_KEYS.LEGACY_STATE);
+    },
+
+    // ─── Kiosk Mode ───────────────────────────────────────────
+
+    async enableKiosk(pin, walletId) {
+      this.kioskEnabled = true;
+      this.kioskPin = pin;
+      this.kioskWalletId = walletId || null;
+      this.kioskOwnerAccess = true; // merchant keeps full access after setup
+      await this.persistState();
+    },
+
+    async disableKiosk() {
+      this.kioskEnabled = false;
+      this.kioskPin = '';
+      this.kioskOwnerAccess = false;
+      this.kioskWalletId = null;
+      this.kioskTipEnabled = false;
+      this.kioskTipValues = [5, 10, 20];
+      this.kioskRoundUpEnabled = false;
+      this.kioskDisplayCurrency = 'sats';
+      await this.persistState();
+    },
+
+    unlockToOwnerMode(pin) {
+      if (pin === this.kioskPin) {
+        this.kioskOwnerAccess = true;
+        return true;
+      }
+      return false;
+    },
+
+    forceUnlockKiosk() {
+      this.kioskOwnerAccess = true;
+    },
+
+    lockToKioskMode() {
+      this.kioskOwnerAccess = false;
+    },
+
+    verifyKioskPin(pin) {
+      return pin === this.kioskPin;
+    },
+
+    async changeKioskPin(newPin) {
+      this.kioskPin = newPin;
+      await this.persistState();
+    },
+
+    async activateKioskMode() {
+      this.kioskOwnerAccess = false;
+      await this.persistState();
+    },
+
+    async setKioskWallet(walletId) {
+      this.kioskWalletId = walletId;
+      await this.persistState();
+    },
+
+    async setKioskTipEnabled(val) {
+      this.kioskTipEnabled = val;
+      await this.persistState();
+    },
+
+    async setKioskTipValues(arr) {
+      this.kioskTipValues = arr;
+      await this.persistState();
+    },
+
+    async setKioskRoundUpEnabled(val) {
+      this.kioskRoundUpEnabled = val;
+      await this.persistState();
+    },
+
+    async setKioskDisplayCurrency(val) {
+      this.kioskDisplayCurrency = val;
+      await this.persistState();
     },
   },
 });
