@@ -1,6 +1,6 @@
 # BuhoGO User Guide
 
-This guide walks you through everything you need to know to use BuhoGO for your Bitcoin Lightning payments.
+This guide walks you through everything you need to know to use BuhoGO.
 
 Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 
@@ -16,11 +16,13 @@ Back to [README](README.md) | For developers: [Developer Guide](Developer.md)
 6. [Sending Bitcoin](#sending-bitcoin)
 7. [Batch Send](#batch-send)
 8. [Internal Transfer](#internal-transfer)
-9. [Transaction History](#transaction-history)
-10. [Managing Contacts](#managing-contacts)
-11. [Switching Wallets](#switching-wallets)
-12. [Settings and Preferences](#settings-and-preferences)
-13. [Troubleshooting](#troubleshooting)
+9. [Auto-Transfer](#auto-transfer)
+10. [Transaction History](#transaction-history)
+11. [Managing Contacts](#managing-contacts)
+12. [Switching Wallets](#switching-wallets)
+13. [Kiosk Mode](#kiosk-mode)
+14. [Settings and Preferences](#settings-and-preferences)
+15. [Troubleshooting](#troubleshooting)
 
 <br>
 
@@ -33,9 +35,9 @@ BuhoGO supports three wallet types. See the [feature comparison](README.md#payme
 Full self-custody with your own keys.
 
 - Zero-fee transfers to other Spark users
-- On-chain Bitcoin (L1) support
+- On-chain Bitcoin (L1) deposits and withdrawals
+- Business and Personal accounts from one seed
 - Single seed phrase backs up everything
-- Requires secure backup and PIN each session
 
 ### NWC Wallet
 
@@ -44,7 +46,7 @@ Connect your existing Lightning wallet (Alby, Primal, etc.).
 - No seed phrase to manage
 - Multiple wallets supported
 - Quick setup with QR code
-- Cannot send to Spark addresses
+- Cannot send to Spark addresses or on-chain
 
 ### LNBits Wallet
 
@@ -53,7 +55,7 @@ Connect to your own LNBits instance.
 - Works with any LNBits server
 - Full control via Admin API key
 - Multiple wallets supported
-- Cannot send to Spark addresses
+- Cannot send to Spark addresses or on-chain
 
 <br>
 
@@ -81,7 +83,7 @@ You will see 12 words displayed on screen. These words are your **only way** to 
 
 ### Step 3: Verify Your Backup
 
-The app will show all 12 words shuffled in random order. You must tap each word in the correct sequence (1-12) to prove you've properly recorded your backup.
+The app shows all 12 words shuffled in random order. Tap each word in the correct sequence (1 through 12) to prove you recorded your backup properly.
 
 <img src="public/Spark_images/CreateSeed_3.png" alt="Verify Seed Phrase" width="280">
 
@@ -92,23 +94,15 @@ The app will show all 12 words shuffled in random order. You must tap each word 
 - If you tap the wrong word, you'll see a red badge and an error message
 - Use "Show me again" if you need to go back and check your written backup
 
-Once all 12 words are selected correctly, you'll see a success message reminding you to store your phrase safely.
+Once all 12 words are selected correctly, you'll see a success message.
 
-### Step 4: Create Your PIN
+### Step 4: Done
 
-Enter a 6-digit PIN, then confirm it. This PIN protects your wallet and is required to:
-
-- Unlock the wallet on app launch
-- View your seed phrase in settings
-- Sign transactions
-
-Choose a PIN you can remember but others cannot guess.
-
-### Step 5: Done
-
-Your wallet is now ready. You will be taken to the main wallet screen where you can start receiving and sending Bitcoin.
+Your wallet is ready with two accounts: **Business** and **Personal**. You can switch between them using the wallet switcher at the top of the main screen.
 
 <img src="public/Spark_images/Home_Black.png" alt="Home Dark" width="280"> <img src="public/Spark_images/Home_Light.png" alt="Home Light" width="280">
+
+Your seed phrase is encrypted on-device using a unique device key. No PIN entry is required on each launch unless you enable biometric app lock.
 
 <br>
 
@@ -116,7 +110,7 @@ Your wallet is now ready. You will be taken to the main wallet screen where you 
 
 ### What is NWC?
 
-Nostr Wallet Connect (NWC) is a protocol that lets apps communicate with Lightning wallets. Many popular wallets support NWC including Alby, Mutiny, and others.
+Nostr Wallet Connect (NWC) is a protocol that lets apps communicate with Lightning wallets. Many popular wallets support NWC including Alby, Primal, and others.
 
 ### Getting Your NWC Connection String
 
@@ -184,7 +178,17 @@ Spark addresses allow you to receive instant, zero-fee payments from other Spark
 
 Your Spark address never changes and does not expire. Anyone with a Spark wallet can send to it without fees.
 
-**Tip**: Your Spark address starts with `sp1` (mainnet) or `tsp1` (testnet).
+**Note**: Spark addresses start with `spark1` on mainnet.
+
+### Receiving On-Chain Bitcoin (Spark Wallet Only)
+
+For receiving from exchanges or on-chain wallets:
+
+1. Tap "Receive" and switch to the "Bitcoin" tab
+2. Copy your Bitcoin address (starts with `bc1p...`)
+3. Send Bitcoin to this address from any on-chain wallet or exchange
+4. Wait for 3 confirmations (roughly 30 minutes)
+5. Tap "Claim" to add the funds to your Lightning balance
 
 <br>
 
@@ -206,8 +210,9 @@ The fastest way to pay:
 3. The app detects the payment type automatically:
    - Lightning invoice (`lnbc...`)
    - Lightning address (`name@domain.com`)
-   - Spark address (`sp1...`) - Spark wallet only
+   - Spark address (`spark1...`) - Spark wallet only
    - LNURL (`lnurl...`)
+   - Bitcoin address (`bc1p...`, `bc1q...`) - Spark wallet only
 
 ### Using Contacts
 
@@ -215,7 +220,12 @@ The fastest way to pay:
 2. Scroll down to see your saved contacts
 3. Tap a contact to start a payment
 
-**Note**: Contacts with Spark addresses show a badge and require a Spark wallet to pay.
+### Sending On-Chain Bitcoin (Spark Wallet Only)
+
+1. Tap "Send" and enter or scan a Bitcoin address
+2. Enter the amount
+3. Choose fee speed: Economy, Standard, or Priority
+4. Review the fee breakdown and confirm
 
 ### Payment Confirmation
 
@@ -230,7 +240,7 @@ Review these details carefully before confirming.
 
 ## Batch Send
 
-Send payments to multiple contacts at once. Great for splitting bills, paying contributors, or distributing funds.
+Send payments to multiple contacts at once. Useful for splitting bills, paying contributors, or distributing funds.
 
 ### How to Use
 
@@ -284,11 +294,30 @@ The app creates a Lightning invoice from the destination wallet and pays it from
 - Both wallets must support Lightning
 - Spark-to-Spark transfers are instant and free
 
-### Use Cases
+<br>
 
-- Move funds from NWC to Spark for zero-fee transfers
-- Consolidate balances from multiple wallets
-- Rebalance between Lightning wallets
+## Auto-Transfer
+
+Set up automatic payouts when your wallet balance exceeds a threshold.
+
+### How to Configure
+
+1. Go to Settings > Auto-Transfer
+2. Select a wallet
+3. Set a balance threshold (when balance exceeds this, a transfer triggers)
+4. Choose a destination type:
+   - **Lightning Address** (e.g. `you@wallet.com`)
+   - **Bitcoin Address** (on-chain, Spark wallets only)
+   - **Spark Address** (zero-fee, Spark wallets only)
+5. For on-chain destinations, choose a fee speed
+6. Enable the rule
+
+### What to Know
+
+- 60-second cooldown between triggers per wallet
+- Minimum send amount is 10 sats
+- Auto-transfers are tagged in transaction history
+- Rules persist across app sessions
 
 <br>
 
@@ -298,11 +327,20 @@ Your transaction history shows all payments sent and received. Access it by tapp
 
 ### Grouped Transactions
 
-When you send or receive multiple payments to/from the same destination within a short period, BuhoGO automatically groups them together to keep your transaction list clean and organized.
+When you send or receive multiple payments to/from the same destination within a short period, BuhoGO groups them together to keep the list clean.
 
 <img src="public/Spark_images/TX_List_1.png" alt="Transactions Expanded" width="280"> <img src="public/Spark_images/TX_List_closed.png" alt="Transactions Grouped" width="280">
 
-Tap on a grouped transaction to expand and see individual payments within the group.
+Tap on a grouped transaction to expand and see individual payments.
+
+### Transaction Details
+
+Tap any transaction to see the full details page:
+- Amount, fees, and fiat equivalent
+- Date and time
+- Payment hash and preimage
+- Add notes or tags for your records
+- Link to a contact from your address book
 
 <br>
 
@@ -310,32 +348,28 @@ Tap on a grouped transaction to expand and see individual payments within the gr
 
 ### Adding a Contact
 
-1. Go to Settings > Address Book
+1. Go to Address Book
 2. Tap the "+" button
 3. Enter the contact name
-4. Choose address type (Lightning or Spark)
+4. Choose address type (Lightning, Spark, or Bitcoin)
 5. Enter the address
 6. Tap "Save"
 
-### Editing a Contact
+### Contact Features
 
-1. Go to Settings > Address Book
-2. Tap on the contact
-3. Make your changes
-4. Tap "Save"
-
-### Deleting a Contact
-
-1. Go to Settings > Address Book
-2. Tap on the contact
-3. Tap "Delete"
-4. Confirm deletion
+- **Color coding**: Each contact gets a color for quick identification
+- **Favorites**: Mark contacts you pay frequently
+- **Recent contacts**: Last 5 contacts used in the past 30 days appear first
+- **Notes**: Add notes to any contact
+- **Search**: Filter contacts by name, address, or notes
 
 ### Contact Types
 
 **Lightning Address**: Format like `name@domain.com`. Works with all wallet types.
 
-**Spark Address**: Format starting with `sp1...`. Only payable from Spark wallets. These payments are instant and free.
+**Spark Address**: Format starting with `spark1...`. Only payable from Spark wallets. These payments are instant and free.
+
+**Bitcoin Address**: On-chain address starting with `bc1...`. Only payable from Spark wallets.
 
 <br>
 
@@ -347,11 +381,44 @@ If you have multiple wallets:
 2. Select the wallet you want to use
 3. The app switches to that wallet immediately
 
-The active wallet indicator shows which wallet is currently selected.
+For Spark wallets, you can also switch between Business and Personal accounts using the wallet switcher.
 
-### Setting a Default Wallet
+Your most recently used wallet becomes the default on app launch.
 
-Your most recently used wallet becomes the default. When you open the app, it will load this wallet automatically.
+<br>
+
+## Kiosk Mode
+
+Turn your device into a dedicated payment terminal for a shop, cafe, or any point-of-sale scenario.
+
+### Setting Up
+
+1. Go to Settings > Kiosk Mode
+2. Enable the toggle
+3. Select the destination wallet (where payments go)
+4. Set a 4-digit PIN (this unlocks the owner area)
+5. Configure tips and rounding preferences
+6. Tap "Start Kiosk Mode"
+
+### Kiosk Configuration
+
+- **Destination Wallet**: Which wallet receives payments
+- **Enable Tips**: Show tip buttons (5%, 10%, 20% by default, customizable)
+- **Round Up**: Round amounts to the next whole number
+- **Display Currency**: Show amounts in sats or fiat
+
+### Using Kiosk Mode
+
+Once started, the device shows a POS keypad. Employees can:
+
+1. Enter the payment amount
+2. Customer optionally selects a tip
+3. QR code is generated for the customer to scan
+4. Payment confirmation appears on success
+
+### Owner Access
+
+Enter the 4-digit PIN to access settings or disable kiosk mode. Deep links are blocked while kiosk is locked to prevent employees from navigating away.
 
 <br>
 
@@ -363,19 +430,23 @@ Toggle between dark and light modes in Settings > Appearance.
 
 ### Language
 
-Change the app language in Settings > Language.
+Change the app language in Settings > Language. Available: English, German, Spanish.
 
 ### Currency
 
 Set your preferred fiat currency for price display in Settings.
 
+### Display Format
+
+Toggle BIP-177 format to show amounts as bitcoin denominations (e.g. 1,234 sats).
+
+### App Lock
+
+Enable biometric authentication (fingerprint or face) to lock the app on mobile devices.
+
 ### Spark Wallet Settings
 
-For Spark wallets, additional options are available:
-
-**View Seed Phrase**: Requires PIN entry. Use this to verify your backup.
-
-**Change PIN**: Update your wallet PIN.
+**View Seed Phrase**: Displays your backup phrase. Use this to verify your written copy.
 
 **Delete Wallet**: Permanently removes the Spark wallet. Make sure you have your seed phrase backed up before deleting.
 
@@ -395,12 +466,11 @@ For technical issues and developer debugging, see [Common Issues](Developer.md#c
 
 ### Spark Wallet Issues
 
-**Forgot PIN**
-There is no PIN recovery. If you have your seed phrase, delete and restore the wallet:
+**Forgot PIN / Lost Access**
+If you have your seed phrase, delete and restore the wallet:
 1. Uninstall and reinstall the app
 2. Select "Restore Wallet"
 3. Enter your 12-word seed phrase
-4. Set a new PIN
 
 <img src="public/Spark_images/RestoreSeed.png" alt="Restore Wallet" width="280">
 
@@ -444,7 +514,7 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 **App Crashes on Launch**
 - Force close and reopen the app
 - Clear app cache in your device settings
-- Reinstall if problems persist (backup first!)
+- Reinstall if problems persist (backup your seed phrase first!)
 
 **QR Scanner Not Working**
 - Ensure camera permissions are granted
@@ -459,7 +529,7 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 |--------|---------|-------------|
 | Lightning Invoice | `lnbc10u1p...` | One-time payment request with encoded amount |
 | Lightning Address | `satoshi@wallet.com` | Reusable address, similar to email |
-| Spark Address | `sp1qw3e...` | Spark network address for zero-fee transfers |
+| Spark Address | `spark1qw3e...` | Spark network address for zero-fee transfers |
 | LNURL | `lnurl1dp68...` | Encoded URL for various Lightning operations |
 | Bitcoin Address (L1) | `bc1p...`, `bc1q...` | On-chain Bitcoin address (Spark only) |
 
@@ -475,8 +545,6 @@ There is no PIN recovery. If you have your seed phrase, delete and restore the w
 
 4. **Test Receive First**: Generate a small test invoice to verify your setup works correctly.
 
-5. **Keep PIN Private**: Never share your PIN with anyone. BuhoGO support will never ask for it.
-
 <br>
 
 ## Getting Help
@@ -485,16 +553,12 @@ If you encounter issues not covered in this guide:
 
 - Check the [GitHub Issues](https://github.com/Buho-Ecosystem/Buho_go/issues) for known problems
 - Open a new issue with details about your problem
-- Include your wallet type (Spark or NWC) and steps to reproduce
+- Include your wallet type (Spark, NWC, or LNBits) and steps to reproduce
 
 <br>
 
 ## Related Documentation
 
 - [README](README.md) - Project overview and quick start
-- [Use Cases](USE_CASES.md) - Real-world scenarios and examples
+- [Use Cases](use_cases.md) - Real-world scenarios and examples
 - [Developer Guide](Developer.md) - Technical documentation for contributors
-
-<br>
-
-*This guide is updated regularly. Check back for new features and improvements.*

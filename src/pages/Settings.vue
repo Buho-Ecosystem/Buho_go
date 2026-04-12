@@ -524,9 +524,10 @@
                     :model-value="walletStore.kioskTipValues[idx]"
                     type="number"
                     suffix="%"
-                    dense outlined
+                    dense filled
                     :label="$t('kiosk.tipValue') + ' ' + (idx + 1)"
                     :dark="$q.dark.isActive"
+                    class="kiosk-tip-input"
                     style="flex: 1; min-width: 0;"
                     @update:model-value="(v) => updateKioskTipValue(idx, v)"
                   />
@@ -589,7 +590,7 @@
             <q-item-section>
               <q-btn unelevated no-caps
                 :color="$q.dark.isActive ? 'green' : 'green-7'"
-                class="full-width"
+                class="full-width kiosk-start-btn"
                 :disable="!walletStore.kioskWalletId || kioskActivating"
                 :loading="kioskActivating"
                 @click="handleStartKiosk">
@@ -769,6 +770,23 @@
             </q-item-label>
             <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
               {{ $t('Learn about all BuhoGO features') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item clickable v-ripple @click="$router.push('/learn')">
+          <q-item-section side>
+            <Icon icon="tabler:trophy" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Bitcoin Quiz') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ $t('Answer questions, earn real sats') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -3602,6 +3620,18 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.kiosk-tip-input :deep(.q-field__control) {
+  border-radius: 12px;
+}
+
+.kiosk-start-btn {
+  border-radius: 14px;
+  height: 48px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 
