@@ -177,6 +177,134 @@ Phase 1 can ship immediately as a quick win. Phase 2 is the real fix. Phase 3 is
 
 ---
 
+## Phase 1: Quick Win — Close Throwaway Instances
+
+Minimal changes. Add `try { nwc.close() } catch {}` after every throwaway usage. No architecture changes, no new patterns. Just stop leaking WebSockets.
+
+### 1. Wallet.vue — updateWalletBalance() (line ~1770)
+
+```js
+// BEFORE:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+await nwc.enable();
+const balance = await nwc.getBalance();
+// nwc is never closed
+
+// AFTER:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+try {
+  await nwc.enable();
+  const balance = await nwc.getBalance();
+  // ... use balance ...
+} finally {
+  try { nwc.close(); } catch {}
+}
+```
+
+### 2. TransactionHistory.vue — loadMore() (line ~1147)
+
+```js
+// BEFORE:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+await nwc.enable();
+const txResponse = await nwc.listTransactions({ ... });
+// nwc is never closed
+
+// AFTER:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+try {
+  await nwc.enable();
+  const txResponse = await nwc.listTransactions({ ... });
+  // ... process transactions ...
+} finally {
+  try { nwc.close(); } catch {}
+}
+```
+
+### 3. TransactionDetails.vue — fetchNWCTransaction() (line ~778)
+
+```js
+// BEFORE:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+await nwc.enable();
+const txResponse = await nwc.listTransactions({ ... });
+// nwc is never closed
+
+// AFTER:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+try {
+  await nwc.enable();
+  const txResponse = await nwc.listTransactions({ ... });
+  // ... find transaction ...
+} finally {
+  try { nwc.close(); } catch {}
+}
+```
+
+### 4. ReceiveModal.vue — generateInvoice() (line ~989)
+
+```js
+// BEFORE:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+await nwc.enable();
+const invoice = await nwc.makeInvoice({ ... });
+// nwc is never closed
+
+// AFTER:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: activeWallet.nwcString });
+try {
+  await nwc.enable();
+  const invoice = await nwc.makeInvoice({ ... });
+  // ... use invoice ...
+} finally {
+  try { nwc.close(); } catch {}
+}
+```
+
+### 5. ReceiveModal.vue — getPaymentMonitoringProvider() (line ~661)
+
+This one is trickier because the connection is used for ongoing monitoring. Add cleanup in `beforeUnmount` or when monitoring completes:
+
+```js
+// In the component's beforeUnmount or modal close handler:
+if (this._monitorNwc) {
+  try { this._monitorNwc.close(); } catch {}
+  this._monitorNwc = null;
+}
+```
+
+### 6. wallet.js — connectWallet() (line ~1371)
+
+Close the old instance before creating a new one:
+
+```js
+// BEFORE:
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: wallet.nwcUrl });
+
+// AFTER:
+const existingNwc = this.connectionStates[walletId]?.nwcInstance;
+if (existingNwc) {
+  try { existingNwc.close(); } catch {}
+}
+const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: wallet.nwcUrl });
+```
+
+### What this achieves
+
+- Connections are closed after each one-off operation
+- Old connections are cleaned up before reconnecting
+- Cuts active WebSockets from 10+ to ~2-3 at any time
+- No architectural changes needed
+- Safe to ship immediately
+
+### What this does NOT fix
+
+- Still creates a new WebSocket for every operation (slow, wasteful)
+- Still opens a connection just to close it seconds later
+- Phase 2 (store getter reuse) is needed for the proper 1-connection-per-wallet solution
+
+---
+
 ## Expected Result
 
 - 1 WebSocket connection per NWC wallet (down from 10+)

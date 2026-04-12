@@ -23,7 +23,7 @@
       </div>
       <div v-else class="status-default" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
         <Icon icon="tabler:hand-click" width="18" height="18" class="q-mr-xs" />
-        {{ $t('Tap the words in order') }} — {{ selectedOrder.length }}/{{ mnemonic.length }}
+        {{ $t('Tap the words in order') }} - {{ selectedOrder.length }}/{{ mnemonic.length }}
       </div>
     </div>
 
@@ -143,7 +143,7 @@ export default {
       } else {
         this.errorIndex = shuffledIndex
         const ordinal = this.getOrdinal(expectedPosition + 1)
-        this.errorMessage = this.$t('Wrong — expected the {ordinal} word', { ordinal })
+        this.errorMessage = this.$t('Wrong - expected the {ordinal} word', { ordinal })
 
         setTimeout(() => {
           if (this.errorIndex === shuffledIndex) {

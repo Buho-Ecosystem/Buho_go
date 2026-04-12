@@ -80,7 +80,7 @@
       <!-- Spark Wallet -->
       <template v-if="isActiveWalletSpark && hasSparkWallet">
         <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ $t('Wallet') }} — Spark
+          {{ $t('Wallet') }} - Spark
         </div>
         <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
           <!-- Wallet Switcher -->
@@ -194,7 +194,7 @@
       <!-- NWC Wallet -->
       <template v-else-if="isActiveWalletNWC">
         <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ $t('Wallet') }} — NWC · {{ activeWallet?.name }}
+          {{ $t('Wallet') }} - NWC · {{ activeWallet?.name }}
         </div>
         <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
           <!-- Wallet Alias -->
@@ -252,7 +252,7 @@
       <!-- LNBits Wallet -->
       <template v-else-if="isActiveWalletLNBits">
         <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ $t('Wallet') }} — LNBits · {{ activeWallet?.name }}
+          {{ $t('Wallet') }} - LNBits · {{ activeWallet?.name }}
         </div>
         <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
           <!-- Server -->
@@ -308,6 +308,29 @@
           </q-item-section>
           <q-item-section side>
             <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <q-item>
+          <q-item-section side>
+            <Icon icon="tabler:eye" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Display Currency') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ $t('Your balance will always start in this currency') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-btn-toggle
+              :model-value="defaultDisplayCurrency"
+              dense no-caps rounded unelevated size="sm"
+              toggle-color="green"
+              :options="[{ label: 'Bitcoin', value: 'bitcoin' }, { label: preferredFiatCurrency, value: 'fiat' }]"
+              @update:model-value="setDisplayCurrency"
+            />
           </q-item-section>
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
@@ -373,25 +396,6 @@
         </q-item>
       </div>
 
-      <!-- Onboarding Guide -->
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'" style="margin-top: -8px;">
-        <q-item clickable v-ripple @click="$router.push('/spark-success?full=true')">
-          <q-item-section side>
-            <Icon icon="tabler:school" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Onboarding Guide') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('Learn about all BuhoGO features') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-      </div>
 
       <!-- SECURITY Section -->
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
@@ -421,6 +425,312 @@
         </q-item>
       </div>
 
+      <!-- KIOSK MODE Section -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('kiosk.kioskMode') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <!-- Enable toggle -->
+        <q-item>
+          <q-item-section side>
+            <Icon icon="tabler:cash-register" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ walletStore.kioskEnabled ? $t('kiosk.enabled') : $t('kiosk.disabled') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-toggle
+              :model-value="walletStore.kioskEnabled"
+              :color="$q.dark.isActive ? 'green' : 'green-7'"
+              @update:model-value="handleKioskToggle"
+            />
+          </q-item-section>
+        </q-item>
+        <div class="kiosk-mode-desc" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+          {{ $t('kiosk.kioskModeWhat') }}
+        </div>
+
+        <template v-if="walletStore.kioskEnabled">
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+
+          <!-- Destination Wallet -->
+          <q-item clickable v-ripple @click="kioskWalletSelection = walletStore.kioskWalletId || ''; showKioskWalletPicker = true">
+            <q-item-section side>
+              <Icon icon="tabler:wallet" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('kiosk.destinationWallet') }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ kioskSelectedWalletName || $t('kiosk.noWalletSelected') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+          </q-item>
+
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+
+          <!-- Current PIN + Change -->
+          <q-item>
+            <q-item-section side>
+              <Icon icon="tabler:lock" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('kiosk.currentPin') }}: {{ walletStore.kioskPin }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-btn flat dense no-caps size="sm" color="green" @click="showKioskChangePinDialog = true">
+                {{ $t('kiosk.changePin') }}
+              </q-btn>
+            </q-item-section>
+          </q-item>
+
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+
+          <!-- Enable Tips -->
+          <q-item>
+            <q-item-section side>
+              <Icon icon="tabler:heart-handshake" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('kiosk.enableTips') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle
+                :model-value="walletStore.kioskTipEnabled"
+                :color="$q.dark.isActive ? 'green' : 'green-7'"
+                @update:model-value="(v) => walletStore.setKioskTipEnabled(v)"
+              />
+            </q-item-section>
+          </q-item>
+
+          <!-- Tip Values (when tips enabled) -->
+          <template v-if="walletStore.kioskTipEnabled">
+            <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+            <q-item dense>
+              <q-item-section>
+                <div style="display: flex; gap: 8px;">
+                  <q-input
+                    v-for="(val, idx) in walletStore.kioskTipValues" :key="'tip-'+idx"
+                    :model-value="walletStore.kioskTipValues[idx]"
+                    type="number"
+                    suffix="%"
+                    dense outlined
+                    :label="$t('kiosk.tipValue') + ' ' + (idx + 1)"
+                    :dark="$q.dark.isActive"
+                    style="flex: 1; min-width: 0;"
+                    @update:model-value="(v) => updateKioskTipValue(idx, v)"
+                  />
+                </div>
+              </q-item-section>
+            </q-item>
+          </template>
+
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+
+          <!-- Round Up -->
+          <q-item>
+            <q-item-section side>
+              <Icon icon="tabler:arrow-bar-to-up" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('kiosk.roundUp') }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ $t('kiosk.roundUpDesc') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle
+                :model-value="walletStore.kioskRoundUpEnabled"
+                :color="$q.dark.isActive ? 'green' : 'green-7'"
+                @update:model-value="(v) => walletStore.setKioskRoundUpEnabled(v)"
+              />
+            </q-item-section>
+          </q-item>
+
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+
+          <!-- Display Currency -->
+          <q-item>
+            <q-item-section side>
+              <Icon icon="tabler:currency-bitcoin" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('kiosk.displayCurrency') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-btn-toggle
+                :model-value="walletStore.kioskDisplayCurrency"
+                dense no-caps rounded unelevated size="sm"
+                toggle-color="green"
+                :options="[{ label: 'Sats', value: 'sats' }, { label: walletStore.preferredFiatCurrency, value: 'fiat' }]"
+                @update:model-value="(v) => walletStore.setKioskDisplayCurrency(v)"
+              />
+            </q-item-section>
+          </q-item>
+
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
+
+          <!-- Start Kiosk Mode -->
+          <q-item>
+            <q-item-section>
+              <q-btn unelevated no-caps
+                :color="$q.dark.isActive ? 'green' : 'green-7'"
+                class="full-width"
+                :disable="!walletStore.kioskWalletId || kioskActivating"
+                :loading="kioskActivating"
+                @click="handleStartKiosk">
+                {{ $t('kiosk.activateKiosk') }}
+              </q-btn>
+            </q-item-section>
+          </q-item>
+        </template>
+      </div>
+
+      <!-- Kiosk PIN Setup Dialog -->
+      <q-dialog v-model="showKioskPinSetupDialog" persistent @hide="resetKioskPinSetup">
+        <q-card style="min-width: 320px; max-width: 360px; border-radius: 20px;"
+          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
+          <q-card-section class="text-center">
+            <!-- Intro -->
+            <template v-if="kioskPinSetupStep === 'intro'">
+              <Icon icon="tabler:cash-register" width="48" height="48" color="#15DE72" class="q-mb-md" />
+              <div class="text-h6 text-weight-bold q-mb-sm">{{ $t('kiosk.kioskMode') }}</div>
+              <p class="text-body2" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('kiosk.introDesc') }}
+              </p>
+              <q-btn unelevated no-caps color="green" class="full-width q-mt-md" style="border-radius: 12px;"
+                @click="kioskPinSetupStep = 'enter'">
+                {{ $t('kiosk.introNext') }}
+              </q-btn>
+              <q-btn flat no-caps color="grey" class="full-width q-mt-sm"
+                @click="showKioskPinSetupDialog = false">
+                {{ $t('Cancel') }}
+              </q-btn>
+            </template>
+            <!-- Enter PIN -->
+            <template v-else-if="kioskPinSetupStep === 'enter'">
+              <div class="text-subtitle1 text-weight-bold q-mb-md">{{ $t('kiosk.setupPin') }}</div>
+              <KioskPinPad ref="kioskSetupPinPadRef" title="" :error-message="kioskPinError"
+                @complete="handleKioskPinSetupComplete" />
+              <q-btn flat no-caps color="grey" class="q-mt-sm"
+                @click="kioskPinSetupStep = 'intro'; kioskPinError = ''">
+                {{ $t('Back') }}
+              </q-btn>
+            </template>
+            <!-- Confirm PIN -->
+            <template v-else-if="kioskPinSetupStep === 'confirm'">
+              <div class="text-subtitle1 text-weight-bold q-mb-md">{{ $t('kiosk.confirmPin') }}</div>
+              <KioskPinPad ref="kioskSetupPinPadRef" title="" :error-message="kioskPinError"
+                @complete="handleKioskPinSetupComplete" />
+              <q-btn flat no-caps color="grey" class="q-mt-sm"
+                @click="kioskPinSetupStep = 'enter'; kioskPinError = ''; $refs.kioskSetupPinPadRef?.reset()">
+                {{ $t('Back') }}
+              </q-btn>
+            </template>
+          </q-card-section>
+        </q-card>
+      </q-dialog>
+
+      <!-- Kiosk Change PIN Dialog -->
+      <q-dialog v-model="showKioskChangePinDialog" persistent @hide="resetKioskChangePin">
+        <q-card style="min-width: 320px; max-width: 360px; border-radius: 20px;"
+          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
+          <q-card-section class="text-center">
+            <div class="text-subtitle1 text-weight-bold q-mb-md">
+              {{ kioskChangePinStep === 'verify' ? $t('kiosk.enterCurrentPin') : (kioskChangePinStep === 'enter' ? $t('kiosk.enterNewPin') : $t('kiosk.confirmNewPin')) }}
+            </div>
+            <KioskPinPad ref="kioskChangePinPadRef" title="" :error-message="kioskChangePinError"
+              @complete="handleKioskChangePinComplete" />
+            <q-btn flat no-caps color="grey" class="q-mt-sm"
+              @click="showKioskChangePinDialog = false">
+              {{ $t('Cancel') }}
+            </q-btn>
+          </q-card-section>
+        </q-card>
+      </q-dialog>
+
+      <!-- Kiosk Disable Dialog -->
+      <q-dialog v-model="showKioskDisableDialog" persistent @hide="resetKioskDisable">
+        <q-card style="min-width: 320px; max-width: 360px; border-radius: 20px;"
+          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
+          <q-card-section class="text-center">
+            <q-icon name="lock_open" size="32px" color="orange" class="q-mb-md" />
+            <div class="text-subtitle1 text-weight-bold q-mb-sm">{{ $t('kiosk.disableKiosk') }}</div>
+            <p class="text-body2 q-mb-md" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('kiosk.enterPinToDisable') }}
+            </p>
+            <KioskPinPad ref="kioskDisablePinPadRef" title="" :error-message="kioskDisableError"
+              @complete="handleKioskDisablePin" />
+            <q-btn flat no-caps color="grey" class="q-mt-sm"
+              @click="showKioskDisableDialog = false">
+              {{ $t('Cancel') }}
+            </q-btn>
+          </q-card-section>
+        </q-card>
+      </q-dialog>
+
+      <!-- Kiosk Wallet Picker Dialog -->
+      <q-dialog v-model="showKioskWalletPicker">
+        <q-card style="min-width: 320px; max-width: 380px; border-radius: 20px;"
+          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
+          <q-card-section>
+            <div class="text-subtitle1 text-weight-bold q-mb-md text-center">
+              {{ $t('kiosk.selectWallet') }}
+            </div>
+            <q-list>
+              <q-item v-for="w in wallets" :key="w.id" clickable v-ripple
+                @click="kioskWalletSelection = w.id">
+                <q-item-section side>
+                  <q-radio :model-value="kioskWalletSelection" :val="w.id" color="green"
+                    @update:model-value="kioskWalletSelection = $event" />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label>{{ w.name }}</q-item-label>
+                  <q-item-label caption>{{ getWalletTypeLabel(w) }}</q-item-label>
+                </q-item-section>
+                <q-item-section side>
+                  <!-- Spark -->
+                  <svg v-if="w.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="#059573"/>
+                  </svg>
+                  <!-- NWC -->
+                  <svg v-else-if="w.type === 'nwc'" width="20" height="20" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_kiosk_grad)"/>
+                    <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
+                    <defs><linearGradient id="nwc_kiosk_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse"><stop stop-color="#FFCA4A"/><stop offset="1" stop-color="#F7931A"/></linearGradient></defs>
+                  </svg>
+                  <!-- LNBits -->
+                  <svg v-else-if="w.type === 'lnbits'" width="14" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
+                  </svg>
+                  <!-- Fallback -->
+                  <Icon v-else icon="tabler:wallet" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </q-card-section>
+          <q-card-actions align="right">
+            <q-btn flat no-caps :label="$t('Cancel')" color="grey" @click="showKioskWalletPicker = false" />
+            <q-btn flat no-caps :label="$t('Confirm')" color="green" :disable="!kioskWalletSelection"
+              @click="confirmKioskWalletSelection" />
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
+
       <!-- ADVANCED Section -->
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
         {{ $t('Advanced') }}
@@ -436,6 +746,29 @@
             </q-item-label>
             <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
               {{ customMempoolUrl ? $t('Custom') : $t('Default (mempool.space)') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+      </div>
+
+      <!-- Learn & Earn -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Learn & Earn') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item clickable v-ripple @click="$router.push('/spark-success?full=true')">
+          <q-item-section side>
+            <Icon icon="tabler:school" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Onboarding Guide') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ $t('Learn about all BuhoGO features') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -1160,7 +1493,7 @@
               <Icon icon="tabler:server" width="24" height="24" />
             </div>
             <p class="mempool-intro-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('BuhoGO uses a Mempool server to look up Bitcoin exchange rates. The default works great — or pick your own for extra privacy.') }}
+              {{ $t('BuhoGO uses a Mempool server to look up Bitcoin exchange rates. The default works great, or pick your own for extra privacy.') }}
             </p>
           </div>
 
@@ -1248,10 +1581,10 @@
                 {{ $t('Exchange rates are up to date') }}
               </template>
               <template v-else-if="fiatRatesStale">
-                {{ $t('Rates may be outdated — last fetched {n} min ago', { n: fiatRateAge }) }}
+                {{ $t('Rates may be outdated - last fetched {n} min ago', { n: fiatRateAge }) }}
               </template>
               <template v-else>
-                {{ $t('Rates up to date — refreshed {n} min ago', { n: fiatRateAge }) }}
+                {{ $t('Rates up to date - refreshed {n} min ago', { n: fiatRateAge }) }}
               </template>
             </span>
           </div>
@@ -1689,6 +2022,7 @@ import {truncateAddress} from '../utils/addressUtils.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import MnemonicDisplay from '../components/MnemonicDisplay.vue'
 import MnemonicOrderVerify from '../components/MnemonicOrderVerify.vue'
+import KioskPinPad from '../components/KioskPinPad.vue'
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { version } from '../../package.json'
 
@@ -1699,6 +2033,7 @@ export default {
     MnemonicDisplay,
     MnemonicOrderVerify,
     // MnemonicVerify,
+    KioskPinPad,
   },
   data() {
     return {
@@ -1780,6 +2115,21 @@ export default {
       // Wallet removal
       walletToRemove: null,
 
+      // Kiosk Mode
+      showKioskPinSetupDialog: false,
+      showKioskChangePinDialog: false,
+      showKioskDisableDialog: false,
+      showKioskWalletPicker: false,
+      kioskPinSetupStep: 'intro', // 'intro' | 'enter' | 'confirm'
+      kioskPinFirst: '',
+      kioskPinError: '',
+      kioskChangePinStep: 'verify', // 'verify' | 'enter' | 'confirm'
+      kioskChangePinFirst: '',
+      kioskChangePinError: '',
+      kioskDisableError: '',
+      kioskActivating: false,
+      kioskWalletSelection: '',
+
       // Auto-transfer
       showAutoTransferDialog: false,
       showAutoWithdrawDialog: false,
@@ -1812,6 +2162,7 @@ export default {
       'totalBalance',
       'connectedWallets',
       'preferredFiatCurrency',
+      'defaultDisplayCurrency',
       'exchangeRates',
       'hasSparkWallet',
       'hasAnySparkWallet',
@@ -1830,6 +2181,16 @@ export default {
       'activeWalletLightningAddress',
       'walletInfos',
     ]),
+
+    walletStore() {
+      return useWalletStore();
+    },
+
+    kioskSelectedWalletName() {
+      if (!this.walletStore.kioskWalletId) return '';
+      const w = this.wallets.find(w => w.id === this.walletStore.kioskWalletId);
+      return w ? w.name : '';
+    },
 
     nwcWalletAlias() {
       if (!this.activeWallet || this.activeWallet.type !== 'nwc') return null;
@@ -2073,6 +2434,111 @@ export default {
       await this.initialize()
     },
 
+    // ─── Kiosk Mode ───────────────────────────────────
+
+    handleKioskToggle(val) {
+      if (val) {
+        this.showKioskPinSetupDialog = true;
+      } else {
+        this.showKioskDisableDialog = true;
+      }
+    },
+
+    handleKioskPinSetupComplete(pin) {
+      if (this.kioskPinSetupStep === 'enter') {
+        this.kioskPinFirst = pin;
+        this.kioskPinSetupStep = 'confirm';
+        this.kioskPinError = '';
+        this.$nextTick(() => this.$refs.kioskSetupPinPadRef?.reset());
+      } else {
+        if (pin === this.kioskPinFirst) {
+          this.walletStore.enableKiosk(pin, this.walletStore.kioskWalletId || '');
+          this.showKioskPinSetupDialog = false;
+          this.$q.notify({ message: this.$t('kiosk.kioskEnabled'), color: 'positive' });
+        } else {
+          this.kioskPinError = this.$t('kiosk.pinMismatch');
+        }
+      }
+    },
+
+    resetKioskPinSetup() {
+      this.kioskPinSetupStep = 'intro';
+      this.kioskPinFirst = '';
+      this.kioskPinError = '';
+    },
+
+    handleKioskChangePinComplete(pin) {
+      if (this.kioskChangePinStep === 'verify') {
+        if (this.walletStore.verifyKioskPin(pin)) {
+          this.kioskChangePinStep = 'enter';
+          this.kioskChangePinError = '';
+          this.$nextTick(() => this.$refs.kioskChangePinPadRef?.reset());
+        } else {
+          this.kioskChangePinError = this.$t('kiosk.incorrectPin');
+        }
+      } else if (this.kioskChangePinStep === 'enter') {
+        this.kioskChangePinFirst = pin;
+        this.kioskChangePinStep = 'confirm';
+        this.kioskChangePinError = '';
+        this.$nextTick(() => this.$refs.kioskChangePinPadRef?.reset());
+      } else {
+        if (pin === this.kioskChangePinFirst) {
+          this.walletStore.changeKioskPin(pin);
+          this.showKioskChangePinDialog = false;
+          this.$q.notify({ message: this.$t('kiosk.pinChanged'), color: 'positive' });
+        } else {
+          this.kioskChangePinError = this.$t('kiosk.pinMismatch');
+        }
+      }
+    },
+
+    resetKioskChangePin() {
+      this.kioskChangePinStep = 'verify';
+      this.kioskChangePinFirst = '';
+      this.kioskChangePinError = '';
+    },
+
+    handleKioskDisablePin(pin) {
+      if (this.walletStore.verifyKioskPin(pin)) {
+        this.walletStore.disableKiosk();
+        this.showKioskDisableDialog = false;
+        this.$q.notify({ message: this.$t('kiosk.kioskDisabled'), color: 'positive' });
+      } else {
+        this.kioskDisableError = this.$t('kiosk.incorrectPin');
+      }
+    },
+
+    resetKioskDisable() {
+      this.kioskDisableError = '';
+    },
+
+    confirmKioskWalletSelection() {
+      this.walletStore.setKioskWallet(this.kioskWalletSelection);
+      this.showKioskWalletPicker = false;
+    },
+
+    updateKioskTipValue(idx, val) {
+      const arr = [...this.walletStore.kioskTipValues];
+      arr[idx] = parseInt(val) || 0;
+      this.walletStore.setKioskTipValues(arr);
+    },
+
+    async handleStartKiosk() {
+      if (!this.walletStore.kioskWalletId) {
+        this.$q.notify({ message: this.$t('kiosk.noWalletSelected'), color: 'warning' });
+        return;
+      }
+      this.kioskActivating = true;
+      try {
+        await this.walletStore.activateKioskMode();
+        this.$router.push('/kiosk');
+      } catch (err) {
+        this.$q.notify({ message: err.message || 'Activation failed', color: 'negative' });
+      } finally {
+        this.kioskActivating = false;
+      }
+    },
+
     async openCurrencyDialog() {
       // Refresh exchange rates before showing dialog
       await this.loadExchangeRates()
@@ -2082,6 +2548,11 @@ export default {
     setPreferredCurrency(currency) {
       this.updateCurrencyPreferences(currency, this.denominationCurrency)
       this.showCurrencyDialog = false
+    },
+
+    setDisplayCurrency(value) {
+      this.walletStore.defaultDisplayCurrency = value;
+      this.walletStore.persistState();
     },
 
     updateAmountFormat(value) {
@@ -3125,6 +3596,14 @@ export default {
   font-size: 15px;
   font-weight: 500;
 }
+
+.kiosk-mode-desc {
+  padding: 0 16px 14px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 
 .item-caption-dark {
   color: #666;
