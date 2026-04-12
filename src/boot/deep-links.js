@@ -50,6 +50,12 @@ function handleDeepLink(url, router, walletStore) {
 
   console.log('[deep-links] Received:', url)
 
+  // Block deep links while kiosk mode is locked
+  if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
+    console.log('[deep-links] Blocked - kiosk mode active')
+    return
+  }
+
   const paymentData = parseDeepLinkURI(url)
   if (!paymentData) {
     Notify.create({

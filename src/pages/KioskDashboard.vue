@@ -111,7 +111,7 @@
 
       <!-- ═══ Cart Sheet ═══ -->
       <q-dialog v-model="showCartSheet" position="bottom">
-        <q-card class="pos-cart-sheet" :class="$q.dark.isActive ? 'pos-cart-sheet-dark' : ''">
+        <q-card class="pos-cart-sheet" :class="$q.dark.isActive ? 'pos-cart-sheet-dark' : 'pos-cart-sheet-light'">
           <q-card-section>
             <div class="pos-sheet-header">
               <span class="pos-sheet-title">{{ accumulatedItems.length }} {{ accumulatedItems.length === 1 ? $t('kiosk.item') : $t('kiosk.items') }}</span>
@@ -127,7 +127,7 @@
 
       <!-- ═══ Unlock ═══ -->
       <q-dialog v-model="showUnlockDialog" persistent @hide="resetUnlock">
-        <div class="kiosk-dialog" :class="$q.dark.isActive ? 'kiosk-dialog-dark' : ''">
+        <div class="kiosk-dialog">
           <transition name="kiosk-fade" mode="out-in">
             <div v-if="!showPinStep" key="explain" class="kiosk-dialog-body">
               <div class="kiosk-dialog-icon"><q-icon name="admin_panel_settings" size="28px" color="green" /></div>
@@ -214,9 +214,21 @@ export default defineComponent({
     const totalBeforeRoundUp = computed(() => baseAmountSats.value + selectedTipAmount.value)
     const roundUpValue = computed(() => {
       if (!store.kioskRoundUpEnabled) return null
-      const amt = totalBeforeRoundUp.value
-      const next = Math.ceil(amt / 100) * 100
-      return next > amt ? next : null
+      const amtSats = totalBeforeRoundUp.value
+      if (amtSats <= 0) return null
+
+      if (isFiatMode.value && fiatRate.value > 0) {
+        // Round to next whole fiat unit (1 EUR, 1 USD, etc.)
+        const fiat = (amtSats / 100_000_000) * fiatRate.value
+        const nextFiat = Math.ceil(fiat)
+        if (nextFiat <= fiat) return null // already whole number
+        const nextSats = Math.round((nextFiat / fiatRate.value) * 100_000_000)
+        return nextSats > amtSats ? nextSats : null
+      } else {
+        // Round to next 1000 sats
+        const next = Math.ceil(amtSats / 1000) * 1000
+        return next > amtSats ? next : null
+      }
     })
     const finalAmountSats = computed(() => (useRoundUp.value && roundUpValue.value) ? roundUpValue.value : totalBeforeRoundUp.value)
 
@@ -322,7 +334,18 @@ export default defineComponent({
     function resetUnlock() { showPinStep.value = false; unlockError.value = ''; if (unlockPinRef.value) unlockPinRef.value.reset() }
     function handleScreenTap() { tapCount++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { tapCount = 0 }, 5000); if (tapCount >= 13) { tapCount = 0; store.forceUnlockKiosk(); router.push('/wallet') } }
 
-    onMounted(() => { if (!store.kioskEnabled || store.kioskOwnerAccess) router.replace('/wallet') })
+    onMounted(() => {
+      // Only redirect away if we're certain kiosk is off or owner unlocked.
+      // Check localStorage as fallback in case store hasn't initialized yet.
+      let enabled = store.kioskEnabled
+      if (!enabled) {
+        try {
+          const saved = JSON.parse(localStorage.getItem('buhoGO_wallet_store') || '{}')
+          enabled = saved.kioskEnabled || false
+        } catch (e) { /* ignore */ }
+      }
+      if (!enabled || store.kioskOwnerAccess) router.replace('/wallet')
+    })
     onUnmounted(() => { clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer) })
 
     return {
@@ -347,8 +370,8 @@ export default defineComponent({
 .kiosk-light { background: #fafafa; color: #1a1a1a; }
 
 /* Header */
-.kiosk-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; flex-shrink: 0; }
-.kiosk-logo { display: flex; align-items: center; }
+.kiosk-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; flex-shrink: 0; position: relative; }
+.kiosk-logo { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; }
 .kiosk-wallet-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; font-family: 'Manrope', sans-serif; padding: 5px 10px; border-radius: 8px; background: rgba(255,255,255,0.05); color: #9ca3af; letter-spacing: 0.2px; }
 .kiosk-light .kiosk-wallet-badge { background: #f0f0f0; color: #6b7280; }
 .kiosk-logo-img { height: 26px; width: auto; }
@@ -415,12 +438,15 @@ export default defineComponent({
 
 /* Cart bottom sheet */
 .pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; }
-.pos-cart-sheet-dark { background: #1c1c28 !important; color: #e8eaed; }
-.pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 8px; }
-.kiosk-light .pos-sheet-header { border-color: #eee; }
+.pos-cart-sheet-dark { background: #0C0C0C !important; border: 1px solid #2A342A !important; border-bottom: none !important; color: #FFF; }
+.pos-cart-sheet-light { background: #FFF !important; border: 1px solid #F3F3F3 !important; border-bottom: none !important; color: #1F2937; }
+.pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2A342A; margin-bottom: 8px; }
+.pos-cart-sheet-light .pos-sheet-header { border-color: #F3F3F3; }
 .pos-sheet-total { color: #059573; }
 .pos-sheet-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-family: 'Manrope', sans-serif; font-size: 14px; }
-.pos-sheet-remove { background: none; border: none; color: #6b7280; cursor: pointer; padding: 4px; -webkit-tap-highlight-color: transparent; }
+.pos-sheet-remove { background: none; border: none; cursor: pointer; padding: 4px; -webkit-tap-highlight-color: transparent; }
+.pos-cart-sheet-dark .pos-sheet-remove { color: rgba(255, 255, 255, 0.4); }
+.pos-cart-sheet-light .pos-sheet-remove { color: #9CA3AF; }
 .pos-sheet-remove:active { color: #ef4444; }
 
 /* Park button in header */
@@ -479,7 +505,8 @@ export default defineComponent({
 .tip-opt { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 72px; padding: 16px 8px; border-radius: 16px; border: 2px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); transition: all 0.18s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; font-family: 'Manrope', sans-serif; }
 .tip-opt:active { transform: scale(0.96); }
 .kiosk-light .tip-opt { background: #f8fafc; border-color: #e2e8f0; }
-.tip-opt-pct { font-size: 1.25rem; font-weight: 800; }
+.tip-opt-pct { font-size: 1.25rem; font-weight: 800; color: #e8eaed; }
+.kiosk-light .tip-opt-pct { color: #1a1a1a; }
 .tip-opt-amt { font-size: 0.8125rem; font-weight: 600; color: #9ca3af; }
 .tip-opt-on { background: rgba(5,149,115,0.07) !important; border-color: #059573 !important; box-shadow: 0 0 0 1px rgba(5,149,115,0.15); }
 .tip-opt-on .tip-opt-pct { color: #059573; }
@@ -514,14 +541,14 @@ export default defineComponent({
 .kiosk-light .tip-break-total { color: #1a1a1a; }
 
 /* Dialog */
-.kiosk-dialog { background: #ffffff; border-radius: 20px; padding: 32px 24px; width: 90vw; max-width: 360px; }
-.kiosk-dialog-dark { background: #1c1c28; color: #e8eaed; }
+/* Dialog */
+.kiosk-dialog { background: var(--bg-card); border-radius: var(--radius-lg); padding: 32px 24px; width: 90vw; max-width: 360px; color: var(--text-primary); }
 .kiosk-dialog-body { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.kiosk-dialog-icon { width: 52px; height: 52px; border-radius: 14px; background: rgba(5,149,115,0.1); color: #059573; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
-.kiosk-light .kiosk-dialog-icon { background: rgba(5,149,115,0.08); }
-.kiosk-dialog-btn { background: #059573 !important; color: white !important; }
-.kiosk-dialog-title { font-family: 'Manrope', sans-serif; font-size: 19px; font-weight: 800; margin: 0 0 8px; }
-.kiosk-dialog-desc { font-size: 14px; color: #6b7280; margin: 0 0 24px; line-height: 1.5; }
+.kiosk-dialog-icon { width: 52px; height: 52px; border-radius: 14px; background: var(--bg-input); color: var(--color-green); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+.kiosk-dialog-title { font-family: 'Manrope', sans-serif; font-size: 19px; font-weight: 800; margin: 0 0 8px; color: var(--text-primary); }
+.kiosk-dialog-desc { font-size: 14px; color: var(--text-secondary); margin: 0 0 24px; line-height: 1.5; }
+.kiosk-dialog .pos-text-btn { color: var(--text-muted); }
+.kiosk-dialog-btn { background: var(--color-green) !important; color: white !important; }
 
 /* Transitions */
 .kiosk-fade-enter-active, .kiosk-fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }

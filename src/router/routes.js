@@ -14,7 +14,10 @@ const routes = [
       { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
-      { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') }
+      { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') },
+      { path: '/learn', component: () => import('pages/LearnDashboard.vue') },
+      { path: '/learn/:groupId', component: () => import('pages/LearnChapter.vue') },
+      { path: '/learn/:groupId/:questionId(.*)', component: () => import('pages/LearnQuestion.vue') }
     ]
   },
 
