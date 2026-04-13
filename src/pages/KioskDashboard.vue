@@ -104,7 +104,7 @@
           </div>
           <div class="pos-actions">
             <button class="pos-add-btn" :class="{ 'pos-btn-disabled': amountSats <= 0 }" :disabled="amountSats <= 0" @click.stop="addToAccumulated"><q-icon name="add" size="22px" /></button>
-            <button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': totalSatsForCharge <= 0 }" :disabled="totalSatsForCharge <= 0" @click.stop="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span v-if="totalSatsForCharge > 0">{{ $t('kiosk.charge') }} {{ displaySats(totalSatsForCharge) }}</span><span v-else>{{ $t('kiosk.enterAmount') }}</span></button>
+            <button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': !walletReady || totalSatsForCharge <= 0 }" :disabled="!walletReady || totalSatsForCharge <= 0" @click.stop="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span v-if="!walletReady">{{ $t('kiosk.connecting') || 'Connecting...' }}</span><span v-else-if="totalSatsForCharge > 0">{{ $t('kiosk.charge') }} {{ displaySats(totalSatsForCharge) }}</span><span v-else>{{ $t('kiosk.enterAmount') }}</span></button>
           </div>
         </div>
       </template>
@@ -130,9 +130,23 @@
         <div class="kiosk-dialog">
           <transition name="kiosk-fade" mode="out-in">
             <div v-if="!showPinStep" key="explain" class="kiosk-dialog-body">
-              <div class="kiosk-dialog-icon"><q-icon name="admin_panel_settings" size="28px" color="green" /></div>
+              <div class="kiosk-dialog-icon">
+                <q-icon name="shield" size="28px" />
+              </div>
               <h3 class="kiosk-dialog-title">{{ $t('kiosk.ownerAreaTitle') }}</h3>
-              <p class="kiosk-dialog-desc">{{ $t('kiosk.ownerAreaDesc') }}</p>
+              <p class="kiosk-dialog-desc">{{ $t('kiosk.ownerAreaDescLong') }}</p>
+
+              <div class="kiosk-unlock-features">
+                <div class="kiosk-unlock-feature">
+                  <div class="kiosk-unlock-feature-icon"><q-icon name="lock" size="16px" /></div>
+                  <span>{{ $t('kiosk.ownerHintProtected') }}</span>
+                </div>
+                <div class="kiosk-unlock-feature">
+                  <div class="kiosk-unlock-feature-icon"><q-icon name="pin" size="16px" /></div>
+                  <span>{{ $t('kiosk.ownerHintPin') }}</span>
+                </div>
+              </div>
+
               <button class="pos-primary-btn kiosk-dialog-btn" @click="showPinStep = true">{{ $t('kiosk.continueToPin') }}</button>
               <button class="pos-text-btn" @click="showUnlockDialog = false">{{ $t('kiosk.backToPos') }}</button>
             </div>
@@ -167,6 +181,7 @@ export default defineComponent({
     const t = (key) => proxy.$t(key)
 
     const state = ref('input')
+    const walletReady = ref(false)
     const rawInput = ref('0')
     const accumulatedItems = ref([])
     const accumulatedSats = computed(() => accumulatedItems.value.reduce((s, v) => s + v, 0))
@@ -334,22 +349,37 @@ export default defineComponent({
     function resetUnlock() { showPinStep.value = false; unlockError.value = ''; if (unlockPinRef.value) unlockPinRef.value.reset() }
     function handleScreenTap() { tapCount++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { tapCount = 0 }, 5000); if (tapCount >= 13) { tapCount = 0; store.forceUnlockKiosk(); router.push('/wallet') } }
 
-    onMounted(() => {
-      // Only redirect away if we're certain kiosk is off or owner unlocked.
-      // Check localStorage as fallback in case store hasn't initialized yet.
-      let enabled = store.kioskEnabled
-      if (!enabled) {
-        try {
-          const saved = JSON.parse(localStorage.getItem('buhoGO_wallet_store') || '{}')
-          enabled = saved.kioskEnabled || false
-        } catch (e) { /* ignore */ }
+    onMounted(async () => {
+      // Load persisted state if store hasn't initialized yet
+      if (!store.kioskEnabled) {
+        await store.initialize()
       }
-      if (!enabled || store.kioskOwnerAccess) router.replace('/wallet')
+
+      // Redirect away if kiosk is not active
+      if (!store.kioskEnabled || store.kioskOwnerAccess) {
+        router.replace('/wallet')
+        return
+      }
+
+      // Connect only the kiosk wallet
+      const walletId = store.kioskWalletId
+      if (walletId && !store.providers[walletId]) {
+        try {
+          const wallet = store.wallets.find(w => w.id === walletId)
+          if (wallet) {
+            await store.connectWallet(walletId)
+          }
+        } catch (err) {
+          console.error('[kiosk] Failed to connect wallet:', err.message)
+        }
+      }
+
+      walletReady.value = !!store.providers[store.kioskWalletId]
     })
     onUnmounted(() => { clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer) })
 
     return {
-      state, rawInput, formattedDisplay, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
+      state, walletReady, rawInput, formattedDisplay, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
       accumulatedItems, accumulatedSats, totalSatsForCharge,
       handleNumpad, addToAccumulated, removeAccumulatedItem, clearAll, proceedToTipOrCharge,
       tipOptions, selectedTipPercent, selectedTipAmount, tipInteractive,
@@ -549,6 +579,21 @@ export default defineComponent({
 .kiosk-dialog-desc { font-size: 14px; color: var(--text-secondary); margin: 0 0 24px; line-height: 1.5; }
 .kiosk-dialog .pos-text-btn { color: var(--text-muted); }
 .kiosk-dialog-btn { background: var(--color-green) !important; color: white !important; }
+
+/* Unlock features list */
+.kiosk-unlock-features { width: 100%; margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
+.kiosk-unlock-feature {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius-sm);
+  background: var(--bg-input); text-align: left;
+  font-family: 'Manrope', sans-serif; font-size: 0.875rem; font-weight: 500;
+  color: var(--text-secondary);
+}
+.kiosk-unlock-feature-icon {
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-secondary); color: var(--text-muted);
+}
 
 /* Transitions */
 .kiosk-fade-enter-active, .kiosk-fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }

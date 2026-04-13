@@ -603,47 +603,57 @@
 
       <!-- Kiosk PIN Setup Dialog -->
       <q-dialog v-model="showKioskPinSetupDialog" persistent @hide="resetKioskPinSetup">
-        <q-card style="min-width: 320px; max-width: 360px; border-radius: 20px;"
-          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
-          <q-card-section class="text-center">
-            <!-- Intro -->
-            <template v-if="kioskPinSetupStep === 'intro'">
-              <Icon icon="tabler:cash-register" width="48" height="48" color="#15DE72" class="q-mb-md" />
-              <div class="text-h6 text-weight-bold q-mb-sm">{{ $t('kiosk.kioskMode') }}</div>
-              <p class="text-body2" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('kiosk.introDesc') }}
-              </p>
-              <q-btn unelevated no-caps color="green" class="full-width q-mt-md" style="border-radius: 12px;"
-                @click="kioskPinSetupStep = 'enter'">
-                {{ $t('kiosk.introNext') }}
-              </q-btn>
-              <q-btn flat no-caps color="grey" class="full-width q-mt-sm"
-                @click="showKioskPinSetupDialog = false">
-                {{ $t('Cancel') }}
-              </q-btn>
-            </template>
-            <!-- Enter PIN -->
-            <template v-else-if="kioskPinSetupStep === 'enter'">
-              <div class="text-subtitle1 text-weight-bold q-mb-md">{{ $t('kiosk.setupPin') }}</div>
-              <KioskPinPad ref="kioskSetupPinPadRef" title="" :error-message="kioskPinError"
-                @complete="handleKioskPinSetupComplete" />
-              <q-btn flat no-caps color="grey" class="q-mt-sm"
-                @click="kioskPinSetupStep = 'intro'; kioskPinError = ''">
-                {{ $t('Back') }}
-              </q-btn>
-            </template>
-            <!-- Confirm PIN -->
-            <template v-else-if="kioskPinSetupStep === 'confirm'">
-              <div class="text-subtitle1 text-weight-bold q-mb-md">{{ $t('kiosk.confirmPin') }}</div>
-              <KioskPinPad ref="kioskSetupPinPadRef" title="" :error-message="kioskPinError"
-                @complete="handleKioskPinSetupComplete" />
-              <q-btn flat no-caps color="grey" class="q-mt-sm"
-                @click="kioskPinSetupStep = 'enter'; kioskPinError = ''; $refs.kioskSetupPinPadRef?.reset()">
-                {{ $t('Back') }}
-              </q-btn>
-            </template>
-          </q-card-section>
-        </q-card>
+        <div class="kiosk-setup-dialog" :style="{ background: 'var(--bg-card)', color: 'var(--text-primary)' }">
+          <!-- Intro -->
+          <template v-if="kioskPinSetupStep === 'intro'">
+            <div class="kiosk-setup-icon">
+              <Icon icon="tabler:cash-register" width="28" height="28" />
+            </div>
+            <h3 class="kiosk-setup-title">{{ $t('kiosk.kioskMode') }}</h3>
+            <p class="kiosk-setup-desc">{{ $t('kiosk.introDesc') }}</p>
+
+            <div class="kiosk-setup-features">
+              <div class="kiosk-setup-feature">
+                <div class="kiosk-feature-icon"><Icon icon="tabler:lock" width="18" height="18" /></div>
+                <span>{{ $t('kiosk.introFeaturePos') }}</span>
+              </div>
+              <div class="kiosk-setup-feature">
+                <div class="kiosk-feature-icon"><Icon icon="tabler:shield-lock" width="18" height="18" /></div>
+                <span>{{ $t('kiosk.introFeatureLock') }}</span>
+              </div>
+              <div class="kiosk-setup-feature">
+                <div class="kiosk-feature-icon"><Icon icon="tabler:password" width="18" height="18" /></div>
+                <span>{{ $t('kiosk.introFeaturePin') }}</span>
+              </div>
+            </div>
+
+            <button class="kiosk-setup-primary" @click="kioskPinSetupStep = 'enter'">
+              {{ $t('kiosk.introNext') }}
+            </button>
+            <button class="kiosk-setup-secondary" @click="showKioskPinSetupDialog = false">
+              {{ $t('Cancel') }}
+            </button>
+          </template>
+
+          <!-- Enter PIN -->
+          <template v-else-if="kioskPinSetupStep === 'enter'">
+            <KioskPinPad ref="kioskSetupPinPadRef" :title="$t('kiosk.setupPin')" :error-message="kioskPinError"
+              @complete="handleKioskPinSetupComplete" />
+            <button class="kiosk-setup-secondary" @click="kioskPinSetupStep = 'intro'; kioskPinError = ''">
+              {{ $t('Back') }}
+            </button>
+          </template>
+
+          <!-- Confirm PIN -->
+          <template v-else-if="kioskPinSetupStep === 'confirm'">
+            <KioskPinPad ref="kioskSetupPinPadRef" :title="$t('kiosk.confirmPin')" :error-message="kioskPinError"
+              @complete="handleKioskPinSetupComplete" />
+            <button class="kiosk-setup-secondary"
+              @click="kioskPinSetupStep = 'enter'; kioskPinError = ''; $refs.kioskSetupPinPadRef?.reset()">
+              {{ $t('Back') }}
+            </button>
+          </template>
+        </div>
       </q-dialog>
 
       <!-- Kiosk Change PIN Dialog -->
@@ -705,8 +715,8 @@
                 </q-item-section>
                 <q-item-section side>
                   <!-- Spark -->
-                  <svg v-if="w.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="#059573"/>
+                  <svg v-if="w.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" :style="{ color: $q.dark.isActive ? '#fff' : '#1a1a1a' }">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
                   </svg>
                   <!-- NWC -->
                   <svg v-else-if="w.type === 'nwc'" width="20" height="20" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -783,10 +793,10 @@
           </q-item-section>
           <q-item-section>
             <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Bitcoin Quiz') }}
+              {{ $t('Bitcoin Lessons') }}
             </q-item-label>
             <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('Answer questions, earn real sats') }}
+              {{ $t('Learn about Bitcoin, earn real sats') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -6539,5 +6549,72 @@ export default {
   background: rgba(0, 0, 0, 0.04);
   color: rgba(0, 0, 0, 0.5);
 }
+
+/* Kiosk Setup Dialog */
+.kiosk-setup-dialog {
+  width: 90vw; max-width: 380px;
+  border-radius: var(--radius-lg);
+  padding: 32px 24px;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+}
+
+.kiosk-setup-icon {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: var(--bg-input);
+  color: var(--color-green);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+}
+
+.kiosk-setup-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 1.25rem; font-weight: 800;
+  margin: 0 0 8px; color: var(--text-primary);
+}
+
+.kiosk-setup-desc {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.875rem; line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0 0 20px; max-width: 300px;
+}
+
+.kiosk-setup-features {
+  width: 100%; display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 24px;
+}
+
+.kiosk-setup-feature {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius-sm);
+  background: var(--bg-input); text-align: left;
+  font-family: 'Manrope', sans-serif; font-size: 0.875rem; font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.kiosk-feature-icon {
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-secondary); color: var(--text-muted);
+}
+
+.kiosk-setup-primary {
+  width: 100%; height: 50px; border: none; border-radius: var(--radius-md);
+  background: var(--color-green); color: white;
+  font-family: 'Manrope', sans-serif; font-size: 0.9375rem; font-weight: 700;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s;
+}
+.kiosk-setup-primary:active { opacity: 0.85; }
+
+.kiosk-setup-secondary {
+  background: none; border: none;
+  color: var(--text-muted);
+  font-family: 'Manrope', sans-serif; font-size: 0.875rem; font-weight: 500;
+  cursor: pointer; padding: 12px 16px; margin-top: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+.kiosk-setup-secondary:active { opacity: 0.6; }
 
 </style>

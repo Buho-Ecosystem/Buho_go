@@ -5,7 +5,7 @@
       <!-- Top bar: Logo left, Skip right -->
       <div class="wizard-topbar">
         <div class="wizard-logo">
-          <img src="public/buho_logo.svg" alt="Buho" class="wizard-logo-img" />
+          <img src="/buho_logo.svg" alt="Buho" class="wizard-logo-img" />
         </div>
         <q-btn flat no-caps dense class="skip-btn" @click="goToWallet">
           {{ $t('Skip') }}
@@ -198,7 +198,20 @@
             </div>
           </q-carousel-slide>
 
-          <!-- 13: You're ready! -->
+          <!-- 13: Bitcoin Lessons -->
+          <q-carousel-slide name="lessons" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Learn and Earn/education.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Bitcoin Lessons') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Learn about Bitcoin step by step and earn real sats along the way. The more you learn, the more you earn.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+
+          <!-- 14: You're ready! -->
           <q-carousel-slide name="ready" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-setup-wizard-bro.svg" class="slide-illustration" alt="" />
@@ -290,12 +303,12 @@ const SPARK_INTRO = ['personal', 'business', 'savings']
 // All feature screens (shown after Spark intro or standalone for NWC/LNbits)
 const ALL_FEATURES = [
   'send-receive', 'transfer', 'auto-transfer', 'history',
-  'contacts', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'ready'
+  'contacts', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'lessons', 'ready'
 ]
 
 // NWC/LNbits: only features that apply (no internal transfer, auto-transfer, or seed backup)
 const NWC_LNBITS_FEATURES = [
-  'send-receive', 'history', 'contacts', 'display', 'more-wallets', 'security', 'ready'
+  'send-receive', 'history', 'contacts', 'display', 'more-wallets', 'security', 'lessons', 'ready'
 ]
 
 export default {

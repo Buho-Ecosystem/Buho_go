@@ -1125,6 +1125,7 @@ export default {
     }, 15000);
     // Restore display currency from user preference
     this.currentDisplayMode = this.walletStore.defaultDisplayCurrency || 'bitcoin';
+    this.addressBookStore.initialize();
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
@@ -2514,10 +2515,9 @@ export default {
           if (lnurlInfo.error || !lnurlInfo.lnurlType) {
             this.$q.notify({
               type: 'negative',
-              message: this.$t('Withdraw link expired or already used'),
-              caption: lnurlInfo.reason || this.$t('Could not retrieve payment details from this link'),
-              icon: 'las la-exclamation-circle',
-              timeout: 10000,
+              message: this.$t('Could not process this link'),
+              caption: lnurlInfo.reason || this.$t('The server did not respond or the link is no longer valid'),
+              timeout: 6000,
             });
             return;
           }
