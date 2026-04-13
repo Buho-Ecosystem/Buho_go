@@ -1,9 +1,10 @@
 /**
- * Share utility for native and web share functionality
- * Uses Web Share API with native platform detection for future Capacitor support
+ * Share utility for native and web share functionality.
+ * Uses @capacitor/share on native platforms, falls back to Web Share API.
  */
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core'
+import { Share } from '@capacitor/share'
 
 /**
  * Share content using native share dialog or Web Share API
@@ -15,25 +16,32 @@ import { Capacitor } from '@capacitor/core';
  */
 export async function shareContent({ title, text, url }) {
   try {
-    // For native platforms, try to use Capacitor Share if available
-    // Note: @capacitor/share must be installed separately for native builds
-    if (Capacitor.isNativePlatform() && window.Capacitor?.Plugins?.Share) {
-      await window.Capacitor.Plugins.Share.share({ title, text, url });
-      return { success: true };
+    if (Capacitor.isNativePlatform()) {
+      await Share.share({ title, text, url, dialogTitle: title })
+      return { success: true }
     }
 
-    // Use Web Share API for PWA/browser
     if (navigator.share) {
-      await navigator.share({ title, text, url });
-      return { success: true };
-    } else {
-      // No share available - return false to trigger fallback
-      return { success: false, reason: 'unsupported' };
+      await navigator.share({ title, text, url })
+      return { success: true }
     }
+
+    return { success: false, reason: 'unsupported' }
   } catch (error) {
-    if (error.name === 'AbortError') {
-      return { success: false, reason: 'cancelled' };
+    // User cancelled the share dialog (iOS throws, Android resolves silently)
+    if (
+      error.name === 'AbortError' ||
+      error.message?.toLowerCase().includes('cancel') ||
+      error.message?.toLowerCase().includes('abort')
+    ) {
+      return { success: false, reason: 'cancelled' }
     }
-    return { success: false, reason: 'error', error };
+
+    // Capacitor "UNAVAILABLE" when Share API is missing on web fallback
+    if (error.code === 'UNAVAILABLE') {
+      return { success: false, reason: 'unsupported' }
+    }
+
+    return { success: false, reason: 'error', error }
   }
 }

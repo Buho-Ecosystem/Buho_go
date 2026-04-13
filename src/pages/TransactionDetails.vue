@@ -486,6 +486,7 @@ import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
+import { shareContent } from '../utils/share';
 
 export default {
   name: 'TransactionDetailsPage',
@@ -1103,11 +1104,8 @@ export default {
       if (desc) text += `\n${desc}`;
       text += '\n\nvia BuhoGO\nhttps://home.mybuho.de/buhogo';
 
-      if (navigator.share) {
-        try {
-          await navigator.share({ text, url: 'https://home.mybuho.de/buhogo' });
-        } catch { /* user cancelled */ }
-      } else {
+      const result = await shareContent({ title: `${direction} ${amount}`, text });
+      if (result.reason === 'unsupported' || result.reason === 'error') {
         await this.copyToClipboard(text);
       }
     }

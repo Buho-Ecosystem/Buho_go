@@ -15,9 +15,10 @@ const routes = [
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
       { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') },
-      { path: '/learn', component: () => import('pages/LearnDashboard.vue') },
-      { path: '/learn/:groupId', component: () => import('pages/LearnChapter.vue') },
-      { path: '/learn/:groupId/:questionId(.*)', component: () => import('pages/LearnQuestion.vue') }
+      { path: '/learn', component: () => import('pages/EarnMap.vue') },
+      { path: '/learn/summary', component: () => import('pages/EarnSummary.vue') },
+      { path: '/learn/:sectionId', component: () => import('pages/EarnSection.vue') },
+      { path: '/learn/:sectionId/:questionId(.*)', component: () => import('pages/EarnQuiz.vue') }
     ]
   },
 

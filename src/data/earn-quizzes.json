@@ -33,19 +33,19 @@
               "answers": [
                 "The smallest unit of Bitcoin",
                 "A small satellite",
-                "A space cat 🐱🚀"
+                "A space cat"
               ],
               "feedback": [
                 "You just earned another two sats!!",
-                "Maybe… but that is not the correct answer in this context 🙂",
+                "Maybe, but that is not the correct answer in this context.",
                 "Ummm.... not quite!"
               ]
             },
             {
               "id": "BitcoinWhatIsIt.whereBitcoinExist",
-              "title": "Where do the bitcoins exist?",
+              "title": "Where do the bitcoin exist?",
               "text": "Bitcoin is a new form of money. It can be used by anyone, anytime -- anywhere in the world. It is not tied to a specific government or region (like US Dollars). There are also no paper bills, metal coins or plastic cards. Everything is 100% digital. Bitcoin is a network of computers running on the internet. Your bitcoin is easily managed with software on your smartphone or computer!\n",
-              "question": "Where do the bitcoins exist?",
+              "question": "Where do the bitcoin exist?",
               "answers": [
                 "On the Internet",
                 "On the moon",
@@ -80,7 +80,7 @@
               "question": "If Bitcoin is digital money, can’t someone just copy it, and create free money?",
               "answers": [
                 "No, it is impossible to copy or duplicate the value of bitcoin",
-                "Yes, you can copy bitcoins just as easily as copying a digital photo",
+                "Yes, you can copy bitcoin just as easily as copying a digital photo",
                 "Yes, but copying bitcoin requires very specialized computers"
               ],
               "feedback": [
@@ -89,7 +89,8 @@
                 "Incorrect. There is no way for anyone to copy, or create a duplicate, of bitcoin."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/bitcoin.svg"
         },
         {
           "id": "WhatIsMoney",
@@ -124,7 +125,7 @@
               "feedback": [
                 "That is right. Money allows you to easily purchase something, without haggling about the form of payment",
                 "No silly, you know that is not the answer.",
-                "Not quite. We call that a solar eclipse 🌚"
+                "Not quite. We call that a solar eclipse."
               ]
             },
             {
@@ -191,7 +192,8 @@
                 "No. Whilst some people do create fake dollar bills, it is definitely not legal!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/currency.svg"
         },
         {
           "id": "HowDoesMoneyWork",
@@ -200,8 +202,8 @@
             {
               "id": "HowDoesMoneyWork.WhatIsFiat",
               "title": "Fiat Currency: What is that?",
-              "text": "All national currencies in circulation today are called “fiat” money. This includes US Dollars, Japanese Yen, Swiss Francs, and so forth.\n\n\nThe word “fiat” is latin for “by decree” -- which means “by official order”.\n\n\nThis means that all fiat money -- including the US Dollar -- is simply created by the order of the national government.\n",
-              "question": "Who creates fiat currencies, such as US Dollars or Swiss Francs?",
+              "text": "All national currencies in circulation today are called “fiat” money. This includes US Dollars, Euros, Japanese Yen, Swiss Francs, and so forth.\n\n\nThe word “fiat” is latin for “by decree” -- which means “by official order”.\n\n\nThis means that all fiat money -- including the US Dollar -- is simply created by the order of the national government.\n",
+              "question": "Who creates fiat currencies, such as US Dollars, Euros, or Swiss Francs?",
               "answers": [
                 "They are created by order of the National government in a given country.",
                 "By the manager of the local branch bank.",
@@ -216,7 +218,7 @@
             {
               "id": "HowDoesMoneyWork.whyCareAboutFiatMoney",
               "title": "I trust my government. Why should I care about fiat money?",
-              "text": "As shared in a prior quiz, the US Central Bank is the Federal Reserve, or the “Fed”.\n\n\nThe Fed can print more dollars at any time -- and does not need permission from the President, nor Congress, and certainly not from US citizens.\n\n\nHaving control of money can be very tempting for authorities to abuse -- and often time leads to massive inflation, arbitrary confiscation and corruption.\n\n\nIn fact, Alan Greenspan, the famous former chairman of The Fed, famously said the US “can pay any debt that it has, because we can always print more to do that”.\n",
+              "text": "As shared in a prior lesson, the US Central Bank is the Federal Reserve, or the “Fed”.\n\n\nThe Fed can print more dollars at any time -- and does not need permission from the President, nor Congress, and certainly not from US citizens.\n\n\nHaving control of money can be very tempting for authorities to abuse -- and often time leads to massive inflation, arbitrary confiscation and corruption.\n\n\nIn fact, Alan Greenspan, the famous former chairman of The Fed, famously said the US “can pay any debt that it has, because we can always print more to do that”.\n",
               "question": "Why should I care about the government controlling fiat money?",
               "answers": [
                 "All fiat currency is eventually abused by government authorities.",
@@ -272,12 +274,13 @@
                 "Money is the root of all evil."
               ],
               "feedback": [
-                "We will explain more about these issues in subsequent quiz modules. Keep digging!!",
+                "We will explain more about these issues in upcoming lessons. Keep digging!!",
                 "Wrong answer. You know that is not true.",
                 "While some may believe this to be so, it is not the answer we are looking for here."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/money-income.svg"
         },
         {
           "id": "BitcoinWhyIsItSpecial",
@@ -291,7 +294,7 @@
               "answers": [
                 "Yes. There can never be more than 21 million bitcoin created.",
                 "No. The government can create more bitcoin at any time.",
-                "No, the bitcoin software can be changed to allow more bitcoins to be created."
+                "No, the bitcoin software can be changed to allow more bitcoin to be created."
               ],
               "feedback": [
                 "By limiting the amount that can be created, Bitcoin is designed to increase in value over time.",
@@ -318,7 +321,7 @@
             {
               "id": "BitcoinWhyIsItSpecial.NoCounterfeitMoney",
               "title": "Special Characteristic",
-              "text": "Paper money, checks and credit card transactions can all be counterfeit, or faked.\n\nThe unique software that runs the Bitcoin network eliminates the possibility of duplicating money for counterfeit purposes.\n\nNew bitcoin can only be issued if there is agreement amongst the participants in the network. People who are voluntarily running bitcoin software on their own computers and smartphones.\n\nThis ensures that it is impossible to counterfeit, or create fake bitcoins.\n",
+              "text": "Paper money, checks and credit card transactions can all be counterfeit, or faked.\n\nThe unique software that runs the Bitcoin network eliminates the possibility of duplicating money for counterfeit purposes.\n\nNew bitcoin can only be issued if there is agreement amongst the participants in the network. People who are voluntarily running bitcoin software on their own computers and smartphones.\n\nThis ensures that it is impossible to counterfeit, or create fake bitcoin.\n",
               "question": "Can people counterfeit Bitcoin?",
               "answers": [
                 "No. It is impossible to counterfeit Bitcoin.",
@@ -350,7 +353,7 @@
             {
               "id": "BitcoinWhyIsItSpecial.securePartOne",
               "title": "Special Characteristic",
-              "text": "The bitcoin network is worth well over $100 billion today. Accordingly, the network must be very secure, so that money is never stolen.\n\n\nBitcoin is known as the world’s first cryptocurrency.\n\n\nThe “crypto” part of the name comes from cryptography. Simply put, cryptography protects information through very complex math functions.\n\n\nMost people do not realize, but Bitcoin is actually the most secure computer network in the world !\n\n\n(you may have heard about bitcoin “hacks”, which we will debunk in the next quiz)\n",
+              "text": "The bitcoin network is worth well over $100 billion today. Accordingly, the network must be very secure, so that money is never stolen.\n\n\nBitcoin is known as the world’s first cryptocurrency.\n\n\nThe “crypto” part of the name comes from cryptography. Simply put, cryptography protects information through very complex math functions.\n\n\nMost people do not realize, but Bitcoin is actually the most secure computer network in the world !\n\n\n(you may have heard about bitcoin “hacks”, which we will debunk in the next lesson)\n",
               "question": "Is the Bitcoin network secure?",
               "answers": [
                 "Yes. The bitcoin network is very secure.",
@@ -363,7 +366,8 @@
                 "Incorrect. Although bitcoin is indeed “open source” software, or available to the public for free, is still extremely secure."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/bitcoin-p2p.svg"
         }
       ]
     },
@@ -419,7 +423,7 @@
                 "The ability to impress others with their collection of rare and valuable items"
               ],
               "feedback": [
-                "Congratulations, you are correct! It seems that the concept of \"buy low, sell high\" is not a modern invention, as early humans also sought to acquire collectibles at a lower cost before their demand and trade value increased. Fun fact: this principle also applies to bitcoin, where early adopters were able to acquire bitcoins at a much lower price before their value skyrocketed",
+                "Congratulations, you are correct! It seems that the concept of \"buy low, sell high\" is not a modern invention, as early humans also sought to acquire collectibles at a lower cost before their demand and trade value increased. Fun fact: this principle also applies to bitcoin, where early adopters were able to acquire bitcoin at a much lower price before their value skyrocketed",
                 "Sorry, that is not the correct answer. While being able to trade collectibles for other useful items may have been a benefit of correctly anticipating demand, it was not the main advantage",
                 "I'm afraid that is not the correct answer. While having a collection of rare and valuable items may have been a source of pride and admiration, it was not the main advantage"
               ]
@@ -456,7 +460,8 @@
                 "I'm afraid that is not the correct answer. While showing off wealth and status may have been a motivation for some individuals, it was not the main reason for why merchants and traders had an incentive to promote the adoption of a foreign store of value in their own society."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/international-trade.svg"
         },
         {
           "id": "AttributesOfAGoodStoreOfValue",
@@ -481,7 +486,7 @@
             {
               "id": "AttributesOfAGoodStoreOfValue.durability",
               "title": "Durability is an important attribute for a good store of value",
-              "text": "The good used as money should not be perishable or easily destroyed. Gold is known for its durability and is often considered the \"king\" in this regard.\n\nA large portion of the gold that has ever been mined or minted, including the gold of the Pharaohs, still exists today and is likely to remain available for many more years. Gold coins that were used as money in ancient times still hold significant value today.\n\nFiat currencies and bitcoins are digital records that may take physical form, such as paper bills. However, it is not the physical manifestation of these currencies that should be considered for their durability, but rather the durability of the institution that issues them.\n\nMany governments and their currencies have come and gone over the centuries, while others, such as the US dollar and British pound, have survived for a longer period of time. Bitcoins have no issuing authority, so their durability depends on the network that secures them. While it is still early to draw strong conclusions about the durability of bitcoins, there are signs that the network has displayed a high level of \"anti-fragility\" despite attempts to regulate it and attacks by hackers.\n",
+              "text": "The good used as money should not be perishable or easily destroyed. Gold is known for its durability and is often considered the \"king\" in this regard.\n\nA large portion of the gold that has ever been mined or minted, including the gold of the Pharaohs, still exists today and is likely to remain available for many more years. Gold coins that were used as money in ancient times still hold significant value today.\n\nFiat currencies and bitcoin are digital records that may take physical form, such as paper bills. However, it is not the physical manifestation of these currencies that should be considered for their durability, but rather the durability of the institution that issues them.\n\nMany governments and their currencies have come and gone over the centuries, while others, such as the US dollar and British pound, have survived for a longer period of time. Bitcoin have no issuing authority, so their durability depends on the network that secures them. While it is still early to draw strong conclusions about the durability of bitcoin, there are signs that the network has displayed a high level of \"anti-fragility\" despite attempts to regulate it and attacks by hackers.\n",
               "question": "Which of the following is an important factor in determining the durability of a good store of value",
               "answers": [
                 "The network that secures the currency",
@@ -497,7 +502,7 @@
             {
               "id": "AttributesOfAGoodStoreOfValue.portability",
               "title": "The good must be easy to transport and store",
-              "text": "\n\"Portability\" refers to how easy it is to move or transport a good from one place to another.\n\nBitcoins are highly portable, allowing for easy storage on a small USB drive and quick transmission across long distances. Similarly, fiat currencies are also digital and therefore portable, but government regulations and capital controls can make large transfers of value difficult or impossible.\n\nOn the other hand, gold, being physical in form and very dense, is the least portable store of value, with the majority of bullion never being transported and the transfer of physical gold being costly, risky, and time-consuming.\n",
+              "text": "\n\"Portability\" refers to how easy it is to move or transport a good from one place to another.\n\nBitcoin are highly portable, allowing for easy storage on a small USB drive and quick transmission across long distances. Similarly, fiat currencies are also digital and therefore portable, but government regulations and capital controls can make large transfers of value difficult or impossible.\n\nOn the other hand, gold, being physical in form and very dense, is the least portable store of value, with the majority of bullion never being transported and the transfer of physical gold being costly, risky, and time-consuming.\n",
               "question": "Which of the following is NOT a factor that makes a good store of value portable",
               "answers": [
                 "Its physical form",
@@ -569,7 +574,7 @@
                 "Ease of production"
               ],
               "feedback": [
-                "Congratulations! You are correct. Did you know that there will only ever be a maximum of 21 million bitcoins in circulation, making it a scarce and valuable asset",
+                "Congratulations! You are correct. Did you know that there will only ever be a maximum of 21 million bitcoin in circulation, making it a scarce and valuable asset",
                 "Sorry, but abundance is not the most important attribute for a store of value. Better luck next time",
                 "Sorry, but ease of production is not the most important attribute for a store of value. Better luck next time!"
               ]
@@ -606,7 +611,8 @@
                 "Sorry, but the opposite is actually true. The fiat banking system, which is regulated by states, requires human intervention to report and prevent certain uses of monetary goods, making it prone to censorship. Try again!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/vault.svg"
         },
         {
           "id": "TheEvolutionOfMoneyI",
@@ -663,7 +669,7 @@
             {
               "id": "TheEvolutionOfMoneyI.mediumOfExchange",
               "title": "Four Stages of Money: Medium of Exchange",
-              "text": "When money is used to store value, its value becomes stable eventually. And when the value of money is stable, it becomes the best option to facilitate trade as it's easy to use and doesn't have the coordination burden of barter.\n\nIn the early days of Bitcoin in 2010, some people did not recognize the opportunity cost to use Bitcoin as a medium of exchange rather than a nascent store of value.\n\nThere is a famous story about Laszlo Hanyecz who traded 10,000 bitcoins (which were worth about $165 million at the time of this writing) for just two pizzas. When Laszlo acquired those pizzas, it marked the first time that bitcoin had market value.\n\nToday, Laszlo's pizza is celebrated globally on May 22 as Bitcoin Pizza Day as an important step and milestone in the evolution of bitcoin as money.\n",
+              "text": "When money is used to store value, its value becomes stable eventually. And when the value of money is stable, it becomes the best option to facilitate trade as it's easy to use and doesn't have the coordination burden of barter.\n\nIn the early days of Bitcoin in 2010, some people did not recognize the opportunity cost to use Bitcoin as a medium of exchange rather than a nascent store of value.\n\nThere is a famous story about Laszlo Hanyecz who traded 10,000 bitcoin (which were worth about $165 million at the time of this writing) for just two pizzas. When Laszlo acquired those pizzas, it marked the first time that bitcoin had market value.\n\nToday, Laszlo's pizza is celebrated globally on May 22 as Bitcoin Pizza Day as an important step and milestone in the evolution of bitcoin as money.\n",
               "question": "What is Bitcoin Pizza Day celebrated for",
               "answers": [
                 "The first time bitcoin had market value",
@@ -671,7 +677,7 @@
                 "again"
               ],
               "feedback": [
-                "You got it right. Bitcoin Pizza Day is celebrated to mark the first time that bitcoin had market value, which was when Laszlo Hanyecz traded 10,000 bitcoins for two pizzas. It's an important event in the evolution of bitcoin",
+                "You got it right. Bitcoin Pizza Day is celebrated to mark the first time that bitcoin had market value, which was when Laszlo Hanyecz traded 10,000 bitcoin for two pizzas. It's an important event in the evolution of bitcoin",
                 "While pineapple is a beautiful fruit, it has no place on a real pizza! Apart from this side note, your answer is wrong. Try again",
                 "Sorry, the best pizza recipe is a matter of personal preference. While pizza is always delicious, it's not the focus of Bitcoin Pizza Day. Maybe try considering the significance of the event in the history of bitcoin."
               ]
@@ -724,7 +730,8 @@
                 "Sorry to break it to you, but Bitcoin is still in the process of becoming more widely accepted as money. Better luck next time!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/coins.svg"
         },
         {
           "id": "TheEvolutionOfMoneyII",
@@ -810,7 +817,8 @@
                 "Wrong! The hardness of money has more to do with its production than its quantity. Better luck with your next answer."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/banknote.svg"
         },
         {
           "id": "TheEvolutionOfMoneyIII",
@@ -944,7 +952,8 @@
                 "Surely this would benefit the WTO's funding immensely, but this is not how the global reserve currency is defined or chosen. Try again!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/finance.svg"
         },
         {
           "id": "TheEvolutionOfMoneyIV",
@@ -1078,7 +1087,8 @@
                 "Oh boy, that's a creative answer but unfortunately not quite right. CBDCs are not designed to be decentralized or permissionless like Bitcoin. In fact, they are issued and backed by central banks, and their main purpose is to be the ultimate tool for control in the digital age. Better luck next time!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/bitcoin.svg"
         }
       ]
     },
@@ -1187,7 +1197,8 @@
                 "Nope. While cryptography does involve the use of complex mathematical equations, the Cypherpunks are not primarily interested in creating these equations for their own sake. Try again!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/problem-solving.svg"
         },
         {
           "id": "BitcoinHowDoesItWork",
@@ -1231,14 +1242,14 @@
               "text": "Another cornerstone of Bitcoin is Public Key Cryptography that uses a pair of keys - a public key and a private key - to sign transactions and verify the ownership of Bitcoin addresses.\n\nThe private key is a long string of characters that is used to authorize Bitcoin transactions. It is often represented as a combination of 12 words (sometimes 24). Only in the correct order do the words result in the corresponding private key.\n\nWhoever knows the private key of a bitcoin address can control the bitcoin in that address. Therefore it is important that it is kept secret and never shared with anyone. Ideally, it should be stored offline, so that no unwanted program can access it. \n",
               "question": "What is the purpose of the private key in a Bitcoin transaction",
               "answers": [
-                "To sign transactions and prove ownership of Bitcoins",
+                "To sign transactions and prove ownership of Bitcoin",
                 "To verify the ownership of a Bitcoin address",
                 "To make a stranger fall in love by posting it on social media"
               ],
               "feedback": [
-                "The private key is used to sign transactions and prove ownership of Bitcoins. It's an essential part of the process of sending and receiving Bitcoin payments, and it's important to keep it secret and secure. Good job",
+                "The private key is used to sign transactions and prove ownership of Bitcoin. It's an essential part of the process of sending and receiving Bitcoin payments, and it's important to keep it secret and secure. Good job",
                 "Almost. **** While the private key can be used to verify the ownership of a Bitcoin address, that's not its primary purpose",
-                "Posting it on social media would be like posting your bank account login information online - it's a surefire way to get your Bitcoins stolen. Better stick to more traditional methods of winning someone's heart!"
+                "Posting it on social media would be like posting your bank account login information online - it's a surefire way to get your Bitcoin stolen. Better stick to more traditional methods of winning someone's heart!"
               ]
             },
             {
@@ -1260,7 +1271,7 @@
             {
               "id": "BitcoinHowDoesItWork.mining",
               "title": "Mining",
-              "text": "When a user wants to send a transaction in the bitcoin network, they need to sign the transaction with their private key to prove that they are the owner of the funds being transferred. Once the transaction is signed, it is broadcasted to the peer-to-peer network.\n\nMining is the process of adding transactions to the bitcoin blockchain. When a transaction is broadcasted to the network, it is picked up by miners, who verify that the transaction is valid (i.e. the user has the necessary funds and the private key used to sign the transaction corresponds to the public key associated with the funds).\n\nOnce a transaction has been verified, it is added to a block of transactions, along with a mathematical puzzle. Miners compete to solve the puzzle, and the first one to solve it gets to add the block to the blockchain and claim a reward in bitcoin. The reward is currently 6.25 bitcoins, plus any transaction fees that were included in the block.\n\nIn addition to adding transactions to the blockchain, mining also serves to secure the bitcoin network. This is because solving the puzzle requires a significant amount of computational power, and adding a block to the blockchain requires other miners to verify the solution. This makes it very difficult for any one person or group to manipulate the blockchain.\n",
+              "text": "When a user wants to send a transaction in the bitcoin network, they need to sign the transaction with their private key to prove that they are the owner of the funds being transferred. Once the transaction is signed, it is broadcasted to the peer-to-peer network.\n\nMining is the process of adding transactions to the bitcoin blockchain. When a transaction is broadcasted to the network, it is picked up by miners, who verify that the transaction is valid (i.e. the user has the necessary funds and the private key used to sign the transaction corresponds to the public key associated with the funds).\n\nOnce a transaction has been verified, it is added to a block of transactions, along with a mathematical puzzle. Miners compete to solve the puzzle, and the first one to solve it gets to add the block to the blockchain and claim a reward in bitcoin. The reward is currently 6.25 bitcoin, plus any transaction fees that were included in the block.\n\nIn addition to adding transactions to the blockchain, mining also serves to secure the bitcoin network. This is because solving the puzzle requires a significant amount of computational power, and adding a block to the blockchain requires other miners to verify the solution. This makes it very difficult for any one person or group to manipulate the blockchain.\n",
               "question": "What is the main purpose of mining in the bitcoin network",
               "answers": [
                 "To add transactions to the blockchain and secure the network",
@@ -1280,7 +1291,7 @@
               "question": "How does the Bitcoin network create a source of truth despite having no central authority",
               "answers": [
                 "Through proof of work, which involves miners competing to solve a mathematical puzzle",
-                "By holding a lottery among all those that have bitcoins in a wallet",
+                "By holding a lottery among all those that have bitcoin in a wallet",
                 "Through a process of majority voting"
               ],
               "feedback": [
@@ -1308,7 +1319,7 @@
             {
               "id": "BitcoinHowDoesItWork.halving",
               "title": "The Halving",
-              "text": "One final element that is important to understand, is that the block reward in the bitcoin network is reduced by half every four years, or every 210,000 blocks.\n\nThis event, known as the \"halving\", is programmed into the bitcoin software that all users run. When bitcoin was first launched, miners received 50 new bitcoins for each block they added to the blockchain. Currently, the block reward is 6.25 bitcoins, but it will be reduced to 3.125 bitcoins in 2024 when the next halving occurs.\n\nThese halvings will continue to take place until the year 2140, at which point the total number of bitcoins that will have been mined will be capped at 21 million. As of 2023, around 92% of all bitcoins (\\~19.3 million) have already been mined.\n\nUnlike fiat currencies, which can be inflationary, bitcoin is disinflationary in nature. This makes it more scarce than fiat and precious metals such as gold and silver, or anything else known in the universe.\n",
+              "text": "One final element that is important to understand, is that the block reward in the bitcoin network is reduced by half every four years, or every 210,000 blocks.\n\nThis event, known as the \"halving\", is programmed into the bitcoin software that all users run. When bitcoin was first launched, miners received 50 new bitcoin for each block they added to the blockchain. Currently, the block reward is 6.25 bitcoin, but it will be reduced to 3.125 bitcoin in 2024 when the next halving occurs.\n\nThese halvings will continue to take place until the year 2140, at which point the total number of bitcoin that will have been mined will be capped at 21 million. As of 2023, around 92% of all bitcoin (\\~19.3 million) have already been mined.\n\nUnlike fiat currencies, which can be inflationary, bitcoin is disinflationary in nature. This makes it more scarce than fiat and precious metals such as gold and silver, or anything else known in the universe.\n",
               "question": "What happens to the block reward in the bitcoin network every four years",
               "answers": [
                 "It is reduced by half",
@@ -1321,7 +1332,8 @@
                 "Very creative, but wrong. The Bitcoin supply schedule is anything but random. Its predictability provides certainty for economic actors unlike anything in the history of mankind. Try again!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/connected-world.svg"
         }
       ]
     },
@@ -1446,7 +1458,8 @@
                 "Uhm no, actually payments in Lightning Network save the users fees for not settling every transaction on the blockchain. Try again!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/speed-test.svg"
         }
       ]
     },
@@ -1555,7 +1568,8 @@
                 "It looks like you're trying to save the world one renewable energy source at a time. While that's admirable, unfortunately that's not the right answer."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/critical-thinking.svg"
         },
         {
           "id": "BitcoinCriticismsFallaciesII",
@@ -1657,7 +1671,8 @@
                 "Uh oh, looks like you might have gotten the wrong answer. Shutting down the internet wouldn't necessarily stop people from using bitcoin."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/questions.svg"
         },
         {
           "id": "BitcoinCriticismsFallaciesIII",
@@ -1759,7 +1774,8 @@
                 "Sorry, the value of bitcoin is not solely determined by the backing of a group of investors. Better luck next time!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/critical-thinking.svg"
         }
       ]
     },
@@ -1868,7 +1884,8 @@
                 "Ha! You're off by a whole planet. Maybe try again and focus on the concept of default choices in the absence of communication."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/growth-analytics.svg"
         },
         {
           "id": "BitcoinAndEconomicsII",
@@ -1970,7 +1987,8 @@
                 "Sorry, but the color of money is not the most important factor in determining which type to use. Better luck next time!"
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/investment-data.svg"
         },
         {
           "id": "BitcoinAndEconomicsIII",
@@ -2056,7 +2074,8 @@
                 "Wrong answer! While calculating potential returns on investment is important for bitcoin miners, it is not directly related to the Ansoff Matrix. Better luck next time."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/growth-analytics.svg"
         }
       ]
     },
@@ -2133,7 +2152,8 @@
                 "Computers can be compromised. Paper is safer."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/safe.svg"
         },
         {
           "id": "LightningAddresses",
@@ -2171,7 +2191,8 @@
                 "No bank needed. That's the beauty of Bitcoin."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/speed-test.svg"
         },
         {
           "id": "HardwareWallets",
@@ -2225,7 +2246,8 @@
                 "Most use USB or QR codes, not Bluetooth."
               ]
             }
-          ]
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/security-on.svg"
         }
       ]
     }
