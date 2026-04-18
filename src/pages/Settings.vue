@@ -151,7 +151,7 @@
           </q-item>
           <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
           <!-- Before backup: show Backup action -->
-          <q-item v-if="!activeSparkBackedUp" clickable v-ripple @click="openBackupDialog">
+          <q-item v-if="!activeSparkBackedUp" clickable v-ripple @click="openSeedPhraseDialog('backup')">
             <q-item-section side>
               <Icon icon="tabler:shield-check" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
             </q-item-section>
@@ -170,7 +170,7 @@
             </q-item-section>
           </q-item>
           <!-- After backup: show View Seed Phrase -->
-          <q-item v-else clickable v-ripple @click="openViewMnemonicDialog">
+          <q-item v-else clickable v-ripple @click="openSeedPhraseDialog('view')">
             <q-item-section side>
               <Icon icon="tabler:eye" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
             </q-item-section>
@@ -415,8 +415,14 @@
             </q-item-label>
           </q-item-section>
           <q-item-section side>
+            <!--
+              One-way :model-value binding (not v-model) so the toggle's
+              visual state only flips when we explicitly set
+              `biometricsEnabled`. Prevents a brief ON→OFF flash while the
+              explain dialog is opening or an availability probe is in flight.
+            -->
             <q-toggle
-              v-model="biometricsEnabled"
+              :model-value="biometricsEnabled"
               :color="$q.dark.isActive ? 'green' : 'green-7'"
               :disable="!biometricsAvailable"
               @update:model-value="toggleBiometrics"
@@ -606,9 +612,24 @@
         <div class="kiosk-setup-dialog" :style="{ background: 'var(--bg-card)', color: 'var(--text-primary)' }">
           <!-- Intro -->
           <template v-if="kioskPinSetupStep === 'intro'">
-            <div class="kiosk-setup-icon">
-              <Icon icon="tabler:cash-register" width="28" height="28" />
+            <!--
+              Animated "scan-to-pay" illustration. Served as a standalone
+              SVG so the browser runs its self-contained CSS animations
+              inside an <img> sandbox. The :key + URL query string change
+              on every entry to the intro step so the browser treats
+              each render as a fresh resource and replays the internal
+              animations from frame 0. See the `watch` block above.
+            -->
+            <div class="kiosk-setup-hero">
+              <img
+                :key="kioskIntroAnimationKey"
+                :src="`/Onboarding wizard spark/scan-to-pay-animated.svg?v=${kioskIntroAnimationKey}`"
+                class="kiosk-setup-illustration"
+                alt=""
+                aria-hidden="true"
+              />
             </div>
+
             <h3 class="kiosk-setup-title">{{ $t('kiosk.kioskMode') }}</h3>
             <p class="kiosk-setup-desc">{{ $t('kiosk.introDesc') }}</p>
 
@@ -756,7 +777,7 @@
               {{ $t('Exchange Rate Source') }}
             </q-item-label>
             <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ customMempoolUrl ? $t('Custom') : $t('Default (mempool.space)') }}
+              {{ mempoolSourceLabel }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -1515,120 +1536,143 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <!-- Intro -->
-          <div class="mempool-intro">
-            <div class="mempool-intro-icon" :class="$q.dark.isActive ? 'mempool-intro-icon-dark' : 'mempool-intro-icon-light'">
-              <Icon icon="tabler:server" width="24" height="24" />
-            </div>
-            <p class="mempool-intro-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('BuhoGO uses a Mempool server to look up Bitcoin exchange rates. The default works great, or pick your own for extra privacy.') }}
-            </p>
-          </div>
-
-          <!-- URL Input -->
-          <div class="mempool-input-wrap">
-            <div class="mempool-input-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Server URL') }}
-            </div>
-            <q-input
-              v-model="tempMempoolUrl"
-              :placeholder="$t('https://mempool.space/api/v1')"
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-              borderless
-              input-class="q-px-md mempool-url-input"
-              dense
-              clearable
+          <!--
+            Animated building-blocks illustration. Self-contained SVG so
+            the browser runs its CSS animations inside an <img> sandbox.
+            Three layers of "replay on open" defense, because SVG-in-img
+            animation restart is inconsistent across WebViews:
+              1. v-if toggles off-and-on each open → Vue destroys and
+                 recreates the DOM element, guaranteeing a fresh load.
+              2. :key bumps → forces Vue to treat the new element as
+                 brand new even when the subtree isn't otherwise
+                 invalidated.
+              3. ?v= URL cache-bust → forces the browser to treat the
+                 SVG as a new resource with a fresh render context.
+            See the `showMempoolDialog` watcher.
+          -->
+          <div class="mempool-hero">
+            <img
+              v-if="mempoolHeroMounted"
+              :key="mempoolAnimationKey"
+              :src="`/Onboarding wizard spark/building-blocks-animated.svg?v=${mempoolAnimationKey}`"
+              class="mempool-hero-img"
+              alt=""
+              aria-hidden="true"
             />
           </div>
 
-          <!-- Quick-pick servers -->
-          <div class="mempool-servers">
-            <div class="mempool-servers-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('Tap to use') }}
-            </div>
+          <!-- Plain-language intro. "BuhoGO" is rendered as a brand
+               span so the green accent survives translations. -->
+          <p class="mempool-intro-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            <span class="buhogo-brand">BuhoGO</span>
+            {{ $t('uses a public Bitcoin server to show live prices. Pick which one to use.') }}
+          </p>
 
-            <div
-              class="server-card"
-              :class="[
-                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
-                tempMempoolUrl === 'https://mempool.space/api/v1' || !tempMempoolUrl ? 'server-active' : ''
-              ]"
-              @click="tempMempoolUrl = 'https://mempool.space/api/v1'"
+          <!-- Source picker. Single radio-style list; the custom input
+               appears inline exactly when "Your own server" is selected,
+               so there's no extra click to reveal or hide it. -->
+          <div class="source-list" :class="$q.dark.isActive ? 'source-list-dark' : 'source-list-light'">
+            <!-- Default -->
+            <button
+              type="button"
+              class="source-row"
+              :class="{ 'source-row-selected': mempoolSelectedSource === 'default' }"
+              @click="selectMempoolSource('default')"
             >
-              <div class="server-info">
-                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">mempool.space</span>
-                <span class="server-tag tag-default">{{ $t('Default') }}</span>
-              </div>
-              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.space/api/v1</span>
-            </div>
+              <span class="source-radio" aria-hidden="true">
+                <span class="source-radio-dot" />
+              </span>
+              <span class="source-body">
+                <span class="source-head">
+                  <span class="source-name">mempool.space</span>
+                  <span class="source-tag tag-default">{{ $t('Default') }}</span>
+                </span>
+                <span class="source-desc">{{ $t('Works for everyone') }}</span>
+              </span>
+            </button>
 
-            <div
-              class="server-card"
-              :class="[
-                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
-                tempMempoolUrl === 'https://mempool.emzy.de/api/v1' ? 'server-active' : ''
-              ]"
-              @click="tempMempoolUrl = 'https://mempool.emzy.de/api/v1'"
-            >
-              <div class="server-info">
-                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">emzy.de</span>
-                <span class="server-tag tag-privacy">{{ $t('Privacy') }}</span>
-              </div>
-              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.emzy.de/api/v1</span>
-            </div>
+            <div class="source-separator" role="presentation"></div>
 
-            <div
-              class="server-card"
-              :class="[
-                $q.dark.isActive ? 'server-card-dark' : 'server-card-light',
-                tempMempoolUrl === 'https://mempool.blocktrainer.de/api/v1' ? 'server-active' : ''
-              ]"
-              @click="tempMempoolUrl = 'https://mempool.blocktrainer.de/api/v1'"
+            <!-- Blocktrainer -->
+            <button
+              type="button"
+              class="source-row"
+              :class="{ 'source-row-selected': mempoolSelectedSource === 'blocktrainer' }"
+              @click="selectMempoolSource('blocktrainer')"
             >
-              <div class="server-info">
-                <span class="server-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">Blocktrainer</span>
-                <span class="server-tag tag-community">{{ $t('Community') }}</span>
-              </div>
-              <span class="server-url" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">mempool.blocktrainer.de/api/v1</span>
+              <span class="source-radio" aria-hidden="true">
+                <span class="source-radio-dot" />
+              </span>
+              <span class="source-body">
+                <span class="source-head">
+                  <span class="source-name">Blocktrainer</span>
+                  <span class="source-tag tag-community">{{ $t('Community') }}</span>
+                </span>
+                <span class="source-desc">{{ $t('Community-run, based in Germany') }}</span>
+              </span>
+            </button>
+
+            <div class="source-separator" role="presentation"></div>
+
+            <!-- Your own server (custom) -->
+            <button
+              type="button"
+              class="source-row"
+              :class="{ 'source-row-selected': mempoolSelectedSource === 'custom' }"
+              @click="selectMempoolSource('custom')"
+            >
+              <span class="source-radio" aria-hidden="true">
+                <span class="source-radio-dot" />
+              </span>
+              <span class="source-body">
+                <span class="source-head">
+                  <span class="source-name">{{ $t('Your own server') }}</span>
+                  <span class="source-tag tag-advanced">{{ $t('Advanced') }}</span>
+                </span>
+                <span class="source-desc">{{ $t('Point BuhoGO at a Mempool server you host or trust') }}</span>
+              </span>
+            </button>
+
+            <!-- Inline custom input, part of the same list. Only rendered
+                 when the custom row is the active selection. -->
+            <div v-if="mempoolSelectedSource === 'custom'" class="source-custom">
+              <q-input
+                ref="mempoolCustomInput"
+                v-model="mempoolCustomDraft"
+                :placeholder="$t('https://your-mempool.example.com/api/v1')"
+                class="source-custom-input"
+                :class="$q.dark.isActive ? 'source-custom-input-dark' : 'source-custom-input-light'"
+                borderless
+                input-class="q-px-md source-custom-input-inner"
+                dense
+                clearable
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                :error="!!customUrlErrorMessage"
+                :error-message="customUrlErrorMessage"
+                hide-bottom-space
+              />
+              <p class="source-custom-help" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                <Icon icon="tabler:info-circle" width="14" height="14" class="source-custom-help-icon" />
+                {{ $t('Must start with https:// and end with /api/v1') }}
+              </p>
             </div>
           </div>
 
-          <!-- Rate freshness -->
-          <div class="rate-status"
-               :class="$q.dark.isActive ? 'status-dark' : 'status-light'">
-            <Icon
-              :icon="fiatRateAge === null ? 'tabler:hourglass' : fiatRatesStale ? 'tabler:alert-triangle' : 'tabler:circle-check'"
-              :class="fiatRateAge === null ? 'text-grey' : fiatRatesStale ? 'text-orange' : 'text-green'"
-              width="16" height="16"
-            />
-            <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              <template v-if="fiatRateAge === null">
-                {{ $t('No exchange rates loaded yet') }}
-              </template>
-              <template v-else-if="fiatRateAge === 0">
-                {{ $t('Exchange rates are up to date') }}
-              </template>
-              <template v-else-if="fiatRatesStale">
-                {{ $t('Rates may be outdated - last fetched {n} min ago', { n: fiatRateAge }) }}
-              </template>
-              <template v-else>
-                {{ $t('Rates up to date - refreshed {n} min ago', { n: fiatRateAge }) }}
-              </template>
-            </span>
-          </div>
         </q-card-section>
 
         <q-card-actions align="right" class="dialog-actions">
           <q-btn
             flat
-            :label="$t('Reset')"
+            :label="$t('Use default')"
             @click="resetMempoolUrl"
             no-caps
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
           />
           <q-btn
             flat
-            :label="$t('Test & Save')"
+            :label="$t('Save')"
             @click="saveMempoolUrl"
             :loading="isTestingUrl"
             :disable="!isMempoolUrlValid"
@@ -1640,131 +1684,19 @@
       </q-card>
     </q-dialog>
 
-    <!-- View Mnemonic Dialog -->
-    <q-dialog v-model="showViewMnemonicDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card seed-phrase-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ viewedMnemonic ? $t('Your Recovery Phrase') : $t('View Seed Phrase') }}
-          </div>
-          <q-btn
-            flat
-            round
-            dense
-            @click="closeViewMnemonicDialog"
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          >
-            <Icon icon="tabler:x" width="18" height="18" />
-          </q-btn>
-        </q-card-section>
+    <!-- Spark recovery phrase (unified view + backup flow) -->
+    <SparkSeedPhraseDialog
+      v-model="showSeedPhraseDialog"
+      :mode="seedPhraseMode"
+      @verified="onSeedPhraseVerified"
+    />
 
-        <q-card-section class="dialog-content">
-          <!-- PIN Entry State -->
-          <div v-if="!viewedMnemonic" class="seed-pin-entry">
-            <div class="seed-icon-header">
-              <div class="seed-icon-circle" :class="$q.dark.isActive ? 'seed-icon-circle-dark' : 'seed-icon-circle-light'">
-                <Icon icon="tabler:eye" width="28" height="28" style="color: var(--q-primary);" />
-              </div>
-            </div>
-
-            <p class="seed-dialog-desc" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Tap below to reveal your 12-word recovery phrase.') }}
-            </p>
-
-            <div class="seed-warning-box">
-              <div class="seed-warning-icon-wrap">
-                <Icon icon="tabler:alert-triangle" width="18" height="18" />
-              </div>
-              <div class="seed-warning-text">{{ $t('Never share your seed phrase. Anyone with it can access your funds.') }}</div>
-            </div>
-          </div>
-
-          <!-- Mnemonic Display State -->
-          <div v-else>
-            <MnemonicDisplay
-              :words="viewedMnemonic.split(' ')"
-              :show-warning="false"
-              :show-copy="false"
-            />
-          </div>
-        </q-card-section>
-
-        <q-card-actions class="dialog-actions seed-dialog-actions">
-          <q-btn
-            v-if="!viewedMnemonic"
-            unelevated
-            no-caps
-            :label="$t('Reveal Phrase')"
-            @click="viewMnemonic"
-            :loading="isViewingMnemonic"
-            class="seed-action-btn"
-            :class="$q.dark.isActive ? 'seed-action-btn-dark' : 'seed-action-btn-light'"
-          />
-          <q-btn
-            v-else
-            unelevated
-            no-caps
-            :label="$t('Done')"
-            @click="closeViewMnemonicDialog"
-            class="seed-action-btn"
-            :class="$q.dark.isActive ? 'seed-action-btn-dark' : 'seed-action-btn-light'"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <!-- Backup Seed Phrase Dialog -->
-    <q-dialog v-model="showBackupDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'" persistent>
-      <q-card class="dialog-card backup-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ backupStep === 'show' ? $t('Your Recovery Phrase') : $t('Verify Your Backup') }}
-          </div>
-          <q-btn
-            flat
-            round
-            dense
-            @click="closeBackupDialog"
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          >
-            <Icon icon="tabler:x" width="18" height="18" />
-          </q-btn>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <!-- Step 1: Show Recovery Phrase -->
-          <div v-if="backupStep === 'show'" class="backup-show-step">
-            <MnemonicDisplay
-              :words="backupMnemonicWords"
-              :show-warning="true"
-              :show-copy="false"
-            />
-          </div>
-
-          <!-- Step 3: Verify Recovery Phrase -->
-          <div v-else-if="backupStep === 'verify'" class="backup-verify-step">
-            <MnemonicOrderVerify
-              ref="backupVerifyComponent"
-              :mnemonic="backupMnemonicWords"
-              @verify-success="onBackupVerified"
-              @show-phrase="backupStep = 'show'"
-            />
-          </div>
-        </q-card-section>
-
-        <q-card-actions v-if="backupStep !== 'verify'" class="dialog-actions seed-dialog-actions">
-          <q-btn
-            v-if="backupStep === 'show'"
-            unelevated
-            no-caps
-            :label="$t('I\'ve written it down')"
-            @click="backupStep = 'verify'"
-            class="seed-action-btn"
-            :class="$q.dark.isActive ? 'seed-action-btn-dark' : 'seed-action-btn-light'"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- App Lock enable: explain what happens before the native prompt -->
+    <BiometricEnableDialog
+      v-model="showBiometricEnableDialog"
+      :biometry-type="pendingBiometryType"
+      @confirmed="onBiometricEnableConfirmed"
+    />
 
 
     <!-- Auto-Transfer Wallet List Dialog -->
@@ -1783,8 +1715,13 @@
 
         <q-card-section class="wallets-dialog-content">
           <!-- Empty state -->
-          <div v-if="wallets.length === 0" class="aw-empty-state" :class="$q.dark.isActive ? 'aw-empty-dark' : 'aw-empty-light'" style="padding: 32px 0;">
-            <Icon icon="tabler:send" width="32" height="32" class="aw-empty-icon" />
+          <div v-if="wallets.length === 0" class="aw-empty-state" :class="$q.dark.isActive ? 'aw-empty-dark' : 'aw-empty-light'">
+            <img
+              src="/Onboarding wizard spark/storyset-transfer-money-bro.svg"
+              class="aw-empty-illustration"
+              alt=""
+              aria-hidden="true"
+            />
             <div class="aw-empty-text">{{ $t('Connect a wallet to set up automatic transfers') }}</div>
           </div>
 
@@ -2045,23 +1982,38 @@ import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
 import {shareContent} from '../utils/share.js'
-import {isBiometricAvailable, authenticate as biometricAuth} from '../utils/biometric.js'
+import { isBiometricAvailable } from '../utils/biometric.js'
 import {truncateAddress} from '../utils/addressUtils.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
-import MnemonicDisplay from '../components/MnemonicDisplay.vue'
-import MnemonicOrderVerify from '../components/MnemonicOrderVerify.vue'
 import KioskPinPad from '../components/KioskPinPad.vue'
+import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
+import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
+// Alternative lightweight verification (type 3 random words). Kept out
+// of the flow intentionally — the order-tap check is stronger. Retained
+// here for future reuse.
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { version } from '../../package.json'
+
+// Preset Mempool servers offered in the exchange-rate source picker.
+// Kept at module scope so they are referenced via computed getters in
+// the template without being reactive (they never change per instance).
+// Any URL that is not one of these presets is treated as "custom" and
+// the custom-server panel is auto-expanded on dialog open.
+const MEMPOOL_DEFAULT_URL = 'https://mempool.space/api/v1';
+const MEMPOOL_BLOCKTRAINER_URL = 'https://mempool.blocktrainer.de/api/v1';
+const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 
 export default {
   name: 'SettingsPage',
   components: {
     VueQrcode,
-    MnemonicDisplay,
-    MnemonicOrderVerify,
-    // MnemonicVerify,
+    SparkSeedPhraseDialog,
+    BiometricEnableDialog,
     KioskPinPad,
+    // MnemonicDisplay and MnemonicOrderVerify are used inside
+    // SparkSeedPhraseDialog; they are not needed at this level.
+    // The 3-random-words variant (MnemonicVerify) is retained as a
+    // commented-out alternative — see SparkSeedPhraseDialog's import.
   },
   data() {
     return {
@@ -2087,12 +2039,35 @@ export default {
       currentPin: '',
       newPin: '',
 
-      // Mempool API settings
+      // Mempool API settings.
+      //
+      // The dialog edits state through two explicit data fields:
+      //   * `mempoolSelectedSource` — which radio row is active. This is
+      //     stored as the source of truth so "custom with empty draft"
+      //     still reads as 'custom' in the UI rather than collapsing
+      //     back to default (as a URL-derived computed would).
+      //   * `mempoolCustomDraft` — the text in the custom URL input.
+      //     Preserved across selection switches so quickly tapping a
+      //     preset to compare doesn't discard the user's typing.
+      //
+      // `customMempoolUrl` remains the persisted, committed value from
+      // the store; the other two are scratch space used only while the
+      // dialog is open.
       customMempoolUrl: null,
-      tempMempoolUrl: '',
+      mempoolSelectedSource: 'default', // 'default' | 'blocktrainer' | 'custom'
+      mempoolCustomDraft: '',
       isTestingUrl: false,
-      fiatRateAge: null,
-      fiatRatesStale: false,
+      // Bumps on every dialog open so the animated SVG replays its
+      // internal CSS animations. The key drives both a Vue :key and a
+      // URL query-string on the <img> for cache-busting.
+      mempoolAnimationKey: 0,
+      // Toggled off-then-on around each open so Vue fully unmounts and
+      // remounts the <img> element. Belt-and-braces: some WebView
+      // builds keep SVG animation state across `:key` changes when the
+      // parent q-dialog doesn't fully tear down the subtree, so we
+      // force a real DOM destroy with v-if. Paired with the key + URL
+      // bust, this makes replay reliable on Chromium and WebKit.
+      mempoolHeroMounted: true,
 
       // Language options
       localeOptions: [
@@ -2103,15 +2078,10 @@ export default {
 
       // Spark wallet settings
       showSparkSettingsDialog: false,
-      showViewMnemonicDialog: false,
-      isViewingMnemonic: false,
-      viewedMnemonic: '',
 
-      // Backup seed phrase dialog
-      showBackupDialog: false,
-      backupStep: 'show', // 'show' | 'verify'
-      backupMnemonicWords: [],
-      isLoadingBackup: false,
+      // Unified seed-phrase dialog (view + backup flows)
+      showSeedPhraseDialog: false,
+      seedPhraseMode: 'view', // 'view' | 'backup'
 
       // Spark reconnect dialog
       isSparkReconnecting: false,
@@ -2140,6 +2110,10 @@ export default {
       biometricsAvailable: false,
       biometryType: 'none', // 'fingerprint', 'face', 'device-pin', 'multiple', 'none'
 
+      // Enable-flow explanation dialog state
+      showBiometricEnableDialog: false,
+      pendingBiometryType: 'none',
+
       // Wallet removal
       walletToRemove: null,
 
@@ -2149,6 +2123,21 @@ export default {
       showKioskDisableDialog: false,
       showKioskWalletPicker: false,
       kioskPinSetupStep: 'intro', // 'intro' | 'enter' | 'confirm'
+      // Monotonically increments each time the user lands on the intro
+      // step with the dialog open. Drives both a Vue `:key` (so Vue
+      // fully remounts the <img> DOM node) and a URL query-string on
+      // the animated SVG (so the browser treats each render as a new
+      // resource and restarts the SVG's internal CSS animations from
+      // frame 0). Without both, Chromium and WebKit have been observed
+      // to cache the final animation state and skip the replay.
+      //
+      // Each unique key adds one entry (~60 KB) to the HTTP cache.
+      // Expected bump count per session is small (dialog opens are a
+      // rare, deliberate action), so unbounded growth is acceptable.
+      // Ping-ponging across a small pool was considered and rejected:
+      // reusing a URL defeats the cache-bust and can leave the animation
+      // frozen for users on browsers where that was the original issue.
+      kioskIntroAnimationKey: 0,
       kioskPinFirst: '',
       kioskPinError: '',
       kioskChangePinStep: 'verify', // 'verify' | 'enter' | 'confirm'
@@ -2326,14 +2315,86 @@ export default {
       return this.currentPin.length >= 4 && this.newPin.length >= 4;
     },
 
+    /**
+     * Whether the current edit is ready to save. Presets are always
+     * valid. For custom: an empty draft is treated as "use default" and
+     * allowed; a non-empty draft must parse as an http(s) URL.
+     */
     isMempoolUrlValid() {
-      if (!this.tempMempoolUrl.trim()) return true; // Empty is valid (will use default)
+      if (this.mempoolSelectedSource !== 'custom') return true;
+      const url = (this.mempoolCustomDraft || '').trim();
+      if (!url) return true;
       try {
-        const url = new URL(this.tempMempoolUrl);
-        return url.protocol === 'https:' || url.protocol === 'http:';
+        const parsed = new URL(url);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:';
       } catch {
         return false;
       }
+    },
+
+    /**
+     * The URL that `saveMempoolUrl` will persist, before normalization.
+     * Returns null for "use the built-in default" so the Settings row
+     * caption reads accurately afterwards.
+     */
+    mempoolEffectiveUrl() {
+      switch (this.mempoolSelectedSource) {
+        case 'blocktrainer':
+          return MEMPOOL_BLOCKTRAINER_URL;
+        case 'custom': {
+          const url = (this.mempoolCustomDraft || '').trim();
+          return url === MEMPOOL_DEFAULT_URL || !url ? null : url;
+        }
+        case 'default':
+        default:
+          return null;
+      }
+    },
+
+    // Expose the module-scope preset URLs to the template. Returning the
+    // same reference each render keeps reactivity cheap.
+    MEMPOOL_DEFAULT_URL() {
+      return MEMPOOL_DEFAULT_URL;
+    },
+
+    MEMPOOL_BLOCKTRAINER_URL() {
+      return MEMPOOL_BLOCKTRAINER_URL;
+    },
+
+    /**
+     * Inline error shown below the custom-URL input. Returns an empty
+     * string (falsy) when the URL is valid or the field is empty.
+     * Keeping the validation message inline here rather than in a
+     * separate notify makes the constraint feel like part of the form,
+     * not a jarring after-the-fact alert.
+     */
+    customUrlErrorMessage() {
+      if (this.mempoolSelectedSource !== 'custom') return '';
+      const url = (this.mempoolCustomDraft || '').trim();
+      if (!url) return ''; // empty is allowed while the user is still typing
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+          return this.$t('Must start with https:// (or http://)');
+        }
+      } catch {
+        return this.$t('That does not look like a valid address');
+      }
+      return '';
+    },
+
+    // Plain-language label for the Settings-row caption. Picks the
+    // friendly name of a known preset when applicable, otherwise falls
+    // back to "Custom" for a user-supplied URL.
+    mempoolSourceLabel() {
+      const saved = this.customMempoolUrl;
+      if (!saved || saved === MEMPOOL_DEFAULT_URL) {
+        return this.$t('Default (mempool.space)');
+      }
+      if (saved === MEMPOOL_BLOCKTRAINER_URL) {
+        return this.$t('Blocktrainer');
+      }
+      return this.$t('Custom server');
     },
 
     appVersion() {
@@ -2397,22 +2458,61 @@ export default {
       return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
   },
+  watch: {
+    /**
+     * Replay the kiosk intro animation every time the user lands on
+     * the intro step with the dialog visible. Covers both (a) a fresh
+     * open of the setup dialog and (b) navigating back to intro from
+     * the PIN entry step. Bumping `kioskIntroAnimationKey` changes the
+     * `<img>` :key (remounting the DOM node) and the SVG URL query
+     * string (invalidating the cached render context), which together
+     * force the SVG's internal CSS animations to restart from frame 0.
+     */
+    kioskPinSetupStep(next) {
+      if (next === 'intro' && this.showKioskPinSetupDialog) {
+        this.kioskIntroAnimationKey += 1;
+      }
+    },
+    showKioskPinSetupDialog(isOpen) {
+      if (isOpen && this.kioskPinSetupStep === 'intro') {
+        this.kioskIntroAnimationKey += 1;
+      }
+    },
+
+    /**
+     * Whenever the exchange-rate-source dialog opens, rehydrate the
+     * editing state from whatever is currently saved. Covers the
+     * "cancel without saving" case (don't leak stale edits) and the
+     * "legacy URL" case (user with a saved emzy.de URL sees the custom
+     * row selected and their URL in the input, ready to keep using).
+     * Also replays the building-blocks animation by briefly unmounting
+     * and re-inserting the hero image (see the comment on the template).
+     */
+    showMempoolDialog(isOpen) {
+      if (!isOpen) return;
+      this.resetMempoolEditorFromSavedUrl();
+      // Unmount → bump → remount in the next tick. This guarantees
+      // Vue destroys the <img> DOM node and creates a fresh one, which
+      // (combined with the URL cache-bust) triggers a brand-new SVG
+      // load with its internal animations at frame 0.
+      this.mempoolHeroMounted = false;
+      this.mempoolAnimationKey += 1;
+      this.$nextTick(() => {
+        this.mempoolHeroMounted = true;
+      });
+    },
+  },
+
   created() {
     this.initializeStore();
     this.loadPinState();
     this.checkNotificationPermission();
     this.loadMempoolSettings();
-    this.updateFiatRateStatus();
     this.loadLanguagePreference();
     this.checkBiometricAvailability();
   },
 
   mounted() {
-    // Update fiat rate status every minute
-    this.fiatRateInterval = setInterval(() => {
-      this.updateFiatRateStatus();
-    }, 60000);
-
     // Refresh exchange rates every 5 minutes
     this.exchangeRateInterval = setInterval(() => {
       this.loadExchangeRates();
@@ -2430,9 +2530,6 @@ export default {
   },
 
   beforeUnmount() {
-    if (this.fiatRateInterval) {
-      clearInterval(this.fiatRateInterval);
-    }
     if (this.exchangeRateInterval) {
       clearInterval(this.exchangeRateInterval);
     }
@@ -2623,10 +2720,13 @@ export default {
 
     async toggleBiometrics(value) {
       if (value) {
-        // Check availability first
-        const { available } = await isBiometricAvailable()
+        // Probe availability before showing the explain dialog so we can
+        // tell the user which method will actually be used (fingerprint,
+        // Face ID, device PIN). If nothing is available, bail early with
+        // a plain-language notice. The toggle stays visually OFF (via
+        // the one-way :model-value binding) until the dialog confirms.
+        const { available, biometryType } = await isBiometricAvailable()
         if (!available) {
-          this.biometricsEnabled = false
           this.$q.notify({
             message: this.$t('No screen lock set on this device'),
             color: 'warning',
@@ -2634,20 +2734,34 @@ export default {
           })
           return
         }
-        // Verify identity before enabling (biometric or device PIN)
-        const passed = await biometricAuth({
-          reason: this.$t('Verify to enable app lock'),
-          title: 'BuhoGO'
+
+        this.pendingBiometryType = biometryType
+        this.showBiometricEnableDialog = true
+      } else {
+        // Straightforward disable. A follow-up should gate this behind
+        // re-auth so a briefly-unlocked phone can't flip it off with a
+        // single tap (known gap tracked separately).
+        this.biometricsEnabled = false
+        this.updateBiometricsEnabled(false)
+        this.$q.notify({
+          message: this.$t('App lock disabled'),
+          color: 'positive',
+          timeout: 1500
         })
-        if (!passed) {
-          this.biometricsEnabled = false
-          return
-        }
       }
-      this.biometricsEnabled = value
-      this.updateBiometricsEnabled(value)
+    },
+
+    /**
+     * Called by BiometricEnableDialog after the user confirmed AND the
+     * native biometric prompt passed. The dialog owns the auth flow; at
+     * this point we just persist the setting and confirm back to the
+     * user that it is now active.
+     */
+    onBiometricEnableConfirmed() {
+      this.biometricsEnabled = true
+      this.updateBiometricsEnabled(true)
       this.$q.notify({
-        message: value ? this.$t('App lock enabled') : this.$t('App lock disabled'),
+        message: this.$t('App lock enabled'),
         color: 'positive',
         timeout: 1500
       })
@@ -3089,18 +3203,67 @@ export default {
 
     loadMempoolSettings() {
       this.customMempoolUrl = fiatRatesService.customApiUrl;
-      this.tempMempoolUrl = this.customMempoolUrl || '';
+      this.resetMempoolEditorFromSavedUrl();
     },
 
+    /**
+     * Map the persisted `customMempoolUrl` back into the dialog's
+     * editing state (source + custom draft). Called on component load
+     * and every time the dialog opens. Centralised so the "saved URL →
+     * editor state" mapping lives in exactly one function.
+     */
+    resetMempoolEditorFromSavedUrl() {
+      const saved = this.customMempoolUrl;
+      if (!saved || saved === MEMPOOL_DEFAULT_URL) {
+        this.mempoolSelectedSource = 'default';
+        this.mempoolCustomDraft = '';
+      } else if (saved === MEMPOOL_BLOCKTRAINER_URL) {
+        this.mempoolSelectedSource = 'blocktrainer';
+        this.mempoolCustomDraft = '';
+      } else {
+        // Anything else, including legacy emzy.de URLs that predate the
+        // preset cull, lands on the custom row with the URL preserved
+        // so the user can keep using it or switch to a preset.
+        this.mempoolSelectedSource = 'custom';
+        this.mempoolCustomDraft = saved;
+      }
+    },
+
+    /**
+     * "Use default" button: revert the editor to the built-in default.
+     * The custom draft is cleared so it doesn't linger silently and
+     * surprise the user next time they expand the custom row.
+     */
     resetMempoolUrl() {
-      this.tempMempoolUrl = '';
+      this.mempoolSelectedSource = 'default';
+      this.mempoolCustomDraft = '';
+    },
+
+    /**
+     * Change which exchange-rate source is selected. When switching to
+     * 'custom', focus the input so the user can start typing without a
+     * second tap. Idempotent: re-selecting the active source is a no-op.
+     */
+    selectMempoolSource(source) {
+      if (this.mempoolSelectedSource === source) return;
+      this.mempoolSelectedSource = source;
+      if (source === 'custom') {
+        this.$nextTick(() => {
+          const ref = this.$refs.mempoolCustomInput;
+          if (ref && typeof ref.focus === 'function') ref.focus();
+        });
+      }
     },
 
     async saveMempoolUrl() {
       this.isTestingUrl = true;
 
       try {
-        const urlToTest = this.tempMempoolUrl.trim() || null;
+        // The computed already normalizes default preset and empty
+        // custom draft to null so the Settings row caption reflects
+        // "Default (mempool.space)" when that's effectively what's in
+        // use (rather than "Custom server").
+        const urlToTest = this.mempoolEffectiveUrl;
 
         if (urlToTest) {
           // Test the URL by making a request
@@ -3121,18 +3284,23 @@ export default {
         fiatRatesService.setCustomApiUrl(urlToTest);
         this.customMempoolUrl = urlToTest;
 
-        // Force refresh rates
+        // Force refresh rates so the app starts using the new source
+        // immediately instead of waiting for the next periodic tick.
         await fiatRatesService.fetchLatestRates();
-        this.updateFiatRateStatus();
 
         this.showMempoolDialog = false;
 
+        // Confirmation toast names the new source so the user can see
+        // exactly what changed. The label is computed off the just-
+        // updated `customMempoolUrl`, so it stays accurate for presets
+        // and custom URLs alike. Concatenated rather than interpolated
+        // because vue-i18n returns missing keys verbatim without
+        // running interpolation on the fallback.
         this.$q.notify({
           type: 'positive',
-          message: urlToTest ?
-            this.$t('API settings saved') :
-            this.$t('Using default API'),
-
+          message: this.$t('Exchange rate source updated'),
+          caption: `${this.$t('Now using')} ${this.mempoolSourceLabel}`,
+          timeout: 2000,
         });
 
       } catch (error) {
@@ -3146,11 +3314,6 @@ export default {
       } finally {
         this.isTestingUrl = false;
       }
-    },
-
-    updateFiatRateStatus() {
-      this.fiatRateAge = fiatRatesService.getRateAge();
-      this.fiatRatesStale = fiatRatesService.areRatesStale();
     },
 
     getCurrentLanguageLabel() {
@@ -3241,70 +3404,28 @@ export default {
       // Don't do anything for 'cancelled' - user just closed the dialog
     },
 
-    openViewMnemonicDialog() {
-      this.viewedMnemonic = '';
-      this.isViewingMnemonic = false;
-      this.showViewMnemonicDialog = true;
-    },
-
-    async viewMnemonic() {
-      this.isViewingMnemonic = true;
-      try {
-        const mnemonic = await this.getSparkMnemonic();
-        this.viewedMnemonic = mnemonic;
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Could not retrieve seed phrase'),
-        });
-      } finally {
-        this.isViewingMnemonic = false;
-      }
-    },
-
-    closeViewMnemonicDialog() {
-      this.showViewMnemonicDialog = false;
-      this.viewedMnemonic = '';
-    },
-
     // ==========================================
-    // Backup Seed Phrase
+    // Recovery phrase (unified view + backup flow)
     // ==========================================
 
-    async openBackupDialog() {
-      this.backupMnemonicWords = [];
-      this.isLoadingBackup = true;
-      this.backupStep = 'show';
-      this.showBackupDialog = true;
-
-      try {
-        const mnemonic = await this.getSparkMnemonic();
-        this.backupMnemonicWords = mnemonic.split(' ');
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Could not retrieve seed phrase'),
-        });
-        this.showBackupDialog = false;
-      } finally {
-        this.isLoadingBackup = false;
-      }
+    /**
+     * Open the recovery-phrase dialog. The dialog handles re-auth
+     * (biometric / device PIN on native, skipped on web), phrase
+     * reveal with 120s auto-hide and screenshot protection, and,
+     * in backup mode, the tap-12-words-in-order verification.
+     *
+     * @param {'view'|'backup'} mode
+     */
+    openSeedPhraseDialog(mode) {
+      this.seedPhraseMode = mode;
+      this.showSeedPhraseDialog = true;
     },
 
-    async onBackupVerified() {
-      await this.confirmBackup();
-      this.showBackupDialog = false;
-      this.$q.notify({
-        type: 'positive',
-        message: this.$t('Backup verified successfully!'),
-        caption: this.$t('Your recovery phrase has been confirmed.'),
-      });
-    },
-
-    closeBackupDialog() {
-      this.showBackupDialog = false;
-      this.backupMnemonicWords = [];
-      this.backupStep = 'show';
+    onSeedPhraseVerified() {
+      // Backup flow succeeded — the dialog has already flagged the
+      // wallet as backed up via the store, closed itself, and emitted.
+      // Nothing else to do here; the Settings row re-renders via the
+      // `activeSparkBackedUp` computed.
     },
 
     confirmDeleteSparkWallet() {
@@ -4929,187 +5050,262 @@ export default {
   }
 }
 
-/* Mempool Dialog Styles */
-/* Mempool Dialog */
+/* Exchange-rate-source (Mempool) Dialog
+ * Shares .dialog-card base styles (overflow: hidden for rounded corners)
+ * but lays its children out as a flex column so the middle section
+ * scrolls internally when content exceeds the viewport. Without this,
+ * expanding the custom-server panel clips the Save button off-screen
+ * on short devices. */
 .mempool-dialog {
   width: 100%;
-  max-width: 420px;
-}
-
-.mempool-intro {
+  max-width: 440px;
+  max-height: min(92vh, 760px);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 1.25rem;
-  text-align: center;
 }
 
-.mempool-intro-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
+.mempool-dialog .dialog-header {
+  flex: 0 0 auto;
+}
+
+.mempool-dialog .dialog-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Fade the scroll edges into the card for a softer look when the
+     content overflows. Optional polish. */
+  scrollbar-width: thin;
+}
+
+.mempool-dialog .dialog-actions {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border-card);
+}
+
+/* Animated hero illustration. Served via <img> so the SVG's inline CSS
+   keyframes run in a self-contained sandbox. `min-height` reserves the
+   illustration's vertical footprint so the layout doesn't jump during
+   the one-tick unmount-remount that forces the animation to replay. */
+.mempool-hero {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0 0 8px;
+  min-height: 220px;
+  /* Clip any skew that overshoots the hero frame during the animation
+     so it can't push the card wider mid-animation. */
+  overflow: hidden;
 }
 
-.mempool-intro-icon-dark {
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
+.mempool-hero-img {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
 }
 
-.mempool-intro-icon-light {
-  background: rgba(5, 149, 115, 0.08);
-  color: #059573;
+@media (max-height: 720px) {
+  .mempool-hero {
+    min-height: 180px;
+  }
+  .mempool-hero-img {
+    max-width: 180px;
+  }
 }
 
 .mempool-intro-text {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   line-height: 1.5;
-  margin: 0;
-  max-width: 320px;
+  margin: 0 auto 14px;
+  max-width: 340px;
+  text-align: center;
 }
 
-.mempool-input-wrap {
-  margin-bottom: 1rem;
+/* Green brand accent for the word "BuhoGO" in body copy. Keeps the
+   surrounding text translatable while letting the brand name pop. */
+.buhogo-brand {
+  font-weight: 700;
+  color: #15DE72;
+  background: linear-gradient(135deg, #059573, #15DE72);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.01em;
 }
 
-.mempool-input-label {
+/* Exchange-rate source picker.
+ * Single radio-style list: three rows with an inline custom-URL field
+ * that appears when the "Your own server" row is the active selection.
+ * No disclosure toggle — the selection itself drives visibility. */
+.source-list {
+  border-radius: 14px;
+  border: 1px solid;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.source-list-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.source-list-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.source-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.source-row:active {
+  background: rgba(21, 222, 114, 0.06);
+}
+
+.source-radio {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border-card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.source-row-selected .source-radio {
+  border-color: #15DE72;
+  background: #15DE72;
+}
+
+.source-radio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  transform: scale(0);
+  transition: transform 0.15s ease;
+}
+
+.source-row-selected .source-radio-dot {
+  transform: scale(1);
+}
+
+.source-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.source-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.source-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.source-desc {
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 6px;
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 
-.mempool-url-input {
+.source-separator {
+  height: 1px;
+  background: var(--border-card);
+  margin-left: 48px; /* aligns with the body column, not the radio */
+}
+
+/* Inline custom input — part of the list, visually anchored to the
+   "Your own server" row but clearly its own editing surface. */
+.source-custom {
+  padding: 0 16px 16px 48px; /* left-inset matches source-body column */
+}
+
+.source-custom-input {
+  border-radius: 10px;
+  transition: border-color 0.15s ease;
+}
+
+.source-custom-input-dark {
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
+}
+
+.source-custom-input-light {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.source-custom-input-inner {
   font-family: var(--font-mono);
   font-size: 12px;
 }
 
-/* Server cards */
-.mempool-servers {
-  margin-bottom: 1rem;
-}
-
-.mempool-servers-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 8px;
-}
-
-.server-card {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1.5px solid transparent;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  margin-bottom: 6px;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.server-card:last-child {
-  margin-bottom: 0;
-}
-
-.server-card-dark {
-  background: var(--bg-secondary);
-  border-color: var(--border-card);
-}
-
-.server-card-dark:active {
-  background: #1E1E1E;
-}
-
-.server-card-light {
-  background: var(--bg-secondary);
-  border-color: var(--border-card);
-}
-
-.server-card-light:active {
-  background: #F0F1F3;
-}
-
-.server-card.server-active {
-  border-color: #15DE72;
-}
-
-.server-card-dark.server-active {
-  background: rgba(21, 222, 114, 0.06);
-}
-
-.server-card-light.server-active {
-  background: rgba(5, 149, 115, 0.04);
-}
-
-.server-info {
+.source-custom-help {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.server-name {
+  gap: 6px;
+  margin: 10px 0 0;
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
-.server-tag {
+.source-custom-help-icon {
+  flex: 0 0 auto;
+  opacity: 0.8;
+}
+
+.source-tag {
   font-family: 'Manrope', sans-serif;
   font-size: 10px;
   font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 20px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
+.tag-advanced {
+  background: rgba(148, 163, 184, 0.16);
+  color: #64748b;
+}
+
+/* Shared preset tags, used by .source-head badges. */
 .tag-default {
   background: rgba(21, 222, 114, 0.12);
   color: #15DE72;
 }
 
-.tag-privacy {
-  background: rgba(139, 92, 246, 0.12);
-  color: #A78BFA;
-}
-
 .tag-community {
   background: rgba(251, 191, 36, 0.12);
   color: #F59E0B;
-}
-
-.server-url {
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-/* Rate status */
-.rate-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-}
-
-.status-dark {
-  background: var(--bg-secondary);
-}
-
-.status-light {
-  background: var(--bg-secondary);
-}
-
-.rate-status span {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 /* Spark Wallet Section Styles */
@@ -5345,249 +5541,6 @@ export default {
 .option-subtitle {
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
-}
-
-/* View Mnemonic Dialog */
-.seed-phrase-dialog {
-  max-width: 420px;
-  width: 100%;
-}
-
-.seed-pin-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.seed-icon-header {
-  display: flex;
-  justify-content: center;
-  padding: 0.5rem 0 0.25rem;
-}
-
-.seed-icon-circle {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.seed-icon-circle-dark {
-  background: rgba(21, 222, 114, 0.1);
-}
-
-.seed-icon-circle-light {
-  background: rgba(21, 222, 114, 0.08);
-}
-
-/* Dialog description text */
-.seed-dialog-desc {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: center;
-  margin: 0;
-  padding: 0 0.5rem;
-}
-
-/* Warning Box - Compact */
-.seed-warning-box {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.75rem 1rem;
-  border-radius: 10px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-}
-
-.seed-warning-icon-wrap {
-  flex-shrink: 0;
-  color: #EF4444;
-}
-
-.seed-warning-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  color: #F87171;
-  line-height: 1.4;
-}
-
-/* Backup Steps Preview */
-.backup-steps-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.steps-preview-dark {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.steps-preview-light {
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.step-preview-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 1rem;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.step-preview-num {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.step-num-dark {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.step-num-light {
-  background: rgba(0, 0, 0, 0.06);
-  color: rgba(0, 0, 0, 0.45);
-}
-
-/* PIN Section */
-.seed-pin-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding-top: 0.25rem;
-}
-
-/* Full-width action buttons for seed dialogs */
-.seed-dialog-actions {
-  padding: 0.75rem 1.25rem 1.25rem;
-  display: flex;
-  flex-direction: column;
-}
-
-.seed-action-btn {
-  width: 100%;
-  height: 44px;
-  border-radius: 12px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.seed-action-btn-dark {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-  color: #fff;
-}
-
-.seed-action-btn-light {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-  color: #fff;
-}
-
-.seed-pin-input {
-  font-size: 18px;
-  letter-spacing: 0.5em;
-  font-weight: 600;
-}
-
-/* Mnemonic Display State */
-.mnemonic-display {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.seed-revealed-banner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 8px;
-  background: rgba(251, 191, 36, 0.12);
-  color: #F59E0B;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.mnemonic-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
-}
-
-.mnemonic-word {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  border-radius: 10px;
-}
-
-.word-dark {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-card);
-}
-
-.word-light {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-card);
-}
-
-.word-number {
-  font-family: 'Manrope', sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  color: #6B7280;
-  min-width: 16px;
-}
-
-.word-text {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: #15DE72;
-  font-weight: 500;
-}
-
-.seed-bottom-warning {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.08);
-  color: #EF4444;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-@media (max-width: 480px) {
-  .mnemonic-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .seed-phrase-dialog {
-    max-width: 100%;
-  }
 }
 
 /* Unlock Dialog */
@@ -6036,19 +5989,6 @@ export default {
 }
 
 /* Backup Dialog */
-.backup-dialog {
-  width: 100%;
-  max-width: 420px;
-}
-
-.backup-show-step {
-  padding: 0.5rem 0;
-}
-
-.backup-verify-step {
-  padding: 0.5rem 0;
-}
-
 /* ==========================================
    Auto-Withdraw — Neobank Style
    ========================================== */
@@ -6072,6 +6012,14 @@ export default {
 }
 .aw-empty-icon {
   color: rgba(128, 128, 128, 0.4);
+}
+.aw-empty-illustration {
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  margin-bottom: 8px;
+  user-select: none;
+  pointer-events: none;
 }
 .aw-empty-text {
   font-family: 'Manrope', sans-serif;
@@ -6552,19 +6500,33 @@ export default {
 
 /* Kiosk Setup Dialog */
 .kiosk-setup-dialog {
-  width: 90vw; max-width: 380px;
+  width: 90vw; max-width: 420px;
   border-radius: var(--radius-lg);
-  padding: 32px 24px;
+  padding: 20px 24px 28px;
   display: flex; flex-direction: column; align-items: center;
   text-align: center;
 }
 
-.kiosk-setup-icon {
-  width: 56px; height: 56px; border-radius: 16px;
-  background: var(--bg-input);
-  color: var(--color-green);
-  display: flex; align-items: center; justify-content: center;
-  margin-bottom: 16px;
+/* Animated hero illustration for the intro step.
+   The SVG carries its own CSS keyframes inside a <style> block and is
+   served via <img> so the animation plays in a self-contained sandbox
+   and auto-replays whenever the dialog remounts. */
+.kiosk-setup-hero {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+  /* Clip any drawing that overflows the intended frame so the skew on
+     the QR-code animation can't push beyond the dialog edge. */
+  overflow: hidden;
+}
+
+.kiosk-setup-illustration {
+  width: 100%;
+  max-width: 340px;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
 }
 
 .kiosk-setup-title {

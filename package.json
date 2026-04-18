@@ -25,6 +25,7 @@
     "@iconify/vue": "^5.0.0",
     "@number-flow/vue": "^0.5.0",
     "@quasar/extras": "^1.16.4",
+    "@scure/bip39": "^1.2.1",
     "axios": "1.13.5",
     "bech32": "^2.0.0",
     "pinia": "^3.0.3",

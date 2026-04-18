@@ -743,52 +743,81 @@ export const useWalletStore = defineStore('wallet', {
       this.lastError = null;
       const onProgress = walletData.onProgress || (() => {});
 
+      // Snapshot pre-call state so we can restore it on partial failure.
+      // The Business/Personal pair is one logical unit — either both land
+      // in memory AND storage, or neither does.
+      const addedWalletIds = [];
+      const previousActiveWalletId = this.activeWalletId;
+      const previousHasBackedUp = this.hasBackedUp;
+
       try {
         if (!walletData.mnemonic) {
-          throw new Error('Mnemonic is required');
+          const err = new Error('Mnemonic is required');
+          err.code = 'SPARK_MNEMONIC_REQUIRED';
+          throw err;
         }
 
         // Only one Spark wallet pair allowed
         if (this.hasAnySparkWallet) {
-          throw new Error('Spark wallet already exists');
+          const err = new Error('Spark wallet already exists');
+          err.code = 'SPARK_WALLET_EXISTS';
+          throw err;
         }
 
         const network = walletData.network || 'MAINNET';
         const walletGroupId = `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+        // Resolve the account-number pair for this mnemonic.
+        // Pre-v1.6.0 Spark mainnet wallets lived on account 0 (the SDK's
+        // old default). On restore we probe account 0 and, if it has
+        // activity, place it on the Personal slot so legacy funds remain
+        // accessible. Non-restore (fresh create) always uses the modern
+        // pair so new users get the latest derivation defaults.
+        const accountPair = await this._resolveSparkAccountPair({
+          mnemonic: walletData.mnemonic,
+          network,
+          isRestore: walletData.isRestore,
+          onProgress,
+        });
+
         // Encrypt mnemonic with device key
         onProgress('encrypting');
         const encryptedMnemonic = await CryptoUtils.encryptMnemonic(walletData.mnemonic);
 
-        // Create Business wallet (accountNumber 1)
+        // Create Business wallet
         onProgress('business');
         const businessWallet = await this._createSparkWalletEntry({
           mnemonic: walletData.mnemonic,
           encryptedMnemonic,
           name: 'Business',
           network,
-          accountNumber: 1,
+          accountNumber: accountPair.business,
           walletGroupId,
           isRestore: walletData.isRestore,
+          isLegacy: accountPair.business === 0,
         });
+        addedWalletIds.push(businessWallet.id);
 
-        // Set Business as active and default
-        this.activeWalletId = businessWallet.id;
-        businessWallet.isActive = true;
-        businessWallet.isDefault = true;
-
-        // Create Personal wallet (accountNumber 2)
+        // Create Personal wallet
         onProgress('personal');
         const personalEncrypted = await CryptoUtils.encryptMnemonic(walletData.mnemonic);
-        await this._createSparkWalletEntry({
+        const personalWallet = await this._createSparkWalletEntry({
           mnemonic: walletData.mnemonic,
           encryptedMnemonic: personalEncrypted,
           name: 'Personal',
           network,
-          accountNumber: 2,
+          accountNumber: accountPair.personal,
           walletGroupId,
           isRestore: walletData.isRestore,
+          isLegacy: accountPair.personal === 0,
         });
+        addedWalletIds.push(personalWallet.id);
+
+        // Land the user inside Personal after setup/restore. Personal is
+        // the everyday-use wallet; Business is secondary.
+        this.activeWalletId = personalWallet.id;
+        personalWallet.isActive = true;
+        personalWallet.isDefault = true;
 
         // Legacy store-level backup flag
         if (walletData.isRestore) {
@@ -797,8 +826,16 @@ export const useWalletStore = defineStore('wallet', {
 
         onProgress('done');
         await this.persistState();
-        return businessWallet;
+        return personalWallet;
       } catch (error) {
+        // Atomic rollback. If Business succeeded and Personal failed
+        // (network blip, SDK timeout, etc.), unwind the in-memory
+        // state we mutated so a retry can cleanly start over and
+        // so storage / memory don't diverge.
+        this._rollbackSparkWalletEntries(addedWalletIds, {
+          previousActiveWalletId,
+          previousHasBackedUp,
+        });
         this.lastError = error.message;
         throw error;
       } finally {
@@ -807,9 +844,84 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Internal helper: create and connect a single Spark wallet entry
+     * Unwind partial state left behind by a failed addSparkWallet call.
+     * Disconnects any opened providers and removes the wallet entries
+     * from every in-memory map the store tracks them in.
      */
-    async _createSparkWalletEntry({ mnemonic, encryptedMnemonic, name, network, accountNumber, walletGroupId, isRestore }) {
+    _rollbackSparkWalletEntries(walletIds, { previousActiveWalletId, previousHasBackedUp }) {
+      for (const id of walletIds) {
+        const provider = this.providers[id];
+        if (provider) {
+          try {
+            provider.disconnect();
+          } catch (e) {
+            console.warn('Rollback: provider disconnect failed for', id, e);
+          }
+          delete this.providers[id];
+        }
+        delete this.walletInfos[id];
+        delete this.balances[id];
+        delete this.connectionStates[id];
+        const idx = this.wallets.findIndex(w => w.id === id);
+        if (idx !== -1) this.wallets.splice(idx, 1);
+      }
+      this.activeWalletId = previousActiveWalletId;
+      this.hasBackedUp = previousHasBackedUp;
+    },
+
+    /**
+     * Pick the (Business, Personal) account-number pair for a Spark
+     * mnemonic being set up or restored.
+     *
+     * Modern wallets (and fresh creates) use (1, 2). A mnemonic that has
+     * activity on account 0 is a legacy pre-v1.6.0 wallet — the Spark SDK
+     * previously defaulted mainnet to account 0 before switching to 1. We
+     * preserve those funds by placing account 0 on the Personal slot.
+     *
+     * Legacy detection is mainnet-restore-only:
+     *   - Testnet/regtest have always used account 0 as their default, so
+     *     the concept of "legacy" doesn't apply there.
+     *   - Fresh creates should always land on the modern pair so new users
+     *     get current derivation defaults.
+     *
+     * The probe is best-effort: if it fails (transient network error), we
+     * fall back to the modern pair. The user can re-run restore later or
+     * import the mnemonic in another wallet to recover legacy funds.
+     */
+    async _resolveSparkAccountPair({ mnemonic, network, isRestore, onProgress }) {
+      const MODERN_PAIR = { business: 1, personal: 2 };
+      const LEGACY_PAIR = { business: 1, personal: 0 };
+
+      if (!isRestore || network !== 'MAINNET') {
+        return MODERN_PAIR;
+      }
+
+      onProgress?.('legacyCheck');
+      try {
+        const probe = await SparkWalletProvider.probeAccountActivity(mnemonic, network, 0);
+        if (probe.hasActivity) {
+          console.info('Spark restore: legacy account 0 detected', {
+            balance: probe.balance,
+            transferCount: probe.transferCount,
+          });
+          return LEGACY_PAIR;
+        }
+      } catch (err) {
+        console.warn('Spark restore: legacy probe failed, using modern pair', err);
+      }
+
+      return MODERN_PAIR;
+    },
+
+    /**
+     * Internal helper: create and connect a single Spark wallet entry.
+     *
+     * `connectSparkWallet` locates the wallet by id in `this.wallets`, so
+     * the entry must be pushed before the connect call. If connect fails,
+     * we undo the push locally — the caller's rollback only sees wallets
+     * that were fully returned from here.
+     */
+    async _createSparkWalletEntry({ mnemonic, encryptedMnemonic, name, network, accountNumber, walletGroupId, isRestore, isLegacy = false }) {
       // Validate mnemonic
       const testWallet = await SparkWalletProvider.restoreWallet(mnemonic, network, accountNumber);
       const sparkAddress = await testWallet.getSparkAddress();
@@ -832,14 +944,26 @@ export const useWalletStore = defineStore('wallet', {
         metadata: {
           sparkAddress,
           hasBackedUp: isRestore || false,
+          // Marks pre-v1.6.0 derivations restored from account 0 on mainnet.
+          // Purely informational — the accountNumber is the source of truth
+          // for key derivation. Lets the UI badge legacy wallets if desired.
+          isLegacy,
         },
       };
 
       this.wallets.push(wallet);
       this.walletInfos[wallet.id] = { sparkAddress, type: 'spark' };
 
-      // Connect the wallet
-      await this.connectSparkWallet(wallet.id);
+      try {
+        await this.connectSparkWallet(wallet.id);
+      } catch (error) {
+        // Undo the push so this helper is transactional from the caller's POV.
+        this._rollbackSparkWalletEntries([wallet.id], {
+          previousActiveWalletId: this.activeWalletId,
+          previousHasBackedUp: this.hasBackedUp,
+        });
+        throw error;
+      }
 
       return wallet;
     },

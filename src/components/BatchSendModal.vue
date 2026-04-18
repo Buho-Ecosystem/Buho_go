@@ -130,8 +130,22 @@
               </div>
             </div>
 
-            <!-- Empty State -->
-            <div v-if="filteredContacts.length === 0" class="empty-state">
+            <!-- Empty: no contacts at all -->
+            <div v-if="allContacts.length === 0" class="empty-state empty-state--primary">
+              <img
+                src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
+                class="empty-illustration-img"
+                alt=""
+                aria-hidden="true"
+              />
+              <div class="empty-title">{{ $t('No contacts yet') }}</div>
+              <div class="empty-subtitle">
+                {{ $t('Save contacts in the Address Book to send to multiple people at once.') }}
+              </div>
+            </div>
+
+            <!-- Empty: filtered search has no matches -->
+            <div v-else-if="filteredContacts.length === 0" class="empty-state">
               <Icon icon="tabler:search" />
               <span>{{ $t('No contacts found') }}</span>
             </div>
@@ -1632,6 +1646,36 @@ function retryFailed() {
 
 .empty-state i {
   font-size: 32px;
+}
+
+.empty-state--primary {
+  padding: 32px 24px 40px;
+  gap: 4px;
+  text-align: center;
+}
+
+.empty-state--primary .empty-illustration-img {
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  margin-bottom: 12px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.empty-state--primary .empty-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text1);
+}
+
+.empty-state--primary .empty-subtitle {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 280px;
+  color: var(--c-text3);
 }
 
 /* Warning Banner */

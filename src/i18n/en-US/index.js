@@ -394,6 +394,7 @@ export default {
   "No contacts yet": "No contacts yet",
   "No contacts found": "No contacts found",
   "Add your first Lightning contact to get started": "Add your first Lightning contact to get started",
+  "Save people you pay often for quick access": "Save people you pay often for quick access",
   "Try adjusting your search terms": "Try adjusting your search terms",
   "Search contacts...": "Search contacts...",
   "Clear Search": "Clear Search",
@@ -975,5 +976,8 @@ export default {
   "kiosk.item": "item",
   "kiosk.items": "items",
   "Could not process this link": "Could not process this link",
-  "The server did not respond or the link is no longer valid": "The server did not respond or the link is no longer valid"
+  "The server did not respond or the link is no longer valid": "The server did not respond or the link is no longer valid",
+  "Backup": "Backup",
+  "NOTE": "NOTE",
+  "Add a personal note...": "Add a personal note..."
 }

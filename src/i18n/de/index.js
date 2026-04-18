@@ -395,6 +395,7 @@ export default {
   "No contacts yet": "Noch keine Kontakte",
   "No contacts found": "Keine Kontakte gefunden",
   "Add your first Lightning contact to get started": "Fügen Sie Ihren ersten Lightning-Kontakt hinzu, um zu beginnen",
+  "Save people you pay often for quick access": "Speichere Personen, die du oft bezahlst, für schnellen Zugriff",
   "Try adjusting your search terms": "Versuchen Sie, Ihre Suchbegriffe anzupassen",
   "Search contacts...": "Kontakte suchen...",
   "Clear Search": "Suche löschen",
@@ -406,6 +407,7 @@ export default {
   "contact": "Kontakt",
   "Enter contact name": "Kontaktname eingeben",
   "user@domain.com": "benutzer{'@'}domain.com",
+  "user@example.com": "benutzer{'@'}example.com",
   "Lightning address is required": "Lightning-Adresse ist erforderlich",
   "Invalid Lightning address format": "Ungültiges Lightning-Adressformat",
   "Invalid Bitcoin address format": "Ungültiges Bitcoin-Adressformat",
@@ -929,5 +931,8 @@ export default {
   "kiosk.park": "Parken",
   "kiosk.parked": "Geparkt",
   "kiosk.item": "Position",
-  "kiosk.items": "Positionen"
+  "kiosk.items": "Positionen",
+  "Backup": "Backup",
+  "NOTE": "NOTIZ",
+  "Add a personal note...": "Persönliche Notiz hinzufügen..."
 }

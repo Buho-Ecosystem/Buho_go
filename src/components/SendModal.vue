@@ -199,7 +199,12 @@
         <q-card-section class="contact-list-section">
           <!-- Empty State -->
           <div v-if="contacts.length === 0" class="contact-empty-state">
-            <Icon icon="tabler:users" width="48" height="48" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
+            <img
+              src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
+              class="empty-illustration-img empty-illustration-img--compact"
+              alt=""
+              aria-hidden="true"
+            />
             <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('No contacts yet') }}
             </div>
@@ -1338,6 +1343,19 @@ export default {
   justify-content: center;
   padding: 2.5rem 1.5rem;
   text-align: center;
+}
+
+.empty-illustration-img {
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+  margin-bottom: 0.5rem;
+  user-select: none;
+  pointer-events: none;
+}
+
+.empty-illustration-img--compact {
+  max-width: 140px;
 }
 
 .empty-title {
