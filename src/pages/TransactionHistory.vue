@@ -528,15 +528,20 @@
     <!-- Empty State -->
     <div v-else-if="filteredTransactions.length === 0" class=" full-height"
          :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
-      <div class="empty-icon">
-        <Icon icon="tabler:receipt" :style="{ fontSize: '4rem', color: $q.dark.isActive ? '#B0B0B0' : '#D1D5DB' }" />
-      </div>
+      <img
+        src="/Onboarding wizard spark/storyset-receipt-bro.svg"
+        class="empty-illustration-img"
+        alt=""
+        aria-hidden="true"
+      />
       <div class="empty-title" :class="$q.dark.isActive ? 'empty_title_dark' : 'empty_title_light'">
-        {{ $t('No transactions found') }}
+        {{ activeFilter === 'all' ? $t('No transactions yet') : $t('No transactions found') }}
       </div>
       <div class="empty-subtitle" :class="$q.dark.isActive ? 'empty_subtitle_dark' : 'empty_subtitle_light'">
         {{
-          activeFilter === 'all' ? $t('Your transactions will appear here') : $t('No transactions for') + ' ' + $t(activeFilter)
+          activeFilter === 'all'
+            ? $t('Send or receive your first payment and it will show up here.')
+            : $t('No transactions for') + ' ' + $t(activeFilter)
         }}
       </div>
       <q-btn
@@ -2906,8 +2911,13 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
-.empty-icon {
-  margin-bottom: 1rem;
+.empty-illustration-img {
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+  margin-bottom: 1.25rem;
+  user-select: none;
+  pointer-events: none;
 }
 
 .empty_title_dark {

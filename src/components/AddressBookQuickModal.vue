@@ -46,9 +46,12 @@
 
         <!-- Empty State -->
         <div v-else-if="!hasContacts" class="empty-state">
-          <div class="empty-circle">
-            <Icon icon="tabler:user-plus" />
-          </div>
+          <img
+            src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
+            class="empty-illustration-img"
+            alt=""
+            aria-hidden="true"
+          />
           <p class="empty-title">{{ $t('No contacts yet') }}</p>
           <p class="empty-subtitle">{{ $t('Add contacts to quickly send payments') }}</p>
           <q-btn unelevated no-caps class="btn-primary" @click="goToAddressBook">
@@ -442,16 +445,13 @@ function close() {
   padding: 48px 24px;
   text-align: center;
 }
-.empty-circle {
-  width: 80px; height: 80px;
-  border-radius: 50%;
-  background: var(--c-bg2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--c-text3);
-  font-size: 36px;
-  margin-bottom: 20px;
+.empty-illustration-img {
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  margin-bottom: 16px;
+  user-select: none;
+  pointer-events: none;
 }
 .empty-title { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: var(--c-text); }
 .empty-subtitle { margin: 0 0 24px; font-size: 14px; color: var(--c-text2); max-width: 260px; line-height: 1.5; }

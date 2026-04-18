@@ -96,7 +96,7 @@
     </div>
 
     <!-- Bottom Nav -->
-    <EarnBottomNav active-tab="learn" />
+    <EarnBottomNav active-tab="lessons" />
 
     <!-- Wallet Selection Dialog -->
     <q-dialog v-model="showWalletPicker" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">

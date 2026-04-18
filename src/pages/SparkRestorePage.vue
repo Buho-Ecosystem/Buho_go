@@ -45,6 +45,32 @@
               {{ $t('Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.') }}
             </p>
 
+            <!-- BIP-39 Suggestion Strip (above grid so mobile keyboard never covers it) -->
+            <div
+              v-if="showSuggestions"
+              id="bip39-suggestion-strip"
+              class="suggestion-strip"
+              :class="$q.dark.isActive ? 'suggestion-strip-dark' : 'suggestion-strip-light'"
+              role="listbox"
+            >
+              <button
+                v-for="(suggestion, sIdx) in activeSuggestions"
+                :key="suggestion"
+                type="button"
+                class="suggestion-chip"
+                :class="[
+                  $q.dark.isActive ? 'suggestion-chip-dark' : 'suggestion-chip-light',
+                  { 'suggestion-chip--highlighted': sIdx === highlightedIndex }
+                ]"
+                role="option"
+                :aria-selected="sIdx === highlightedIndex"
+                @mousedown.prevent
+                @click="pickSuggestion(suggestion)"
+              >
+                {{ suggestion }}
+              </button>
+            </div>
+
             <!-- Word Inputs Grid -->
             <div class="words-input-grid">
               <div
@@ -60,13 +86,24 @@
                   type="text"
                   autocomplete="off"
                   autocapitalize="none"
+                  autocorrect="off"
                   spellcheck="false"
                   class="word-input"
                   style="width: 20%;"
                   :class="$q.dark.isActive ? 'input-dark' : 'input-light'"
-                  @input="normalizeWord(index)"
-                  @keydown.enter="focusNextInput(index)"
-                  @paste="handlePaste"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-controls="bip39-suggestion-strip"
+                  :aria-expanded="showSuggestions && activeIndex === index"
+                  @input="onWordInput(index)"
+                  @focus="onWordFocus(index)"
+                  @blur="onWordBlur"
+                  @paste="handlePaste($event, index)"
+                  @keydown.enter.prevent="onEnter(index)"
+                  @keydown.tab="onTab($event, index)"
+                  @keydown.right="onArrowRight"
+                  @keydown.left="onArrowLeft"
+                  @keydown.esc="closeSuggestions"
                   :ref="el => wordInputRefs[index] = el"
                 />
               </div>
@@ -111,8 +148,21 @@
 </template>
 
 <script>
+import { wordlist as BIP39_WORDLIST } from '@scure/bip39/wordlists/english';
 import { useWalletStore } from '../stores/wallet';
-import { SparkWalletProvider } from '../providers/SparkWalletProvider';
+
+// Fast membership lookups for per-word typo checks.
+const BIP39_WORDSET = new Set(BIP39_WORDLIST);
+
+const SEED_WORD_COUNT = 12;
+const MAX_SUGGESTIONS = 8;
+// Short delay on blur so tapping a suggestion chip registers before the
+// strip disappears (mousedown.prevent alone isn't enough on touch devices).
+const BLUR_DISMISS_DELAY_MS = 120;
+// Hard cap on raw clipboard length accepted by the paste handler.
+// A valid 24-word BIP-39 phrase is <250 chars; 4 KB leaves ample headroom
+// while preventing pathological clipboard payloads from being processed.
+const PASTE_MAX_CHARS = 4096;
 
 export default {
   name: 'SparkRestorePage',
@@ -124,15 +174,24 @@ export default {
     return {
       currentStep: 1,
       isValidating: false,
-      inputWords: Array(12).fill(''),
+      inputWords: Array(SEED_WORD_COUNT).fill(''),
       wordInputRefs: [],
       mnemonicError: '',
-
-      // Restoring
       restoringStatus: 'Initializing...',
+
+      // BIP-39 suggestion strip state
+      activeIndex: -1,
+      highlightedIndex: 0,
+      blurTimer: null,
     }
   },
-  mounted() {
+  beforeUnmount() {
+    if (this.blurTimer) clearTimeout(this.blurTimer);
+    // Defense-in-depth: overwrite the in-memory seed words so they don't
+    // linger in the component instance until GC. Not a hard guarantee
+    // (engines may keep copies), but shrinks the obvious surface.
+    this.inputWords = Array(SEED_WORD_COUNT).fill('');
+    this.wordInputRefs = [];
   },
   computed: {
     canContinue() {
@@ -146,39 +205,127 @@ export default {
     },
     displayStep() {
       return this.currentStep;
-    }
+    },
+    activeSuggestions() {
+      if (this.activeIndex < 0) return [];
+      return this.suggestionsFor(this.activeIndex);
+    },
+    showSuggestions() {
+      if (this.activeIndex < 0) return false;
+      const current = (this.inputWords[this.activeIndex] || '').trim().toLowerCase();
+      if (!current) return false;
+      const matches = this.activeSuggestions;
+      if (matches.length === 0) return false;
+      // Typed value is already the sole exact match — user is done with this slot.
+      if (matches.length === 1 && matches[0] === current) return false;
+      return true;
+    },
   },
   methods: {
-    normalizeWord(index) {
-      this.inputWords[index] = this.inputWords[index].toLowerCase().trim();
+    suggestionsFor(index) {
+      const prefix = (this.inputWords[index] || '').trim().toLowerCase();
+      if (!prefix) return [];
+      return BIP39_WORDLIST
+        .filter(word => word.startsWith(prefix))
+        .slice(0, MAX_SUGGESTIONS);
+    },
+
+    onWordInput(index) {
+      this.inputWords[index] = (this.inputWords[index] || '').toLowerCase();
+      this.highlightedIndex = 0;
       this.mnemonicError = '';
     },
 
-    focusNextInput(index) {
-      if (index < 11 && this.wordInputRefs[index + 1]) {
-        this.wordInputRefs[index + 1].focus();
+    onWordFocus(index) {
+      if (this.blurTimer) {
+        clearTimeout(this.blurTimer);
+        this.blurTimer = null;
+      }
+      this.activeIndex = index;
+      this.highlightedIndex = 0;
+    },
+
+    onWordBlur() {
+      this.blurTimer = setTimeout(() => {
+        this.activeIndex = -1;
+        this.blurTimer = null;
+      }, BLUR_DISMISS_DELAY_MS);
+    },
+
+    closeSuggestions() {
+      this.activeIndex = -1;
+    },
+
+    pickSuggestion(word) {
+      const idx = this.activeIndex;
+      if (idx < 0) return;
+      this.inputWords[idx] = word;
+      this.highlightedIndex = 0;
+      this.focusNext(idx);
+    },
+
+    onEnter(index) {
+      if (this.showSuggestions) {
+        const pick = this.activeSuggestions[this.highlightedIndex];
+        if (pick) {
+          this.pickSuggestion(pick);
+          return;
+        }
+      }
+      this.focusNext(index);
+    },
+
+    onTab(event, index) {
+      // Shift+Tab preserves native reverse-focus behavior.
+      if (this.showSuggestions && !event.shiftKey) {
+        const pick = this.activeSuggestions[this.highlightedIndex];
+        if (pick) {
+          event.preventDefault();
+          this.pickSuggestion(pick);
+        }
       }
     },
 
-    handlePaste(event) {
+    onArrowRight(event) {
+      if (!this.showSuggestions) return;
       event.preventDefault();
-      const pastedText = event.clipboardData.getData('text');
-      const words = pastedText.trim().toLowerCase().split(/\s+/);
+      const len = this.activeSuggestions.length;
+      this.highlightedIndex = (this.highlightedIndex + 1) % len;
+    },
 
-      if (words.length >= 12) {
-        for (let i = 0; i < 12; i++) {
-          this.inputWords[i] = words[i] || '';
-        }
-        this.mnemonicError = '';
-      } else if (words.length > 1) {
-        // Paste multiple words starting from current position
-        const currentIndex = this.inputWords.findIndex((_, i) =>
-          this.wordInputRefs[i] === event.target
-        );
-        for (let i = 0; i < words.length && currentIndex + i < 12; i++) {
-          this.inputWords[currentIndex + i] = words[i];
-        }
+    onArrowLeft(event) {
+      if (!this.showSuggestions) return;
+      event.preventDefault();
+      const len = this.activeSuggestions.length;
+      this.highlightedIndex = (this.highlightedIndex - 1 + len) % len;
+    },
+
+    focusNext(index) {
+      const next = index + 1;
+      if (next < SEED_WORD_COUNT && this.wordInputRefs[next]) {
+        this.wordInputRefs[next].focus();
+      } else if (this.wordInputRefs[index]) {
+        this.wordInputRefs[index].blur();
       }
+    },
+
+    handlePaste(event, startIndex) {
+      const text = event.clipboardData?.getData('text') || '';
+      // Cap the raw paste length so pathological clipboard payloads can't
+      // blow out memory before we reduce to at most SEED_WORD_COUNT tokens.
+      const bounded = text.slice(0, PASTE_MAX_CHARS).trim().toLowerCase();
+      const tokens = bounded.split(/\s+/).filter(Boolean).slice(0, SEED_WORD_COUNT);
+      if (tokens.length <= 1) return; // allow native single-word paste
+
+      event.preventDefault();
+      // A full 12-word phrase pasted anywhere fills the grid from slot 0.
+      const base = tokens.length >= SEED_WORD_COUNT ? 0 : startIndex;
+      const limit = Math.min(tokens.length, SEED_WORD_COUNT - base);
+      for (let i = 0; i < limit; i++) {
+        this.inputWords[base + i] = tokens[i];
+      }
+      this.mnemonicError = '';
+      this.activeIndex = -1;
     },
 
     handleBack() {
@@ -186,25 +333,42 @@ export default {
     },
 
     async validateAndContinue() {
-      this.isValidating = true;
       this.mnemonicError = '';
 
-      try {
-        // Validate by trying to restore wallet
-        const wallet = await SparkWalletProvider.restoreWallet(this.mnemonic, 'MAINNET');
-        wallet.cleanupConnections();
+      // Client-side: only verify each word exists in the official BIP-39
+      // recovery word list. This catches typos with precise feedback
+      // ("word 7 doesn't look right") without blocking valid phrases on
+      // checksum edge cases. The Spark SDK performs the authoritative
+      // checksum check and will reject genuinely invalid phrases.
+      const badPositions = [];
+      this.inputWords.forEach((raw, idx) => {
+        const word = (raw || '').trim().toLowerCase();
+        if (!word || !BIP39_WORDSET.has(word)) {
+          badPositions.push(idx + 1);
+        }
+      });
 
-        // Proceed directly to restore
-        await this.restoreWallet();
-      } catch (error) {
-        console.error('Invalid mnemonic:', error);
-        this.mnemonicError = this.$t('Invalid seed phrase. Please check your words and try again.');
+      if (badPositions.length > 0) {
+        const positions = badPositions.join(', ');
+        // Resolve the placeholder after translation so it works whether or
+        // not the locale file contains the key. vue-i18n falls back to the
+        // key itself on miss, and does not interpolate the fallback.
+        const template = badPositions.length === 1
+          ? this.$t("Word {n} doesn't match the official recovery word list. Check the spelling and try again.")
+          : this.$t("Words {n} don't match the official recovery word list. Check the spelling and try again.");
+        this.mnemonicError = template.replace('{n}', positions);
 
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Invalid seed phrase'),
-          caption: this.$t('Please verify your words are correct'),
+          message: this.$t("Some words don't look right"),
+          caption: this.$t('Please review each word carefully and try again.'),
         });
+        return;
+      }
+
+      this.isValidating = true;
+      try {
+        await this.restoreWallet();
       } finally {
         this.isValidating = false;
       }
@@ -221,6 +385,7 @@ export default {
           isRestore: true,
           onProgress: (step) => {
             const messages = {
+              legacyCheck: this.$t('Checking for an existing wallet...'),
               encrypting: this.$t('Encrypting wallet...'),
               business: this.$t('Setting up Business wallet...'),
               personal: this.$t('Setting up Personal wallet...'),
@@ -236,15 +401,49 @@ export default {
         this.$router.replace('/spark-success');
       } catch (error) {
         console.error('Failed to restore wallet:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to restore wallet'),
-          caption: error.message?.includes('duplicate')
-            ? this.$t('This wallet is already added')
-            : this.$t('Please check your backup phrase and try again'),
-        });
+        const { message, caption } = this._userFacingRestoreError(error);
+        this.$q.notify({ type: 'negative', message, caption });
         this.currentStep = 1;
       }
+    },
+
+    /**
+     * Map store / SDK errors to plain-language messages for the user.
+     * Technical details are logged; the user sees what they can act on.
+     */
+    _userFacingRestoreError(error) {
+      if (error?.code === 'SPARK_WALLET_EXISTS') {
+        return {
+          message: this.$t('Your Spark wallets are already set up'),
+          caption: this.$t(
+            'Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.'
+          ),
+        };
+      }
+
+      // Phrase-shaped errors from the Spark SDK when the checksum or seed
+      // decoding fails. The SDK's message wording varies by version, so we
+      // match on a small set of stable keywords rather than exact strings.
+      const rawMessage = (error?.message || '').toLowerCase();
+      const isPhraseError = /mnemonic|seed|invalid hex|checksum/.test(rawMessage);
+      if (isPhraseError) {
+        return {
+          message: this.$t("Your recovery phrase wasn't accepted"),
+          caption: this.$t(
+            "One or more words don't add up. Please double-check each word, including the last one, and try again."
+          ),
+        };
+      }
+
+      // Otherwise: network / service errors during SDK initialization.
+      // Rollback has already cleaned up partial state, so the user can
+      // safely retry.
+      return {
+        message: this.$t("We couldn't restore your wallet"),
+        caption: this.$t(
+          'Please check your internet connection and try again. Your recovery words are still safe.'
+        ),
+      };
     }
   }
 }
@@ -357,6 +556,89 @@ export default {
 
 .view_title {
   color: #6B7280;
+}
+
+/* BIP-39 Suggestion Strip
+ * Rendered ABOVE the word grid so the mobile keyboard (which rises from the
+ * bottom) never covers it. One shared strip reflects the focused input —
+ * avoids the visual chaos of per-input popups on a 12-slot grid. */
+.suggestion-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 12px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid;
+  box-shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.18);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.suggestion-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.suggestion-strip-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.suggestion-strip-dark {
+  background: var(--bg-input);
+  border-color: var(--border-card);
+}
+
+.suggestion-chip {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  scroll-snap-align: start;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.suggestion-chip-light {
+  color: #1e293b;
+  background: #f1f5f9;
+}
+
+.suggestion-chip-light:hover {
+  background: rgba(21, 222, 114, 0.12);
+  color: #059573;
+}
+
+.suggestion-chip-dark {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.suggestion-chip-dark:hover {
+  background: rgba(21, 222, 114, 0.18);
+  color: #15DE72;
+}
+
+.suggestion-chip--highlighted,
+.suggestion-chip--highlighted:hover {
+  background: linear-gradient(135deg, #059573, #15DE72);
+  color: #ffffff;
+  border-color: #15DE72;
+}
+
+.suggestion-chip:active {
+  transform: scale(0.97);
 }
 
 /* Words Input Grid */
@@ -586,10 +868,13 @@ export default {
 /* Footer */
 .restore-footer {
   padding: 0 1.5rem 1.5rem;
+  display: flex;
+  justify-content: center;
 }
 
 .continue-btn {
   width: 100%;
+  max-width: 320px;
   height: 52px;
   border-radius: 24px;
   font-family: 'Manrope', sans-serif;

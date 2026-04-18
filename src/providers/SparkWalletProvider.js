@@ -187,6 +187,56 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Probe a mnemonic + account derivation for existing on-chain activity.
+   *
+   * Used by the restore flow to detect pre-v1.6.0 mainnet wallets, which
+   * lived on accountNumber = 0 before the Spark SDK changed its mainnet
+   * default to 1 for backwards compatibility. A detected legacy account is
+   * mapped to the Personal slot during restore so funds remain accessible.
+   *
+   * The wallet connection is always torn down before returning so the
+   * probe is side-effect-free.
+   *
+   * @param {string} mnemonic
+   * @param {string} network
+   * @param {number} accountNumber
+   * @returns {Promise<{ hasActivity: boolean, balance: number, transferCount: number }>}
+   */
+  static async probeAccountActivity(mnemonic, network, accountNumber) {
+    let wallet = null;
+    try {
+      const { wallet: probeWallet } = await SparkWallet.initialize({
+        mnemonicOrSeed: mnemonic,
+        accountNumber,
+        options: { network },
+      });
+      wallet = probeWallet;
+
+      const [{ balance }, transfersResult] = await Promise.all([
+        wallet.getBalance(),
+        wallet.getTransfers(1, 0),
+      ]);
+
+      const balanceSats = Number(balance || 0);
+      const transferCount = (transfersResult?.transfers || []).length;
+
+      return {
+        hasActivity: balanceSats > 0 || transferCount > 0,
+        balance: balanceSats,
+        transferCount,
+      };
+    } finally {
+      if (wallet) {
+        try {
+          wallet.cleanupConnections();
+        } catch (err) {
+          console.warn('probeAccountActivity: cleanup failed', err);
+        }
+      }
+    }
+  }
+
+  /**
    * Restore wallet from existing mnemonic (for validation during restore)
    * @param {string} mnemonic
    * @param {string} network
@@ -647,7 +697,7 @@ export class SparkWalletProvider extends WalletProvider {
         type: this._mapTransferType(transfer),
         amount: Number(transfer.totalValue || transfer.amount || 0),
         timestamp: this._parseTimestamp(transfer.createdTime || transfer.updatedTime),
-        description: transfer.memo || transfer.description || '',
+        description: this._decodeBase64Memo(transfer.userRequest?.invoice?.memo) || '',
         status: this._normalizeStatus(transfer.status),
         fee: Number(transfer.feeSats || transfer.fees || transfer.fee || 0),
         // Determine if this is a Spark-to-Spark transfer (zero fee) vs Lightning
@@ -713,6 +763,24 @@ export class SparkWalletProvider extends WalletProvider {
     }
     // Default to pending for any other status
     return PAYMENT_STATUS.PENDING;
+  }
+
+  /**
+   * Decode base64-encoded memo from Spark SDK.
+   * Returns the original string if it's not valid base64.
+   */
+  _decodeBase64Memo(memo) {
+    if (!memo) return '';
+    try {
+      const decoded = atob(memo);
+      // Verify it decoded to printable text (not binary garbage)
+      if (/^[\x20-\x7E\xA0-\xFF]*$/.test(decoded) && decoded.length > 0) {
+        return decoded;
+      }
+      return memo;
+    } catch {
+      return memo;
+    }
   }
 
   /**

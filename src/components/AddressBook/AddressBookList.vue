@@ -105,23 +105,17 @@
     </div>
 
     <div v-else class="empty-state full-height" :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
-      <div class="empty-illustration">
-        <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="60" cy="60" r="60" :fill="$q.dark.isActive ? '#2A342A' : '#F3F4F6'"/>
-          <path d="M40 45C40 38.3726 45.3726 33 52 33H68C74.6274 33 80 38.3726 80 45V55C80 61.6274 74.6274 67 68 67H52C45.3726 67 40 61.6274 40 55V45Z" :fill="$q.dark.isActive ? '#15DE72' : '#059573'"/>
-          <circle cx="52" cy="48" r="4" fill="white"/>
-          <circle cx="68" cy="48" r="4" fill="white"/>
-          <path d="M48 58C48 60.2091 49.7909 62 52 62H68C70.2091 62 72 60.2091 72 58V55H48V58Z" fill="white"/>
-          <path d="M35 75H85C87.2091 75 89 76.7909 89 79V85C89 87.2091 87.2091 89 85 89H35C32.7909 89 31 87.2091 31 85V79C31 76.7909 32.7909 75 35 75Z" :fill="$q.dark.isActive ? '#B0B0B0' : '#9CA3AF'"/>
-          <circle cx="40" cy="82" r="3" fill="white"/>
-          <path d="M48 80H75V84H48V80Z" fill="white"/>
-        </svg>
-      </div>
+      <img
+        src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
+        class="empty-illustration-img"
+        alt=""
+        aria-hidden="true"
+      />
       <div class="empty-title" :class="$q.dark.isActive ? 'empty_title_dark' : 'empty_title_light'">
         {{ $t('No contacts yet') }}
       </div>
       <div class="empty-subtitle" :class="$q.dark.isActive ? 'empty_subtitle_dark' : 'empty_subtitle_light'">
-        {{ $t('Add Lightning or Spark contacts to get started') }}
+        {{ $t('Save people you pay often for quick access') }}
       </div>
       <q-btn
         unelevated
@@ -504,9 +498,13 @@ export default {
   background: white;
 }
 
-.empty-illustration {
-  margin-bottom: 2rem;
-  opacity: 0.8;
+.empty-illustration-img {
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+  margin-bottom: 1.25rem;
+  user-select: none;
+  pointer-events: none;
 }
 
 .empty_title_dark {
@@ -600,9 +598,8 @@ export default {
     height: 50vh;
   }
 
-  .empty-illustration svg {
-    width: 80px;
-    height: 80px;
+  .empty-illustration-img {
+    max-width: 140px;
   }
 
   .empty_title_dark,
