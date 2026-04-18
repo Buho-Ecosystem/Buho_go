@@ -73,9 +73,20 @@
         </div>
       </div>
 
-      <!-- Transaction History Button skeleton -->
-      <div class="transaction-icon-section">
-        <q-skeleton type="circle" size="48px" animation="wave" />
+      <!-- Last transaction preview skeleton -->
+      <div class="last-tx-section">
+        <div class="last-tx-card-skeleton" :class="$q.dark.isActive ? 'last-tx-skeleton-dark' : 'last-tx-skeleton-light'">
+          <q-skeleton type="circle" size="36px" animation="wave" />
+          <div class="last-tx-card-skeleton-text">
+            <q-skeleton type="text" width="60%" height="14px" animation="wave" />
+            <q-skeleton type="text" width="40%" height="12px" animation="wave" />
+          </div>
+          <div class="last-tx-card-skeleton-amount">
+            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+            <q-skeleton type="text" width="56px" height="12px" animation="wave" />
+          </div>
+        </div>
+        <q-skeleton type="text" width="72px" height="14px" animation="wave" class="history-link-skeleton" />
       </div>
     </div>
 
@@ -165,18 +176,80 @@
         </div>
       </div>
 
-      <!-- Transaction History Icon -->
-      <div class="transaction-icon-section">
-        <q-btn
-          flat
-          round
-          size="md"
-          @click="$router.push('/transactions')"
-          :class="[$q.dark.isActive ? 'transaction-history-btn-dark' : 'transaction-history-btn-light', { 'pulse': shouldPulse }]"
-          aria-label="Transaction History"
+      <!--
+        Last-transaction preview + History link.
+
+        When a last transaction is available we show it as a tappable
+        card above the History link. When it's loading we show a
+        skeleton card. When there is no transaction we render only the
+        History link (no placeholder / empty-state copy here — the
+        /transactions page handles empty state itself).
+
+        Everything routes to /transactions; the card is just a richer,
+        more informative entry point than the old round icon button.
+      -->
+      <div class="last-tx-section">
+        <!-- Loading: skeleton -->
+        <div
+          v-if="isLoadingLastTransaction"
+          class="last-tx-card-skeleton"
+          :class="$q.dark.isActive ? 'last-tx-skeleton-dark' : 'last-tx-skeleton-light'"
         >
-          <Icon icon="tabler:history" width="20" height="20" />
-        </q-btn>
+          <q-skeleton type="circle" size="36px" animation="wave" />
+          <div class="last-tx-card-skeleton-text">
+            <q-skeleton type="text" width="60%" height="14px" animation="wave" />
+            <q-skeleton type="text" width="40%" height="12px" animation="wave" />
+          </div>
+          <div class="last-tx-card-skeleton-amount">
+            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+            <q-skeleton type="text" width="56px" height="12px" animation="wave" />
+          </div>
+        </div>
+
+        <!-- Loaded: the most recent transaction -->
+        <button
+          v-else-if="lastTransaction"
+          type="button"
+          class="last-tx-card"
+          :class="$q.dark.isActive ? 'last-tx-card-dark' : 'last-tx-card-light'"
+          @click="openTransactionHistory"
+          :aria-label="$t('Open transaction history')"
+        >
+          <span class="last-tx-icon" :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'">
+            <Icon :icon="lastTxIcon" width="18" height="18" />
+          </span>
+          <span class="last-tx-info">
+            <span class="last-tx-title" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
+              {{ lastTxTitle }}
+            </span>
+            <span class="last-tx-time" :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'">
+              {{ lastTxTimeAgo }}
+            </span>
+          </span>
+          <span class="last-tx-amount-wrap">
+            <span class="last-tx-amount" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
+              {{ lastTxAmountDisplay }}
+            </span>
+            <span
+              v-if="lastTxFiatDisplay"
+              class="last-tx-fiat"
+              :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'"
+            >
+              {{ lastTxFiatDisplay }}
+            </span>
+          </span>
+        </button>
+
+        <!-- Always: the History link row -->
+        <button
+          type="button"
+          class="history-link"
+          :class="$q.dark.isActive ? 'history-link-dark' : 'history-link-light'"
+          @click="openTransactionHistory"
+        >
+          <Icon icon="tabler:list" width="16" height="16" />
+          <span>{{ $t('History') }}</span>
+        </button>
       </div>
     </div>
 
@@ -746,6 +819,7 @@ import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
+import {haptics} from '../utils/haptics.js';
 import NumberFlow from '@number-flow/vue';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
@@ -808,7 +882,14 @@ export default {
         denominationCurrency: 'bitcoin',
         displayMode: 'bitcoin'
       },
-      recentTransactions: [],
+      // Last transaction preview shown above the History link.
+      // `null` before the first fetch completes (we render a skeleton
+      // instead while `isLoadingLastTransaction` is true). Populated
+      // with the raw provider tx object; formatting happens in
+      // computed properties.
+      lastTransaction: null,
+      isLoadingLastTransaction: true,
+
       showReceiveModal: false,
       showSendModal: false,
       showPaymentConfirmation: false,
@@ -826,11 +907,9 @@ export default {
       parsedInvoice: null,
       lightningAddress: '',
       refreshInterval: null,
-      pulseInterval: null,
       showLoadingScreen: true,
       currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
-      shouldPulse: false,
       paymentData: null,
       isSendingPayment: false,
       fiatRatesLoaded: false,
@@ -878,6 +957,67 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       ) || null;
+    },
+
+    /**
+     * Whether the last transaction represents an incoming payment.
+     * Handles the provider's direct types ('receive' / 'send') and the
+     * legacy 'incoming' / 'outgoing' shape that the rest of the app
+     * also recognises, plus a defensive amount-sign fallback for any
+     * future provider that forgets to set `type`.
+     */
+    lastTxIsIncoming() {
+      const tx = this.lastTransaction;
+      if (!tx) return false;
+      const t = (tx.type || '').toLowerCase();
+      if (t === 'receive' || t === 'received' || t === 'incoming') return true;
+      if (t === 'send' || t === 'sent' || t === 'outgoing') return false;
+      // Last-resort fallback — some providers encode direction in the sign.
+      return Number(tx.amount) > 0;
+    },
+
+    lastTxIcon() {
+      return this.lastTxIsIncoming ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right';
+    },
+
+    lastTxTitle() {
+      return this.lastTxIsIncoming
+        ? this.$t('Payment Received')
+        : this.$t('Payment Sent');
+    },
+
+    lastTxTimeAgo() {
+      if (!this.lastTransaction) return '';
+      // Providers variously expose timestamp / settled_at / createdTime
+      // depending on the underlying SDK. Try each in order.
+      const ts =
+        this.lastTransaction.timestamp ??
+        this.lastTransaction.settled_at ??
+        this.lastTransaction.createdTime ??
+        null;
+      return this.formatRelativeTime(ts);
+    },
+
+    lastTxAmountDisplay() {
+      if (!this.lastTransaction) return '';
+      const rawAmount = Math.abs(Number(this.lastTransaction.amount) || 0);
+      const sign = this.lastTxIsIncoming ? '+' : '-';
+      // Use the same formatter the rest of the app uses so unit
+      // (sats / BTC) and BIP-177 formatting match.
+      const formatted = formatAmount(rawAmount, this.walletStore.useBip177Format);
+      return `${sign}${formatted}`;
+    },
+
+    lastTxFiatDisplay() {
+      if (!this.lastTransaction) return '';
+      const sats = Math.abs(Number(this.lastTransaction.amount) || 0);
+      if (sats === 0) return '';
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
+      if (fiat === null || fiat === undefined) return '';
+      // "about $0.02" matches the reference mock's softer tone vs an
+      // exact value, which is appropriate for a preview.
+      return `${this.$t('about')} ${fiatRatesService.formatFiatAmount(fiat, currency)}`;
     },
     walletDisplayName() {
       if (!this.activeWallet) return '';
@@ -1141,9 +1281,6 @@ export default {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
     }
-    if (this.pulseInterval) {
-      clearInterval(this.pulseInterval);
-    }
     if (this.qrScanner) {
       this.qrScanner.destroy();
     }
@@ -1164,6 +1301,20 @@ export default {
         this.updateSecondaryValue();
       },
       immediate: true
+    },
+
+    /**
+     * Refresh the last-transaction card whenever the active wallet
+     * changes (e.g. user switches between Business and Personal via
+     * the Spark tab bar, or picks a different connected wallet).
+     * Flip the skeleton back on briefly so the card feels responsive
+     * to the switch rather than silently swapping its contents.
+     */
+    'walletState.activeWalletId'(next, prev) {
+      if (next === prev) return;
+      this.isLoadingLastTransaction = true;
+      this.lastTransaction = null;
+      this.loadLastTransaction();
     },
 
     currentDisplayMode: {
@@ -1626,11 +1777,10 @@ export default {
         this.startBitcoinDepositPolling();
 
         await this.loadFiatRates();
-        await this.loadTransactions();
+        await this.loadLastTransaction();
         await this.loadNostrProfiles();
 
         this.startPeriodicRefresh();
-        this.startPulseAnimation();
 
         this.showLoadingScreen = false;
 
@@ -1789,10 +1939,93 @@ export default {
       } catch (error) {
         console.error('Failed to update balance:', error);
       }
+
+      // Refresh the last-transaction preview alongside the balance so
+      // the wallet screen stays consistent after a send/receive event.
+      // Fire-and-forget; errors inside are swallowed by the method.
+      this.loadLastTransaction();
     },
 
-    async loadTransactions() {
-      this.recentTransactions = [];
+    /**
+     * Fetch the single most recent transaction for the active wallet
+     * and store it in `lastTransaction`. Best-effort: when the active
+     * wallet isn't connected yet, or its provider doesn't expose
+     * `getTransactions`, we silently clear to null so the UI falls
+     * back to just the "History" link without an error state.
+     *
+     * Called from created() after initial connect, periodically every
+     * 30s alongside balance refresh, after send/receive completes
+     * (via updateWalletBalance), and whenever the user switches the
+     * active wallet.
+     */
+    async loadLastTransaction() {
+      const walletId = this.activeWallet?.id;
+      if (!walletId) {
+        this.lastTransaction = null;
+        this.isLoadingLastTransaction = false;
+        return;
+      }
+
+      try {
+        const provider = this.walletStore.providers?.[walletId];
+        if (!provider || typeof provider.getTransactions !== 'function') {
+          this.lastTransaction = null;
+          return;
+        }
+
+        const result = await provider.getTransactions({ limit: 1, offset: 0 });
+        // Providers return either an array or `{ transactions: [...] }`
+        // depending on the implementation. Handle both so new providers
+        // don't silently break this card.
+        const txs = Array.isArray(result) ? result : (result?.transactions || []);
+        this.lastTransaction = txs.length > 0 ? txs[0] : null;
+      } catch (err) {
+        console.warn('Failed to load last transaction:', err);
+        this.lastTransaction = null;
+      } finally {
+        this.isLoadingLastTransaction = false;
+      }
+    },
+
+    openTransactionHistory() {
+      haptics.tap();
+      this.$router.push('/transactions');
+    },
+
+    /**
+     * Build a best-effort relative time string without pulling in a
+     * date library. Falls back to a short absolute date for anything
+     * older than a week.
+     */
+    formatRelativeTime(timestamp) {
+      if (!timestamp) return '';
+      const ts = typeof timestamp === 'number' ? timestamp : new Date(timestamp).getTime();
+      if (!Number.isFinite(ts)) return '';
+      const diffMs = Date.now() - ts;
+      if (diffMs < 0) return this.$t('just now');
+      const minute = 60 * 1000;
+      const hour = 60 * minute;
+      const day = 24 * hour;
+      const week = 7 * day;
+      if (diffMs < minute) return this.$t('just now');
+      if (diffMs < hour) {
+        const n = Math.floor(diffMs / minute);
+        return `${n} ${n === 1 ? this.$t('min ago') : this.$t('mins ago')}`;
+      }
+      if (diffMs < day) {
+        const n = Math.floor(diffMs / hour);
+        return `${n} ${n === 1 ? this.$t('hr ago') : this.$t('hrs ago')}`;
+      }
+      if (diffMs < week) {
+        const n = Math.floor(diffMs / day);
+        return `${n} ${n === 1 ? this.$t('day ago') : this.$t('days ago')}`;
+      }
+      // Older than a week: show a short absolute date, localised.
+      try {
+        return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      } catch {
+        return '';
+      }
     },
 
     loadNostrProfiles() {
@@ -1809,7 +2042,7 @@ export default {
     startPeriodicRefresh() {
       this.refreshInterval = setInterval(async () => {
         await this.updateWalletBalance();
-        await this.loadTransactions();
+        await this.loadLastTransaction();
         await this.loadFiatRates();
       }, 30000);
     },
@@ -1848,15 +2081,6 @@ export default {
           };
         }
       }
-    },
-
-    startPulseAnimation() {
-      this.pulseInterval = setInterval(() => {
-        this.shouldPulse = true;
-        setTimeout(() => {
-          this.shouldPulse = false;
-        }, 1000);
-      }, 25000);
     },
 
     async toggleCurrency() {
@@ -3820,54 +4044,211 @@ export default {
   transform: translateY(10px);
 }
 
-/* Transaction History Button */
-.transaction-icon-section {
+/* ------------------------------------------------------------------
+   Last-transaction preview + History link.
+   Neutral palette only — deliberately no green accents here. The
+   balance above carries the brand colour; this block stays quiet so
+   the eye lands on the amount, not the last-tx direction.
+------------------------------------------------------------------ */
+.last-tx-section {
   display: flex;
-  justify-content: center;
-  margin-bottom: 2rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 1.25rem;
+  margin-bottom: 1.5rem;
 }
 
-.transaction-history-btn-dark,
-.transaction-history-btn-light {
-  width: 48px;
-  height: 48px;
+/* ── Card ──────────────────────────────────────────────────────── */
+.last-tx-card {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  font-family: 'Manrope', sans-serif;
+}
+
+.last-tx-card:active {
+  transform: scale(0.99);
+}
+
+.last-tx-card-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.last-tx-card-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.last-tx-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  transition: transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.last-tx-icon-light {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.last-tx-icon-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.last-tx-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.last-tx-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.last-tx-title-light {
+  color: #0f172a;
+}
+
+.last-tx-title-dark {
+  color: #f1f5f9;
+}
+
+.last-tx-time,
+.last-tx-fiat {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.last-tx-muted-light {
+  color: #64748b;
+}
+
+.last-tx-muted-dark {
+  color: #94a3b8;
+}
+
+.last-tx-amount-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.last-tx-amount {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── History link ─────────────────────────────────────────────── */
+.history-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border: none;
+  background: none;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.history-link:active {
   opacity: 0.6;
 }
 
-.transaction-history-btn-dark {
-  background: #2A342A;
-  color: #B0B0B0;
+.history-link-light {
+  color: #475569;
 }
 
-.transaction-history-btn-light {
-  background: #f8f9fa;
-  color: #6b7280;
+.history-link-dark {
+  color: #cbd5e1;
 }
 
-.transaction-history-btn-dark:active,
-.transaction-history-btn-light:active {
-  transform: scale(0.95);
+/* ── Skeleton ─────────────────────────────────────────────────── */
+.last-tx-card-skeleton {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid;
 }
 
-.transaction-history-btn-dark.pulse,
-.transaction-history-btn-light.pulse {
-  animation: subtle-pulse 1s ease-out;
+.last-tx-skeleton-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
 }
 
-@keyframes subtle-pulse {
-  0% {
-    opacity: 0.6;
-    transform: scale(1);
+.last-tx-skeleton-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.last-tx-card-skeleton-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.last-tx-card-skeleton-amount {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.history-link-skeleton {
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .last-tx-card,
+  .history-link {
+    transition: none;
   }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.02);
-  }
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
+  .last-tx-card:active {
+    transform: none;
   }
 }
 
