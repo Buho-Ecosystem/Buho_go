@@ -52,97 +52,157 @@
       </q-tabs>
     </div>
 
-    <!-- Summary Stats -->
+    <!--
+      Filter summary: three neutral cards (Net / Received / Sent).
+      Each card carries its own fiat line so users have the full
+      picture at a glance — no more hunting for the conversion on
+      just one card. Direction is shown via a small label icon and
+      the signed amount; no coloured accents on the value itself.
+    -->
     <div class="stats-section" v-if="activeFilter !== 'all' && filteredTransactions.length > 0">
-      <div class="stats-cards-row">
-        <div class="balance-card-gradient stats-balance-card">
-          <div class="stats-balance-label">{{ activeWalletName }}</div>
-          <div class="stats-balance-fiat">{{ getFiatAmountForStats(totalReceived - totalSent) }}</div>
-          <div class="stats-balance-sats">
-<!--            <Icon icon="tabler:currency-bitcoin" width="12" height="12" style="margin-right: 4px" />-->
-            {{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}</div>
+      <div class="stats-grid">
+        <div class="stats-card" :class="$q.dark.isActive ? 'stats-card-dark' : 'stats-card-light'">
+          <div class="stats-card-head">
+            <Icon
+              icon="tabler:arrows-down-up"
+              width="13" height="13"
+              class="stats-card-head-icon"
+              :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'"
+            />
+            <span class="stats-card-label" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+              {{ $t('Net') }}
+            </span>
+          </div>
+          <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+            {{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}
+          </div>
+          <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+            {{ getFiatAmountForStats(netAmount) }}
+          </div>
         </div>
-        <div class="stats-info-card" :class="$q.dark.isActive ? 'stats-info-card-dark' : 'stats-info-card-light'">
-          <div class="stats-info-value positive">{{ formatAmountWithSign(totalReceived, true) }}</div>
-          <div class="stats-info-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{ $t('Received') }}</div>
+
+        <div class="stats-card" :class="$q.dark.isActive ? 'stats-card-dark' : 'stats-card-light'">
+          <div class="stats-card-head">
+            <Icon
+              icon="tabler:arrow-down-left"
+              width="13" height="13"
+              class="stats-card-head-icon stats-card-head-icon-in"
+            />
+            <span class="stats-card-label" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+              {{ $t('Received') }}
+            </span>
+          </div>
+          <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+            {{ formatAmountWithSign(totalReceived, true) }}
+          </div>
+          <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+            {{ getFiatAmountForStats(totalReceived) }}
+          </div>
         </div>
-        <div class="stats-info-card" :class="$q.dark.isActive ? 'stats-info-card-dark' : 'stats-info-card-light'">
-          <div class="stats-info-value negative">{{ formatAmountWithSign(totalSent, false) }}</div>
-          <div class="stats-info-label" :class="$q.dark.isActive ? 'stat_label_dark' : 'stat_label_light'">{{ $t('Sent') }}</div>
+
+        <div class="stats-card" :class="$q.dark.isActive ? 'stats-card-dark' : 'stats-card-light'">
+          <div class="stats-card-head">
+            <Icon
+              icon="tabler:arrow-up-right"
+              width="13" height="13"
+              class="stats-card-head-icon"
+              :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'"
+            />
+            <span class="stats-card-label" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+              {{ $t('Sent') }}
+            </span>
+          </div>
+          <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+            {{ formatAmountWithSign(totalSent, false) }}
+          </div>
+          <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+            {{ getFiatAmountForStats(totalSent) }}
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Pending Bitcoin Deposits - Integrated with TX List Style -->
-    <div v-if="pendingBitcoinDeposits.length > 0" class="pending-deposits-list">
-      <!-- Section Header -->
-      <div class="pending-list-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
-        <span class="header-text">
-          {{ $t('Bitcoin Deposits') }}
-          <span v-if="pendingBitcoinDeposits.length > 1" class="deposit-count">({{ pendingBitcoinDeposits.length }})</span>
+    <!-- Pending Bitcoin deposits — share the tx-row base class so the
+         two surfaces feel like one list. Ready deposits are clickable
+         to trigger the claim sheet; unconfirmed ones surface progress
+         via confirmation dots. -->
+    <div v-if="pendingBitcoinDeposits.length > 0" class="tx-pending-deposits">
+      <div class="tx-pending-header" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+        <span>
+          {{ $t('Bitcoin deposits') }}
+          <span v-if="pendingBitcoinDeposits.length > 1"> ({{ pendingBitcoinDeposits.length }})</span>
         </span>
-        <span v-if="claimableDeposits.length > 0" class="header-badge">
+        <span v-if="claimableDeposits.length > 0" class="tx-pending-ready">
           {{ claimableDeposits.length }} {{ $t('ready') }}
         </span>
       </div>
 
-      <!-- Deposit Entries - Matching TX Card Style -->
-      <div
+      <button
         v-for="deposit in pendingBitcoinDeposits"
         :key="deposit.txId"
-        class="deposit-tx-card"
-        :class="$q.dark.isActive ? 'deposit-tx-card-dark' : 'deposit-tx-card-light'"
-        @click="deposit.confirmed ? initiateClaimDeposit(deposit) : null"
+        type="button"
+        class="tx-row"
+        :class="[
+          $q.dark.isActive ? 'tx-row-dark' : 'tx-row-light',
+          { 'tx-row-ready': deposit.confirmed }
+        ]"
+        :disabled="!deposit.confirmed && !claimingTxId"
+        @click="deposit.confirmed && initiateClaimDeposit(deposit)"
       >
-        <!-- Left: Bitcoin Icon -->
-        <div class="tx-avatar">
-          <div class="direction-icon bitcoin-deposit" :class="{ 'claimable': deposit.confirmed }">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 3v2h1V3h2v2.05A5.001 5.001 0 0 1 15.95 15 5.001 5.001 0 0 1 13.5 19.95V22h-2v-2h-1v2h-2v-2H7v-2h1V6H7V4h1.5V2h2v2h1V2h2v2zm-3 4v4h3a2 2 0 1 0 0-4h-3zm0 6v4h3.5a2 2 0 1 0 0-4h-3.5z"/></svg>
-          </div>
-        </div>
+        <span class="tx-row-icon-wrap">
+          <span
+            class="tx-row-icon"
+            :class="[
+              $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
+              deposit.confirmed ? 'tx-row-icon-in' : 'tx-row-icon-out'
+            ]"
+          >
+            <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
+          </span>
+        </span>
 
-        <!-- Center: Info -->
-        <div class="tx-info">
-          <div class="tx-primary" :class="$q.dark.isActive ? 'tx_primary_dark' : 'tx_primary_light'">
-            {{ $t('Bitcoin Deposit') }}
-          </div>
-          <div class="tx-secondary deposit-status" :class="deposit.confirmed ? 'status-ready' : 'status-pending'">
+        <span class="tx-row-body">
+          <span class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+            {{ $t('Bitcoin deposit') }}
+          </span>
+          <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
             <template v-if="deposit.confirmed">
-              <Icon icon="tabler:circle-check" width="14" height="14" class="status-icon" />
+              <Icon icon="tabler:circle-check" width="13" height="13" class="tx-row-sub-icon tx-row-sub-icon-ready" />
               {{ $t('Ready to claim') }}
             </template>
             <template v-else>
-              <span class="conf-dots">
-                <span class="dot" :class="{ active: deposit.confirmations >= 1 }"></span>
-                <span class="dot" :class="{ active: deposit.confirmations >= 2 }"></span>
-                <span class="dot" :class="{ active: deposit.confirmations >= 3 }"></span>
+              <span class="tx-conf-dots" aria-hidden="true">
+                <span class="tx-conf-dot" :class="{ 'tx-conf-dot-active': deposit.confirmations >= 1 }" />
+                <span class="tx-conf-dot" :class="{ 'tx-conf-dot-active': deposit.confirmations >= 2 }" />
+                <span class="tx-conf-dot" :class="{ 'tx-conf-dot-active': deposit.confirmations >= 3 }" />
               </span>
               {{ deposit.confirmations }}/3 {{ $t('confirmations') }}
             </template>
-          </div>
-        </div>
+          </span>
+        </span>
 
-        <!-- Right: Amount & Action -->
-        <div class="tx-amounts deposit-actions">
-          <q-chip class="amount-sats positive" :class="$q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light'">
-            {{ formatAmount(deposit.amount) }}
-          </q-chip>
-          <q-btn
-            v-if="deposit.confirmed"
-            size="sm"
-            no-caps
-            unelevated
-            class="claim-action-btn"
-            :loading="claimingTxId === deposit.txId"
-            @click.stop="initiateClaimDeposit(deposit)"
-          >
-            {{ $t('Claim') }}
-          </q-btn>
-          <div v-else class="amount-fiat confirming-text" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
+        <span class="tx-row-amount-col">
+          <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+            +{{ formatAmount(deposit.amount) }}
+          </span>
+          <span v-if="deposit.confirmed" class="tx-deposit-action">
+            <q-btn
+              size="sm"
+              no-caps
+              unelevated
+              dense
+              class="tx-claim-btn"
+              :loading="claimingTxId === deposit.txId"
+              @click.stop="initiateClaimDeposit(deposit)"
+            >
+              {{ $t('Claim') }}
+            </q-btn>
+          </span>
+          <span v-else class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
             {{ $t('Confirming...') }}
-          </div>
-        </div>
-      </div>
+          </span>
+        </span>
+      </button>
     </div>
 
     <!-- Claim Confirmation - iOS Action Sheet Style -->
@@ -275,39 +335,31 @@
       @closed="onClaimSuccessClosed"
     />
 
-    <!-- Skeleton Loading State -->
+    <!-- Skeleton loading state — shape matches the live row for a
+         seamless hand-off when real data lands. -->
     <div v-if="showLoadingScreen || isLoading" class="transaction-content" :class="$q.dark.isActive ? 'transaction_content_dark' : 'transaction_content_light'">
-      <!-- Group Header skeleton -->
-      <div :class="$q.dark.isActive ? 'group_header_dark' : 'group_header_light'" style="pointer-events: none;">
-        <div style="flex: 1;">
-          <q-skeleton type="text" width="100px" height="15px" animation="wave" style="margin-bottom: 4px;" />
-          <q-skeleton type="text" width="80px" height="13px" animation="wave" />
-        </div>
-        <q-skeleton type="text" width="60px" height="15px" animation="wave" />
+      <div class="tx-group-header-skeleton" :class="$q.dark.isActive ? 'tx-group-header-dark' : 'tx-group-header-light'">
+        <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+        <q-skeleton type="text" width="44px" height="14px" animation="wave" />
       </div>
 
-      <!-- Transaction Card skeletons -->
       <div
         v-for="n in 6"
         :key="'skel-'+n"
-        class="transaction-card"
-        :class="$q.dark.isActive ? 'transaction_card_dark' : 'transaction_card_light'"
-        style="pointer-events: none;"
+        class="tx-row tx-row-skeleton"
+        :class="$q.dark.isActive ? 'tx-row-dark' : 'tx-row-light'"
       >
-        <!-- Avatar -->
-        <div class="tx-avatar">
-          <q-skeleton type="circle" size="40px" animation="wave" />
-        </div>
-        <!-- Info -->
-        <div class="tx-info">
-          <q-skeleton type="text" width="60%" height="15px" animation="wave" />
-          <q-skeleton type="text" width="40%" height="13px" animation="wave" style="margin-top: 2px;" />
-        </div>
-        <!-- Amounts -->
-        <div class="tx-amounts">
-          <q-skeleton type="text" width="70px" height="15px" animation="wave" />
-          <q-skeleton type="text" width="50px" height="13px" animation="wave" style="margin-left: auto;" />
-        </div>
+        <span class="tx-row-icon-wrap">
+          <q-skeleton type="circle" size="36px" animation="wave" />
+        </span>
+        <span class="tx-row-body">
+          <q-skeleton type="text" width="60%" height="14px" animation="wave" />
+          <q-skeleton type="text" width="35%" height="12px" animation="wave" />
+        </span>
+        <span class="tx-row-amount-col">
+          <q-skeleton type="text" width="68px" height="14px" animation="wave" />
+          <q-skeleton type="text" width="46px" height="12px" animation="wave" />
+        </span>
       </div>
     </div>
 
@@ -318,181 +370,155 @@
       v-else-if="filteredTransactions.length > 0"
     >
       <q-pull-to-refresh @refresh="onPullToRefresh" color="primary">
-      <div class="transaction-groups">
+      <div class="tx-groups">
         <div
           v-for="group in groupedTransactions"
           :key="group.date"
-          class="transaction-group"
+          class="tx-group"
         >
-          <!-- Group Header -->
-          <div
+          <!-- Group Header: date + count on left, chevron on right.
+               Net amount intentionally removed — it was visually dense
+               and repeats on the summary stats card when filters apply. -->
+          <button
             v-if="!group.isFlat"
-            class="group-header"
-            :class="$q.dark.isActive ? 'group_header_dark' : 'group_header_light'"
+            type="button"
+            class="tx-group-header"
+            :class="$q.dark.isActive ? 'tx-group-header-dark' : 'tx-group-header-light'"
             @click="toggleGroup(group.date)"
           >
-            <div class="group-info">
-              <div class="group-date" :class="$q.dark.isActive ? 'group_date_dark' : 'group_date_light'">
-                {{ group.dateLabel }}
-              </div>
-              <div class="group-summary" :class="$q.dark.isActive ? 'group_summary_dark' : 'group_summary_light'">
-                {{ group.transactions.length }} {{ $t('transaction') }}{{ group.transactions.length !== 1 ? 's' : '' }}
-              </div>
-            </div>
-            <div class="group-amount">
-              <div class="group-total"
-                   :class="[group.netAmount >= 0 ? 'positive' : 'negative', $q.dark.isActive ? 'group_total_dark' : 'group_total_light']">
-                {{ formatAmountWithSign(Math.abs(group.netAmount), group.netAmount >= 0) }}
-                <div class="group-fiat text-right" :class="$q.dark.isActive ? 'group_fiat_dark' : 'group_fiat_light'">
-                  {{ group.netAmount >= 0 ? '+' : '' }}{{ getFiatAmountForStats(group.netAmount) }}
-                </div>
-              </div>
+            <span class="tx-group-date">{{ group.dateLabel }}</span>
+            <span class="tx-group-meta">
+              <span class="tx-group-count">
+                {{ group.transactions.length }}
+                {{ group.transactions.length === 1 ? $t('item') : $t('items') }}
+              </span>
               <Icon
                 :icon="group.expanded ? 'tabler:chevron-up' : 'tabler:chevron-down'"
-                :class="$q.dark.isActive ? 'expand_icon_dark' : 'expand_icon_light'"
+                width="16" height="16"
+                class="tx-group-chevron"
               />
-            </div>
-          </div>
+            </span>
+          </button>
 
-          <!-- Group Transactions -->
+          <!-- Group transactions -->
           <q-slide-transition>
-            <div v-show="group.expanded || group.isFlat" class="group-transactions"
-                 :class="[{ 'flat-list': group.isFlat }, $q.dark.isActive ? 'group_transactions_dark' : 'group_transactions_light']">
-
+            <div v-show="group.expanded || group.isFlat" class="tx-rows">
               <template v-for="tx in group.transactions" :key="tx.id">
-                <!-- Regular Transaction -->
-                <div
+                <!-- Regular row -->
+                <button
                   v-if="!tx.isGroup"
-                  class="transaction-card"
-                  :class="$q.dark.isActive ? 'transaction_card_dark' : 'transaction_card_light'"
+                  type="button"
+                  class="tx-row"
+                  :class="[
+                    $q.dark.isActive ? 'tx-row-dark' : 'tx-row-light',
+                    { 'tx-row-pending': tx.status === 'pending' }
+                  ]"
                   @click="viewTransaction(tx)"
                 >
-                <!-- Left: Avatar/Icon -->
-                <div class="tx-avatar">
-                  <div v-if="getContactForTransaction(tx)"
-                       class="contact-avatar"
-                       :style="{ backgroundColor: getContactForTransaction(tx).color }">
-                    {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
-                  </div>
-                  <div v-else class="direction-icon" :class="getIndicatorClass(tx)">
-                    <!-- Auto-Transfer: paper-plane (outgoing, distinct style) -->
-                    <svg v-if="isAutoWithdraw(tx)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
-                    <!-- Awaiting Payment: clock -->
-                    <svg v-else-if="isPendingInvoice(tx)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <!-- Bitcoin L1: bitcoin symbol -->
-                    <svg v-else-if="isBitcoinTransaction(tx)" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 3v2h1V3h2v2.05A5.001 5.001 0 0 1 15.95 15 5.001 5.001 0 0 1 13.5 19.95V22h-2v-2h-1v2h-2v-2H7v-2h1V6H7V4h1.5V2h2v2h1V2h2v2zm-3 4v4h3a2 2 0 1 0 0-4h-3zm0 6v4h3.5a2 2 0 1 0 0-4h-3.5z"/></svg>
-                    <!-- Zap/Nostr: lightning bolt -->
-                    <svg v-else-if="tx.senderNpub" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                    <!-- Received: arrow-down-left -->
-                    <Icon v-else-if="tx.type === 'incoming'" icon="tabler:arrow-down" width="20" height="20" />
-                    <!-- Sent: arrow-up-right -->
-                    <Icon v-else icon="tabler:arrow-up" width="20" height="20" />
-                  </div>
-                </div>
-
-                <!-- Center: Info -->
-                <div class="tx-info">
-                  <!-- Line 1: Date and Time (always shown) -->
-                  <div class="tx-primary" :class="$q.dark.isActive ? 'tx_primary_dark' : 'tx_primary_light'">
-                    <span v-if="tx.status === 'pending' && tx.type === 'incoming'">{{ $t('Awaiting payment') }}</span>
-                    <span v-else-if="tx.status === 'pending'">{{ $t('Sending...') }}</span>
-                    <span v-else>{{ formatHumanDateTime(tx.settled_at) }}</span>
-                  </div>
-
-                  <!-- Line 2: Contact name (if assigned) -->
-                  <div v-if="getContactForTransaction(tx)"
-                       class="tx-secondary"
-                       :class="$q.dark.isActive ? 'tx_secondary_dark' : 'tx_secondary_light'">
-                    {{ getContactForTransaction(tx).name }}
-                  </div>
-
-                  <!-- Line 3: Auto-withdraw note OR description -->
-                  <div v-if="isAutoWithdraw(tx) && getAutoWithdrawNote(tx)"
-                       class="tx-description aw-note"
-                       :class="$q.dark.isActive ? 'tx_description_dark' : 'tx_description_light'">
-                    {{ getAutoWithdrawNote(tx) }}
-                  </div>
-                  <div v-else-if="shouldShowDescription(tx)"
-                       class="tx-description tx-description-italic"
-                       :class="$q.dark.isActive ? 'tx_description_dark' : 'tx_description_light'">
-                    {{ tx.description || tx.memo }}
-                  </div>
-
-                  <!-- Line 4: Tags (skip auto-withdraw tag since icon already indicates it) -->
-                  <div v-if="getTagsForTransaction(tx).filter(t => t !== 'auto-withdraw').length > 0" class="tx-tags">
-                    <template v-for="tag in getTagsForTransaction(tx).filter(t => t !== 'auto-withdraw')" :key="tag">
-                      <span class="tag-pill">
-                        {{ tag }}
-                      </span>
-                    </template>
-                  </div>
-                </div>
-
-                <!-- Right: Amounts -->
-                <div class="tx-amounts">
-                  <div class="amount-sats"
-                       :class="[getAmountClass(tx), $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
-                    {{ getFormattedAmount(tx) }}
-                  </div>
-                  <q-chip class="" :class="tx.type === 'incoming' ? 'badge-pill badge-pill-green' : 'badge-pill badge-pill-red'">
-                    {{ getFiatAmount(tx) }}
-                  </q-chip>
-                </div>
-                </div>
-
-                <!-- Micropayment Group -->
-                <div
-                  v-if="tx.isGroup"
-                  class="micropayment-group"
-                  :class="$q.dark.isActive ? 'micropayment_group_dark' : 'micropayment_group_light'"
-                >
-                <div class="group-header-micro" @click="toggleMicropaymentGroup(tx.id)">
-                  <div class="group-icon-micro">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg>
-                  </div>
-                  <div class="group-info-micro">
-                    <div class="group-primary" :class="$q.dark.isActive ? 'group_primary_dark' : 'group_primary_light'">
-                      {{ tx.count }} {{ tx.transactionType === 'incoming' ? 'payments from' : 'payments to' }} {{ getGroupRecipientDisplay(tx) }}
-                    </div>
-                    <div class="group-secondary" :class="$q.dark.isActive ? 'group_secondary_dark' : 'group_secondary_light'">
-                      {{ formatRelativeTime(tx.startTime) }}
-                    </div>
-                  </div>
-                  <div class="group-amount-micro">
-                    <div class="amount-sats"
-                         :class="[tx.transactionType === 'incoming' ? 'positive' : 'negative', $q.dark.isActive ? 'amount_sats_dark' : 'amount_sats_light']">
-                      {{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}
-                    </div>
-                    <Icon
-                      :icon="expandedMicropaymentGroups.has(tx.id) ? 'tabler:chevron-up' : 'tabler:chevron-down'"
-                      width="16"
-                      height="16"
-                      :class="$q.dark.isActive ? 'expand_icon_dark' : 'expand_icon_light'"
-                    />
-                  </div>
-                </div>
-
-                <!-- Expanded Group Items -->
-                <q-slide-transition>
-                  <div v-show="expandedMicropaymentGroups.has(tx.id)" class="group-items-micro"
-                       :class="$q.dark.isActive ? 'group_items_micro_dark' : 'group_items_micro_light'">
-                    <div
-                      v-for="innerTx in tx.transactions"
-                      :key="innerTx.id"
-                      class="group-item-micro"
-                      :class="$q.dark.isActive ? 'group_item_micro_dark' : 'group_item_micro_light'"
-                      @click="viewTransaction(innerTx)"
+                  <!-- Icon / avatar -->
+                  <span class="tx-row-icon-wrap">
+                    <span
+                      v-if="getContactForTransaction(tx)"
+                      class="tx-row-avatar"
+                      :style="{ backgroundColor: getContactForTransaction(tx).color }"
                     >
-                      <div class="item-time" :class="$q.dark.isActive ? 'item_time_dark' : 'item_time_light'">
-                        {{ formatHumanDateTime(innerTx.settled_at) }}
-                      </div>
-                      <div class="item-amount"
-                           :class="[innerTx.type === 'incoming' ? 'positive' : '', $q.dark.isActive ? 'item_amount_dark' : 'item_amount_light']">
-                        {{ formatAmountWithSign(innerTx.amount, innerTx.type === 'incoming') }}
-                      </div>
+                      {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
+                    </span>
+                    <span
+                      v-else
+                      class="tx-row-icon"
+                      :class="[
+                        $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
+                        `tx-row-icon-${getTxDirection(tx)}`
+                      ]"
+                    >
+                      <Icon :icon="getTxIcon(tx)" width="18" height="18" />
+                    </span>
+                  </span>
+
+                  <!-- Text column -->
+                  <span class="tx-row-body">
+                    <span class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                      {{ getTxTitle(tx) }}
+                    </span>
+                    <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+                      {{ getTxSubtitle(tx) }}
+                    </span>
+                  </span>
+
+                  <!-- Amount column -->
+                  <span class="tx-row-amount-col">
+                    <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                      {{ getFormattedAmount(tx) }}
+                    </span>
+                    <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+                      {{ getFiatAmount(tx) }}
+                    </span>
+                  </span>
+                </button>
+
+                <!-- Micropayment group -->
+                <div v-if="tx.isGroup" class="tx-micro">
+                  <button
+                    type="button"
+                    class="tx-row tx-micro-header"
+                    :class="[
+                      $q.dark.isActive ? 'tx-row-dark' : 'tx-row-light',
+                      { 'tx-micro-open': expandedMicropaymentGroups.has(tx.id) }
+                    ]"
+                    @click="toggleMicropaymentGroup(tx.id)"
+                  >
+                    <span class="tx-row-icon-wrap">
+                      <span
+                        class="tx-row-icon"
+                        :class="[
+                          $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
+                          `tx-row-icon-${tx.transactionType === 'incoming' ? 'in' : 'out'}`
+                        ]"
+                      >
+                        <Icon icon="tabler:stack-2" width="18" height="18" />
+                      </span>
+                    </span>
+                    <span class="tx-row-body">
+                      <span class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                        {{ tx.count }} {{ tx.transactionType === 'incoming' ? $t('payments from') : $t('payments to') }}
+                        {{ getGroupRecipientDisplay(tx) }}
+                      </span>
+                      <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+                        {{ formatRelativeTime(tx.startTime) }}
+                      </span>
+                    </span>
+                    <span class="tx-row-amount-col">
+                      <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                        {{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}
+                      </span>
+                      <Icon
+                        :icon="expandedMicropaymentGroups.has(tx.id) ? 'tabler:chevron-up' : 'tabler:chevron-down'"
+                        width="14" height="14"
+                        class="tx-micro-chevron"
+                      />
+                    </span>
+                  </button>
+
+                  <q-slide-transition>
+                    <div v-show="expandedMicropaymentGroups.has(tx.id)" class="tx-micro-items">
+                      <button
+                        v-for="innerTx in tx.transactions"
+                        :key="innerTx.id"
+                        type="button"
+                        class="tx-micro-item"
+                        :class="$q.dark.isActive ? 'tx-row-dark' : 'tx-row-light'"
+                        @click="viewTransaction(innerTx)"
+                      >
+                        <span class="tx-micro-item-time" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+                          {{ formatShortTime(innerTx.settled_at) }}
+                        </span>
+                        <span class="tx-micro-item-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                          {{ formatAmountWithSign(innerTx.amount, innerTx.type === 'incoming') }}
+                        </span>
+                      </button>
                     </div>
-                  </div>
-                </q-slide-transition>
+                  </q-slide-transition>
                 </div>
               </template>
             </div>
@@ -833,6 +859,74 @@ export default {
       // Skip generic default descriptions
       if (desc === 'Lightning transaction') return false;
       return true;
+    },
+
+    // ------------------------------------------------------------------
+    // Row presentation helpers. Kept small and explicit so the row
+    // template stays declarative: each row asks the method for a title,
+    // a subtitle, and a direction tag and renders them. All the type-
+    // discrimination (pending, auto-withdraw, contact, etc.) is here.
+    // ------------------------------------------------------------------
+
+    /**
+     * The identity line for a transaction row.
+     * Priority: pending status → contact name → auto-withdraw note
+     * → user description → fallback to the type label.
+     */
+    getTxTitle(tx) {
+      if (!tx) return '';
+      if (tx.status === 'pending') {
+        return tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending...');
+      }
+      const contact = this.getContactForTransaction(tx);
+      if (contact) return contact.name;
+      if (this.isAutoWithdraw(tx)) {
+        const note = this.getAutoWithdrawNote(tx);
+        if (note) return note;
+        return this.$t('Auto-Transfer');
+      }
+      if (this.shouldShowDescription(tx)) {
+        return tx.description || tx.memo;
+      }
+      if (this.isBitcoinTransaction(tx)) {
+        return tx.type === 'incoming' ? this.$t('Bitcoin received') : this.$t('Bitcoin sent');
+      }
+      if (tx.senderNpub) return this.$t('Zap received');
+      return tx.type === 'incoming' ? this.$t('Payment received') : this.$t('Payment sent');
+    },
+
+    /**
+     * The secondary caption — the time HH:MM. Group headers already
+     * carry the date, so repeating it on every row is noise.
+     */
+    getTxSubtitle(tx) {
+      if (!tx) return '';
+      if (tx.status === 'pending') return this.formatShortTime(tx.settled_at);
+      return this.formatShortTime(tx.settled_at);
+    },
+
+    /**
+     * 'in' | 'out' — drives the icon choice (arrow direction) and the
+     * subtle accent on the icon circle. Incoming earns a gentle green
+     * tint so direction is legible at scan time; outgoing stays neutral.
+     */
+    getTxDirection(tx) {
+      return tx?.type === 'incoming' ? 'in' : 'out';
+    },
+
+    /**
+     * Iconify name for the left-side icon circle. Single icon system
+     * (tabler) for visual rhythm — replaces the mix of raw SVG paths
+     * the old layout used.
+     */
+    getTxIcon(tx) {
+      if (!tx) return 'tabler:dots';
+      if (this.isPendingInvoice(tx)) return 'tabler:clock';
+      if (tx.status === 'pending') return 'tabler:clock';
+      if (this.isAutoWithdraw(tx)) return 'tabler:send';
+      if (this.isBitcoinTransaction(tx)) return 'tabler:currency-bitcoin';
+      if (tx.senderNpub) return 'tabler:bolt';
+      return tx.type === 'incoming' ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right';
     },
 
     formatRelativeTime(timestamp) {
@@ -2092,154 +2186,382 @@ export default {
   background: #F6F6F6;
 }
 
-.transaction-groups {
-  padding: 0.5rem;
+/* ==================================================================
+   Transaction list — redesigned, neutral palette.
+   Shares colour tokens with the Wallet page's last-tx preview so the
+   two surfaces feel like one system. No green/red on amounts; no
+   coloured chips on fiat. Direction is conveyed by the sign on the
+   amount and the arrow direction in the left icon.
+================================================================== */
+.tx-groups {
+  padding: 8px 16px 16px;
 }
 
-.transaction-group {
-  margin-bottom: 1rem;
+.tx-group + .tx-group {
+  margin-top: 12px;
 }
 
-/* Group Header */
-.group_header_dark {
+/* Group header: date + item count + chevron. Net amount removed to
+   keep the list scannable; filter stats card carries totals when
+   needed. */
+.tx-group-header,
+.tx-group-header-skeleton {
+  width: 100%;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: #1A1A1A;
-  border-radius: 12px;
+  padding: 10px 4px 8px;
+  border: none;
+  background: transparent;
+  font-family: 'Manrope', sans-serif;
   cursor: pointer;
-  transition: background-color 0.15s ease;
-  margin: 0 16px 8px 16px;
-  font-family: 'Manrope', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
 }
 
-.group_header_light {
-  display: flex;
-  justify-content: space-between;
+.tx-group-header-light {
+  color: #64748b;
+}
+
+.tx-group-header-dark {
+  color: #94a3b8;
+}
+
+.tx-group-date {
+  flex: 0 0 auto;
+}
+
+.tx-group-meta {
+  display: inline-flex;
   align-items: center;
-  padding: 12px 16px;
-  background: #FFFFFF;
-  border-radius: 12px;
+  gap: 6px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.tx-group-count {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.tx-group-chevron {
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+/* ── Rows ────────────────────────────────────────────────────── */
+.tx-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tx-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid;
+  background: none;
   cursor: pointer;
-  transition: background-color 0.15s ease;
-  margin: 0 16px 8px 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  text-align: left;
+  transition: transform 0.12s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
   font-family: 'Manrope', sans-serif;
 }
 
-.group_header_dark:hover {
-  background: rgba(255, 255, 255, 0.05);
+.tx-row:disabled {
+  cursor: default;
 }
 
-.group_header_light:hover {
-  background: rgba(0, 0, 0, 0.02);
+.tx-row:not(:disabled):active {
+  transform: scale(0.995);
 }
 
-.group-info {
-  flex: 1;
+.tx-row-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
 }
 
-.group_date_dark {
-  font-size: 15px;
-  font-weight: 500;
-  color: #FFFFFF;
-  margin-bottom: 2px;
-  font-family: 'Manrope', sans-serif;
+.tx-row-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
 }
 
-.group_date_light {
-  font-size: 15px;
-  font-weight: 500;
-  color: #000000;
-  margin-bottom: 2px;
-  font-family: 'Manrope', sans-serif;
+/* Pending rows get a hairline accent on the left so scanning users
+   can spot "still in motion" payments without visual shouting. */
+.tx-row-pending {
+  box-shadow: inset 2px 0 0 rgba(148, 163, 184, 0.5);
 }
 
-.group_summary_dark {
-  font-size: 13px;
-  color: #999;
-  display: flex;
+/* Ready-to-claim deposits: subtle green accent instead. Direction is
+   clear from the Claim CTA too, so the accent stays quiet. */
+.tx-row-ready {
+  box-shadow: inset 2px 0 0 rgba(21, 222, 114, 0.6);
+}
+
+/* ── Left column (icon / avatar) ─────────────────────────────── */
+.tx-row-icon-wrap {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-family: 'Manrope', sans-serif;
+  justify-content: center;
 }
 
-.group_summary_light {
-  font-size: 13px;
-  color: #6B7280;
-  display: flex;
+.tx-row-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-family: 'Manrope', sans-serif;
-}
-
-.group-amount {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.group_total_dark {
-  font-size: 15px;
-  font-weight: 500;
-  font-family: 'Manrope', sans-serif;
-}
-
-.group_total_light {
-  font-size: 15px;
-  font-weight: 500;
-  font-family: 'Manrope', sans-serif;
-}
-
-.group-fiat {
+  justify-content: center;
   font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+}
+
+.tx-row-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Outgoing & neutral icons: muted slate. Incoming: subtle green
+   tint so direction is legible at scan time. Still muted enough to
+   not compete with the balance above. */
+.tx-row-icon-light {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.tx-row-icon-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.tx-row-icon-light.tx-row-icon-in {
+  background: rgba(21, 222, 114, 0.1);
+  color: #059573;
+}
+
+.tx-row-icon-dark.tx-row-icon-in {
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
+}
+
+/* ── Middle column (title + caption) ─────────────────────────── */
+.tx-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.tx-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-row-title-light {
+  color: #0f172a;
+}
+
+.tx-row-title-dark {
+  color: #f1f5f9;
+}
+
+.tx-row-sub,
+.tx-row-fiat {
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tx-row-sub-icon {
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+.tx-row-sub-icon-ready {
+  color: #15DE72;
+  opacity: 1;
+}
+
+.tx-row-muted-light {
+  color: #64748b;
+}
+
+.tx-row-muted-dark {
+  color: #94a3b8;
+}
+
+/* ── Right column (amount + fiat) ────────────────────────────── */
+.tx-row-amount-col {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tx-row-amount {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Confirmation dots (pending Bitcoin deposits) ────────────── */
+.tx-conf-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 2px;
+}
+
+.tx-conf-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+  transition: opacity 0.25s ease;
+}
+
+.tx-conf-dot-active {
+  opacity: 0.9;
+}
+
+/* ── Micropayment group ──────────────────────────────────────── */
+.tx-micro {
+  display: flex;
+  flex-direction: column;
+}
+
+.tx-micro-chevron {
+  opacity: 0.6;
+  margin-top: 4px;
+}
+
+.tx-micro-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0 44px; /* align under the text column, not the icon */
+  padding: 4px 0;
+  font-family: 'Manrope', sans-serif;
+}
+
+.tx-micro-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease;
+}
+
+.tx-micro-item:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.tx-micro-item-time,
+.tx-micro-item-amount {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-micro-item-amount {
+  font-weight: 600;
+}
+
+/* ── Pending Bitcoin deposits section ────────────────────────── */
+.tx-pending-deposits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 16px 0;
+}
+
+.tx-pending-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 2px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.tx-pending-ready {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.tx-deposit-action {
+  display: inline-flex;
+  justify-content: flex-end;
   margin-top: 2px;
 }
 
-.group_fiat_dark {
-  color: #999;
+.tx-claim-btn {
+  min-height: 28px !important;
+  padding: 4px 12px !important;
+  border-radius: 10px !important;
+  background: #15DE72 !important;
+  color: #0f172a !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
 }
 
-.group_fiat_light {
-  color: #6B7280;
+/* ── Skeleton ────────────────────────────────────────────────── */
+.tx-row-skeleton {
+  pointer-events: none;
 }
 
-.expand_icon_dark {
-  color: #B0B0B0;
-  transition: transform 0.2s;
+.tx-group-header-skeleton {
+  pointer-events: none;
 }
 
-.expand_icon_light {
-  color: #6B7280;
-  transition: transform 0.2s;
-}
-
-/* Group Transactions */
-.group_transactions_dark {
-  background: #1A1A1A;
-  border-radius: 12px;
-  overflow: hidden;
-  margin: 0 16px 16px 16px;
-}
-
-.group_transactions_light {
-  background: #FFFFFF;
-  border-radius: 12px;
-  overflow: hidden;
-  margin: 0 16px 16px 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.flat-list {
-  border: none !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  margin: 0 !important;
-  box-shadow: none !important;
-}
-
+/* ── Legacy transaction-item block kept for code paths we haven't
+   migrated; safe to remove once confirmed unused. ──────────── */
 .transaction_item_dark {
   display: flex;
   align-items: center;
@@ -2438,440 +2760,6 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
-/* Redesigned Transaction Card - Bitcoin Design Guide Pattern */
-.transaction-card,
-.transaction_card_dark,
-.transaction_card_light {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  min-height: 72px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  font-family: 'Manrope', sans-serif;
-}
-
-.transaction_card_dark {
-  border-bottom: 1px solid #2A2A2A;
-}
-
-.transaction_card_light {
-  border-bottom: 1px solid #E5E7EB;
-}
-
-/* Remove border on last transaction in grouped view */
-.group_transactions_dark .transaction-card:last-child,
-.group_transactions_dark .micropayment-group:last-child {
-  border-bottom: none;
-}
-
-.group_transactions_light .transaction-card:last-child,
-.group_transactions_light .micropayment-group:last-child {
-  border-bottom: none;
-}
-
-.transaction_card_dark:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.transaction_card_light:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-/* Avatar/Icon Section */
-.tx-avatar {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-}
-
-.contact-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  font-weight: 600;
-  color: white;
-  font-family: 'Manrope', sans-serif;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-}
-
-.direction-icon {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-}
-
-/* Incoming - Green tinted */
-.direction-icon.incoming {
-  background: rgba(21, 222, 114, 0.15);
-  color: #15DE72;
-}
-
-/* Outgoing - Red tinted */
-.direction-icon.outgoing {
-  background: rgba(255, 68, 68, 0.15);
-  color: #FF4444;
-}
-
-/* Awaiting Payment - Muted amber */
-.direction-icon.awaiting-payment {
-  background: rgba(245, 158, 11, 0.2);
-  color: #F59E0B;
-}
-
-/* Auto-Withdraw - Indigo */
-.direction-icon.auto-withdraw {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818CF8;
-}
-
-/* Auto-withdraw note styling */
-.aw-note {
-  font-style: normal !important;
-  opacity: 0.85;
-}
-
-/* Info Section */
-.tx-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.tx-primary,
-.tx_primary_dark,
-.tx_primary_light {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.4;
-  font-family: 'Manrope', sans-serif;
-}
-
-.tx_primary_dark {
-  color: #FFFFFF;
-}
-
-.tx_primary_light {
-  color: #000000;
-}
-
-.tx-secondary,
-.tx_secondary_dark,
-.tx_secondary_light {
-  font-size: 13px;
-  line-height: 1.4;
-  margin-top: 2px;
-  font-family: 'Manrope', sans-serif;
-}
-
-.tx_secondary_dark {
-  color: #999;
-}
-
-.tx_secondary_light {
-  color: #6B7280;
-}
-
-.tx-description,
-.tx_description_dark,
-.tx_description_light {
-  font-size: 13px;
-  line-height: 1.4;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  font-family: 'Manrope', sans-serif;
-}
-
-.tx_description_dark {
-  color: #999;
-}
-
-.tx_description_light {
-  color: #6B7280;
-}
-
-.tx-description-italic {
-  font-style: italic;
-}
-
-/* Tags */
-.tx-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.tag-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.25rem 0.625rem;
-  background: #78716c;
-  color: white;
-  border-radius: 12px;
-  font-size: 0.7rem;
-  font-weight: 500;
-  font-family: 'Manrope', sans-serif;
-}
-
-.aw-tag-pill {
-  gap: 4px;
-  background: rgba(99, 102, 241, 0.15);
-  color: #818CF8;
-}
-
-/* Amount Section */
-.tx-amounts {
-  flex-shrink: 0;
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /*min-width: 90px;*/
-}
-
-.amount-sats,
-.amount_sats_dark,
-.amount_sats_light {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.4;
-  font-family: 'Manrope', sans-serif;
-}
-
-.amount_sats_dark.positive,
-.amount_sats_light.positive {
-  color: #34C759 !important;
-}
-
-.amount_sats_dark.negative {
-  color: #FFFFFF;
-}
-
-.amount_sats_light.negative {
-  color: #000000;
-}
-
-.amount-sats.positive {
-  color: #34C759 !important;
-}
-
-.amount-sats.positive::before {
-  content: '+';
-}
-
-.amount-sats.negative::before {
-  content: '-';
-}
-
-.amount-fiat,
-.amount_fiat_dark,
-.amount_fiat_light {
-  font-size: 13px;
-  line-height: 1.4;
-  font-family: 'Manrope', sans-serif;
-}
-
-.amount_fiat_dark {
-  color: #999;
-}
-
-.amount_fiat_light {
-  color: #6B7280;
-}
-
-/* Micropayment Group Styles */
-.micropayment-group,
-.micropayment_group_dark,
-.micropayment_group_light {
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  font-family: 'Manrope', sans-serif;
-}
-
-.micropayment_group_dark {
-  border-bottom: 1px solid #2A2A2A;
-}
-
-.micropayment_group_light {
-  border-bottom: 1px solid #E5E7EB;
-}
-
-.group-header-micro {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  min-height: 72px;
-  transition: background-color 0.15s ease;
-}
-
-.micropayment_group_dark .group-header-micro:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.micropayment_group_light .group-header-micro:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.group-icon-micro {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #007AFF, #5AC8FA);
-  color: white;
-  flex-shrink: 0;
-}
-
-.group-info-micro {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.group-primary,
-.group_primary_dark,
-.group_primary_light {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.4;
-  font-family: 'Manrope', sans-serif;
-}
-
-.group_primary_dark {
-  color: #FFFFFF;
-}
-
-.group_primary_light {
-  color: #000000;
-}
-
-.group-secondary,
-.group_secondary_dark,
-.group_secondary_light {
-  font-size: 13px;
-  line-height: 1.4;
-  font-family: 'Manrope', sans-serif;
-  margin-top: 2px;
-}
-
-.group_secondary_dark {
-  color: #999;
-}
-
-.group_secondary_light {
-  color: #6B7280;
-}
-
-.group-amount-micro {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-/* Expanded Group Items */
-.group-items-micro,
-.group_items_micro_dark,
-.group_items_micro_light {
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-}
-
-.group_items_micro_dark {
-  background: #0C0C0C;
-  border-top: 1px solid #2A342A;
-}
-
-.group_items_micro_light {
-  background: #FAFAFA;
-  border-top: 1px solid #E5E7EB;
-}
-
-.group-item-micro,
-.group_item_micro_dark,
-.group_item_micro_light {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.group_item_micro_dark {
-  border-bottom: 1px solid #2A342A;
-}
-
-.group_item_micro_light {
-  border-bottom: 1px solid #E5E7EB;
-}
-
-.group_item_micro_dark:hover {
-  background: #171717;
-}
-
-.group_item_micro_light:hover {
-  background: #F5F5F5;
-}
-
-.item-time,
-.item_time_dark,
-.item_time_light {
-  font-size: 0.85rem;
-  font-family: 'Manrope', sans-serif;
-}
-
-.item_time_dark {
-  color: #B0B0B0;
-}
-
-.item_time_light {
-  color: #6B7280;
-}
-
-.item-amount,
-.item_amount_dark,
-.item_amount_light {
-  font-size: 0.85rem;
-  font-weight: 500;
-  font-family: 'Manrope', sans-serif;
-}
-
-.item_amount_dark {
-  color: #F6F6F6;
-}
-
-.item_amount_light {
-  color: #212121;
-}
-
-.item-amount.positive {
-  color: #15DE72 !important;
-}
-
 /* Loading and Empty States */
 .loading_state_dark,
 .empty_state_dark {
@@ -3018,165 +2906,7 @@ export default {
 /* ==========================================
    Pending Bitcoin Deposits - TX List Style
    ========================================== */
-.pending-deposits-list {
-  margin-bottom: 0;
-}
-
-.pending-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-family: 'Manrope', sans-serif;
-}
-
-.pending-list-header .header-text {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.pending-list-header .deposit-count {
-  font-weight: 500;
-  opacity: 0.7;
-}
-
-.pending-list-header .header-badge {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
-  padding: 3px 8px;
-  border-radius: 10px;
-  background: #34C759;
-  color: white;
-}
-
-.pending-list-header.header-dark {
-  color: #F7931A;
-  background: rgba(247, 147, 26, 0.08);
-  border-bottom: 1px solid rgba(247, 147, 26, 0.15);
-}
-
-.pending-list-header.header-light {
-  color: #D97706;
-  background: rgba(247, 147, 26, 0.06);
-  border-bottom: 1px solid rgba(247, 147, 26, 0.12);
-}
-
-/* Deposit Card - Matching TX Card Style */
-.deposit-tx-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  min-height: 72px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  font-family: 'Manrope', sans-serif;
-}
-
-.deposit-tx-card-dark {
-  border-bottom: 1px solid rgba(247, 147, 26, 0.12);
-  background: rgba(247, 147, 26, 0.03);
-}
-
-.deposit-tx-card-light {
-  border-bottom: 1px solid rgba(247, 147, 26, 0.1);
-  background: rgba(247, 147, 26, 0.02);
-}
-
-.deposit-tx-card-dark:hover {
-  background: rgba(247, 147, 26, 0.08);
-}
-
-.deposit-tx-card-light:hover {
-  background: rgba(247, 147, 26, 0.05);
-}
-
-.deposit-tx-card:last-child {
-  border-bottom: none;
-}
-
-/* Bitcoin Deposit Icon - Orange */
-.direction-icon.bitcoin-deposit {
-  background: #F7931A;
-}
-
-/* Claimable state - subtle green ring, no animation */
-.direction-icon.bitcoin-deposit.claimable {
-  box-shadow: 0 0 0 2px #34C759, 0 1px 3px rgba(0, 0, 0, 0.12);
-}
-
-/* Deposit Status Styling */
-.deposit-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.deposit-status.status-ready {
-  color: #34C759;
-}
-
-.deposit-status.status-pending {
-  color: #F7931A;
-}
-
-.deposit-status .status-icon {
-  margin-right: 2px;
-}
-
-/* Confirmation Dots */
-.conf-dots {
-  display: inline-flex;
-  gap: 3px;
-  margin-right: 6px;
-}
-
-.conf-dots .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(247, 147, 26, 0.25);
-  transition: all 0.3s ease;
-}
-
-.conf-dots .dot.active {
-  background: #F7931A;
-  box-shadow: 0 0 6px rgba(247, 147, 26, 0.5);
-}
-
-/* Deposit Actions */
-.deposit-actions {
-  align-items: flex-end !important;
-}
-
-.claim-action-btn {
-  background: #34C759 !important;
-  color: white !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  padding: 6px 14px !important;
-  border-radius: 8px !important;
-  min-height: 28px !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  transition: all 0.2s ease;
-}
-
-.claim-action-btn:hover {
-  background: #2DB84D !important;
-}
-
-.confirming-text {
-  font-size: 12px;
-  font-style: italic;
-}
+/* (Legacy pending-deposits styles removed; see .tx-pending-* above.) */
 
 /* ==========================================
    iOS Action Sheet - Claim Confirmation
@@ -3528,86 +3258,112 @@ export default {
   }
 }
 
-/* Stats Cards Row */
-.stats-cards-row {
-  display: flex;
-  gap: 12px;
-  padding: 12px 16px;
-  overflow-x: hidden;
-  flex-wrap: wrap;
+/* ── Filter summary cards (Net / Received / Sent) ─────────────
+   Three equal neutral cards shown when a filter other than "all"
+   is active. Shares the .tx-row surface/border for a consistent
+   language down the page. Each card carries its own fiat line so
+   the Net / Received / Sent triple is self-describing. */
+.stats-section {
+  padding: 12px 16px 4px;
 }
 
-.stats-balance-card {
-  min-width: 0;
-  flex: 1 1 100%;
-  padding: 16px;
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stats-card {
+  padding: 14px 14px 12px;
+  border-radius: 16px;
+  border: 1px solid;
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-.stats-balance-label {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: 500;
-}
-.stats-balance-fiat {
-  font-size: 22px;
-  font-weight: 700;
-  color: #FFF;
-}
-.stats-balance-sats {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  display: flex;
-  align-items: center;
+  font-family: 'Manrope', sans-serif;
+  min-width: 0;
+  transition: border-color 0.15s ease, transform 0.12s ease;
 }
 
-.stats-info-card-dark {
-  background: var(--bg-card, #1A1A1A);
-  border: 1px solid var(--border-card, #2A342A);
-  border-radius: 24px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1 1 0;
-}
-.stats-info-card-light {
-  background: var(--bg-card, #FFF);
-  border: 1px solid var(--border-card, #EBEBEB);
-  border-radius: 24px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1 1 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+.stats-card-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
-.stats-info-value {
+.stats-card-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.stats-card-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+  min-width: 0;
+}
+
+.stats-card-head-icon {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+/* Subtle green accent on the Received card's direction icon only,
+   staying within the neutral palette rule (no colour on the value
+   itself). Just enough to help users scan the triple at a glance. */
+.stats-card-head-icon-in {
+  color: #15DE72;
+  opacity: 0.95;
+}
+
+.stats-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats-card-value {
   font-size: 16px;
   font-weight: 700;
-  font-family: 'Manrope', sans-serif;
-}
-.stats-info-value.positive {
-  color: #15DE72;
-}
-.stats-info-value.negative {
-  color: #FF4444;
-}
-.stats-info-label {
-  font-size: 12px;
-  font-weight: 400;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
 }
 
-/* Amount fiat badge override */
-.amount-fiat-badge {
-  margin-top: 2px;
+.stats-card-fiat {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: auto;
+}
+
+/* On small screens the value can get tight at 3-up. Drop the
+   value one notch and tighten padding so it still reads. */
+@media (max-width: 380px) {
+  .stats-grid {
+    gap: 8px;
+  }
+  .stats-card {
+    padding: 12px 12px 10px;
+  }
+  .stats-card-value {
+    font-size: 14px;
+  }
+  .stats-card-fiat {
+    font-size: 10.5px;
+  }
 }
 </style>
