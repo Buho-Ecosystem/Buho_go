@@ -359,7 +359,7 @@ export default {
 }
 
 .bg-dark { background: var(--bg-primary); }
-.bg-light { background: #F8F8F8; }
+.bg-light { background: var(--bg-primary); }
 
 .wizard-container {
   width: 100%;

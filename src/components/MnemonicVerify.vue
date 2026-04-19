@@ -247,7 +247,7 @@ export default {
 }
 
 .label-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .word-input {
@@ -281,9 +281,9 @@ export default {
 }
 
 .input-light {
-  background: #F9FAFB;
-  border-color: #E5E7EB;
-  color: #1F2937;
+  background: var(--bg-input);
+  border-color: var(--border-card);
+  color: var(--text-primary);
 }
 
 .input-light:focus {

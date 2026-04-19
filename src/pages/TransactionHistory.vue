@@ -1964,8 +1964,8 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: white;
-  border-bottom: 1px solid #E5E7EB;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-card);
   position: sticky;
   top: var(--safe-top, 0px);
   z-index: 100;
@@ -1992,7 +1992,7 @@ export default {
   align-items: center;
   justify-content: center;
   transition: background-color 0.15s ease;
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .back_btn_dark:hover,
@@ -2002,7 +2002,7 @@ export default {
 
 .back_btn_light:hover,
 .close_btn_light:hover {
-  background: #F1F5F9;
+  background: var(--bg-input);
 }
 
 .main_page_title_dark {
@@ -2026,8 +2026,8 @@ export default {
 }
 
 .filter_section_light {
-  background: white;
-  border-bottom: 1px solid #E5E7EB;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-card);
 }
 
 .filter_tabs_dark,
@@ -2065,11 +2065,11 @@ export default {
 }
 
 .tab_inactive_light {
-  color: #6B7280 !important;
+  color: var(--text-secondary) !important;
   font-weight: 500 !important;
   font-family: 'Manrope', sans-serif !important;
   border-radius: 999px !important;
-  border: 1px solid #E5E7EB;
+  border: 1px solid var(--border-card);
 }
 
 /* Stats Section */
@@ -2080,9 +2080,9 @@ export default {
 }
 
 .stats_section_light {
-  background: #F6F6F6;
+  background: var(--bg-secondary);
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid var(--border-card);
 }
 
 .stats_container_dark {
@@ -2099,11 +2099,11 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: white;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   border-radius: 12px;
   padding: 0.75rem 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .stat-item {
@@ -2125,7 +2125,7 @@ export default {
 
 .stat_label_light {
   font-size: 0.6875rem;
-  color: #6B7280;
+  color: var(--text-secondary);
   margin-bottom: 0.25rem;
   font-weight: 400;
   text-transform: capitalize;
@@ -2160,7 +2160,7 @@ export default {
 }
 
 .stat_fiat_light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .stat_divider_dark {
@@ -2172,7 +2172,7 @@ export default {
 .stat_divider_light {
   width: 1px;
   height: 24px;
-  background: #E5E7EB;
+  background: var(--border-card);
 }
 
 /* Transaction Content */
@@ -2782,7 +2782,7 @@ export default {
   height: 60vh;
   text-align: center;
   padding: 2rem;
-  background: white;
+  background: var(--bg-primary);
 }
 
 .loading_text_dark {
@@ -2851,9 +2851,9 @@ export default {
 
 .btn_light {
   border-radius: 20px !important;
-  border: 1px solid #E8E8E8 !important;
-  background: #F6F6F6 !important;
-  color: #212121 !important;
+  border: 1px solid var(--border-card) !important;
+  background: var(--bg-input) !important;
+  color: var(--text-primary) !important;
   font-family: 'Manrope', sans-serif !important;
   font-size: 14px !important;
   font-weight: 500 !important;
@@ -2923,7 +2923,7 @@ export default {
 }
 
 .claim-action-sheet.sheet-light {
-  background: #FFFFFF;
+  background: var(--bg-card);
 }
 
 /* Handle Bar */
@@ -3088,7 +3088,7 @@ export default {
 }
 
 .refund-dialog.dialog-light {
-  background: #FFFFFF;
+  background: var(--bg-card);
 }
 
 .refund-header {

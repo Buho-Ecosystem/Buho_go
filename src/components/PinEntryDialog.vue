@@ -493,7 +493,7 @@ export default {
 }
 
 .pin-dot-light {
-  border-color: #D1D5DB;
+  border-color: var(--border-card);
   background: transparent;
 }
 

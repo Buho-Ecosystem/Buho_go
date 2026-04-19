@@ -14,6 +14,31 @@
 .bg-brand-green-dark { background: #059573 !important; }
 .text-brand-green-dark { color: #059573 !important; }
 
+/* ─── Theme transition ───
+   Every coloured surface cross-fades to the new theme at the same
+   time. No overlays. No sweeps. Just a scoped blanket transition
+   that's active during the toggle and then gone.
+
+   Scoping via the `theme-transitioning` class on <html> is the
+   critical part — leaving a blanket `*` transition on permanently
+   would make every hover, focus and state change across the entire
+   app acquire a 280 ms colour fade and feel sluggish. The class is
+   added right before Quasar's dark flag flips and removed after
+   the transition completes (see themeTransition.js). */
+html.theme-transitioning,
+html.theme-transitioning body,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition:
+    background-color 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    fill 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    stroke 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
 
 /* ─── Local Manrope font (no external network dependency) ─── */
 @font-face {
@@ -168,19 +193,41 @@ body.platform-android {
 }
 
 body.body--light {
-    --bg-primary: #FFF;
-    --bg-secondary: #F5F5F5;
-    --bg-card: #FFF;
-    --bg-input: #F0F0F0;
-    --border-card: #EBEBEB;
-    --text-primary: #212121;
-    --text-secondary: #6D6D6D;
-    --text-muted: #9CA3AF;
+    /* ─── Cream paper palette ──────────────────────────────
+       Design intent: ONE paper. No tonal stack, no "cream zones."
+       Every flat surface (page, sections, cards) renders on the
+       SAME base color. Shape comes from hairline borders and a
+       whisper shadow — never from a deeper fill.
 
-    /* Light shadows */
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.15);
+       This is the iOS Reminders / Apple Books approach:
+         • page, section, card = identical cream
+         • input is barely 2% deeper for a subtle inset feel
+         • border-card does the card-definition work
+         • shadows only used for true elevation (modals, menus)
+    ──────────────────────────────────────────────────────── */
+    --bg-primary: #FAF7EF;      /* the paper — ALL flat surfaces use this */
+    --bg-secondary: #FAF7EF;    /* intentionally identical */
+    --bg-card: #FAF7EF;         /* intentionally identical */
+    --bg-input: #F3EFE3;        /* ~3% deeper, just enough for inset */
+    --border-card: #E3DCC7;     /* visible hairline — does the shaping */
+
+    --text-primary: #1A1A1C;    /* near-black, faint warmth */
+    --text-secondary: #5F5B52;  /* warm muted */
+    --text-muted: #928D83;      /* cream-tinted gray */
+
+    /* Whisper shadows — only on true elevation (menus, modals) */
+    --shadow-sm: 0 1px 2px rgba(40, 34, 20, 0.03);
+    --shadow-md: 0 4px 10px rgba(40, 34, 20, 0.05);
+    --shadow-lg: 0 12px 32px rgba(40, 34, 20, 0.09);
+}
+
+/* Ensure Quasar's page chrome picks up the cream paper, not its default white.
+   Any page that does NOT paint its own bg will show --bg-primary through. */
+body.body--light,
+body.body--light .q-layout,
+body.body--light .q-page-container {
+    background: var(--bg-primary);
+    color: var(--text-primary);
 }
 
 /* Utility: hide scrollbar */
@@ -340,10 +387,11 @@ body.body--light {
 }
 
 .card_light_style {
-    border-radius: 24px !important;;
-    border: 1px solid #F3F3F3 !important;;
-    background: #FFF !important;;
-    box-shadow: 4px 4px 32px 0px rgba(198, 198, 198, 0.25) !important;
+    border-radius: 24px !important;
+    border: 1px solid var(--border-card) !important;
+    background: var(--bg-card) !important;
+    /* Border does the shape work; shadow is only a whisper of depth */
+    box-shadow: var(--shadow-sm) !important;
 }
 
 
@@ -373,8 +421,8 @@ body.body--light {
 
 .search_light {
     border-radius: 20px !important;
-    background-color: #F8F8F8 !important;
-    color: #212121 !important;
+    background-color: var(--bg-input) !important;
+    color: var(--text-primary) !important;
 }
 
 .add_wallet_textbox_dark {
@@ -468,9 +516,10 @@ body.body--light {
 
 .menu_light {
     border-radius: 16px;
-    border: 1px solid var(--Shark-50, #F6F6F6);
-    background: #FFF;
-    box-shadow: 4px 4px 16px 0px rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-card);
+    background: var(--bg-card);
+    /* Menus float — need a touch more shadow than inline cards */
+    box-shadow: var(--shadow-md);
 }
 
 
@@ -515,8 +564,8 @@ body.body--light {
 
 .card_style_light { /* @deprecated duplicate of card_light_style */
     border-radius: 24px !important;
-    border: 1px solid #EBEBEB !important;
-    background: #FFF !important;
+    border: 1px solid var(--border-card) !important;
+    background: var(--bg-card) !important;
 }
 
 .table_header {
@@ -639,7 +688,7 @@ body.body--light {
   align-items: center;
   justify-content: center;
   transition: background-color 0.15s ease;
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .back_btn_dark:hover,
@@ -660,7 +709,7 @@ body.body--dark .q-skeleton::after {
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
 }
 body.body--light .q-skeleton {
-  background: #EBEBEB;
+  background: var(--border-card);
 }
 
 /* ─── Notification Toasts ─── */

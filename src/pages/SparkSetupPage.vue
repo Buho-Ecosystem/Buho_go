@@ -116,7 +116,7 @@ export default {
 }
 
 .bg-light {
-  background: #F8F8F8;
+  background: var(--bg-primary);
 }
 
 .container {
@@ -199,7 +199,7 @@ export default {
 }
 
 .view_title {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 /* PIN Step */
@@ -308,7 +308,7 @@ export default {
 }
 
 .numpad-btn-light:hover {
-  background: #E5E7EB;
+  background: var(--border-card);
 }
 
 .numpad-btn-light:active {

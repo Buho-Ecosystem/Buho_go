@@ -190,7 +190,7 @@ export default {
 }
 
 .contact-card-light {
-  background: #FFF;
+  background: var(--bg-card);
 }
 
 .contact-card-dark:hover {
@@ -304,7 +304,7 @@ export default {
 }
 
 .contact-address-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Notes */
@@ -323,7 +323,7 @@ export default {
 }
 
 .contact-notes-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Actions (Star + Overflow) */
@@ -363,7 +363,7 @@ export default {
 }
 
 .overflow-btn-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .overflow-btn-dark:hover {
@@ -385,8 +385,8 @@ export default {
 }
 
 .overflow-menu-light :deep(.q-list) {
-  background: #FFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   border-radius: var(--radius-md);
   padding: 4px 0;
 }
@@ -408,7 +408,7 @@ export default {
 }
 
 .separator-light {
-  background: #F0F0F0 !important;
+  background: var(--border-card) !important;
 }
 
 /* Responsive - Mobile */

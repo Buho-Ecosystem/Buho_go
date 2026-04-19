@@ -211,8 +211,8 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: white;
-  border-bottom: 1px solid #E5E7EB;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-card);
   position: sticky;
   top: var(--safe-top, 0px);
   z-index: 100;
@@ -234,7 +234,7 @@ export default {
 }
 
 .back_btn_light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .back_btn_dark:hover {
@@ -242,7 +242,7 @@ export default {
 }
 
 .back_btn_light:hover {
-  background: #F1F5F9;
+  background: var(--bg-input);
 }
 
 .main_page_title_dark {

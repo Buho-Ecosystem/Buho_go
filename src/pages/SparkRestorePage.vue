@@ -664,7 +664,7 @@ export default {
 }
 
 .number-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .word-input {
@@ -745,7 +745,7 @@ export default {
 }
 
 .pin-dot-light {
-  border-color: #D1D5DB;
+  border-color: var(--border-card);
 }
 
 .pin-dot.filled {

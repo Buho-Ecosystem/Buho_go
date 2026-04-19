@@ -3618,7 +3618,8 @@ export default {
 }
 
 .wallet-page-light {
-  background: #f8f9fa;
+  /* Single source of truth lives in app.css → body.body--light → --bg-primary */
+  background: var(--bg-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -3711,11 +3712,11 @@ export default {
 }
 
 .modern-menu-btn-light {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .modern-menu-btn-light:hover {
-  background: #f1f5f9;
+  background: var(--bg-input);
 }
 
 .menu-icon {
@@ -3737,7 +3738,7 @@ export default {
 }
 
 .menu-line-light {
-  background: #374151;
+  background: var(--text-primary);
 }
 
 /* Main Content */
@@ -3775,7 +3776,7 @@ export default {
 }
 
 .spark-tabs-light {
-  background: #F1F5F9;
+  background: var(--bg-input);
 }
 
 .spark-tabs-slider {
@@ -3799,8 +3800,9 @@ export default {
 }
 
 .spark-tabs-light .spark-tabs-slider {
-  background: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(40, 34, 20, 0.08), 0 1px 2px rgba(40, 34, 20, 0.04);
+  border: 1px solid var(--border-card);
 }
 
 .spark-tab {
@@ -3949,7 +3951,7 @@ export default {
 }
 
 .amount-number-light {
-  color: #1F2937;
+  color: var(--text-primary);
 }
 
 
@@ -3963,7 +3965,7 @@ export default {
 }
 
 .amount-unit-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .currency-icon-left {
@@ -4454,9 +4456,9 @@ export default {
 }
 
 .payment_input_light :deep(.q-field__control) {
-  background: white;
-  color: #1f2937;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
   border-radius: 12px;
 }
 
@@ -4575,11 +4577,11 @@ export default {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: #6b7280;
-  background: white;
+  color: var(--text-secondary);
+  background: var(--bg-input);
   padding: 0.75rem;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-card);
 }
 
 .limits-icon {
@@ -4796,9 +4798,9 @@ export default {
 
 .amount_input_light :deep(.q-field__control),
 .comment_input_light :deep(.q-field__control) {
-  background: white;
-  color: #1f2937;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
   border-radius: 12px;
   margin-bottom: 1rem;
 }
@@ -4810,8 +4812,8 @@ export default {
 }
 
 .payment_actions_light {
-  background: #f8f9fa;
-  border-top: 1px solid #e5e7eb;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-card);
 }
 
 .cancel_btn_dark {
@@ -4819,7 +4821,7 @@ export default {
 }
 
 .cancel_btn_light {
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 /* Invoice Form */
@@ -4837,9 +4839,9 @@ export default {
 }
 
 .description_input_light :deep(.q-field__control) {
-  background: white;
-  color: #1f2937;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
   border-radius: 12px;
 }
 
@@ -5477,7 +5479,7 @@ export default {
 }
 
 .switch-balance-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Check Icon */
@@ -5502,8 +5504,8 @@ export default {
 }
 
 .switcher-footer-light {
-  border-top-color: #E5E7EB;
-  background: #F8F9FA;
+  border-top-color: var(--border-card);
+  background: var(--bg-primary);
 }
 
 /* Transfer Funds Button */
@@ -5550,7 +5552,7 @@ export default {
 }
 
 .manage-btn-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .manage-wallets-btn:hover {
@@ -5562,7 +5564,7 @@ export default {
 }
 
 .manage-btn-light:hover {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 /* Save Contact Dialog */

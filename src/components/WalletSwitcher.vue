@@ -205,6 +205,7 @@
 
 
             </template>
+            </template>
           </div>
 
           <!-- Actions -->
@@ -436,8 +437,9 @@ export default {
 }
 
 .current-wallet-light {
-  background: #FFF;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .current-wallet-dark:hover {
@@ -557,7 +559,7 @@ export default {
 }
 
 .wallet-balance-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .expand-icon {
@@ -570,7 +572,7 @@ export default {
 }
 
 .expand-icon-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .expand-icon.rotated {
@@ -625,7 +627,7 @@ export default {
 }
 
 .group-header-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Wallet Option - iOS style cards */
@@ -804,7 +806,7 @@ export default {
 }
 
 .option-balance-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .locked-icon {
@@ -853,7 +855,7 @@ export default {
 }
 
 .option-action-btn-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .option-action-btn-dark:hover {
@@ -880,8 +882,8 @@ export default {
 }
 
 .actions-light {
-  background: #F8F9FA;
-  border-top-color: #E5E7EB;
+  background: var(--bg-secondary);
+  border-top-color: var(--border-card);
 }
 
 .action-btn {
@@ -899,7 +901,7 @@ export default {
 }
 
 .action-btn-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .add-wallet-btn:hover {
@@ -916,7 +918,7 @@ export default {
 }
 
 .manage-btn.action-btn-light:hover {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 /* Overlay */

@@ -967,7 +967,7 @@ export default {
 }
 
 .claim-sheet.sheet-light {
-  background: #FFFFFF;
+  background: var(--bg-card);
 }
 
 .sheet-handle {

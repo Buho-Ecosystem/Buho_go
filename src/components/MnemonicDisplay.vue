@@ -178,8 +178,8 @@ export default {
 }
 
 .word-item-light {
-  background: #FFFFFF;
-  border-color: #E5E7EB;
+  background: var(--bg-card);
+  border-color: var(--border-card);
 }
 
 .word-number {
@@ -202,7 +202,7 @@ export default {
 }
 
 .word-text-light {
-  color: #1F2937;
+  color: var(--text-primary);
 }
 
 .word-text.blurred {
@@ -236,7 +236,7 @@ export default {
 }
 
 .toggle-btn-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 /* Bottom Warning — matches verify bottom warning */

@@ -560,8 +560,8 @@ export default {
 }
 
 .toggle-light {
-  background: #F8F8F8;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
 }
 
 .toggle-dark :deep(.q-btn) {

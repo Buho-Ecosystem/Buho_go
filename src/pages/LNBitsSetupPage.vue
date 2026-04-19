@@ -826,8 +826,8 @@ export default {
 }
 
 .scanner-light {
-  background: #F8F9FA;
-  border-color: #E5E7EB;
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
 }
 
 .camera-error,
@@ -932,7 +932,7 @@ export default {
 }
 
 .preview-light {
-  background: #F5F5F5;
+  background: var(--bg-input);
 }
 
 .preview-row {

@@ -390,7 +390,7 @@
           <q-item-section side>
             <q-toggle
               :model-value="$q.dark.isActive"
-              @update:model-value="$q.dark.toggle()"
+              @update:model-value="handleToggleDark"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             />
           </q-item-section>
@@ -1987,6 +1987,7 @@ import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
 import {shareContent} from '../utils/share.js'
+import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
 import {truncateAddress} from '../utils/addressUtils.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
@@ -2670,6 +2671,16 @@ export default {
       // Refresh exchange rates before showing dialog
       await this.loadExchangeRates()
       this.showCurrencyDialog = true
+    },
+
+    /**
+     * Dark-mode toggle with the diagonal sweep transition. The sweep
+     * utility flips the Quasar dark flag at mid-animation so the class
+     * change is hidden under the overlay. Falls back to an instant
+     * toggle on prefers-reduced-motion.
+     */
+    handleToggleDark() {
+      toggleThemeWithSweep(this.$q)
     },
 
     setPreferredCurrency(currency) {
@@ -3596,8 +3607,9 @@ export default {
 }
 
 .bg-light {
-  background: #F8F8F8;
-  color: #212121;
+  /* Single source of truth lives in app.css → body.body--light → --bg-primary */
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* Header */
@@ -3628,7 +3640,7 @@ export default {
 }
 
 .back-btn-light {
-  color: #212121;
+  color: var(--text-primary);
 }
 
 .back-btn-dark:hover {
@@ -3636,7 +3648,7 @@ export default {
 }
 
 .back-btn-light:hover {
-  background: #F3F4F6;
+  background: var(--bg-input);
 }
 
 .header-content {
@@ -3724,7 +3736,7 @@ export default {
 .card-light {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Q-Item Styles */
@@ -3741,7 +3753,7 @@ export default {
 }
 
 .item-label-light {
-  color: #1F2937;
+  color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 500;
@@ -3834,12 +3846,12 @@ export default {
 }
 
 .settings-mini-toggle-light {
-  background: rgba(15, 23, 42, 0.04);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  background: var(--bg-input);
+  box-shadow: inset 0 0 0 1px var(--border-card);
 }
 
 .settings-mini-toggle-light :deep(.q-btn) {
-  color: #64748b;
+  color: var(--text-secondary);
   background: transparent;
 }
 
@@ -3870,7 +3882,7 @@ export default {
 }
 
 .item-caption-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
 }
@@ -3892,7 +3904,7 @@ export default {
 }
 
 .side-value-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Chevrons */
@@ -3902,7 +3914,9 @@ export default {
 }
 
 .chevron-light {
-  color: #D1D5DB;
+  /* Legacy class name — actually styles ALL left-side section icons plus
+     the trailing chevrons. Must stay readable on cream paper. */
+  color: var(--text-secondary);
   font-size: 18px;
 }
 
@@ -3953,7 +3967,7 @@ export default {
 }
 
 .support-message-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .donation-row {
@@ -3977,7 +3991,7 @@ export default {
 }
 
 .donate-btn-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .donate-btn-primary {
@@ -4219,7 +4233,7 @@ export default {
 }
 
 .version-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .card-icon {
@@ -4328,7 +4342,7 @@ export default {
 }
 
 .footer-light {
-  border-top-color: #E5E7EB;
+  border-top-color: var(--border-card);
 }
 
 .disconnect-container {
@@ -4462,12 +4476,12 @@ export default {
 
 .currency-item-light,
 .language-item-light {
-  background: rgba(15, 23, 42, 0.04);
+  background: var(--bg-input);
 }
 
 .currency-item-light:hover,
 .language-item-light:hover {
-  background: rgba(15, 23, 42, 0.06);
+  background: rgba(40, 34, 20, 0.06);
 }
 
 /* Active: brand-green tinted pane with inset ring. */
@@ -4619,7 +4633,7 @@ export default {
 
 .add-wallet-btn-light {
   color: #059573;
-  border-color: #E5E7EB;
+  border-color: var(--border-card);
   background: transparent;
 }
 
@@ -4642,7 +4656,7 @@ export default {
 
 .add-pocket-btn-light {
   color: #059573;
-  border: 1px dashed #E5E7EB;
+  border: 1px dashed var(--border-card);
   background: transparent;
   border-radius: 12px;
 }
@@ -4731,7 +4745,7 @@ export default {
 }
 
 .wallet-card-light:hover {
-  background: #F9FAFB;
+  background: var(--bg-input);
 }
 
 .wallet-card-active {
@@ -4928,7 +4942,7 @@ export default {
 }
 
 .wallet-balance-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .wallet-error-msg {
@@ -4958,7 +4972,7 @@ export default {
 }
 
 .wallet-action-btn-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .wallet-action-btn-dark:hover {
@@ -5344,8 +5358,8 @@ export default {
 }
 
 .source-custom-input-light {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
 }
 
 .source-custom-input-inner {
@@ -5455,16 +5469,16 @@ export default {
   border-radius: 12px;
   background: var(--bg-input);
   border: 1px solid var(--border-card);
-  color: #212121;
+  color: var(--text-primary);
 }
 
 .pin-input-light .q-field__native,
 .pin-input-light .q-field__input {
-  color: #212121 !important;
+  color: var(--text-primary) !important;
 }
 
 .pin-input-light .q-field__native::placeholder {
-  color: #9CA3AF !important;
+  color: var(--text-muted) !important;
 }
 
 .pin-input-dark:focus-within {
@@ -5789,11 +5803,11 @@ export default {
 }
 
 .account-item-light {
-  background: #F3F4F6;
+  background: var(--bg-input);
 }
 
 .account-item-light:hover {
-  background: #E5E7EB;
+  background: var(--border-card);
 }
 
 .account-item-active.account-item-dark {

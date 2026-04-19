@@ -946,8 +946,8 @@ export default {
 }
 
 .send-card-light {
-  background: #FFF;
-  color: #212121;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* Header */
@@ -1268,7 +1268,7 @@ export default {
 }
 
 .manual-input-light :deep(.q-field__label) {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .manual-input-light :deep(.q-field--focused .q-field__label),
@@ -1442,7 +1442,7 @@ export default {
 }
 
 .section-header-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .contact-item {
