@@ -83,6 +83,7 @@
             <div class="qr-card" @click="copySparkAddress">
               <div class="qr-frame">
                 <vue-qrcode
+                  ref="sparkQr"
                   :value="sparkAddress"
                   :options="sparkQrOptions"
                   class="qr-code"
@@ -160,6 +161,7 @@
             <div class="qr-card" @click="copyInvoice">
               <div class="qr-frame">
                 <vue-qrcode
+                  ref="invoiceQr"
                   :value="'lightning:' + generatedInvoice.payment_request.toUpperCase()"
                   :options="invoiceQrOptions"
                   class="qr-code"
@@ -326,6 +328,7 @@ import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
 import { shareContent } from '../utils/share';
+import { qrBlobFromRef } from '../utils/qrShare';
 import { truncateAddress } from '../utils/addressUtils';
 import { getQrOptions } from '../utils/qrConfig';
 import PaymentConfirmation from './PaymentConfirmation.vue';
@@ -1113,16 +1116,19 @@ export default {
     async shareSparkAddress() {
       if (!this.sparkAddress) return;
 
+      const qrBlob = await qrBlobFromRef(this.$refs.sparkQr);
       const result = await shareContent({
         title: this.$t('Spark Address'),
-        text: this.sparkAddress
+        // Pure address so recipients can copy-paste cleanly. The
+        // BuhoGO wordmark is baked into the QR image by qrShare.
+        text: this.sparkAddress,
+        files: qrBlob ? [{ blob: qrBlob, name: 'spark-address.png', mimeType: 'image/png' }] : undefined,
       });
 
       if (result.success) {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Shared'),
-
         });
       } else if (result.reason === 'unsupported') {
         // Fallback: copy to clipboard
@@ -1131,7 +1137,7 @@ export default {
         console.error('Failed to share Spark address:', result.error);
         await this.copySparkAddress();
       }
-      // Don't do anything for 'cancelled' - user just closed the dialog
+      // 'cancelled' → user closed the dialog, no action needed.
     },
 
     truncateSparkAddress(address) {
@@ -1158,42 +1164,44 @@ export default {
     async shareInvoice() {
       if (!this.generatedInvoice) return;
 
-      // Lightning URI for sharing (most wallets recognize this format)
+      // Lightning URI so every wallet we share to can open it directly.
       const lightningUri = `lightning:${this.generatedInvoice.payment_request}`;
 
+      const qrBlob = await qrBlobFromRef(this.$refs.invoiceQr);
       const result = await shareContent({
         title: this.$t('Lightning Invoice'),
-        text: lightningUri
+        // Pure invoice URI so recipients can copy-paste cleanly. The
+        // BuhoGO wordmark is baked into the QR image by qrShare.
+        text: lightningUri,
+        files: qrBlob ? [{ blob: qrBlob, name: 'lightning-invoice.png', mimeType: 'image/png' }] : undefined,
       });
 
       if (result.success) {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Shared'),
-
         });
       } else if (result.reason === 'unsupported' || result.reason === 'error') {
         if (result.reason === 'error') {
           console.error('Failed to share invoice:', result.error);
         }
-        // Fallback: copy to clipboard
+        // Fallback: copy the raw invoice so the user still has something.
         try {
           await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
           this.$q.notify({
             type: 'positive',
             message: this.$t('Invoice copied'),
-
           });
         } catch (copyError) {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Couldn\'t share'),
-
           });
         }
       }
-      // Don't do anything for 'cancelled' - user just closed the dialog
+      // 'cancelled' → user closed the dialog, no action needed.
     },
+
 
     /**
      * Handle when the payment confirmation screen is closed
@@ -1255,7 +1263,7 @@ export default {
 }
 
 .header-light {
-  border-bottom-color: #E5E7EB;
+  border-bottom-color: var(--border-card);
 }
 
 .header-content {
@@ -1584,7 +1592,7 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: #E5E7EB;
+  background: var(--bg-input);
   padding: 0.375rem 0.75rem;
   border-radius: 16px;
   cursor: pointer;
@@ -1643,6 +1651,15 @@ export default {
   text-align: center;
   min-width: min(200px, 60vw);
   max-width: 100%;
+  /* Use the brand green for the caret so it signals interactivity
+     without clashing with the numeric display. */
+  caret-color: #15DE72;
+}
+/* Suppress the caret while the placeholder (e.g. "0") is showing
+   so the vertical bar doesn't visually slice through the digit.
+   As soon as the user types, the caret returns. */
+.amount-input:placeholder-shown {
+  caret-color: transparent;
 }
 
 .amount-input-dark {
@@ -1650,7 +1667,7 @@ export default {
 }
 
 .amount-input-light {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .amount-input::placeholder {
@@ -2168,26 +2185,29 @@ export default {
 
 /* --- Light --- */
 .toggle-light {
-  background: #F1F5F9;
-  border: 1px solid rgba(15, 23, 42, 0.04);
+  /* Warm container so the pill sits inside the cream family, not a cool island. */
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
 }
 
 .toggle-light :deep(.q-btn) {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   background: transparent;
 }
 
-.toggle-light :deep(.q-btn--active) {
+/* Higher specificity (.q-btn.q-btn--active) beats Quasar's `.text-white`
+   class, which was making the active label invisible on the pill. */
+.toggle-light :deep(.q-btn.q-btn--active),
+.toggle-light :deep(.q-btn.q-btn--active.text-white) {
   background: #FFFFFF !important;
-  color: #0F172A !important;
+  color: var(--text-primary) !important;
   box-shadow:
-    inset 0 0 0 1px rgba(15, 23, 42, 0.14),
-    0 1px 3px rgba(0, 0, 0, 0.08),
-    0 1px 2px rgba(0, 0, 0, 0.04);
+    inset 0 0 0 1px var(--border-card),
+    0 1px 2px rgba(40, 34, 20, 0.08) !important;
 }
 
 .toggle-light :deep(.q-btn + .q-btn)::before {
-  background: rgba(0, 0, 0, 0.1);
+  background: rgba(40, 34, 20, 0.12);
 }
 
 .mode-hint {

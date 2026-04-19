@@ -267,7 +267,7 @@ export default {
   background-image: radial-gradient(ellipse 500px 400px at 50% 20%, rgba(146, 227, 169, 0.03), transparent);
 }
 .earn-light {
-  background: #F8F8F8;
+  background: var(--bg-primary);
   background-image: radial-gradient(ellipse 500px 400px at 50% 20%, rgba(146, 227, 169, 0.06), transparent);
 }
 
@@ -380,7 +380,7 @@ export default {
 }
 
 .sheet-dark { background: var(--bg-card, #1A1A1A) !important; }
-.sheet-light { background: #FFF !important; }
+.sheet-light { background: var(--bg-card) !important; }
 
 .sheet-handle-wrap {
   display: flex;
@@ -438,9 +438,9 @@ export default {
 }
 
 .abtn-light {
-  background: var(--bg-input, #F0F0F0);
+  background: var(--bg-input);
   color: var(--text-primary);
-  border-color: #EBEBEB;
+  border-color: var(--border-card);
 }
 
 .abtn-correct { border-color: var(--color-green, #15DE72) !important; background: rgba(21, 222, 114, 0.1) !important; }

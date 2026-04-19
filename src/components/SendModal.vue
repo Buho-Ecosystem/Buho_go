@@ -143,7 +143,7 @@
             :placeholder="manualInputPlaceholder"
             class="manual-input"
             :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
-            color="green"
+            :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             autofocus
             :rules="[validatePaymentInput]"
           />
@@ -946,8 +946,8 @@ export default {
 }
 
 .send-card-light {
-  background: #FFF;
-  color: #212121;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* Header */
@@ -1138,31 +1138,36 @@ export default {
   gap: 1rem;
 }
 
+/* Manual / Paste / Contacts — three equal mode-pickers, neutral
+   translucent tint. Secondary weight: they direct the user to an
+   input method, they don't commit anything. Icons stay neutral too
+   so the trio reads as "pick your input" instead of three coloured
+   buttons competing for attention. */
 .action-btn {
   flex: 1;
   height: 80px;
   border-radius: 16px;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .action-btn-dark {
-  background: rgba(42, 52, 42, 0.5);
-  color: white;
-}
-
-.action-btn-light {
-  background: rgba(0, 0, 0, 0.05);
-  color: #212121;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .action-btn-dark:hover {
-  background: rgba(42, 52, 42, 0.8);
-  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.action-btn-light {
+  background: rgba(15, 23, 42, 0.04);
+  color: rgba(15, 23, 42, 0.75);
 }
 
 .action-btn-light:hover {
-  background: rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
+  background: rgba(15, 23, 42, 0.07);
 }
 
 .btn-content {
@@ -1173,13 +1178,15 @@ export default {
 }
 
 .btn-icon {
-  color: #15DE72;
+  color: inherit;
+  opacity: 0.85;
 }
 
 .btn-label {
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
+  letter-spacing: -0.005em;
 }
 
 /* Manual Input Dialog */
@@ -1261,7 +1268,7 @@ export default {
 }
 
 .manual-input-light :deep(.q-field__label) {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .manual-input-light :deep(.q-field--focused .q-field__label),
@@ -1435,7 +1442,7 @@ export default {
 }
 
 .section-header-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .contact-item {

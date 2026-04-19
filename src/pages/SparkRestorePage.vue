@@ -33,11 +33,6 @@
         <q-card-section class="restore-content">
           <!-- Step 1: Enter Seed Phrase -->
           <div v-if="currentStep === 1" class="step-content">
-            <div class="step-icon">
-              <div class="icon-bg">
-                <Icon icon="tabler:arrow-back-up" width="32" height="32" style="color: white;" />
-              </div>
-            </div>
             <h2 class="step-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
               {{ $t('Restore Spark Wallet') }}
             </h2>
@@ -516,22 +511,6 @@ export default {
   flex: 1;
 }
 
-/* Step Icon */
-.step-icon {
-  margin-bottom: 1.5rem;
-}
-
-.icon-bg {
-  width: 72px;
-  height: 72px;
-  background: linear-gradient(135deg, #059573, #15DE72);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(21, 222, 114, 0.3);
-}
-
 /* Typography */
 .step-title {
   font-family: 'Manrope', sans-serif;
@@ -685,7 +664,7 @@ export default {
 }
 
 .number-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .word-input {
@@ -766,7 +745,7 @@ export default {
 }
 
 .pin-dot-light {
-  border-color: #D1D5DB;
+  border-color: var(--border-card);
 }
 
 .pin-dot.filled {
@@ -951,19 +930,6 @@ export default {
     padding: 0 0.875rem 1rem;
   }
 
-  .step-icon {
-    margin-bottom: 1rem;
-  }
-
-  .icon-bg {
-    width: 60px;
-    height: 60px;
-  }
-
-  .icon-bg .q-icon {
-    font-size: 26px !important;
-  }
-
   .step-title {
     font-size: 18px;
   }
@@ -1028,19 +994,6 @@ export default {
 
 /* Short screens - reduce vertical spacing */
 @media (max-height: 700px) {
-  .step-icon {
-    margin-bottom: 1rem;
-  }
-
-  .icon-bg {
-    width: 56px;
-    height: 56px;
-  }
-
-  .icon-bg .q-icon {
-    font-size: 24px !important;
-  }
-
   .step-title {
     font-size: 18px;
     margin-bottom: 0.5rem;
@@ -1079,19 +1032,6 @@ export default {
 
 /* Very short screens (landscape or compact phones) */
 @media (max-height: 600px) {
-  .step-icon {
-    margin-bottom: 0.75rem;
-  }
-
-  .icon-bg {
-    width: 48px;
-    height: 48px;
-  }
-
-  .icon-bg .q-icon {
-    font-size: 22px !important;
-  }
-
   .step-title {
     font-size: 16px;
     margin-bottom: 0.25rem;

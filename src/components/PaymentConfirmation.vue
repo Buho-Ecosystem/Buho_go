@@ -253,7 +253,7 @@ export default {
 }
 
 .backdrop-light {
-  background: #FFFFFF;
+  background: var(--bg-primary);
 }
 
 .backdrop-light::before {
@@ -475,8 +475,8 @@ export default {
 
 .close-btn-light {
   background: rgba(0, 0, 0, 0.04);
-  color: #374151;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
 }
 
 .close-btn-light:hover {

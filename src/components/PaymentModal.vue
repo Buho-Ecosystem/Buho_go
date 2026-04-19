@@ -802,7 +802,7 @@ export default {
 }
 
 .header-light {
-  border-bottom-color: #E5E7EB;
+  border-bottom-color: var(--border-card);
 }
 
 .header-content {
@@ -833,7 +833,7 @@ export default {
 }
 
 .contact-section-light {
-  border-bottom-color: #E5E7EB;
+  border-bottom-color: var(--border-card);
 }
 
 .contact-card {
@@ -851,8 +851,8 @@ export default {
 }
 
 .contact-card-light {
-  background: #FFF;
-  border-color: #E5E7EB;
+  background: var(--bg-card);
+  border-color: var(--border-card);
 }
 
 .contact-avatar {
@@ -998,7 +998,7 @@ export default {
 }
 
 .contact-address-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 /* Amount Section */
@@ -1028,7 +1028,7 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: #E5E7EB;
+  background: var(--bg-input);
   padding: 0.375rem 0.75rem;
   border-radius: 16px;
   cursor: pointer;
@@ -1082,7 +1082,7 @@ export default {
 }
 
 .amount-input-light {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .amount-input::placeholder {
@@ -1100,7 +1100,7 @@ export default {
 }
 
 .fiat-equivalent-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 /* Comment Section */

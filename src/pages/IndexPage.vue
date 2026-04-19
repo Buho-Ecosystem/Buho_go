@@ -540,8 +540,8 @@ export default {
 }
 
 .bg-light {
-  background: #F8F8F8;
-  color: #212121;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .container {
@@ -794,8 +794,8 @@ export default {
 }
 
 .scanner-light {
-  background: #F8F9FA;
-  border-color: #E5E7EB;
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
 }
 
 .scan-overlay {

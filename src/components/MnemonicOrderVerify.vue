@@ -333,14 +333,14 @@ export default {
 }
 
 .chip-light {
-  background: #FFFFFF;
-  border-color: #E5E7EB;
-  color: #1F2937;
+  background: var(--bg-card);
+  border-color: var(--border-card);
+  color: var(--text-primary);
 }
 
 .chip-light:active:not(:disabled) {
   transform: scale(0.97);
-  background: #F9FAFB;
+  background: var(--bg-input);
 }
 
 /* Selected */
@@ -436,8 +436,8 @@ export default {
 
 .btn-outline-light {
   background: transparent;
-  border: 1.5px solid #E5E7EB;
-  color: #6B7280;
+  border: 1.5px solid var(--border-card);
+  color: var(--text-secondary);
 }
 
 .btn-outline-light:active {

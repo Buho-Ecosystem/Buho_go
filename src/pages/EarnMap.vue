@@ -233,7 +233,7 @@ export default {
 }
 
 .earn-light {
-  background: #F8F8F8;
+  background: var(--bg-primary);
   background-image:
     radial-gradient(ellipse 600px 400px at 20% 10%, rgba(146, 227, 169, 0.08), transparent),
     radial-gradient(ellipse 500px 300px at 80% 50%, rgba(5, 149, 115, 0.06), transparent);

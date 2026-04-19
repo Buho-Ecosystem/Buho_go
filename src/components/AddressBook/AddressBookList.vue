@@ -406,7 +406,7 @@ export default {
 }
 
 .entries-header-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .entries-count {
@@ -495,7 +495,7 @@ export default {
 }
 
 .empty_state_light {
-  background: white;
+  background: var(--bg-primary);
 }
 
 .empty-illustration-img {

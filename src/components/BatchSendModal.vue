@@ -450,7 +450,7 @@
               </div>
               <div class="exec-amount">{{ formatSats(result.amount) }}</div>
               <div class="exec-icon">
-                <q-spinner-dots v-if="result.status === 'sending'" size="20px" color="green" />
+                <q-spinner-dots v-if="result.status === 'sending'" size="20px" color="brand-green" />
                 <Icon v-else-if="result.status === 'success'" icon="tabler:circle-check" class="icon-success" />
                 <Icon v-else-if="result.status === 'failed'" icon="tabler:circle-x" class="icon-failed" />
                 <Icon v-else-if="result.status === 'skipped'" icon="tabler:circle-minus" class="icon-skipped" />
