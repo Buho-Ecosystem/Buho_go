@@ -257,24 +257,24 @@
     <div class="bottom-actions">
       <div class="action-buttons">
         <q-btn
-          :class="$q.dark.isActive ? 'action-btn receive-btn-dark' : 'action-btn receive-btn-light'"
-          @click="showReceiveModal = true"
+          class="action-btn action-btn-receive"
+          @click="openReceive"
           no-caps
           unelevated
-          aria-label="Receive payment"
+          :aria-label="$t('Receive payment')"
         >
-          <Icon icon="tabler:arrow-down" width="24" height="24" />
-          <div class="btn-text">{{ $t('Receive') }}</div>
+          <Icon icon="tabler:scan" width="20" height="20" />
+          <span class="btn-text">{{ $t('Receive') }}</span>
         </q-btn>
         <q-btn
-          :class="$q.dark.isActive ? 'action-btn send-btn-dark' : 'action-btn send-btn-light'"
-          @click="showSendModal = true"
+          class="action-btn action-btn-send"
+          @click="openSend"
           no-caps
           unelevated
-          aria-label="Send payment"
+          :aria-label="$t('Send payment')"
         >
-          <Icon icon="tabler:arrow-up" width="24" height="24" />
-          <div class="btn-text">{{ $t('Send') }}</div>
+          <Icon icon="tabler:scan" width="20" height="20" />
+          <span class="btn-text">{{ $t('Send') }}</span>
         </q-btn>
       </div>
     </div>
@@ -1990,6 +1990,16 @@ export default {
     openTransactionHistory() {
       haptics.tap();
       this.$router.push('/transactions');
+    },
+
+    openReceive() {
+      haptics.tap();
+      this.showReceiveModal = true;
+    },
+
+    openSend() {
+      haptics.tap();
+      this.showSendModal = true;
     },
 
     /**
@@ -4272,57 +4282,125 @@ export default {
   margin: 0 auto;
 }
 
+/* Twin tinted-fill buttons. Send and Receive are equal, co-primary
+   actions — no outlined-vs-filled hierarchy. Each carries a soft
+   wash of its brand colour with full-saturation label and icon; the
+   background is atmosphere, the foreground is meaning. Sharper 18px
+   radius matches the app's card language and drops the pill that
+   fought the rest of the wallet UI. */
 .action-btn {
   flex: 1;
-  height: 72px;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  font-weight: 600;
-  transition: all 0.2s ease;
+  height: 56px;
+  min-height: 56px;
+  min-width: 120px;
+  border-radius: 18px;
+  padding: 0 20px;
   position: relative;
   overflow: hidden;
-  min-height: 72px;
-  min-width: 120px;
+  transition:
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    filter 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+/* Identical layout on both: icon + label in a single row, centered.
+   Neutralises Quasar's internal content padding which otherwise
+   offsets one button against the other. */
+.action-btn :deep(.q-btn__content) {
+  padding: 0;
+  flex-direction: row;
+  column-gap: 10px;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Micro top-edge sheen — a barely-there light source. Adds form
+   without introducing a new colour or animation surface. */
+.action-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0) 40%
+  );
+  pointer-events: none;
 }
 
 .action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  filter: brightness(1.08);
 }
 
 .action-btn:active {
-  transform: translateY(0) scale(0.98);
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+  filter: brightness(0.92);
 }
 
-.receive-btn-dark,
-.receive-btn-light {
-  background: linear-gradient(135deg, #059573, #43B65B);
-  color: white;
+/* Receive — green tinted fill. Uses the same #15DE72 accent as the
+   ReceiveModal so the button and the modal it opens feel like one
+   continuous surface. */
+.action-btn-receive {
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
+  border: 1px solid rgba(21, 222, 114, 0.22);
 }
 
-.receive-btn-dark:hover,
-.receive-btn-light:hover {
-  background: linear-gradient(135deg, #047857, #059573);
+/* Send — blue tinted fill. #3B82F6 chosen over #2563EB for the
+   icon/label because it has stronger contrast on the tinted wash
+   in dark mode. The shade still belongs to the brand-blue family. */
+.action-btn-send {
+  background: rgba(59, 130, 246, 0.14);
+  color: #3B82F6;
+  border: 1px solid rgba(59, 130, 246, 0.22);
 }
 
-.send-btn-dark,
-.send-btn-light {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-  color: white;
+/* Light mode: tinted fills must be slightly denser to remain
+   legible on white, and the label/icon drop to the deeper shades
+   (#059573 / #2563EB) for WCAG AA contrast on a light wash. */
+.body--light .action-btn-receive {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
+  border-color: rgba(5, 149, 115, 0.20);
 }
 
-.send-btn-dark:hover,
-.send-btn-light:hover {
-  background: linear-gradient(135deg, #2563EB, #1D4ED8);
+.body--light .action-btn-send {
+  background: rgba(37, 99, 235, 0.10);
+  color: #2563EB;
+  border-color: rgba(37, 99, 235, 0.20);
 }
 
 .btn-text {
-  font-size: 1rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.9375rem; /* 15px */
   font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-btn,
+  .action-btn:hover,
+  .action-btn:active {
+    transition: none;
+    transform: none;
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-btn,
+  .action-btn:hover,
+  .action-btn:active {
+    transition: none;
+    transform: none;
+    filter: none;
+  }
 }
 
 /* Dialog Header Styles */
