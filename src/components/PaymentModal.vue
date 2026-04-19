@@ -133,7 +133,7 @@
       <q-card-section class="payment-footer">
         <q-btn
           class="send-payment-btn"
-          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+          :class="$q.dark.isActive ? 'send-payment-btn-dark' : 'send-payment-btn-light'"
           :loading="isSending"
           @click="sendPayment"
           :disable="!isValidAmount || !canPayContact"
@@ -1168,18 +1168,53 @@ export default {
   flex-shrink: 0;
 }
 
+/* Blue-tinted primary CTA for the send flow — matches the Wallet's
+   Send button exactly. Brand-blue wash + saturated blue label,
+   1px inset ring, 16px radius. No gradient. */
 .send-payment-btn {
   width: 100%;
   height: 52px;
-  border-radius: var(--radius-xl);
-  background: var(--gradient-green);
-  color: #FFF;
+  border-radius: 16px;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  transition: all 0.2s ease;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   border: none;
   cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease,
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.send-payment-btn-dark {
+  background: rgba(59, 130, 246, 0.14) !important;
+  color: #3B82F6 !important;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
+}
+
+.send-payment-btn-light {
+  background: rgba(37, 99, 235, 0.10) !important;
+  color: #2563EB !important;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.20);
+}
+
+.send-payment-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.send-payment-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  transition-duration: 0.08s;
+  filter: brightness(0.94);
+}
+
+.send-payment-btn:disabled,
+.send-payment-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Responsive Design */

@@ -1961,6 +1961,23 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Turn a raw SDK/transport error into a user-facing string.
+     * Transport-class failures get a generic "network" message; everything
+     * else keeps the original message but is scoped to the relevant wallet
+     * and phase (invoice creation vs. payment).
+     */
+    _friendlyTransferError(error, fromWallet, toWallet, phase = 'transfer') {
+      const msg = error?.message || String(error || '');
+      const isTransport = /Transport error|Load failed|Failed to fetch|NetworkError|fetch failed/i.test(msg);
+      if (isTransport) {
+        return 'Network issue reaching the wallet service. Please check your connection and try again.';
+      }
+      if (phase === 'invoice') return `Failed to create invoice from ${toWallet.name}: ${msg}`;
+      if (phase === 'pay') return `Failed to send payment from ${fromWallet.name}: ${msg}`;
+      return `Transfer from ${fromWallet.name} to ${toWallet.name} failed: ${msg}`;
+    },
+
+    /**
      * Transfer funds between two wallets
      * Creates an invoice from destination wallet and pays from source wallet
      * @param {string} fromWalletId - Source wallet ID
@@ -1999,52 +2016,63 @@ export const useWalletStore = defineStore('wallet', {
         throw new Error('Failed to connect wallets');
       }
 
-      // Step 1: Create invoice from destination wallet
-      let invoice;
-      const transferMemo = memo || `Transfer from ${fromWallet.name}`;
-      const toType = toWallet.type?.toLowerCase() || 'nwc';
-
-      try {
-        if (toType === 'spark' || toType === 'lnbits') {
-          // Spark and LNBits both use createInvoice({ amount, description })
-          const invoiceResult = await toProvider.createInvoice({
-            amount: amountSats,
-            description: transferMemo
-          });
-          invoice = invoiceResult.paymentRequest || invoiceResult.payment_request || invoiceResult.bolt11 || invoiceResult;
-        } else {
-          // NWC wallet (WebLN interface) - makeInvoice expects satoshis
-          // The Alby SDK handles internal conversion to millisats for NIP-47
-          const invoiceResult = await toProvider.makeInvoice({
-            amount: amountSats,
-            description: transferMemo
-          });
-          invoice = invoiceResult.invoice || invoiceResult.paymentRequest || invoiceResult.bolt11;
-        }
-      } catch (invoiceError) {
-        console.error('Invoice creation error:', invoiceError);
-        throw new Error(`Failed to create invoice from ${toWallet.name}: ${invoiceError.message}`);
-      }
-
-      if (!invoice) {
-        throw new Error('Failed to create invoice from destination wallet');
-      }
-
-      // Step 2: Pay invoice from source wallet
-      let paymentResult;
       const fromType = fromWallet.type?.toLowerCase() || 'nwc';
+      const toType = toWallet.type?.toLowerCase() || 'nwc';
+      const transferMemo = memo || `Transfer from ${fromWallet.name}`;
 
-      try {
-        if (fromType === 'spark' || fromType === 'lnbits') {
-          // Spark and LNBits both use payInvoice({ invoice })
-          paymentResult = await fromProvider.payInvoice({ invoice });
-        } else {
-          // NWC wallet - use sendPayment with just the invoice string
-          paymentResult = await fromProvider.sendPayment(invoice);
+      // Fast path: Spark → Spark uses native zero-fee transfer, bypassing
+      // Lightning invoice creation. Avoids the SO preimage-share round-trip
+      // that can fail with transport errors under flaky network conditions.
+      let paymentResult;
+      if (fromType === 'spark' && toType === 'spark') {
+        try {
+          const sparkAddress = await toProvider.getSparkAddress();
+          paymentResult = await fromProvider.transferToSparkAddress(sparkAddress, amountSats);
+        } catch (sparkError) {
+          console.error('Spark-native transfer error:', sparkError);
+          throw new Error(this._friendlyTransferError(sparkError, fromWallet, toWallet));
         }
-      } catch (payError) {
-        console.error('Payment error:', payError);
-        throw new Error(`Failed to send payment from ${fromWallet.name}: ${payError.message}`);
+      } else {
+        // Lightning path: create invoice on destination, pay from source
+        let invoice;
+        try {
+          if (toType === 'spark' || toType === 'lnbits') {
+            // Spark and LNBits both use createInvoice({ amount, description })
+            const invoiceResult = await toProvider.createInvoice({
+              amount: amountSats,
+              description: transferMemo
+            });
+            invoice = invoiceResult.paymentRequest || invoiceResult.payment_request || invoiceResult.bolt11 || invoiceResult;
+          } else {
+            // NWC wallet (WebLN interface) - makeInvoice expects satoshis
+            // The Alby SDK handles internal conversion to millisats for NIP-47
+            const invoiceResult = await toProvider.makeInvoice({
+              amount: amountSats,
+              description: transferMemo
+            });
+            invoice = invoiceResult.invoice || invoiceResult.paymentRequest || invoiceResult.bolt11;
+          }
+        } catch (invoiceError) {
+          console.error('Invoice creation error:', invoiceError);
+          throw new Error(this._friendlyTransferError(invoiceError, fromWallet, toWallet, 'invoice'));
+        }
+
+        if (!invoice) {
+          throw new Error('Failed to create invoice from destination wallet');
+        }
+
+        try {
+          if (fromType === 'spark' || fromType === 'lnbits') {
+            // Spark and LNBits both use payInvoice({ invoice })
+            paymentResult = await fromProvider.payInvoice({ invoice });
+          } else {
+            // NWC wallet - use sendPayment with just the invoice string
+            paymentResult = await fromProvider.sendPayment(invoice);
+          }
+        } catch (payError) {
+          console.error('Payment error:', payError);
+          throw new Error(this._friendlyTransferError(payError, fromWallet, toWallet, 'pay'));
+        }
       }
 
       // Step 3: Refresh balances for both wallets

@@ -61,10 +61,11 @@
           <div class="error-subtitle">{{ cameraError }}</div>
           <q-btn
             class="retry-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :class="$q.dark.isActive ? 'retry-btn-dark' : 'retry-btn-light'"
             :label="$t('Retry')"
             @click="initializeCamera"
             no-caps
+            unelevated
           />
         </div>
 
@@ -1045,8 +1046,35 @@ export default {
   line-height: 1.5;
 }
 
+/* Error-recovery button — neutral translucent tint. Not a primary
+   CTA, just a "try again" affordance, so we keep it quiet and let
+   the error message do the talking. */
 .retry-btn {
-  border-radius: 24px;
+  border-radius: 12px;
+  padding: 10px 20px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: background-color 0.18s ease;
+}
+
+.retry-btn-dark {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.retry-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.retry-btn-light {
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: rgba(0, 0, 0, 0.75) !important;
+}
+
+.retry-btn-light:hover {
+  background: rgba(0, 0, 0, 0.08) !important;
 }
 
 /* Scanning Frame */

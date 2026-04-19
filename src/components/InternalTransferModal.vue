@@ -824,9 +824,26 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
    ════════════════════════════════════════════════════════════ */
 .modal-footer { display: flex; align-items: center; padding: 16px 20px; padding-bottom: max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--c-border); gap: 12px; }
 .btn-back { display: flex; align-items: center; gap: 4px; padding: 10px 16px; font-size: 15px; font-weight: 500; color: var(--c-text2); }
-.btn-main { display: flex; align-items: center; gap: 6px; padding: 12px 24px; font-size: 15px; font-weight: 600; background: var(--gradient-green) !important; color: #fff !important; border-radius: var(--radius-md); }
-.btn-main:hover { opacity: 0.9; }
-.btn-main:disabled { opacity: .5; }
+/* Primary CTA — tinted green, matches the Create Invoice / Continue
+   pattern used across the app. */
+.btn-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 24px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  background: rgba(21, 222, 114, 0.14) !important;
+  color: #15DE72 !important;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+  transition: filter 0.18s ease, transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-main:hover:not(:disabled) { filter: brightness(1.06); }
+.btn-main:active:not(:disabled) { transform: scale(0.98); filter: brightness(0.94); }
+.btn-main:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ════════════════════════════════════════════════════════════
    Picker
