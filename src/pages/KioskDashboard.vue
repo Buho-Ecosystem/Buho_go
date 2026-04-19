@@ -538,9 +538,21 @@ export default defineComponent({
 .tip-opt-pct { font-size: 1.25rem; font-weight: 800; color: #e8eaed; }
 .kiosk-light .tip-opt-pct { color: #1a1a1a; }
 .tip-opt-amt { font-size: 0.8125rem; font-weight: 600; color: #9ca3af; }
-.tip-opt-on { background: rgba(5,149,115,0.07) !important; border-color: #059573 !important; box-shadow: 0 0 0 1px rgba(5,149,115,0.15); }
-.tip-opt-on .tip-opt-pct { color: #059573; }
-.tip-opt-on .tip-opt-amt { color: #059573; }
+/* Active tip % — tinted-green pane matching the app-wide selection
+   grammar (14% wash + 1px inset ring + saturated label). */
+.tip-opt-on {
+  background: rgba(21, 222, 114, 0.14) !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22) !important;
+}
+.tip-opt-on .tip-opt-pct { color: #15DE72; }
+.tip-opt-on .tip-opt-amt { color: #15DE72; }
+.kiosk-light .tip-opt-on {
+  background: rgba(5, 149, 115, 0.10) !important;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20) !important;
+}
+.kiosk-light .tip-opt-on .tip-opt-pct,
+.kiosk-light .tip-opt-on .tip-opt-amt { color: #059573; }
 
 .tip-roundup { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,0.03); border: 2px solid rgba(255,255,255,0.08); transition: all 0.18s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; font-family: 'Manrope', sans-serif; }
 .tip-roundup:active { transform: scale(0.97); }
@@ -551,10 +563,22 @@ export default defineComponent({
 .kiosk-light .tip-roundup-icon { background: #e2e8f0; }
 .tip-roundup-label { font-size: 0.875rem; font-weight: 600; color: #9ca3af; flex: 1; }
 .tip-roundup-val { font-size: 1rem; font-weight: 700; color: #d1d5db; }
-.tip-roundup-on { background: rgba(5,149,115,0.06) !important; border-color: #059573 !important; }
-.tip-roundup-on .tip-roundup-icon { background: rgba(5,149,115,0.15); color: #059573; }
-.tip-roundup-on .tip-roundup-label { color: #059573; }
-.tip-roundup-on .tip-roundup-val { color: #059573; }
+/* Round-up row active — same tinted-green selection grammar. */
+.tip-roundup-on {
+  background: rgba(21, 222, 114, 0.14) !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+}
+.tip-roundup-on .tip-roundup-icon { background: rgba(21, 222, 114, 0.22); color: #15DE72; }
+.tip-roundup-on .tip-roundup-label { color: #15DE72; }
+.tip-roundup-on .tip-roundup-val { color: #15DE72; }
+.kiosk-light .tip-roundup-on {
+  background: rgba(5, 149, 115, 0.10) !important;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+.kiosk-light .tip-roundup-on .tip-roundup-icon { background: rgba(5, 149, 115, 0.18); color: #059573; }
+.kiosk-light .tip-roundup-on .tip-roundup-label,
+.kiosk-light .tip-roundup-on .tip-roundup-val { color: #059573; }
 
 .tip-skip { padding: 14px; background: transparent; border: none; font-size: 0.875rem; font-weight: 500; color: #6b7280; text-align: center; text-decoration: underline; text-decoration-color: rgba(107,114,128,0.3); text-underline-offset: 3px; cursor: pointer; -webkit-tap-highlight-color: transparent; font-family: 'Manrope', sans-serif; }
 .tip-skip:active { color: inherit; }

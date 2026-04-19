@@ -6,6 +6,7 @@
         <div class="qr-frame" :class="{ 'loading': !depositAddress }">
           <vue-qrcode
             v-if="depositAddress"
+            ref="depositQr"
             :value="qrValue"
             :options="qrOptions"
             class="qr-code"
@@ -203,6 +204,7 @@ import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { useWalletStore } from 'src/stores/wallet';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
 import { shareContent } from 'src/utils/share';
+import { qrBlobFromRef } from 'src/utils/qrShare';
 import { truncateAddress } from 'src/utils/addressUtils';
 import { getQrOptions } from 'src/utils/qrConfig';
 
@@ -520,22 +522,26 @@ export default {
     async shareAddress() {
       if (!this.depositAddress) return;
 
+      const qrBlob = await qrBlobFromRef(this.$refs.depositQr);
       const result = await shareContent({
         title: this.$t('Bitcoin Address'),
-        text: this.depositAddress
+        // Pure address so recipients can copy-paste cleanly. The
+        // BuhoGO wordmark is baked into the QR image by qrShare.
+        text: this.depositAddress,
+        files: qrBlob ? [{ blob: qrBlob, name: 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
       });
 
       if (result.success) {
-        // Share was successful - no notification needed, native share UI provides feedback
+        // Native share UI already confirms success; no toast needed.
       } else if (result.reason === 'unsupported' || result.reason === 'error') {
         if (result.reason === 'error') {
           console.error('Failed to share address:', result.error);
         }
-        // Fallback to copy if share is not supported or failed
         await this.copyAddress();
       }
-      // Don't do anything for 'cancelled' - user just closed the dialog
+      // 'cancelled' → user closed the dialog, no action needed.
     },
+
 
     getUserFriendlyError(error, context = 'general') {
       const errorStr = error?.message || error?.toString() || '';

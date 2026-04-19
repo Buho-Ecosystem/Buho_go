@@ -83,6 +83,7 @@
             <div class="qr-card" @click="copySparkAddress">
               <div class="qr-frame">
                 <vue-qrcode
+                  ref="sparkQr"
                   :value="sparkAddress"
                   :options="sparkQrOptions"
                   class="qr-code"
@@ -160,6 +161,7 @@
             <div class="qr-card" @click="copyInvoice">
               <div class="qr-frame">
                 <vue-qrcode
+                  ref="invoiceQr"
                   :value="'lightning:' + generatedInvoice.payment_request.toUpperCase()"
                   :options="invoiceQrOptions"
                   class="qr-code"
@@ -326,6 +328,7 @@ import { formatAmount } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
 import { shareContent } from '../utils/share';
+import { qrBlobFromRef } from '../utils/qrShare';
 import { truncateAddress } from '../utils/addressUtils';
 import { getQrOptions } from '../utils/qrConfig';
 import PaymentConfirmation from './PaymentConfirmation.vue';
@@ -1113,16 +1116,19 @@ export default {
     async shareSparkAddress() {
       if (!this.sparkAddress) return;
 
+      const qrBlob = await qrBlobFromRef(this.$refs.sparkQr);
       const result = await shareContent({
         title: this.$t('Spark Address'),
-        text: this.sparkAddress
+        // Pure address so recipients can copy-paste cleanly. The
+        // BuhoGO wordmark is baked into the QR image by qrShare.
+        text: this.sparkAddress,
+        files: qrBlob ? [{ blob: qrBlob, name: 'spark-address.png', mimeType: 'image/png' }] : undefined,
       });
 
       if (result.success) {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Shared'),
-
         });
       } else if (result.reason === 'unsupported') {
         // Fallback: copy to clipboard
@@ -1131,7 +1137,7 @@ export default {
         console.error('Failed to share Spark address:', result.error);
         await this.copySparkAddress();
       }
-      // Don't do anything for 'cancelled' - user just closed the dialog
+      // 'cancelled' → user closed the dialog, no action needed.
     },
 
     truncateSparkAddress(address) {
@@ -1158,42 +1164,44 @@ export default {
     async shareInvoice() {
       if (!this.generatedInvoice) return;
 
-      // Lightning URI for sharing (most wallets recognize this format)
+      // Lightning URI so every wallet we share to can open it directly.
       const lightningUri = `lightning:${this.generatedInvoice.payment_request}`;
 
+      const qrBlob = await qrBlobFromRef(this.$refs.invoiceQr);
       const result = await shareContent({
         title: this.$t('Lightning Invoice'),
-        text: lightningUri
+        // Pure invoice URI so recipients can copy-paste cleanly. The
+        // BuhoGO wordmark is baked into the QR image by qrShare.
+        text: lightningUri,
+        files: qrBlob ? [{ blob: qrBlob, name: 'lightning-invoice.png', mimeType: 'image/png' }] : undefined,
       });
 
       if (result.success) {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Shared'),
-
         });
       } else if (result.reason === 'unsupported' || result.reason === 'error') {
         if (result.reason === 'error') {
           console.error('Failed to share invoice:', result.error);
         }
-        // Fallback: copy to clipboard
+        // Fallback: copy the raw invoice so the user still has something.
         try {
           await navigator.clipboard.writeText(this.generatedInvoice.payment_request);
           this.$q.notify({
             type: 'positive',
             message: this.$t('Invoice copied'),
-
           });
         } catch (copyError) {
           this.$q.notify({
             type: 'negative',
             message: this.$t('Couldn\'t share'),
-
           });
         }
       }
-      // Don't do anything for 'cancelled' - user just closed the dialog
+      // 'cancelled' → user closed the dialog, no action needed.
     },
+
 
     /**
      * Handle when the payment confirmation screen is closed

@@ -326,8 +326,9 @@
           <q-item-section side>
             <q-btn-toggle
               :model-value="defaultDisplayCurrency"
-              dense no-caps rounded unelevated size="sm"
-              toggle-color="green"
+              dense no-caps unelevated size="sm"
+              class="settings-mini-toggle"
+              :class="$q.dark.isActive ? 'settings-mini-toggle-dark' : 'settings-mini-toggle-light'"
               :options="[{ label: 'Bitcoin', value: 'bitcoin' }, { label: preferredFiatCurrency, value: 'fiat' }]"
               @update:model-value="setDisplayCurrency"
             />
@@ -369,7 +370,7 @@
             <q-toggle
               :model-value="useBip177Format"
               @update:model-value="updateAmountFormat"
-              :color="$q.dark.isActive ? 'green' : 'green-7'"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             />
           </q-item-section>
         </q-item>
@@ -390,7 +391,7 @@
             <q-toggle
               :model-value="$q.dark.isActive"
               @update:model-value="$q.dark.toggle()"
-              :color="$q.dark.isActive ? 'green' : 'green-7'"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             />
           </q-item-section>
         </q-item>
@@ -423,7 +424,7 @@
             -->
             <q-toggle
               :model-value="biometricsEnabled"
-              :color="$q.dark.isActive ? 'green' : 'green-7'"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
               :disable="!biometricsAvailable"
               @update:model-value="toggleBiometrics"
             />
@@ -449,7 +450,7 @@
           <q-item-section side>
             <q-toggle
               :model-value="walletStore.kioskEnabled"
-              :color="$q.dark.isActive ? 'green' : 'green-7'"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
               @update:model-value="handleKioskToggle"
             />
           </q-item-section>
@@ -492,7 +493,7 @@
               </q-item-label>
             </q-item-section>
             <q-item-section side>
-              <q-btn flat dense no-caps size="sm" color="green" @click="showKioskChangePinDialog = true">
+              <q-btn flat dense no-caps size="sm" class="inline-link-btn" @click="showKioskChangePinDialog = true">
                 {{ $t('kiosk.changePin') }}
               </q-btn>
             </q-item-section>
@@ -513,7 +514,7 @@
             <q-item-section side>
               <q-toggle
                 :model-value="walletStore.kioskTipEnabled"
-                :color="$q.dark.isActive ? 'green' : 'green-7'"
+                :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
                 @update:model-value="(v) => walletStore.setKioskTipEnabled(v)"
               />
             </q-item-section>
@@ -560,7 +561,7 @@
             <q-item-section side>
               <q-toggle
                 :model-value="walletStore.kioskRoundUpEnabled"
-                :color="$q.dark.isActive ? 'green' : 'green-7'"
+                :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
                 @update:model-value="(v) => walletStore.setKioskRoundUpEnabled(v)"
               />
             </q-item-section>
@@ -581,8 +582,9 @@
             <q-item-section side>
               <q-btn-toggle
                 :model-value="walletStore.kioskDisplayCurrency"
-                dense no-caps rounded unelevated size="sm"
-                toggle-color="green"
+                dense no-caps unelevated size="sm"
+                class="settings-mini-toggle"
+                :class="$q.dark.isActive ? 'settings-mini-toggle-dark' : 'settings-mini-toggle-light'"
                 :options="[{ label: 'Sats', value: 'sats' }, { label: walletStore.preferredFiatCurrency, value: 'fiat' }]"
                 @update:model-value="(v) => walletStore.setKioskDisplayCurrency(v)"
               />
@@ -595,8 +597,8 @@
           <q-item>
             <q-item-section>
               <q-btn unelevated no-caps
-                :color="$q.dark.isActive ? 'green' : 'green-7'"
                 class="full-width kiosk-start-btn"
+                :class="$q.dark.isActive ? 'kiosk-start-btn-dark' : 'kiosk-start-btn-light'"
                 :disable="!walletStore.kioskWalletId || kioskActivating"
                 :loading="kioskActivating"
                 @click="handleStartKiosk">
@@ -727,7 +729,8 @@
               <q-item v-for="w in wallets" :key="w.id" clickable v-ripple
                 @click="kioskWalletSelection = w.id">
                 <q-item-section side>
-                  <q-radio :model-value="kioskWalletSelection" :val="w.id" color="green"
+                  <q-radio :model-value="kioskWalletSelection" :val="w.id"
+                    :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
                     @update:model-value="kioskWalletSelection = $event" />
                 </q-item-section>
                 <q-item-section>
@@ -757,7 +760,9 @@
           </q-card-section>
           <q-card-actions align="right">
             <q-btn flat no-caps :label="$t('Cancel')" color="grey" @click="showKioskWalletPicker = false" />
-            <q-btn flat no-caps :label="$t('Confirm')" color="green" :disable="!kioskWalletSelection"
+            <q-btn flat no-caps :label="$t('Confirm')"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+              :disable="!kioskWalletSelection"
               @click="confirmKioskWalletSelection" />
           </q-card-actions>
         </q-card>
@@ -1993,6 +1998,7 @@ import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 // here for future reuse.
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { version } from '../../package.json'
+import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
 
 // Preset Mempool servers offered in the exchange-rate source picker.
 // Kept at module scope so they are referenced via computed getters in
@@ -2069,12 +2075,8 @@ export default {
       // bust, this makes replay reliable on Chromium and WebKit.
       mempoolHeroMounted: true,
 
-      // Language options
-      localeOptions: [
-        { value: 'en-US', label: 'English' },
-        { value: 'de', label: 'Deutsch' },
-        { value: 'es', label: 'Español' }
-      ],
+      // Language options (shared registry — see src/i18n/locales.js)
+      localeOptions: SUPPORTED_LOCALES,
 
       // Spark wallet settings
       showSparkSettingsDialog: false,
@@ -3322,22 +3324,21 @@ export default {
     },
 
     setLanguage(languageCode) {
-      this.$i18n.locale = languageCode
-      // Save to localStorage for persistence
-      localStorage.setItem('buhoGO_language', languageCode)
+      if (!applyLocale(this.$i18n, languageCode)) return
       this.showLanguageDialog = false
 
       this.$q.notify({
         type: 'positive',
         message: this.$t('Language updated'),
-
       })
     },
 
     loadLanguagePreference() {
-      const savedLanguage = localStorage.getItem('buhoGO_language')
-      if (savedLanguage && this.localeOptions.find(lang => lang.value === savedLanguage)) {
-        this.$i18n.locale = savedLanguage
+      // Boot already restores the saved locale on app start; this keeps
+      // Settings in sync if it mounts before the user-driven change.
+      const saved = getSavedLocale()
+      if (saved && saved !== this.$i18n.locale) {
+        this.$i18n.locale = saved
       }
     },
 
@@ -3757,13 +3758,109 @@ export default {
   border-radius: 12px;
 }
 
+/* Kiosk primary CTAs — tinted-green, same grammar as Create Invoice
+   and the Wallet's Receive button. */
 .kiosk-start-btn {
-  border-radius: 14px;
+  border-radius: 16px;
   height: 48px;
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.005em;
+  transition:
+    filter 0.18s ease,
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+.kiosk-start-btn-dark {
+  background: rgba(21, 222, 114, 0.14) !important;
+  color: #15DE72 !important;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+}
+
+.kiosk-start-btn-light {
+  background: rgba(5, 149, 115, 0.10) !important;
+  color: #059573 !important;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+
+.kiosk-start-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.kiosk-start-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  filter: brightness(0.94);
+}
+.kiosk-start-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Compact segmented toggles (Bitcoin/USD, Sats/USD).
+   Active segment: tinted-green pane with inset ring — same grammar
+   as the Spark/Lightning/Bitcoin toggle in ReceiveModal. Inactive:
+   transparent with muted label. */
+.settings-mini-toggle {
+  border-radius: 12px;
+  padding: 3px;
+  overflow: hidden;
+}
+
+.settings-mini-toggle :deep(.q-btn) {
+  border-radius: 9px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  padding: 4px 12px;
+  min-height: 26px;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.settings-mini-toggle :deep(.q-btn .q-focus-helper) { display: none; }
+
+.settings-mini-toggle-dark {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.settings-mini-toggle-dark :deep(.q-btn) {
+  color: #94a3b8;
+  background: transparent;
+}
+
+.settings-mini-toggle-dark :deep(.q-btn--active) {
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+}
+
+.settings-mini-toggle-light {
+  background: rgba(15, 23, 42, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+
+.settings-mini-toggle-light :deep(.q-btn) {
+  color: #64748b;
+  background: transparent;
+}
+
+.settings-mini-toggle-light :deep(.q-btn--active) {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+
+/* Small inline utility action (e.g., "Change" next to the PIN).
+   Neutral muted text so it reads as a quiet affordance and never
+   competes with the primary CTA further down the screen. */
+.inline-link-btn {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+.inline-link-btn:hover { opacity: 1; }
 
 
 .item-caption-dark {
@@ -5655,8 +5752,9 @@ export default {
 }
 
 .badge-verified {
-  background: rgba(21, 222, 114, 0.12);
+  background: rgba(21, 222, 114, 0.14);
   color: #15DE72;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
 }
 
 .badge-unverified {
@@ -6550,14 +6648,33 @@ export default {
   background: var(--bg-secondary); color: var(--text-muted);
 }
 
+/* PIN-setup intro CTA — tinted green, matches .kiosk-start-btn. */
 .kiosk-setup-primary {
-  width: 100%; height: 50px; border: none; border-radius: var(--radius-md);
-  background: var(--color-green); color: white;
-  font-family: 'Manrope', sans-serif; font-size: 0.9375rem; font-weight: 700;
-  cursor: pointer; -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.15s;
+  width: 100%;
+  height: 50px;
+  border: none;
+  border-radius: 16px;
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    filter 0.18s ease,
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.kiosk-setup-primary:active { opacity: 0.85; }
+.kiosk-setup-primary:hover { filter: brightness(1.06); }
+.kiosk-setup-primary:active { transform: scale(0.98); filter: brightness(0.94); }
+
+body.body--light .kiosk-setup-primary {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
 
 .kiosk-setup-secondary {
   background: none; border: none;

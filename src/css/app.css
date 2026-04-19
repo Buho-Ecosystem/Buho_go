@@ -1,5 +1,20 @@
 /* app global css */
 
+@import 'quasar.variables.scss';
+
+/* ─── Unified brand-green palette ───
+   Quasar's color system lets any string be a color name as long as
+   matching `.bg-{name}` / `.text-{name}` classes exist. We register
+   our two brand-green shades here so toggles, radios and any native
+   Quasar `color="…"` binding can opt into the BuhoGO palette with
+   a single consistent value rather than drifting between the stock
+   `green` / `green-7` shades. */
+.bg-brand-green { background: #15DE72 !important; }
+.text-brand-green { color: #15DE72 !important; }
+.bg-brand-green-dark { background: #059573 !important; }
+.text-brand-green-dark { color: #059573 !important; }
+
+
 /* ─── Local Manrope font (no external network dependency) ─── */
 @font-face {
   font-family: 'Manrope';
@@ -18,8 +33,6 @@
   src: url('/fonts/Manrope-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-
-@import 'quasar.variables.scss';
 
 /* ─── Mobile-first: prevent horizontal scroll ─── */
 *, *::before, *::after {
@@ -286,32 +299,6 @@ body.body--light {
     gap: 8px;
     min-width: 0;
     flex: 1 1 0;
-}
-
-
-.add_btn_dark {
-    border-radius: 24px !important;
-    border: 1px solid rgba(255, 255, 255, 0.20) !important;;
-    background: linear-gradient(90deg, #059573 0%, #78D53C 100%) !important;;
-    box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;;
-    color: #0C0C0C !important;;
-    font-family: 'Manrope', sans-serif;
-    font-size: 14px;
-    font-style: normal;
-    font-weight: 400;
-}
-
-.add_btn_light {
-    border-radius: 24px !important;;
-    border: 1px solid rgba(255, 255, 255, 0.20) !important;;
-    background: linear-gradient(90deg, #059573 0%, #78D53C 100%) !important;;
-    box-shadow: 0px 4px 8px 0px rgba(206, 206, 206, 0.25) !important;;
-    color: #FFF !important;;
-    font-family: 'Manrope', sans-serif;
-    font-size: 14px;
-    font-style: normal;
-    font-weight: 400;
-    line-height: 100%; /* 14px */
 }
 
 

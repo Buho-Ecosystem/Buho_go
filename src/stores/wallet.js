@@ -33,6 +33,16 @@ const CryptoUtils = {
    * Generated once, stored in localStorage as base64.
    */
   async getDeviceKey() {
+    // crypto.subtle only exists in a secure context (HTTPS or localhost).
+    // Serving over a LAN IP / plain http:// leaves it undefined, which
+    // otherwise surfaces as a cryptic "Cannot read properties of undefined".
+    if (!globalThis.crypto?.subtle) {
+      throw new Error(
+        'Secure context required. Open this app over HTTPS or from localhost. ' +
+        'Browsers disable Web Crypto on plain http:// LAN addresses.'
+      );
+    }
+
     let keyB64 = localStorage.getItem(STORAGE_KEYS.DEVICE_KEY);
 
     if (!keyB64) {

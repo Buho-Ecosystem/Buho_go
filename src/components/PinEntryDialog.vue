@@ -63,7 +63,7 @@
               ></div>
             </div>
 
-            <q-spinner-dots size="40px" color="green" />
+            <q-spinner-dots size="40px" color="brand-green" />
             <div class="unlock-loading-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
               {{ $t('Unlocking your wallet...') }}
             </div>
