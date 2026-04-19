@@ -56,7 +56,6 @@
         <div v-if="isSparkWallet && !generatedInvoice && !showAddressView" class="receive-type-toggle">
           <q-btn-toggle
             v-model="receiveMode"
-            toggle-color="primary"
             :options="receiveModeOptions"
             class="type-toggle"
             :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
@@ -109,17 +108,19 @@
           <!-- Action Buttons -->
           <div class="action-buttons">
             <button
-              class="chip-outline"
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="copySparkAddress"
             >
-              <Icon icon="tabler:copy" width="14" height="14" />
+              <Icon icon="tabler:copy" width="18" height="18" />
               <span>{{ $t('Copy Request') }}</span>
             </button>
             <button
-              class="share-btn-gradient"
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="shareSparkAddress"
             >
-              <Icon icon="tabler:share" width="14" height="14" />
+              <Icon icon="tabler:share" width="18" height="18" />
               <span>{{ $t('Share Invoice') }}</span>
             </button>
           </div>
@@ -175,17 +176,19 @@
           <!-- Action Buttons -->
           <div class="action-buttons">
             <button
-              class="chip-outline"
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="copyInvoice"
             >
-              <Icon icon="tabler:copy" width="14" height="14" />
+              <Icon icon="tabler:copy" width="18" height="18" />
               <span>{{ $t('Copy Request') }}</span>
             </button>
             <button
-              class="share-btn-gradient"
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="shareInvoice"
             >
-              <Icon icon="tabler:share" width="14" height="14" />
+              <Icon icon="tabler:share" width="18" height="18" />
               <span>{{ $t('Share Invoice') }}</span>
             </button>
           </div>
@@ -286,7 +289,7 @@
           </q-btn>
           <q-btn
             class="create-invoice-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :class="$q.dark.isActive ? 'create-invoice-btn-dark' : 'create-invoice-btn-light'"
             :loading="isCreatingInvoice"
             @click="createInvoice"
             :disable="!isValidAmount"
@@ -1520,13 +1523,19 @@ export default {
 }
 
 .action-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 10px 16px;
   border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .action-btn-dark {
@@ -1721,16 +1730,56 @@ export default {
   color: rgba(0, 0, 0, 0.5);
 }
 
+/* Primary CTA for the receive flow — tinted green fill, same
+   grammar as the Receive button on the wallet and the Spark/
+   Lightning/Bitcoin toggle's active state. Rounded to match the
+   app's card language (16px) rather than the old pill (24px). */
 .create-invoice-btn {
   width: 100%;
   height: 52px;
-  border-radius: 24px;
+  border-radius: 16px;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  transition: all 0.2s ease;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   border: none;
   cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    filter 0.18s ease;
+}
+
+.create-invoice-btn-dark {
+  background: rgba(21, 222, 114, 0.14) !important;
+  color: #15DE72 !important;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+}
+
+.create-invoice-btn-light {
+  background: rgba(5, 149, 115, 0.10) !important;
+  color: #059573 !important;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+
+.create-invoice-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.create-invoice-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  transition-duration: 0.08s;
+  filter: brightness(0.94);
+}
+
+/* Disabled state stays muted so newbies see clearly that an amount
+   is required before they can create the invoice. */
+.create-invoice-btn:disabled,
+.create-invoice-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Responsive Design */
@@ -2003,23 +2052,41 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
+/* Spark / Lightning / Bitcoin segmented control — compact row of
+   tabs matching the Wallet page's Business/Personal spark-tabs
+   grammar: tight padding, icons tucked left of each label. Active
+   segment keeps the green tinted fill that matches the rest of the
+   receive flow. */
 .type-toggle {
   border-radius: 12px;
   overflow: hidden;
-  max-width: 280px;
+  max-width: 260px;
   width: 100%;
+  padding: 3px;
 }
 
 .type-toggle :deep(.q-btn) {
+  position: relative;
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 0.625rem 1rem;
-  min-height: 40px;
+  letter-spacing: -0.005em;
+  padding: 0 0.875rem;
+  min-height: 34px;
+  border-radius: 9px;
+  margin-left: 3px;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.type-toggle :deep(.q-btn:first-child) {
+  margin-left: 0;
 }
 
 .type-toggle :deep(.q-btn__content) {
@@ -2027,38 +2094,100 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.type-toggle :deep(.q-btn--active) {
+  font-weight: 600;
+}
+
+/* Wipe Quasar's utility active fill so our grey pane wins */
+.type-toggle :deep(.q-btn.bg-primary) {
+  background: transparent !important;
 }
 
 .type-toggle :deep(.q-btn__content .q-icon) {
   margin: 0;
+  font-size: 14px;
 }
 
+.type-toggle :deep(.q-btn__content img) {
+  width: 12px;
+  height: 12px;
+}
+
+/* Hairline dividers sit in the 3px gap between segments
+   (margin-left on each btn after the first). Hidden next
+   to the active segment so the grey pane reads cleanly. */
+.type-toggle :deep(.q-btn + .q-btn)::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 16px;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.type-toggle :deep(.q-btn--active)::before,
+.type-toggle :deep(.q-btn--active + .q-btn)::before {
+  opacity: 0;
+}
+
+/* Kill Quasar's default pre-active overlay so tinted fills read
+   cleanly without a darkening wash over the top. */
+.type-toggle :deep(.q-btn .q-focus-helper) {
+  display: none;
+}
+
+/* --- Dark --- */
 .toggle-dark {
   background: #1A1A1A;
-  border: 1px solid #2A342A;
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .toggle-dark :deep(.q-btn) {
-  color: #B0B0B0;
+  color: var(--text-muted);
+  background: transparent;
 }
 
 .toggle-dark :deep(.q-btn--active) {
-  background: linear-gradient(90deg, #059573, #15DE72);
-  color: #FFFFFF;
+  background: #2A2A2A !important;
+  color: #FFFFFF !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+.toggle-dark :deep(.q-btn + .q-btn)::before {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* --- Light --- */
 .toggle-light {
-  background: #F3F4F6;
-  border: 1px solid #E5E7EB;
+  background: #F1F5F9;
+  border: 1px solid rgba(15, 23, 42, 0.04);
 }
 
 .toggle-light :deep(.q-btn) {
-  color: #6B7280;
+  color: var(--text-muted);
+  background: transparent;
 }
 
 .toggle-light :deep(.q-btn--active) {
-  background: linear-gradient(90deg, #059573, #15DE72);
-  color: #FFFFFF;
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.14),
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.toggle-light :deep(.q-btn + .q-btn)::before {
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .mode-hint {
@@ -2086,13 +2215,13 @@ export default {
 
 @media (max-width: 480px) {
   .type-toggle {
-    max-width: 260px;
+    max-width: 240px;
   }
 
   .type-toggle :deep(.q-btn) {
-    font-size: 12px;
-    padding: 0.5rem 0.75rem;
-    min-height: 36px;
+    font-size: 11px;
+    padding: 0 0.6rem;
+    min-height: 32px;
   }
 
   .spark-actions {

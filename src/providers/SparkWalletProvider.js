@@ -108,6 +108,41 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Detect transient transport errors from the Spark SDK / gRPC-Web layer.
+   * These indicate the request never reached (or got a response from) the SO
+   * federation — typically a browser fetch failure ("Load failed" on Safari,
+   * "Failed to fetch" on Chromium) or a gRPC transport fault. Safe to retry
+   * for idempotent operations only.
+   */
+  static isTransientTransportError(err) {
+    const msg = String(err?.message || err || '');
+    return /Transport error|Load failed|Failed to fetch|NetworkError|fetch failed|ECONNRESET|ETIMEDOUT/i.test(msg);
+  }
+
+  /**
+   * Retry an idempotent SDK call on transient transport errors.
+   * Non-transport errors bubble up immediately.
+   */
+  async _withTransportRetry(operation, { attempts = 3, baseDelayMs = 300 } = {}) {
+    let lastError;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await operation();
+      } catch (err) {
+        lastError = err;
+        const isLast = i === attempts - 1;
+        if (isLast || !SparkWalletProvider.isTransientTransportError(err)) {
+          throw err;
+        }
+        const delay = baseDelayMs * Math.pow(3, i); // 300ms, 900ms
+        console.warn(`Spark transport error (attempt ${i + 1}/${attempts}), retrying in ${delay}ms:`, err.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    throw lastError;
+  }
+
+  /**
    * Decode a BOLT11 invoice and extract its amount
    * Returns null if invoice has no amount (zero-amount invoice)
    * @param {string} invoice - BOLT11 encoded invoice
@@ -361,7 +396,9 @@ export class SparkWalletProvider extends WalletProvider {
         invoiceParams.memo = description || 'BuhoGO Payment';
       }
 
-      const result = await this.wallet.createLightningInvoice(invoiceParams);
+      const result = await this._withTransportRetry(
+        () => this.wallet.createLightningInvoice(invoiceParams)
+      );
 
       // Spark SDK returns LightningReceiveRequest:
       // { id, invoice: { encodedInvoice, paymentHash, ... }, status, ... }

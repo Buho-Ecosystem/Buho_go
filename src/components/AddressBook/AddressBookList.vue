@@ -562,23 +562,37 @@ export default {
   font-weight: 500 !important;
 }
 
-/* Primary Action Buttons */
-.dialog_add_btn_dark {
-  border-radius: 24px !important;
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #0C0C0C !important;
-  font-weight: 600 !important;
-  box-shadow: 0px 4px 8px 0px rgba(61, 61, 61, 0.25) !important;
+/* Empty-state Add Contact — unified neutral translucent treatment,
+   identical to the header Add Contact pill and the Copy/Share
+   buttons in the receive flow. No greens; the plus icon carries
+   the intent. */
+.dialog_add_btn_dark,
+.dialog_add_btn_light {
+  border-radius: 10px !important;
+  padding: 10px 18px !important;
   font-family: 'Manrope', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  letter-spacing: -0.005em !important;
+  transition: background-color 0.18s ease, color 0.18s ease !important;
+}
+
+.dialog_add_btn_dark {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.dialog_add_btn_dark:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
 }
 
 .dialog_add_btn_light {
-  border-radius: 24px !important;
-  background: linear-gradient(135deg, #15DE72, #059573) !important;
-  color: #0C0C0C !important;
-  font-weight: 600 !important;
-  box-shadow: 0px 4px 8px 0px rgba(159, 159, 159, 0.25) !important;
-  font-family: 'Manrope', sans-serif !important;
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: rgba(0, 0, 0, 0.75) !important;
+}
+
+.dialog_add_btn_light:hover {
+  background: rgba(0, 0, 0, 0.08) !important;
 }
 
 /* Responsive Design */

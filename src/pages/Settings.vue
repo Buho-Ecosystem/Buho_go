@@ -4317,121 +4317,110 @@ export default {
   padding: 1.5rem;
 }
 
-/* Currency Dialog */
-.currency-list {
+/* ----------------------------------------------------------------
+   Language + Currency selection — unified tinted-fill dialogs.
+
+   Inactive rows wear a neutral translucent wash (no chunky borders).
+   The active row gets the brand-green tinted pane with a 1px inset
+   ring and a green check — same visual grammar as the Send/Receive
+   buttons, the Spark/Lightning/Bitcoin toggle, and the Copy/Share
+   buttons. Newbies get one consistent selection pattern across the
+   whole app: "tinted green = this one is selected".
+---------------------------------------------------------------- */
+.currency-list,
+.language-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
-.currency-item {
+.currency-item,
+.language-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-radius: 16px;
-  border: 2px solid;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  /* Reserve the inset ring slot so active state can fade in
+     smoothly without a layout shift. */
+  box-shadow: inset 0 0 0 1px transparent;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
 }
 
-.currency-item-dark {
-  border-color: var(--border-card);
+/* Inactive: neutral translucent wash, lightly brighter on hover. */
+.currency-item-dark,
+.language-item-dark {
+  background: rgba(255, 255, 255, 0.04);
 }
 
-.currency-item-light {
-  border-color: var(--border-card);
+.currency-item-dark:hover,
+.language-item-dark:hover {
+  background: rgba(255, 255, 255, 0.07);
 }
 
-.currency-item-dark:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.05);
+.currency-item-light,
+.language-item-light {
+  background: rgba(15, 23, 42, 0.04);
 }
 
-.currency-item-light:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.05);
+.currency-item-light:hover,
+.language-item-light:hover {
+  background: rgba(15, 23, 42, 0.06);
 }
 
-.currency-item.active {
-  border-color: #15DE72;
-  border-width: 1px;
-  background: rgba(21, 222, 114, 0.1);
+/* Active: brand-green tinted pane with inset ring. */
+.currency-item.active,
+.language-item.active {
+  background: rgba(21, 222, 114, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
 }
 
-.currency-info {
+/* Active in light mode uses the deeper green for WCAG contrast. */
+.body--light .currency-item.active,
+.language-item-light.active,
+.currency-item-light.active {
+  background: rgba(5, 149, 115, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+
+.currency-info,
+.language-info {
   flex: 1;
 }
 
-.currency-code {
+.currency-code,
+.language-name {
   font-family: 'Manrope', sans-serif;
-  margin-bottom: 0.25rem;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  margin-bottom: 2px;
 }
 
-.currency-rate {
+.currency-rate,
+.language-code {
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
+  font-weight: 500;
+  opacity: 0.7;
+  line-height: 1.2;
 }
 
 .check-icon {
   color: #15DE72;
   font-size: 20px;
+  flex: 0 0 auto;
+  margin-left: 12px;
 }
 
-/* Language Dialog */
-.language-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.language-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  border-radius: 16px;
-  border: 2px solid;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.language-item-dark {
-  border-color: var(--border-card);
-}
-
-.language-item-light {
-  border-color: var(--border-card);
-}
-
-.language-item-dark:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.05);
-}
-
-.language-item-light:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.05);
-}
-
-.language-item.active {
-  border-color: #15DE72;
-  border-width: 1px;
-  background: rgba(21, 222, 114, 0.1);
-}
-
-.language-info {
-  flex: 1;
-}
-
-.language-name {
-  font-family: 'Manrope', sans-serif;
-  margin-bottom: 0.25rem;
-}
-
-.language-code {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
+.body--light .check-icon {
+  color: #059573;
 }
 
 /* Wallet Statistics */
