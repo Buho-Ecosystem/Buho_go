@@ -1054,7 +1054,7 @@ export default {
 /* Sheet Actions */
 .sheet-actions {
   padding: 8px 20px;
-  padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: max(32px, var(--safe-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 10px;

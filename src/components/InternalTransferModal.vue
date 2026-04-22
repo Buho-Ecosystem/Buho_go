@@ -822,7 +822,7 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 /* ════════════════════════════════════════════════════════════
    Footer
    ════════════════════════════════════════════════════════════ */
-.modal-footer { display: flex; align-items: center; padding: 16px 20px; padding-bottom: max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--c-border); gap: 12px; }
+.modal-footer { display: flex; align-items: center; padding: 16px 20px; padding-bottom: max(16px, var(--safe-bottom, 16px)); border-top: 1px solid var(--c-border); gap: 12px; }
 .btn-back { display: flex; align-items: center; gap: 4px; padding: 10px 16px; font-size: 15px; font-weight: 500; color: var(--c-text2); }
 /* Primary CTA — tinted green, matches the Create Invoice / Continue
    pattern used across the app. */

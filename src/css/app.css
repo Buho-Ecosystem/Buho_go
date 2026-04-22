@@ -177,6 +177,31 @@ body.platform-android {
     --color-green: #15DE72;
     --color-red: #FF4444;
     --gradient-green: linear-gradient(90deg, #059573 0%, #78D53C 100%);
+
+    /* ─── Brand accent + neutral-button tokens (theme-aware) ────
+       Dark theme keeps the bright brand green as its accent;
+       light theme remaps the same semantic slots to muted /
+       neutral values so the cream paper stays calm.
+
+       --brand-accent:       used where a component currently
+                             hard-codes the brand green as a
+                             decorative accent. Semantic
+                             "success" states (incoming tx,
+                             payment confirmed) should KEEP a
+                             raw #15DE72 instead — those are
+                             meaning, not decoration.
+       --brand-accent-soft:  for tinted backgrounds / washes.
+       --btn-neutral-*:      for any CTA that previously used a
+                             green or blue tinted fill as its
+                             primary button style. Cream gets a
+                             single neutral "primary action"
+                             styling; dark keeps a dark card.
+    ──────────────────────────────────────────────────────── */
+    --brand-accent:       #15DE72;
+    --brand-accent-soft:  rgba(21, 222, 114, 0.14);
+    --btn-neutral-bg:     #1A1A1A;
+    --btn-neutral-fg:     #FFFFFF;
+    --btn-neutral-border: transparent;
     --radius-sm: 8px;
     --radius-md: 16px;
     --radius-lg: 20px;
@@ -219,6 +244,27 @@ body.body--light {
     --shadow-sm: 0 1px 2px rgba(40, 34, 20, 0.03);
     --shadow-md: 0 4px 10px rgba(40, 34, 20, 0.05);
     --shadow-lg: 0 12px 32px rgba(40, 34, 20, 0.09);
+
+    /* Light-mode accent remap — dark green reads as "confident"
+       on cream without the neon buzz of #15DE72. Used only where
+       the original component chose green for decoration; all raw
+       #15DE72 references that encode meaning (tx success, balance
+       inflow) stay untouched. */
+    --brand-accent:       #059573;
+    --brand-accent-soft:  rgba(5, 149, 115, 0.08);
+
+    /* Neutral primary CTA — single dark pill on cream. Gives one
+       visual weight to any "primary action" button regardless of
+       the component that hosts it. Dark mode keeps the dark card
+       look defined above. */
+    --btn-neutral-bg:     #1A1A1C;
+    --btn-neutral-fg:     #FAF7EF;
+    --btn-neutral-border: transparent;
+
+    /* Legacy token alignment — anything still reading
+       var(--color-green) will now get the muted accent instead of
+       the bright brand green. */
+    --color-green: #059573;
 }
 
 /* Ensure Quasar's page chrome picks up the cream paper, not its default white.
@@ -379,6 +425,20 @@ body.body--light .q-page-container {
     backdrop-filter: blur(6px) !important;
 }
 
+/* Shared safe-area for centered Settings sub-dialogs.
+   Quasar's minimized (card-style) dialogs are rendered in a
+   portal outside .q-page, so they don't inherit the automatic
+   --safe-top padding. On devices with a notch the dialog header
+   can clip under the status bar, and on tall-content dialogs
+   like "Exchange rate source" the body extends past the home
+   indicator. Padding the inner wrapper by --safe-* keeps the
+   content fully in the visible viewport on every device. */
+.dialog_dark .q-dialog__inner--minimized,
+.dialog_light .q-dialog__inner--minimized {
+    padding-top: max(12px, var(--safe-top, 12px));
+    padding-bottom: max(12px, var(--safe-bottom, 12px));
+}
+
 .card_dark_style {
     border-radius: 24px !important;
     border: 1px solid #2A342A !important;;
@@ -469,10 +529,15 @@ body.body--light .q-page-container {
 
 .dialog_add_btn_light {
     border-radius: 16px;
+    /* Neutral dark pill on cream — matches the wallet-home Receive/Send
+       treatment from Bucket B. Every dialog primary CTA (Create Wallet,
+       Continue, Save, Confirm…) now shares the same visual weight
+       regardless of which modal it lives in, removing the "is this the
+       green one or the other one?" guessing game the audit surfaced. */
     border: none;
-    background: rgba(5, 149, 115, 0.10);
-    color: #059573;
-    box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+    background: var(--btn-neutral-bg);
+    color: var(--btn-neutral-fg);
+    box-shadow: none;
     font-family: 'Manrope', sans-serif;
     font-size: 15px;
     font-style: normal;

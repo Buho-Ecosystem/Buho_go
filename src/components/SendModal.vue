@@ -1128,7 +1128,9 @@ export default {
 .send-actions {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem;
-  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  /* var(--safe-bottom) so the Android boot fallback applies; env()
+     returns 0 on most Android WebViews. */
+  padding-bottom: max(1rem, var(--safe-bottom, 1rem));
   flex-shrink: 0;
 }
 

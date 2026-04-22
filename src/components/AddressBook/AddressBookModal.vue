@@ -572,10 +572,25 @@ export default {
   color: #6B7280;
 }
 
-.toggle-dark :deep(.q-btn--active),
-.toggle-light :deep(.q-btn--active) {
+/* q-btn-toggle with toggle-color="primary" paints the selected
+   button with Quasar's `.bg-primary .text-white` classes (not
+   `.q-btn--active`). We scope by parent class so only the Add
+   Contact Address Type toggle is remapped; other `.bg-primary`
+   uses elsewhere in the app stay untouched. */
+.toggle-dark :deep(.q-btn.bg-primary) {
+  /* Dark keeps the gradient green — coloured accent reads as
+     intended on near-black. */
   background: linear-gradient(135deg, #059573, #15DE72) !important;
   color: white !important;
+}
+
+.toggle-light :deep(.q-btn.bg-primary) {
+  /* Light mode drops the gradient for a tinted wash that matches
+     the Display Currency / Kiosk mini-toggle language used across
+     Settings. One active-pill treatment app-wide on cream. */
+  background: rgba(5, 149, 115, 0.10) !important;
+  color: #059573 !important;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
 }
 
 .input-error {
@@ -609,7 +624,15 @@ export default {
 }
 
 .form-input:focus {
+  /* --color-green resolves to #15DE72 in dark and #059573 in light
+     (see src/css/app.css light-mode override). Dark keeps the brand
+     green focus ring; light needs a quieter ring that doesn't
+     re-introduce a loud accent against cream. */
   border-color: var(--color-green);
+}
+
+.body--light .form-input:focus {
+  border-color: var(--text-primary);
 }
 
 .form-input::placeholder {
@@ -648,6 +671,15 @@ export default {
   padding: 0 1.5rem;
   background: var(--gradient-green);
   color: #FFF;
+}
+
+.body--light .save-btn {
+  /* Neutral dark pill on cream — same primary-action language as
+     Create Invoice, Restore Spark Wallet, Connect NWC, etc. Dark
+     mode keeps the gradient-green for continuity with other
+     "Add / Save" CTAs there. */
+  background: var(--btn-neutral-bg);
+  color: var(--btn-neutral-fg);
 }
 
 .save-btn:disabled {

@@ -284,6 +284,26 @@
               </q-item-label>
             </q-item-section>
           </q-item>
+          <!-- Lightning Address (only shown if one is configured on this wallet) -->
+          <q-separator v-if="activeWalletLightningAddress" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+          <q-item v-if="activeWalletLightningAddress">
+            <q-item-section side>
+              <Icon icon="tabler:bolt" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Lightning Address') }}
+              </q-item-label>
+              <q-item-label caption class="mono-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ activeWalletLightningAddress }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side class="spark-address-actions">
+              <q-btn flat round dense @click="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm">
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </q-btn>
+            </q-item-section>
+          </q-item>
         </div>
       </template>
 
@@ -3791,9 +3811,14 @@ export default {
 }
 
 .kiosk-start-btn-light {
-  background: rgba(5, 149, 115, 0.10) !important;
-  color: #059573 !important;
-  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+  /* Neutral dark pill on cream — same primary-action language as
+     the wallet-home Receive/Send and every modal primary CTA. The
+     previous green-tinted treatment reintroduced a coloured accent
+     on a cream surface; keep brand-green reserved for semantic
+     success/state, not decoration. Dark mode unchanged. */
+  background: var(--btn-neutral-bg) !important;
+  color: var(--btn-neutral-fg) !important;
+  box-shadow: none;
 }
 
 .kiosk-start-btn:hover:not(:disabled) { filter: brightness(1.06); }
@@ -3859,6 +3884,29 @@ export default {
   background: rgba(5, 149, 115, 0.10);
   color: #059573;
   box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+
+/* Settings toggle tracks — align the on-state to the "Display
+   Currency" segmented pill above so every green on the page shares
+   one intensity. Quasar paints the active track with `currentColor`
+   at full opacity, which on cream (and on dark) read as a louder
+   green than the tinted pill next to it. We override the track
+   background to an explicit tinted rgba wash that matches the
+   `.settings-mini-toggle-*-active` selector. The thumb stays solid
+   brand-green so the "on" position is unambiguous at a glance.
+
+   Scoped to this page so q-toggles elsewhere (e.g. KioskDashboard
+   tip switch) keep the solid track they rely on. */
+:deep(.q-toggle__inner--truthy .q-toggle__track) {
+  /* Alpha matches .settings-mini-toggle-dark .q-btn--active above
+     so both active surfaces share the same intensity on dark. */
+  background: rgba(21, 222, 114, 0.14) !important;
+  opacity: 1 !important;
+}
+
+.body--light :deep(.q-toggle__inner--truthy .q-toggle__track) {
+  /* Alpha matches .settings-mini-toggle-light .q-btn--active above. */
+  background: rgba(5, 149, 115, 0.10) !important;
 }
 
 /* Small inline utility action (e.g., "Change" next to the PIN).
@@ -3939,6 +3987,14 @@ export default {
   font-weight: 500;
 }
 
+/* Desaturated red on cream — the full-saturation #EF4444 read as
+   shouty next to the warm muted palette. Keeps the warning signal
+   loud enough while sitting on the same restraint level as the
+   rest of the light theme. */
+.body--light .danger-text {
+  color: #C63636 !important;
+}
+
 .text-center {
   text-align: center;
   width: 100%;
@@ -3995,8 +4051,20 @@ export default {
 }
 
 .donate-btn-primary {
-  background: #15DE72;
-  color: #000;
+  /* Brand accent (bright green in dark, muted dark-green in light)
+     so the recommended tip stands out on both themes without the
+     fluorescent pop that overwhelms the cream paper. */
+  background: var(--brand-accent);
+  color: var(--brand-accent-fg, #0B3D2A);
+}
+
+.body--light .donate-btn-primary {
+  /* On cream the bright green pill was the loudest offender in the
+     entire Settings page. Use the neutral dark-pill language that
+     all other "primary action" buttons adopted so the donation card
+     reads as one more card, not an accent island. */
+  background: var(--btn-neutral-bg);
+  color: var(--btn-neutral-fg);
 }
 
 /* Donation Dialog */
@@ -4632,7 +4700,12 @@ export default {
 }
 
 .add-wallet-btn-light {
-  color: #059573;
+  /* "Add Wallet" is the CTA inside the wallets dialog; the dashed
+     border keeps it visually distinct from the filled primary buttons
+     on the rest of the Settings surface. Neutralised to text-primary
+     so the action reads as inviting without re-introducing a second
+     green accent on cream. */
+  color: var(--text-primary);
   border-color: var(--border-card);
   background: transparent;
 }
@@ -6685,9 +6758,12 @@ export default {
 .kiosk-setup-primary:active { transform: scale(0.98); filter: brightness(0.94); }
 
 body.body--light .kiosk-setup-primary {
-  background: rgba(5, 149, 115, 0.10);
-  color: #059573;
-  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+  /* Same neutral primary-action pill as .kiosk-start-btn-light and
+     .create-invoice-btn-light. One visual weight for every CTA on
+     cream. */
+  background: var(--btn-neutral-bg);
+  color: var(--btn-neutral-fg);
+  box-shadow: none;
 }
 
 .kiosk-setup-secondary {

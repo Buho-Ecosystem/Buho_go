@@ -106,7 +106,7 @@
             <span>{{ sparkWalletPair[0]?.name }}</span>
           </button>
           <div class="spark-tab-divider"></div>
-          <button class="spark-tab spark-tab-center" @click="openWalletManagement">
+          <button class="spark-tab spark-tab-center" data-audit="wallet-switcher" @click="openWalletManagement">
             <Icon icon="tabler:wallet" width="16" height="16" />
           </button>
           <div class="spark-tab-divider"></div>
@@ -244,6 +244,7 @@
         <button
           type="button"
           class="history-link"
+          data-audit="history-link"
           :class="$q.dark.isActive ? 'history-link-dark' : 'history-link-light'"
           @click="openTransactionHistory"
         >
@@ -258,6 +259,7 @@
       <div class="action-buttons">
         <q-btn
           class="action-btn action-btn-receive"
+          data-audit="fab-receive"
           @click="openReceive"
           no-caps
           unelevated
@@ -268,6 +270,7 @@
         </q-btn>
         <q-btn
           class="action-btn action-btn-send"
+          data-audit="fab-send"
           @click="openSend"
           no-caps
           unelevated
@@ -4004,7 +4007,11 @@ export default {
 }
 
 .balance-secondary-light {
-  color: #059573;
+  /* Fiat is a secondary readout — the primary balance below should
+     carry the room. Warm muted grey sits quiet on cream, leaving
+     the brand-green reserved for semantic "incoming" states in
+     the tx list. */
+  color: var(--text-muted);
 }
 
 .secondary-amount-display {
@@ -4264,10 +4271,14 @@ export default {
   }
 }
 
-/* Bottom Actions */
+/* Bottom Actions
+   Uses var(--safe-bottom) so the Android boot patch in
+   src/boot/safe-area.js applies (env() returns 0 on Android
+   WebView with a gesture bar). Floor raised to 2.25rem so the
+   CTAs clear the notchless-phone edge with visual breathing room. */
 .bottom-actions {
   padding: 1rem 1.5rem;
-  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+  padding-bottom: max(2.25rem, var(--safe-bottom, 2.25rem));
   position: fixed;
   bottom: 0;
   left: 0;
@@ -4362,19 +4373,18 @@ export default {
   border: 1px solid rgba(59, 130, 246, 0.22);
 }
 
-/* Light mode: tinted fills must be slightly denser to remain
-   legible on white, and the label/icon drop to the deeper shades
-   (#059573 / #2563EB) for WCAG AA contrast on a light wash. */
-.body--light .action-btn-receive {
-  background: rgba(5, 149, 115, 0.10);
-  color: #059573;
-  border-color: rgba(5, 149, 115, 0.20);
-}
-
+/* Light mode: drop the green/blue tint story entirely. On cream
+   the twin tinted washes read as two competing brand colors; the
+   audit flagged this as the single loudest inconsistency. Both
+   buttons now share one neutral "primary action" look — dark pill
+   on cream — so Send and Receive feel like peer actions with equal
+   visual weight. Dark mode keeps the tinted-fill language because
+   coloured accents on black are the whole point of that theme. */
+.body--light .action-btn-receive,
 .body--light .action-btn-send {
-  background: rgba(37, 99, 235, 0.10);
-  color: #2563EB;
-  border-color: rgba(37, 99, 235, 0.20);
+  background: var(--btn-neutral-bg);
+  color: var(--btn-neutral-fg);
+  border: 1px solid var(--btn-neutral-border);
 }
 
 .btn-text {
@@ -5161,7 +5171,14 @@ export default {
 /* Responsive Design */
 @media (max-width: 480px) {
   .bottom-actions {
-    padding: 0.75rem 1rem 1.5rem 1rem;
+    /* Keep the narrow-viewport side padding but preserve the safe-area
+       floor from the base rule. Shorthand padding was erasing the
+       padding-bottom calculation on mobile, which was the biggest
+       safe-area offender flagged in the audit. */
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.75rem;
+    padding-bottom: max(1.75rem, var(--safe-bottom, 1.75rem));
   }
 
   .action-buttons {

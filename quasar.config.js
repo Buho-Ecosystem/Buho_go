@@ -17,7 +17,8 @@ export default defineConfig((ctx) => {
       'iconify',
       'safe-area',
       'kiosk',
-      ctx.mode.capacitor ? 'deep-links' : ''
+      ctx.mode.capacitor ? 'deep-links' : '',
+      ctx.dev ? 'audit' : ''
     ].filter(Boolean),
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css

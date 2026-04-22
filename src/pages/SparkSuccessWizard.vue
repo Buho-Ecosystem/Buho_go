@@ -478,7 +478,7 @@ body.body--light .dot {
 /* ── Navigation buttons ── */
 .wizard-nav {
   padding: 0 20px 24px;
-  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-bottom: max(24px, var(--safe-bottom, 16px));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -516,7 +516,7 @@ body.body--light .dot {
   .slide-title { font-size: 20px; margin-top: 20px; }
   .slide-text { font-size: 13px; }
   .wizard-dots { padding: 8px 20px; }
-  .wizard-nav { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .wizard-nav { padding-bottom: max(16px, var(--safe-bottom, 16px)); }
 }
 
 @media (max-width: 380px) {

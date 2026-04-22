@@ -410,7 +410,7 @@ export default defineComponent({
 .kiosk-light .kiosk-lock-btn { background: var(--bg-input); }
 
 /* State center */
-.pos-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 20px; padding-bottom: max(24px, env(safe-area-inset-bottom)); text-align: center; }
+.pos-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 20px; padding-bottom: max(24px, var(--safe-bottom, 16px)); text-align: center; }
 .pos-state-title { font-size: 1rem; font-weight: 700; font-family: 'Manrope', sans-serif; }
 .pos-state-sub { font-size: 0.75rem; color: #6b7280; margin-top: 4px; }
 .mt-2 { margin-top: 0.5rem; } .mt-4 { margin-top: 1rem; } .mt-6 { margin-top: 1.5rem; } .mt-8 { margin-top: 2rem; }
@@ -515,14 +515,14 @@ export default defineComponent({
 .pos-key-action:active { color: inherit; transform: scale(0.94); }
 
 /* Actions */
-.pos-actions { display: flex; gap: 10px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.pos-actions { display: flex; gap: 10px; padding-bottom: max(16px, var(--safe-bottom, 16px)); }
 .pos-add-btn { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0; background: rgba(5,149,115,0.08); color: #059573; border: 1.5px solid rgba(5,149,115,0.25); border-radius: 14px; cursor: pointer; transition: transform 0.08s ease, background 0.08s ease; -webkit-tap-highlight-color: transparent; }
 .pos-add-btn:active:not(:disabled) { transform: scale(0.94); background: rgba(5,149,115,0.15); }
 .kiosk-light .pos-add-btn { background: rgba(5,149,115,0.05); }
 .pos-charge-btn { flex: 1; }
 
 /* Tipping */
-.tip-screen { flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem 1.25rem; padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px)); opacity: 0; transition: opacity 0.3s ease; }
+.tip-screen { flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem 1.25rem; padding-bottom: calc(1.5rem + var(--safe-bottom, 0px)); opacity: 0; transition: opacity 0.3s ease; }
 .tip-screen.tip-ready { opacity: 1; }
 .tip-header { text-align: center; flex-shrink: 0; padding-bottom: 0.75rem; }
 .tip-prompt { display: block; font-size: 1.25rem; font-weight: 700; font-family: 'Manrope', sans-serif; line-height: 1.3; margin-bottom: 1rem; }

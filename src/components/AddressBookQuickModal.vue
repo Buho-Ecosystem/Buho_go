@@ -722,7 +722,7 @@ function close() {
   display: flex;
   gap: 8px;
   padding: 14px 16px;
-  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  padding-bottom: max(14px, var(--safe-bottom, 16px));
   border-top: 1px solid var(--c-border);
   flex-shrink: 0;
 }

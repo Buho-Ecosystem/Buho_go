@@ -385,7 +385,7 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 2rem 1.5rem;
-  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+  padding-bottom: max(2rem, var(--safe-bottom, 0px));
   gap: 1rem;
 }
 
@@ -652,7 +652,7 @@ export default {
 @media (max-width: 480px) {
   .pin-content {
     padding: 1.5rem 1.25rem;
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(1.5rem, var(--safe-bottom, 0px));
     gap: 0.75rem;
   }
 
@@ -684,7 +684,7 @@ export default {
 @media (max-height: 700px) {
   .pin-content {
     padding: 1rem;
-    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(1rem, var(--safe-bottom, 0px));
     gap: 0.5rem;
   }
 

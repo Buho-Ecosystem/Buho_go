@@ -80,7 +80,10 @@ export default {
   right: 0;
   bottom: 0;
   padding: 0 16px;
-  padding-bottom: max(12px, calc(env(safe-area-inset-bottom) + 4px));
+  /* var(--safe-bottom) so the Android gesture-nav fallback from
+     src/boot/safe-area.js is honoured; env() alone returns 0 on
+     most Android WebViews. */
+  padding-bottom: max(16px, calc(var(--safe-bottom, 16px) + 4px));
   z-index: 100;
   pointer-events: none; /* only the nav pill receives events */
 }

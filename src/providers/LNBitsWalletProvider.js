@@ -16,7 +16,21 @@
  * - GET  /api/v1/payments/<hash> - Check payment status
  * - GET  /api/v1/payments - List payments
  * - POST /api/v1/payments/decode - Decode invoice
+ *
+ * Optional (lnurlp extension, feature-detected at runtime):
+ * - GET  /lnurlp/api/v1/links - List pay links (lightning addresses when `username` is set)
+ * - POST /lnurlp/api/v1/links - Create a pay link / lightning address
  */
+
+// Defaults applied when creating a new lightning address via the lnurlp extension.
+// These are chosen for a good out-of-the-box experience; power users can still
+// fine-tune any link directly in the LNBits admin UI afterwards.
+const LN_ADDRESS_DEFAULTS = Object.freeze({
+  minSats: 1,
+  maxSats: 1_000_000,
+  commentChars: 300,  // generous comment field so senders can leave a message
+  zapsEnabled: true,  // nostr zaps on by default
+});
 
 import { WalletProvider } from './WalletProvider';
 
@@ -466,6 +480,137 @@ export class LNBitsWalletProvider extends WalletProvider {
         throw new Error('Unable to reach server. Check the URL and try again.');
       }
       throw error;
+    }
+  }
+
+  // ==========================================
+  // Lightning Address support (lnurlp extension)
+  // ==========================================
+
+  /**
+   * Check whether the lnurlp extension is installed and reachable on this server.
+   * Used to decide whether it's worth prompting the user to add a lightning address.
+   *
+   * @returns {Promise<boolean>} true if the extension responds, false otherwise
+   */
+  async checkLnurlpAvailable() {
+    try {
+      await this._apiRequest('/lnurlp/api/v1/links?all_wallets=false');
+      return true;
+    } catch (error) {
+      // Any failure (extension missing, 404, network, auth) → treat as unavailable.
+      // We intentionally don't surface the error: this is a passive capability probe.
+      return false;
+    }
+  }
+
+  /**
+   * List lightning addresses already configured on this wallet.
+   *
+   * Only pay links that have a `username` set are returned — those are the ones
+   * that resolve as `username@domain` lightning addresses. Regular pay links
+   * (no username) are filtered out.
+   *
+   * @returns {Promise<Array<{id: string, username: string, address: string, min: number, max: number}>>}
+   */
+  async listLightningAddresses() {
+    let links;
+    try {
+      links = await this._apiRequest('/lnurlp/api/v1/links?all_wallets=false');
+    } catch (error) {
+      // Caller should have already called checkLnurlpAvailable; but be defensive.
+      return [];
+    }
+
+    if (!Array.isArray(links)) return [];
+
+    const domain = this._getServerDomain();
+
+    return links
+      .filter((link) => link && typeof link.username === 'string' && link.username.trim().length > 0)
+      .map((link) => ({
+        id: link.id,
+        username: link.username,
+        // Prefer the server-reported domain if present (handles custom LN-address domains),
+        // otherwise derive from serverUrl.
+        address: `${link.username}@${link.domain || domain}`,
+        min: link.min,
+        max: link.max,
+      }));
+  }
+
+  /**
+   * Create a new lightning address (lnurlp pay link with a username) on this wallet.
+   *
+   * Applies BuhoGO's sensible defaults: 1-1,000,000 sat range, 300-char comments,
+   * and nostr zaps enabled. These are overridable by passing explicit fields.
+   *
+   * @param {Object} params
+   * @param {string} params.username - Desired username (the part before the @)
+   * @param {string} [params.description] - Human-readable description shown to senders
+   * @param {number} [params.min] - Minimum amount in sats
+   * @param {number} [params.max] - Maximum amount in sats
+   * @param {number} [params.commentChars] - Max comment length (0-799)
+   * @param {boolean} [params.zaps] - Enable nostr zaps
+   * @returns {Promise<{id: string, username: string, address: string}>}
+   * @throws {Error} if the username is already taken or the server rejects the request
+   */
+  async createLightningAddress({
+    username,
+    description,
+    min = LN_ADDRESS_DEFAULTS.minSats,
+    max = LN_ADDRESS_DEFAULTS.maxSats,
+    commentChars = LN_ADDRESS_DEFAULTS.commentChars,
+    zaps = LN_ADDRESS_DEFAULTS.zapsEnabled,
+  } = {}) {
+    const cleanUsername = (username || '').trim().toLowerCase();
+    if (!cleanUsername) {
+      throw new Error('Username is required');
+    }
+
+    const walletLabel = this.walletInfo?.name || this.walletData?.name || 'BuhoGO';
+    const payload = {
+      description: description || `Lightning Address for ${walletLabel}`,
+      min,
+      max,
+      comment_chars: commentChars,
+      username: cleanUsername,
+      zaps,
+      // Fiat fields left null so the paylink operates in sats. Users can switch
+      // to fiat-denominated paylinks via the LNBits admin UI if they want to.
+      currency: null,
+      fiat_base_multiplier: 100,
+    };
+
+    const response = await this._apiRequest('/lnurlp/api/v1/links', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (!response || !response.id) {
+      throw new Error('Unexpected response from server when creating the lightning address');
+    }
+
+    const domain = response.domain || this._getServerDomain();
+    return {
+      id: response.id,
+      username: response.username || cleanUsername,
+      address: `${response.username || cleanUsername}@${domain}`,
+    };
+  }
+
+  /**
+   * Extract the hostname portion of the LNBits server URL for use as the
+   * lightning-address domain (e.g. "https://my.lnbits.com" → "my.lnbits.com").
+   *
+   * @returns {string} hostname, or the raw serverUrl if parsing fails
+   * @private
+   */
+  _getServerDomain() {
+    try {
+      return new URL(this.serverUrl).hostname;
+    } catch {
+      return this.serverUrl;
     }
   }
 

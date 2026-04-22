@@ -2049,8 +2049,12 @@ export default {
 }
 
 .tab_active_light {
-  background: rgba(5, 149, 115, 0.1) !important;
-  color: #059573 !important;
+  /* Time-filter tabs are navigation, not semantic "positive" state.
+     On cream the green-tinted wash competed with the incoming-tx
+     green chevrons below it; neutralised to a cream-deep pill so
+     meaning stays attached to tx state alone. */
+  background: var(--bg-input) !important;
+  color: var(--text-primary) !important;
   border-radius: 999px !important;
   font-weight: 600 !important;
   font-family: 'Manrope', sans-serif !important;

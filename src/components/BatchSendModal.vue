@@ -2558,7 +2558,7 @@ function retryFailed() {
   display: flex;
   gap: 12px;
   padding: 16px 20px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-bottom: max(16px, var(--safe-bottom, 16px));
   border-top: 1px solid var(--c-border);
   flex-shrink: 0;
 }

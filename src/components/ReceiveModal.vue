@@ -1720,7 +1720,10 @@ export default {
 /* Footer */
 .receive-footer {
   padding: 1rem 1.5rem;
-  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  /* var(--safe-bottom) so the Android boot fallback applies; env()
+     returns 0 on Android WebViews and would leave the CTA flush
+     against the gesture-nav bar. */
+  padding-bottom: max(1.5rem, var(--safe-bottom, 1.5rem));
   flex-shrink: 0;
 }
 
@@ -1776,9 +1779,13 @@ export default {
 }
 
 .create-invoice-btn-light {
-  background: rgba(5, 149, 115, 0.10) !important;
-  color: #059573 !important;
-  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+  /* Neutralise to the shared "primary action on cream" style so
+     the invoice CTA carries the same weight as the wallet-home
+     Receive/Send pair it follows from. Dark theme keeps the green
+     tinted-wash above because it still reads as an accent there. */
+  background: var(--btn-neutral-bg) !important;
+  color: var(--btn-neutral-fg) !important;
+  box-shadow: none;
 }
 
 .create-invoice-btn:hover:not(:disabled) {
@@ -1850,7 +1857,7 @@ export default {
 
   .receive-footer {
     padding: 0.75rem 1rem;
-    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(1.25rem, var(--safe-bottom, 1.25rem));
   }
 
   .create-invoice-btn {
