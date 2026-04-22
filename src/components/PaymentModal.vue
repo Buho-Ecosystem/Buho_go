@@ -1196,9 +1196,13 @@ export default {
 }
 
 .send-payment-btn-light {
-  background: rgba(37, 99, 235, 0.10) !important;
-  color: #2563EB !important;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.20);
+  /* Neutral dark pill on cream — matches Create Invoice, the
+     wallet-home Send, and every other primary CTA. Dark mode keeps
+     the blue tinted wash because blue on near-black reads as the
+     intended "Send" accent there. */
+  background: var(--btn-neutral-bg) !important;
+  color: var(--btn-neutral-fg) !important;
+  box-shadow: none;
 }
 
 .send-payment-btn:hover:not(:disabled) {

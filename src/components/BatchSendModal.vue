@@ -1811,7 +1811,12 @@ function retryFailed() {
   font-family: inherit;
   color: var(--c-text);
   padding: 12px 16px;
-  text-align: left;
+  /* Right-align so the typed amount sits flush against the `sats`
+     currency toggle. Previously text-align:left split the number to
+     the far left while the toggle floated on the far right, leaving
+     a dead gap that read as a layout bug. */
+  text-align: right;
+  min-width: 0;
 }
 
 .amount-input::placeholder {
@@ -2582,8 +2587,52 @@ function retryFailed() {
   border-radius: var(--radius-md);
 }
 
+.body--light .btn-primary {
+  /* Neutral dark pill on cream — matches Create Invoice, the
+     Transfer Funds CTA, and every other primary action on the
+     cream surface. Dark keeps the gradient green. */
+  background: var(--btn-neutral-bg) !important;
+  color: var(--btn-neutral-fg) !important;
+}
+
 .btn-primary:disabled {
   opacity: 0.4;
+}
+
+/* ════════════════════════════════════════════════════════════
+   Light-mode accent remaps — every decorative green here uses
+   #15DE72 or a 0.14 alpha wash, which reads as neon on cream.
+   Swap to the muted #059573 shade + 0.08 alpha wash that the
+   rest of the light theme uses. Dark mode untouched above.
+   ════════════════════════════════════════════════════════════ */
+
+/* "Same amount" / "Custom amounts" active tab — tinted wash on
+   cream so it lines up with the Display Currency / Add Contact
+   Address Type pills. */
+.body--light .mode-btn.mode-active {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+
+/* Calculation preview card (the "X sats × N recipients = Y sats"
+   summary) — softer tint + border on cream. */
+.body--light .calc-preview {
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.06) 0%, rgba(5, 149, 115, 0.03) 100%);
+  border-color: rgba(5, 149, 115, 0.18);
+}
+.body--light .calc-total-sats {
+  /* Total amount stays coloured — semantic "confirmed total",
+     muted to the dark-green shade to match the rest of the
+     light palette. */
+  color: #059573;
+}
+
+/* Currency toggle hover — swap full-saturation green hover to a
+   soft tint so the pill doesn't flash bright on cream. */
+.body--light .currency-toggle:hover {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
 }
 
 /* ════════════════════════════════════════════════════════════

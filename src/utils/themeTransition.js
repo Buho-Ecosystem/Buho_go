@@ -15,6 +15,7 @@
  */
 
 import { Dark } from 'quasar';
+import { persistTheme } from '../boot/theme';
 
 const DURATION_MS = 280;
 
@@ -27,6 +28,7 @@ export function toggleThemeWithSweep($q) {
 
   if (prefersReducedMotion()) {
     dark.toggle();
+    persistTheme(dark.isActive);
     return;
   }
 
@@ -35,6 +37,9 @@ export function toggleThemeWithSweep($q) {
   const root = document.documentElement;
   root.classList.add('theme-transitioning');
   dark.toggle();
+  // Persist immediately after flipping — the cross-fade is cosmetic and the
+  // user's choice should survive reload even if the transition is interrupted.
+  persistTheme(dark.isActive);
 
   setTimeout(() => {
     root.classList.remove('theme-transitioning');

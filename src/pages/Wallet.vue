@@ -265,7 +265,7 @@
           unelevated
           :aria-label="$t('Receive payment')"
         >
-          <Icon icon="tabler:scan" width="20" height="20" />
+          <Icon icon="tabler:qrcode" width="20" height="20" />
           <span class="btn-text">{{ $t('Receive') }}</span>
         </q-btn>
         <q-btn

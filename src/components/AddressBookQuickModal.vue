@@ -739,4 +739,11 @@ function close() {
 .btn-batch {
   background: rgba(21,222,114,.1);
 }
+
+/* Light-mode palette — remap decorative greens to the muted
+   dark-green (#059573) used across the app on cream. */
+.body--light .header-icon { color: #059573; }
+.body--light .btn-footer { color: #059573; }
+.body--light .btn-footer:hover { background: rgba(5,149,115,.06); }
+.body--light .btn-batch { background: rgba(5,149,115,.08); }
 </style>
