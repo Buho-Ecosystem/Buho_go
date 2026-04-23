@@ -17,6 +17,7 @@ import { WalletProvider } from './WalletProvider';
 import { SparkWallet } from '@buildonspark/spark-sdk';
 import { Invoice } from '@getalby/lightning-tools';
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { isBitcoinAddress } from '../utils/addressUtils.js';
 
 /**
  * Payment status constants matching SDK statuses
@@ -1370,14 +1371,7 @@ export class SparkWalletProvider extends WalletProvider {
    * Supports mainnet (bc1, 1, 3) and testnet (tb1, m, n, 2)
    */
   _isValidBitcoinAddress(address) {
-    if (!address || typeof address !== 'string') return false;
-
-    // Mainnet: bc1 (bech32), 1 (P2PKH), 3 (P2SH)
-    // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
-    const mainnetRegex = /^(bc1[a-zA-HJ-NP-Z0-9]{39,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/;
-    const testnetRegex = /^(tb1[a-zA-HJ-NP-Z0-9]{39,62}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/;
-
-    return mainnetRegex.test(address) || testnetRegex.test(address);
+    return isBitcoinAddress(address);
   }
 
   /**

@@ -179,6 +179,11 @@
 <script>
 import { useAddressBookStore } from '../../stores/addressBook'
 import { mapState, mapActions } from 'pinia'
+import {
+  isSparkAddress,
+  isBitcoinAddress,
+  isLightningAddress,
+} from '../../utils/addressUtils'
 
 export default {
   name: 'AddressBookModal',
@@ -332,38 +337,10 @@ export default {
       this.showColorPicker = false
     },
 
-    isValidLightningAddress(address) {
-      if (!address) return false
-      const lightningAddressRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-      return lightningAddressRegex.test(address.trim())
-    },
-
-    isValidSparkAddress(address) {
-      if (!address) return false
-      const trimmed = address.trim().toLowerCase()
-      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
-      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
-      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1']
-      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1']
-      return newPrefixes.some(p => trimmed.startsWith(p)) ||
-             legacyPrefixes.some(p => trimmed.startsWith(p))
-    },
-
-    isValidBitcoinAddress(address) {
-      if (!address) return false
-      const trimmed = address.trim()
-      // Mainnet: bc1 (bech32/bech32m native segwit), 1 (P2PKH legacy), 3 (P2SH)
-      // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
-      const mainnetBech32Regex = /^bc1[a-zA-HJ-NP-Z0-9]{39,62}$/i
-      const mainnetLegacyRegex = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/
-      const testnetBech32Regex = /^tb1[a-zA-HJ-NP-Z0-9]{39,62}$/i
-      const testnetLegacyRegex = /^[mn2][a-km-zA-HJ-NP-Z1-9]{25,34}$/
-
-      return mainnetBech32Regex.test(trimmed) ||
-             mainnetLegacyRegex.test(trimmed) ||
-             testnetBech32Regex.test(trimmed) ||
-             testnetLegacyRegex.test(trimmed)
-    },
+    // Validation delegates to the shared predicates in src/utils/addressUtils.
+    isValidLightningAddress(address) { return isLightningAddress(address) },
+    isValidSparkAddress(address) { return isSparkAddress(address) },
+    isValidBitcoinAddress(address) { return isBitcoinAddress(address) },
 
     async saveEntry() {
       if (!this.isFormValid) return

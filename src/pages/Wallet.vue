@@ -819,6 +819,7 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
+import {isLightningInvoice as isLightningInvoiceShared} from '../utils/addressUtils.js';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
@@ -1856,6 +1857,15 @@ export default {
       }
     },
 
+    /**
+     * Refresh the active wallet's balance and the last-transaction preview.
+     *
+     * Called from the 30s periodic tick, after every send/receive, on wallet
+     * switch, and on app start. The balance-fetch logic branches per wallet
+     * type (Spark / LNBits / NWC) and each branch returns early after its
+     * own fetch — so the last-transaction refresh lives in `finally` to
+     * guarantee it runs for every wallet type, even when a branch throws.
+     */
     async updateWalletBalance() {
       try {
         if (this.showLoadingScreen) {
@@ -1941,12 +1951,12 @@ export default {
         }
       } catch (error) {
         console.error('Failed to update balance:', error);
+      } finally {
+        // Runs for every wallet type, including the branches above that
+        // `return` early after their balance fetch. Fire-and-forget — any
+        // error inside is logged by loadLastTransaction itself.
+        this.loadLastTransaction();
       }
-
-      // Refresh the last-transaction preview alongside the balance so
-      // the wallet screen stays consistent after a send/receive event.
-      // Fire-and-forget; errors inside are swallowed by the method.
-      this.loadLastTransaction();
     },
 
     /**
@@ -1956,10 +1966,10 @@ export default {
      * `getTransactions`, we silently clear to null so the UI falls
      * back to just the "History" link without an error state.
      *
-     * Called from created() after initial connect, periodically every
-     * 30s alongside balance refresh, after send/receive completes
-     * (via updateWalletBalance), and whenever the user switches the
-     * active wallet.
+     * Called from updateWalletBalance's `finally` block — so it fires on
+     * the 30s periodic tick, after every send/receive, and on wallet
+     * switch, for every wallet type (Spark / LNBits / NWC). Also called
+     * directly from created() after initial connect.
      */
     async loadLastTransaction() {
       const walletId = this.activeWallet?.id;
@@ -2054,8 +2064,9 @@ export default {
 
     startPeriodicRefresh() {
       this.refreshInterval = setInterval(async () => {
+        // updateWalletBalance refreshes the last-tx card in its finally
+        // block, so we don't call loadLastTransaction separately here.
         await this.updateWalletBalance();
-        await this.loadLastTransaction();
         await this.loadFiatRates();
       }, 30000);
     },
@@ -2252,10 +2263,10 @@ export default {
 
     parseInvoiceManually(invoice) {
       try {
-        const cleanInvoice = invoice.replace(/^lightning:/i, '');
+        const cleanInvoice = invoice.replace(/^lightning:/i, '').toLowerCase();
 
         let amount = 0;
-        const amountMatch = cleanInvoice.match(/lnbc(\d+)([munp]?)/i);
+        const amountMatch = cleanInvoice.match(/lnbc(\d+)([munp]?)/);
         if (amountMatch) {
           const value = parseInt(amountMatch[1]);
           const unit = amountMatch[2];
@@ -3169,11 +3180,7 @@ export default {
       throw new Error('Unsupported payment type for LNBits wallet');
     },
 
-    // Helper: Check if input is a Lightning invoice
-    isLightningInvoice(input) {
-      const lower = input.toLowerCase();
-      return lower.startsWith('lnbc') || lower.startsWith('lntb') || lower.startsWith('lnbcrt');
-    },
+    isLightningInvoice(input) { return isLightningInvoiceShared(input); },
 
     // Helper: Check if input is a Lightning address
     isLightningAddress(input) {

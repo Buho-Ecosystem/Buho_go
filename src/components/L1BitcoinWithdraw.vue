@@ -176,6 +176,7 @@
 <script>
 import { useWalletStore } from 'src/stores/wallet';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
+import { parseBip21 } from 'src/utils/bip21';
 
 export default {
   name: 'L1BitcoinWithdraw',
@@ -215,17 +216,15 @@ export default {
 
   computed: {
     /**
-     * Clean Bitcoin address - strips bitcoin: URI prefix and query params
-     * Defensive handling for BIP21 URIs that might come from QR codes
+     * Clean Bitcoin address — if the user pastes a BIP21 URI, extract just
+     * the on-chain address portion. Query params (amount, label, lightning)
+     * are intentionally dropped here: this component is the L1 withdraw
+     * path, so any `lightning=` fallback is not applicable.
      */
     cleanedAddress() {
-      let address = this.destinationAddress || '';
-      // Strip bitcoin: prefix (BIP21 URI scheme)
-      if (address.toLowerCase().startsWith('bitcoin:')) {
-        address = address.substring(8);
-      }
-      // Remove query parameters (?amount=X&label=Y)
-      return address.split('?')[0];
+      const raw = (this.destinationAddress || '').trim();
+      const bip21 = parseBip21(raw);
+      return bip21 ? bip21.address : raw;
     },
 
     /**

@@ -357,6 +357,14 @@ import QrScanner from 'qr-scanner';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
+import { parseBip21, selectBip21Destination } from '../utils/bip21';
+import {
+  isSparkAddress,
+  isLightningInvoice,
+  isLnurl,
+  isBitcoinAddress,
+  isLightningAddress,
+} from '../utils/addressUtils';
 
 export default {
   name: 'SendModal',
@@ -605,15 +613,13 @@ export default {
           return;
         }
 
-        // Handle lightning: prefix and extract the actual invoice
-        let cleanData = trimmedData.toLowerCase().startsWith('lightning:')
-          ? trimmedData.substring(10)
-          : trimmedData;
-
-        // Handle bitcoin: URI scheme (BIP21) - strip prefix and query params
-        if (cleanData.toLowerCase().startsWith('bitcoin:')) {
-          cleanData = cleanData.substring(8).split('?')[0];
-        }
+        // Resolve URI wrappers: strip `lightning:`, and for BIP21
+        // (`bitcoin:<addr>?amount=...&lightning=lnbc...`) prefer the embedded
+        // BOLT11 invoice over the on-chain address. Without this the query
+        // string would either be glued to the address (parse error) or the
+        // lightning fallback would be silently discarded.
+        const { cleaned: resolved, bip21 } = this.normalizePaymentInput(trimmedData);
+        let cleanData = resolved;
 
         // Normalize lightning addresses to lowercase (LN address standard)
         if (cleanData.includes('@') && cleanData.includes('.')) {
@@ -644,10 +650,13 @@ export default {
           });
         }
 
-        // Emit the detected payment data to parent component
+        // Emit the detected payment data to parent component.
+        // BIP21 metadata (amount, label, message) is forwarded when present
+        // so the receive/confirm UI can prefill fields where applicable.
         this.$emit('payment-detected', {
           data: cleanData,
-          type: paymentType
+          type: paymentType,
+          ...(bip21 ? { bip21 } : {})
         });
 
         this.closeModal();
@@ -657,78 +666,50 @@ export default {
       }
     },
 
-    determinePaymentType(data) {
-      const trimmed = data.trim().toLowerCase();
-      // Handle lightning: prefix
-      let cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
-      // Handle bitcoin: URI scheme
-      if (cleanData.startsWith('bitcoin:')) {
-        cleanData = cleanData.substring(8).split('?')[0]; // Remove URI params
+    /**
+     * Unwrap URI schemes to the inner payment destination.
+     *
+     * - `lightning:<...>`      → strip prefix
+     * - `bitcoin:<addr>?...`   → parse BIP21, prefer embedded `lightning=`
+     *                            invoice over on-chain address
+     *
+     * Returns the resolved string plus the parsed BIP21 object (when the
+     * input was a BIP21 URI) so callers can surface amount/label/message.
+     */
+    normalizePaymentInput(input) {
+      const trimmed = (input || '').trim();
+
+      const bip21 = parseBip21(trimmed);
+      if (bip21) {
+        const destination = selectBip21Destination(bip21);
+        return { cleaned: destination ? destination.value : '', bip21 };
       }
 
-      // Spark addresses - Zero fee transfers
-      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
-      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
-      if (this.isSparkAddress(cleanData)) return 'spark_address';
-      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
-      if (cleanData.startsWith('lnbc') || cleanData.startsWith('lntb') ||
-          cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
-      if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
-      if (cleanData.startsWith('lnurl') || cleanData.startsWith('keyauth://')) return 'lnurl';
-      // Bitcoin on-chain addresses (L1)
-      if (this.isBitcoinAddress(cleanData)) return 'bitcoin_address';
+      if (trimmed.toLowerCase().startsWith('lightning:')) {
+        return { cleaned: trimmed.substring(10), bip21: null };
+      }
+
+      return { cleaned: trimmed, bip21: null };
+    },
+
+    determinePaymentType(data) {
+      const { cleaned } = this.normalizePaymentInput(data);
+      if (!cleaned) return 'unknown';
+
+      if (isSparkAddress(cleaned)) return 'spark_address';
+      if (isLightningInvoice(cleaned)) return 'lightning_invoice';
+      if (isLightningAddress(cleaned)) return 'lightning_address';
+      if (isLnurl(cleaned)) return 'lnurl';
+      if (isBitcoinAddress(cleaned)) return 'bitcoin_address';
       return 'unknown';
-    },
-
-    /**
-     * Check if address is a valid Bitcoin on-chain address
-     */
-    isBitcoinAddress(address) {
-      if (!address) return false;
-      const normalized = address.trim();
-      // Mainnet: bc1 (bech32/bech32m), 1 (P2PKH), 3 (P2SH)
-      // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
-      const mainnetRegex = /^(bc1[a-zA-HJ-NP-Z0-9]{39,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/i;
-      const testnetRegex = /^(tb1[a-zA-HJ-NP-Z0-9]{39,62}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/i;
-      return mainnetRegex.test(normalized) || testnetRegex.test(normalized);
-    },
-
-    isSparkAddress(address) {
-      if (!address) return false;
-      const normalized = address.toLowerCase().trim();
-      // New format prefixes
-      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1'];
-      // Legacy format prefixes
-      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1'];
-      return newPrefixes.some(p => normalized.startsWith(p)) ||
-             legacyPrefixes.some(p => normalized.startsWith(p));
     },
 
     validatePaymentInput(input) {
       if (!input || input.trim().length === 0) {
         return this.$t('Please enter a payment request');
       }
-
-      let trimmed = input.trim().toLowerCase();
-      // Strip lightning: prefix if present
-      if (trimmed.startsWith('lightning:')) {
-        trimmed = trimmed.substring(10);
-      }
-      // Strip bitcoin: URI prefix if present
-      if (trimmed.startsWith('bitcoin:')) {
-        trimmed = trimmed.substring(8).split('?')[0];
-      }
-      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
-      const isLightningInvoice = trimmed.startsWith('lnbc') || trimmed.startsWith('lntb') ||
-        trimmed.startsWith('lntbs') || trimmed.startsWith('lnbcrt');
-      const isLightningAddress = trimmed.includes('@') && trimmed.includes('.');
-      const isLnurl = trimmed.startsWith('lnurl');
-      const isSparkAddr = this.isSparkAddress(trimmed);
-      const isBitcoinAddr = this.isBitcoinAddress(trimmed);
-
-      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddr || isBitcoinAddr;
-
-      return isValid ? true : this.$t('Invalid payment format');
+      const type = this.determinePaymentType(input);
+      return type === 'unknown' ? this.$t('Invalid payment format') : true;
     },
 
     showManualInput() {

@@ -157,6 +157,10 @@ import { mapState } from 'pinia'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount } from '../utils/amountFormatting.js'
+import {
+  isLightningInvoice as isLightningInvoiceShared,
+  isLnurl as isLnurlShared,
+} from '../utils/addressUtils.js'
 
 export default {
   name: 'PaymentModal',
@@ -583,22 +587,13 @@ export default {
       return result
     },
 
-    // Helper methods for payment type detection
-    // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
-    isLightningInvoice(input) {
-      const lower = input.toLowerCase()
-      return lower.startsWith('lnbc') || lower.startsWith('lntb') ||
-        lower.startsWith('lntbs') || lower.startsWith('lnbcrt')
-    },
-
-    isLightningAddress(input) {
-      return input.includes('@') && !input.startsWith('lnurl')
-    },
-
-    isLNURL(input) {
-      const lower = input.toLowerCase()
-      return lower.startsWith('lnurl') || lower.startsWith('keyauth://')
-    },
+    // Helper methods for payment type detection.
+    // LN invoice/LNURL delegate to the shared predicates; Lightning Address
+    // here is a looser "has @ and isn't LNURL" check used by the send flow
+    // (the strict format check lives in addressUtils.isLightningAddress).
+    isLightningInvoice(input) { return isLightningInvoiceShared(input) },
+    isLightningAddress(input) { return input.includes('@') && !input.startsWith('lnurl') },
+    isLNURL(input)            { return isLnurlShared(input) },
 
     async fetchLNURLInvoice(lnurl, amountSats) {
       // Decode LNURL (bech32) to get the URL
