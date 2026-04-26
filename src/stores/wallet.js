@@ -215,6 +215,28 @@ export const useWalletStore = defineStore('wallet', {
 
     // Error tracking
     lastError: null,
+
+    // Bitcoin L1 deposit-claim coordination.
+    //
+    // Two flows can claim the same UTXO concurrently: the silent auto-claim
+    // in Wallet.vue and the manual "Add to Wallet" sheet in
+    // L1BitcoinReceive.vue. Whichever lands second gets a misleading SDK
+    // error ("needs more confirmations") because the UTXO is already gone.
+    //
+    // We mark a txId here the moment any flow starts a claim and clear it
+    // when the flow finishes (success OR error). The UI uses
+    // `isDepositClaimInFlight(txId)` to lock the manual button while
+    // auto-claim is running, and the auto-claim path checks the same flag
+    // before submitting a duplicate.
+    //
+    // Stored as a plain object map (not a Set) for Pinia reactivity.
+    inFlightDepositClaims: {},
+
+    // Bumped after a deposit claim completes so subscribed components
+    // (L1BitcoinReceive) can refresh their pending-deposit list immediately
+    // instead of waiting for the next 30s poll tick. Counter, not boolean,
+    // so each completion triggers a fresh watcher fire.
+    depositsRefreshSignal: 0,
   }),
 
   getters: {
@@ -523,6 +545,46 @@ export const useWalletStore = defineStore('wallet', {
   },
 
   actions: {
+    /**
+     * Mark a Bitcoin L1 deposit txId as currently being claimed. Idempotent.
+     * Called by both the auto-claim flow (Wallet.vue) and the manual sheet
+     * (L1BitcoinReceive.vue) so neither submits a duplicate to the SSP.
+     */
+    markDepositClaimInFlight(txId) {
+      if (!txId) return;
+      if (!this.inFlightDepositClaims[txId]) {
+        this.inFlightDepositClaims[txId] = true;
+      }
+    },
+
+    /**
+     * Clear the in-flight marker for a txId. Always call from a `finally`
+     * so a thrown error can't leave the UI permanently locked.
+     */
+    clearDepositClaimInFlight(txId) {
+      if (!txId) return;
+      if (this.inFlightDepositClaims[txId]) {
+        delete this.inFlightDepositClaims[txId];
+      }
+    },
+
+    /**
+     * Reactive predicate: is this txId currently being claimed somewhere?
+     * Use from templates as `walletStore.isDepositClaimInFlight(deposit.txId)`.
+     */
+    isDepositClaimInFlight(txId) {
+      return !!this.inFlightDepositClaims[txId];
+    },
+
+    /**
+     * Tell subscribed views (L1BitcoinReceive) to re-fetch their pending
+     * deposit list now instead of waiting for the next poll. Bump the
+     * counter so a `watch` on `depositsRefreshSignal` fires every time.
+     */
+    signalDepositsRefresh() {
+      this.depositsRefreshSignal += 1;
+    },
+
     /**
      * Initialize the store from localStorage
      */

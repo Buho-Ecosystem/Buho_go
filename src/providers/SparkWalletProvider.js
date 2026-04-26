@@ -1700,12 +1700,20 @@ export class SparkWalletProvider extends WalletProvider {
       }
 
       const status = SparkWalletProvider._normalizeCoopExitStatus(request.status);
+      const txId = request.coopExitTxid || null;
+      // Treat "broadcast with txid" as terminal-for-UX. The SSP doesn't
+      // promote to SUCCEEDED until N on-chain confirmations, which often
+      // takes >30 min and would loop the spinner toast past our timeout.
+      // From the user's perspective the funds have left and the tx is
+      // verifiable on mempool — that's success enough to dismiss the
+      // spinner and show "Bitcoin sent" with a tap-to-view link.
+      const isBroadcastedWithTx = status === 'broadcasting' && !!txId;
       return {
         id: request.id,
         status,
         rawStatus: request.status || null,
-        txId: request.coopExitTxid || null,
-        isComplete: status === 'completed',
+        txId,
+        isComplete: status === 'completed' || isBroadcastedWithTx,
         isFailed: status === 'failed' || status === 'expired'
       };
     } catch (error) {

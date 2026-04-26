@@ -104,7 +104,7 @@ export default {
   "wallet": "cartera",
   "wallets": "carteras",
   "connected": "conectado",
-  "Preferences": "Preferencias",
+  "Appearance": "Apariencia",
   "Currency": "Moneda",
   "Amount Display Format": "Formato de visualización de cantidades",
   "Legacy (e.g. 1,234 sats)": "Legacy (ej. 1.234 sats)",
@@ -1059,18 +1059,29 @@ export default {
   "Sent to the address you provided": "Enviado a la dirección que indicaste",
 
   // ── Auto-claim incoming Bitcoin ──
-  "Add incoming Bitcoin automatically": "Añadir Bitcoin entrante automáticamente",
-  "Most Bitcoin deposits show up in your balance as soon as they arrive. We'll only ask first when network fees would take a noticeable bite out of the amount.": "La mayoría de los depósitos de Bitcoin aparecen en tu saldo en cuanto llegan. Solo te preguntaremos cuando las comisiones de red representen una parte importante del importe.",
+  "Auto-add Bitcoin deposits": "Añadir depósitos de Bitcoin automáticamente",
+  "Add deposits to your balance without an extra step.": "Añade los depósitos a tu saldo sin un paso adicional.",
   "Bitcoin received": "Bitcoin recibido",
   "sats added to your wallet": "sats añadidos a tu cartera",
-  "Bitcoin arrived, needs your OK": "Bitcoin recibido, necesitamos tu confirmación",
-  "Network fees are higher than usual. Adding this to your wallet will cost about {fee}.": "Las comisiones de red son más altas de lo habitual. Añadirlo a tu cartera costará aproximadamente {fee}.",
-  "Add to wallet": "Añadir a la cartera",
   "Send back": "Devolver",
   "Tiny Bitcoin deposit": "Depósito de Bitcoin muy pequeño",
   "This {amount} sats is too small to bring in. Network fees would eat most of it.": "Este depósito de {amount} sats es demasiado pequeño. Las comisiones de red consumirían la mayor parte.",
   "Try anyway": "Intentar de todos modos",
 
   // ── L1 transaction badge ──
-  "On-chain": "En cadena"
+  "On-chain": "En cadena",
+
+  // ── Bitcoin L1 deposit chip & sheet ──
+  "Bitcoin arriving": "Bitcoin entrando",
+  "Confirming on the Bitcoin network": "Confirmando en la red Bitcoin",
+  "~10-60 min total": "~10-60 min en total",
+  "Calculating fee...": "Calculando comisión...",
+  "Adding": "Añadiendo",
+  "Already adding to wallet": "Ya se está añadiendo a la cartera",
+
+  // ── Transaction history pending-deposits group ──
+  "Bitcoin deposit": "Depósito de Bitcoin",
+  "Bitcoin deposits": "Depósitos de Bitcoin",
+  "payments from": "pagos de",
+  "payments to": "pagos a"
 }

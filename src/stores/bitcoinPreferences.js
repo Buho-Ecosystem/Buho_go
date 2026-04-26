@@ -74,7 +74,7 @@ export const useBitcoinPreferencesStore = defineStore('bitcoinPreferences', {
     return {
       // When true, auto-claim eligible deposits as soon as they reach
       // the SDK-required confirmation count. Surfaced in Settings as
-      // "Add incoming Bitcoin automatically".
+      // "Auto-add Bitcoin deposits".
       autoAddIncomingBitcoin: persisted?.autoAddIncomingBitcoin ?? true
     }
   },

@@ -1256,6 +1256,17 @@ export default {
     },
 
     /**
+     * When any deposit-claim flow finishes (auto-claim here, or the
+     * manual sheet inside L1BitcoinReceive) the wallet store bumps
+     * `depositsRefreshSignal`. Re-fetch immediately so the home-screen
+     * "Ready to claim" banner clears in step with the receive sheet,
+     * not 30s later on the next poll tick.
+     */
+    'walletStore.depositsRefreshSignal'() {
+      this.checkPendingBitcoinDeposits();
+    },
+
+    /**
      * Refresh the last-transaction card whenever the active wallet
      * changes (e.g. user switches between Business and Personal via
      * the Spark tab bar, or picks a different connected wallet).
@@ -1266,6 +1277,11 @@ export default {
       if (next === prev) return;
       this.isLoadingLastTransaction = true;
       this.lastTransaction = null;
+      // `switchSparkTab` already awaits `loadLastTransaction` itself so
+      // it can hold the tab-switch guard until data has actually
+      // landed. Skipping here avoids a duplicate provider fetch when
+      // the user moves between Business and Personal.
+      if (this.sparkTabSwitching) return;
       this.loadLastTransaction();
     },
 
@@ -1520,7 +1536,7 @@ export default {
     /**
      * Route a confirmed deposit through the auto-claim flow.
      *
-     * When the user has "Add incoming Bitcoin automatically" off this
+     * When the user has "Auto-add Bitcoin deposits" off this
      * keeps the legacy "Ready to claim" toast as a safety net so
      * existing UX doesn't regress for people who deliberately opted
      * out. When the toggle is on, the deposit is classified by the
@@ -1572,7 +1588,12 @@ export default {
             fee_sats: classification.feeSats,
             fee_ratio: classification.feeRatio
           });
-          this.notifyClaimNeedsApproval(deposit, classification);
+          // Same surface as the manual flow — a small "Ready to claim"
+          // toast, the chip in the receive sheet, and the high-fee
+          // warning inside the claim sheet itself. The big sticky
+          // banner that used to live here was too loud for what is
+          // ultimately a routine fee disclosure.
+          this.notifyDepositReadyManual(deposit);
           break;
         case 'too_small':
           telemetryTrack('bitcoin.deposit.classified', {
@@ -1610,6 +1631,21 @@ export default {
     async attemptAutoClaim(deposit, classification, options = { source: 'auto' }) {
       const startedAt = Date.now();
       let workingClassification = classification;
+
+      // Coordination guard: skip if the manual sheet (or another auto-claim
+      // tick) has already submitted this UTXO. Prevents the SSP from seeing
+      // a duplicate request and prevents the second one from receiving a
+      // misleading "needs more confirmations" error.
+      if (this.walletStore.isDepositClaimInFlight(deposit.txId)) {
+        telemetryTrack('bitcoin.deposit.claim_skipped', {
+          source: options.source,
+          reason: 'in_flight',
+          amount_sats: deposit.amount
+        });
+        return;
+      }
+
+      this.walletStore.markDepositClaimInFlight(deposit.txId);
 
       try {
         const provider = await this.walletStore.ensureSparkConnected();
@@ -1650,6 +1686,10 @@ export default {
         if (this.walletStore.activeWalletId) {
           this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
         }
+        // Drop the row from the receive-sheet list immediately instead of
+        // waiting for its 30s poll. Without this, the user can still see a
+        // "Claim" CTA for a UTXO that was already swept.
+        this.walletStore.signalDepositsRefresh();
       } catch (error) {
         telemetryTrack('bitcoin.deposit.claim_failed', {
           source: options.source,
@@ -1659,6 +1699,8 @@ export default {
         });
         console.warn('Auto-claim attempt failed, surfacing manual prompt:', error?.message || error);
         this.notifyDepositReadyManual(deposit);
+      } finally {
+        this.walletStore.clearDepositClaimInFlight(deposit.txId);
       }
     },
 
@@ -1680,48 +1722,6 @@ export default {
         caption: feeCopy ? `${amountCopy} · ${feeCopy}` : amountCopy,
         position: 'top',
         timeout: 5000
-      });
-    },
-
-    /**
-     * Approval prompt when the network fee exceeds our auto-claim
-     * thresholds. Two inline actions — [Add to wallet] / [Send back] —
-     * matching the design decision that we never block with a modal.
-     */
-    notifyClaimNeedsApproval(deposit, classification) {
-      const feeCopy = `${classification.feeSats.toLocaleString()} ${this.$t('sats')} (${(classification.feeRatio * 100).toFixed(1)}%)`;
-
-      this.$q.notify({
-        type: 'warning',
-        icon: 'currency_bitcoin',
-        message: this.$t('Bitcoin arrived, needs your OK'),
-        caption: this.$t('Network fees are higher than usual. Adding this to your wallet will cost about {fee}.', { fee: feeCopy }),
-        position: 'top',
-        timeout: 0,
-        actions: [
-          {
-            label: this.$t('Add to wallet'),
-            color: 'white',
-            handler: () => {
-              telemetryTrack('bitcoin.deposit.user_action', {
-                source: 'needs_approval',
-                action: 'add_to_wallet'
-              });
-              this.attemptAutoClaim(deposit, classification, { source: 'user_approved' });
-            }
-          },
-          {
-            label: this.$t('Send back'),
-            color: 'white',
-            handler: () => {
-              telemetryTrack('bitcoin.deposit.user_action', {
-                source: 'needs_approval',
-                action: 'send_back'
-              });
-              this.openReceiveModalBitcoin();
-            }
-          }
-        ]
       });
     },
 
@@ -1945,6 +1945,12 @@ export default {
     },
 
     async switchSparkTab(walletId) {
+      // Hard guard: ignore taps while a switch is already mid-flight.
+      // The Spark SDK doesn't tolerate two concurrent context changes
+      // and a fast double-tap on Business/Personal would otherwise race
+      // its key derivation, leaving the UI on one wallet but the SDK on
+      // another. The button is also visually disabled via `:disabled`
+      // — this is the belt-and-braces back-stop.
       if (walletId === this.storeActiveWalletId || this.sparkTabSwitching) return;
       this.sparkTabSwitching = true;
 
@@ -1953,7 +1959,19 @@ export default {
         this.walletState.activeWalletId = walletId;
         this.walletState.balance = this.storeBalances[walletId] || 0;
         localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-        this.updateWalletBalance();
+
+        // Hold the guard until the post-switch data load actually
+        // settles. Previously we cleared it after `switchActiveWallet`
+        // returned but kicked off `updateWalletBalance()` as
+        // fire-and-forget, which let a second tap land while the SDK
+        // was still fetching the balance for the new context.
+        // `loadLastTransaction` is also driven by the
+        // `walletState.activeWalletId` watcher, which short-circuits
+        // while `sparkTabSwitching` is true to avoid a duplicate fetch.
+        await Promise.allSettled([
+          this.updateWalletBalance(),
+          this.loadLastTransaction()
+        ]);
       } catch (error) {
         console.error('Error switching Spark tab:', error);
         this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t switch wallet') });

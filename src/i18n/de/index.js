@@ -104,7 +104,7 @@ export default {
   "wallet": "Wallet",
   "wallets": "Wallets",
   "connected": "verbunden",
-  "Preferences": "Einstellungen",
+  "Appearance": "Erscheinungsbild",
   "Currency": "Währung",
   "Amount Display Format": "Anzeigeformat für Beträge",
   "Legacy (e.g. 1,234 sats)": "Legacy (z.B. 1.234 sats)",
@@ -1059,18 +1059,29 @@ export default {
   "Sent to the address you provided": "An die angegebene Adresse gesendet",
 
   // ── Auto-claim incoming Bitcoin ──
-  "Add incoming Bitcoin automatically": "Eingehende Bitcoin automatisch hinzufügen",
-  "Most Bitcoin deposits show up in your balance as soon as they arrive. We'll only ask first when network fees would take a noticeable bite out of the amount.": "Die meisten Bitcoin-Einzahlungen erscheinen sofort in deinem Guthaben. Wir fragen nur dann nach, wenn die Netzwerkgebühren einen spürbaren Teil des Betrags ausmachen würden.",
+  "Auto-add Bitcoin deposits": "Bitcoin-Einzahlungen automatisch hinzufügen",
+  "Add deposits to your balance without an extra step.": "Einzahlungen ohne weiteren Schritt zum Guthaben hinzufügen.",
   "Bitcoin received": "Bitcoin empfangen",
   "sats added to your wallet": "Sats wurden zu deiner Wallet hinzugefügt",
-  "Bitcoin arrived, needs your OK": "Bitcoin angekommen, deine Zustimmung erforderlich",
-  "Network fees are higher than usual. Adding this to your wallet will cost about {fee}.": "Die Netzwerkgebühren sind höher als üblich. Das Hinzufügen kostet etwa {fee}.",
-  "Add to wallet": "Zur Wallet hinzufügen",
   "Send back": "Zurücksenden",
   "Tiny Bitcoin deposit": "Sehr kleine Bitcoin-Einzahlung",
   "This {amount} sats is too small to bring in. Network fees would eat most of it.": "Diese {amount} Sats sind zu klein. Die Netzwerkgebühren würden den Großteil aufzehren.",
   "Try anyway": "Trotzdem versuchen",
 
   // ── L1 transaction badge ──
-  "On-chain": "On-Chain"
+  "On-chain": "On-Chain",
+
+  // ── Bitcoin L1 deposit chip & sheet ──
+  "Bitcoin arriving": "Bitcoin trifft ein",
+  "Confirming on the Bitcoin network": "Wird im Bitcoin-Netzwerk bestätigt",
+  "~10-60 min total": "~10-60 Min insgesamt",
+  "Calculating fee...": "Gebühr wird berechnet...",
+  "Adding": "Wird hinzugefügt",
+  "Already adding to wallet": "Wird bereits zur Wallet hinzugefügt",
+
+  // ── Transaction history pending-deposits group ──
+  "Bitcoin deposit": "Bitcoin-Einzahlung",
+  "Bitcoin deposits": "Bitcoin-Einzahlungen",
+  "payments from": "Zahlungen von",
+  "payments to": "Zahlungen an"
 }

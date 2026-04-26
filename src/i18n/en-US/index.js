@@ -104,7 +104,7 @@ export default {
   "wallet": "wallet",
   "wallets": "wallets",
   "connected": "connected",
-  "Preferences": "Preferences",
+  "Appearance": "Appearance",
   "Currency": "Currency",
   "Amount Display Format": "Amount Display Format",
   "Legacy (e.g. 1,234 sats)": "Legacy (e.g. 1,234 sats)",
@@ -1123,15 +1123,26 @@ export default {
 
   // ── Auto-claim incoming Bitcoin ──
   "Incoming Bitcoin": "Incoming Bitcoin",
-  "Add incoming Bitcoin automatically": "Add incoming Bitcoin automatically",
-  "Most Bitcoin deposits show up in your balance as soon as they arrive. We'll only ask first when network fees would take a noticeable bite out of the amount.": "Most Bitcoin deposits show up in your balance as soon as they arrive. We'll only ask first when network fees would take a noticeable bite out of the amount.",
+  "Auto-add Bitcoin deposits": "Auto-add Bitcoin deposits",
+  "Add deposits to your balance without an extra step.": "Add deposits to your balance without an extra step.",
   "Bitcoin received": "Bitcoin received",
   "sats added to your wallet": "sats added to your wallet",
-  "Bitcoin arrived, needs your OK": "Bitcoin arrived, needs your OK",
-  "Network fees are higher than usual. Adding this to your wallet will cost about {fee}.": "Network fees are higher than usual. Adding this to your wallet will cost about {fee}.",
-  "Add to wallet": "Add to wallet",
   "Send back": "Send back",
   "Tiny Bitcoin deposit": "Tiny Bitcoin deposit",
   "This {amount} sats is too small to bring in. Network fees would eat most of it.": "This {amount} sats is too small to bring in. Network fees would eat most of it.",
-  "Try anyway": "Try anyway"
+  "Try anyway": "Try anyway",
+
+  // ── Bitcoin L1 deposit chip & sheet ──
+  "Bitcoin arriving": "Bitcoin arriving",
+  "Confirming on the Bitcoin network": "Confirming on the Bitcoin network",
+  "~10-60 min total": "~10-60 min total",
+  "Calculating fee...": "Calculating fee...",
+  "Adding": "Adding",
+  "Already adding to wallet": "Already adding to wallet",
+
+  // ── Transaction history pending-deposits group ──
+  "Bitcoin deposit": "Bitcoin deposit",
+  "Bitcoin deposits": "Bitcoin deposits",
+  "payments from": "payments from",
+  "payments to": "payments to"
 }
