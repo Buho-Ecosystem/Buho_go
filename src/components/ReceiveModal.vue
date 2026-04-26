@@ -59,6 +59,7 @@
             :options="receiveModeOptions"
             class="type-toggle"
             :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
+            :toggle-text-color="$q.dark.isActive ? 'white' : 'dark'"
             no-caps
             unelevated
             spread

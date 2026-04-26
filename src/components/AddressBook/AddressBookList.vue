@@ -690,11 +690,23 @@ export default {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* Delete Confirmation Dialog */
+/* Delete / Clear-All Confirmation Dialog
+   Surface language: rounded card (--radius-xl), layered shadow, generous
+   padding. Destructive accent moves from orange-warning to red-destructive
+   so the dialog reads as "this deletes" rather than "heads up". The name
+   stays in primary text color — the action button carries the red, the
+   copy doesn't need to. */
 .delete-confirm-card {
   width: 100%;
-  max-width: 340px;
-  border-radius: 16px;
+  max-width: 380px;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35),
+              0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.body--light .delete-confirm-card {
+  box-shadow: 0 20px 40px rgba(17, 24, 39, 0.14),
+              0 4px 12px rgba(17, 24, 39, 0.06);
 }
 
 .delete-header {
@@ -702,61 +714,83 @@ export default {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 1.5rem 1.5rem 0.5rem;
+  padding: 1.75rem 1.5rem 0.5rem;
 }
 
 .delete-icon-wrapper {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  background: rgba(249, 115, 22, 0.12);
+  background: rgba(239, 68, 68, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.18);
 }
 
 .delete-icon {
-  color: #F97316;
+  color: #EF4444;
 }
 
 .delete-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
-  color: #F97316;
+  color: var(--text-primary);
   margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
 }
 
 .delete-message {
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
+  max-width: 280px;
 }
 
 .delete-message strong {
-  color: #F97316;
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .delete-actions {
-  padding: 0.5rem 1.5rem 1.5rem;
+  padding: 1.25rem 1.5rem 1.5rem;
   display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.6rem;
+}
+
+.delete-actions .cancel-btn,
+.delete-actions .delete-action-btn {
+  flex: 1;
+  height: 44px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  border-radius: var(--radius-xl);
 }
 
 .cancel-btn {
-  font-family: 'Manrope', sans-serif;
   font-weight: 500;
-  border-radius: 10px;
+  background: var(--bg-input);
+}
+
+.body--light .cancel-btn {
+  background: rgba(17, 24, 39, 0.05);
 }
 
 .delete-action-btn {
-  font-family: 'Manrope', sans-serif;
   font-weight: 600;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #F97316, #EA580C) !important;
-  color: white !important;
+  background: #EF4444 !important;
+  color: #fff !important;
+  transition: background 0.15s ease, transform 0.08s ease;
+}
+
+.delete-action-btn:hover {
+  background: #DC2626 !important;
+}
+
+.delete-action-btn:active {
+  transform: scale(0.98);
 }
 
 .delete-action-btn:disabled {

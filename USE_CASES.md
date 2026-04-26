@@ -1,346 +1,168 @@
-# BuhoGO Use Cases
+# BuhoGO — Use Cases
 
-Real-world scenarios showing how BuhoGO fits into daily life.
+> Real scenarios. What to tap. Why it works.
 
-Back to [README](README.md) | [User Guide](Guide.md)
+[← README](README.md) · [Guide](Guide.md)
 
-## Quick Reference
+---
 
-| I want to... | Use this feature |
-|--------------|------------------|
-| Send money to a friend | Send > Enter their address > Send |
-| Receive money | Receive > Share QR or address |
-| Receive from an exchange | Receive > Bitcoin tab > Share L1 address |
-| Withdraw to hardware wallet | Send > Enter Bitcoin address > Choose fee > Send |
-| Save contacts | Address Book > Add contact |
-| Check my balance | Main screen shows it |
-| See past payments | Transaction history |
-| Use multiple wallets | Wallet switcher at top |
-| Send with zero fees | Both use Spark addresses |
-| Pay several people at once | Batch Send from Address Book |
-| Set up a POS terminal | Settings > Kiosk Mode |
-| Auto-forward payments | Settings > Auto-Transfer |
-| Move funds between wallets | Settings > Transfer Between Wallets |
+## "I want to…" cheat sheet
 
-## Everyday Scenarios
+| I want to…                      | Do this                                                |
+| ------------------------------- | ------------------------------------------------------ |
+| Pay a friend                    | **Send** → paste / scan address                        |
+| Get paid                        | **Receive** → share QR or Lightning address            |
+| Receive from an exchange        | **Receive → Bitcoin** → share `bc1p…`                  |
+| Withdraw to a hardware wallet   | **Send** → paste BTC address → choose fee              |
+| Pay 5 contributors at once      | **Address Book → Batch Send**                          |
+| Run a POS                       | **Settings → Kiosk Mode**                              |
+| Auto-sweep to cold storage      | **Settings → Auto-Transfer**                           |
+| Move funds between my wallets   | **Settings → Internal Transfer**                       |
 
-### Splitting a Dinner Bill
+---
 
-**The situation:** You're out with friends and someone paid the full bill. Everyone needs to chip in.
+## Everyday
 
-**With BuhoGO:**
-1. Your friend shares their Lightning address (like `alice@wallet.com`)
-2. Open BuhoGO and tap "Send"
-3. Type their address or scan their QR code
-4. Enter your share amount
-5. Hit send, done in seconds
+> [!TIP]
+> Both on Spark? Use the `spark1…` address — **zero fees, instant.**
 
-**Why it works:** No bank apps, no waiting for transfers, no exchange rates if you're traveling. Just instant settlement.
+<details open>
+<summary><b>💸 Splitting a dinner bill</b></summary>
 
+Friend paid. They share their Lightning address (`alice@wallet.com`). You: **Send → paste → amount → swipe**. Done in seconds. No bank app, no IBAN.
 
-### Paying a Street Vendor
+</details>
 
-**The situation:** You're at a farmers market or street fair. The vendor has a Bitcoin payment sign.
+<details>
+<summary><b>🎁 Tipping a creator</b></summary>
 
-**With BuhoGO:**
-1. Ask the vendor for their payment QR code
-2. Open BuhoGO and tap "Send"
-3. Point your camera at the QR code
-4. Confirm the amount and send
+Grab their Lightning address from their bio. Send $0.50 if you want — Lightning fees make micro-tips actually viable. Creator gets 100%.
 
-**Why it works:** Works anywhere with internet. No card readers needed, no minimum purchase amounts.
+</details>
 
+<details>
+<summary><b>🌍 Money from family abroad</b></summary>
 
-### Receiving Money from Family Abroad
+**Receive → Lightning** → send the QR via WhatsApp. Arrives in minutes regardless of country. No SWIFT, no 5-day wait, no FX cut.
 
-**The situation:** Your cousin in another country wants to send you money for your birthday.
+</details>
 
-**With BuhoGO:**
-1. Open BuhoGO and tap "Receive"
-2. Create an invoice for the expected amount (or share your Spark address for any amount)
-3. Send the QR code via WhatsApp, email, or any messenger
-4. Your cousin scans it with their Bitcoin wallet and sends
+<details>
+<summary><b>👥 Paying multiple contributors</b></summary>
 
-**Why it works:** No international wire fees, no 3-5 business day waits. Money arrives in minutes regardless of which country either of you is in.
+Save them in **Address Book** once. Then **Batch Send → select all → enter amounts → execute**. One flow, progress per contact, retry on failure.
 
+</details>
 
-### Tipping a Content Creator
+---
 
-**The situation:** You enjoyed someone's podcast, video, or article and want to show appreciation.
+## On-chain (Spark only)
 
-**With BuhoGO:**
-1. Find the creator's Lightning address (often in their bio or website)
-2. Open BuhoGO, tap "Send"
-3. Enter their address
-4. Send any amount you like, even small tips work
+<details open>
+<summary><b>🏦 Withdrawing from an exchange</b></summary>
 
-**Why it works:** Lightning fees are tiny, so sending $0.50 actually makes sense. Creators get the full amount without platform cuts.
+**Receive → Bitcoin** → copy `bc1p…` → paste in exchange withdrawal. Wait for 3 confirmations (~30 min) → tap **Claim**. Funds become Lightning-spendable instantly. No channel management.
 
+</details>
 
-### Paying a Friend Back Instantly
+<details>
+<summary><b>🥶 Moving to cold storage</b></summary>
 
-**The situation:** Your friend spotted you for coffee. You want to pay them back right now.
+**Send** → paste your hardware wallet's BTC address → pick fee speed → confirm.
 
-**With BuhoGO (both using Spark):**
-1. Ask for their Spark address (starts with `spark1...`)
-2. Open BuhoGO, tap "Send"
-3. Enter their address and the amount
-4. Send, arrives instantly with **zero fees**
+</details>
 
-**Why it works:** Spark-to-Spark transfers cost nothing and confirm immediately. Perfect for settling up between friends.
+<details>
+<summary><b>📥 Receiving a large on-chain payment</b></summary>
 
+Same flow as the exchange case. Sender pays from anywhere, you claim when confirmed, then it's Lightning-ready.
 
-### Paying Multiple Contributors
+</details>
 
-**The situation:** You run a community project and need to pay five contributors their monthly share.
+---
 
-**With BuhoGO:**
-1. Save each contributor in your Address Book
-2. Open the Address Book and tap the batch send icon
-3. Select all five contributors
-4. Enter amounts (same for everyone, or custom per person)
-5. Review and confirm. Payments go out one by one.
+## Business
 
-**Why it works:** One flow instead of five separate payments. Progress tracking shows you which ones completed.
+> [!IMPORTANT]
+> Run a POS? Combine **Kiosk Mode** + **Auto-Transfer**. Employees touch nothing sensitive; balances flow to your safe destination automatically.
 
+<details open>
+<summary><b>☕ Café POS terminal</b></summary>
 
-### Building a Savings Habit
+**Settings → Kiosk Mode** → pick your Business wallet → set 4-digit PIN → configure tips. Employees see only the keypad. Customers scan & pay. No monthly fees, no chargebacks.
 
-**The situation:** You want to stack sats (save Bitcoin) regularly without complicated exchanges.
+</details>
 
-**With BuhoGO:**
-1. Create a Spark wallet (full control, your keys)
-2. Share your Lightning address or invoice with services that pay in Bitcoin
-3. Receive payments directly to your wallet
-4. Watch your balance grow over time
+<details>
+<summary><b>🍹 Tips as a service worker</b></summary>
 
-**Why it works:** Self-custody means you own it completely. No exchange accounts, no withdrawal limits, no third parties.
+Print the QR of your Spark address. Display at your station. Tips land directly in your wallet — no pool, no payroll wait.
 
+</details>
 
-## On-Chain Bitcoin (L1) Scenarios
+<details>
+<summary><b>🔁 Auto-forward POS to cold storage</b></summary>
 
-### Withdrawing from an Exchange
+**Settings → Auto-Transfer** → select POS wallet → threshold (e.g. 100k sats) → destination = your hardware wallet's BTC address → enable. Excess sweeps automatically.
 
-**The situation:** You bought Bitcoin on an exchange and want to move it to your own wallet.
+</details>
 
-**With BuhoGO:**
-1. Open BuhoGO and tap "Receive"
-2. Switch to the "Bitcoin" tab
-3. Copy your Bitcoin address (starts with `bc1p...`)
-4. In your exchange, paste the address and confirm withdrawal
-5. Wait for 3 confirmations (roughly 30 minutes)
-6. Tap "Claim" to add funds to your wallet
+<details>
+<summary><b>💼 Freelance invoice</b></summary>
 
-**Why it works:** Your Spark wallet has a real Bitcoin address. Once claimed, funds are immediately available for Lightning payments, no channel management needed.
+**Receive** → invoice for the agreed amount → send to client. They pay, you keep 100%. No PayPal cut, no wire fees.
 
+</details>
 
-### Moving to Cold Storage
+---
 
-**The situation:** You want to move some Bitcoin to a hardware wallet for long-term saving.
+## Travel
 
-**With BuhoGO:**
-1. Get your hardware wallet's receive address
-2. Open BuhoGO, tap "Send"
-3. Scan or paste the Bitcoin address
-4. Enter the amount and choose fee speed
-5. Confirm the withdrawal
+<details>
+<summary><b>✈️ Paying in another country</b></summary>
 
-**Why it works:** Direct on-chain withdrawal to any Bitcoin address.
+Already have BuhoGO loaded with sats? Scan merchant QR → pay. Same money, every country. No FX surcharge, no declined-card surprises.
 
+</details>
 
-### Receiving a Large Payment
+<details>
+<summary><b>🆘 Lost your wallet abroad</b></summary>
 
-**The situation:** Someone wants to send you a significant amount of Bitcoin but doesn't have a Lightning wallet.
+Self-custody safety net: install BuhoGO on any device → restore with your 12 words → access funds. Find a Bitcoin ATM or P2P swap to get cash.
 
-**With BuhoGO:**
-1. Open BuhoGO, tap "Receive", switch to "Bitcoin" tab
-2. Share your address or QR code
-3. They send from any Bitcoin wallet or exchange
-4. After 3 confirmations, claim the deposit
-5. Funds are now ready for instant Lightning payments
+</details>
 
-**Why it works:** Bridges the gap between on-chain Bitcoin and Lightning. Receive from anywhere, spend instantly.
+---
 
+## Privacy
 
-### Consolidating Bitcoin
+<details>
+<summary><b>🤫 Donations off your bank statement</b></summary>
 
-**The situation:** You have Bitcoin in multiple places and want to consolidate into one wallet.
+Send via Lightning to the org's address. Doesn't appear on bank statements. No data brokers in the loop.
 
-**With BuhoGO:**
-1. Get your BuhoGO Bitcoin address (Receive > Bitcoin tab)
-2. Send from each source to this address
-3. Claim each deposit as it confirms
-4. All funds unified in one Lightning-enabled wallet
+</details>
 
-**Why it works:** One address, multiple deposits. Each becomes instantly spendable on Lightning once claimed.
+<details>
+<summary><b>🛒 Buying without surveillance ads</b></summary>
 
+Pay merchants who accept Bitcoin instead of card. No card-network tracking → no eerie recommendations next week.
 
-## Business Scenarios
+</details>
 
-### Running a POS Terminal
+---
 
-**The situation:** You run a cafe and want to accept Bitcoin payments without giving employees access to the full wallet.
+## Starter paths
 
-**With BuhoGO Kiosk Mode:**
-1. Go to Settings > Kiosk Mode
-2. Select your Business wallet as the destination
-3. Set a 4-digit owner PIN
-4. Configure tip percentages (5%, 10%, 20%)
-5. Tap "Start Kiosk Mode"
+| You are…                        | Recommended path                                                    |
+| ------------------------------- | ------------------------------------------------------------------- |
+| **New to Bitcoin**              | Create Spark wallet → back up seed → receive $5 → send $1 to a friend |
+| **Already have a LN wallet**    | Connect via NWC → keep funds where they are, get a nicer interface  |
+| **Want max security**           | Spark wallet → seed on paper in 2 locations → biometric lock → Auto-Transfer to cold storage |
+| **Running a small business**    | Spark "Business" account → Kiosk Mode → Auto-Transfer to main wallet |
 
-Employees see only the payment keypad. They enter the amount, the customer scans the QR code, done. No access to wallet settings, seed phrases, or other features.
+---
 
-**Why it works:** PIN-locked POS keeps your wallet secure. Tips go directly to you. No monthly fees, no payment processor.
+## Still stuck?
 
-
-### Accepting Tips as a Service Worker
-
-**The situation:** You're a barista, bartender, or delivery driver. Customers want to tip digitally.
-
-**With BuhoGO:**
-1. Create your Spark wallet once
-2. Print a QR code of your Spark address
-3. Display it at your station or share after service
-4. Receive tips directly, no tip pool, no waiting for payroll
-
-**Why it works:** Tips go straight to you. Cash out whenever you want or hold as savings.
-
-
-### Auto-Forwarding to Cold Storage
-
-**The situation:** Your POS wallet collects payments all day. You want funds automatically moved to a safer destination once the balance gets large enough.
-
-**With BuhoGO Auto-Transfer:**
-1. Go to Settings > Auto-Transfer
-2. Select your POS wallet
-3. Set a threshold (e.g. 100,000 sats)
-4. Set destination to your hardware wallet's Bitcoin address
-5. Enable the rule
-
-When the balance exceeds the threshold, BuhoGO automatically sends the excess to your cold storage.
-
-**Why it works:** Reduces risk of keeping large balances on a device. Fully automatic.
-
-
-### Freelance Payment
-
-**The situation:** You completed a project for an international client. They offer to pay in Bitcoin.
-
-**With BuhoGO:**
-1. Open BuhoGO and tap "Receive"
-2. Create an invoice for the agreed amount
-3. Send the invoice to your client
-4. Receive payment directly, no middleman fees
-
-**Why it works:** No PayPal fees, no wire transfer costs, no waiting. Invoice amount arrives in full.
-
-
-### Small Business Sales
-
-**The situation:** You run a small shop and want to accept Bitcoin.
-
-**With BuhoGO:**
-1. Set up a Spark wallet for your business
-2. Enable Kiosk Mode for the checkout counter
-3. Employees enter amounts, customers scan and pay
-4. Set up Auto-Transfer to forward funds to your main wallet
-
-**Why it works:** No payment processor application, no monthly fees, no chargebacks.
-
-
-## Travel Scenarios
-
-### Paying in a Foreign Country
-
-**The situation:** You're traveling and your card doesn't work everywhere. But you see Bitcoin accepted.
-
-**With BuhoGO:**
-1. Already have BuhoGO on your phone with some Bitcoin loaded
-2. Scan the merchant's payment QR code
-3. Pay in Bitcoin, no currency exchange needed
-
-**Why it works:** Bitcoin works the same everywhere. No foreign transaction fees, no declined cards.
-
-
-### Emergency Money Access
-
-**The situation:** You lost your wallet abroad. Cards are cancelled. You need money now.
-
-**With BuhoGO:**
-1. Your Bitcoin is accessible from any device with your seed phrase
-2. Install BuhoGO, restore with your 12 words
-3. Find a Bitcoin ATM or peer-to-peer exchange
-4. Access your funds when banks can't help
-
-**Why it works:** Self-custody means your money is truly yours. No bank hours, no customer service calls needed.
-
-## Privacy Scenarios
-
-### Donations Without Disclosure
-
-**The situation:** You want to support a cause without your bank seeing the transaction.
-
-**With BuhoGO:**
-1. The organization shares their Lightning address
-2. Send your donation from BuhoGO
-3. No bank statement entry, no data shared
-
-**Why it works:** Lightning payments don't go through traditional banking. Your support stays between you and the recipient.
-
-
-### Buying Without Big Tech Tracking
-
-**The situation:** You want to buy something online without it showing up in recommendation algorithms.
-
-**With BuhoGO:**
-1. Find a merchant accepting Bitcoin
-2. Pay with BuhoGO instead of card
-3. Purchase complete without feeding data brokers
-
-**Why it works:** No credit card company tracking your purchases. No "you might also like" based on what you bought.
-
-
-## Getting Started Scenarios
-
-### "I'm New to Bitcoin"
-
-**Recommended approach:**
-1. Download BuhoGO
-2. Create a Spark wallet (follow the backup steps carefully!)
-3. Receive a small amount from a friend or buy a tiny amount
-4. Try sending a payment to someone
-5. Get comfortable before adding more funds
-
-**Start small.** Your first transaction can be $1. Learn how it works before going bigger.
-
-
-### "I Already Have a Lightning Wallet"
-
-**Recommended approach:**
-1. Download BuhoGO
-2. Choose "Connect Wallet"
-3. Get an NWC connection string from your existing wallet
-4. Paste or scan it in BuhoGO
-5. Use BuhoGO as your interface while your other wallet manages the funds
-
-You get BuhoGO's interface without moving your Bitcoin.
-
-
-### "I Want Maximum Security"
-
-**Recommended approach:**
-1. Create a Spark wallet in BuhoGO
-2. Write down your 12-word seed phrase on paper
-3. Store the paper in a secure location (safe, safety deposit box)
-4. Consider a second copy in a different secure location
-5. Enable biometric app lock in Settings
-6. Set up Auto-Transfer to move large balances to cold storage
-
-**Remember:** Your seed phrase = your Bitcoin. Lose the phrase, lose access. Keep it safe.
-
-
-## Still Have Questions?
-
-- Read the full [User Guide](Guide.md) for detailed instructions
-- Check the [README](README.md) for features overview
-- Visit [GitHub Issues](https://github.com/Buho-Ecosystem/Buho_go/issues) for help
+[Guide](Guide.md) · [GitHub Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)

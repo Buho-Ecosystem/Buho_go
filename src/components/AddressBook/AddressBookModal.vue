@@ -35,9 +35,9 @@
             @click="showColorPicker = true"
           >
             <span class="preview-initial">{{ getPreviewInitial() }}</span>
-          </div>
-          <div class="avatar-hint" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Tap to change color') }}
+            <div class="preview-edit-dot">
+              <Icon icon="tabler:palette" width="12" height="12" />
+            </div>
           </div>
         </div>
 
@@ -58,52 +58,52 @@
             />
           </div>
 
-          <!-- Address Type Toggle -->
+          <!-- Unified payment address (auto-detects Lightning / Spark / Bitcoin) -->
           <div class="input-wrapper">
-            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Address Type') }}
-            </div>
-            <q-btn-toggle
-              v-model="formData.addressType"
-              toggle-color="primary"
-              :options="[
-                { label: 'Lightning', value: 'lightning', icon: 'bolt' },
-                { value: 'spark', slot: 'spark' },
-                { label: 'Bitcoin', value: 'bitcoin', icon: 'currency_bitcoin' }
-              ]"
-              class="address-type-toggle"
-              :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
-              no-caps
-              unelevated
-              spread
-            >
-              <template #spark>
-                <img
-                  width="18" height="18"
-                  :src="sparkIconActive ? '/Spark/Spark Asterisk Black.svg' : ($q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg')"
-                  alt="Spark"
-                  style="margin-right: 6px;"
-                />
-                Spark
-              </template>
-            </q-btn-toggle>
-          </div>
-
-          <div class="input-wrapper">
-            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ addressTypeLabel }}
+            <div class="input-label-row">
+              <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+                {{ $t('Payment address') }}
+              </div>
+              <transition name="type-pill">
+                <div
+                  v-if="detectedType"
+                  class="detected-pill"
+                  :class="`detected-pill--${detectedType}`"
+                >
+                  <img
+                    v-if="detectedType === 'spark'"
+                    width="11" height="11"
+                    :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
+                    alt="Spark"
+                  />
+                  <Icon v-else :icon="detectedIcon" width="12" height="12" />
+                  <span>{{ detectedLabel }}</span>
+                </div>
+              </transition>
             </div>
             <input
               v-model="formData.address"
               type="text"
-              :placeholder="addressPlaceholder"
+              :placeholder="$t('Paste the address from your friend or shop')"
               class="form-input"
-              :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
+              :class="[
+                $q.dark.isActive ? 'form-input-dark' : 'form-input-light',
+                addressShowsError ? 'form-input--error' : ''
+              ]"
               ref="addressInput"
               maxlength="150"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
             />
-            <div v-if="formData.address && !isAddressValid" class="input-error">
-              {{ addressErrorMessage }}
+            <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
+              <template v-if="addressShowsError">
+                <Icon icon="tabler:alert-circle" width="13" height="13" />
+                <span>{{ $t("We don't recognize this as a Lightning, Spark, or Bitcoin address") }}</span>
+              </template>
+              <template v-else>
+                <span>{{ $t('Works with a Lightning address, Spark address, or Bitcoin address') }}</span>
+              </template>
             </div>
           </div>
 
@@ -185,6 +185,18 @@ import {
   isLightningAddress,
 } from '../../utils/addressUtils'
 
+// Order matters: Spark addresses are checked before Bitcoin because some
+// Spark prefixes share a base58-ish look and we want them claimed first.
+function detectType(address) {
+  if (!address || typeof address !== 'string') return null
+  const v = address.trim()
+  if (!v) return null
+  if (isSparkAddress(v)) return 'spark'
+  if (isBitcoinAddress(v)) return 'bitcoin'
+  if (isLightningAddress(v)) return 'lightning'
+  return null
+}
+
 export default {
   name: 'AddressBookModal',
   props: {
@@ -203,7 +215,6 @@ export default {
       formData: {
         name: '',
         address: '',
-        addressType: 'lightning',
         color: '#3B82F6',
         notes: ''
       },
@@ -227,52 +238,33 @@ export default {
       return !!this.entry
     },
 
-    sparkIconActive() {
-      return this.formData.addressType === 'spark'
+    detectedType() {
+      return detectType(this.formData.address)
     },
 
-    addressTypeLabel() {
+    detectedLabel() {
       const labels = {
-        lightning: this.$t('Lightning Address'),
-        spark: this.$t('Spark Address'),
-        bitcoin: this.$t('Bitcoin Address')
+        lightning: this.$t('Lightning'),
+        spark: this.$t('Spark'),
+        bitcoin: this.$t('Bitcoin')
       }
-      return labels[this.formData.addressType] || labels.lightning
+      return labels[this.detectedType] || ''
     },
 
-    addressPlaceholder() {
-      const placeholders = {
-        lightning: 'user@domain.com',
-        spark: 'spark1... or sp1...',
-        bitcoin: 'bc1... or 1... or 3...'
+    detectedIcon() {
+      const icons = {
+        lightning: 'tabler:bolt',
+        bitcoin: 'tabler:currency-bitcoin'
       }
-      return placeholders[this.formData.addressType] || placeholders.lightning
+      return icons[this.detectedType] || ''
     },
 
-    addressErrorMessage() {
-      const messages = {
-        lightning: this.$t('Invalid Lightning address format'),
-        spark: this.$t('Invalid Spark address (should start with spark1 or sp1)'),
-        bitcoin: this.$t('Invalid Bitcoin address format')
-      }
-      return messages[this.formData.addressType] || messages.lightning
-    },
-
-    isAddressValid() {
-      if (!this.formData.address.trim()) return true // Don't show error for empty
-      if (this.formData.addressType === 'spark') {
-        return this.isValidSparkAddress(this.formData.address)
-      }
-      if (this.formData.addressType === 'bitcoin') {
-        return this.isValidBitcoinAddress(this.formData.address)
-      }
-      return this.isValidLightningAddress(this.formData.address)
+    addressShowsError() {
+      return this.formData.address.trim().length > 0 && !this.detectedType
     },
 
     isFormValid() {
-      return this.formData.name.trim() &&
-             this.formData.address.trim() &&
-             this.isAddressValid
+      return this.formData.name.trim() && !!this.detectedType
     }
   },
   watch: {
@@ -285,12 +277,6 @@ export default {
       } else {
         this.resetForm()
       }
-    },
-    'formData.addressType'() {
-      // Clear address when switching types to avoid confusion
-      if (!this.isEditing) {
-        this.formData.address = ''
-      }
     }
   },
   methods: {
@@ -301,7 +287,6 @@ export default {
         this.formData = {
           name: this.entry.name,
           address: this.entry.address || this.entry.lightningAddress || '',
-          addressType: this.entry.addressType || 'lightning',
           color: this.entry.color,
           notes: this.entry.notes || ''
         }
@@ -309,7 +294,6 @@ export default {
         this.formData = {
           name: '',
           address: '',
-          addressType: 'lightning',
           color: this.getRandomColor(),
           notes: ''
         }
@@ -320,7 +304,6 @@ export default {
       this.formData = {
         name: '',
         address: '',
-        addressType: 'lightning',
         color: '#3B82F6',
         notes: ''
       }
@@ -337,11 +320,6 @@ export default {
       this.showColorPicker = false
     },
 
-    // Validation delegates to the shared predicates in src/utils/addressUtils.
-    isValidLightningAddress(address) { return isLightningAddress(address) },
-    isValidSparkAddress(address) { return isSparkAddress(address) },
-    isValidBitcoinAddress(address) { return isBitcoinAddress(address) },
-
     async saveEntry() {
       if (!this.isFormValid) return
 
@@ -351,7 +329,7 @@ export default {
         const entryData = {
           name: this.formData.name.trim(),
           address: this.formData.address.trim(),
-          addressType: this.formData.addressType,
+          addressType: this.detectedType,
           color: this.formData.color,
           notes: this.formData.notes?.trim() || ''
         }
@@ -361,14 +339,12 @@ export default {
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact saved'),
-
           })
         } else {
           await this.addEntry(entryData)
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact added'),
-
           })
         }
 
@@ -380,7 +356,6 @@ export default {
           type: 'negative',
           message: errorMessage.title,
           caption: errorMessage.caption,
-
           timeout: 4000,
         })
       } finally {
@@ -402,29 +377,15 @@ export default {
         }
       }
 
-      if (msg.includes('Invalid Lightning')) {
+      if (msg.includes('Invalid')) {
         return {
-          title: this.$t('Invalid Lightning address'),
-          caption: this.$t('Please enter a valid address like user@domain.com')
-        }
-      }
-
-      if (msg.includes('Invalid Spark')) {
-        return {
-          title: this.$t('Invalid Spark address'),
-          caption: this.$t('Spark addresses start with spark1 or sp1')
-        }
-      }
-
-      if (msg.includes('Invalid Bitcoin')) {
-        return {
-          title: this.$t('Invalid Bitcoin address'),
-          caption: this.$t('Bitcoin addresses start with bc1, 1, or 3')
+          title: this.$t('Address not recognized'),
+          caption: this.$t('Please check the address and try again')
         }
       }
 
       return {
-        title: this.$t('Couldn\'t save contact'),
+        title: this.$t("Couldn't save contact"),
         caption: msg || this.$t('Please try again')
       }
     }
@@ -435,7 +396,7 @@ export default {
 <style scoped>
 .address-modal {
   width: 100%;
-  max-width: 480px;
+  max-width: 460px;
   border-radius: var(--radius-xl);
 }
 
@@ -443,12 +404,14 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border-card);
 }
 
 .modal-title {
   font-family: 'Manrope', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .close-btn {
@@ -457,66 +420,87 @@ export default {
 }
 
 .modal-content {
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem 0.5rem;
 }
 
+/* Avatar */
 .avatar-preview {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 2rem;
+  justify-content: center;
+  margin-bottom: 1.25rem;
 }
 
 .preview-circle {
-  width: 80px;
-  height: 80px;
+  position: relative;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  margin-bottom: 0.75rem;
 }
 
 .preview-circle:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  transform: scale(1.04);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
 }
 
 .preview-initial {
   color: white;
   font-family: 'Manrope', sans-serif;
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 700;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.avatar-hint {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  text-align: center;
+/* Tiny palette badge replaces the "Tap to change color" caption — same
+   affordance, less visual chrome. */
+.preview-edit-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-card, #fff);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border-card);
 }
 
-.view_title_dark {
-  color: var(--text-secondary);
+.body--light .preview-edit-dot {
+  background: #fff;
+  color: #374151;
 }
 
-.view_title {
-  color: var(--text-muted);
-}
+/* Form */
+.view_title_dark { color: var(--text-secondary); }
+.view_title { color: var(--text-muted); }
 
 .form-fields {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.1rem;
 }
 
 .input-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
+}
+
+.input-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 20px;
 }
 
 .input-label {
@@ -525,60 +509,85 @@ export default {
   text-align: left;
 }
 
-/* Address Type Toggle */
-.address-type-toggle {
-  border-radius: var(--radius-md);
-  overflow: hidden;
+/* Detected-type pill: the auto-detection feedback that replaces the
+   three-way Lightning/Spark/Bitcoin toggle. */
+.detected-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  line-height: 1;
 }
 
-.toggle-dark {
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
+.detected-pill--lightning {
+  background: rgba(5, 149, 115, 0.12);
+  color: #059573;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.22);
 }
 
-.toggle-light {
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
+.body--dark .detected-pill--lightning,
+.q-dark .detected-pill--lightning {
+  background: rgba(21, 222, 114, 0.16);
+  color: #15DE72;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.28);
 }
 
-.toggle-dark :deep(.q-btn) {
-  color: var(--text-secondary);
+.detected-pill--spark {
+  background: rgba(120, 120, 120, 0.12);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px rgba(120, 120, 120, 0.25);
 }
 
-.toggle-light :deep(.q-btn) {
-  color: #6B7280;
+.detected-pill--bitcoin {
+  background: rgba(247, 147, 26, 0.14);
+  color: #C97A0F;
+  box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.28);
 }
 
-/* q-btn-toggle with toggle-color="primary" paints the selected
-   button with Quasar's `.bg-primary .text-white` classes (not
-   `.q-btn--active`). We scope by parent class so only the Add
-   Contact Address Type toggle is remapped; other `.bg-primary`
-   uses elsewhere in the app stay untouched. */
-.toggle-dark :deep(.q-btn.bg-primary) {
-  /* Dark keeps the gradient green — coloured accent reads as
-     intended on near-black. */
-  background: linear-gradient(135deg, #059573, #15DE72) !important;
-  color: white !important;
+.body--dark .detected-pill--bitcoin,
+.q-dark .detected-pill--bitcoin {
+  color: #F7931A;
+  box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.36);
 }
 
-.toggle-light :deep(.q-btn.bg-primary) {
-  /* Light mode drops the gradient for a tinted wash that matches
-     the Display Currency / Kiosk mini-toggle language used across
-     Settings. One active-pill treatment app-wide on cream. */
-  background: rgba(5, 149, 115, 0.10) !important;
-  color: #059573 !important;
-  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+.type-pill-enter-active,
+.type-pill-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.type-pill-enter-from,
+.type-pill-leave-to {
+  opacity: 0;
+  transform: translateY(-2px) scale(0.96);
 }
 
-.input-error {
+/* Input helper line lives under the address field — it carries the
+   "what's accepted" hint and the soft validation message. */
+.input-helper {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
-  color: #EF4444;
-  margin-top: 0.5rem;
-  padding-left: 0.25rem;
+  line-height: 1.3;
+  padding-left: 2px;
+  min-height: 16px;
 }
 
-/* Form Inputs */
+.helper-dark { color: var(--text-muted); }
+.helper-light { color: #6B7280; }
+
+.input-helper :deep(svg),
+.input-helper svg {
+  flex-shrink: 0;
+  color: #EF4444;
+}
+
+/* Inputs */
 .form-input {
   width: 100%;
   padding: 0.75rem 1rem;
@@ -601,15 +610,16 @@ export default {
 }
 
 .form-input:focus {
-  /* --color-green resolves to #15DE72 in dark and #059573 in light
-     (see src/css/app.css light-mode override). Dark keeps the brand
-     green focus ring; light needs a quieter ring that doesn't
-     re-introduce a loud accent against cream. */
   border-color: var(--color-green);
 }
 
 .body--light .form-input:focus {
   border-color: var(--text-primary);
+}
+
+.form-input--error,
+.form-input--error:focus {
+  border-color: rgba(239, 68, 68, 0.55);
 }
 
 .form-input::placeholder {
@@ -651,10 +661,6 @@ export default {
 }
 
 .body--light .save-btn {
-  /* Neutral dark pill on cream — same primary-action language as
-     Create Invoice, Restore Spark Wallet, Connect NWC, etc. Dark
-     mode keeps the gradient-green for continuity with other
-     "Add / Save" CTAs there. */
   background: var(--btn-neutral-bg);
   color: var(--btn-neutral-fg);
 }
@@ -719,22 +725,16 @@ export default {
     border-radius: var(--radius-md);
   }
 
-  .modal-header,
+  .modal-header {
+    padding: 1rem 1.25rem;
+  }
+
   .modal-content {
-    padding: 1.25rem;
+    padding: 1rem 1.25rem 0.25rem;
   }
 
   .modal-actions {
-    padding: 1rem 1.25rem 1.25rem;
-  }
-
-  .preview-circle {
-    width: 64px;
-    height: 64px;
-  }
-
-  .preview-initial {
-    font-size: 24px;
+    padding: 0.75rem 1.25rem 1.25rem;
   }
 
   .color-grid {

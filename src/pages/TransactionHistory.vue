@@ -151,7 +151,7 @@
       >
         <span class="tx-row-icon-wrap">
           <span
-            class="tx-row-icon"
+            class="tx-row-icon tx-row-icon-bitcoin"
             :class="[
               $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
               deposit.confirmed ? 'tx-row-icon-in' : 'tx-row-icon-out'
@@ -300,6 +300,45 @@
             <span class="refund-amount-label">{{ $t('Amount being returned') }}</span>
             <span class="refund-amount-value">{{ formatAmount(claimingDeposit?.amount || 0) }}</span>
           </div>
+
+          <!-- Advanced: send to a different on-chain address. Hidden by
+               default — most users want the "back to sender" path, which
+               we derive from the deposit's first input automatically. -->
+          <button
+            type="button"
+            class="refund-advanced-toggle"
+            :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
+            @click="refundShowAdvanced = !refundShowAdvanced"
+          >
+            <Icon
+              icon="tabler:chevron-down"
+              :class="['refund-advanced-chev', { flipped: refundShowAdvanced }]"
+              width="14"
+              height="14"
+            />
+            <span>{{ $t('Advanced') }}</span>
+          </button>
+
+          <transition name="refund-advanced-fade">
+            <div v-if="refundShowAdvanced" class="refund-advanced-panel" :class="$q.dark.isActive ? 'panel-dark' : 'panel-light'">
+              <label class="refund-advanced-label">
+                {{ $t('Send to a different Bitcoin address') }}
+              </label>
+              <input
+                v-model="refundCustomAddress"
+                type="text"
+                spellcheck="false"
+                autocapitalize="off"
+                autocomplete="off"
+                :placeholder="$t('bc1...')"
+                class="refund-advanced-input"
+                :class="$q.dark.isActive ? 'input-dark' : 'input-light'"
+              />
+              <p class="refund-advanced-hint">
+                {{ $t('Leave empty to send back to the original sender.') }}
+              </p>
+            </div>
+          </transition>
         </q-card-section>
 
         <q-card-actions class="refund-actions">
@@ -429,7 +468,8 @@
                       class="tx-row-icon"
                       :class="[
                         $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
-                        `tx-row-icon-${getTxDirection(tx)}`
+                        `tx-row-icon-${getTxDirection(tx)}`,
+                        { 'tx-row-icon-bitcoin': isBitcoinTransaction(tx) }
                       ]"
                     >
                       <Icon :icon="getTxIcon(tx)" width="18" height="18" />
@@ -438,8 +478,23 @@
 
                   <!-- Text column -->
                   <span class="tx-row-body">
-                    <span class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                      {{ getTxTitle(tx) }}
+                    <span class="tx-row-title-row">
+                      <span class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                        {{ getTxTitle(tx) }}
+                      </span>
+                      <!-- L1 badge — calls out on-chain transactions
+                           (deposits + cooperative-exit withdrawals) so a
+                           user scanning history can tell on-chain apart
+                           from Lightning at a glance. Survives the
+                           post-claim transition because the claimed-tx
+                           ids are persisted to localStorage. -->
+                      <span
+                        v-if="isBitcoinTransaction(tx)"
+                        class="tx-l1-badge"
+                        :class="$q.dark.isActive ? 'tx-l1-badge-dark' : 'tx-l1-badge-light'"
+                      >
+                        {{ $t('On-chain') }}
+                      </span>
                     </span>
                     <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
                       {{ getTxSubtitle(tx) }}
@@ -642,7 +697,11 @@ export default {
       lastClaimedDepositTxId: null,
       // Refund dialog state
       showRefundDialog: false,
-      isRefundingDeposit: false
+      isRefundingDeposit: false,
+      // Optional manual destination override (advanced disclosure).
+      // Empty string means "auto-derive from the deposit's first input".
+      refundShowAdvanced: false,
+      refundCustomAddress: ''
     }
   },
 
@@ -1875,36 +1934,50 @@ export default {
     // ==========================================
 
     showRefundConfirmation() {
-      // Close the claim dialog and show refund confirmation
+      // Close the claim dialog and show refund confirmation. Reset the
+      // advanced disclosure so each refund starts collapsed and empty —
+      // we don't want the previous attempt's address pre-filled.
       this.showClaimDialog = false;
+      this.refundShowAdvanced = false;
+      this.refundCustomAddress = '';
       this.showRefundDialog = true;
     },
 
     async confirmRefundDeposit() {
       if (!this.claimingDeposit) return;
 
+      const customAddress = this.refundCustomAddress.trim();
+      const usedCustomAddress = customAddress.length > 0;
+
       this.isRefundingDeposit = true;
       try {
         const provider = await this.walletStore.ensureSparkConnected();
-        await provider.refundDeposit(
-          this.claimingDeposit.txId,
-          this.claimingDeposit.outputIndex
-        );
+        const result = await provider.refundDeposit({
+          txId: this.claimingDeposit.txId,
+          outputIndex: this.claimingDeposit.outputIndex,
+          // Empty string → auto-derive sender address inside the provider.
+          destinationAddress: usedCustomAddress ? customAddress : undefined
+        });
 
-        // Close dialog
+        // Close dialog and reset advanced state for the next refund.
         this.showRefundDialog = false;
+        this.refundShowAdvanced = false;
+        this.refundCustomAddress = '';
 
         // Remove from pending list
         this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(
           d => d.txId !== this.claimingDeposit.txId
         );
 
-        // Show success notification
+        // Caption reflects what actually happened: a manual address vs.
+        // the auto-derived sender. Avoids the prior UX where we always
+        // claimed "sent back to the original sender" regardless.
         this.$q.notify({
           type: 'positive',
           message: this.$t('Bitcoin returned'),
-          caption: this.$t('Sent back to the original sender'),
-
+          caption: usedCustomAddress
+            ? this.$t('Sent to the address you provided')
+            : this.$t('Sent back to the original sender'),
           icon: 'check_circle'
         });
 
@@ -1912,13 +1985,20 @@ export default {
         this.claimingDeposit = null;
         this.claimFeeQuote = null;
 
+        // Pass txid/destination upstream in case any caller cares.
+        return result;
       } catch (error) {
         console.error('Refund failed:', error);
+        // Surface the provider's friendly error message when present
+        // (e.g. "Could not determine refund destination..." after both
+        // mempool sources fail), so the user knows to use Advanced.
+        const friendly = error?.message && !error.message.includes('Network')
+          ? error.message
+          : this.$t('Please try again');
         this.$q.notify({
           type: 'negative',
           message: this.$t('Could not return Bitcoin'),
-          caption: this.$t('Please try again'),
-
+          caption: friendly
         });
       } finally {
         this.isRefundingDeposit = false;
@@ -2362,6 +2442,51 @@ export default {
 .tx-row-icon-dark.tx-row-icon-in {
   background: rgba(21, 222, 114, 0.14);
   color: #15DE72;
+}
+
+/* Bitcoin (L1) icon — overrides direction colours so L1 deposits AND
+   withdrawals share the same orange brand glyph. Wins specificity over
+   .tx-row-icon-in/.tx-row-icon-out by being a separate selector applied
+   on top, but we use !important on color so it survives both modifier
+   combinations regardless of source order. */
+.tx-row-icon-bitcoin {
+  color: #F7931A !important;
+}
+.tx-row-icon-light.tx-row-icon-bitcoin {
+  background: rgba(247, 147, 26, 0.12);
+}
+.tx-row-icon-dark.tx-row-icon-bitcoin {
+  background: rgba(247, 147, 26, 0.16);
+}
+
+/* L1 badge — small pill next to the title for on-chain transactions */
+.tx-row-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tx-l1-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  line-height: 1.4;
+  font-family: 'Manrope', sans-serif;
+}
+.tx-l1-badge-light {
+  background: rgba(247, 147, 26, 0.14);
+  color: #B86E0F;
+}
+.tx-l1-badge-dark {
+  background: rgba(247, 147, 26, 0.18);
+  color: #FBBF77;
 }
 
 /* ── Middle column (title + caption) ─────────────────────────── */
@@ -3150,6 +3275,95 @@ export default {
   font-size: 15px;
   font-weight: 600;
   font-family: 'Manrope', sans-serif;
+}
+
+/* ── Advanced disclosure — manual destination override ── */
+.refund-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 6px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.refund-advanced-toggle.toggle-light { color: rgba(0, 0, 0, 0.6); }
+.refund-advanced-toggle.toggle-dark { color: rgba(255, 255, 255, 0.7); }
+.refund-advanced-toggle:hover { opacity: 0.85; }
+
+.refund-advanced-chev {
+  transition: transform 0.18s ease;
+}
+.refund-advanced-chev.flipped { transform: rotate(180deg); }
+
+.refund-advanced-panel {
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.refund-advanced-panel.panel-light { background: rgba(0, 0, 0, 0.04); }
+.refund-advanced-panel.panel-dark { background: rgba(255, 255, 255, 0.05); }
+
+.refund-advanced-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.refund-advanced-input {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.refund-advanced-input.input-light {
+  background: #fff;
+  color: #111;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+.refund-advanced-input.input-light:focus { border-color: rgba(0, 0, 0, 0.4); }
+.refund-advanced-input.input-dark {
+  background: rgba(0, 0, 0, 0.32);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.refund-advanced-input.input-dark:focus { border-color: rgba(255, 255, 255, 0.45); }
+
+.refund-advanced-hint {
+  margin: 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.refund-advanced-fade-enter-active,
+.refund-advanced-fade-leave-active {
+  transition: opacity 0.18s ease, max-height 0.2s ease;
+  overflow: hidden;
+}
+.refund-advanced-fade-enter-from,
+.refund-advanced-fade-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+.refund-advanced-fade-enter-to,
+.refund-advanced-fade-leave-from {
+  opacity: 1;
+  max-height: 200px;
 }
 
 .refund-actions {

@@ -1,198 +1,197 @@
+<!--
+  L1BitcoinWithdraw
+  Self-managed bottom-sheet for sending Bitcoin on-chain. Uses the same
+  design vocabulary as PaymentConfirmSheet (recipient hero, big amount
+  stage, slide-to-send) but stays a dedicated component because L1 sends
+  carry concerns the LN flows don't: priority-fee selection (slow /
+  medium / fast), Spark service fee + Bitcoin network fee breakdown,
+  and a wallet-balance check that includes the fee in the total.
+
+  Fee numbers come from the Spark SDK's `getWithdrawalFeeQuote`
+  (`userFee*` + `l1BroadcastFee*`) — we don't second-guess them with
+  third-party mempool data, because those are the numbers the SSP will
+  actually charge when we submit the withdrawal with the matching
+  `feeQuoteId` and `feeAmountSats`.
+-->
 <template>
-  <div class="l1-bitcoin-withdraw">
-    <!-- Destination Display -->
-    <div class="destination-section" :class="$q.dark.isActive ? 'section-dark' : 'section-light'">
-      <div class="section-label">{{ $t('Sending to') }}</div>
-      <div class="destination-display">
-        <Icon icon="tabler:currency-bitcoin" width="20" height="20" class="bitcoin-icon" />
-        <span class="destination-type">{{ $t('Bitcoin Address') }}</span>
-      </div>
-      <div class="destination-address">{{ truncateAddress(cleanedAddress) }}</div>
-    </div>
+  <q-dialog
+    v-model="show"
+    position="bottom"
+    persistent
+    :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+  >
+    <q-card class="sheet-card" :class="$q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light'">
+      <div class="grab-bar"></div>
 
-    <!-- Amount Input -->
-    <div class="amount-section">
-      <div class="amount-input-wrapper" :class="$q.dark.isActive ? 'input-dark' : 'input-light'">
-        <input
-          v-model="displayAmount"
-          type="number"
-          inputmode="numeric"
-          placeholder="0"
-          class="amount-input-large"
-          :class="$q.dark.isActive ? 'amount-input-dark' : 'amount-input-light'"
-          @input="onAmountChange"
-          @focus="isAmountFocused = true"
-          @blur="isAmountFocused = false"
-        />
-        <span class="currency-label">{{ currencyLabel }}</span>
-      </div>
-      <div class="balance-row">
-        <span class="balance-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-          {{ $t('Available:') }} {{ formatAmount(availableBalance) }}
-        </span>
-        <q-btn
-          flat
-          dense
-          no-caps
-          size="sm"
-          class="use-max-btn"
-          @click="setMaxAmount"
-        >
-          {{ $t('Use all') }}
+      <header class="top-row">
+        <q-btn flat round dense @click="closeSheet" class="top-btn" :disable="isSending">
+          <Icon icon="tabler:x" width="20" height="20" />
         </q-btn>
-      </div>
-    </div>
+        <div class="top-title">{{ $t('Send Bitcoin') }}</div>
+        <div class="top-spacer"></div>
+      </header>
 
-    <!-- Speed Selection (shown after amount entered) -->
-    <div v-if="amountSats > 0 && feeQuote" class="speed-section">
-      <div class="section-label">{{ $t('How fast?') }}</div>
-      <div class="speed-options">
-        <!-- Economy (Slow) -->
-        <div
-          :class="['speed-card', { selected: selectedSpeed === 'slow' }]"
-          @click="selectedSpeed = 'slow'"
-        >
-          <div class="speed-emoji">🐢</div>
-          <div class="speed-name">{{ $t('Economy') }}</div>
-          <div class="speed-time">{{ $t(feeQuote.slow.timeEstimate) }}</div>
-          <div class="speed-fee">{{ formatAmount(feeQuote.slow.totalFee) }}</div>
-        </div>
-
-        <!-- Normal (Medium) - Recommended -->
-        <div
-          :class="['speed-card', 'recommended', { selected: selectedSpeed === 'medium' }]"
-          @click="selectedSpeed = 'medium'"
-        >
-          <div class="recommended-badge">{{ $t('Recommended') }}</div>
-          <div class="speed-emoji">⚡</div>
-          <div class="speed-name">{{ $t('Normal') }}</div>
-          <div class="speed-time">{{ $t(feeQuote.medium.timeEstimate) }}</div>
-          <div class="speed-fee">{{ formatAmount(feeQuote.medium.totalFee) }}</div>
-        </div>
-
-        <!-- Fast (Next Block) -->
-        <div
-          :class="['speed-card', { selected: selectedSpeed === 'fast' }]"
-          @click="selectedSpeed = 'fast'"
-        >
-          <div class="speed-emoji">🚀</div>
-          <div class="speed-name">{{ $t('Fast') }}</div>
-          <div class="speed-time">{{ $t(feeQuote.fast.timeEstimate) }}</div>
-          <div class="speed-fee">{{ formatAmount(feeQuote.fast.totalFee) }}</div>
-        </div>
-
-        <!-- Custom Fee -->
-        <div
-          :class="['speed-card', 'custom-card', { selected: selectedSpeed === 'custom' }]"
-          @click="selectedSpeed = 'custom'"
-        >
-          <div class="speed-emoji">⚙️</div>
-          <div class="speed-name">{{ $t('Custom') }}</div>
-          <div class="speed-time">{{ $t('Set your own') }}</div>
-          <div class="speed-fee" v-if="selectedSpeed === 'custom' && customFeeRate > 0">
-            {{ formatAmount(customNetworkFee) }}
+      <div class="stage">
+        <!-- Recipient strip: bitcoin icon + truncated address with a tap-
+             to-reveal toggle for the full address. -->
+        <section class="recipient">
+          <div class="recipient-avatar">
+            <Icon icon="tabler:currency-bitcoin" width="28" height="28" />
           </div>
-          <div class="speed-fee" v-else>—</div>
-        </div>
-      </div>
+          <div class="recipient-meta">
+            <div class="recipient-name">{{ $t('Bitcoin Address') }}</div>
+            <button type="button" class="recipient-via" @click="showFullAddress = !showFullAddress">
+              <span>{{ showFullAddress ? $t('Hide address') : truncateAddress(cleanedAddress) }}</span>
+              <Icon
+                icon="tabler:chevron-down"
+                width="12"
+                height="12"
+                class="recipient-via-chev"
+                :class="{ flipped: showFullAddress }"
+              />
+            </button>
+            <transition name="fade-collapse">
+              <div v-if="showFullAddress" class="recipient-address">{{ cleanedAddress }}</div>
+            </transition>
+          </div>
+        </section>
 
-      <!-- Custom Fee Input (shown when custom selected) -->
-      <div v-if="selectedSpeed === 'custom'" class="custom-fee-section">
-        <div class="custom-fee-input-wrapper">
+        <!-- Amount stage -->
+        <section class="amount-stage">
           <input
-            v-model.number="customFeeRate"
-            type="number"
+            v-model="displayAmount"
+            type="text"
             inputmode="numeric"
-            min="1"
-            :placeholder="String(feeQuote.medium.feeRate || 1)"
-            class="custom-fee-input"
-            :class="$q.dark.isActive ? 'input-dark' : 'input-light'"
+            placeholder="0"
+            class="amount-input"
+            @input="onAmountChange"
+            @focus="isAmountFocused = true"
+            @blur="isAmountFocused = false"
+            :readonly="isSending"
           />
-          <span class="fee-unit">sat/vB</span>
+          <button type="button" class="unit-pill" disabled>
+            <span>{{ currencyLabel }}</span>
+          </button>
+          <div class="balance-row">
+            <span class="balance-label">
+              {{ $t('Available') }} · {{ formatAmount(availableBalance) }}
+            </span>
+            <button
+              type="button"
+              class="max-pill"
+              :disabled="isSending || availableBalance <= 0"
+              @click="setMaxAmount"
+            >
+              {{ $t('Use all') }}
+            </button>
+          </div>
+        </section>
+
+        <!-- Speed selection — appears once we have a fee quote. The
+             three options (Economy / Normal / Fast) come straight from
+             the SDK's per-tier quote so users compare exactly what the
+             SSP will charge for each. -->
+        <section v-if="amountSats > 0 && feeQuote" class="speed-section">
+          <div class="section-label">{{ $t('How fast?') }}</div>
+          <div class="speed-grid">
+            <button
+              v-for="opt in speedOptions"
+              :key="opt.id"
+              type="button"
+              class="speed-card"
+              :class="{
+                'speed-card--selected': selectedSpeed === opt.id,
+                'speed-card--recommended': opt.id === 'medium'
+              }"
+              :disabled="isSending"
+              @click="selectedSpeed = opt.id"
+            >
+              <div v-if="opt.id === 'medium'" class="speed-recommended">{{ $t('Recommended') }}</div>
+              <div class="speed-icon">
+                <Icon :icon="opt.icon" width="22" height="22" />
+              </div>
+              <div class="speed-name">{{ opt.label }}</div>
+              <div class="speed-time">{{ opt.timeText }}</div>
+              <div class="speed-fee">{{ opt.feeText }}</div>
+            </button>
+          </div>
+        </section>
+
+        <!-- Fee-quote loading indicator -->
+        <div v-else-if="amountSats > 0 && isLoadingFeeQuote" class="fee-loading">
+          <q-spinner-dots size="22px" />
+          <span>{{ $t('Calculating fees...') }}</span>
         </div>
-        <div class="fee-rate-hints">
-          <span class="hint" @click="customFeeRate = feeQuote.slow.feeRate">
-            {{ $t('Economy') }}: {{ feeQuote.slow.feeRate }}
-          </span>
-          <span class="hint" @click="customFeeRate = feeQuote.medium.feeRate">
-            {{ $t('Normal') }}: {{ feeQuote.medium.feeRate }}
-          </span>
-          <span class="hint" @click="customFeeRate = feeQuote.fast.feeRate">
-            {{ $t('Fast') }}: {{ feeQuote.fast.feeRate }}
-          </span>
+
+        <!-- Summary panel — explicit breakdown so users know what each
+             slice of the total covers before they commit. -->
+        <section v-if="amountSats > 0 && feeQuote && selectedSpeed" class="summary">
+          <div class="summary-row">
+            <span>{{ $t('You send') }}</span>
+            <span class="summary-value">{{ formatAmount(amountSats) }}</span>
+          </div>
+          <div class="summary-row summary-row--muted">
+            <span>{{ $t('Spark service fee') }}</span>
+            <span class="summary-value">{{ formatAmount(selectedFee.serviceFee) }}</span>
+          </div>
+          <div class="summary-row summary-row--muted">
+            <span>{{ $t('Bitcoin network fee') }}</span>
+            <span class="summary-value">{{ formatAmount(selectedFee.networkFee) }}</span>
+          </div>
+          <div class="summary-divider"></div>
+          <div class="summary-row summary-row--total">
+            <span>{{ $t('Total from wallet') }}</span>
+            <span class="summary-value summary-value--total">{{ formatAmount(totalAmount) }}</span>
+          </div>
+        </section>
+
+        <!-- Insufficient-balance warning — same vocabulary as the
+             PaymentConfirmSheet wallet-hint so the UI stays unified. -->
+        <div v-if="insufficientBalance && amountSats > 0" class="wallet-hint">
+          <Icon icon="tabler:alert-triangle" width="14" height="14" />
+          <span>{{ $t('Total exceeds your balance — try a smaller amount') }}</span>
+        </div>
+
+        <!-- Slide-to-send. Bitcoin sends are always above the threshold
+             we'd normally use for LN — every on-chain transaction is
+             irreversible, so the deliberate gesture is appropriate
+             regardless of amount. -->
+        <div class="cta-row">
+          <SlideToSend
+            ref="slideRef"
+            :label="slideLabel"
+            :loading="isSending"
+            :disabled="!canSend"
+            @complete="executeWithdrawal"
+          />
         </div>
       </div>
-    </div>
-
-    <!-- Loading Fee Quote -->
-    <div v-if="amountSats > 0 && isLoadingFeeQuote" class="fee-loading">
-      <q-spinner size="20px" color="primary" />
-      <span>{{ $t('Calculating fees...') }}</span>
-    </div>
-
-    <!-- Fee Breakdown & Summary -->
-    <div v-if="amountSats > 0 && feeQuote && selectedSpeed" class="summary-section">
-      <div class="summary-row">
-        <span class="label">{{ $t('You send') }}</span>
-        <span class="value">{{ formatAmount(amountSats) }}</span>
-      </div>
-      <div class="summary-row fee-row">
-        <span class="label">{{ $t('Service fee') }}</span>
-        <span class="value">{{ formatAmount(selectedFee.serviceFee) }}</span>
-      </div>
-      <div class="summary-row fee-row">
-        <span class="label">{{ $t('Network fee') }}</span>
-        <span class="value">{{ formatAmount(selectedFee.networkFee) }}</span>
-      </div>
-      <div class="summary-divider"></div>
-      <div class="summary-row total-row">
-        <span class="label">{{ $t('Total from wallet') }}</span>
-        <span class="value total">{{ formatAmount(totalAmount) }}</span>
-      </div>
-    </div>
-
-    <!-- Insufficient Balance Warning -->
-    <div v-if="insufficientBalance" class="warning-message">
-      <Icon icon="tabler:alert-triangle" width="16" height="16" />
-      <span>{{ $t('Insufficient balance') }}</span>
-    </div>
-
-    <!-- Send Button -->
-    <q-btn
-      v-if="canSend"
-      size="lg"
-      no-caps
-      unelevated
-      class="send-btn"
-      :class="$q.dark.isActive ? 'send-btn-dark' : 'send-btn-light'"
-      :loading="isSending"
-      @click="executeWithdrawal"
-    >
-      {{ $t('Send Bitcoin') }}
-    </q-btn>
-  </div>
+    </q-card>
+  </q-dialog>
 </template>
 
 <script>
 import { useWalletStore } from 'src/stores/wallet';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
 import { parseBip21 } from 'src/utils/bip21';
+import SlideToSend from './SlideToSend.vue';
 
 export default {
   name: 'L1BitcoinWithdraw',
+  components: { SlideToSend },
 
   props: {
-    destinationAddress: {
-      type: String,
-      required: true
-    },
-    availableBalance: {
-      type: Number,
-      default: 0
-    }
+    modelValue: { type: Boolean, default: false },
+    destinationAddress: { type: String, required: true },
+    availableBalance: { type: Number, default: 0 }
   },
 
-  emits: ['withdrawal-complete', 'withdrawal-error'],
+  emits: ['update:modelValue', 'withdrawal-submitted', 'withdrawal-error'],
+
+  setup() {
+    const walletStore = useWalletStore();
+    return { walletStore };
+  },
 
   data() {
     return {
@@ -204,17 +203,16 @@ export default {
       selectedSpeed: 'medium',
       isSending: false,
       feeQuoteDebounceTimer: null,
-      customFeeRate: 0,
-      TX_VBYTES: 140 // Typical withdrawal transaction size
+      showFullAddress: false
     };
   },
 
-  setup() {
-    const walletStore = useWalletStore();
-    return { walletStore };
-  },
-
   computed: {
+    show: {
+      get() { return this.modelValue; },
+      set(v) { this.$emit('update:modelValue', v); }
+    },
+
     /**
      * Clean Bitcoin address — if the user pastes a BIP21 URI, extract just
      * the on-chain address portion. Query params (amount, label, lightning)
@@ -227,42 +225,13 @@ export default {
       return bip21 ? bip21.address : raw;
     },
 
-    /**
-     * Currency label for amount input - respects user format preference
-     */
+    /** Currency label for amount input — respects user format preference. */
     currencyLabel() {
       return this.walletStore.useBip177Format ? '₿' : 'sats';
     },
 
-    /**
-     * Calculate custom network fee based on user-defined fee rate
-     */
-    customNetworkFee() {
-      if (!this.customFeeRate || this.customFeeRate <= 0) return 0;
-      return Math.ceil(this.customFeeRate * this.TX_VBYTES);
-    },
-
-    /**
-     * Build custom fee object matching the structure of preset fees
-     */
-    customFeeObject() {
-      if (!this.feeQuote) return null;
-      return {
-        serviceFee: Number(this.feeQuote.medium?.serviceFee || 0),
-        networkFee: this.customNetworkFee,
-        totalFee: Number(this.feeQuote.medium?.serviceFee || 0) + this.customNetworkFee,
-        feeQuoteId: this.feeQuote.medium?.feeQuoteId,
-        timeEstimate: this.$t('Custom'),
-        feeRate: this.customFeeRate
-      };
-    },
-
     selectedFee() {
       if (!this.feeQuote || !this.selectedSpeed) return null;
-      // Handle custom fee selection
-      if (this.selectedSpeed === 'custom') {
-        return this.customFeeObject;
-      }
       return this.feeQuote[this.selectedSpeed];
     },
 
@@ -276,10 +245,6 @@ export default {
     },
 
     canSend() {
-      // For custom fee, require a valid fee rate
-      if (this.selectedSpeed === 'custom' && (!this.customFeeRate || this.customFeeRate < 1)) {
-        return false;
-      }
       return (
         this.amountSats > 0 &&
         this.feeQuote &&
@@ -287,32 +252,95 @@ export default {
         !this.insufficientBalance &&
         !this.isLoadingFeeQuote
       );
+    },
+
+    /**
+     * Speed-card view models. Building these in computed-land keeps the
+     * template free of conditional formatting and lets the cards render
+     * through a single `v-for`. Fee numbers come straight from the SDK
+     * quote — no third-party derivation.
+     */
+    speedOptions() {
+      if (!this.feeQuote) return [];
+      const fmt = (sats) => this.formatAmount(sats);
+      // Icon vocabulary mirrors the auto-withdraw fee picker in Settings
+      // so the same three speeds read identically across the app.
+      return [
+        {
+          id: 'slow',
+          icon: 'tabler:leaf',
+          label: this.$t('Economy'),
+          timeText: this.$t(this.feeQuote.slow.timeEstimate),
+          feeText: fmt(this.feeQuote.slow.totalFee)
+        },
+        {
+          id: 'medium',
+          icon: 'tabler:scale',
+          label: this.$t('Standard'),
+          timeText: this.$t(this.feeQuote.medium.timeEstimate),
+          feeText: fmt(this.feeQuote.medium.totalFee)
+        },
+        {
+          id: 'fast',
+          icon: 'tabler:rocket',
+          label: this.$t('Priority'),
+          timeText: this.$t(this.feeQuote.fast.timeEstimate),
+          feeText: fmt(this.feeQuote.fast.totalFee)
+        }
+      ];
+    },
+
+    slideLabel() {
+      if (!this.amountSats) return this.$t('Slide to send');
+      return `${this.$t('Slide to send')} ${this.formatAmount(this.amountSats)}`;
+    }
+  },
+
+  watch: {
+    show(v) {
+      // Reset all entry-form state on a fresh open so a previous
+      // attempt's amount/fee don't leak into a new send.
+      if (v) this.resetForFreshOpen();
     }
   },
 
   methods: {
+    resetForFreshOpen() {
+      this.displayAmount = '';
+      this.amountSats = 0;
+      this.feeQuote = null;
+      this.isLoadingFeeQuote = false;
+      this.selectedSpeed = 'medium';
+      this.showFullAddress = false;
+      this.isSending = false;
+    },
+
+    closeSheet() {
+      if (this.isSending) return;
+      this.show = false;
+    },
+
     onAmountChange() {
       const value = parseFloat(this.displayAmount) || 0;
       this.amountSats = Math.floor(value);
 
-      // Debounce fee quote fetching
-      if (this.feeQuoteDebounceTimer) {
-        clearTimeout(this.feeQuoteDebounceTimer);
-      }
+      // Debounce so we're not hammering the fee quote endpoint on
+      // every keystroke. 500ms feels close to "still typing" without
+      // adding a noticeable wait once the user stops.
+      if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
 
       if (this.amountSats > 0) {
-        this.feeQuoteDebounceTimer = setTimeout(() => {
-          this.fetchFeeQuote();
-        }, 500);
+        this.feeQuoteDebounceTimer = setTimeout(() => this.fetchFeeQuote(), 500);
       } else {
         this.feeQuote = null;
       }
     },
 
     setMaxAmount() {
-      // Calculate max sendable (balance - estimated max fee)
-      // Use a conservative estimate for max fee
-      const estimatedMaxFee = 2000; // Conservative estimate
+      // Conservative max-fee reservation. The real fee gets recalculated
+      // once the quote returns; this just gives the user something to
+      // commit to with a single tap without the amount field flickering.
+      const estimatedMaxFee = 2000;
       const maxSendable = Math.max(0, this.availableBalance - estimatedMaxFee);
       this.displayAmount = maxSendable.toString();
       this.onAmountChange();
@@ -323,25 +351,15 @@ export default {
 
       this.isLoadingFeeQuote = true;
       try {
-        // Ensure Spark is connected (auto-reconnects with session PIN if needed)
         const provider = await this.walletStore.ensureSparkConnected();
         if (!provider?.getWithdrawalFeeQuote) {
           throw new Error('Withdrawal not supported');
         }
-
-        this.feeQuote = await provider.getWithdrawalFeeQuote(
-          this.amountSats,
-          this.cleanedAddress
-        );
+        this.feeQuote = await provider.getWithdrawalFeeQuote(this.amountSats, this.cleanedAddress);
       } catch (error) {
         console.error('Failed to fetch fee quote:', error);
-        const userMessage = this.getUserFriendlyError(error);
-        this.$q.notify({
-          type: 'negative',
-          message: userMessage.title,
-          caption: userMessage.description,
-          
-        });
+        const msg = this.getUserFriendlyError(error);
+        this.$q.notify({ type: 'negative', message: msg.title, caption: msg.description });
         this.feeQuote = null;
       } finally {
         this.isLoadingFeeQuote = false;
@@ -349,70 +367,45 @@ export default {
     },
 
     async executeWithdrawal() {
-      if (!this.canSend) return;
+      if (!this.canSend) {
+        this.$refs.slideRef?.reset();
+        return;
+      }
 
       this.isSending = true;
+      const totalFee = this.selectedFee.totalFee;
       try {
-        // Ensure Spark is connected (auto-reconnects with session PIN if needed)
         const provider = await this.walletStore.ensureSparkConnected();
-        if (!provider?.withdrawToL1) {
-          throw new Error('Withdrawal not supported');
-        }
+        if (!provider?.withdrawToL1) throw new Error('Withdrawal not supported');
 
         const result = await provider.withdrawToL1({
           amountSats: this.amountSats,
           destinationAddress: this.cleanedAddress,
-          speed: this.selectedSpeed.toUpperCase(),
-          feeQuoteId: this.selectedFee.feeQuoteId
+          speed: this.selectedSpeed,
+          feeQuoteId: this.selectedFee.feeQuoteId,
+          feeAmountSats: totalFee,
+          deductFeeFromWithdrawalAmount: false
         });
 
-        // Try to get txId for mempool link (available once broadcast)
-        let txId = null;
-        try {
-          const status = await provider.getWithdrawalStatus(result.requestId);
-          txId = status.txId;
-        } catch (e) {
-          console.warn('Could not fetch withdrawal status:', e);
-        }
-
-        // Show success with optional "view on mempool" action
-        const mempoolUrl = provider.getMempoolExplorerUrl();
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Bitcoin sent'),
-          caption: txId ? this.$t('Tap to view transaction') : this.$t('Your withdrawal is being processed'),
-          
-          timeout: 6000,
-          actions: txId ? [{
-            icon: 'open_in_new',
-            color: 'white',
-            handler: () => window.open(`${mempoolUrl}/tx/${txId}`, '_blank')
-          }] : []
-        });
-
-        this.$emit('withdrawal-complete', {
-          ...result,
-          txId: txId,
-          amount: this.amountSats,
-          fee: this.selectedFee.totalFee,
+        // Hand off to the parent: emit once with the request ID and
+        // close. The parent owns the post-submission lifecycle (polling,
+        // mempool-link toast, balance refresh) so this component can
+        // safely unmount the moment the sheet closes — important because
+        // the parent's `v-if` typically tears us down right after.
+        this.$emit('withdrawal-submitted', {
+          requestId: result.requestId,
+          amountSats: this.amountSats,
+          feeSats: totalFee,
           destinationAddress: this.destinationAddress
         });
 
-        // Refresh wallet balance
-        if (this.walletStore.activeWalletId) {
-          await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
-        }
-
+        this.show = false;
       } catch (error) {
         console.error('Withdrawal failed:', error);
-        const userMessage = this.getUserFriendlyError(error);
-        this.$q.notify({
-          type: 'negative',
-          message: userMessage.title,
-          caption: userMessage.description,
-          
-        });
+        const msg = this.getUserFriendlyError(error);
+        this.$q.notify({ type: 'negative', message: msg.title, caption: msg.description });
         this.$emit('withdrawal-error', error);
+        this.$refs.slideRef?.reset();
       } finally {
         this.isSending = false;
       }
@@ -429,11 +422,16 @@ export default {
       return formatAmountUtil(sats, this.walletStore.useBip177Format);
     },
 
+    /**
+     * Map raw provider/network errors to short, user-readable copy.
+     * Categories are derived from substring matches on the error
+     * message — when nothing matches we fall back to a friendly
+     * generic so we never leak stack-trace fragments to users.
+     */
     getUserFriendlyError(error) {
       const errorStr = error?.message || error?.toString() || '';
       const errorLower = errorStr.toLowerCase();
 
-      // Balance/amount issues
       if (errorLower.includes('exceeds available balance') ||
           errorLower.includes('insufficient') ||
           errorLower.includes('not enough')) {
@@ -442,25 +440,18 @@ export default {
           description: this.$t('The amount plus fees exceeds your balance. Try a smaller amount.')
         };
       }
-
-      // Minimum amount
-      if (errorLower.includes('minimum') || errorLower.includes('too small') ||
-          errorLower.includes('dust')) {
+      if (errorLower.includes('minimum') || errorLower.includes('too small') || errorLower.includes('dust')) {
         return {
           title: this.$t('Amount too small'),
           description: this.$t('Please enter a larger amount to cover network fees.')
         };
       }
-
-      // Invalid address
       if (errorLower.includes('invalid address') || errorLower.includes('address')) {
         return {
           title: this.$t('Invalid address'),
           description: this.$t('The Bitcoin address appears to be invalid.')
         };
       }
-
-      // Network/connection issues
       if (errorLower.includes('network') || errorLower.includes('timeout') ||
           errorLower.includes('connection') || errorLower.includes('fetch')) {
         return {
@@ -468,25 +459,18 @@ export default {
           description: this.$t('Please check your internet and try again.')
         };
       }
-
-      // Fee quote expired
       if (errorLower.includes('expired') || errorLower.includes('quote')) {
         return {
           title: this.$t('Please try again'),
-          description: this.$t('The fee estimate expired. We\'ll get a fresh one.')
+          description: this.$t("The fee estimate expired. We'll get a fresh one.")
         };
       }
-
-      // Wallet not unlocked / PIN needed
-      if (errorLower.includes('not unlocked') || errorLower.includes('enter your pin') ||
-          errorLower.includes('pin')) {
+      if (errorLower.includes('not unlocked') || errorLower.includes('enter your pin') || errorLower.includes('pin')) {
         return {
           title: this.$t('Wallet locked'),
           description: this.$t('Please enter your PIN to unlock the wallet.')
         };
       }
-
-      // Wallet not ready
       if (errorLower.includes('not supported') || errorLower.includes('provider') ||
           errorLower.includes('not connected') || errorLower.includes('wallet')) {
         return {
@@ -494,8 +478,6 @@ export default {
           description: this.$t('Please make sure your wallet is unlocked.')
         };
       }
-
-      // Generic fallback - don't show technical details
       return {
         title: this.$t('Something went wrong'),
         description: this.$t('Please try again in a moment.')
@@ -504,455 +486,380 @@ export default {
   },
 
   beforeUnmount() {
-    if (this.feeQuoteDebounceTimer) {
-      clearTimeout(this.feeQuoteDebounceTimer);
-    }
+    if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
   }
 };
 </script>
 
 <style scoped>
-.l1-bitcoin-withdraw {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  padding: 0.5rem 0;
-}
-
-/* Destination Section */
-.destination-section {
-  padding: 14px 16px;
-  border-radius: 14px;
-}
-
-.section-dark {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.section-light {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-.section-label {
-  font-size: 12px;
-  opacity: 0.6;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.destination-display {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.bitcoin-icon {
-  color: #F7931A;
-}
-
-.destination-type {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.destination-address {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-/* Amount Section */
-.amount-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.amount-input-wrapper {
-  display: flex;
-  align-items: center;
-  padding: 16px 20px;
-  border-radius: 14px;
-  border: 2px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.input-dark {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.input-light {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-.amount-input-wrapper:focus-within {
-  border-color: #15DE72;
-}
-
-.amount-input-large {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: 28px;
-  font-weight: 700;
-  outline: none;
+/* ─── Surface (mirrors PaymentConfirmSheet) ─── */
+.sheet-card {
   width: 100%;
+  max-width: 520px;
+  max-height: 92vh;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Manrope', sans-serif;
+  padding-bottom: max(1rem, var(--safe-bottom, 0px));
 }
 
-.amount-input-dark {
-  color: #FFFFFF;
+.sheet-card-dark { box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55); }
+.sheet-card-light {
+  border-top: 1px solid var(--border-card);
+  box-shadow: 0 -20px 50px rgba(40, 34, 20, 0.12);
 }
 
-.amount-input-light {
-  color: #212121;
+.grab-bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: 0.45;
+  margin: 8px auto 4px;
+  flex-shrink: 0;
 }
 
-.amount-input-large::placeholder {
-  opacity: 0.3;
+.top-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px 8px;
+  flex-shrink: 0;
+}
+.top-btn { width: 36px; height: 36px; color: var(--text-secondary); }
+.top-title {
+  flex: 1;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.005em;
+}
+.top-spacer { width: 36px; }
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 20px 12px;
+  gap: 14px;
+  overflow-y: auto;
 }
 
-.amount-input-dark::placeholder {
-  color: #FFFFFF;
+/* ─── Recipient ─── */
+.recipient {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--bg-input);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-card);
 }
 
-.amount-input-light::placeholder {
-  color: #212121;
+.recipient-avatar {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(247, 147, 26, 0.14);
+  color: #F7931A;
+  box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.32);
+  flex-shrink: 0;
 }
 
-.currency-label {
-  font-size: 16px;
+.recipient-meta { flex: 1; min-width: 0; }
+.recipient-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.recipient-via {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
   font-weight: 500;
-  opacity: 0.6;
-  margin-left: 8px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
+.recipient-via:hover { color: var(--text-primary); }
+.recipient-via-chev { transition: transform 0.18s ease; opacity: 0.7; }
+.recipient-via-chev.flipped { transform: rotate(180deg); }
+
+.recipient-address {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+.fade-collapse-enter-active, .fade-collapse-leave-active {
+  transition: opacity 0.16s ease, max-height 0.2s ease;
+  overflow: hidden;
+  max-height: 200px;
+}
+.fade-collapse-enter-from, .fade-collapse-leave-to { opacity: 0; max-height: 0; }
+
+/* ─── Amount stage ─── */
+.amount-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0;
+  gap: 10px;
+}
+
+.amount-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  text-align: center;
+  font-family: 'Manrope', sans-serif;
+  font-size: 48px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  caret-color: var(--color-green);
+  padding: 0;
+}
+.amount-input::placeholder { color: var(--text-muted); opacity: 0.45; }
+
+.unit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: none;
+  cursor: default;
+  opacity: 0.85;
+}
+.body--light .unit-pill { background: rgba(17, 24, 39, 0.05); }
 
 .balance-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0 4px;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
 }
 
 .balance-label {
-  font-size: 13px;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
 }
 
-.use-max-btn {
-  color: #15DE72;
+.max-pill {
+  border: none;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.08s ease;
+}
+.max-pill:hover:not(:disabled) { filter: brightness(1.05); }
+.max-pill:active:not(:disabled) { transform: scale(0.96); }
+.max-pill:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ─── Speed selection ─── */
+.section-label {
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
 }
 
-/* Speed Selection */
-.speed-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.speed-options {
+.speed-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-}
-
-@media (max-width: 400px) {
-  .speed-options {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 .speed-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 8px;
-  border-radius: 14px;
-  background: rgba(128, 128, 128, 0.1);
-  border: 2px solid transparent;
+  gap: 4px;
+  padding: 14px 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.08s ease;
+  font-family: inherit;
 }
 
-.speed-card.selected {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.1);
+.speed-card:active:not(:disabled) { transform: scale(0.98); }
+.speed-card:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.speed-card--selected {
+  border-color: var(--brand-accent);
+  background: var(--brand-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--brand-accent);
 }
 
-.speed-card.recommended {
-  border-color: rgba(21, 222, 114, 0.3);
-}
-
-.recommended-badge {
+.speed-recommended {
   position: absolute;
   top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #15DE72;
-  color: white;
+  right: 10px;
+  background: var(--brand-accent);
+  color: #fff;
   font-size: 9px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
-  white-space: nowrap;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
 }
 
-.speed-emoji {
-  font-size: 24px;
-  margin-bottom: 4px;
-}
+.body--light .speed-recommended { color: #fff; }
 
-.speed-name {
-  font-size: 13px;
-  font-weight: 600;
+/* Icon tile picks up the muted secondary tone for unselected cards and
+   flips to brand-accent on the selected one. Driven entirely off CSS
+   variables so light/dark mode follow the same rule. */
+.speed-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   margin-bottom: 2px;
+  color: var(--text-secondary);
+  transition: color 0.15s ease;
 }
-
-.speed-time {
-  font-size: 11px;
-  opacity: 0.6;
-  margin-bottom: 6px;
-}
-
+.speed-card--selected .speed-icon { color: var(--brand-accent); }
+.speed-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.speed-time { font-size: 11px; color: var(--text-muted); letter-spacing: 0.01em; }
 .speed-fee {
   font-size: 12px;
   font-weight: 600;
-  color: #15DE72;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
 }
 
-/* Custom Card */
-.speed-card.custom-card {
-  border-style: dashed;
-  border-color: rgba(128, 128, 128, 0.3);
-}
+.speed-card--selected .speed-fee { color: var(--brand-accent); }
 
-.speed-card.custom-card.selected {
-  border-style: solid;
-  border-color: #15DE72;
-}
-
-/* Custom Fee Input Section */
-.custom-fee-section {
-  margin-top: 12px;
-  padding: 16px;
-  border-radius: 14px;
-  background: rgba(21, 222, 114, 0.08);
-  border: 1px solid rgba(21, 222, 114, 0.2);
-}
-
-.custom-fee-input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-radius: 10px;
-  background: rgba(128, 128, 128, 0.1);
-  margin-bottom: 10px;
-}
-
-.custom-fee-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: 18px;
-  font-weight: 600;
-  outline: none;
-  width: 100%;
-  text-align: center;
-}
-
-.custom-fee-input::placeholder {
-  opacity: 0.4;
-}
-
-.custom-fee-input.input-dark {
-  color: #FFFFFF;
-}
-
-.custom-fee-input.input-light {
-  color: #212121;
-}
-
-.fee-unit {
-  font-size: 14px;
-  opacity: 0.6;
-  font-weight: 500;
-}
-
-.fee-rate-hints {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.fee-rate-hints .hint {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  background: rgba(128, 128, 128, 0.15);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.fee-rate-hints .hint:hover {
-  background: rgba(21, 222, 114, 0.2);
-}
-
-/* Fee Loading */
+/* ─── Fee loading ─── */
 .fee-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 16px;
-  font-size: 14px;
-  opacity: 0.7;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
-/* Summary Section */
-.summary-section {
+/* ─── Summary ─── */
+.summary {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
-  border-radius: 14px;
-  background: rgba(128, 128, 128, 0.08);
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--bg-input);
+  border-radius: var(--radius-lg);
 }
 
 .summary-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-}
-
-.summary-row .label {
-  font-size: 14px;
-  opacity: 0.7;
-}
-
-.summary-row .value {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.fee-row .label {
-  opacity: 0.5;
+  justify-content: space-between;
   font-size: 13px;
+  color: var(--text-primary);
 }
 
-.fee-row .value {
-  font-size: 13px;
-  opacity: 0.8;
+.summary-row--muted {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.summary-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-value--total {
+  font-size: 15px;
+  color: var(--text-primary);
 }
 
 .summary-divider {
   height: 1px;
-  background: rgba(128, 128, 128, 0.2);
+  background: var(--border-card);
   margin: 4px 0;
 }
 
-.total-row .label {
+.summary-row--total {
+  font-size: 14px;
   font-weight: 600;
-  opacity: 1;
+  margin-top: 2px;
 }
 
-.total-row .value.total {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-/* Warning Message */
-.warning-message {
+/* ─── Wallet hint (insufficient balance) ─── */
+.wallet-hint {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  padding: 12px;
-  border-radius: 10px;
-  background: rgba(255, 107, 107, 0.1);
-  color: #FF6B6B;
-  font-size: 13px;
-  font-weight: 500;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  line-height: 1.4;
+  background: rgba(239, 68, 68, 0.10);
+  color: #DC2626;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.22);
+}
+.body--dark .wallet-hint {
+  background: rgba(239, 68, 68, 0.14);
+  color: #FCA5A5;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.32);
 }
 
-/* Send Button */
-/* Send Bitcoin — blue-tinted primary CTA for the send flow, same
-   grammar as the wallet's Send button and PaymentModal's Send
-   Payment. */
-.send-btn {
-  width: 100%;
-  height: 54px;
-  border-radius: 16px;
-  margin-top: 0.5rem;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease,
-    filter 0.18s ease,
-    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* ─── CTA ─── */
+.cta-row { margin-top: 6px; }
 
-.send-btn-dark {
-  background: rgba(59, 130, 246, 0.14) !important;
-  color: #3B82F6 !important;
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
-}
-
-.send-btn-light {
-  background: rgba(37, 99, 235, 0.10) !important;
-  color: #2563EB !important;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.20);
-}
-
-.send-btn:hover:not(:disabled) {
-  filter: brightness(1.06);
-}
-
-.send-btn:active:not(:disabled) {
-  transform: scale(0.98);
-  transition-duration: 0.08s;
-  filter: brightness(0.94);
-}
-
-.send-btn:disabled,
-.send-btn[disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Mobile Responsiveness */
-@media (max-width: 375px) {
-  .amount-input-large {
-    font-size: 24px;
-  }
-
-  .speed-options {
-    gap: 6px;
-  }
-
-  .speed-card {
-    padding: 10px 4px;
-  }
-
-  .speed-emoji {
-    font-size: 20px;
-  }
-
-  .speed-name {
-    font-size: 11px;
-  }
-
-  .recommended-badge {
-    font-size: 8px;
-    padding: 2px 6px;
-  }
+@media (max-width: 480px) {
+  .stage { padding: 8px 16px 10px; gap: 12px; }
+  .recipient { padding: 12px; }
+  .recipient-avatar { width: 48px; height: 48px; min-width: 48px; }
+  .amount-input { font-size: 40px; }
+  .speed-card { padding: 12px 8px 10px; }
+  .speed-icon { width: 26px; height: 26px; }
 }
 </style>

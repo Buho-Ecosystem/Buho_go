@@ -611,6 +611,7 @@ import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
 import LightningPaymentService from '../utils/lightning.js'
+import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -1234,8 +1235,9 @@ async function startBatch() {
         await addressBookStore.updateLastUsed(result.contact.id)
       }
     } catch (error) {
+      console.error('Batch send payment failed:', error)
       result.status = 'failed'
-      result.error = error.message || t('Payment failed')
+      result.error = getUserFriendlyErrorMessage(error, 'payment', t)
     }
 
     // Small delay for UI feedback

@@ -168,6 +168,7 @@ import { useQuasar } from 'quasar'
 import { useWalletStore } from 'stores/wallet'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
+import { getUserFriendlyErrorMessage } from 'src/utils/userErrors'
 
 export default defineComponent({
   name: 'KioskDashboard',
@@ -280,7 +281,11 @@ export default defineComponent({
         invoiceData.value = result
         qrDataUrl.value = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
         state.value = 'payment'; startPolling()
-      } catch (err) { console.error('[kiosk] charge error:', err); $q.notify({ message: err.message || 'Failed to create invoice', color: 'negative' }); state.value = 'input' }
+      } catch (err) {
+        console.error('[kiosk] charge error:', err)
+        $q.notify({ type: 'negative', message: getUserFriendlyErrorMessage(err, 'kiosk', t) })
+        state.value = 'input'
+      }
     }
     function startPolling() {
       clearPolling(); const ib = store.balances[store.kioskWalletId] || 0
@@ -424,9 +429,11 @@ export default defineComponent({
 .kiosk-light .pos-btn-disabled { background: var(--border-card) !important; color: var(--text-muted) !important; }
 
 /* Text btn */
-.pos-text-btn { background: none; border: none; color: #6b7280; font-size: 14px; font-family: 'Manrope', sans-serif; font-weight: 500; cursor: pointer; padding: 12px 16px; margin-top: 4px; -webkit-tap-highlight-color: transparent; }
-.pos-text-btn:active { opacity: 0.6; }
-.pos-cancel-btn { color: #ef4444; }
+.pos-text-btn { background: transparent; border: 1px solid rgba(107,114,128,0.45); border-radius: 10px; color: #6b7280; font-size: 14px; font-family: 'Manrope', sans-serif; font-weight: 600; cursor: pointer; padding: 10px 22px; margin-top: 4px; -webkit-tap-highlight-color: transparent; transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease; }
+.pos-text-btn:active { transform: scale(0.96); background: rgba(107,114,128,0.08); }
+.kiosk-light .pos-text-btn { border-color: rgba(107,114,128,0.5); }
+.pos-cancel-btn { color: #ef4444; border-color: rgba(239,68,68,0.5); }
+.pos-cancel-btn:active { background: rgba(239,68,68,0.08); }
 
 /* Sats pill */
 .pos-amount-pill { display: inline-flex; align-items: center; gap: 4px; background: rgba(5,149,115,0.08); border: 1px solid rgba(5,149,115,0.18); border-radius: 9999px; padding: 5px 14px; font-size: 0.875rem; font-weight: 700; color: #059573; letter-spacing: 0.01em; font-family: 'Manrope', sans-serif; }

@@ -338,6 +338,7 @@ import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDi
 import { useWalletStore } from '../stores/wallet'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 import { mapActions, mapState } from 'pinia'
+import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 export default {
   name: 'LNBitsSetupPage',
@@ -435,7 +436,7 @@ export default {
 
       } catch (error) {
         console.error('LNBits validation failed:', error);
-        this.errorMessage = error.message || this.$t('Connection failed');
+        this.errorMessage = getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this));
       } finally {
         this.isConnecting = false;
       }
@@ -465,7 +466,7 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to add wallet'),
-          caption: error.message,
+          caption: getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this)),
         });
         return;
       }

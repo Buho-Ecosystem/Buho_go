@@ -23,7 +23,8 @@ const DEFAULT_CONFIG = {
   maxInterval: 6000,         // Max 6 seconds between checks (more real-time feel)
   backoffMultiplier: 1.25,   // Gentle backoff
   maxAttempts: 35,           // Stop after ~3 minutes
-  expiryBuffer: 60           // Stop checking 60 seconds before expiry
+  expiryBuffer: 60,          // Stop checking 60 seconds before expiry
+  maxConsecutiveErrors: 8    // Bail out if lookups keep throwing (e.g. wallet disconnected)
 };
 
 /**
@@ -40,6 +41,7 @@ export class PaymentMonitor {
     this.invoice = null;
     this.provider = null;
     this.onStatusChange = null;
+    this.consecutiveErrors = 0;
   }
 
   /**
@@ -69,6 +71,7 @@ export class PaymentMonitor {
     this.isMonitoring = true;
     this.attemptCount = 0;
     this.currentInterval = this.config.initialInterval;
+    this.consecutiveErrors = 0;
 
     // Notify that monitoring has started
     this._notifyStatus(PaymentStatus.PENDING, {
@@ -140,7 +143,13 @@ export class PaymentMonitor {
     }
 
     try {
-      const result = await this.provider.lookupInvoice(this.invoice.payment_hash);
+      // Prefer a backend-native invoice ID (e.g. Spark's receive request UUID)
+      // when available, since it maps directly to getLightningReceiveRequest.
+      // Falls back to payment_hash, which providers may resolve via a
+      // transfer-list scan.
+      const lookupKey = this.invoice.invoice_id || this.invoice.payment_hash;
+      const result = await this.provider.lookupInvoice(lookupKey);
+      this.consecutiveErrors = 0;
 
       if (result.paid) {
         // Payment confirmed
@@ -172,6 +181,19 @@ export class PaymentMonitor {
 
     } catch (error) {
       console.warn('Payment check failed:', error.message);
+      this.consecutiveErrors++;
+
+      // Persistent failures (wallet disconnected, network down, etc.) should
+      // not poll forever — surface as ERROR and stop so callers can recover.
+      if (this.consecutiveErrors >= this.config.maxConsecutiveErrors) {
+        this._notifyStatus(PaymentStatus.ERROR, {
+          message: error.message || 'Payment monitoring failed',
+          attempt: this.attemptCount,
+          error: error.message
+        });
+        this.stop();
+        return;
+      }
 
       // Don't stop on transient errors, just continue polling
       this._notifyStatus(PaymentStatus.PENDING, {

@@ -498,241 +498,44 @@
       @bitcoin-payment-requested="handleBitcoinPaymentFromContact"
     />
 
-    <!-- Payment Confirmation Dialog -->
-    <q-dialog v-model="showPaymentConfirmation" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="width: 500px; max-width: 95vw;">
-        <q-card-section :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
-          <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ pendingPayment?.type === 'lnurl_withdraw' ? $t('Redeem Sats') : pendingPayment?.bitcoinAddress ? $t('Send Bitcoin') : $t('Confirm Payment') }}
-          </div>
-          <q-btn flat round dense v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
-            <Icon icon="tabler:x" width="20" height="20" />
-          </q-btn>
-        </q-card-section>
+    <!-- Shared confirmation sheet — used for both send (Lightning Address /
+         LNURL-Pay / invoice / Spark) and redeem (LNURL-Withdraw) flows.
+         Same component, different verb. Bitcoin on-chain still uses the
+         dialog below pending its own pass. -->
+    <PaymentConfirmSheet
+      ref="sendSheetRef"
+      v-model="showSendSheet"
+      :payment="paymentSheetProps"
+      :wallet-can-pay="paymentSheetWalletCanPay"
+      :wallet-hint="paymentSheetWalletHint"
+      :is-sending="isSendingPayment"
+      @confirm="onSendSheetConfirm"
+      @cancel="onSendSheetCancel"
+    />
 
-        <!-- Bitcoin Withdrawal UI -->
-        <q-card-section v-if="pendingPayment?.bitcoinAddress" class="bitcoin-withdraw-section">
-          <L1BitcoinWithdraw
-            :destination-address="pendingPayment.bitcoinAddress"
-            :available-balance="walletState.balance"
-            @withdrawal-complete="handleBitcoinWithdrawalComplete"
-            @withdrawal-error="handleBitcoinWithdrawalError"
-          />
-        </q-card-section>
+    <PaymentConfirmSheet
+      ref="withdrawSheetRef"
+      v-model="showWithdrawSheet"
+      :payment="withdrawSheetProps"
+      verb="redeem"
+      :is-sending="withdrawSheetIsBusy"
+      :status-message="withdrawSheetStatus"
+      @confirm="onWithdrawSheetConfirm"
+      @cancel="onWithdrawSheetCancel"
+    />
 
-        <!-- LNURL-Withdraw UI -->
-        <q-card-section v-else-if="pendingPayment?.type === 'lnurl_withdraw'" class="payment-content">
-          <div class="payment-info">
-            <div class="payment-amount">
-              <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
-                {{ withdrawAmountDisplay }}
-              </div>
-              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
-                   style="cursor: pointer;" @click="toggleWithdrawDenomination">
-                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <Icon icon="tabler:refresh" width="12" height="12" :class="{ 'denomination-spin': denominationSpinning }" /></span>
-              </div>
-            </div>
-
-            <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
-              <div class="detail-item" v-if="pendingPayment.defaultDescription">
-                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Description') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ pendingPayment.defaultDescription }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Type') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ $t('Withdrawal') }}</span>
-              </div>
-              <div class="detail-item" v-if="!pendingPayment.isFixedAmount">
-                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Redeemable') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'" style="cursor: pointer;" @click="toggleWithdrawDenomination">
-                  {{ withdrawRedeemableRange }} <Icon icon="tabler:refresh" width="12" height="12" :class="{ 'denomination-spin': denominationSpinning }" />
-                </span>
-              </div>
-            </div>
-
-            <!-- Amount input for variable-amount withdraw -->
-            <div v-if="needsWithdrawAmountInput" class="amount-input-section">
-              <q-input
-                v-model="paymentAmount"
-                outlined
-                :label="withdrawDenomination === 'fiat' ? withdrawFiatCurrency : $t('Amount')"
-                type="number"
-                :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
-                :rules="[val => validateWithdrawAmount(val)]"
-                :disable="lnurlWithdrawStatus !== 'idle'"
-              >
-                <template v-slot:append>
-                  <Icon icon="tabler:refresh" width="18" height="18"
-                    :class="{ 'denomination-spin': denominationSpinning }"
-                    class="denomination-toggle-icon"
-                    @click="toggleWithdrawDenomination"
-                  />
-                </template>
-              </q-input>
-            </div>
-
-            <!-- Status display during processing -->
-            <div v-if="lnurlWithdrawStatus !== 'idle'" class="withdraw-status-section q-mt-md" style="text-align: center;">
-              <q-spinner-dots v-if="lnurlWithdrawStatus !== 'error' && lnurlWithdrawStatus !== 'confirmed'" size="24px" class="q-mr-sm" />
-              <Icon v-else-if="lnurlWithdrawStatus === 'error'" icon="tabler:alert-circle" width="24" height="24" style="color: var(--q-negative);" class="q-mr-sm" />
-              <span :class="lnurlWithdrawStatus === 'error' ? 'text-negative' : ($q.dark.isActive ? 'text-grey-4' : 'text-grey-7')">
-                {{ withdrawStatusMessage }}
-              </span>
-            </div>
-          </div>
-        </q-card-section>
-
-        <!-- Regular Payment Confirmation -->
-        <q-card-section class="payment-content" v-else-if="pendingPayment">
-          <div class="payment-info">
-            <!-- SA Retailer Merchant Info -->
-            <div v-if="pendingPayment.merchant" class="merchant-info">
-              <div class="merchant-info-left">
-                <img :src="pendingPayment.merchant.logo" :alt="pendingPayment.merchant.displayName" class="merchant-logo" />
-                <div class="merchant-text">
-                  <div class="merchant-name">{{ pendingPayment.merchant.displayName }}</div>
-                  <div v-if="pendingPayment.zarAmount" class="merchant-zar">R{{ pendingPayment.zarAmount }}</div>
-                </div>
-              </div>
-              <div v-if="merchantCountdown > 0" class="merchant-countdown" :class="merchantCountdown <= 20 ? 'countdown-urgent' : ''">
-                <Icon icon="tabler:clock" width="14" height="14" />
-                {{ Math.floor(merchantCountdown / 60) }}:{{ String(merchantCountdown % 60).padStart(2, '0') }}
-              </div>
-            </div>
-
-            <div class="payment-amount">
-              <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
-                {{ formatPaymentAmount() }}
-              </div>
-              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
-                   :style="needsAmountInput ? 'cursor: pointer;' : ''" @click="needsAmountInput ? toggleSendDenomination() : null">
-                <span v-if="paymentFiatValue">{{ paymentFiatValue }} <q-icon v-if="needsAmountInput" name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
-                <span v-else-if="pendingPayment && (pendingPayment.amount > 0 || paymentAmount)"
-                      class="loading-fiat">{{ $t('Loading...') }}</span>
-              </div>
-              <!-- Show ZAR equivalent if user's preferred currency is not ZAR -->
-              <div v-if="pendingPayment.zarAmount && walletState.preferredFiatCurrency !== 'ZAR'"
-                   class="amount-zar-secondary" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-                R{{ pendingPayment.zarAmount }} ZAR
-              </div>
-            </div>
-
-            <!-- Rate staleness warning -->
-            <div v-if="pendingPayment.merchant && ratesStale" class="rate-warning">
-              <Icon icon="tabler:alert-triangle" width="14" height="14" />
-              {{ $t('Exchange rates may be outdated') }}
-            </div>
-
-            <div class="payment-details" :class="$q.dark.isActive ? 'payment_details_dark' : 'payment_details_light'">
-              <!-- Recipient (Lightning Address or Spark Address) - hide raw address for merchant payments -->
-              <div class="detail-item" v-if="(pendingPayment.lightningAddress || pendingPayment.sparkAddress) && !pendingPayment.merchant">
-                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
-                    $t('To')
-                  }}:</span>
-                <span class="detail-value recipient-address" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
-                    pendingPayment.lightningAddress || pendingPayment.sparkAddress
-                  }}</span>
-              </div>
-              <!-- Show merchant name as recipient for SA retail payments -->
-              <div class="detail-item" v-else-if="pendingPayment.merchant">
-                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
-                    $t('To')
-                  }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
-                    pendingPayment.merchant.displayName
-                  }}</span>
-              </div>
-              <div class="detail-item" v-if="pendingPayment.description">
-                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{
-                    $t('Description')
-                  }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
-                    pendingPayment.description
-                  }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label"
-                      :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Type') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{
-                    getPaymentTypeLabel()
-                  }}</span>
-              </div>
-              <!-- Fee estimate for Spark Lightning payments -->
-              <div class="detail-item" v-if="showFeeEstimate">
-                <span class="detail-label"
-                      :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Est. Fee') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">
-                  <span v-if="isEstimatingFee" class="fee-loading">{{ $t('Estimating...') }}</span>
-                  <span v-else-if="estimatedFee !== null">{{ formatAmountInline(estimatedFee) }}</span>
-                  <span v-else-if="pendingPayment.sparkAddress" class="fee-free">{{ $t('Free (Spark transfer)') }}</span>
-                </span>
-              </div>
-              <!-- Amount range for variable-amount payments -->
-              <div class="detail-item" v-if="payAmountRange">
-                <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Amount range') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ payAmountRange }}</span>
-              </div>
-            </div>
-
-            <!-- Amount input for LNURL/Lightning Address -->
-            <div v-if="needsAmountInput" class="amount-input-section">
-              <q-input
-                v-model="paymentAmount"
-                outlined
-                :label="sendDenomination === 'fiat' ? preferredFiatCurrency : $t('Amount')"
-                type="number"
-                :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
-                :rules="[validatePaymentAmount]"
-              >
-                <template v-slot:append>
-                  <Icon icon="tabler:refresh" width="18" height="18"
-                    :class="{ 'denomination-spin': denominationSpinning }"
-                    class="denomination-toggle-icon"
-                    @click="toggleSendDenomination"
-                  />
-                </template>
-              </q-input>
-
-              <q-input
-                v-if="pendingPayment.commentAllowed > 0"
-                v-model="paymentComment"
-                outlined
-                :label="$t('Comment (optional)')"
-                :maxlength="pendingPayment.commentAllowed"
-                :class="$q.dark.isActive ? 'comment_input_dark' : 'comment_input_light'"
-              />
-            </div>
-          </div>
-        </q-card-section>
-
-        <q-card-actions v-if="pendingPayment?.type !== 'lnurl_withdraw' || lnurlWithdrawStatus === 'idle'" align="right" class="payment-actions"
-                        :class="$q.dark.isActive ? 'payment_actions_dark' : 'payment_actions_light'">
-          <q-btn flat :label="$t('Cancel')" v-close-popup no-caps
-                 :class="$q.dark.isActive ? 'cancel_btn_dark' : 'cancel_btn_light'"
-                 @click="pendingPayment?.type === 'lnurl_withdraw' ? resetWithdrawState() : null"/>
-          <q-btn
-            v-if="pendingPayment?.type === 'lnurl_withdraw'"
-            flat
-            :label="$t('Redeem')"
-            no-caps
-            @click="executeWithdraw"
-            :disable="!canConfirmWithdraw"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-          />
-          <q-btn
-            v-else
-            flat
-            :label="$t('Send Payment')"
-            no-caps
-            @click="confirmPayment"
-            :loading="isSendingPayment"
-            :disable="!canConfirmPayment"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- Bitcoin on-chain — self-managing bottom sheet with its own
+         priority-fee selector, custom rate input, and slide-to-send.
+         Lives alongside the LN sheets so all three confirm UIs share
+         the same surface language. -->
+    <L1BitcoinWithdraw
+      v-if="pendingPayment?.bitcoinAddress"
+      v-model="showBitcoinSheet"
+      :destination-address="pendingPayment.bitcoinAddress"
+      :available-balance="walletState.balance"
+      @withdrawal-submitted="handleBitcoinWithdrawalSubmitted"
+      @withdrawal-error="handleBitcoinWithdrawalError"
+    />
 
     <!-- LNURL-Withdraw Success Screen -->
     <PaymentConfirmation
@@ -835,9 +638,16 @@ import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
+import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
+import {
+  useBitcoinPreferencesStore,
+  BITCOIN_DEPOSIT_POLL_MS,
+  CLASSIFICATION_FRESHNESS_MS
+} from '../stores/bitcoinPreferences';
+import { track as telemetryTrack } from '../utils/telemetry';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {EventBus} from '../utils/eventBus';
 
@@ -850,6 +660,7 @@ export default {
     InternalTransferModal,
     AddressBookQuickModal,
     PaymentModal,
+    PaymentConfirmSheet,
     BatchSendModal,
     PaymentConfirmation,
     NumberFlow,
@@ -858,7 +669,8 @@ export default {
   setup() {
     const walletStore = useWalletStore();
     const addressBookStore = useAddressBookStore();
-    return { walletStore, addressBookStore };
+    const bitcoinPrefsStore = useBitcoinPreferencesStore();
+    return { walletStore, addressBookStore, bitcoinPrefsStore };
   },
   data() {
     return {
@@ -896,29 +708,35 @@ export default {
 
       showReceiveModal: false,
       showSendModal: false,
-      showPaymentConfirmation: false,
+      // PaymentConfirmSheet flags. Both paths use the same shared sheet
+      // component — the only difference is the `verb` prop (send vs
+      // redeem) which switches all the labels, and the payload shape
+      // built by the corresponding `*SheetProps` computed below.
+      showSendSheet: false,
+      showWithdrawSheet: false,
+      // Bitcoin on-chain runs through L1BitcoinWithdraw, which owns its
+      // own bottom-sheet and bundles fee-priority selection + the
+      // dust/balance checks the LN paths don't need.
+      showBitcoinSheet: false,
       pendingPayment: null,
       merchantCountdown: 0,
       merchantCountdownTimer: null,
       paymentAmount: '',
       paymentComment: '',
-      sendDenomination: 'sats', // 'sats' or 'fiat' — for LNURL/Lightning Address send flow
-      slidePosition: 0,
-      slideConfirmed: false,
-      isSliding: false,
-      slideStartX: 0,
-      maxSlideDistance: 0,
-      parsedInvoice: null,
-      lightningAddress: '',
+      // Currency mode for the user-entered amount when bridging into
+      // confirmPayment / executeWithdraw. PaymentConfirmSheet always
+      // emits in sats and the bridge handlers leave this at 'sats',
+      // but the field stays so the legacy validation paths
+      // (validatePaymentAmount, sendAmountSats) keep their fiat branch
+      // available in case future callers feed in fiat values directly.
+      sendDenomination: 'sats',
       refreshInterval: null,
       showLoadingScreen: true,
       currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
-      paymentData: null,
       isSendingPayment: false,
       fiatRatesLoaded: false,
       secondaryValue: '',
-      paymentFiatValue: '',
       showWalletSwitcher: false,
       // Fee estimation for Spark Lightning payments
       estimatedFee: null,
@@ -944,8 +762,6 @@ export default {
       showContactPayment: false,
       selectedPayContact: null,
       // LNURL-Withdraw state
-      withdrawDenomination: 'sats', // 'sats' or 'fiat'
-      denominationSpinning: false,
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
@@ -1109,6 +925,193 @@ export default {
       }
       return true;
     },
+
+    /**
+     * Adapter from the legacy `pendingPayment` shape to the
+     * PaymentConfirmSheet `payment` prop shape. Centralizing the mapping
+     * here keeps Wallet.vue's send-pipeline state untouched while the
+     * sheet stays decoupled from any wallet/legacy specifics.
+     */
+    paymentSheetProps() {
+      const p = this.pendingPayment;
+      if (!p) return null;
+
+      // ── Recipient ─────────────────────────────────────────────
+      // Merchant payments (SA retail QR) get the merchant logo + name as
+      // hero. Otherwise we use the address itself as the display name —
+      // for Lightning addresses that already reads cleanly ("alice@…"),
+      // and for Spark/invoice we surface a generic "Lightning Invoice"
+      // label so the user knows what they're paying.
+      let recipient;
+      if (p.merchant) {
+        recipient = {
+          name: p.merchant.displayName,
+          logoUrl: p.merchant.logo,
+          color: '#3B82F6',
+          addressType: 'lightning',
+          address: ''
+        };
+      } else if (p.lightningAddress) {
+        recipient = {
+          name: p.lightningAddress,
+          color: '#F59E0B',
+          addressType: 'lightning',
+          address: p.lightningAddress
+        };
+      } else if (p.sparkAddress) {
+        recipient = {
+          name: this.$t('Spark address'),
+          color: '#6B7280',
+          addressType: 'spark',
+          address: p.sparkAddress
+        };
+      } else if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
+        recipient = {
+          name: this.$t('LNURL payment'),
+          color: '#3B82F6',
+          addressType: 'lnurl',
+          address: typeof p.data === 'string' ? p.data : ''
+        };
+      } else {
+        // BOLT11 invoice or unknown — show description as the "name" if
+        // we have it, otherwise fall back to a generic label.
+        recipient = {
+          name: p.description || this.$t('Lightning invoice'),
+          color: '#F59E0B',
+          addressType: 'invoice',
+          address: ''
+        };
+      }
+
+      // ── Amount mode ───────────────────────────────────────────
+      // Source of truth precedence:
+      //   1. Invoice with baked amount → fixed
+      //   2. LNURL/Lightning Address with min===max (or isFixedAmount) → fixed
+      //   3. LNURL/Lightning Address with bounded min/max → range
+      //   4. Anything else (Spark, zero-amount invoice) → free
+      let amount;
+      if (p.amount > 0 && !p.lightningAddress && !this.needsAmountInput) {
+        amount = { mode: 'fixed', fixedSats: p.amount };
+      } else if (p.fixedAmountSats) {
+        amount = { mode: 'fixed', fixedSats: p.fixedAmountSats };
+      } else if (p.isFixedAmount && p.minSendable) {
+        amount = { mode: 'fixed', fixedSats: Math.floor(p.minSendable / 1000) };
+      } else if (p.minSendable && p.maxSendable && p.minSendable !== p.maxSendable) {
+        amount = {
+          mode: 'range',
+          minSats: Math.ceil(p.minSendable / 1000),
+          maxSats: Math.floor(p.maxSendable / 1000)
+        };
+      } else {
+        amount = { mode: 'free' };
+      }
+
+      // ── Fee estimate ──────────────────────────────────────────
+      // Only Spark wallets expose pre-call fee data. NWC/LNBits omit the
+      // object entirely so the sheet renders nothing — better than
+      // showing an empty "—" row that implies missing information.
+      let feeEstimate = null;
+      if (this.walletStore.isActiveWalletSpark) {
+        if (p.sparkAddress) {
+          // Spark-to-Spark transfers are free.
+          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free (Spark transfer)') };
+        } else if (this.isEstimatingFee) {
+          feeEstimate = { sats: null, isEstimating: true };
+        } else if (this.estimatedFee !== null && this.estimatedFee !== undefined) {
+          feeEstimate = { sats: this.estimatedFee, isEstimating: false };
+        }
+      }
+
+      return {
+        recipient,
+        amount,
+        description: p.description || p.defaultDescription || '',
+        commentAllowed: !!p.commentAllowed,
+        commentMaxLength: p.commentAllowed || 100,
+        // Merchant-driven extras — countdown, ZAR fallback, stale rates.
+        // The sheet hides each of these when the corresponding field is
+        // absent, so we can wire them unconditionally here.
+        countdown: this.merchantCountdown > 0
+          ? { seconds: this.merchantCountdown, urgentBelow: 20 }
+          : null,
+        zarAmount: p.zarAmount || null,
+        ratesStale: !!(p.merchant && this.ratesStale),
+        feeEstimate
+      };
+    },
+
+    paymentSheetWalletCanPay() {
+      const p = this.pendingPayment;
+      if (!p) return true;
+      if (p.sparkAddress || p.type === 'spark_address') {
+        return this.walletStore.isActiveWalletSpark;
+      }
+      return true;
+    },
+
+    paymentSheetWalletHint() {
+      if (this.paymentSheetWalletCanPay) return '';
+      return this.$t('Switch to your Spark wallet to pay this address');
+    },
+
+    /**
+     * Adapter from a `pendingPayment` of type 'lnurl_withdraw' to the
+     * sheet's normalized payload. Mirrors `paymentSheetProps` in shape
+     * but tuned for the redeem verb: the recipient is the withdrawal
+     * source (using its description as the display name), the via line
+     * reads "Lightning · Withdrawal", and amount mode is fixed when the
+     * source pre-committed an amount, range otherwise.
+     */
+    withdrawSheetProps() {
+      const p = this.pendingPayment;
+      if (!p || p.type !== 'lnurl_withdraw') return null;
+
+      const sourceName = p.defaultDescription || this.$t('LNURL Withdrawal');
+      const recipient = {
+        name: sourceName,
+        initial: '↓',
+        color: '#3B82F6',
+        addressType: 'lnurl',
+        viaOverride: this.$t('Lightning · Withdrawal'),
+        address: ''
+      };
+
+      let amount;
+      if (p.isFixedAmount) {
+        amount = { mode: 'fixed', fixedSats: p.fixedAmountSats };
+      } else if (p.minSats && p.maxSats && p.minSats !== p.maxSats) {
+        amount = { mode: 'range', minSats: p.minSats, maxSats: p.maxSats };
+      } else {
+        // Defensive — every spec-compliant withdraw QR carries a range
+        // or a fixed amount, but if metadata is missing fall back to a
+        // free input so the user isn't stuck.
+        amount = { mode: 'free' };
+      }
+
+      return {
+        recipient,
+        amount,
+        // Description already lives in the recipient name; surfacing it
+        // again in the description row would be redundant.
+        description: '',
+        commentAllowed: false
+      };
+    },
+
+    /**
+     * The sheet's `isSending` is true for any non-terminal status. The
+     * status copy itself comes from `withdrawStatusMessage` so the user
+     * sees "Generating invoice…" → "Awaiting confirmation…" rather than
+     * a bare spinner.
+     */
+    withdrawSheetIsBusy() {
+      const s = this.lnurlWithdrawStatus;
+      return s !== 'idle' && s !== 'confirmed' && s !== 'error';
+    },
+
+    withdrawSheetStatus() {
+      return this.withdrawSheetIsBusy ? this.withdrawStatusMessage : '';
+    },
     // Show fee estimate row only when we have actual fee data to display
     // - Spark wallet: Show when we have an estimate OR it's a free Spark transfer
     // - NWC/LNBits: Never show (no fee estimation available)
@@ -1171,77 +1174,22 @@ export default {
     storeConnectionStates() {
       return this.walletStore.connectionStates || {};
     },
-    needsWithdrawAmountInput() {
-      if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
-      return !this.pendingPayment.isFixedAmount;
-    },
     preferredFiatCurrency() {
       return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
     },
-    withdrawFiatCurrency() {
-      return this.preferredFiatCurrency;
-    },
+    /**
+     * Sats amount to withdraw. Two read paths feed into this:
+     *   - Fixed-amount withdraws → use the LNURL-quoted `fixedAmountSats`
+     *     directly (paymentAmount isn't bound for these)
+     *   - Variable-amount withdraws → the PaymentConfirmSheet writes the
+     *     user-entered sats into `paymentAmount` via the bridge handler,
+     *     so we just parse it here.
+     */
     withdrawAmountSats() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return 0;
       if (this.pendingPayment.isFixedAmount) return this.pendingPayment.fixedAmountSats;
       const val = parseFloat(this.paymentAmount);
-      if (!val || val <= 0) return 0;
-      if (this.withdrawDenomination === 'fiat') {
-        return fiatRatesService.convertFiatToSatsSync(val, this.withdrawFiatCurrency) || 0;
-      }
-      return Math.floor(val);
-    },
-    withdrawAmountDisplay() {
-      if (!this.pendingPayment) return '';
-      if (this.pendingPayment.isFixedAmount) {
-        if (this.withdrawDenomination === 'fiat') {
-          const fiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.fixedAmountSats, this.withdrawFiatCurrency);
-          return fiat !== null ? fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency) : this.formatAmountInline(this.pendingPayment.fixedAmountSats);
-        }
-        return this.formatAmountInline(this.pendingPayment.fixedAmountSats);
-      }
-      if (!this.paymentAmount) return this.$t('Enter amount');
-      if (this.withdrawDenomination === 'fiat') {
-        const val = parseFloat(this.paymentAmount);
-        return val > 0 ? fiatRatesService.formatFiatAmount(val, this.withdrawFiatCurrency) : this.$t('Enter amount');
-      }
-      return this.formatAmountInline(parseInt(this.paymentAmount));
-    },
-    withdrawSecondaryDisplay() {
-      const sats = this.withdrawAmountSats;
-      if (!sats) return '';
-      if (this.withdrawDenomination === 'fiat') {
-        return '≈ ' + this.formatAmountInline(sats);
-      }
-      const fiat = fiatRatesService.convertSatsToFiatSync(sats, this.withdrawFiatCurrency);
-      if (fiat === null) return '';
-      return '≈ ' + fiatRatesService.formatFiatAmount(fiat, this.withdrawFiatCurrency);
-    },
-    withdrawRedeemableRange() {
-      if (!this.pendingPayment) return '';
-      if (this.withdrawDenomination === 'fiat') {
-        const minFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.minSats, this.withdrawFiatCurrency);
-        const maxFiat = fiatRatesService.convertSatsToFiatSync(this.pendingPayment.maxSats, this.withdrawFiatCurrency);
-        if (minFiat !== null && maxFiat !== null) {
-          return `${fiatRatesService.formatFiatAmount(minFiat, this.withdrawFiatCurrency)} - ${fiatRatesService.formatFiatAmount(maxFiat, this.withdrawFiatCurrency)}`;
-        }
-      }
-      return `${this.pendingPayment.minSats} - ${this.pendingPayment.maxSats} sats`;
-    },
-    payAmountRange() {
-      if (!this.pendingPayment || !this.needsAmountInput) return '';
-      const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 0);
-      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 0);
-      if (!minSats || !maxSats || minSats === maxSats) return '';
-      if (this.sendDenomination === 'fiat') {
-        const currency = this.preferredFiatCurrency;
-        const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
-        const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
-        if (minFiat !== null && maxFiat !== null) {
-          return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)}`;
-        }
-      }
-      return `${minSats} - ${maxSats} sats`;
+      return val > 0 ? Math.floor(val) : 0;
     },
     canConfirmWithdraw() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
@@ -1326,7 +1274,13 @@ export default {
       immediate: true
     },
 
-    showPaymentConfirmation(open) {
+    /**
+     * Merchant countdown bookkeeping — starts when a merchant payment is
+     * about to be confirmed, stops on close. We watch `showSendSheet`
+     * because merchant payments (SA retail QR) now route through the
+     * shared confirm sheet rather than the legacy dialog.
+     */
+    showSendSheet(open) {
       if (open && this.pendingPayment?.merchant) {
         this.startMerchantCountdown();
       } else {
@@ -1337,14 +1291,33 @@ export default {
       }
     },
 
+    /**
+     * Bitcoin sheet cleanup. L1BitcoinWithdraw self-manages its own
+     * dialog and only clears `pendingPayment` on a successful send (via
+     * handleBitcoinWithdrawalComplete). When the user closes the sheet
+     * without sending, this watcher catches the v-model going false and
+     * drops the stale `pendingPayment` so it can't leak into the next
+     * flow the user opens.
+     */
+    showBitcoinSheet(open) {
+      if (!open && this.pendingPayment?.bitcoinAddress) {
+        this.pendingPayment = null;
+      }
+    },
+
+    /**
+     * Re-estimate fees whenever the payment payload or the entered amount
+     * changes. PaymentConfirmSheet reads `estimatedFee` / `isEstimatingFee`
+     * via `paymentSheetProps.feeEstimate` and renders the row from there.
+     */
     pendingPayment: {
-      handler: 'updatePaymentFiatValue',
+      handler: 'updateFeeEstimate',
       immediate: true,
       deep: true
     },
 
     paymentAmount: {
-      handler: 'updatePaymentFiatValue',
+      handler: 'updateFeeEstimate',
       immediate: true
     },
 
@@ -1412,7 +1385,7 @@ export default {
           bitcoinAddress: address,
           contactName: contact.name
         };
-        this.showPaymentConfirmation = true;
+        this.showBitcoinSheet = true;
         return;
       }
 
@@ -1443,13 +1416,12 @@ export default {
     handleBitcoinPaymentFromContact(paymentData) {
       this.showContactPayment = false;
       this.selectedPayContact = null;
-      // Navigate to Bitcoin withdrawal
       const address = paymentData.address || paymentData.contact?.address;
       this.pendingPayment = {
         bitcoinAddress: address,
         contactName: paymentData.contact?.name
       };
-      this.showPaymentConfirmation = true;
+      this.showBitcoinSheet = true;
     },
 
     /**
@@ -1506,47 +1478,300 @@ export default {
     },
 
     /**
-     * Detect deposit changes and trigger notifications
+     * Detect deposit changes and trigger the right notification path.
+     *
+     * Three transitions matter:
+     *   1. Brand-new deposit appears (not seen before, any conf state).
+     *   2. A previously-pending deposit just crossed the SDK's
+     *      confirmation threshold (`confirmed` flipped from false → true).
+     *   3. A confirmed deposit was already on the list at boot — handled
+     *      separately on init (`processConfirmedDepositsForInit`) so the
+     *      user sees the auto-claim sweep when they open the app after
+     *      the deposit settled while offline.
+     *
+     * Cases 1 and 2 funnel through `handleConfirmedDeposit`, which in
+     * turn delegates to the auto-claim flow when the user has it on, or
+     * keeps the legacy "Ready to claim" toast when it's off.
      */
     detectDepositChanges(newDeposits) {
       const previousTxIds = new Set(this.pendingBitcoinDeposits.map(d => d.txId));
       const previousConfirmed = new Map(this.pendingBitcoinDeposits.map(d => [d.txId, d.confirmed]));
 
       for (const deposit of newDeposits) {
-        // New deposit detected (not seen before)
-        if (!previousTxIds.has(deposit.txId)) {
-          this.notifyNewDeposit(deposit);
-        }
-        // Deposit became claimable (was not confirmed, now is)
-        else if (deposit.confirmed && !previousConfirmed.get(deposit.txId)) {
-          this.notifyDepositReady(deposit);
+        const isNew = !previousTxIds.has(deposit.txId);
+
+        if (isNew) {
+          if (deposit.confirmed) {
+            // Already-confirmed first sighting (e.g. settled while the
+            // app was closed). Auto-claim sweeps it via the confirmed
+            // handler — no toast.
+            this.handleConfirmedDeposit(deposit);
+          }
+          // Brand-new unconfirmed deposit: the header "Incoming" chip
+          // already calls this out + the receive sheet shows full
+          // progress, so we deliberately don't fire a toast. Avoids
+          // duplicate signals competing for attention.
+        } else if (deposit.confirmed && !previousConfirmed.get(deposit.txId)) {
+          this.handleConfirmedDeposit(deposit);
         }
       }
     },
 
     /**
-     * Show notification for new deposit detected
+     * Route a confirmed deposit through the auto-claim flow.
+     *
+     * When the user has "Add incoming Bitcoin automatically" off this
+     * keeps the legacy "Ready to claim" toast as a safety net so
+     * existing UX doesn't regress for people who deliberately opted
+     * out. When the toggle is on, the deposit is classified by the
+     * provider and the appropriate notification fires:
+     *
+     *   - eligible       → silent auto-claim + "Bitcoin received" toast
+     *   - needs_approval → notification with [Add to wallet] / [Send back]
+     *   - too_small      → notification with [Send back] / [Try anyway]
+     *   - quote_failed   → fall back to "Ready to claim" so the user can
+     *                       still drive the existing manual flow
+     *
+     * Designed to never throw — orchestration errors get logged and the
+     * legacy toast is shown as the safety net.
      */
-    notifyNewDeposit(deposit) {
+    async handleConfirmedDeposit(deposit) {
+      if (!this.bitcoinPrefsStore.autoAddIncomingBitcoin) {
+        this.notifyDepositReadyManual(deposit);
+        return;
+      }
+
+      let classification;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        if (!provider?.classifyConfirmedDeposit) {
+          this.notifyDepositReadyManual(deposit);
+          return;
+        }
+        classification = await provider.classifyConfirmedDeposit(deposit);
+      } catch (error) {
+        console.warn('Auto-claim classification failed:', error?.message || error);
+        this.notifyDepositReadyManual(deposit);
+        return;
+      }
+
+      switch (classification.category) {
+        case 'eligible':
+          telemetryTrack('bitcoin.deposit.classified', {
+            category: 'eligible',
+            amount_sats: deposit.amount,
+            fee_sats: classification.feeSats,
+            fee_ratio: classification.feeRatio
+          });
+          await this.attemptAutoClaim(deposit, classification, { source: 'auto' });
+          break;
+        case 'needs_approval':
+          telemetryTrack('bitcoin.deposit.classified', {
+            category: 'needs_approval',
+            amount_sats: deposit.amount,
+            fee_sats: classification.feeSats,
+            fee_ratio: classification.feeRatio
+          });
+          this.notifyClaimNeedsApproval(deposit, classification);
+          break;
+        case 'too_small':
+          telemetryTrack('bitcoin.deposit.classified', {
+            category: 'too_small',
+            amount_sats: deposit.amount
+          });
+          this.notifyDepositTooSmall(deposit);
+          break;
+        case 'quote_failed':
+        default:
+          telemetryTrack('bitcoin.deposit.classified', {
+            category: 'quote_failed',
+            amount_sats: deposit.amount,
+            error: classification.error?.message || 'unknown'
+          });
+          this.notifyDepositReadyManual(deposit);
+          break;
+      }
+    },
+
+    /**
+     * Try the silent auto-claim path. Falls back to a manual prompt if
+     * the SSP rejects the claim (e.g. fee changed mid-flight).
+     *
+     * If the captured quote is older than CLASSIFICATION_FRESHNESS_MS we
+     * refetch before submitting — typical case is a `needs_approval`
+     * toast the user took a while to act on. The refresh is best-effort:
+     * on failure we proceed with the original quote and let the SSP
+     * reject if the fee has actually drifted.
+     *
+     * @param {Object} deposit
+     * @param {Object} classification
+     * @param {{source: 'auto' | 'user_approved' | 'try_anyway'}} options
+     */
+    async attemptAutoClaim(deposit, classification, options = { source: 'auto' }) {
+      const startedAt = Date.now();
+      let workingClassification = classification;
+
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+
+        const ageMs = Date.now() - (workingClassification.classifiedAt || 0);
+        if (ageMs > CLASSIFICATION_FRESHNESS_MS && typeof provider.refreshClassificationQuote === 'function') {
+          telemetryTrack('bitcoin.deposit.quote_refreshed', {
+            age_ms: ageMs,
+            source: options.source
+          });
+          workingClassification = await provider.refreshClassificationQuote(
+            deposit,
+            workingClassification
+          );
+        }
+
+        const result = await provider.claimDeposit(
+          deposit.txId,
+          workingClassification.quote,
+          deposit.outputIndex || 0
+        );
+        const credited = Number(
+          result?.amount ||
+          workingClassification.quote?.creditAmountSats ||
+          deposit.amount
+        );
+
+        telemetryTrack('bitcoin.deposit.claim_succeeded', {
+          source: options.source,
+          amount_sats: credited,
+          fee_sats: workingClassification.feeSats,
+          duration_ms: Date.now() - startedAt,
+          processing: !!result?.processing,
+          transfer_id: result?.transferId || null
+        });
+
+        this.notifyAutoClaimSucceeded(credited, workingClassification.feeSats);
+        if (this.walletStore.activeWalletId) {
+          this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+        }
+      } catch (error) {
+        telemetryTrack('bitcoin.deposit.claim_failed', {
+          source: options.source,
+          amount_sats: deposit.amount,
+          duration_ms: Date.now() - startedAt,
+          error: error?.message || 'unknown'
+        });
+        console.warn('Auto-claim attempt failed, surfacing manual prompt:', error?.message || error);
+        this.notifyDepositReadyManual(deposit);
+      }
+    },
+
+    /**
+     * Silent-success toast for an auto-claimed deposit. We surface the
+     * fee inline (small footer) so transparency is preserved without
+     * making it the headline.
+     */
+    notifyAutoClaimSucceeded(amountSats, feeSats) {
+      const amountCopy = `${amountSats.toLocaleString()} ${this.$t('sats added to your wallet')}`;
+      const feeCopy = feeSats > 0
+        ? `${this.$t('Network fee')}: ${feeSats.toLocaleString()} ${this.$t('sats')}`
+        : null;
+
       this.$q.notify({
-        type: 'info',
+        type: 'positive',
         icon: 'currency_bitcoin',
-        message: this.$t('Bitcoin detected'),
-        caption: `${deposit.amount.toLocaleString()} sats ${this.$t('confirming')}`,
+        message: this.$t('Bitcoin received'),
+        caption: feeCopy ? `${amountCopy} · ${feeCopy}` : amountCopy,
         position: 'top',
-        timeout: 5000,
-        actions: [{
-          label: this.$t('View'),
-          color: 'white',
-          handler: () => this.openReceiveModalBitcoin()
-        }]
+        timeout: 5000
       });
     },
 
     /**
-     * Show notification when deposit is ready to claim
+     * Approval prompt when the network fee exceeds our auto-claim
+     * thresholds. Two inline actions — [Add to wallet] / [Send back] —
+     * matching the design decision that we never block with a modal.
      */
-    notifyDepositReady(deposit) {
+    notifyClaimNeedsApproval(deposit, classification) {
+      const feeCopy = `${classification.feeSats.toLocaleString()} ${this.$t('sats')} (${(classification.feeRatio * 100).toFixed(1)}%)`;
+
+      this.$q.notify({
+        type: 'warning',
+        icon: 'currency_bitcoin',
+        message: this.$t('Bitcoin arrived, needs your OK'),
+        caption: this.$t('Network fees are higher than usual. Adding this to your wallet will cost about {fee}.', { fee: feeCopy }),
+        position: 'top',
+        timeout: 0,
+        actions: [
+          {
+            label: this.$t('Add to wallet'),
+            color: 'white',
+            handler: () => {
+              telemetryTrack('bitcoin.deposit.user_action', {
+                source: 'needs_approval',
+                action: 'add_to_wallet'
+              });
+              this.attemptAutoClaim(deposit, classification, { source: 'user_approved' });
+            }
+          },
+          {
+            label: this.$t('Send back'),
+            color: 'white',
+            handler: () => {
+              telemetryTrack('bitcoin.deposit.user_action', {
+                source: 'needs_approval',
+                action: 'send_back'
+              });
+              this.openReceiveModalBitcoin();
+            }
+          }
+        ]
+      });
+    },
+
+    /**
+     * Tiny-deposit prompt. The "Try anyway" path opens the existing
+     * manual claim list so the user can review the (likely large) fee
+     * before committing.
+     */
+    notifyDepositTooSmall(deposit) {
+      this.$q.notify({
+        type: 'info',
+        icon: 'currency_bitcoin',
+        message: this.$t('Tiny Bitcoin deposit'),
+        caption: this.$t('This {amount} sats is too small to bring in. Network fees would eat most of it.', { amount: deposit.amount.toLocaleString() }),
+        position: 'top',
+        timeout: 0,
+        actions: [
+          {
+            label: this.$t('Send back'),
+            color: 'white',
+            handler: () => {
+              telemetryTrack('bitcoin.deposit.user_action', {
+                source: 'too_small',
+                action: 'send_back'
+              });
+              this.openReceiveModalBitcoin();
+            }
+          },
+          {
+            label: this.$t('Try anyway'),
+            color: 'white',
+            handler: () => {
+              telemetryTrack('bitcoin.deposit.user_action', {
+                source: 'too_small',
+                action: 'try_anyway'
+              });
+              this.openReceiveModalBitcoin();
+            }
+          }
+        ]
+      });
+    },
+
+    /**
+     * Legacy manual-claim toast. Used when auto-claim is off, when
+     * classification fails, or when the optimistic claim path errors
+     * out. Identical UX to the pre-auto-claim behaviour so we always
+     * have a safe fallback.
+     */
+    notifyDepositReadyManual(deposit) {
       this.$q.notify({
         type: 'positive',
         icon: 'check_circle',
@@ -1571,10 +1796,11 @@ export default {
       // Initial check
       this.checkPendingBitcoinDeposits();
 
-      // Poll every 5 minutes
+      // Cadence is tuned in stores/bitcoinPreferences.js so it stays a
+      // single knob rather than scattered magic numbers.
       this.bitcoinDepositPollingInterval = setInterval(() => {
         this.checkPendingBitcoinDeposits();
-      }, 300000);
+      }, BITCOIN_DEPOSIT_POLL_MS);
     },
 
     /**
@@ -1597,20 +1823,93 @@ export default {
     /**
      * Handle successful Bitcoin withdrawal
      */
-    handleBitcoinWithdrawalComplete(result) {
-      this.showPaymentConfirmation = false;
+    /**
+     * Handle a freshly-submitted Bitcoin withdrawal.
+     *
+     * The L1 sheet emits this once with the SSP-issued request ID and
+     * closes itself. From here we:
+     *   1. tear down the pending-payment context so the sheet can unmount,
+     *   2. refresh the wallet balance (the SSP debits immediately even
+     *      though the L1 broadcast happens later),
+     *   3. show a persistent "submitted" toast and poll
+     *      `getCoopExitRequest` in the background until the SSP returns
+     *      the on-chain txid (or reports failure / expiry),
+     *   4. swap the toast for either a tappable mempool link or a clear
+     *      failure message.
+     *
+     * Polling lives here (not on the sheet) because the sheet's `v-if`
+     * is bound to `pendingPayment`, which we clear in step 1 — moving
+     * the polling onto the sheet would race the unmount.
+     */
+    handleBitcoinWithdrawalSubmitted({ requestId }) {
+      this.showBitcoinSheet = false;
       this.pendingPayment = null;
+      this.updateWalletBalance();
 
-      this.$q.notify({
-        type: 'positive',
-        message: this.$t('Bitcoin withdrawal initiated'),
-        caption: this.$t('Your withdrawal is being processed'),
+      this._monitorL1Withdrawal(requestId);
+    },
 
-        timeout: 4000,
+    /**
+     * Background poll for an L1 withdrawal until it reaches a terminal
+     * state. Notification handles update in place: persistent "submitted"
+     * → success-with-mempool-link or a clear failure message.
+     */
+    async _monitorL1Withdrawal(requestId) {
+      const provider = this.walletStore.getActiveProvider();
+      if (!provider?.waitForWithdrawalCompletion) {
+        console.warn('Active provider cannot monitor L1 withdrawals');
+        return;
+      }
+
+      const dismissProcessing = this.$q.notify({
+        type: 'ongoing',
+        message: this.$t('Bitcoin withdrawal submitted'),
+        caption: this.$t('Waiting for on-chain broadcast...'),
+        timeout: 0,
+        spinner: true
       });
 
-      // Refresh balance
-      this.updateWalletBalance();
+      try {
+        const final = await provider.waitForWithdrawalCompletion(requestId);
+        dismissProcessing();
+
+        if (final.isFailed) {
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t('Withdrawal failed'),
+            caption: this.$t('Your funds remain in your wallet.'),
+            timeout: 6000
+          });
+          this.updateWalletBalance();
+          return;
+        }
+
+        const mempoolUrl = provider.getMempoolExplorerUrl?.();
+        const txId = final.txId;
+
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Bitcoin sent'),
+          caption: txId ? this.$t('Tap to view transaction') : this.$t('Your withdrawal completed'),
+          timeout: 6000,
+          actions: (txId && mempoolUrl) ? [{
+            icon: 'open_in_new',
+            color: 'white',
+            handler: () => window.open(`${mempoolUrl}/tx/${txId}`, '_blank')
+          }] : []
+        });
+
+        this.updateWalletBalance();
+      } catch (error) {
+        console.warn('L1 withdrawal monitor stopped:', error.message);
+        dismissProcessing();
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Still settling'),
+          caption: this.$t('Your withdrawal is taking longer than usual. Check your activity feed.'),
+          timeout: 6000
+        });
+      }
     },
 
     /**
@@ -1636,7 +1935,7 @@ export default {
               bitcoinAddress: query.address,
               contactName: query.contactName || null
             };
-            this.showPaymentConfirmation = true;
+            this.showBitcoinSheet = true;
 
             // Clear query params
             this.$router.replace({ query: {} });
@@ -2336,9 +2635,7 @@ export default {
       if (!amountSats || amountSats <= 0) {
         this.$q.notify({
           type: 'negative',
-          message: this.withdrawDenomination === 'fiat'
-            ? this.$t('Fiat rates unavailable - switch to sats or refresh the app')
-            : this.$t('Invalid amount'),
+          message: this.$t('Invalid amount'),
           icon: 'las la-exclamation-triangle',
           timeout: 10000,
         });
@@ -2410,6 +2707,10 @@ export default {
       return {
         payment_request: paymentRequest,
         payment_hash: paymentHash,
+        // Spark-specific receive request ID (UUID). Required by
+        // getLightningReceiveRequest() — the payment hash is NOT a valid
+        // ID for that endpoint. Other backends won't populate this.
+        invoice_id: result.id || null,
         amount: amountSats,
         expires_at: result.expires_at || result.expiresAt || Math.floor(Date.now() / 1000) + 3600
       };
@@ -2438,12 +2739,37 @@ export default {
       const walletType = this.walletStore.activeWalletType;
 
       if (walletType === 'spark') {
-        // Spark: event-based monitoring
+        // Spark: event-based monitoring as a wake-up signal, verified
+        // against the specific invoice. The raw `onPaymentReceived`
+        // callback fires for ANY incoming payment (the SDK doesn't
+        // expose which invoice was settled), so without this filter an
+        // unrelated wallet credit — or even a stale cached event — would
+        // close the sheet before the user's withdraw actually settles.
+        // We confirm via `lookupInvoice` and fall through silently if
+        // the event doesn't correspond to our payment hash.
         try {
           const provider = await this.walletStore.ensureSparkConnected();
-          this.withdrawSparkUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
-            this.handleWithdrawConfirmed(amountSats);
+          // Prefer the Spark receive request ID for getLightningReceiveRequest;
+          // fall back to the payment hash, which lookupInvoice resolves via
+          // the transfer-list scan.
+          const lookupKey = invoice.invoice_id || invoice.payment_hash;
+          this.withdrawSparkUnsubscribe = provider.onPaymentReceived(async () => {
+            if (this.lnurlWithdrawStatus !== 'monitoring') return;
+            if (!lookupKey || typeof provider.lookupInvoice !== 'function') return;
+            try {
+              const result = await provider.lookupInvoice(lookupKey);
+              if (result?.paid) {
+                this.handleWithdrawConfirmed(result.amount || amountSats);
+              }
+            } catch (e) {
+              console.warn('lookupInvoice failed during Spark withdraw monitoring:', e);
+            }
           });
+          // Belt-and-braces: also run polling as a safety net so that if
+          // the event never fires (cold session, dropped subscription)
+          // the withdraw still settles. The polling monitor filters by
+          // payment_hash and stops itself once confirmed.
+          this.startWithdrawPollingMonitor(invoice, amountSats);
         } catch (error) {
           console.warn('Spark event monitoring failed, falling back to polling:', error);
           this.startWithdrawPollingMonitor(invoice, amountSats);
@@ -2554,6 +2880,12 @@ export default {
     },
 
     async handleWithdrawConfirmed(amount) {
+      // Idempotency guard — both the Spark event listener and the
+      // polling monitor can race to confirm the same payment. The
+      // first one wins; subsequent calls are silently ignored so we
+      // don't double-fire the success modal or thrash status.
+      if (this.lnurlWithdrawStatus === 'confirmed') return;
+
       this.stopWithdrawMonitor();
       this.lnurlWithdrawStatus = 'confirmed';
 
@@ -2570,7 +2902,7 @@ export default {
         // Fiat conversion optional
       }
 
-      this.showPaymentConfirmation = false;
+      this.showWithdrawSheet = false;
       this.pendingPayment = null;
       this.showWithdrawSuccess = true;
 
@@ -2595,67 +2927,6 @@ export default {
       this.lnurlWithdrawInvoice = null;
       this.withdrawConfirmedAmount = 0;
       this.withdrawConfirmedFiat = '';
-      this.withdrawDenomination = 'sats';
-    },
-
-    toggleWithdrawDenomination() {
-      this.denominationSpinning = true;
-      setTimeout(() => { this.denominationSpinning = false; }, 500);
-      const currentAmount = parseFloat(this.paymentAmount);
-      if (this.withdrawDenomination === 'sats') {
-        // Switching to fiat — check if rates are available
-        if (!fiatRatesService.ratesAvailable) {
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t('Fiat rates unavailable'),
-            caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
-            icon: 'las la-exclamation-triangle',
-            timeout: 10000,
-          });
-          return;
-        }
-        this.withdrawDenomination = 'fiat';
-        if (currentAmount > 0) {
-          const fiat = fiatRatesService.convertSatsToFiatSync(currentAmount, this.withdrawFiatCurrency);
-          this.paymentAmount = fiat !== null ? fiat.toFixed(2) : '';
-        }
-      } else {
-        // Switching to sats
-        this.withdrawDenomination = 'sats';
-        if (currentAmount > 0) {
-          const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.withdrawFiatCurrency);
-          this.paymentAmount = sats !== null ? sats.toString() : '';
-        }
-      }
-    },
-
-    toggleSendDenomination() {
-      this.denominationSpinning = true;
-      setTimeout(() => { this.denominationSpinning = false; }, 500);
-      const currentAmount = parseFloat(this.paymentAmount);
-      if (this.sendDenomination === 'sats') {
-        if (!fiatRatesService.ratesAvailable) {
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t('Fiat rates unavailable'),
-            caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
-            icon: 'las la-exclamation-triangle',
-            timeout: 10000,
-          });
-          return;
-        }
-        this.sendDenomination = 'fiat';
-        if (currentAmount > 0) {
-          const fiat = fiatRatesService.convertSatsToFiatSync(currentAmount, this.preferredFiatCurrency);
-          this.paymentAmount = fiat !== null ? fiat.toFixed(2) : '';
-        }
-      } else {
-        this.sendDenomination = 'sats';
-        if (currentAmount > 0) {
-          const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.preferredFiatCurrency);
-          this.paymentAmount = sats !== null ? sats.toString() : '';
-        }
-      }
     },
 
     startMerchantCountdown() {
@@ -2665,7 +2936,7 @@ export default {
         this.merchantCountdown--;
         if (this.merchantCountdown <= 0) {
           this.stopMerchantCountdown();
-          this.showPaymentConfirmation = false;
+          this.showSendSheet = false;
           this.pendingPayment = null;
           this.$q.notify({
             type: 'warning',
@@ -2690,55 +2961,6 @@ export default {
       this.showWithdrawSuccess = false;
       this.resetWithdrawState();
       this.paymentAmount = '';
-    },
-
-    validateWithdrawAmount(val) {
-      if (!this.pendingPayment) return true;
-      const amount = parseFloat(val);
-      if (isNaN(amount) || amount <= 0) return 'Amount must be greater than 0';
-      if (this.withdrawDenomination === 'fiat') {
-        const sats = fiatRatesService.convertFiatToSatsSync(amount, this.withdrawFiatCurrency);
-        if (sats === null) return 'Exchange rate unavailable';
-        if (sats < this.pendingPayment.minSats) return `Below minimum (≈ ${this.pendingPayment.minSats} sats)`;
-        if (sats > this.pendingPayment.maxSats) return `Above maximum (≈ ${this.pendingPayment.maxSats} sats)`;
-      } else {
-        if (amount < this.pendingPayment.minSats) return `Minimum: ${this.pendingPayment.minSats} sats`;
-        if (amount > this.pendingPayment.maxSats) return `Maximum: ${this.pendingPayment.maxSats} sats`;
-      }
-      return true;
-    },
-
-    getPaymentTypeLabel() {
-      if (!this.paymentData && !this.pendingPayment) return '';
-
-      const payment = this.paymentData || this.pendingPayment;
-
-      const labels = {
-        'lightning_invoice': 'Lightning Invoice',
-        'lnurl_pay': 'LNURL Payment',
-        'lnurl_withdraw': 'Withdrawal',
-        'lightning_address': 'Lightning Address',
-        'spark_address': 'Spark Transfer',
-        'bitcoin_address': 'Bitcoin Withdrawal'
-      };
-      return labels[payment.type] || 'Lightning Payment';
-    },
-
-    requiresAmount() {
-      if (!this.paymentData) return false;
-
-      return this.paymentData.type === 'lnurl_pay' ||
-        this.paymentData.type === 'lightning_address' ||
-        (this.paymentData.type === 'lightning_invoice' && this.paymentData.requiresAmount);
-    },
-
-    getAmountLimits() {
-      if (!this.paymentData) return null;
-
-      return {
-        min: Math.floor(this.paymentData.minSendable / 1000),
-        max: Math.floor(this.paymentData.maxSendable / 1000)
-      };
     },
 
     async onPaymentDetected(paymentData) {
@@ -2881,7 +3103,17 @@ export default {
           this.pendingPayment = paymentData;
         }
 
-        this.showPaymentConfirmation = true;
+        // Dispatch by payload shape:
+        //   - Bitcoin on-chain → L1BitcoinWithdraw (own sheet)
+        //   - LNURL-Withdraw   → PaymentConfirmSheet, verb='redeem'
+        //   - Everything else  → PaymentConfirmSheet, verb='send'
+        if (this.pendingPayment?.bitcoinAddress) {
+          this.showBitcoinSheet = true;
+        } else if (this.pendingPayment?.type === 'lnurl_withdraw') {
+          this.showWithdrawSheet = true;
+        } else {
+          this.showSendSheet = true;
+        }
       } catch (error) {
         console.error('Error processing payment:', error);
         this.$q.notify({
@@ -2890,86 +3122,6 @@ export default {
           caption: this.$t('Please try again'),
 
         });
-      }
-    },
-
-    formatPaymentAmount() {
-      if (!this.pendingPayment) return '';
-
-      // Variable amount - user needs to input
-      if (this.needsAmountInput) {
-        if (!this.paymentAmount) return 'Enter amount';
-        if (this.sendDenomination === 'fiat') {
-          const val = parseFloat(this.paymentAmount);
-          return val > 0 ? fiatRatesService.formatFiatAmount(val, this.preferredFiatCurrency) : 'Enter amount';
-        }
-        return formatAmount(parseInt(this.paymentAmount), this.walletStore.useBip177Format);
-      }
-
-      // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
-      if (this.pendingPayment.type === 'lnurl' ||
-          this.pendingPayment.type === 'lnurl_pay' ||
-          this.pendingPayment.type === 'lightning_address') {
-        // Use new fixedAmountSats property if available
-        if (this.pendingPayment.fixedAmountSats) {
-          return formatAmount(this.pendingPayment.fixedAmountSats, this.walletStore.useBip177Format);
-        }
-        // Fallback: calculate from minSendable
-        if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-          const fixedAmount = Math.floor(this.pendingPayment.minSendable / 1000);
-          return formatAmount(fixedAmount, this.walletStore.useBip177Format);
-        }
-      }
-
-      // Standard invoice with amount
-      return this.pendingPayment.amount ?
-        formatAmount(parseInt(this.pendingPayment.amount), this.walletStore.useBip177Format) :
-        'Variable amount';
-    },
-
-    async formatPaymentFiat() {
-      if (!this.pendingPayment) return '';
-
-      let amount = 0;
-      if (this.pendingPayment.type === 'lnurl_withdraw') {
-        // Handled by withdrawSecondaryDisplay computed
-        return '';
-      } else if (this.needsAmountInput) {
-        // When user is entering in fiat, show sats equivalent instead
-        if (this.sendDenomination === 'fiat') {
-          const sats = this.sendAmountSats;
-          if (sats > 0) return '≈ ' + formatAmount(sats, this.walletStore.useBip177Format);
-          return '';
-        }
-        amount = parseInt(this.paymentAmount) || 0;
-      } else if (this.pendingPayment.type === 'lnurl' ||
-                 this.pendingPayment.type === 'lnurl_pay' ||
-                 this.pendingPayment.type === 'lightning_address') {
-        // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
-        if (this.pendingPayment.fixedAmountSats) {
-          amount = this.pendingPayment.fixedAmountSats;
-        } else if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
-          amount = Math.floor(this.pendingPayment.minSendable / 1000);
-        }
-      } else {
-        amount = this.pendingPayment.amount || 0;
-      }
-
-      if (amount === 0) return '';
-
-      try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
-
-        // Handle unavailable rates
-        if (fiatAmount === null) {
-          return '';
-        }
-
-        return '≈ ' + fiatRatesService.formatFiatAmount(fiatAmount, currency);
-      } catch (error) {
-        console.error('Error formatting payment fiat:', error);
-        return '';
       }
     },
 
@@ -3053,7 +3205,6 @@ export default {
         const recipientAddressType = this.getRecipientAddressType();
         const shouldOfferSave = recipientAddress && !this.addressBookStore.findContactByAddress(recipientAddress);
 
-        this.showPaymentConfirmation = false;
         const pendingPaymentBackup = this.pendingPayment; // Keep reference for save dialog
         this.pendingPayment = null;
         this.paymentAmount = '';
@@ -3094,6 +3245,67 @@ export default {
       } finally {
         this.isSendingPayment = false;
       }
+    },
+
+    /**
+     * PaymentConfirmSheet → confirm handler.
+     *
+     * The sheet validates the entered amount against its constraints
+     * before emitting, so we trust the value and just bridge it into the
+     * fields that `confirmPayment` reads. On failure we reset the slide
+     * thumb so the user can try again without dismissing the sheet.
+     */
+    async onSendSheetConfirm({ amountSats, comment }) {
+      this.paymentAmount = String(amountSats);
+      this.paymentComment = comment || '';
+      this.sendDenomination = 'sats';
+
+      await this.confirmPayment();
+
+      // confirmPayment nulls pendingPayment on success and leaves it
+      // in place on failure (its catch block doesn't rethrow).
+      if (this.pendingPayment === null) {
+        this.showSendSheet = false;
+      } else {
+        this.$refs.sendSheetRef?.resetSlide();
+      }
+    },
+
+    onSendSheetCancel() {
+      this.showSendSheet = false;
+      this.pendingPayment = null;
+      this.paymentAmount = '';
+      this.paymentComment = '';
+      this.estimatedFee = null;
+      this.isEstimatingFee = false;
+    },
+
+    /**
+     * PaymentConfirmSheet → confirm handler for the LNURL-Withdraw
+     * (redeem) flow. The sheet has already validated the amount against
+     * the withdraw source's range/fixed constraints, so we just bridge
+     * it into `paymentAmount` (which executeWithdraw reads) and run the
+     * existing pipeline. On failure we reset the slide and keep the
+     * sheet open so the user can retry without re-entering anything.
+     */
+    async onWithdrawSheetConfirm({ amountSats }) {
+      this.paymentAmount = String(amountSats);
+
+      await this.executeWithdraw();
+
+      // executeWithdraw transitions lnurlWithdrawStatus through stages.
+      // 'confirmed' closes the sheet via handleWithdrawConfirmed.
+      // 'error' lands here — let the user retry.
+      if (this.lnurlWithdrawStatus === 'error') {
+        this.$refs.withdrawSheetRef?.resetSlide();
+      }
+    },
+
+    onWithdrawSheetCancel() {
+      this.showWithdrawSheet = false;
+      this.resetWithdrawState();
+      this.pendingPayment = null;
+      this.paymentAmount = '';
     },
 
     async sendSparkPayment(amount, comment) {
@@ -3524,12 +3736,6 @@ export default {
       if (this.walletState.balance !== undefined) {
         this.secondaryValue = await this.getSecondaryValue(this.walletState.balance);
       }
-    },
-
-    async updatePaymentFiatValue() {
-      this.paymentFiatValue = await this.formatPaymentFiat();
-      // Also update fee estimate when payment changes
-      await this.updateFeeEstimate();
     },
 
     async updateFeeEstimate() {

@@ -15,6 +15,20 @@
 
 import { WalletProvider } from './WalletProvider';
 import { SparkWallet } from '@buildonspark/spark-sdk';
+import { AUTO_CLAIM_THRESHOLDS } from '../stores/bitcoinPreferences';
+
+/**
+ * Spark's `ExitSpeed` is a TypeScript string-enum: `FAST | MEDIUM | SLOW`.
+ * The SDK's runtime barrel doesn't currently re-export it (the type is in
+ * `.d.ts` only), so importing it from the package fails at module load.
+ * Mirror the enum locally — the SDK accepts the raw string values, and we
+ * keep parity with the doc'd shape (https://docs.spark.money/wallet-sdk).
+ */
+const ExitSpeed = Object.freeze({
+  FAST: 'FAST',
+  MEDIUM: 'MEDIUM',
+  SLOW: 'SLOW'
+});
 import { Invoice } from '@getalby/lightning-tools';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
@@ -37,11 +51,7 @@ const BITCOIN_L1 = {
   // Minimum deposit amount in satoshis
   MIN_DEPOSIT_SATS: 500,
   // Default mempool API fallback
-  DEFAULT_MEMPOOL_API: 'https://mempool.space/api',
-  // Typical withdrawal transaction size in vBytes
-  // P2WPKH input (~68 vB) + P2WPKH output (~31 vB) + overhead (~10 vB) ≈ 110 vB
-  // Adding buffer for potential change output: ~140 vB typical
-  TYPICAL_TX_VBYTES: 140
+  DEFAULT_MEMPOOL_API: 'https://mempool.space/api'
 };
 
 /**
@@ -99,13 +109,57 @@ export class SparkWalletProvider extends WalletProvider {
   // ==========================================
 
   /**
-   * Calculate fallback max fee for Lightning payments
-   * Only used when SDK fee estimation fails
+   * Calculate fallback max routing fee for Lightning payments.
+   * Only used when getLightningSendFeeEstimate() fails — the SDK estimate
+   * is always preferred when available.
+   *
+   * Per Spark docs (https://docs.spark.money/wallet-sdk/lightning/withdraw):
+   * "set the maximum routing fee to whichever is greater: 5 sats (minimum)
+   * or 17 bps × transaction amount (0.17%)".
+   *
    * @param {number} amountSats - Payment amount in satoshis
-   * @returns {number} Recommended max fee in satoshis (1% with min 21 sats)
+   * @returns {number} Recommended max fee in satoshis
    */
   static calculateRecommendedFee(amountSats) {
-    return Math.max(21, Math.ceil(amountSats * 0.01));
+    return Math.max(5, Math.ceil(amountSats * 0.0017));
+  }
+
+  /**
+   * UTF-8 byte length of a string. Used for the 120-byte memo cap that
+   * Spark enforces on Lightning invoice memos.
+   */
+  static _utf8ByteLength(str) {
+    if (typeof TextEncoder !== 'undefined') {
+      return new TextEncoder().encode(str).length;
+    }
+    // Defensive fallback for non-browser test runners that lack TextEncoder.
+    return unescape(encodeURIComponent(str)).length;
+  }
+
+  /**
+   * Normalize the SDK's `expiresAt` into a Unix-seconds integer.
+   *
+   * The Spark SDK has surfaced this as either an ISO-8601 string or a
+   * numeric millisecond timestamp depending on version. We accept both,
+   * and fall back to a 24h-from-now estimate (the documented default
+   * invoice lifetime) when the SDK omits the field.
+   */
+  static _coerceExpiresAt(value) {
+    const FALLBACK_SECONDS = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+
+    if (value == null) return FALLBACK_SECONDS;
+
+    if (typeof value === 'number') {
+      // Heuristic: values < 1e12 look like seconds; larger are milliseconds.
+      return value < 1e12 ? Math.floor(value) : Math.floor(value / 1000);
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) return Math.floor(parsed / 1000);
+    }
+
+    return FALLBACK_SECONDS;
   }
 
   /**
@@ -317,6 +371,10 @@ export class SparkWalletProvider extends WalletProvider {
     this.wallet = null;
     this.mnemonic = null;
     this.isConnected = false;
+    // Clear any cached identity-derived data so a future reconnect on
+    // the same provider instance can't leak the previous wallet's
+    // address into a new session.
+    this._cachedL1Address = null;
   }
 
   /**
@@ -336,12 +394,18 @@ export class SparkWalletProvider extends WalletProvider {
     this._ensureConnected();
 
     try {
-      const { balance, tokenBalances } = await this.wallet.getBalance();
+      // Spark SDK ≥ 0.7 returns
+      //   { balance, satsBalance: { available, owned, incoming }, tokenBalances }
+      // The top-level `balance` field is deprecated and slated for removal in
+      // 0.8 — read from `satsBalance.available` and fall back to the legacy
+      // field so an unexpected SDK shape never causes a hard failure here.
+      const result = await this.wallet.getBalance();
+      const available = result?.satsBalance?.available ?? result?.balance ?? 0n;
 
       return {
-        balance: Number(balance), // Convert from bigint to number
-        pending: 0,
-        tokenBalances: tokenBalances || []
+        balance: Number(available), // Convert from bigint to number
+        pending: Number(result?.satsBalance?.incoming ?? 0n),
+        tokenBalances: result?.tokenBalances || []
       };
     } catch (error) {
       this.setError(error);
@@ -370,40 +434,80 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Create a Lightning invoice for receiving payments
+   * Create a Lightning invoice for receiving payments.
    *
-   * @param {Object} options - Invoice options
-   * @param {number} options.amount - Amount in satoshis (use 0 for zero-amount invoices)
-   * @param {string} [options.description] - Invoice memo/description
-   * @param {number} [options.expiry=3600] - Invoice expiry in seconds
-   * @param {boolean} [options.includeSparkAddress=true] - Embed Spark address in invoice for zero-fee transfers
-   * @param {string} [options.descriptionHash] - Hash of description (for LNURL/UMA, cannot use with description)
+   * Per Spark docs (https://docs.spark.money/wallet-sdk/lightning/deposit):
+   *   - `memo` is capped at 120 bytes (UTF-8) and is mutually exclusive
+   *     with `descriptionHash`.
+   *   - `includeSparkAddress` (fallback field) and `includeSparkInvoice`
+   *     (routing hints) are mutually exclusive — pick one or neither.
+   *   - The actual expiry comes from the SDK in `result.invoice.expiresAt`;
+   *     the SDK does not accept a caller-supplied expiry.
+   *
+   * @param {Object} options
+   * @param {number} options.amount - Amount in satoshis (0 for zero-amount invoices)
+   * @param {string} [options.description] - Optional memo (≤ 120 bytes UTF-8)
+   * @param {boolean} [options.includeSparkAddress=true] - Embed Spark address in BOLT11 fallback field
+   * @param {boolean} [options.includeSparkInvoice=false] - Embed Spark invoice in BOLT11 routing hints (newer; preferred for Spark-aware payers)
+   * @param {string} [options.descriptionHash] - Hash of a longer description (LNURL/UMA); cannot be combined with `description`
    * @returns {Promise<{paymentRequest: string, paymentHash: string, id: string, expiresAt: number}>}
    */
-  async createInvoice({ amount, description, expiry = 3600, includeSparkAddress = true, descriptionHash = null }) {
+  async createInvoice({
+    amount,
+    description,
+    includeSparkAddress,
+    includeSparkInvoice = false,
+    descriptionHash = null
+  }) {
     this._ensureConnected();
 
-    try {
-      // Build invoice parameters
-      const invoiceParams = {
-        amountSats: amount,
-        includeSparkAddress: includeSparkAddress
-      };
+    // Mutual exclusion only fires when the caller explicitly opts into
+    // both. We leave `includeSparkAddress` unset by default so the natural
+    // call `createInvoice({ amount, includeSparkInvoice: true })` works
+    // without forcing every caller to also pass `includeSparkAddress: false`.
+    if (includeSparkAddress === true && includeSparkInvoice === true) {
+      throw new Error(
+        'createInvoice: includeSparkAddress and includeSparkInvoice are mutually exclusive'
+      );
+    }
+    if (description && descriptionHash) {
+      throw new Error(
+        'createInvoice: description and descriptionHash are mutually exclusive'
+      );
+    }
 
-      // Use descriptionHash OR memo, not both (SDK constraint)
-      if (descriptionHash) {
-        invoiceParams.descriptionHash = descriptionHash;
-      } else {
-        invoiceParams.memo = description || 'BuhoGO Payment';
+    // Default to embedding the Spark address (zero-fee Spark transfers when
+    // a Spark-aware payer scans the BOLT11) unless the caller picked the
+    // newer routing-hints variant or explicitly opted out.
+    const useSparkAddress = includeSparkAddress ?? !includeSparkInvoice;
+
+    const invoiceParams = {
+      amountSats: amount,
+      includeSparkAddress: useSparkAddress,
+      includeSparkInvoice
+    };
+
+    if (descriptionHash) {
+      invoiceParams.descriptionHash = descriptionHash;
+    } else if (description) {
+      // Spark caps memos at 120 UTF-8 bytes — fail fast with a clear error
+      // instead of letting the SDK surface a generic validation failure.
+      const memoBytes = SparkWalletProvider._utf8ByteLength(description);
+      if (memoBytes > 120) {
+        throw new Error(
+          `Invoice memo too long: ${memoBytes} bytes (max 120). Shorten the description.`
+        );
       }
+      invoiceParams.memo = description;
+    }
 
+    try {
       const result = await this._withTransportRetry(
         () => this.wallet.createLightningInvoice(invoiceParams)
       );
 
       // Spark SDK returns LightningReceiveRequest:
-      // { id, invoice: { encodedInvoice, paymentHash, ... }, status, ... }
-      // See: https://docs.spark.money/llms-full.txt
+      // { id, invoice: { encodedInvoice, paymentHash, expiresAt, ... }, status, ... }
       const invoiceString = result.invoice?.encodedInvoice;
 
       if (!invoiceString || typeof invoiceString !== 'string') {
@@ -415,7 +519,7 @@ export class SparkWalletProvider extends WalletProvider {
         paymentRequest: invoiceString,
         paymentHash: result.invoice?.paymentHash || null,
         id: result.id, // Invoice ID for monitoring with getLightningReceiveRequest()
-        expiresAt: Math.floor(Date.now() / 1000) + expiry
+        expiresAt: SparkWalletProvider._coerceExpiresAt(result.invoice?.expiresAt)
       };
     } catch (error) {
       this.setError(error);
@@ -424,16 +528,36 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Pay a Lightning invoice
+   * Pay a Lightning invoice.
    *
-   * @param {Object} options - Payment options
-   * @param {string} options.invoice - BOLT11 encoded Lightning invoice
-   * @param {number} [options.maxFee] - Maximum fee in sats (defaults to recommended fee)
-   * @param {boolean} [options.preferSpark=false] - When true, uses Spark transfer if invoice contains Spark address
-   * @param {number} [options.amountSats] - Amount for zero-amount invoices (auto-detected, only used if invoice has no amount)
-   * @returns {Promise<{id: string, preimage: string, fee: number, status: string}>}
+   * The Spark SDK's `payLightningInvoice` returns as soon as the payment is
+   * accepted for routing — the response status is often still PENDING. Per
+   * Spark docs the `transfer:claimed` event does NOT fire for outgoing
+   * payments, so we poll `getLightningSendRequest` until the payment reaches
+   * a terminal state (COMPLETED or FAILED). This guarantees callers receive
+   * a final status and an accurate preimage/fee, never a transient PENDING
+   * that silently flips to FAILED later.
+   *
+   * Set `awaitCompletion: false` for fire-and-forget callers that handle
+   * polling themselves.
+   *
+   * @param {Object} options
+   * @param {string} options.invoice - BOLT11-encoded Lightning invoice
+   * @param {number} [options.maxFee] - Max fee in sats (defaults to SDK estimate + buffer)
+   * @param {boolean} [options.preferSpark=false] - Use Spark transfer if invoice carries a Spark address
+   * @param {number} [options.amountSats] - Amount for zero-amount invoices (auto-detected)
+   * @param {boolean} [options.awaitCompletion=true] - Poll until terminal status
+   * @param {number} [options.completionTimeoutMs=60000] - Max time to wait before returning PENDING
+   * @returns {Promise<{id: string|null, preimage: string|null, fee: number, status: string}>}
    */
-  async payInvoice({ invoice, maxFee, preferSpark = false, amountSats = null }) {
+  async payInvoice({
+    invoice,
+    maxFee,
+    preferSpark = false,
+    amountSats = null,
+    awaitCompletion = true,
+    completionTimeoutMs = 60000
+  }) {
     this._ensureConnected();
 
     try {
@@ -449,12 +573,12 @@ export class SparkWalletProvider extends WalletProvider {
       if (!effectiveMaxFee) {
         try {
           const feeEstimate = await this.getLightningSendFeeEstimate(invoice, amountSats);
-          // Spark docs recommend: feeEstimate + 5 sats buffer
-          effectiveMaxFee = feeEstimate.estimatedFeeSats + 10; // Using 10 for extra safety
+          // Spark docs recommend: SDK estimate + a small buffer.
+          effectiveMaxFee = feeEstimate.estimatedFeeSats + 5;
         } catch (error) {
           console.warn('Spark fee estimation failed:', error.message);
-          // Fallback: use 1% of amount with minimum 21 sats
-          effectiveMaxFee = Math.max(21, Math.ceil(invoiceAmount * 0.01));
+          // Doc-aligned fallback: max(5 sats, 17 bps).
+          effectiveMaxFee = SparkWalletProvider.calculateRecommendedFee(invoiceAmount);
         }
       }
 
@@ -472,17 +596,82 @@ export class SparkWalletProvider extends WalletProvider {
       }
 
       const payment = await this.wallet.payLightningInvoice(paymentParams);
-
-      return {
-        id: payment.id || null,
-        preimage: payment.preimage,
-        fee: payment.feeSats || 0,
-        status: this._normalizePaymentStatus(payment.status)
-      };
+      return await this._finalizeOutgoingPayment(payment, {
+        awaitCompletion,
+        completionTimeoutMs
+      });
     } catch (error) {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Resolve an outgoing Lightning payment to a terminal status.
+   *
+   * Behaviour by initial SDK response:
+   *   - COMPLETED → return immediately.
+   *   - FAILED    → throw (so callers' existing try/catch handles it).
+   *   - PENDING   → poll `getLightningSendRequest`. A subsequent FAILED
+   *                 throws; COMPLETED returns; a polling timeout returns
+   *                 with status PENDING so the UI can show "still routing"
+   *                 without falsely claiming success.
+   *
+   * Skips polling entirely when the caller opts out via `awaitCompletion`
+   * or when there is no payment ID (synchronous Spark-direct transfers).
+   *
+   * @private
+   */
+  async _finalizeOutgoingPayment(payment, { awaitCompletion, completionTimeoutMs }) {
+    const initialStatus = this._normalizePaymentStatus(payment.status);
+
+    if (initialStatus === PAYMENT_STATUS.FAILED) {
+      throw new Error('Lightning payment failed');
+    }
+
+    const skipPolling =
+      !awaitCompletion ||
+      initialStatus === PAYMENT_STATUS.COMPLETED ||
+      !payment.id;
+
+    if (skipPolling) {
+      return {
+        id: payment.id || null,
+        preimage: payment.preimage || null,
+        fee: payment.feeSats || 0,
+        status: initialStatus
+      };
+    }
+
+    let final;
+    try {
+      final = await this.waitForPaymentCompletion(payment.id, {
+        timeoutMs: completionTimeoutMs
+      });
+    } catch (error) {
+      // Timeout is the only error path here — surface as PENDING, not failure.
+      console.warn(
+        'Spark Lightning payment did not settle within timeout, returning pending:',
+        error.message
+      );
+      return {
+        id: payment.id,
+        preimage: payment.preimage || null,
+        fee: payment.feeSats || 0,
+        status: PAYMENT_STATUS.PENDING
+      };
+    }
+
+    if (final.status === PAYMENT_STATUS.FAILED) {
+      throw new Error('Lightning payment failed');
+    }
+
+    return {
+      id: final.id,
+      preimage: final.preimage,
+      fee: final.fee,
+      status: final.status
+    };
   }
 
   /**
@@ -609,20 +798,27 @@ export class SparkWalletProvider extends WalletProvider {
   async lookupInvoice(paymentHash) {
     this._ensureConnected();
 
-    try {
-      // Try to get the specific Lightning receive request first
-      const receiveRequest = await this.wallet.getLightningReceiveRequest(paymentHash);
+    // The SSP API's getLightningReceiveRequest expects a request ID (UUID),
+    // not a payment hash. A 64-char hex string is a payment hash — calling
+    // the SSP endpoint with one fails GraphQL ID validation, so we skip
+    // straight to the transfer-list scan in that case.
+    const isPaymentHash = typeof paymentHash === 'string' && /^[0-9a-f]{64}$/i.test(paymentHash);
 
-      if (receiveRequest) {
-        const status = String(receiveRequest.status || '').toUpperCase();
-        return {
-          paid: status.includes('COMPLETED') || status.includes('CLAIMED'),
-          preimage: receiveRequest.preimage || null,
-          amount: Number(receiveRequest.amount || receiveRequest.invoice?.amountSats || 0)
-        };
+    try {
+      if (!isPaymentHash) {
+        const receiveRequest = await this.wallet.getLightningReceiveRequest(paymentHash);
+
+        if (receiveRequest) {
+          const status = String(receiveRequest.status || '').toUpperCase();
+          return {
+            paid: status.includes('COMPLETED') || status.includes('CLAIMED'),
+            preimage: receiveRequest.preimage || null,
+            amount: Number(receiveRequest.amount || receiveRequest.invoice?.amountSats || 0)
+          };
+        }
       }
 
-      // Fallback: search in recent transfers
+      // Search recent transfers by payment hash
       const result = await this.wallet.getTransfers(100, 0);
       const transferList = result.transfers || [];
 
@@ -1049,19 +1245,12 @@ export class SparkWalletProvider extends WalletProvider {
 
     const address = await this.getL1DepositAddress();
 
-    // Determine API URLs to try
-    const customUrl = fiatRatesService.getApiUrl().replace(/\/+$/, '').replace(/\/v1$/, '');
-    const fallbackUrl = BITCOIN_L1.DEFAULT_MEMPOOL_API;
-    const urlsToTry = customUrl !== fallbackUrl
-      ? [customUrl, fallbackUrl]
-      : [fallbackUrl];
-
     let utxos = null;
     let usedBaseUrl = null;
     let lastError = null;
 
-    // Try each URL until one succeeds
-    for (const baseUrl of urlsToTry) {
+    // Try each configured mempool source until one succeeds.
+    for (const baseUrl of this._mempoolBaseUrls()) {
       try {
         const response = await fetch(`${baseUrl}/address/${address}/utxo`);
         if (response.ok) {
@@ -1145,53 +1334,178 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Claim a Bitcoin deposit using quote data
+   * Classify a confirmed Bitcoin deposit for auto-claim handling.
+   *
+   * Pure: no UI side effects, no claim attempt — fetches the quote and
+   * returns a category the orchestration layer (Wallet.vue) acts on.
+   *
+   * Categories:
+   *   - 'eligible'       — auto-claim is safe; fee within thresholds.
+   *   - 'needs_approval' — fee exceeds threshold; user should confirm.
+   *   - 'too_small'      — deposit below dust floor; offer to send back.
+   *   - 'quote_failed'   — quote lookup failed; treat as manual.
+   *
+   * The returned `quote` is reused by the eventual claim call so we
+   * don't pay for two SSP roundtrips per deposit. `classifiedAt` lets
+   * callers detect stale quotes (e.g. when the user takes minutes to
+   * approve a `needs_approval` prompt) and refetch via
+   * {@link refreshClassificationQuote} before claiming.
+   *
+   * @param {Object} deposit - One entry from getPendingDeposits()
+   * @returns {Promise<{
+   *   category: 'eligible' | 'needs_approval' | 'too_small' | 'quote_failed',
+   *   quote: object|null,
+   *   feeSats: number,
+   *   feeRatio: number,
+   *   classifiedAt: number,
+   *   error?: Error
+   * }>}
+   */
+  async classifyConfirmedDeposit(deposit) {
+    if (!deposit?.txId || !deposit?.confirmed) {
+      throw new Error('classifyConfirmedDeposit requires a confirmed deposit');
+    }
+
+    const depositAmountSats = Number(deposit.amount || 0);
+
+    if (depositAmountSats < AUTO_CLAIM_THRESHOLDS.MIN_DEPOSIT_SATS) {
+      // Don't even bother with a quote — the deposit is below the floor
+      // where auto-claim makes sense. The orchestrator surfaces this as
+      // "tiny deposit" so the user can choose to send back.
+      return {
+        category: 'too_small',
+        quote: null,
+        feeSats: 0,
+        feeRatio: 0,
+        classifiedAt: Date.now()
+      };
+    }
+
+    let quote;
+    try {
+      quote = await this.getClaimFeeQuote(deposit.txId, deposit.outputIndex || 0);
+    } catch (error) {
+      return {
+        category: 'quote_failed',
+        quote: null,
+        feeSats: 0,
+        feeRatio: 0,
+        classifiedAt: Date.now(),
+        error
+      };
+    }
+
+    const creditAmountSats = Number(quote?.creditAmountSats || 0);
+    const feeSats = Math.max(0, depositAmountSats - creditAmountSats);
+    const feeRatio = depositAmountSats > 0 ? feeSats / depositAmountSats : 1;
+
+    const withinAbsoluteCap = feeSats <= AUTO_CLAIM_THRESHOLDS.MAX_FEE_SATS;
+    const withinRelativeCap = feeRatio <= AUTO_CLAIM_THRESHOLDS.MAX_FEE_RATIO;
+
+    return {
+      category: withinAbsoluteCap && withinRelativeCap ? 'eligible' : 'needs_approval',
+      quote,
+      feeSats,
+      feeRatio,
+      classifiedAt: Date.now()
+    };
+  }
+
+  /**
+   * Refresh a stale classification's quote without re-running the
+   * threshold logic. Returns a new classification object with the same
+   * `category` but an up-to-date `quote`, `feeSats`, `feeRatio`, and
+   * `classifiedAt`. Falls back to the original classification on error
+   * so callers can attempt the optimistic claim either way.
+   *
+   * Used by the orchestration layer when a `needs_approval` notification
+   * sat in the user's tray for longer than the freshness window
+   * (`CLASSIFICATION_FRESHNESS_MS`) before they tapped Add to wallet.
+   */
+  async refreshClassificationQuote(deposit, previousClassification) {
+    if (!previousClassification?.quote) return previousClassification;
+
+    try {
+      const quote = await this.getClaimFeeQuote(deposit.txId, deposit.outputIndex || 0);
+      const depositAmountSats = Number(deposit.amount || 0);
+      const creditAmountSats = Number(quote?.creditAmountSats || 0);
+      const feeSats = Math.max(0, depositAmountSats - creditAmountSats);
+      const feeRatio = depositAmountSats > 0 ? feeSats / depositAmountSats : 1;
+
+      return {
+        ...previousClassification,
+        quote,
+        feeSats,
+        feeRatio,
+        classifiedAt: Date.now()
+      };
+    } catch (error) {
+      console.warn('Could not refresh claim quote, using prior:', error?.message || error);
+      return previousClassification;
+    }
+  }
+
+  /**
+   * Claim a Bitcoin deposit using quote data.
+   *
+   * The SDK's `claimStaticDeposit` returns `{ transferId } | null` — it does
+   * NOT echo back the credited amount. Source the amount from the quote
+   * (which the caller already has) and surface the transferId for tracking.
+   *
    * @param {string} txId - Transaction ID of the deposit
    * @param {object} quoteData - Quote data from getClaimFeeQuote()
-   * @param {number} outputIndex - Output index (default 0)
-   * @returns {Promise<{success: boolean, amount: number, processing?: boolean, message?: string}>}
+   * @param {number} [outputIndex=0]
+   * @returns {Promise<{success: boolean, amount: number, transferId: string|null, processing?: boolean, message?: string}>}
    */
   async claimDeposit(txId, quoteData, outputIndex = 0) {
     this._ensureConnected();
 
+    const creditAmountSats = Number(quoteData?.creditAmountSats || 0);
+
     this.setSyncing(true, 'claiming_deposit');
 
     try {
-      // SDK: claimStaticDeposit({ transactionId, creditAmountSats, sspSignature, outputIndex })
       const result = await this.wallet.claimStaticDeposit({
         transactionId: txId,
-        outputIndex: outputIndex,
-        creditAmountSats: quoteData.creditAmountSats,
+        outputIndex,
+        creditAmountSats,
         sspSignature: quoteData.signature
       });
 
       this.setSyncing(false);
       return {
         success: true,
-        amount: Number(result.creditAmountSats || result.amount || 0)
+        amount: creditAmountSats,
+        transferId: result?.transferId || null
       };
     } catch (error) {
       this.setSyncing(false);
-      const errorMsg = error.message?.toLowerCase() || '';
+      const errorMsg = String(error?.message || '').toLowerCase();
 
-      // TRANSFER_LOCKED means the claim is already being processed (race condition with background stream)
-      // This is not a failure - the claim will complete successfully
+      // TRANSFER_LOCKED means the claim is already being processed by a
+      // concurrent background stream — not a failure, just a race we
+      // surface as "in progress".
       if (errorMsg.includes('transfer_locked') || (errorMsg.includes('leaf') && errorMsg.includes('locked'))) {
         console.log('Claim already in progress (TRANSFER_LOCKED), will complete shortly');
         return {
           success: true,
           processing: true,
           message: 'Claim is being processed. Your balance will update shortly.',
-          amount: Number(quoteData.creditAmountSats || 0)
+          amount: creditAmountSats,
+          transferId: null
         };
       }
 
-      // Provide friendly error messages
-      if (errorMsg.includes('fee')) {
-        throw new Error('Claim fee has changed. Please try again.');
+      // Friendly error mapping. Order matters: dust check first because
+      // its message contains the word "fee".
+      if (errorMsg.includes('dust') || errorMsg.includes('less than the dust')) {
+        throw new Error('Deposit too small to claim — the fee would exceed the amount.');
       }
       if (errorMsg.includes('confirm')) {
         throw new Error('Deposit needs more confirmations. Please wait.');
+      }
+      if (errorMsg.includes('fee')) {
+        throw new Error('Claim fee has changed. Please try again.');
       }
       this.setError(error);
       throw error;
@@ -1199,40 +1513,23 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Fetch recommended fee rates from mempool.space API
-   * @returns {Promise<{fastestFee: number, halfHourFee: number, hourFee: number, economyFee: number, minimumFee: number}>}
-   */
-  async _fetchMempoolFeeRates() {
-    const apiUrl = fiatRatesService.getApiUrl();
-    // Handle both /api/v1 and /api formats
-    const baseUrl = apiUrl.replace(/\/v1$/, '');
-
-    try {
-      const response = await fetch(`${baseUrl}/v1/fees/recommended`);
-      if (!response.ok) {
-        throw new Error(`Mempool API error: ${response.status}`);
-      }
-      return await response.json();
-    } catch (error) {
-      console.warn('Failed to fetch mempool fees, using fallback:', error.message);
-      // Fallback to default mempool.space if custom API fails
-      if (apiUrl !== 'https://mempool.space/api/v1') {
-        const fallbackResponse = await fetch('https://mempool.space/api/v1/fees/recommended');
-        if (fallbackResponse.ok) {
-          return await fallbackResponse.json();
-        }
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Get fee quote for L1 Bitcoin withdrawal
-   * Returns fees for slow/medium/fast speeds with breakdown
-   * Fetches real-time fee rates from mempool.space API
+   * Get a fee quote for an L1 (on-chain) Bitcoin withdrawal.
+   *
+   * Returns the SDK-authoritative breakdown for all three exit speeds. Per
+   * Spark docs (https://docs.spark.money/wallet-sdk/lightning/withdraw-l1)
+   * we surface the SSP's own `userFee*` and `l1BroadcastFee*` values — we
+   * do not derive the network fee from third-party mempool data, because
+   * the SSP batches and broadcasts the actual transaction and its number
+   * is what the user is charged.
+   *
    * @param {number} amountSats - Amount to withdraw in satoshis
    * @param {string} destinationAddress - Bitcoin address to withdraw to
-   * @returns {Promise<{slow: Object, medium: Object, fast: Object, expiresAt: number}>}
+   * @returns {Promise<{
+   *   slow:    {serviceFee: number, networkFee: number, totalFee: number, feeQuoteId: string, timeEstimate: string},
+   *   medium:  {serviceFee: number, networkFee: number, totalFee: number, feeQuoteId: string, timeEstimate: string},
+   *   fast:    {serviceFee: number, networkFee: number, totalFee: number, feeQuoteId: string, timeEstimate: string},
+   *   expiresAt: number
+   * }>}
    */
   async getWithdrawalFeeQuote(amountSats, destinationAddress) {
     this._ensureConnected();
@@ -1241,82 +1538,131 @@ export class SparkWalletProvider extends WalletProvider {
       throw new Error('Invalid Bitcoin address');
     }
 
+    let quote;
     try {
-      // Fetch both Spark quote and mempool fee rates in parallel
-      const [quote, mempoolFees] = await Promise.all([
-        this.wallet.getWithdrawalFeeQuote({
-          amountSats: amountSats,
-          withdrawalAddress: destinationAddress
-        }),
-        this._fetchMempoolFeeRates()
-      ]);
-
-      // Calculate network fees based on mempool fee rates
-      // Fee = fee_rate (sat/vB) * transaction_size (vB)
-      const txSize = BITCOIN_L1.TYPICAL_TX_VBYTES;
-      const networkFees = {
-        slow: Math.ceil(mempoolFees.hourFee * txSize),
-        medium: Math.ceil(mempoolFees.halfHourFee * txSize),
-        fast: Math.ceil(mempoolFees.fastestFee * txSize)
-      };
-
-      // Build user-friendly fee structure with breakdown
-      const buildFeeInfo = (speedQuote, networkFee, timeEstimate, feeRate) => ({
-        serviceFee: Number(speedQuote?.userFee || 0),
-        networkFee: networkFee,
-        totalFee: Number(speedQuote?.userFee || 0) + networkFee,
-        feeQuoteId: quote.feeQuoteId || quote.id,
-        timeEstimate: timeEstimate,
-        feeRate: feeRate // sat/vB for display
+      quote = await this.wallet.getWithdrawalFeeQuote({
+        amountSats,
+        withdrawalAddress: destinationAddress
       });
-
-      return {
-        slow: buildFeeInfo(quote.slow, networkFees.slow, '~1 hour', mempoolFees.hourFee),
-        medium: buildFeeInfo(quote.medium, networkFees.medium, '~30 min', mempoolFees.halfHourFee),
-        fast: buildFeeInfo(quote.fast, networkFees.fast, 'Next block', mempoolFees.fastestFee),
-        expiresAt: quote.expiry ? Math.floor(new Date(quote.expiry).getTime() / 1000) : Date.now() / 1000 + 60
-      };
     } catch (error) {
       this.setError(error);
       throw error;
     }
+
+    if (!quote) {
+      throw new Error('No withdrawal fee quote available right now. Please try again.');
+    }
+
+    return {
+      slow: SparkWalletProvider._buildL1FeeTier(quote, 'Slow', '~1 hour'),
+      medium: SparkWalletProvider._buildL1FeeTier(quote, 'Medium', '~30 min'),
+      fast: SparkWalletProvider._buildL1FeeTier(quote, 'Fast', 'Next block'),
+      expiresAt: SparkWalletProvider._coerceExpiresAt(quote.expiresAt)
+    };
   }
 
   /**
-   * Withdraw to L1 Bitcoin address
-   * @param {Object} options - Withdrawal options
+   * Build a single fee tier from a CoopExitFeeQuote.
+   *
+   * Reads the per-speed `userFee*` (Spark service fee) and `l1BroadcastFee*`
+   * (on-chain broadcast fee) currency amounts and sums them into a total
+   * that matches what the SSP will charge when this quote is used.
+   *
+   * @private
+   */
+  static _buildL1FeeTier(quote, suffix, timeEstimate) {
+    const userFee = Number(quote[`userFee${suffix}`]?.originalValue || 0);
+    const networkFee = Number(quote[`l1BroadcastFee${suffix}`]?.originalValue || 0);
+    return {
+      serviceFee: userFee,
+      networkFee,
+      totalFee: userFee + networkFee,
+      feeQuoteId: quote.id,
+      timeEstimate
+    };
+  }
+
+  /**
+   * Map our 'slow' | 'medium' | 'fast' speed key to the SDK's ExitSpeed enum.
+   * Defaults to MEDIUM for unknown inputs to fail safe rather than reject.
+   */
+  static _toExitSpeed(speed) {
+    const key = String(speed || '').toUpperCase();
+    if (key === 'FAST' || key === ExitSpeed.FAST) return ExitSpeed.FAST;
+    if (key === 'SLOW' || key === ExitSpeed.SLOW) return ExitSpeed.SLOW;
+    return ExitSpeed.MEDIUM;
+  }
+
+  /**
+   * Withdraw to an L1 Bitcoin address (cooperative exit).
+   *
+   * Per Spark docs, the SDK's `withdraw()` requires:
+   *   - `onchainAddress` (the destination)
+   *   - `exitSpeed` from the {@link ExitSpeed} enum
+   *   - `feeQuoteId` from a prior `getWithdrawalFeeQuote()`
+   *   - `feeAmountSats` — the locked-in total (`userFee*` + `l1BroadcastFee*`)
+   *     for the selected speed. Without this the SSP can recompute fees and
+   *     the user may be charged a different amount than what the UI showed.
+   *   - `deductFeeFromWithdrawalAmount` — we send `false` so callers can
+   *     reason about "amount sent" and "fee paid" as independent numbers
+   *     (the doc default of `true` would silently shrink the recipient's
+   *     received amount by the fee).
+   *
+   * @param {Object} options
    * @param {number} options.amountSats - Amount to withdraw in satoshis
    * @param {string} options.destinationAddress - Bitcoin address to withdraw to
-   * @param {string} options.speed - Speed: 'SLOW', 'MEDIUM', or 'FAST'
+   * @param {string} [options.speed='medium'] - 'slow' | 'medium' | 'fast'
    * @param {string} options.feeQuoteId - Fee quote ID from getWithdrawalFeeQuote()
+   * @param {number} options.feeAmountSats - Total fee in sats for the chosen speed
+   * @param {boolean} [options.deductFeeFromWithdrawalAmount=false] - If true, the SSP subtracts the fee from `amountSats` instead of charging it on top
    * @returns {Promise<{requestId: string, status: string, amount: number}>}
    */
-  async withdrawToL1({ amountSats, destinationAddress, speed = 'MEDIUM', feeQuoteId }) {
+  async withdrawToL1({
+    amountSats,
+    destinationAddress,
+    speed = 'medium',
+    feeQuoteId,
+    feeAmountSats,
+    deductFeeFromWithdrawalAmount = false
+  }) {
     this._ensureConnected();
 
     if (!this._isValidBitcoinAddress(destinationAddress)) {
       throw new Error('Invalid Bitcoin address');
     }
+    if (!feeQuoteId) {
+      throw new Error('Missing feeQuoteId — call getWithdrawalFeeQuote() first');
+    }
+    if (typeof feeAmountSats !== 'number' || feeAmountSats < 0) {
+      throw new Error('Missing or invalid feeAmountSats');
+    }
 
     try {
       const result = await this.wallet.withdraw({
-        amountSats: amountSats,
-        withdrawalAddress: destinationAddress,
-        speed: speed.toUpperCase(),
-        feeQuoteId: feeQuoteId
+        onchainAddress: destinationAddress,
+        exitSpeed: SparkWalletProvider._toExitSpeed(speed),
+        amountSats,
+        feeQuoteId,
+        feeAmountSats,
+        deductFeeFromWithdrawalAmount
       });
+
+      if (!result?.id) {
+        throw new Error('Withdrawal failed — SSP did not return a request ID');
+      }
 
       return {
         requestId: result.id,
-        status: 'pending',
+        status: SparkWalletProvider._normalizeCoopExitStatus(result.status),
         amount: amountSats
       };
     } catch (error) {
-      // Provide friendly error messages
-      if (error.message?.toLowerCase().includes('balance')) {
+      // Friendlier copy for the two errors users hit most often.
+      const msg = String(error?.message || '').toLowerCase();
+      if (msg.includes('balance') || msg.includes('insufficient')) {
         throw new Error('Insufficient balance for this withdrawal');
       }
-      if (error.message?.toLowerCase().includes('quote')) {
+      if (msg.includes('quote') || msg.includes('expired')) {
         throw new Error('Fee quote expired. Please try again.');
       }
       this.setError(error);
@@ -1325,21 +1671,42 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Check withdrawal status
+   * Check the status of an L1 withdrawal request.
+   *
    * @param {string} requestId - Withdrawal request ID from withdrawToL1()
-   * @returns {Promise<{id: string, status: string, txId: string|null, completedAt: number|null}>}
+   * @returns {Promise<{
+   *   id: string,
+   *   status: 'pending' | 'broadcasting' | 'completed' | 'failed' | 'expired',
+   *   rawStatus: string|null,
+   *   txId: string|null,
+   *   isComplete: boolean,
+   *   isFailed: boolean
+   * }>}
    */
   async getWithdrawalStatus(requestId) {
     this._ensureConnected();
 
     try {
       const request = await this.wallet.getCoopExitRequest(requestId);
+      if (!request) {
+        return {
+          id: requestId,
+          status: 'pending',
+          rawStatus: null,
+          txId: null,
+          isComplete: false,
+          isFailed: false
+        };
+      }
 
+      const status = SparkWalletProvider._normalizeCoopExitStatus(request.status);
       return {
         id: request.id,
-        status: this._normalizeWithdrawalStatus(request.status),
-        txId: request.l1TxId || null,
-        completedAt: request.completedAt ? Math.floor(new Date(request.completedAt).getTime() / 1000) : null
+        status,
+        rawStatus: request.status || null,
+        txId: request.coopExitTxid || null,
+        isComplete: status === 'completed',
+        isFailed: status === 'failed' || status === 'expired'
       };
     } catch (error) {
       this.setError(error);
@@ -1348,22 +1715,72 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Normalize withdrawal status to user-friendly format
+   * Poll an L1 withdrawal until it reaches a terminal state.
+   *
+   * Spark docs explicitly note that withdrawals don't emit events, so
+   * polling is the recommended monitoring strategy. Resolves with the
+   * final status object once `isComplete` or `isFailed` is true; rejects
+   * on timeout so callers can surface "still settling" UX.
+   *
+   * @param {string} requestId
+   * @param {Object} [options]
+   * @param {number} [options.intervalMs=15000] - Poll interval (default 15s)
+   * @param {number} [options.timeoutMs=1800000] - Max wait (default 30min)
+   * @param {Function} [options.onStatusChange] - Callback fired on each distinct status transition
+   * @returns {Promise<Object>}
    */
-  _normalizeWithdrawalStatus(status) {
-    if (!status) return 'pending';
-    const statusStr = String(status).toUpperCase();
+  async waitForWithdrawalCompletion(requestId, options = {}) {
+    const {
+      intervalMs = 15000,
+      timeoutMs = 30 * 60 * 1000,
+      onStatusChange = null
+    } = options;
 
-    if (statusStr.includes('COMPLETED') || statusStr.includes('FINALIZED')) {
-      return 'completed';
+    const startedAt = Date.now();
+    let lastStatus = null;
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const result = await this.getWithdrawalStatus(requestId);
+
+      if (onStatusChange && result.status !== lastStatus) {
+        onStatusChange(result);
+        lastStatus = result.status;
+      }
+
+      if (result.isComplete || result.isFailed) {
+        return result;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
     }
-    if (statusStr.includes('FAILED') || statusStr.includes('ERROR')) {
-      return 'failed';
+
+    throw new Error('Withdrawal status check timed out');
+  }
+
+  /**
+   * Map the SDK's SparkCoopExitRequestStatus enum onto a small set of UI
+   * states. Done as exact-match (with a lowercase fallback) so we never
+   * silently misclassify a status the way substring matching could.
+   */
+  static _normalizeCoopExitStatus(status) {
+    if (!status) return 'pending';
+    const upper = String(status).toUpperCase();
+    switch (upper) {
+      case 'SUCCEEDED':
+        return 'completed';
+      case 'FAILED':
+        return 'failed';
+      case 'EXPIRED':
+        return 'expired';
+      case 'TX_BROADCASTED':
+      case 'WAITING_ON_TX_CONFIRMATIONS':
+        return 'broadcasting';
+      case 'INITIATED':
+      case 'INBOUND_TRANSFER_CHECKED':
+      case 'TX_SIGNED':
+      default:
+        return 'pending';
     }
-    if (statusStr.includes('BROADCAST')) {
-      return 'broadcasting';
-    }
-    return 'pending';
   }
 
   /**
@@ -1386,39 +1803,146 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Refund a deposit back to the original sender
-   * Use when claim fee is too high relative to deposit amount
+   * Refund a Bitcoin deposit back to a destination address.
    *
-   * UI: Exposed via TransactionHistory.vue claim dialog "Return to sender" option
+   * Per Spark docs, `refundAndBroadcastStaticDeposit` requires:
+   *   - `depositTransactionId` (the original deposit txid)
+   *   - `destinationAddress` (where the refund goes)
+   *   - `satsPerVbyteFee` (fee rate for the refund tx)
    *
-   * @param {string} txId - Transaction ID of the deposit
-   * @param {number} outputIndex - Output index (default 0)
-   * @returns {Promise<{success: boolean, txId: string|null}>}
+   * For the "send back to the original sender" UX we auto-derive the
+   * destination from the deposit transaction's first input via the
+   * mempool API. Callers can override either field — useful for an
+   * "advanced" UI that lets the user pick their own destination or fee.
+   *
+   * Returns the broadcast transaction id (a hex string per the SDK).
+   *
+   * @param {Object} options
+   * @param {string} options.txId - Deposit transaction ID
+   * @param {number} [options.outputIndex=0]
+   * @param {string} [options.destinationAddress] - Override destination; defaults to the deposit tx's first input address
+   * @param {number} [options.satsPerVbyteFee] - Override fee rate (sat/vB); defaults to mempool's recommended halfHourFee
+   * @returns {Promise<{success: boolean, txId: string|null, destinationAddress: string, satsPerVbyteFee: number}>}
    */
-  async refundDeposit(txId, outputIndex = 0) {
+  async refundDeposit({ txId, outputIndex = 0, destinationAddress, satsPerVbyteFee } = {}) {
     this._ensureConnected();
 
+    if (!txId) {
+      throw new Error('Refund requires a deposit transaction ID');
+    }
+
+    const [resolvedAddress, resolvedFee] = await Promise.all([
+      destinationAddress
+        ? Promise.resolve(destinationAddress)
+        : this._deriveSenderAddress(txId),
+      satsPerVbyteFee != null
+        ? Promise.resolve(satsPerVbyteFee)
+        : this._fetchRecommendedFeeRate('halfHour')
+    ]);
+
+    if (!resolvedAddress) {
+      throw new Error(
+        'Could not determine refund destination. Provide an address manually.'
+      );
+    }
+    if (!this._isValidBitcoinAddress(resolvedAddress)) {
+      throw new Error('Refund destination is not a valid Bitcoin address');
+    }
+    if (!Number.isFinite(resolvedFee) || resolvedFee < 1) {
+      throw new Error('Could not determine a valid refund fee rate');
+    }
+
     try {
-      const result = await this.wallet.refundAndBroadcastStaticDeposit({
-        transactionId: txId,
-        outputIndex: outputIndex
+      const broadcastedTxId = await this.wallet.refundAndBroadcastStaticDeposit({
+        depositTransactionId: txId,
+        outputIndex,
+        destinationAddress: resolvedAddress,
+        satsPerVbyteFee: Math.ceil(resolvedFee)
       });
 
       return {
         success: true,
-        txId: result.l1TxId || result.txId || null
+        txId: typeof broadcastedTxId === 'string' ? broadcastedTxId : null,
+        destinationAddress: resolvedAddress,
+        satsPerVbyteFee: Math.ceil(resolvedFee)
       };
     } catch (error) {
-      // Provide friendly error messages
-      if (error.message?.toLowerCase().includes('not found')) {
+      const msg = String(error?.message || '').toLowerCase();
+      if (msg.includes('not found')) {
         throw new Error('Deposit not found or already claimed');
       }
-      if (error.message?.toLowerCase().includes('confirm')) {
+      if (msg.includes('confirm')) {
         throw new Error('Deposit needs more confirmations');
       }
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Look up a Bitcoin transaction via the mempool API and return the
+   * address of its first input (the closest analogue to "the sender").
+   * Returns `null` if the lookup fails or the address can't be parsed —
+   * callers must handle that case (e.g. by asking the user to enter one).
+   *
+   * @private
+   */
+  async _deriveSenderAddress(txId) {
+    for (const baseUrl of this._mempoolBaseUrls()) {
+      try {
+        const response = await fetch(`${baseUrl}/tx/${txId}`);
+        if (!response.ok) continue;
+        const tx = await response.json();
+        const senderAddress = tx?.vin?.[0]?.prevout?.scriptpubkey_address;
+        if (senderAddress) return senderAddress;
+      } catch (e) {
+        // Try the next base URL.
+        continue;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Fetch a recommended sat/vB fee rate from the mempool API. Used as a
+   * default when callers don't pass an explicit `satsPerVbyteFee` to
+   * `refundDeposit`. Falls back to a conservative 5 sat/vB if every
+   * configured mempool source is unreachable.
+   *
+   * @private
+   */
+  async _fetchRecommendedFeeRate(tier = 'halfHour') {
+    const tierKey = {
+      fastest: 'fastestFee',
+      halfHour: 'halfHourFee',
+      hour: 'hourFee'
+    }[tier] || 'halfHourFee';
+
+    for (const baseUrl of this._mempoolBaseUrls()) {
+      try {
+        const response = await fetch(`${baseUrl}/v1/fees/recommended`);
+        if (!response.ok) continue;
+        const fees = await response.json();
+        const rate = Number(fees?.[tierKey]);
+        if (Number.isFinite(rate) && rate >= 1) return rate;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    return 5; // Conservative fallback; reasonable for non-urgent refunds.
+  }
+
+  /**
+   * Mempool base URLs to try, in priority order. Honors the user's
+   * configured mempool endpoint and falls back to mempool.space.
+   *
+   * @private
+   */
+  _mempoolBaseUrls() {
+    const customUrl = fiatRatesService.getApiUrl().replace(/\/+$/, '').replace(/\/v1$/, '');
+    const fallbackUrl = BITCOIN_L1.DEFAULT_MEMPOOL_API;
+    return customUrl !== fallbackUrl ? [customUrl, fallbackUrl] : [fallbackUrl];
   }
 
   // ==========================================

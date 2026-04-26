@@ -31,34 +31,40 @@
       <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
     </div>
 
-    <!-- Action Buttons -->
+    <!-- Action Buttons — markup and styling intentionally mirror the Spark
+         receive view (ReceiveModal.vue) so both flows feel identical. -->
     <div v-if="depositAddress" class="action-buttons">
-      <q-btn
-        flat
-        no-caps
+      <button
         class="action-btn"
         :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
         @click="copyAddress"
       >
         <Icon icon="tabler:copy" width="18" height="18" />
         <span>{{ $t('Copy') }}</span>
-      </q-btn>
-      <q-btn
-        flat
-        no-caps
+      </button>
+      <button
         class="action-btn"
         :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
         @click="shareAddress"
       >
         <Icon icon="tabler:share" width="18" height="18" />
         <span>{{ $t('Share') }}</span>
-      </q-btn>
+      </button>
     </div>
 
-    <!-- Pending Deposits -->
-    <div v-if="pendingDeposits.length > 0" class="deposits-section">
+    <!--
+      Pending Deposits
+      Polished incoming-deposit tracker. Surfaces directly under the
+      address card so a user who just scanned the QR sees the
+      confirmation progress without scrolling. Card uses Bitcoin orange
+      as the accent (matches the asset colour) instead of the legacy
+      green tint, with a subtle progress bar that fills 1/3 → 2/3 → 3/3
+      so the wait is legible at a glance.
+    -->
+    <div v-if="pendingDeposits.length > 0" class="deposits-section" :class="$q.dark.isActive ? 'deposits-section-dark' : 'deposits-section-light'">
       <div class="section-header">
-        <span class="section-title" :class="$q.dark.isActive ? 'title-dark' : 'title-light'">
+        <span class="section-eyebrow" :class="$q.dark.isActive ? 'eyebrow-dark' : 'eyebrow-light'">
+          <span class="eyebrow-pulse" aria-hidden="true"></span>
           {{ $t('Incoming') }}
         </span>
         <q-btn
@@ -69,7 +75,7 @@
           :loading="isCheckingDeposits"
           @click="checkDeposits"
           class="refresh-icon"
-          :class="{ 'spinning': isCheckingDeposits }"
+          :class="[$q.dark.isActive ? 'refresh-dark' : 'refresh-light', { 'spinning': isCheckingDeposits }]"
         >
           <Icon icon="tabler:refresh" width="14" height="14" />
         </q-btn>
@@ -79,34 +85,44 @@
         v-for="deposit in pendingDeposits"
         :key="deposit.txId"
         class="deposit-row"
-        :class="$q.dark.isActive ? 'row-dark' : 'row-light'"
       >
-        <!-- Left: Status indicator -->
-        <div class="deposit-indicator" :class="deposit.confirmed ? 'ready' : 'pending'">
-          <Icon :icon="deposit.confirmed ? 'tabler:check' : 'tabler:currency-bitcoin'" width="18" height="18" />
+        <!-- Avatar: orange-tinted Bitcoin glyph (shared with the
+             transaction-history rows so the same payment reads the same
+             everywhere). -->
+        <div class="deposit-indicator" :class="$q.dark.isActive ? 'indicator-dark' : 'indicator-light'">
+          <Icon icon="tabler:currency-bitcoin" width="20" height="20" />
         </div>
 
-        <!-- Center: Amount & Status -->
+        <!-- Centre: amount + progress meter. -->
         <div class="deposit-details">
-          <div class="deposit-amount" :class="$q.dark.isActive ? 'amount-dark' : 'amount-light'">
-            +{{ formatAmount(deposit.amount) }}
+          <div class="deposit-amount-row">
+            <span class="deposit-amount" :class="$q.dark.isActive ? 'amount-dark' : 'amount-light'">
+              +{{ formatAmount(deposit.amount) }}
+            </span>
+            <span
+              class="deposit-state"
+              :class="[
+                deposit.confirmed ? 'state-ready' : 'state-pending',
+                $q.dark.isActive ? 'state-dark' : 'state-light'
+              ]"
+            >
+              {{ deposit.confirmed ? $t('Ready') : $t('Confirming...') }}
+            </span>
           </div>
-          <div class="deposit-status" :class="deposit.confirmed ? 'status-ready' : 'status-pending'">
-            <template v-if="deposit.confirmed">
-              {{ $t('Ready') }}
-            </template>
-            <template v-else>
-              <span class="status-dots">
-                <span class="dot" :class="{ 'active': deposit.confirmations >= 1 }"></span>
-                <span class="dot" :class="{ 'active': deposit.confirmations >= 2 }"></span>
-                <span class="dot" :class="{ 'active': deposit.confirmations >= 3 }"></span>
-              </span>
-              {{ deposit.confirmations }}/3
-            </template>
+          <div class="deposit-progress" :class="$q.dark.isActive ? 'progress-dark' : 'progress-light'" aria-hidden="true">
+            <span
+              class="progress-fill"
+              :class="deposit.confirmed ? 'progress-fill-ready' : 'progress-fill-pending'"
+              :style="{ width: ((Math.min(deposit.confirmations, 3) / 3) * 100) + '%' }"
+            ></span>
+          </div>
+          <div class="deposit-meta" :class="$q.dark.isActive ? 'meta-dark' : 'meta-light'">
+            {{ deposit.confirmations }}/3 {{ $t('confirmations') }}
           </div>
         </div>
 
-        <!-- Right: Action -->
+        <!-- Trailing action: Claim CTA when ready, nothing when still
+             waiting (the progress bar carries that state). -->
         <q-btn
           v-if="deposit.confirmed"
           no-caps
@@ -118,9 +134,6 @@
         >
           {{ $t('Claim') }}
         </q-btn>
-        <span v-else class="confirming-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-          {{ $t('Confirming...') }}
-        </span>
       </div>
     </div>
 
@@ -636,10 +649,12 @@ export default {
 
 <style scoped>
 .l1-bitcoin-receive {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 0;
+  min-height: 0;
 }
 
 /* ==========================================
@@ -745,14 +760,23 @@ export default {
   margin-top: 12px;
 }
 
+/* Action button styles intentionally mirror ReceiveModal.vue's Spark view
+   so the Bitcoin receive screen matches the Spark receive screen pixel-
+   for-pixel. Keep these in sync if either side changes. */
 .action-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 10px 16px;
   border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .action-btn-dark {
@@ -774,157 +798,172 @@ export default {
 }
 
 /* ==========================================
-   Pending Deposits Section
+   Pending Deposits — orange-accented, fits both themes through
+   CSS variables + paired -light / -dark modifiers.
    ========================================== */
 .deposits-section {
-  background: rgba(21, 222, 114, 0.06);
   border-radius: 16px;
   overflow: hidden;
+  border: 1px solid transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.deposits-section-light {
+  background: rgba(247, 147, 26, 0.06);
+  border-color: rgba(247, 147, 26, 0.18);
+}
+.deposits-section-dark {
+  background: rgba(247, 147, 26, 0.07);
+  border-color: rgba(247, 147, 26, 0.16);
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(21, 222, 114, 0.1);
+  padding: 10px 14px;
 }
 
-.section-title {
-  font-size: 13px;
-  font-weight: 600;
+.section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+}
+.eyebrow-light { color: #B86E0F; }
+.eyebrow-dark  { color: #FBBF77; }
+
+/* Soft pulsing dot to signal "in motion". Pure CSS, no JS. */
+.eyebrow-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #F7931A;
+  box-shadow: 0 0 0 0 rgba(247, 147, 26, 0.55);
+  animation: eyebrow-pulse 1.8s ease-out infinite;
+}
+@keyframes eyebrow-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(247, 147, 26, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(247, 147, 26, 0);    }
+  100% { box-shadow: 0 0 0 0 rgba(247, 147, 26, 0);    }
 }
 
-.title-dark {
-  color: #15DE72;
-}
-
-.title-light {
-  color: #0DBB5F;
-}
-
-.refresh-icon {
-  color: #15DE72;
-}
-
-.refresh-icon.spinning {
-  animation: spin 1s linear infinite;
-}
-
+.refresh-icon { transition: opacity 0.15s ease; }
+.refresh-light { color: #B86E0F; }
+.refresh-dark  { color: #FBBF77; }
+.refresh-icon.spinning { animation: spin 1s linear infinite; }
 @keyframes spin {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* Deposit Row */
 .deposit-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 14px;
+  padding: 12px 14px 14px;
+}
+.deposit-row + .deposit-row {
+  border-top: 1px solid rgba(247, 147, 26, 0.12);
 }
 
-.row-dark {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.row-light {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-}
-
-.deposit-row:last-child {
-  border-bottom: none;
-}
-
+/* Avatar: tinted bg + solid Bitcoin orange glyph. Same vocabulary as
+   the transaction-history rows so a deposit reads the same wherever
+   the user encounters it. */
 .deposit-indicator {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
   flex-shrink: 0;
+  color: #F7931A;
 }
-
-.deposit-indicator.pending {
-  background: linear-gradient(135deg, #F7931A, #FFAB40);
-}
-
-.deposit-indicator.ready {
-  background: linear-gradient(135deg, #15DE72, #0DBB5F);
-}
+.indicator-light { background: rgba(247, 147, 26, 0.14); }
+.indicator-dark  { background: rgba(247, 147, 26, 0.18); }
 
 .deposit-details {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deposit-amount-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .deposit-amount {
   font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.amount-light { color: #0F172A; }
+.amount-dark  { color: #FFFFFF; }
+
+.deposit-state {
+  font-size: 11px;
   font-weight: 600;
-  color: #15DE72;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.state-pending.state-light { color: #B86E0F; }
+.state-pending.state-dark  { color: #FBBF77; }
+.state-ready.state-light   { color: #0DBB5F; }
+.state-ready.state-dark    { color: #15DE72; }
+
+/* Progress meter — fills with Bitcoin orange while pending, flips to
+   green the moment the deposit is claimable. Width is driven inline
+   so it animates smoothly between confirmation jumps. */
+.deposit-progress {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-light { background: rgba(247, 147, 26, 0.16); }
+.progress-dark  { background: rgba(247, 147, 26, 0.18); }
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease, background 0.2s ease;
+}
+.progress-fill-pending {
+  background: linear-gradient(90deg, #F7931A, #FFB347);
+}
+.progress-fill-ready {
+  background: linear-gradient(90deg, #0DBB5F, #15DE72);
 }
 
-.amount-dark {
-  color: #FFFFFF;
+.deposit-meta {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
 }
+.meta-light { color: rgba(15, 23, 42, 0.6); }
+.meta-dark  { color: rgba(255, 255, 255, 0.55); }
 
-.amount-light {
-  color: #000000;
-}
-
-.deposit-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.deposit-status.status-ready {
-  color: #15DE72;
-}
-
-.deposit-status.status-pending {
-  color: #F7931A;
-}
-
-/* Status Dots */
-.status-dots {
-  display: inline-flex;
-  gap: 3px;
-  margin-right: 4px;
-}
-
-.status-dots .dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: rgba(247, 147, 26, 0.25);
-  transition: all 0.3s ease;
-}
-
-.status-dots .dot.active {
-  background: #F7931A;
-}
-
-/* Claim Button */
+/* Claim CTA — same green palette as elsewhere in the app, but tightened
+   shadow so it doesn't fight with the orange accent. */
 .claim-btn {
   background: linear-gradient(135deg, #15DE72, #0DBB5F) !important;
-  color: white !important;
+  color: #fff !important;
   font-size: 13px !important;
   font-weight: 600 !important;
   padding: 8px 16px !important;
   border-radius: 10px !important;
-  box-shadow: 0 2px 8px rgba(21, 222, 114, 0.25);
-}
-
-.confirming-label {
-  font-size: 12px;
-  font-style: italic;
+  box-shadow: 0 2px 6px rgba(21, 222, 114, 0.22);
 }
 
 /* ==========================================

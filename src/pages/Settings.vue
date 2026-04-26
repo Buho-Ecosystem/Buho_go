@@ -418,6 +418,42 @@
       </div>
 
 
+      <!--
+        INCOMING BITCOIN Section
+        Spark-only — only Spark wallets generate static deposit addresses.
+        One toggle, no advanced thresholds in the main UI: power users
+        can change them via bitcoinPreferences.js constants. Sub-copy
+        explains the "we'll only ask first when fees would take a bite"
+        contract so users know exactly what auto-mode does.
+      -->
+      <template v-if="isSparkActiveWallet">
+        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+          {{ $t('Incoming Bitcoin') }}
+        </div>
+        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+          <q-item>
+            <q-item-section side>
+              <Icon icon="tabler:download" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Add incoming Bitcoin automatically') }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ $t('Most Bitcoin deposits show up in your balance as soon as they arrive. We\'ll only ask first when network fees would take a noticeable bite out of the amount.') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle
+                :model-value="bitcoinPrefsStore.autoAddIncomingBitcoin"
+                @update:model-value="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
+                :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+              />
+            </q-item-section>
+          </q-item>
+        </div>
+      </template>
+
       <!-- SECURITY Section -->
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
         {{ $t('Security') }}
@@ -2003,6 +2039,7 @@
 <script>
 import {useWalletStore} from '../stores/wallet'
 import {useAutoWithdrawStore} from '../stores/autoWithdraw'
+import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
@@ -2010,6 +2047,7 @@ import {shareContent} from '../utils/share.js'
 import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
 import {truncateAddress} from '../utils/addressUtils.js'
+import {getUserFriendlyErrorMessage} from '../utils/userErrors.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
@@ -2224,6 +2262,20 @@ export default {
 
     walletStore() {
       return useWalletStore();
+    },
+
+    bitcoinPrefsStore() {
+      return useBitcoinPreferencesStore();
+    },
+
+    /**
+     * The auto-add-incoming-Bitcoin setting only applies to Spark
+     * wallets (the only wallet type that produces static deposit
+     * addresses). Hide the section for everyone else so we don't
+     * advertise a control they can't use.
+     */
+    isSparkActiveWallet() {
+      return this.walletStore.activeWalletType === 'spark';
     },
 
     kioskSelectedWalletName() {
@@ -2542,8 +2594,8 @@ export default {
     }, 300000); // 5 minutes
 
     // Handle deep link from backup banner
-    if (this.$route.query.section === 'backup' && this.hasSparkWallet) {
-      this.$nextTick(() => this.openBackupDialog());
+    if (this.$route.query.section === 'backup' && this.hasSparkWallet && !this.activeSparkBackedUp) {
+      this.$nextTick(() => this.openSeedPhraseDialog('backup'));
     }
 
     // Handle deep link from wallet switcher "Manage Wallets" button
@@ -2681,7 +2733,11 @@ export default {
         await this.walletStore.activateKioskMode();
         this.$router.push('/kiosk');
       } catch (err) {
-        this.$q.notify({ message: err.message || 'Activation failed', color: 'negative' });
+        console.error('Kiosk activation failed:', err);
+        this.$q.notify({
+          type: 'negative',
+          message: getUserFriendlyErrorMessage(err, 'kiosk', this.$t.bind(this))
+        });
       } finally {
         this.kioskActivating = false;
       }

@@ -12,6 +12,7 @@ import { SparkWalletProvider, SPARK_ACCOUNT_DEFAULTS } from '../providers/SparkW
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { getUserFriendlyErrorMessage } from '../utils/userErrors';
 
 /**
  * Storage keys for persistence
@@ -2013,19 +2014,21 @@ export const useWalletStore = defineStore('wallet', {
 
     /**
      * Turn a raw SDK/transport error into a user-facing string.
-     * Transport-class failures get a generic "network" message; everything
-     * else keeps the original message but is scoped to the relevant wallet
-     * and phase (invoice creation vs. payment).
+     *
+     * Routes the error through `getUserFriendlyErrorMessage` so technical
+     * details (gRPC paths, SDK internals, stack traces) never reach the UI.
+     * The wallet name is appended for context — phase-specific messages help
+     * the user understand which step failed (invoice vs. payment) without
+     * exposing the underlying error class.
+     *
+     * The raw error is logged at the call site via `console.error` for
+     * debugging; the return value here is what the user actually sees.
      */
     _friendlyTransferError(error, fromWallet, toWallet, phase = 'transfer') {
-      const msg = error?.message || String(error || '');
-      const isTransport = /Transport error|Load failed|Failed to fetch|NetworkError|fetch failed/i.test(msg);
-      if (isTransport) {
-        return 'Network issue reaching the wallet service. Please check your connection and try again.';
-      }
-      if (phase === 'invoice') return `Failed to create invoice from ${toWallet.name}: ${msg}`;
-      if (phase === 'pay') return `Failed to send payment from ${fromWallet.name}: ${msg}`;
-      return `Transfer from ${fromWallet.name} to ${toWallet.name} failed: ${msg}`;
+      const friendly = getUserFriendlyErrorMessage(error, 'transfer');
+      if (phase === 'invoice') return `${friendly} (${toWallet.name})`;
+      if (phase === 'pay')     return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
+      return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
     },
 
     /**

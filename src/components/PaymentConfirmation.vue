@@ -13,13 +13,14 @@
         <div class="success-animation" :class="{ 'animate': showAnimation }">
           <div class="success-circle" :class="accentColor === 'orange' ? 'bitcoin-theme' : ''">
             <svg class="checkmark" viewBox="0 0 52 52">
-              <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
               <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
             </svg>
           </div>
-          <div class="pulse-ring" :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"></div>
-          <div class="pulse-ring delay-1" :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"></div>
-          <div class="pulse-ring delay-2" :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"></div>
+          <div
+            v-if="showAnimation"
+            class="pulse-ring-once"
+            :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"
+          ></div>
         </div>
 
         <!-- Amount Display -->
@@ -34,15 +35,10 @@
             {{ fiatAmount }}
           </div>
         </div>
+      </div>
 
-        <!-- Description -->
-        <div v-if="description" class="description-section" :class="{ 'fade-in': showAmount }">
-          <div class="description-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ description }}
-          </div>
-        </div>
-
-        <!-- Auto-close countdown -->
+      <!-- Bottom area: countdown + description -->
+      <div class="bottom-area">
         <div class="countdown-section" :class="{ 'fade-in': showCountdown }">
           <div class="countdown-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             {{ $t('Closing in {seconds}s...', { seconds: countdown }) }}
@@ -57,12 +53,22 @@
             {{ $t('Close Now') }}
           </q-btn>
         </div>
+
+        <div
+          v-if="description"
+          class="description-section"
+          :class="[{ 'fade-in': showCountdown }, $q.dark.isActive ? 'desc-dark' : 'desc-light']"
+        >
+          {{ description }}
+        </div>
       </div>
 
-      <!-- Confetti particles (optional celebration) -->
+      <!-- Confetti particles (disabled for now — keep for future use)
       <div class="confetti-container" v-if="showConfetti">
-        <div v-for="i in 50" :key="i" class="confetti" :style="getConfettiStyle(i)"></div>
+        <div v-for="i in 24" :key="i" class="confetti" :style="getConfettiStyle(i)"></div>
       </div>
+      -->
+
     </div>
   </q-dialog>
 </template>
@@ -92,15 +98,15 @@ export default {
     },
     label: {
       type: String,
-      default: '' // Will use 'Payment Received' if empty
+      default: ''
     },
     autoCloseDelay: {
       type: Number,
-      default: 5 // seconds
+      default: 5
     },
     accentColor: {
       type: String,
-      default: 'green' // 'green' or 'orange' for Bitcoin
+      default: 'green'
     }
   },
   emits: ['update:modelValue', 'closed'],
@@ -151,20 +157,19 @@ export default {
       this.showCountdown = false
       this.showConfetti = false
 
-      // Stagger the animations
       setTimeout(() => {
         this.showAnimation = true
-        this.showConfetti = true
-      }, 100)
+        // this.showConfetti = true // confetti disabled for now
+      }, 80)
 
       setTimeout(() => {
         this.showAmount = true
-      }, 600)
+      }, 380)
 
       setTimeout(() => {
         this.showCountdown = true
         this.startCountdown()
-      }, 1000)
+      }, 700)
     },
 
     startCountdown() {
@@ -204,9 +209,9 @@ export default {
       const colors = this.accentColor === 'orange' ? orangeColors : greenColors
       const color = colors[index % colors.length]
       const left = Math.random() * 100
-      const animDuration = 2 + Math.random() * 2
-      const animDelay = Math.random() * 0.5
-      const size = 6 + Math.random() * 6
+      const animDuration = 1.4 + Math.random() * 0.6
+      const animDelay = Math.random() * 0.3
+      const size = 6 + Math.random() * 5
 
       return {
         left: `${left}%`,
@@ -240,32 +245,8 @@ export default {
   background: #0C0C0C;
 }
 
-.backdrop-dark::before {
-  content: '';
-  position: absolute;
-  top: 30%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(21, 222, 114, 0.08) 0%, transparent 70%);
-  pointer-events: none;
-}
-
 .backdrop-light {
   background: var(--bg-primary);
-}
-
-.backdrop-light::before {
-  content: '';
-  position: absolute;
-  top: 30%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(5, 149, 115, 0.06) 0%, transparent 70%);
-  pointer-events: none;
 }
 
 .confirmation-content {
@@ -280,36 +261,45 @@ export default {
 /* Success Animation */
 .success-animation {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: 110px;
+  height: 110px;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transform: scale(0.5);
-  transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .success-animation.animate {
-  opacity: 1;
-  transform: scale(1);
+  animation: zoom-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes zoom-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .success-circle {
   width: 110px;
   height: 110px;
-  background: linear-gradient(135deg, #15DE72 0%, #059573 100%);
+  background: #15DE72;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 12px 40px rgba(21, 222, 114, 0.35), 0 4px 12px rgba(21, 222, 114, 0.2);
 }
 
-/* Bitcoin Orange Theme */
 .success-circle.bitcoin-theme {
-  background: linear-gradient(135deg, #F7931A 0%, #E67E00 100%);
-  box-shadow: 0 12px 40px rgba(247, 147, 26, 0.35), 0 4px 12px rgba(247, 147, 26, 0.2);
+  background: #F7931A;
 }
 
 .checkmark {
@@ -317,22 +307,14 @@ export default {
   height: 52px;
 }
 
-.checkmark-circle {
-  stroke: rgba(255, 255, 255, 0.3);
-  stroke-width: 2;
-  stroke-dasharray: 166;
-  stroke-dashoffset: 166;
-  animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) 0.3s forwards;
-}
-
 .checkmark-check {
   stroke: white;
-  stroke-width: 3;
+  stroke-width: 3.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 48;
   stroke-dashoffset: 48;
-  animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s forwards;
+  animation: stroke 0.32s cubic-bezier(0.65, 0, 0.45, 1) 0.18s forwards;
 }
 
 @keyframes stroke {
@@ -341,35 +323,28 @@ export default {
   }
 }
 
-/* Pulse rings */
-.pulse-ring {
+/* One-shot pulse ring (fires once on mount, then gone) */
+.pulse-ring-once {
   position: absolute;
   width: 110px;
   height: 110px;
-  border: 2px solid rgba(21, 222, 114, 0.4);
+  border: 2px solid rgba(21, 222, 114, 0.45);
   border-radius: 50%;
-  animation: pulse-expand 2s ease-out infinite;
+  animation: pulse-once 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  pointer-events: none;
 }
 
-.pulse-ring.bitcoin-pulse {
-  border-color: rgba(247, 147, 26, 0.4);
+.pulse-ring-once.bitcoin-pulse {
+  border-color: rgba(247, 147, 26, 0.45);
 }
 
-.pulse-ring.delay-1 {
-  animation-delay: 0.5s;
-}
-
-.pulse-ring.delay-2 {
-  animation-delay: 1s;
-}
-
-@keyframes pulse-expand {
+@keyframes pulse-once {
   0% {
     transform: scale(1);
     opacity: 0.7;
   }
   100% {
-    transform: scale(2.2);
+    transform: scale(1.7);
     opacity: 0;
   }
 }
@@ -378,8 +353,9 @@ export default {
 .amount-section {
   text-align: center;
   opacity: 0;
-  transform: translateY(24px);
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateY(8px);
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .amount-section.fade-in {
@@ -412,36 +388,29 @@ export default {
   opacity: 0.7;
 }
 
-/* Description Section */
-.description-section {
-  text-align: center;
-  max-width: 300px;
-  opacity: 0;
-  transform: translateY(24px);
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  transition-delay: 0.1s;
+/* Bottom area: countdown + description, anchored toward bottom */
+.bottom-area {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(2rem, env(safe-area-inset-bottom, 2rem));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  z-index: 10;
+  padding: 0 1.5rem;
 }
 
-.description-section.fade-in {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.description-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-/* Countdown Section */
 .countdown-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   opacity: 0;
-  transform: translateY(24px);
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateY(8px);
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .countdown-section.fade-in {
@@ -460,7 +429,7 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
 .close-btn-dark {
@@ -481,6 +450,36 @@ export default {
 
 .close-btn-light:hover {
   background: rgba(0, 0, 0, 0.08);
+}
+
+/* Description (e.g. "BuhoGO Payment") — centered footer */
+.description-section {
+  text-align: center;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: 0.08s;
+  max-width: 320px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.description-section.fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.desc-dark {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.desc-light {
+  color: rgba(0, 0, 0, 0.45);
 }
 
 /* Confetti */
@@ -507,8 +506,29 @@ export default {
     opacity: 1;
   }
   100% {
-    transform: translateY(100vh) rotate(720deg);
+    transform: translateY(100vh) rotate(540deg);
     opacity: 0;
+  }
+}
+
+/* Reduced motion: disable all entry/exit animation */
+@media (prefers-reduced-motion: reduce) {
+  .success-animation,
+  .amount-section,
+  .countdown-section,
+  .description-section {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+  .checkmark-check {
+    animation: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+  .pulse-ring-once,
+  .confetti-container {
+    display: none !important;
   }
 }
 
@@ -518,24 +538,16 @@ export default {
     font-size: 2.5rem;
   }
 
-  .success-animation {
-    width: 120px;
-    height: 120px;
-  }
-
-  .success-circle {
-    width: 90px;
-    height: 90px;
+  .success-animation,
+  .success-circle,
+  .pulse-ring-once {
+    width: 96px;
+    height: 96px;
   }
 
   .checkmark {
-    width: 42px;
-    height: 42px;
-  }
-
-  .pulse-ring {
-    width: 90px;
-    height: 90px;
+    width: 44px;
+    height: 44px;
   }
 }
 </style>

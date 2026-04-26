@@ -1,271 +1,111 @@
+<div align="center">
+
+<img src="public/buho_logo.png" alt="BuhoGO" width="120">
+
 # BuhoGO
 
-**Bitcoin & Lightning Wallet for Web and Mobile**
+**A clean, open-source Bitcoin & Lightning wallet. Self-custody or bring-your-own.**
 
-BuhoGO is an open-source wallet application that makes Bitcoin & Lightning payments accessible to everyone. Whether you prefer self-custody with [Spark](https://spark.money), connecting your existing wallet via [NWC](https://nwc.dev), or running your own [LNBits](https://lnbits.com) instance, BuhoGO provides a clean interface for everyday Bitcoin transactions.
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Live App](https://img.shields.io/badge/Web-go.mybuho.de-15DE72)](https://go.mybuho.de)
+[![Google Play](https://img.shields.io/badge/Android-Google%20Play-3DDC84?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=mybuho.buhogo)
+[![Docker](https://img.shields.io/badge/Docker-robinvonmises%2Fbuho__go-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/robinvonmises/buho_go)
 
-[Live App](https://go.mybuho.de) | [Google Play](https://play.google.com/store/apps/details?id=mybuho.buhogo) | [Report Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
+[**Live App**](https://go.mybuho.de) · [**Guide**](Guide.md) · [**Use Cases**](USE_CASES.md) · [**Developers**](Developer.md) · [**Contribute**](CONTRIBUTING.md)
 
-<img
-  src="https://github.com/user-attachments/assets/a4750386-cf4e-49d5-b1d9-8092b59219c9"
-  alt="BuhoGO header"
-  width="500"
-/>
+<img src="https://github.com/user-attachments/assets/a4750386-cf4e-49d5-b1d9-8092b59219c9" alt="BuhoGO header" width="640">
 
-<br>
+</div>
 
-## Features
+## What it is
 
-### Three Wallet Options
+One app, three ways to hold sats:
 
-**Spark Wallet (Self-Custodial)**
-- Generate a new wallet with 12-word seed phrase
-- Full control over your Bitcoin with device-key encryption
-- Zero-fee instant transfers to other Spark users
-- On-chain Bitcoin (L1) deposits and withdrawals
-- Business and Personal accounts from one seed
+| Wallet  | Custody         | Best for                                    |
+| ------- | --------------- | ------------------------------------------- |
+| **Spark**  | Self-custodial  | New users who want full ownership plus on-chain |
+| **NWC**    | Connect (Alby, Primal, etc.) | Keep your existing Lightning wallet     |
+| **LNBits** | Your server     | Power users running their own node          |
 
-**NWC Connected Wallet**
-- Connect any Nostr Wallet Connect compatible wallet
-- Use your existing Lightning setup (Alby, Primal, etc.)
-- Multiple NWC wallets supported simultaneously
-- No seed phrase management required
+> [!TIP]
+> Spark gives you on-chain Bitcoin (L1) deposits and withdrawals, plus zero-fee transfers between Spark users, without channel management.
 
-**LNBits Wallet**
-- Connect to any LNBits instance
-- Full wallet control via Admin API key
-- Multiple LNBits wallets supported
-- Works with self-hosted and shared servers
+## Capabilities
 
-### Payment Capabilities
+|                        | Spark | NWC | LNBits |
+| ---------------------- | :---: | :-: | :----: |
+| Pay Lightning invoice  |   Yes  |  Yes  |    Yes   |
+| Pay Lightning address  |   Yes  |  Yes  |    Yes   |
+| LNURL pay / withdraw   |   Yes  |  Yes  |    Yes   |
+| Receive Lightning      |   Yes  |  Yes  |    Yes   |
+| Spark to Spark (zero-fee) |  Yes  |  No  |    No   |
+| On-chain Bitcoin (L1)  |   Yes  |  No  |    No   |
 
-| Feature | Spark | NWC | LNBits |
-|---------|-------|-----|--------|
-| Pay Lightning Invoices | Yes | Yes | Yes |
-| Pay Lightning Addresses | Yes | Yes | Yes |
-| Pay LNURL Requests | Yes | Yes | Yes |
-| Receive Lightning | Yes | Yes | Yes |
-| Spark-to-Spark Transfers | Yes | No | No |
-| Zero-Fee Transfers | Yes | No | No |
-| On-Chain Bitcoin (L1) | Yes | No | No |
+## Beyond send and receive
 
-### Kiosk Mode (Point of Sale)
-
-Turn any device into a dedicated payment terminal.
-
-- PIN-locked POS interface for employees
-- Configurable tip percentages (5%, 10%, 20%)
-- Round-up option for whole number amounts
-- Sats or fiat display currency
-- Destination wallet selection
-- Deep link blocking while locked
-
-### Additional Features
-
-- **QR Scanner**: Scan invoices, addresses, and LNURL codes
-- **Address Book**: Save contacts with Lightning, Spark, or Bitcoin addresses
-- **Batch Send**: Pay multiple contacts in one go
-- **Internal Transfer**: Move funds between your wallets
-- **Auto-Transfer**: Threshold-based automatic payouts to any destination
-- **Transaction History**: Full record with notes, tags, and contact linking
-- **Deep Links**: Handle `lightning:`, `bitcoin:`, `lnurlp://`, and `lnurlw://` URIs
-- **Biometric Auth**: Fingerprint or face unlock on mobile
-- **Dark and Light Themes**: Choose your preferred appearance
-- **Multi-Language**: English, German, Spanish
-- **Real-Time Prices**: Bitcoin price display in your preferred currency
-
-<br>
+- **Kiosk Mode**: turn any device into a PIN-locked POS terminal with tips, round-up, and fiat display
+- **Batch Send**: pay many contacts in one flow
+- **Auto-Transfer**: threshold-based payouts (e.g. sweep your POS to cold storage)
+- **Internal Transfer**: move funds between your own wallets
+- **Address Book**: contacts with Lightning, Spark, or BTC addresses
+- **Deep links**: handles `lightning:`, `bitcoin:`, `lnurlp://`, `lnurlw://`
+- **Biometric unlock**, dark/light themes, EN / DE / ES
 
 ## Screenshots
 
-### Interface Themes
+<table>
+<tr>
+<td align="center"><img src="public/Spark_images/Home_Black.png" width="220"><br><sub>Dark mode</sub></td>
+<td align="center"><img src="public/Spark_images/Home_Light.png" width="220"><br><sub>Light mode</sub></td>
+<td align="center"><img src="public/Settings_images/BuhoGO_Start_Choose_Wallet.png" width="220"><br><sub>Welcome</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="public/create_send.png" width="220"><br><sub>Send / receive</sub></td>
+<td align="center"><img src="public/Spark_images/TX_List_1.png" width="220"><br><sub>Transactions</sub></td>
+<td align="center"><img src="public/Spark_images/CreateSeed_3.png" width="220"><br><sub>Wallet ready</sub></td>
+</tr>
+</table>
 
-<img src="public/Spark_images/Home_Black.png" alt="Dark Mode" width="280"> <img src="public/Spark_images/Home_Light.png" alt="Light Mode" width="280">
-
-### Welcome Screen
-
-<img src="public/Settings_images/BuhoGO_Start_Choose_Wallet.png" alt="Welcome Screen" width="280">
-
-### Send and Receive
-
-<img src="public/create_send.png" alt="Create/Send" width="280">
-
-### Spark Wallet Setup
-
-<img src="public/Spark_images/CreateSeed_1.png" alt="Create Seed" width="280"> <img src="public/Spark_images/CreateSeed_2.png" alt="Verify Backup" width="280"> <img src="public/Spark_images/CreateSeed_3.png" alt="Wallet Ready" width="280">
-
-### Transaction History
-
-<img src="public/Spark_images/TX_List_1.png" alt="Transactions Expanded" width="280"> <img src="public/Spark_images/TX_List_closed.png" alt="Transactions Collapsed" width="280">
-
-<br>
-
-## Quick Start
-
-### Installation
+## Run it
 
 ```bash
 git clone https://github.com/Buho-Ecosystem/Buho_go.git
-cd Buho_go
-npm install
-npm run dev
+cd Buho_go && npm install && npm run dev
 ```
 
-The app will be available at `http://localhost:9000`
+Open `http://localhost:9000`.
 
-### Production Build
+<details>
+<summary><b>Production / Android builds</b></summary>
 
 ```bash
+# Web (output: dist/spa)
 npm run build
-```
 
-Build output goes to `dist/spa`.
-
-### Android Build
-
-```bash
+# Android APK
 quasar build -m capacitor -T android
+# ...or open in Android Studio
+quasar build -m capacitor -T android --ide
 ```
+</details>
 
-Or use `--ide` to open in Android Studio for debugging.
+## Security in one paragraph
 
-<br>
+Spark seeds are encrypted with **AES-256-GCM** using a per-device key (PBKDF2, 100k iterations). Private keys never leave the device. NWC strings and LNBits API keys are stored locally only. No server holds your secrets, ever.
 
-## Getting Started
+## Tech
 
-For detailed step-by-step instructions, see the [User Guide](Guide.md).
-
-### Option A: Create a Spark Wallet
-
-1. Open the app and select "Create Wallet"
-2. Write down your 12-word seed phrase (this is your backup)
-3. Verify your backup by tapping words in the correct order
-4. Your wallet is ready with Business and Personal accounts
-
-See [Setting Up a Spark Wallet](Guide.md#setting-up-a-spark-wallet) for details.
-
-### Option B: Connect an NWC Wallet
-
-1. Open the app and select "Connect Wallet"
-2. Get your NWC connection string from your wallet provider
-3. Paste the string or scan the QR code
-4. Your wallet is now connected
-
-See [Connecting an NWC Wallet](Guide.md#connecting-an-nwc-wallet) for details.
-
-### Option C: Connect an LNBits Wallet
-
-1. Open the app and select "Connect Wallet" then "LNBits"
-2. Enter your server URL and Admin API key
-3. Your wallet is now connected
-
-See [Connecting an LNBits Wallet](Guide.md#connecting-an-lnbits-wallet) for details.
-
-### Making Payments
-
-BuhoGO accepts multiple payment formats:
-
-- **Lightning Invoice**: Strings starting with `lnbc...`
-- **Lightning Address**: Email-like format `name@domain.com`
-- **LNURL**: Encoded payment requests starting with `lnurl...`
-- **Spark Address**: Strings starting with `spark1...` (Spark wallets only)
-- **Bitcoin Address**: On-chain addresses like `bc1p...` or `bc1q...` (Spark wallets only)
-
-Scan a QR code or paste the payment destination and the app handles the rest.
-
-<br>
-
-## Security
-
-For technical details, see the [Developer Guide](Developer.md#security-considerations).
-
-### Spark Wallet Security
-
-- Seed phrases encrypted with AES-256-GCM using a device key
-- Private keys never leave your device
-- No server-side storage of sensitive data
-- Biometric unlock available on mobile
-
-### NWC / LNBits Wallet Security
-
-- Connection strings and API keys stored locally only
-- Each wallet operates independently
-- Non-custodial architecture throughout
-
-### Best Practices
-
-- Back up your Spark seed phrase securely offline
-- Verify recipient addresses before sending
-- Start with small amounts when testing
-
-<br>
-
-## Tech Stack
-
-For architecture details, see the [Developer Guide](Developer.md#architecture-overview).
-
-| Component | Technology |
-|-----------|------------|
-| Framework | Vue.js 3 |
-| UI Library | Quasar Framework |
-| State Management | Pinia |
-| Build Tool | Vite |
-| Lightning (Spark) | @buildonspark/spark-sdk |
-| Lightning (NWC) | @getalby/sdk |
-| Lightning (LNBits) | LNBits REST API |
-| Mobile | Capacitor (Android, iOS planned) |
-
-<br>
-
-## Project Structure
-
-```
-src/
-  boot/              # App initialization (safe-area, deep-links, kiosk, i18n)
-  components/        # Reusable Vue components
-  css/               # Global styles and theming
-  i18n/              # Internationalization (en, de, es)
-  pages/             # Application pages/routes
-  providers/         # Wallet provider implementations
-  router/            # Vue Router configuration
-  stores/            # Pinia state stores
-  utils/             # Shared utilities
-```
-
-<br>
+`Vue 3` · `Quasar` · `Pinia` · `Vite` · `@buildonspark/spark-sdk` · `@getalby/sdk` · `LNBits REST` · `Capacitor`
 
 ## Documentation
 
-- [User Guide](Guide.md) - Step-by-step instructions for using BuhoGO
-- [Use Cases](use_cases.md) - Real-world scenarios and examples
-- [Developer Guide](Developer.md) - Technical documentation for contributors
-
-<br>
-
-## Contributing
-
-Contributions are welcome. Please read the [Developer Guide](Developer.md) before contributing.
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes following the [Styling Guidelines](Developer.md#styling-guidelines)
-4. Submit a pull request
-
-<br>
+| Doc | For |
+| --- | --- |
+| [**Guide.md**](Guide.md) | Users: setup, sending, receiving, kiosk |
+| [**USE_CASES.md**](USE_CASES.md) | Anyone: "I want to do X" then how |
+| [**Developer.md**](Developer.md) | Hackers: architecture, providers, builds |
+| [**CONTRIBUTING.md**](CONTRIBUTING.md) | First-timers and pros: how to help |
 
 ## License
 
-AGPL-3.0. See [LICENSE](LICENSE) for the full text.
-
-<br>
-
-## Links
-
-- **Web App**: [go.mybuho.de](https://go.mybuho.de)
-- **GitHub**: [Buho-Ecosystem/Buho_go](https://github.com/Buho-Ecosystem/Buho_go)
-- **Google Play**: [BuhoGO](https://play.google.com/store/apps/details?id=mybuho.buhogo)
-- **Docker Image**: [BuhoGO Docker](https://hub.docker.com/r/robinvonmises/buho_go)
-
-<br>
-
-*Built for the Bitcoin community by people who use Bitcoin every day.*
+[AGPL-3.0](LICENSE). Built for Bitcoiners, by Bitcoiners.
