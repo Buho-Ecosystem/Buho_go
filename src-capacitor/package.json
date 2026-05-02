@@ -1,6 +1,6 @@
 {
   "name": "buho-app",
-  "version": "1.6.0",
+  "version": "1.8.1",
   "description": "BuhoGo - A Bitcoin Lightning Wallet for the Web",
   "author": "pratikpatel <pratikpatelpp802@gmail.com> & drshift <keleeweb@tutanota.com>",
   "private": true,
