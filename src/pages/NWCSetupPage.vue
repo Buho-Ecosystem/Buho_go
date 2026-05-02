@@ -234,6 +234,7 @@ import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import { useWalletStore } from '../stores/wallet'
 import { mapActions } from 'pinia'
+import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 export default {
   name: 'NWCSetupPage',
@@ -325,11 +326,11 @@ export default {
         this.loadingText = this.$t('Loading wallet...');
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        this.$router.push('/wallet');
+        this.$router.replace('/spark-success?mode=nwc-lnbits');
       } catch (error) {
         console.error('Failed to connect NWC wallet:', error);
         this.showLoadingScreen = false;
-        this.errorMessage = error.message || this.$t('Connection failed');
+        this.errorMessage = getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this));
       } finally {
         this.isConnecting = false;
       }
@@ -675,8 +676,8 @@ export default {
 }
 
 .scanner-light {
-  background: #F8F9FA;
-  border-color: #E5E7EB;
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
 }
 
 .camera-error,

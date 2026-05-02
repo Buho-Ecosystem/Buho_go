@@ -14,7 +14,14 @@
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Address Book') }}
       </div>
-      <q-btn no-caps unelevated class="add-contact-pill-btn" @click="showAddModal">
+      <q-btn
+        no-caps
+        unelevated
+        class="add-contact-btn"
+        :class="$q.dark.isActive ? 'add-contact-btn-dark' : 'add-contact-btn-light'"
+        @click="showAddModal"
+      >
+        <Icon icon="tabler:plus" width="16" height="16" class="q-mr-xs" />
         {{ $t('Add Contact') }}
       </q-btn>
     </div>
@@ -91,7 +98,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t load contacts'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         })
       }
     },
@@ -141,7 +147,6 @@ export default {
         type: 'positive',
         message: this.$t('Sent'),
 
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       })
     },
 
@@ -206,8 +211,8 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: white;
-  border-bottom: 1px solid #E5E7EB;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-card);
   position: sticky;
   top: var(--safe-top, 0px);
   z-index: 100;
@@ -229,7 +234,7 @@ export default {
 }
 
 .back_btn_light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .back_btn_dark:hover {
@@ -237,7 +242,7 @@ export default {
 }
 
 .back_btn_light:hover {
-  background: #F1F5F9;
+  background: var(--bg-input);
 }
 
 .main_page_title_dark {
@@ -258,15 +263,35 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
-/* Add Contact Pill Button */
-.add-contact-pill-btn {
-  background: var(--gradient-green);
-  color: #FFF;
-  border-radius: 999px;
-  padding: 6px 18px;
+/* Add Contact button — unified neutral translucent style, same
+   treatment as the empty-state CTA and the Copy/Share buttons in
+   the receive flow. No greens; the icon carries the intent. */
+.add-contact-btn {
+  border-radius: 10px;
+  padding: 6px 14px;
   font-size: 13px;
   font-weight: 500;
   font-family: 'Manrope', sans-serif;
+  letter-spacing: -0.005em;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.add-contact-btn-dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.add-contact-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.add-contact-btn-light {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.add-contact-btn-light:hover {
+  background: rgba(0, 0, 0, 0.08);
 }
 
 /* Content */
@@ -290,8 +315,8 @@ export default {
     height: calc(100vh - 70px);
   }
 
-  .add-contact-pill-btn {
-    padding: 5px 14px;
+  .add-contact-btn {
+    padding: 5px 12px;
     font-size: 12px;
   }
 }

@@ -314,6 +314,19 @@
           </q-card-actions>
         </q-card>
       </q-dialog>
+
+      <!-- Post-connect: offer to attach a lightning address (lnurlp extension). -->
+      <!-- Skipped in kiosk mode so unattended setups don't stall on this dialog. -->
+      <LNBitsLightningAddressDialog
+        v-if="addressPrompt.visible"
+        v-model="addressPrompt.visible"
+        :domain="addressPrompt.domain"
+        :existing-addresses="addressPrompt.existingAddresses"
+        :default-username="addressPrompt.defaultUsername"
+        :create-address="addressPrompt.createAddress"
+        @confirm="onLightningAddressConfirm"
+        @skip="onLightningAddressSkip"
+      />
     </div>
   </q-page>
 </template>
@@ -321,14 +334,17 @@
 <script>
 import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
+import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import { useWalletStore } from '../stores/wallet'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
-import { mapActions } from 'pinia'
+import { mapActions, mapState } from 'pinia'
+import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 export default {
   name: 'LNBitsSetupPage',
   components: {
     LoadingScreen,
+    LNBitsLightningAddressDialog,
   },
   data() {
     return {
@@ -353,9 +369,21 @@ export default {
       validatedWalletId: '',
       validatedWalletName: '',
       validatedBalance: 0,
+      // Post-connect lightning-address prompt.
+      // Populated by maybePromptLightningAddress() once the wallet is saved and
+      // we've verified the lnurlp extension is available.
+      addressPrompt: {
+        visible: false,
+        walletId: null,
+        domain: '',
+        existingAddresses: [],
+        defaultUsername: '',
+        createAddress: null,
+      },
     }
   },
   computed: {
+    ...mapState(useWalletStore, ['kioskEnabled']),
     displayServerUrl() {
       try {
         const url = new URL(this.validatedServerUrl);
@@ -369,7 +397,7 @@ export default {
     this.stopQrScanner();
   },
   methods: {
-    ...mapActions(useWalletStore, ['addLNBitsWallet']),
+    ...mapActions(useWalletStore, ['addLNBitsWallet', 'setWalletLightningAddress']),
 
     goBack() {
       if (window.history.length > 1) {
@@ -408,7 +436,7 @@ export default {
 
       } catch (error) {
         console.error('LNBits validation failed:', error);
-        this.errorMessage = error.message || this.$t('Connection failed');
+        this.errorMessage = getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this));
       } finally {
         this.isConnecting = false;
       }
@@ -421,8 +449,9 @@ export default {
       this.showLoadingScreen = true;
       this.loadingText = this.$t('Adding wallet...');
 
+      let wallet;
       try {
-        await this.addLNBitsWallet({
+        wallet = await this.addLNBitsWallet({
           name: this.walletName.trim(),
           serverUrl: this.validatedServerUrl,
           walletId: this.validatedWalletId,
@@ -431,18 +460,129 @@ export default {
 
         this.loadingText = this.$t('Loading wallet...');
         await new Promise(resolve => setTimeout(resolve, 500));
-
-        this.$router.push('/wallet');
       } catch (error) {
         console.error('Failed to add LNBits wallet:', error);
         this.showLoadingScreen = false;
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to add wallet'),
-          caption: error.message,
-          
+          caption: getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this)),
         });
+        return;
       }
+
+      // Wallet is saved. In kiosk mode we never interrupt with extra dialogs —
+      // head straight to the success screen. Otherwise offer to set up a
+      // lightning address if the server supports it.
+      if (this.kioskEnabled) {
+        this.goToSuccess();
+        return;
+      }
+
+      const prompted = await this.maybePromptLightningAddress(wallet);
+      if (!prompted) {
+        // No lnurlp extension (or probe failed) — nothing to prompt, just finish.
+        this.goToSuccess();
+      }
+      // If prompted === true, navigation happens after the user responds to
+      // the dialog (see onLightningAddressConfirm / onLightningAddressSkip).
+    },
+
+    /**
+     * Navigate to the standard post-setup success screen. Kept as a single
+     * method so every exit path (kiosk, dialog skipped, dialog confirmed,
+     * lnurlp unavailable) lands in the same place.
+     */
+    goToSuccess() {
+      this.$router.replace('/spark-success?mode=nwc-lnbits');
+    },
+
+    /**
+     * Check whether the connected LNBits server has the lnurlp extension and,
+     * if so, open the lightning-address dialog pre-populated with any
+     * existing addresses on the wallet.
+     *
+     * Hides the loading screen before opening the dialog so the user sees
+     * the prompt on a clean background.
+     *
+     * @param {Object} wallet - the freshly-created wallet object from the store
+     * @returns {Promise<boolean>} true if the dialog was opened, false otherwise
+     */
+    async maybePromptLightningAddress(wallet) {
+      if (!wallet) return false;
+
+      // Build a throwaway provider instance pinned to the wallet we just added.
+      // We don't use the store-managed connection because the dialog's lifecycle
+      // is self-contained and we want to keep these API calls isolated.
+      const provider = new LNBitsWalletProvider(wallet.id, {
+        name: wallet.name,
+        serverUrl: wallet.connectionData.serverUrl,
+        walletId: wallet.connectionData.walletId,
+        adminKey: wallet.connectionData.adminKey,
+      });
+
+      const available = await provider.checkLnurlpAvailable();
+      if (!available) return false;
+
+      let existing = [];
+      try {
+        existing = await provider.listLightningAddresses();
+      } catch (e) {
+        // Extension present but listing failed — proceed with empty list so
+        // the user can still create one. Don't block the flow on a non-fatal error.
+        console.warn('Failed to list existing lightning addresses:', e);
+      }
+
+      const domain = new URL(wallet.connectionData.serverUrl).hostname;
+
+      this.showLoadingScreen = false;
+      this.addressPrompt = {
+        visible: true,
+        walletId: wallet.id,
+        domain,
+        existingAddresses: existing,
+        // Suggest a username derived from the wallet name (lowercase, alphanumeric).
+        // The dialog sanitises this further before using it.
+        defaultUsername: wallet.name || '',
+        // The dialog invokes this when the user clicks "Create address".
+        // Bound here so the provider instance stays in closure.
+        createAddress: (username) => provider.createLightningAddress({ username }),
+      };
+      return true;
+    },
+
+    async onLightningAddressConfirm({ address }) {
+      try {
+        await this.setWalletLightningAddress(this.addressPrompt.walletId, address);
+      } catch (e) {
+        // Persisting the address is a local-only op; failure here is extremely
+        // unlikely but we don't want to strand the user. Notify and move on.
+        console.error('Failed to save lightning address locally:', e);
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Address created but not saved locally'),
+          caption: this.$t('You can set it again from Settings.'),
+        });
+      } finally {
+        this.resetAddressPrompt();
+        this.goToSuccess();
+      }
+    },
+
+    onLightningAddressSkip() {
+      this.resetAddressPrompt();
+      this.goToSuccess();
+    },
+
+    resetAddressPrompt() {
+      this.addressPrompt = {
+        visible: false,
+        walletId: null,
+        domain: '',
+        existingAddresses: [],
+        defaultUsername: '',
+        createAddress: null,
+      };
     },
 
     async openScanner() {
@@ -826,8 +966,8 @@ export default {
 }
 
 .scanner-light {
-  background: #F8F9FA;
-  border-color: #E5E7EB;
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
 }
 
 .camera-error,
@@ -932,7 +1072,7 @@ export default {
 }
 
 .preview-light {
-  background: #F5F5F5;
+  background: var(--bg-input);
 }
 
 .preview-row {

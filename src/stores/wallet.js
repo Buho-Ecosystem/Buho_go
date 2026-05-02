@@ -12,6 +12,7 @@ import { SparkWalletProvider, SPARK_ACCOUNT_DEFAULTS } from '../providers/SparkW
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { getUserFriendlyErrorMessage } from '../utils/userErrors';
 
 /**
  * Storage keys for persistence
@@ -19,88 +20,135 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 const STORAGE_KEYS = {
   WALLET_STORE: 'buhoGO_wallet_store',
   LEGACY_STATE: 'buhoGO_wallet_state',
-  SESSION_PIN: 'buhoGO_session_pin', // sessionStorage only - per tab, cleared on close
+  DEVICE_KEY: 'buhoGO_device_key',
 };
 
 /**
- * Encryption utilities for Spark wallet mnemonic
- * Uses Web Crypto API with AES-256-GCM
+ * Encryption utilities for Spark wallet mnemonic.
+ * Uses a random 256-bit device key stored in localStorage.
+ * The mnemonic is never stored in plaintext — AES-256-GCM encryption at rest.
  */
 const CryptoUtils = {
   /**
-   * Derive encryption key from PIN using PBKDF2
+   * Get or create the device encryption key.
+   * Generated once, stored in localStorage as base64.
    */
-  async deriveKey(pin, salt) {
-    const encoder = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(pin),
-      'PBKDF2',
-      false,
-      ['deriveKey']
-    );
+  async getDeviceKey() {
+    // crypto.subtle only exists in a secure context (HTTPS or localhost).
+    // Serving over a LAN IP / plain http:// leaves it undefined, which
+    // otherwise surfaces as a cryptic "Cannot read properties of undefined".
+    if (!globalThis.crypto?.subtle) {
+      throw new Error(
+        'Secure context required. Open this app over HTTPS or from localhost. ' +
+        'Browsers disable Web Crypto on plain http:// LAN addresses.'
+      );
+    }
 
-    return crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: salt,
-        iterations: 100000,
-        hash: 'SHA-256'
-      },
-      keyMaterial,
-      { name: 'AES-GCM', length: 256 },
+    let keyB64 = localStorage.getItem(STORAGE_KEYS.DEVICE_KEY);
+
+    if (!keyB64) {
+      const raw = crypto.getRandomValues(new Uint8Array(32));
+      keyB64 = btoa(String.fromCharCode(...raw));
+      localStorage.setItem(STORAGE_KEYS.DEVICE_KEY, keyB64);
+    }
+
+    const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
+    return crypto.subtle.importKey(
+      'raw',
+      raw,
+      { name: 'AES-GCM' },
       false,
       ['encrypt', 'decrypt']
     );
   },
 
   /**
-   * Encrypt mnemonic with PIN
+   * Encrypt mnemonic with device key
    */
-  async encryptMnemonic(mnemonic, pin) {
+  async encryptMnemonic(mnemonic) {
     const encoder = new TextEncoder();
-    const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await this.deriveKey(pin, salt);
+    const key = await this.getDeviceKey();
 
     const encrypted = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv },
+      { name: 'AES-GCM', iv },
       key,
       encoder.encode(mnemonic)
     );
 
-    // Combine salt + iv + encrypted data
-    const result = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
-    result.set(salt, 0);
-    result.set(iv, salt.length);
-    result.set(new Uint8Array(encrypted), salt.length + iv.length);
+    // Combine iv + encrypted data
+    const result = new Uint8Array(iv.length + encrypted.byteLength);
+    result.set(iv, 0);
+    result.set(new Uint8Array(encrypted), iv.length);
 
-    // Return as base64
     return btoa(String.fromCharCode(...result));
   },
 
   /**
-   * Decrypt mnemonic with PIN
+   * Decrypt mnemonic with device key
    */
-  async decryptMnemonic(encryptedData, pin) {
+  async decryptMnemonic(encryptedData) {
+    const data = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    const iv = data.slice(0, 12);
+    const encrypted = data.slice(12);
+    const key = await this.getDeviceKey();
+
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      encrypted
+    );
+
+    return new TextDecoder().decode(decrypted);
+  },
+
+  /**
+   * Migrate a PIN-encrypted mnemonic to device-key encryption.
+   * Used once for existing users who had a PIN.
+   */
+  async migrateFromPin(encryptedData, pin) {
+    // Decrypt with old PIN-based scheme (salt + iv + ciphertext)
+    const data = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    const salt = data.slice(0, 16);
+    const iv = data.slice(16, 28);
+    const encrypted = data.slice(28);
+
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw', encoder.encode(pin), 'PBKDF2', false, ['deriveKey']
+    );
+    const oldKey = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['decrypt']
+    );
+
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      oldKey,
+      encrypted
+    );
+
+    const mnemonic = new TextDecoder().decode(decrypted);
+
+    // Re-encrypt with device key
+    return this.encryptMnemonic(mnemonic);
+  },
+
+  /**
+   * Check if encrypted data uses the old PIN-based format.
+   * Old format: salt(16) + iv(12) + ciphertext (base64 decodes to > 28 bytes with salt prefix)
+   * New format: iv(12) + ciphertext (no salt)
+   * We detect by trying device-key decryption — if it fails, it's old format.
+   */
+  async isOldPinFormat(encryptedData) {
     try {
-      const data = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
-
-      const salt = data.slice(0, 16);
-      const iv = data.slice(16, 28);
-      const encrypted = data.slice(28);
-
-      const key = await this.deriveKey(pin, salt);
-
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: iv },
-        key,
-        encrypted
-      );
-
-      return new TextDecoder().decode(decrypted);
-    } catch (error) {
-      throw new Error('Incorrect PIN');
+      await this.decryptMnemonic(encryptedData);
+      return false; // Device key worked — already migrated
+    } catch {
+      return true; // Device key failed — still PIN-encrypted
     }
   }
 };
@@ -121,11 +169,9 @@ export const useWalletStore = defineStore('wallet', {
     balances: {},
     walletInfos: {},
 
-    // Session PIN for Spark wallet (runtime only, not persisted)
-    sessionPin: null,
-
     // User preferences
     preferredFiatCurrency: 'USD',
+    defaultDisplayCurrency: 'bitcoin', // 'bitcoin' or 'fiat' — what the balance shows on app open
     denominationCurrency: 'sats',
     useBip177Format: true, // BIP-177 (₿) vs Legacy (sats) format
 
@@ -139,6 +185,29 @@ export const useWalletStore = defineStore('wallet', {
     hasBackedUp: false,
     backupDismissedUntil: null, // timestamp when banner dismissal expires
 
+    // Biometric lock
+    biometricsEnabled: false,
+
+    // Internal flag: set true when user explicitly removes wallets (bypasses persist guard)
+    _walletRemovalInProgress: false,
+
+    // Migration: true if existing wallets still use old PIN encryption
+    needsPinMigration: false,
+
+    // Kiosk Mode
+    kioskEnabled: false,
+    kioskPin: '',
+    kioskOwnerAccess: false, // true = merchant unlocked, false = locked to POS
+    kioskWalletId: null, // which wallet receives kiosk payments
+
+    // Kiosk — Tipping
+    kioskTipEnabled: false,
+    kioskTipValues: [5, 10, 20], // tip percentages
+    kioskRoundUpEnabled: false,
+
+    // Kiosk — Display
+    kioskDisplayCurrency: 'sats', // 'sats' | 'fiat'
+
     // UI states
     isLoading: false,
     isConnecting: false,
@@ -146,6 +215,28 @@ export const useWalletStore = defineStore('wallet', {
 
     // Error tracking
     lastError: null,
+
+    // Bitcoin L1 deposit-claim coordination.
+    //
+    // Two flows can claim the same UTXO concurrently: the silent auto-claim
+    // in Wallet.vue and the manual "Add to Wallet" sheet in
+    // L1BitcoinReceive.vue. Whichever lands second gets a misleading SDK
+    // error ("needs more confirmations") because the UTXO is already gone.
+    //
+    // We mark a txId here the moment any flow starts a claim and clear it
+    // when the flow finishes (success OR error). The UI uses
+    // `isDepositClaimInFlight(txId)` to lock the manual button while
+    // auto-claim is running, and the auto-claim path checks the same flag
+    // before submitting a duplicate.
+    //
+    // Stored as a plain object map (not a Set) for Pinia reactivity.
+    inFlightDepositClaims: {},
+
+    // Bumped after a deposit claim completes so subscribed components
+    // (L1BitcoinReceive) can refresh their pending-deposit list immediately
+    // instead of waiting for the next 30s poll tick. Counter, not boolean,
+    // so each completion triggers a fresh watcher fire.
+    depositsRefreshSignal: 0,
   }),
 
   getters: {
@@ -212,7 +303,16 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Lightning address of the active wallet (from NWC lud16 parameter)
+     * Lightning address of the active wallet (user@domain), if any.
+     *
+     * Resolution order (wallet-type agnostic):
+     *   1. `wallet.metadata.lud16` — the canonical storage slot, set by any flow
+     *      that configures a lightning address (NWC lud16 param, LNBits lnurlp setup, etc.)
+     *   2. For NWC wallets only: parse the `lud16` query param from `nwcUrl` as a fallback
+     *      so wallets added before lud16 extraction was implemented still light up.
+     *
+     * Always returns a validated `user@domain` string or null. Spark wallets don't
+     * support lightning addresses and always return null.
      */
     activeWalletLightningAddress: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
@@ -343,12 +443,12 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Check if PIN is required for Spark wallet
+     * Check if Spark wallet needs connection (no PIN required — auto-connects)
      */
     needsPinEntry: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
       if (activeWallet?.type !== WALLET_TYPES.SPARK) return false;
-      return !state.sessionPin;
+      return !state.connectionStates[state.activeWalletId]?.connected;
     },
 
     /**
@@ -436,9 +536,55 @@ export const useWalletStore = defineStore('wallet', {
         || activeWallet?.metadata?.sparkAddress
         || null;
     },
+
+    /** Kiosk is active and merchant has NOT unlocked */
+    isKioskRestricted: (state) => state.kioskEnabled && !state.kioskOwnerAccess,
+
+    /** The wallet object selected for kiosk payments */
+    kioskWallet: (state) => state.wallets.find((w) => w.id === state.kioskWalletId) || null,
   },
 
   actions: {
+    /**
+     * Mark a Bitcoin L1 deposit txId as currently being claimed. Idempotent.
+     * Called by both the auto-claim flow (Wallet.vue) and the manual sheet
+     * (L1BitcoinReceive.vue) so neither submits a duplicate to the SSP.
+     */
+    markDepositClaimInFlight(txId) {
+      if (!txId) return;
+      if (!this.inFlightDepositClaims[txId]) {
+        this.inFlightDepositClaims[txId] = true;
+      }
+    },
+
+    /**
+     * Clear the in-flight marker for a txId. Always call from a `finally`
+     * so a thrown error can't leave the UI permanently locked.
+     */
+    clearDepositClaimInFlight(txId) {
+      if (!txId) return;
+      if (this.inFlightDepositClaims[txId]) {
+        delete this.inFlightDepositClaims[txId];
+      }
+    },
+
+    /**
+     * Reactive predicate: is this txId currently being claimed somewhere?
+     * Use from templates as `walletStore.isDepositClaimInFlight(deposit.txId)`.
+     */
+    isDepositClaimInFlight(txId) {
+      return !!this.inFlightDepositClaims[txId];
+    },
+
+    /**
+     * Tell subscribed views (L1BitcoinReceive) to re-fetch their pending
+     * deposit list now instead of waiting for the next poll. Bump the
+     * counter so a `watch` on `depositsRefreshSignal` fires every time.
+     */
+    signalDepositsRefresh() {
+      this.depositsRefreshSignal += 1;
+    },
+
     /**
      * Initialize the store from localStorage
      */
@@ -572,16 +718,29 @@ export const useWalletStore = defineStore('wallet', {
             }
           }
 
+          console.log(`[wallet-store] Loading ${migratedWallets.length} wallet(s):`, migratedWallets.map(w => `${w.type}:${w.name}`));
+
           this.$patch({
             wallets: migratedWallets,
             activeWalletId: parsed.activeWalletId || null,
             preferredFiatCurrency: parsed.preferredFiatCurrency || 'USD',
+            defaultDisplayCurrency: parsed.defaultDisplayCurrency || 'bitcoin',
             denominationCurrency: parsed.denominationCurrency || 'sats',
             useBip177Format: parsed.useBip177Format !== undefined ? parsed.useBip177Format : true,
             exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
             exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
             exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
             hasBackedUp: parsed.hasBackedUp || false,
+            biometricsEnabled: parsed.biometricsEnabled || false,
+            // Kiosk
+            kioskEnabled: parsed.kioskEnabled || false,
+            kioskPin: parsed.kioskPin || '',
+            kioskOwnerAccess: this.kioskOwnerAccess || false, // preserve if already unlocked this session
+            kioskWalletId: parsed.kioskWalletId || null,
+            kioskTipEnabled: parsed.kioskTipEnabled || false,
+            kioskTipValues: parsed.kioskTipValues || [5, 10, 20],
+            kioskRoundUpEnabled: parsed.kioskRoundUpEnabled || false,
+            kioskDisplayCurrency: parsed.kioskDisplayCurrency || 'sats',
           });
         }
 
@@ -595,12 +754,20 @@ export const useWalletStore = defineStore('wallet', {
         const autoWithdrawStore = useAutoWithdrawStore();
         await autoWithdrawStore.initialize();
 
-        // Try to restore session PIN from sessionStorage (survives page reload)
-        this._restoreSessionPin();
-
-        // Auto-connect all Spark wallets if session PIN is available
-        if (this.sessionPin) {
-          await this.connectAllSparkWallets(this.sessionPin);
+        // Auto-connect Spark wallets — detect if migration from PIN is needed
+        if (this.sparkWallets.length > 0) {
+          if (typeof window !== 'undefined' && window.__AUDIT__) {
+            // Audit harness: skip migration detection and provider init entirely
+          } else {
+            const firstSpark = this.sparkWallets[0];
+            const isOld = await CryptoUtils.isOldPinFormat(firstSpark.connectionData.encryptedMnemonic);
+            if (isOld) {
+              this.needsPinMigration = true;
+              console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
+            } else {
+              await this.connectAllSparkWallets();
+            }
+          }
         }
 
         // Auto-connect active non-Spark wallet
@@ -624,57 +791,6 @@ export const useWalletStore = defineStore('wallet', {
       }
     },
 
-    // ==========================================
-    // Session PIN Management (survives page reload within tab)
-    // ==========================================
-
-    /**
-     * Store session PIN in both Pinia state and sessionStorage
-     * sessionStorage survives page reloads but clears when tab closes
-     */
-    _setSessionPin(pin) {
-      this.sessionPin = pin;
-      if (pin) {
-        try {
-          sessionStorage.setItem(STORAGE_KEYS.SESSION_PIN, pin);
-        } catch (e) {
-          console.warn('Could not store session PIN:', e);
-        }
-      } else {
-        sessionStorage.removeItem(STORAGE_KEYS.SESSION_PIN);
-      }
-    },
-
-    /**
-     * Restore session PIN from sessionStorage if available
-     * Called during initialization or when Pinia state is lost (HMR)
-     */
-    _restoreSessionPin() {
-      if (!this.sessionPin) {
-        try {
-          const stored = sessionStorage.getItem(STORAGE_KEYS.SESSION_PIN);
-          if (stored) {
-            this.sessionPin = stored;
-            return true;
-          }
-        } catch (e) {
-          console.warn('Could not restore session PIN:', e);
-        }
-      }
-      return !!this.sessionPin;
-    },
-
-    /**
-     * Clear session PIN from both Pinia state and sessionStorage
-     */
-    _clearSessionPin() {
-      this.sessionPin = null;
-      try {
-        sessionStorage.removeItem(STORAGE_KEYS.SESSION_PIN);
-      } catch (e) {
-        // Ignore errors
-      }
-    },
 
     // ==========================================
     // Seed Backup Management
@@ -713,62 +829,81 @@ export const useWalletStore = defineStore('wallet', {
       this.lastError = null;
       const onProgress = walletData.onProgress || (() => {});
 
+      // Snapshot pre-call state so we can restore it on partial failure.
+      // The Business/Personal pair is one logical unit — either both land
+      // in memory AND storage, or neither does.
+      const addedWalletIds = [];
+      const previousActiveWalletId = this.activeWalletId;
+      const previousHasBackedUp = this.hasBackedUp;
+
       try {
         if (!walletData.mnemonic) {
-          throw new Error('Mnemonic is required');
+          const err = new Error('Mnemonic is required');
+          err.code = 'SPARK_MNEMONIC_REQUIRED';
+          throw err;
         }
 
         // Only one Spark wallet pair allowed
         if (this.hasAnySparkWallet) {
-          throw new Error('Spark wallet already exists');
-        }
-
-        const pin = walletData.pin || this.sessionPin;
-        if (!pin || pin.length !== 6) {
-          throw new Error('A 6-digit PIN is required');
+          const err = new Error('Spark wallet already exists');
+          err.code = 'SPARK_WALLET_EXISTS';
+          throw err;
         }
 
         const network = walletData.network || 'MAINNET';
         const walletGroupId = `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-        // Encrypt mnemonic with PIN
+        // Resolve the account-number pair for this mnemonic.
+        // Pre-v1.6.0 Spark mainnet wallets lived on account 0 (the SDK's
+        // old default). On restore we probe account 0 and, if it has
+        // activity, place it on the Personal slot so legacy funds remain
+        // accessible. Non-restore (fresh create) always uses the modern
+        // pair so new users get the latest derivation defaults.
+        const accountPair = await this._resolveSparkAccountPair({
+          mnemonic: walletData.mnemonic,
+          network,
+          isRestore: walletData.isRestore,
+          onProgress,
+        });
+
+        // Encrypt mnemonic with device key
         onProgress('encrypting');
-        const encryptedMnemonic = await CryptoUtils.encryptMnemonic(walletData.mnemonic, pin);
+        const encryptedMnemonic = await CryptoUtils.encryptMnemonic(walletData.mnemonic);
 
-        // Store PIN in session
-        this._setSessionPin(pin);
-
-        // Create Business wallet (accountNumber 1)
+        // Create Business wallet
         onProgress('business');
         const businessWallet = await this._createSparkWalletEntry({
           mnemonic: walletData.mnemonic,
           encryptedMnemonic,
           name: 'Business',
           network,
-          accountNumber: 1,
+          accountNumber: accountPair.business,
           walletGroupId,
           isRestore: walletData.isRestore,
-          pin,
+          isLegacy: accountPair.business === 0,
         });
+        addedWalletIds.push(businessWallet.id);
 
-        // Set Business as active and default
-        this.activeWalletId = businessWallet.id;
-        businessWallet.isActive = true;
-        businessWallet.isDefault = true;
-
-        // Create Personal wallet (accountNumber 2)
+        // Create Personal wallet
         onProgress('personal');
-        const personalEncrypted = await CryptoUtils.encryptMnemonic(walletData.mnemonic, pin);
-        await this._createSparkWalletEntry({
+        const personalEncrypted = await CryptoUtils.encryptMnemonic(walletData.mnemonic);
+        const personalWallet = await this._createSparkWalletEntry({
           mnemonic: walletData.mnemonic,
           encryptedMnemonic: personalEncrypted,
           name: 'Personal',
           network,
-          accountNumber: 2,
+          accountNumber: accountPair.personal,
           walletGroupId,
           isRestore: walletData.isRestore,
-          pin,
+          isLegacy: accountPair.personal === 0,
         });
+        addedWalletIds.push(personalWallet.id);
+
+        // Land the user inside Personal after setup/restore. Personal is
+        // the everyday-use wallet; Business is secondary.
+        this.activeWalletId = personalWallet.id;
+        personalWallet.isActive = true;
+        personalWallet.isDefault = true;
 
         // Legacy store-level backup flag
         if (walletData.isRestore) {
@@ -777,8 +912,16 @@ export const useWalletStore = defineStore('wallet', {
 
         onProgress('done');
         await this.persistState();
-        return businessWallet;
+        return personalWallet;
       } catch (error) {
+        // Atomic rollback. If Business succeeded and Personal failed
+        // (network blip, SDK timeout, etc.), unwind the in-memory
+        // state we mutated so a retry can cleanly start over and
+        // so storage / memory don't diverge.
+        this._rollbackSparkWalletEntries(addedWalletIds, {
+          previousActiveWalletId,
+          previousHasBackedUp,
+        });
         this.lastError = error.message;
         throw error;
       } finally {
@@ -787,9 +930,84 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Internal helper: create and connect a single Spark wallet entry
+     * Unwind partial state left behind by a failed addSparkWallet call.
+     * Disconnects any opened providers and removes the wallet entries
+     * from every in-memory map the store tracks them in.
      */
-    async _createSparkWalletEntry({ mnemonic, encryptedMnemonic, name, network, accountNumber, walletGroupId, isRestore, pin }) {
+    _rollbackSparkWalletEntries(walletIds, { previousActiveWalletId, previousHasBackedUp }) {
+      for (const id of walletIds) {
+        const provider = this.providers[id];
+        if (provider) {
+          try {
+            provider.disconnect();
+          } catch (e) {
+            console.warn('Rollback: provider disconnect failed for', id, e);
+          }
+          delete this.providers[id];
+        }
+        delete this.walletInfos[id];
+        delete this.balances[id];
+        delete this.connectionStates[id];
+        const idx = this.wallets.findIndex(w => w.id === id);
+        if (idx !== -1) this.wallets.splice(idx, 1);
+      }
+      this.activeWalletId = previousActiveWalletId;
+      this.hasBackedUp = previousHasBackedUp;
+    },
+
+    /**
+     * Pick the (Business, Personal) account-number pair for a Spark
+     * mnemonic being set up or restored.
+     *
+     * Modern wallets (and fresh creates) use (1, 2). A mnemonic that has
+     * activity on account 0 is a legacy pre-v1.6.0 wallet — the Spark SDK
+     * previously defaulted mainnet to account 0 before switching to 1. We
+     * preserve those funds by placing account 0 on the Personal slot.
+     *
+     * Legacy detection is mainnet-restore-only:
+     *   - Testnet/regtest have always used account 0 as their default, so
+     *     the concept of "legacy" doesn't apply there.
+     *   - Fresh creates should always land on the modern pair so new users
+     *     get current derivation defaults.
+     *
+     * The probe is best-effort: if it fails (transient network error), we
+     * fall back to the modern pair. The user can re-run restore later or
+     * import the mnemonic in another wallet to recover legacy funds.
+     */
+    async _resolveSparkAccountPair({ mnemonic, network, isRestore, onProgress }) {
+      const MODERN_PAIR = { business: 1, personal: 2 };
+      const LEGACY_PAIR = { business: 1, personal: 0 };
+
+      if (!isRestore || network !== 'MAINNET') {
+        return MODERN_PAIR;
+      }
+
+      onProgress?.('legacyCheck');
+      try {
+        const probe = await SparkWalletProvider.probeAccountActivity(mnemonic, network, 0);
+        if (probe.hasActivity) {
+          console.info('Spark restore: legacy account 0 detected', {
+            balance: probe.balance,
+            transferCount: probe.transferCount,
+          });
+          return LEGACY_PAIR;
+        }
+      } catch (err) {
+        console.warn('Spark restore: legacy probe failed, using modern pair', err);
+      }
+
+      return MODERN_PAIR;
+    },
+
+    /**
+     * Internal helper: create and connect a single Spark wallet entry.
+     *
+     * `connectSparkWallet` locates the wallet by id in `this.wallets`, so
+     * the entry must be pushed before the connect call. If connect fails,
+     * we undo the push locally — the caller's rollback only sees wallets
+     * that were fully returned from here.
+     */
+    async _createSparkWalletEntry({ mnemonic, encryptedMnemonic, name, network, accountNumber, walletGroupId, isRestore, isLegacy = false }) {
       // Validate mnemonic
       const testWallet = await SparkWalletProvider.restoreWallet(mnemonic, network, accountNumber);
       const sparkAddress = await testWallet.getSparkAddress();
@@ -812,34 +1030,44 @@ export const useWalletStore = defineStore('wallet', {
         metadata: {
           sparkAddress,
           hasBackedUp: isRestore || false,
+          // Marks pre-v1.6.0 derivations restored from account 0 on mainnet.
+          // Purely informational — the accountNumber is the source of truth
+          // for key derivation. Lets the UI badge legacy wallets if desired.
+          isLegacy,
         },
       };
 
       this.wallets.push(wallet);
       this.walletInfos[wallet.id] = { sparkAddress, type: 'spark' };
 
-      // Connect the wallet
-      await this.connectSparkWallet(wallet.id, pin);
+      try {
+        await this.connectSparkWallet(wallet.id);
+      } catch (error) {
+        // Undo the push so this helper is transactional from the caller's POV.
+        this._rollbackSparkWalletEntries([wallet.id], {
+          previousActiveWalletId: this.activeWalletId,
+          previousHasBackedUp: this.hasBackedUp,
+        });
+        throw error;
+      }
 
       return wallet;
     },
 
     /**
-     * Connect to a Spark wallet with PIN
+     * Connect to a Spark wallet using device key
      * @param {string} walletId - Wallet ID
-     * @param {string} pin - 6-digit PIN
      */
-    async connectSparkWallet(walletId, pin) {
+    async connectSparkWallet(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet || wallet.type !== WALLET_TYPES.SPARK) {
         throw new Error('Spark wallet not found');
       }
 
       try {
-        // Decrypt mnemonic
+        // Decrypt mnemonic with device key
         const mnemonic = await CryptoUtils.decryptMnemonic(
-          wallet.connectionData.encryptedMnemonic,
-          pin
+          wallet.connectionData.encryptedMnemonic
         );
 
         // Create provider (accountNumber falls back to network default for pre-1.5.0 wallets)
@@ -852,9 +1080,8 @@ export const useWalletStore = defineStore('wallet', {
         // Initialize with mnemonic
         await provider.initializeWithMnemonic(mnemonic);
 
-        // Store provider and session PIN (survives page reload)
+        // Store provider
         this.providers[walletId] = provider;
-        this._setSessionPin(pin);
 
         // Update connection state
         this.connectionStates[walletId] = {
@@ -887,38 +1114,13 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Unlock all Spark wallets with shared PIN
-     * @param {string} pin - 6-digit PIN
+     * Connect all Spark wallets using device key
      */
-    async unlockSparkWallet(pin) {
-      const sparkWallets = this.sparkWallets;
-      if (sparkWallets.length === 0) {
-        throw new Error('No Spark wallet found');
-      }
-
-      // Validate PIN against the first Spark wallet
-      await CryptoUtils.decryptMnemonic(
-        sparkWallets[0].connectionData.encryptedMnemonic,
-        pin
-      );
-
-      // Store PIN (survives page reload)
-      this._setSessionPin(pin);
-
-      // Connect all Spark wallets
-      await this.connectAllSparkWallets(pin);
-    },
-
-    /**
-     * Connect all Spark wallets with shared PIN
-     * @param {string} pin - 6-digit PIN
-     */
-    async connectAllSparkWallets(pin) {
-      const sparkWallets = this.sparkWallets;
-      for (const wallet of sparkWallets) {
+    async connectAllSparkWallets() {
+      for (const wallet of this.sparkWallets) {
         try {
           if (!this.connectionStates[wallet.id]?.connected) {
-            await this.connectSparkWallet(wallet.id, pin);
+            await this.connectSparkWallet(wallet.id);
           }
         } catch (err) {
           console.warn(`Failed to connect Spark wallet "${wallet.name}":`, err.message);
@@ -927,7 +1129,7 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Lock all Spark wallets (clear session)
+     * Lock all Spark wallets (disconnect providers)
      */
     lockSparkWallet() {
       for (const wallet of this.sparkWallets) {
@@ -942,16 +1144,14 @@ export const useWalletStore = defineStore('wallet', {
           error: null,
         };
       }
-      this._clearSessionPin();
     },
 
     /**
-     * Get decrypted mnemonic for a Spark wallet (requires PIN verification)
-     * @param {string} pin - PIN to verify
+     * Get decrypted mnemonic for a Spark wallet
      * @param {string} [walletId] - Specific wallet ID (defaults to active Spark wallet)
      * @returns {Promise<string>} Mnemonic
      */
-    async getSparkMnemonic(pin, walletId) {
+    async getSparkMnemonic(walletId) {
       const wallet = walletId
         ? this.wallets.find(w => w.id === walletId && w.type === WALLET_TYPES.SPARK)
         : this.activeWallet?.type === WALLET_TYPES.SPARK ? this.activeWallet : this.sparkWallet;
@@ -960,37 +1160,8 @@ export const useWalletStore = defineStore('wallet', {
       }
 
       return CryptoUtils.decryptMnemonic(
-        wallet.connectionData.encryptedMnemonic,
-        pin
+        wallet.connectionData.encryptedMnemonic
       );
-    },
-
-    /**
-     * Change shared Spark PIN — re-encrypts ALL Spark wallet mnemonics
-     * @param {string} currentPin - Current PIN
-     * @param {string} newPin - New PIN
-     */
-    async changeSparkPin(currentPin, newPin) {
-      const sparkWallets = this.sparkWallets;
-      if (sparkWallets.length === 0) {
-        throw new Error('No Spark wallet found');
-      }
-
-      if (!newPin || newPin.length !== 6) {
-        throw new Error('New PIN must be 6 digits');
-      }
-
-      // Re-encrypt every Spark wallet's mnemonic with the new PIN
-      for (const wallet of sparkWallets) {
-        const mnemonic = await CryptoUtils.decryptMnemonic(
-          wallet.connectionData.encryptedMnemonic,
-          currentPin
-        );
-        wallet.connectionData.encryptedMnemonic = await CryptoUtils.encryptMnemonic(mnemonic, newPin);
-      }
-
-      this._setSessionPin(newPin);
-      await this.persistState();
     },
 
     /**
@@ -1000,6 +1171,27 @@ export const useWalletStore = defineStore('wallet', {
      */
     getSparkProvider(walletId) {
       return this.providers[walletId] || null;
+    },
+
+    /**
+     * One-time migration: re-encrypt all Spark wallets from old PIN scheme to device key.
+     * Called once after update for users who had a PIN. After this, PIN is never needed again.
+     * @param {string} pin - The user's existing 6-digit PIN (one last time)
+     */
+    async migrateSparkWallets(pin) {
+      for (const wallet of this.sparkWallets) {
+        const newEncrypted = await CryptoUtils.migrateFromPin(
+          wallet.connectionData.encryptedMnemonic,
+          pin
+        );
+        wallet.connectionData.encryptedMnemonic = newEncrypted;
+      }
+
+      this.needsPinMigration = false;
+      await this.persistState();
+
+      // Now connect with the new device key encryption
+      await this.connectAllSparkWallets();
     },
 
     // ==========================================
@@ -1119,11 +1311,9 @@ export const useWalletStore = defineStore('wallet', {
         this.balances[wallet.id] = balanceResponse.balance;
         this.walletInfos[wallet.id] = info;
 
-        // Set as active if first wallet
-        if (this.wallets.length === 1) {
-          this.activeWalletId = wallet.id;
-          wallet.isActive = true;
-        }
+        // Activate the newly added wallet
+        this.activeWalletId = wallet.id;
+        wallet.isActive = true;
 
         await this.persistState();
         return wallet;
@@ -1207,11 +1397,9 @@ export const useWalletStore = defineStore('wallet', {
         this.wallets.push(wallet);
         this.balances[wallet.id] = validation.walletInfo.balance;
 
-        // Set as active if first wallet
-        if (this.wallets.length === 1) {
-          this.activeWalletId = wallet.id;
-          wallet.isActive = true;
-        }
+        // Activate the newly added wallet
+        this.activeWalletId = wallet.id;
+        wallet.isActive = true;
 
         // Connect the wallet
         await this.connectLNBitsWallet(wallet.id);
@@ -1281,6 +1469,7 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - The wallet ID to remove
      */
     async removeWallet(walletId) {
+      this._walletRemovalInProgress = true;
       try {
         const walletIndex = this.wallets.findIndex((w) => w.id === walletId);
         if (walletIndex === -1) {
@@ -1322,11 +1511,10 @@ export const useWalletStore = defineStore('wallet', {
         delete this.balances[walletId];
         delete this.walletInfos[walletId];
 
-        // Clear session PIN only if removing the last Spark wallet
+        // Clean up backup state if removing the last Spark wallet
         if (wallet.type === WALLET_TYPES.SPARK) {
           const remainingSparkWallets = this.wallets.filter(w => w.type === WALLET_TYPES.SPARK);
           if (remainingSparkWallets.length === 0) {
-            this._clearSessionPin();
             this.hasBackedUp = false;
             this.backupDismissedUntil = null;
           }
@@ -1376,13 +1564,10 @@ export const useWalletStore = defineStore('wallet', {
         wallet.lastUsed = Date.now();
         this.activeWalletId = walletId;
 
-        // Ensure connected (Spark needs PIN)
+        // Ensure connected
         if (!this.connectionStates[walletId]?.connected) {
           if (wallet.type === WALLET_TYPES.SPARK) {
-            if (this.sessionPin) {
-              await this.connectSparkWallet(walletId, this.sessionPin);
-            }
-            // If no PIN, the UI will prompt for it
+            await this.connectSparkWallet(walletId);
           } else if (wallet.type === WALLET_TYPES.LNBITS) {
             await this.connectLNBitsWallet(walletId);
           } else {
@@ -1412,10 +1597,7 @@ export const useWalletStore = defineStore('wallet', {
 
       // Handle Spark wallet separately
       if (wallet.type === WALLET_TYPES.SPARK) {
-        if (!this.sessionPin) {
-          throw new Error('PIN required for Spark wallet');
-        }
-        await this.connectSparkWallet(walletId, this.sessionPin);
+        await this.connectSparkWallet(walletId);
         return null;
       }
 
@@ -1500,9 +1682,7 @@ export const useWalletStore = defineStore('wallet', {
         if (wallet.type === WALLET_TYPES.SPARK) {
           const provider = this.providers[walletId];
           if (!provider || !this.connectionStates[walletId]?.connected) {
-            if (this.sessionPin) {
-              await this.connectSparkWallet(walletId, this.sessionPin);
-            }
+            await this.connectSparkWallet(walletId);
             return;
           }
 
@@ -1594,6 +1774,34 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Set (or clear) the lightning address for a wallet.
+     *
+     * Stored in `metadata.lud16` — the same slot used for NWC-provided addresses —
+     * so the `activeWalletLightningAddress` getter picks it up uniformly across
+     * wallet types (LNBits, NWC, etc.). Spark wallets are rejected; they don't
+     * support lightning addresses.
+     *
+     * @param {string} walletId
+     * @param {string|null} address - Full `user@domain` address, or null/empty to clear
+     */
+    async setWalletLightningAddress(walletId, address) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      if (!wallet) return;
+      if (wallet.type === WALLET_TYPES.SPARK) return;
+
+      if (!wallet.metadata) wallet.metadata = {};
+
+      const cleaned = typeof address === 'string' ? address.trim() : '';
+      if (cleaned) {
+        wallet.metadata.lud16 = cleaned;
+      } else {
+        delete wallet.metadata.lud16;
+      }
+
+      await this.persistState();
+    },
+
+    /**
      * Set a wallet as the default
      * @param {string} walletId - The wallet ID to make default
      */
@@ -1669,51 +1877,51 @@ export const useWalletStore = defineStore('wallet', {
         return provider;
       }
 
-      // Try to restore session PIN from sessionStorage if not in memory
-      // This handles cases where Pinia state was lost (HMR, etc.)
-      if (!this.sessionPin) {
-        this._restoreSessionPin();
-      }
-
-      // Try to connect using session PIN
-      if (this.sessionPin) {
-        try {
-          await this.connectSparkWallet(wallet.id, this.sessionPin);
-          provider = this.getProvider(wallet.id);
-          if (provider && provider.isConnected) {
-            return provider;
-          }
-        } catch (error) {
-          // If connection fails with stored PIN, it might be corrupted
-          // Clear it and let user re-enter
-          console.warn('Auto-reconnect failed:', error.message);
+      // Try to auto-connect using device key
+      try {
+        await this.connectSparkWallet(wallet.id);
+        provider = this.getProvider(wallet.id);
+        if (provider && provider.isConnected) {
+          return provider;
         }
+      } catch (error) {
+        console.warn('Spark auto-connect failed:', error.message);
       }
 
-      throw new Error('Spark wallet not unlocked. Please enter your PIN.');
+      throw new Error('Spark wallet could not be connected.');
     },
 
     /**
      * Validate all wallets and remove invalid ones
      */
     async validateWallets() {
+      const before = this.wallets.length;
       this.wallets = this.wallets.filter((wallet) => {
         if (wallet.type === WALLET_TYPES.SPARK) {
-          return wallet.connectionData?.encryptedMnemonic;
+          const valid = !!wallet.connectionData?.encryptedMnemonic;
+          if (!valid) console.warn(`[validateWallets] Removing Spark wallet "${wallet.name}" (${wallet.id}): missing encryptedMnemonic`);
+          return valid;
         }
         if (wallet.type === WALLET_TYPES.LNBITS) {
-          return wallet.connectionData?.serverUrl && wallet.connectionData?.adminKey;
+          const valid = wallet.connectionData?.serverUrl && wallet.connectionData?.adminKey;
+          if (!valid) console.warn(`[validateWallets] Removing LNBits wallet "${wallet.name}" (${wallet.id}): missing serverUrl or adminKey`);
+          return valid;
         }
         // NWC wallet
         const isValid = wallet.nwcUrl && wallet.nwcUrl.startsWith('nostr+walletconnect://');
         if (!isValid) {
-          console.warn(`Removing invalid wallet: ${wallet.id}`);
+          console.warn(`[validateWallets] Removing NWC wallet "${wallet.name}" (${wallet.id}): nwcUrl=${wallet.nwcUrl ? 'invalid format' : 'missing'}`, JSON.stringify({ type: wallet.type, keys: Object.keys(wallet) }));
         }
         return isValid;
       });
 
+      if (this.wallets.length < before) {
+        console.warn(`[validateWallets] Removed ${before - this.wallets.length} wallet(s). ${this.wallets.length} remaining.`);
+      }
+
       // Ensure active wallet is valid
       if (this.activeWalletId && !this.wallets.find((w) => w.id === this.activeWalletId)) {
+        console.warn(`[validateWallets] Active wallet ${this.activeWalletId} no longer valid, switching to ${this.wallets[0]?.id || 'none'}`);
         this.activeWalletId = this.wallets[0]?.id || null;
       }
     },
@@ -1722,6 +1930,7 @@ export const useWalletStore = defineStore('wallet', {
      * Disconnect and remove all wallets
      */
     async disconnectAll() {
+      this._walletRemovalInProgress = true;
       for (const walletId of Object.keys(this.connectionStates)) {
         await this.disconnectWallet(walletId);
       }
@@ -1734,7 +1943,6 @@ export const useWalletStore = defineStore('wallet', {
       this.providers = {};
       this.hasBackedUp = false;
       this.backupDismissedUntil = null;
-      this._clearSessionPin();
 
       // Clear auto-withdraw configs
       const autoWithdrawStore = useAutoWithdrawStore();
@@ -1747,6 +1955,7 @@ export const useWalletStore = defineStore('wallet', {
      * Disconnect and remove only NWC wallets (keeps Spark wallet)
      */
     async disconnectNwcWallets() {
+      this._walletRemovalInProgress = true;
       const nwcWallets = this.wallets.filter(w => w.type === WALLET_TYPES.NWC);
 
       // Disconnect each NWC wallet
@@ -1774,6 +1983,7 @@ export const useWalletStore = defineStore('wallet', {
      * Disconnect and remove only LNBits wallets
      */
     async disconnectLNBitsWallets() {
+      this._walletRemovalInProgress = true;
       const lnbitsWallets = this.wallets.filter(w => w.type === WALLET_TYPES.LNBITS);
 
       // Disconnect each LNBits wallet
@@ -1848,10 +2058,7 @@ export const useWalletStore = defineStore('wallet', {
 
       // Connect based on wallet type
       if (wallet.type === WALLET_TYPES.SPARK) {
-        if (!this.sessionPin) {
-          throw new Error('PIN required for Spark wallet');
-        }
-        await this.connectSparkWallet(walletId, this.sessionPin);
+        await this.connectSparkWallet(walletId);
       } else if (wallet.type === WALLET_TYPES.LNBITS) {
         await this.connectLNBitsWallet(walletId);
       } else {
@@ -1865,6 +2072,25 @@ export const useWalletStore = defineStore('wallet', {
       }
 
       return provider;
+    },
+
+    /**
+     * Turn a raw SDK/transport error into a user-facing string.
+     *
+     * Routes the error through `getUserFriendlyErrorMessage` so technical
+     * details (gRPC paths, SDK internals, stack traces) never reach the UI.
+     * The wallet name is appended for context — phase-specific messages help
+     * the user understand which step failed (invoice vs. payment) without
+     * exposing the underlying error class.
+     *
+     * The raw error is logged at the call site via `console.error` for
+     * debugging; the return value here is what the user actually sees.
+     */
+    _friendlyTransferError(error, fromWallet, toWallet, phase = 'transfer') {
+      const friendly = getUserFriendlyErrorMessage(error, 'transfer');
+      if (phase === 'invoice') return `${friendly} (${toWallet.name})`;
+      if (phase === 'pay')     return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
+      return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
     },
 
     /**
@@ -1906,52 +2132,63 @@ export const useWalletStore = defineStore('wallet', {
         throw new Error('Failed to connect wallets');
       }
 
-      // Step 1: Create invoice from destination wallet
-      let invoice;
-      const transferMemo = memo || `Transfer from ${fromWallet.name}`;
-      const toType = toWallet.type?.toLowerCase() || 'nwc';
-
-      try {
-        if (toType === 'spark' || toType === 'lnbits') {
-          // Spark and LNBits both use createInvoice({ amount, description })
-          const invoiceResult = await toProvider.createInvoice({
-            amount: amountSats,
-            description: transferMemo
-          });
-          invoice = invoiceResult.paymentRequest || invoiceResult.payment_request || invoiceResult.bolt11 || invoiceResult;
-        } else {
-          // NWC wallet (WebLN interface) - makeInvoice expects satoshis
-          // The Alby SDK handles internal conversion to millisats for NIP-47
-          const invoiceResult = await toProvider.makeInvoice({
-            amount: amountSats,
-            description: transferMemo
-          });
-          invoice = invoiceResult.invoice || invoiceResult.paymentRequest || invoiceResult.bolt11;
-        }
-      } catch (invoiceError) {
-        console.error('Invoice creation error:', invoiceError);
-        throw new Error(`Failed to create invoice from ${toWallet.name}: ${invoiceError.message}`);
-      }
-
-      if (!invoice) {
-        throw new Error('Failed to create invoice from destination wallet');
-      }
-
-      // Step 2: Pay invoice from source wallet
-      let paymentResult;
       const fromType = fromWallet.type?.toLowerCase() || 'nwc';
+      const toType = toWallet.type?.toLowerCase() || 'nwc';
+      const transferMemo = memo || `Transfer from ${fromWallet.name}`;
 
-      try {
-        if (fromType === 'spark' || fromType === 'lnbits') {
-          // Spark and LNBits both use payInvoice({ invoice })
-          paymentResult = await fromProvider.payInvoice({ invoice });
-        } else {
-          // NWC wallet - use sendPayment with just the invoice string
-          paymentResult = await fromProvider.sendPayment(invoice);
+      // Fast path: Spark → Spark uses native zero-fee transfer, bypassing
+      // Lightning invoice creation. Avoids the SO preimage-share round-trip
+      // that can fail with transport errors under flaky network conditions.
+      let paymentResult;
+      if (fromType === 'spark' && toType === 'spark') {
+        try {
+          const sparkAddress = await toProvider.getSparkAddress();
+          paymentResult = await fromProvider.transferToSparkAddress(sparkAddress, amountSats);
+        } catch (sparkError) {
+          console.error('Spark-native transfer error:', sparkError);
+          throw new Error(this._friendlyTransferError(sparkError, fromWallet, toWallet));
         }
-      } catch (payError) {
-        console.error('Payment error:', payError);
-        throw new Error(`Failed to send payment from ${fromWallet.name}: ${payError.message}`);
+      } else {
+        // Lightning path: create invoice on destination, pay from source
+        let invoice;
+        try {
+          if (toType === 'spark' || toType === 'lnbits') {
+            // Spark and LNBits both use createInvoice({ amount, description })
+            const invoiceResult = await toProvider.createInvoice({
+              amount: amountSats,
+              description: transferMemo
+            });
+            invoice = invoiceResult.paymentRequest || invoiceResult.payment_request || invoiceResult.bolt11 || invoiceResult;
+          } else {
+            // NWC wallet (WebLN interface) - makeInvoice expects satoshis
+            // The Alby SDK handles internal conversion to millisats for NIP-47
+            const invoiceResult = await toProvider.makeInvoice({
+              amount: amountSats,
+              description: transferMemo
+            });
+            invoice = invoiceResult.invoice || invoiceResult.paymentRequest || invoiceResult.bolt11;
+          }
+        } catch (invoiceError) {
+          console.error('Invoice creation error:', invoiceError);
+          throw new Error(this._friendlyTransferError(invoiceError, fromWallet, toWallet, 'invoice'));
+        }
+
+        if (!invoice) {
+          throw new Error('Failed to create invoice from destination wallet');
+        }
+
+        try {
+          if (fromType === 'spark' || fromType === 'lnbits') {
+            // Spark and LNBits both use payInvoice({ invoice })
+            paymentResult = await fromProvider.payInvoice({ invoice });
+          } else {
+            // NWC wallet - use sendPayment with just the invoice string
+            paymentResult = await fromProvider.sendPayment(invoice);
+          }
+        } catch (payError) {
+          console.error('Payment error:', payError);
+          throw new Error(this._friendlyTransferError(payError, fromWallet, toWallet, 'pay'));
+        }
       }
 
       // Step 3: Refresh balances for both wallets
@@ -2034,6 +2271,15 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Update biometric lock preference
+     * @param {boolean} enabled - Enable or disable biometric lock
+     */
+    updateBiometricsEnabled(enabled) {
+      this.biometricsEnabled = enabled;
+      this.persistState();
+    },
+
+    /**
      * Generate a unique wallet ID
      * @returns {string} Unique wallet ID
      */
@@ -2046,17 +2292,43 @@ export const useWalletStore = defineStore('wallet', {
      */
     async persistState() {
       try {
+        // Safety: never save fewer wallets than localStorage already has,
+        // unless the user explicitly removed wallets (disconnect/remove actions).
+        // Guards against HMR resets and race conditions that wipe wallet data.
+        if (!this._walletRemovalInProgress) {
+          const existing = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
+          if (existing) {
+            const parsed = JSON.parse(existing);
+            const savedCount = parsed.wallets?.length || 0;
+            if (savedCount > 0 && this.wallets.length < savedCount) {
+              console.warn(`[wallet-store] Refusing to persist — would lose wallets (${this.wallets.length} < ${savedCount} saved). This is likely an HMR or race condition.`);
+              return;
+            }
+          }
+        }
+        this._walletRemovalInProgress = false;
+
         // Save new format
         const stateToSave = {
           wallets: this.wallets,
           activeWalletId: this.activeWalletId,
           preferredFiatCurrency: this.preferredFiatCurrency,
+          defaultDisplayCurrency: this.defaultDisplayCurrency,
           denominationCurrency: this.denominationCurrency,
           useBip177Format: this.useBip177Format,
           exchangeRates: this.exchangeRates,
           exchangeRatesAvailable: this.exchangeRatesAvailable,
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
           hasBackedUp: this.hasBackedUp,
+          biometricsEnabled: this.biometricsEnabled,
+          // Kiosk
+          kioskEnabled: this.kioskEnabled,
+          kioskPin: this.kioskPin,
+          kioskWalletId: this.kioskWalletId,
+          kioskTipEnabled: this.kioskTipEnabled,
+          kioskTipValues: this.kioskTipValues,
+          kioskRoundUpEnabled: this.kioskRoundUpEnabled,
+          kioskDisplayCurrency: this.kioskDisplayCurrency,
         };
         localStorage.setItem(STORAGE_KEYS.WALLET_STORE, JSON.stringify(stateToSave));
 
@@ -2110,6 +2382,83 @@ export const useWalletStore = defineStore('wallet', {
       this.$reset();
       localStorage.removeItem(STORAGE_KEYS.WALLET_STORE);
       localStorage.removeItem(STORAGE_KEYS.LEGACY_STATE);
+    },
+
+    // ─── Kiosk Mode ───────────────────────────────────────────
+
+    async enableKiosk(pin, walletId) {
+      this.kioskEnabled = true;
+      this.kioskPin = pin;
+      this.kioskWalletId = walletId || null;
+      this.kioskOwnerAccess = true; // merchant keeps full access after setup
+      await this.persistState();
+    },
+
+    async disableKiosk() {
+      this.kioskEnabled = false;
+      this.kioskPin = '';
+      this.kioskOwnerAccess = false;
+      this.kioskWalletId = null;
+      this.kioskTipEnabled = false;
+      this.kioskTipValues = [5, 10, 20];
+      this.kioskRoundUpEnabled = false;
+      this.kioskDisplayCurrency = 'sats';
+      await this.persistState();
+    },
+
+    unlockToOwnerMode(pin) {
+      if (pin === this.kioskPin) {
+        this.kioskOwnerAccess = true;
+        return true;
+      }
+      return false;
+    },
+
+    forceUnlockKiosk() {
+      this.kioskOwnerAccess = true;
+    },
+
+    lockToKioskMode() {
+      this.kioskOwnerAccess = false;
+    },
+
+    verifyKioskPin(pin) {
+      return pin === this.kioskPin;
+    },
+
+    async changeKioskPin(newPin) {
+      this.kioskPin = newPin;
+      await this.persistState();
+    },
+
+    async activateKioskMode() {
+      this.kioskOwnerAccess = false;
+      await this.persistState();
+    },
+
+    async setKioskWallet(walletId) {
+      this.kioskWalletId = walletId;
+      await this.persistState();
+    },
+
+    async setKioskTipEnabled(val) {
+      this.kioskTipEnabled = val;
+      await this.persistState();
+    },
+
+    async setKioskTipValues(arr) {
+      this.kioskTipValues = arr;
+      await this.persistState();
+    },
+
+    async setKioskRoundUpEnabled(val) {
+      this.kioskRoundUpEnabled = val;
+      await this.persistState();
+    },
+
+    async setKioskDisplayCurrency(val) {
+      this.kioskDisplayCurrency = val;
+      await this.persistState();
     },
   },
 });

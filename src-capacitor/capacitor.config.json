@@ -4,5 +4,9 @@
   "webDir": "www",
   "server": {
     "androidScheme": "https"
-  }
+  },
+  "packageClassList": [
+    "AppPlugin",
+    "PreferencesPlugin"
+  ]
 }

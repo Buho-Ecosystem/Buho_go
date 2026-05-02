@@ -46,12 +46,15 @@
 
         <!-- Empty State -->
         <div v-else-if="!hasContacts" class="empty-state">
-          <div class="empty-circle">
-            <Icon icon="tabler:user-plus" />
-          </div>
+          <img
+            src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
+            class="empty-illustration-img"
+            alt=""
+            aria-hidden="true"
+          />
           <p class="empty-title">{{ $t('No contacts yet') }}</p>
           <p class="empty-subtitle">{{ $t('Add contacts to quickly send payments') }}</p>
-          <q-btn unelevated no-caps class="btn-primary" @click="goToAddressBook">
+          <q-btn unelevated no-caps class="btn-primary" @click="openAddContact">
             <Icon icon="tabler:plus" class="q-mr-sm" />
             {{ $t('Add Contact') }}
           </q-btn>
@@ -219,6 +222,15 @@
         </q-btn>
       </footer>
     </q-card>
+
+    <!-- Inline create-contact form. Surfaced from the empty-state CTA so users
+         can add their first contact without bouncing through the Address Book
+         page. On save we close the quick sheet and route to /address-book so
+         the user lands on the populated list view, not back on the empty state. -->
+    <AddressBookModal
+      v-model="showAddModal"
+      @saved="onContactAdded"
+    />
   </q-dialog>
 </template>
 
@@ -227,6 +239,7 @@ import { ref, computed } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
 import { useAddressBookStore } from '../stores/addressBook';
+import AddressBookModal from './AddressBook/AddressBookModal.vue';
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -246,6 +259,7 @@ const addressBookStore = useAddressBookStore();
 // ─────────────────────────────────────────────────────────────
 const searchQuery = ref('');
 const isLoading = ref(false);
+const showAddModal = ref(false);
 
 // ─────────────────────────────────────────────────────────────
 // Computed
@@ -348,6 +362,18 @@ function goToAddressBook() {
   router.push('/address-book');
 }
 
+function openAddContact() {
+  showAddModal.value = true;
+}
+
+// After the first contact is saved, route to /address-book so the user
+// lands on the populated list rather than re-seeing the empty state
+// behind the form.
+function onContactAdded() {
+  showAddModal.value = false;
+  goToAddressBook();
+}
+
 function openBatchSend() {
   isVisible.value = false;
   emit('open-batch-send');
@@ -442,27 +468,33 @@ function close() {
   padding: 48px 24px;
   text-align: center;
 }
-.empty-circle {
-  width: 80px; height: 80px;
-  border-radius: 50%;
-  background: var(--c-bg2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--c-text3);
-  font-size: 36px;
-  margin-bottom: 20px;
+.empty-illustration-img {
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  margin-bottom: 16px;
+  user-select: none;
+  pointer-events: none;
 }
 .empty-title { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: var(--c-text); }
 .empty-subtitle { margin: 0 0 24px; font-size: 14px; color: var(--c-text2); max-width: 260px; line-height: 1.5; }
 
+/* Empty-state CTA: matches the app-wide primary-action language —
+   gradient-green on dark, neutral dark pill on cream — same as
+   Create Invoice, Save (contact form), Restore Spark Wallet, etc. */
 .btn-primary {
-  padding: 12px 24px;
-  font-size: 15px;
-  font-weight: 600;
+  padding: 0 22px;
+  height: 44px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--radius-xl);
   background: var(--gradient-green) !important;
   color: #fff !important;
-  border-radius: var(--radius-md);
+}
+
+.body--light .btn-primary {
+  background: var(--btn-neutral-bg) !important;
+  color: var(--btn-neutral-fg) !important;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -722,7 +754,7 @@ function close() {
   display: flex;
   gap: 8px;
   padding: 14px 16px;
-  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  padding-bottom: max(14px, var(--safe-bottom, 16px));
   border-top: 1px solid var(--c-border);
   flex-shrink: 0;
 }
@@ -739,4 +771,11 @@ function close() {
 .btn-batch {
   background: rgba(21,222,114,.1);
 }
+
+/* Light-mode palette — remap decorative greens to the muted
+   dark-green (#059573) used across the app on cream. */
+.body--light .header-icon { color: #059573; }
+.body--light .btn-footer { color: #059573; }
+.body--light .btn-footer:hover { background: rgba(5,149,115,.06); }
+.body--light .btn-batch { background: rgba(5,149,115,.08); }
 </style>

@@ -130,8 +130,22 @@
               </div>
             </div>
 
-            <!-- Empty State -->
-            <div v-if="filteredContacts.length === 0" class="empty-state">
+            <!-- Empty: no contacts at all -->
+            <div v-if="allContacts.length === 0" class="empty-state empty-state--primary">
+              <img
+                src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
+                class="empty-illustration-img"
+                alt=""
+                aria-hidden="true"
+              />
+              <div class="empty-title">{{ $t('No contacts yet') }}</div>
+              <div class="empty-subtitle">
+                {{ $t('Save contacts in the Address Book to send to multiple people at once.') }}
+              </div>
+            </div>
+
+            <!-- Empty: filtered search has no matches -->
+            <div v-else-if="filteredContacts.length === 0" class="empty-state">
               <Icon icon="tabler:search" />
               <span>{{ $t('No contacts found') }}</span>
             </div>
@@ -436,7 +450,7 @@
               </div>
               <div class="exec-amount">{{ formatSats(result.amount) }}</div>
               <div class="exec-icon">
-                <q-spinner-dots v-if="result.status === 'sending'" size="20px" color="green" />
+                <q-spinner-dots v-if="result.status === 'sending'" size="20px" color="brand-green" />
                 <Icon v-else-if="result.status === 'success'" icon="tabler:circle-check" class="icon-success" />
                 <Icon v-else-if="result.status === 'failed'" icon="tabler:circle-x" class="icon-failed" />
                 <Icon v-else-if="result.status === 'skipped'" icon="tabler:circle-minus" class="icon-skipped" />
@@ -597,6 +611,7 @@ import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
 import LightningPaymentService from '../utils/lightning.js'
+import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -1220,8 +1235,9 @@ async function startBatch() {
         await addressBookStore.updateLastUsed(result.contact.id)
       }
     } catch (error) {
+      console.error('Batch send payment failed:', error)
       result.status = 'failed'
-      result.error = error.message || t('Payment failed')
+      result.error = getUserFriendlyErrorMessage(error, 'payment', t)
     }
 
     // Small delay for UI feedback
@@ -1634,6 +1650,36 @@ function retryFailed() {
   font-size: 32px;
 }
 
+.empty-state--primary {
+  padding: 32px 24px 40px;
+  gap: 4px;
+  text-align: center;
+}
+
+.empty-state--primary .empty-illustration-img {
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  margin-bottom: 12px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.empty-state--primary .empty-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text1);
+}
+
+.empty-state--primary .empty-subtitle {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 280px;
+  color: var(--c-text3);
+}
+
 /* Warning Banner */
 .warning-banner {
   display: flex;
@@ -1767,7 +1813,12 @@ function retryFailed() {
   font-family: inherit;
   color: var(--c-text);
   padding: 12px 16px;
-  text-align: left;
+  /* Right-align so the typed amount sits flush against the `sats`
+     currency toggle. Previously text-align:left split the number to
+     the far left while the toggle floated on the far right, leaving
+     a dead gap that read as a layout bug. */
+  text-align: right;
+  min-width: 0;
 }
 
 .amount-input::placeholder {
@@ -2514,7 +2565,7 @@ function retryFailed() {
   display: flex;
   gap: 12px;
   padding: 16px 20px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-bottom: max(16px, var(--safe-bottom, 16px));
   border-top: 1px solid var(--c-border);
   flex-shrink: 0;
 }
@@ -2538,8 +2589,52 @@ function retryFailed() {
   border-radius: var(--radius-md);
 }
 
+.body--light .btn-primary {
+  /* Neutral dark pill on cream — matches Create Invoice, the
+     Transfer Funds CTA, and every other primary action on the
+     cream surface. Dark keeps the gradient green. */
+  background: var(--btn-neutral-bg) !important;
+  color: var(--btn-neutral-fg) !important;
+}
+
 .btn-primary:disabled {
   opacity: 0.4;
+}
+
+/* ════════════════════════════════════════════════════════════
+   Light-mode accent remaps — every decorative green here uses
+   #15DE72 or a 0.14 alpha wash, which reads as neon on cream.
+   Swap to the muted #059573 shade + 0.08 alpha wash that the
+   rest of the light theme uses. Dark mode untouched above.
+   ════════════════════════════════════════════════════════════ */
+
+/* "Same amount" / "Custom amounts" active tab — tinted wash on
+   cream so it lines up with the Display Currency / Add Contact
+   Address Type pills. */
+.body--light .mode-btn.mode-active {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
+}
+
+/* Calculation preview card (the "X sats × N recipients = Y sats"
+   summary) — softer tint + border on cream. */
+.body--light .calc-preview {
+  background: linear-gradient(135deg, rgba(5, 149, 115, 0.06) 0%, rgba(5, 149, 115, 0.03) 100%);
+  border-color: rgba(5, 149, 115, 0.18);
+}
+.body--light .calc-total-sats {
+  /* Total amount stays coloured — semantic "confirmed total",
+     muted to the dark-green shade to match the rest of the
+     light palette. */
+  color: #059573;
+}
+
+/* Currency toggle hover — swap full-saturation green hover to a
+   soft tint so the pill doesn't flash bright on cream. */
+.body--light .currency-toggle:hover {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
 }
 
 /* ════════════════════════════════════════════════════════════

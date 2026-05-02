@@ -19,7 +19,7 @@
         :class="$q.dark.isActive ? 'word-item-dark' : 'word-item-light'"
       >
         <span class="word-number">{{ index + 1 }}</span>
-        <span class="word-text" :class="[blurred ? 'blurred' : '', $q.dark.isActive ? 'word-text-dark' : 'word-text-light']">
+        <span class="word-text" :class="[internalBlurred ? 'blurred' : '', $q.dark.isActive ? 'word-text-dark' : 'word-text-light']">
           {{ word }}
         </span>
       </div>
@@ -30,10 +30,10 @@
       <button
         class="toggle-btn"
         :class="$q.dark.isActive ? 'toggle-btn-dark' : 'toggle-btn-light'"
-        @click="blurred = !blurred"
+        @click="toggleBlur"
       >
-        <Icon :icon="blurred ? 'tabler:eye' : 'tabler:eye-off'" width="16" height="16" />
-        {{ blurred ? $t('Show words') : $t('Hide words') }}
+        <Icon :icon="internalBlurred ? 'tabler:eye' : 'tabler:eye-off'" width="16" height="16" />
+        {{ internalBlurred ? $t('Show words') : $t('Hide words') }}
       </button>
     </div>
 
@@ -66,19 +66,37 @@ export default {
       type: Boolean,
       default: false
     },
+    // Seed value for the blur state. When the parent updates this prop
+    // reactively (e.g. after a timeout), the component re-syncs its
+    // internal blur state via the watcher below. Combined with the
+    // `update:blurred` emit, this gives parents full control without
+    // the footguns of a nullable controlled prop.
     initialBlurred: {
       type: Boolean,
       default: false
-    }
+    },
   },
-  emits: ['copied'],
+  emits: ['copied', 'update:blurred'],
   data() {
     return {
-      blurred: this.initialBlurred,
+      internalBlurred: this.initialBlurred,
       copied: false
     }
   },
+  watch: {
+    initialBlurred(next) {
+      // Parent drove the blur state externally (e.g. auto-hide timer
+      // re-blurring the phrase). Mirror it locally so the user's own
+      // toggle keeps working from whatever the new baseline is.
+      this.internalBlurred = next;
+    },
+  },
   methods: {
+    toggleBlur() {
+      const next = !this.internalBlurred;
+      this.internalBlurred = next;
+      this.$emit('update:blurred', next);
+    },
     async copyWords() {
       try {
         const mnemonicString = this.words.join(' ');
@@ -90,7 +108,6 @@ export default {
           type: 'positive',
           message: this.$t('Seed phrase copied'),
           caption: this.$t('Clear your clipboard after pasting'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
         setTimeout(() => {
@@ -101,7 +118,6 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t copy'),
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     }
@@ -162,8 +178,8 @@ export default {
 }
 
 .word-item-light {
-  background: #FFFFFF;
-  border-color: #E5E7EB;
+  background: var(--bg-card);
+  border-color: var(--border-card);
 }
 
 .word-number {
@@ -186,7 +202,7 @@ export default {
 }
 
 .word-text-light {
-  color: #1F2937;
+  color: var(--text-primary);
 }
 
 .word-text.blurred {
@@ -220,7 +236,7 @@ export default {
 }
 
 .toggle-btn-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 /* Bottom Warning — matches verify bottom warning */

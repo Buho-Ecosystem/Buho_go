@@ -20,9 +20,10 @@
           {{ entry.name }}
         </div>
         <div class="address-type-badge" :class="addressTypeBadgeClass">
-          <svg v-if="addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
-          </svg>
+          <img v-if="addressType === 'spark'" width="10" height="10"
+            :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
+            alt="Spark"
+          />
           <Icon v-else :icon="addressTypeIcon" width="10" height="10" />
           <span>{{ addressTypeLabel }}</span>
         </div>
@@ -52,6 +53,21 @@
         <q-tooltip>{{ entry.isFavorite ? $t('Remove from favorites') : $t('Add to favorites') }}</q-tooltip>
       </q-btn>
 
+      <!-- Copy Address (promoted out of the overflow menu — primary action
+           alongside Pay, so it shouldn't take two taps to reach) -->
+      <q-btn
+        flat
+        round
+        dense
+        @click.stop="$emit('copy-address', entry)"
+        class="copy-btn"
+        :class="$q.dark.isActive ? 'copy-btn-dark' : 'copy-btn-light'"
+        size="sm"
+      >
+        <Icon icon="tabler:copy" width="16" height="16" />
+        <q-tooltip>{{ $t('Copy Address') }}</q-tooltip>
+      </q-btn>
+
       <!-- 3-dot Overflow Menu -->
       <q-btn
         flat
@@ -75,15 +91,6 @@
               </q-item-section>
               <q-item-section>
                 <q-item-label :class="$q.dark.isActive ? 'menu-label-dark' : 'menu-label-light'">{{ $t('Edit') }}</q-item-label>
-              </q-item-section>
-            </q-item>
-
-            <q-item clickable v-close-popup @click.stop="$emit('copy-address', entry)">
-              <q-item-section avatar style="min-width: 32px;">
-                <Icon icon="tabler:copy" width="14" height="14" style="color: var(--text-secondary)" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label :class="$q.dark.isActive ? 'menu-label-dark' : 'menu-label-light'">{{ $t('Copy Address') }}</q-item-label>
               </q-item-section>
             </q-item>
 
@@ -189,7 +196,7 @@ export default {
 }
 
 .contact-card-light {
-  background: #FFF;
+  background: var(--bg-card);
 }
 
 .contact-card-dark:hover {
@@ -303,7 +310,7 @@ export default {
 }
 
 .contact-address-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Notes */
@@ -322,7 +329,7 @@ export default {
 }
 
 .contact-notes-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Actions (Star + Overflow) */
@@ -350,6 +357,32 @@ export default {
   color: var(--color-green);
 }
 
+/* Copy Button — same neutral footprint as the overflow button so the
+   trio (star / copy / kebab) reads as a single action cluster. */
+.copy-btn {
+  width: 32px;
+  height: 32px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.copy-btn-dark {
+  color: var(--text-muted);
+}
+
+.copy-btn-light {
+  color: var(--text-muted);
+}
+
+.copy-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.copy-btn-light:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #6B7280;
+}
+
 /* Overflow Menu Button */
 .overflow-menu-btn {
   width: 32px;
@@ -362,7 +395,7 @@ export default {
 }
 
 .overflow-btn-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .overflow-btn-dark:hover {
@@ -375,39 +408,82 @@ export default {
   color: #6B7280;
 }
 
-/* Overflow Menu Styles */
+/* Overflow Menu — soft, rounded card with breathing room. Matches the
+   modal/dialog language used elsewhere (radius-lg, layered shadow on
+   cream, ambient glow on dark) instead of the previous hairline-bordered
+   sharp tile. */
+.overflow-menu-dark :deep(.q-menu),
+.overflow-menu-light :deep(.q-menu) {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
 .overflow-menu-dark :deep(.q-list) {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: var(--radius-md);
-  padding: 4px 0;
+  border-radius: var(--radius-lg);
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45),
+              0 2px 8px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
 }
 
 .overflow-menu-light :deep(.q-list) {
-  background: #FFF;
-  border: 1px solid #E5E7EB;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.12),
+              0 2px 6px rgba(17, 24, 39, 0.06);
+  min-width: 180px;
+}
+
+/* Item rows: rounded hover pill, more vertical padding, tighter min-height
+   so the menu feels like a pop-over, not a list view. */
+.overflow-menu-dark :deep(.q-item),
+.overflow-menu-light :deep(.q-item) {
   border-radius: var(--radius-md);
-  padding: 4px 0;
+  min-height: 38px;
+  padding: 6px 10px;
+  transition: background 0.12s ease;
+}
+
+.overflow-menu-dark :deep(.q-item:hover),
+.overflow-menu-dark :deep(.q-item--active) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.overflow-menu-light :deep(.q-item:hover),
+.overflow-menu-light :deep(.q-item--active) {
+  background: rgba(17, 24, 39, 0.05);
 }
 
 .menu-label-dark {
   color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
+  font-weight: 500;
 }
 
 .menu-label-light {
   color: #212121;
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
+  font-weight: 500;
 }
 
+/* Separator becomes a thin inset divider with margin so it doesn't
+   touch the rounded edge of the card. */
 .separator-dark {
   background: var(--border-card) !important;
+  margin: 4px 6px !important;
+  height: 1px !important;
 }
 
 .separator-light {
-  background: #F0F0F0 !important;
+  background: var(--border-card) !important;
+  margin: 4px 6px !important;
+  height: 1px !important;
 }
 
 /* Responsive - Mobile */
