@@ -2,7 +2,7 @@ export default {
   "Your Business Wallet": "Dein Business Wallet",
   "Accept payments from customers, manage your sales, and keep your business funds in one place.": "Empfange Zahlungen von Kunden, verwalte deine Verkäufe und behalte dein Guthaben an einem Ort.",
   "Your Personal Wallet": "Dein Persönliches Wallet",
-  "Your private funds stay separate here. Both wallets share the same recovery words, but each has its own balance.": "Dein privates Guthaben wird getrennt geführt. Beide Wallets nutzen dieselben Seed-Wörter, haben aber jeweils ein eigenes Guthaben",
+  "Your private funds stay separate here. Both wallets share the same recovery words, but each has its own balance.": "Dein privates Guthaben wird getrennt geführt. Beide Wallets nutzen die gleichen Seed-Wörter, haben aber jeweils ein eigenes Guthaben",
   "Save for the Future": "Spare für die Zukunft",
   "Ready to save? You can send your Bitcoin to a hardware wallet or any Bitcoin address for long-term storage.": "Bereit zum Sparen? Du kannst deine Bitcoin an ein Hardware-Wallet oder jede beliebige Bitcoin-Adresse senden.",
   "Let's go!": "Los geht's!",
