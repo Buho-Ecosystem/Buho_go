@@ -10,6 +10,7 @@ export const ADDRESS_TYPES = {
 export const useAddressBookStore = defineStore('addressBook', {
   state: () => ({
     entries: [],
+    _initialized: false,
     searchQuery: '',
     colorPalette: [
       '#3B82F6', // Blue
@@ -85,8 +86,10 @@ export const useAddressBookStore = defineStore('addressBook', {
   },
 
   actions: {
-    // Initialize store from localStorage
+    // Initialize store from localStorage (safe to call multiple times)
     async initialize() {
+      if (this._initialized) return
+
       try {
         const savedEntries = localStorage.getItem('buhoGO_address_book')
         if (savedEntries) {
@@ -97,10 +100,12 @@ export const useAddressBookStore = defineStore('addressBook', {
         console.error('Error loading address book:', error)
         this.entries = []
       }
+      this._initialized = true
     },
 
     // Add new entry
     async addEntry(entryData) {
+      await this.initialize()
       try {
         const addressType = entryData.addressType || 'lightning'
         const address = entryData.address || entryData.lightningAddress || ''
@@ -151,6 +156,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     // Update existing entry
     async updateEntry(id, updateData) {
+      await this.initialize()
       try {
         const entryIndex = this.entries.findIndex(entry => entry.id === id)
         if (entryIndex === -1) {
@@ -208,6 +214,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     // Delete entry
     async deleteEntry(id) {
+      await this.initialize()
       try {
         const entryIndex = this.entries.findIndex(entry => entry.id === id)
         if (entryIndex === -1) {
@@ -226,6 +233,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     // Toggle favorite status
     async toggleFavorite(id) {
+      await this.initialize()
       const entry = this.entries.find(e => e.id === id)
       if (entry) {
         entry.isFavorite = !entry.isFavorite
@@ -237,6 +245,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     // Update last used timestamp (called when paying a contact)
     async updateLastUsed(id) {
+      await this.initialize()
       const entry = this.entries.find(e => e.id === id)
       if (entry) {
         entry.lastUsedAt = Date.now()
@@ -373,6 +382,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     // Import entries (supports both Lightning and Spark addresses)
     async importEntries(entries) {
+      await this.initialize()
       try {
         let importedCount = 0
 

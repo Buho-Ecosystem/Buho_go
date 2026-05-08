@@ -43,6 +43,23 @@ const BITCOIN_L1 = {
   TYPICAL_TX_VBYTES: 140
 };
 
+/**
+ * Default Spark account numbers per network.
+ * These match the Spark SDK defaults — always pass explicitly to avoid
+ * breakage if the SDK defaults ever change.
+ * Derivation path: m/8797555'/accountNumber'/keyType'
+ *
+ * Per Spark docs: MAINNET defaults to 1 (legacy compatibility), REGTEST to 0.
+ * TESTNET/SIGNET/LOCAL not specified — using 0 (non-mainnet convention).
+ */
+export const SPARK_ACCOUNT_DEFAULTS = {
+  MAINNET: 1,
+  TESTNET: 0,
+  SIGNET: 0,
+  REGTEST: 0,
+  LOCAL: 0,
+};
+
 export class SparkWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
@@ -51,6 +68,7 @@ export class SparkWalletProvider extends WalletProvider {
     this.mnemonic = null;
     this.sparkAddress = null;
     this.network = walletData.network || 'MAINNET';
+    this.accountNumber = walletData.accountNumber ?? SPARK_ACCOUNT_DEFAULTS[this.network];
 
     // Sync state tracking for UI feedback
     this.isSyncing = false;
@@ -90,6 +108,41 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Detect transient transport errors from the Spark SDK / gRPC-Web layer.
+   * These indicate the request never reached (or got a response from) the SO
+   * federation — typically a browser fetch failure ("Load failed" on Safari,
+   * "Failed to fetch" on Chromium) or a gRPC transport fault. Safe to retry
+   * for idempotent operations only.
+   */
+  static isTransientTransportError(err) {
+    const msg = String(err?.message || err || '');
+    return /Transport error|Load failed|Failed to fetch|NetworkError|fetch failed|ECONNRESET|ETIMEDOUT/i.test(msg);
+  }
+
+  /**
+   * Retry an idempotent SDK call on transient transport errors.
+   * Non-transport errors bubble up immediately.
+   */
+  async _withTransportRetry(operation, { attempts = 3, baseDelayMs = 300 } = {}) {
+    let lastError;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await operation();
+      } catch (err) {
+        lastError = err;
+        const isLast = i === attempts - 1;
+        if (isLast || !SparkWalletProvider.isTransientTransportError(err)) {
+          throw err;
+        }
+        const delay = baseDelayMs * Math.pow(3, i); // 300ms, 900ms
+        console.warn(`Spark transport error (attempt ${i + 1}/${attempts}), retrying in ${delay}ms:`, err.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    throw lastError;
+  }
+
+  /**
    * Decode a BOLT11 invoice and extract its amount
    * Returns null if invoice has no amount (zero-amount invoice)
    * @param {string} invoice - BOLT11 encoded invoice
@@ -122,6 +175,7 @@ export class SparkWalletProvider extends WalletProvider {
 
       const result = await SparkWallet.initialize({
         mnemonicOrSeed: mnemonic,
+        accountNumber: this.accountNumber,
         options: { network: this.network }
       });
 
@@ -132,6 +186,9 @@ export class SparkWalletProvider extends WalletProvider {
       // Cache Spark address
       this.sparkAddress = await this.wallet.getSparkAddress();
 
+      // Enable privacy mode — hides address and transactions from Sparkscan and public APIs
+      this.enablePrivacyMode();
+
       return true;
     } catch (error) {
       this.setError(error);
@@ -141,12 +198,16 @@ export class SparkWalletProvider extends WalletProvider {
 
   /**
    * Create a new wallet with fresh mnemonic
+   * @param {string} network - Network to use
+   * @param {number} [accountNumber] - Account derivation index (default per network)
    * @returns {Promise<{wallet: SparkWallet, mnemonic: string}>}
    */
-  static async createNewWallet(network = 'MAINNET') {
+  static async createNewWallet(network = 'MAINNET', accountNumber) {
+    const account = accountNumber ?? SPARK_ACCOUNT_DEFAULTS[network];
     try {
       const result = await SparkWallet.initialize({
         mnemonicOrSeed: undefined, // Generate new mnemonic
+        accountNumber: account,
         options: { network }
       });
 
@@ -161,15 +222,68 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Probe a mnemonic + account derivation for existing on-chain activity.
+   *
+   * Used by the restore flow to detect pre-v1.6.0 mainnet wallets, which
+   * lived on accountNumber = 0 before the Spark SDK changed its mainnet
+   * default to 1 for backwards compatibility. A detected legacy account is
+   * mapped to the Personal slot during restore so funds remain accessible.
+   *
+   * The wallet connection is always torn down before returning so the
+   * probe is side-effect-free.
+   *
+   * @param {string} mnemonic
+   * @param {string} network
+   * @param {number} accountNumber
+   * @returns {Promise<{ hasActivity: boolean, balance: number, transferCount: number }>}
+   */
+  static async probeAccountActivity(mnemonic, network, accountNumber) {
+    let wallet = null;
+    try {
+      const { wallet: probeWallet } = await SparkWallet.initialize({
+        mnemonicOrSeed: mnemonic,
+        accountNumber,
+        options: { network },
+      });
+      wallet = probeWallet;
+
+      const [{ balance }, transfersResult] = await Promise.all([
+        wallet.getBalance(),
+        wallet.getTransfers(1, 0),
+      ]);
+
+      const balanceSats = Number(balance || 0);
+      const transferCount = (transfersResult?.transfers || []).length;
+
+      return {
+        hasActivity: balanceSats > 0 || transferCount > 0,
+        balance: balanceSats,
+        transferCount,
+      };
+    } finally {
+      if (wallet) {
+        try {
+          wallet.cleanupConnections();
+        } catch (err) {
+          console.warn('probeAccountActivity: cleanup failed', err);
+        }
+      }
+    }
+  }
+
+  /**
    * Restore wallet from existing mnemonic (for validation during restore)
    * @param {string} mnemonic
    * @param {string} network
+   * @param {number} [accountNumber] - Account derivation index (default per network)
    * @returns {Promise<SparkWallet>}
    */
-  static async restoreWallet(mnemonic, network = 'MAINNET') {
+  static async restoreWallet(mnemonic, network = 'MAINNET', accountNumber) {
+    const account = accountNumber ?? SPARK_ACCOUNT_DEFAULTS[network];
     try {
       const result = await SparkWallet.initialize({
         mnemonicOrSeed: mnemonic,
+        accountNumber: account,
         options: { network }
       });
 
@@ -202,6 +316,19 @@ export class SparkWalletProvider extends WalletProvider {
     this.wallet = null;
     this.mnemonic = null;
     this.isConnected = false;
+  }
+
+  /**
+   * Enable privacy mode — hides wallet address, balance, and transaction history
+   * from Sparkscan and public API queries. Runs in the background so it doesn't
+   * block wallet initialization.
+   */
+  enablePrivacyMode() {
+    if (!this.wallet) return;
+
+    this.wallet.setPrivacyEnabled(true).catch((error) => {
+      console.warn('Could not enable privacy mode:', error.message);
+    });
   }
 
   async getBalance() {
@@ -269,7 +396,9 @@ export class SparkWalletProvider extends WalletProvider {
         invoiceParams.memo = description || 'BuhoGO Payment';
       }
 
-      const result = await this.wallet.createLightningInvoice(invoiceParams);
+      const result = await this._withTransportRetry(
+        () => this.wallet.createLightningInvoice(invoiceParams)
+      );
 
       // Spark SDK returns LightningReceiveRequest:
       // { id, invoice: { encodedInvoice, paymentHash, ... }, status, ... }
@@ -605,9 +734,9 @@ export class SparkWalletProvider extends WalletProvider {
         type: this._mapTransferType(transfer),
         amount: Number(transfer.totalValue || transfer.amount || 0),
         timestamp: this._parseTimestamp(transfer.createdTime || transfer.updatedTime),
-        description: transfer.memo || transfer.description || '',
+        description: this._decodeBase64Memo(transfer.userRequest?.invoice?.memo) || '',
         status: this._normalizeStatus(transfer.status),
-        fee: Number(transfer.fee || 0),
+        fee: Number(transfer.feeSats || transfer.fees || transfer.fee || 0),
         // Determine if this is a Spark-to-Spark transfer (zero fee) vs Lightning
         sparkTransfer: this._isSparkTransfer(transfer),
         // Keep original transfer data for debugging
@@ -671,6 +800,24 @@ export class SparkWalletProvider extends WalletProvider {
     }
     // Default to pending for any other status
     return PAYMENT_STATUS.PENDING;
+  }
+
+  /**
+   * Decode base64-encoded memo from Spark SDK.
+   * Returns the original string if it's not valid base64.
+   */
+  _decodeBase64Memo(memo) {
+    if (!memo) return '';
+    try {
+      const decoded = atob(memo);
+      // Verify it decoded to printable text (not binary garbage)
+      if (/^[\x20-\x7E\xA0-\xFF]*$/.test(decoded) && decoded.length > 0) {
+        return decoded;
+      }
+      return memo;
+    } catch {
+      return memo;
+    }
   }
 
   /**

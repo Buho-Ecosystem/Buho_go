@@ -275,7 +275,8 @@ export class LNBitsWalletProvider extends WalletProvider {
         timestamp: this._parseTimestamp(tx.time || tx.created_at),
         description: tx.memo || '',
         status: this._parsePaymentStatus(tx.status, tx.pending),
-        fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0
+        fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,
+        extra: tx.extra || null
       }));
     } catch (error) {
       console.warn('getTransactions error:', error.message);

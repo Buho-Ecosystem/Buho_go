@@ -1,11 +1,11 @@
 <template>
   <q-dialog
     v-model="show"
-    persistent
     maximized
     transition-show="slide-up"
     transition-hide="slide-down"
     class="send-modal"
+    @before-hide="resetState"
   >
     <q-card class="send-card" :class="$q.dark.isActive ? 'send-card-dark' : 'send-card-light'">
       <!-- Header -->
@@ -61,10 +61,11 @@
           <div class="error-subtitle">{{ cameraError }}</div>
           <q-btn
             class="retry-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :class="$q.dark.isActive ? 'retry-btn-dark' : 'retry-btn-light'"
             :label="$t('Retry')"
             @click="initializeCamera"
             no-caps
+            unelevated
           />
         </div>
 
@@ -142,7 +143,7 @@
             :placeholder="manualInputPlaceholder"
             class="manual-input"
             :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
-            color="green"
+            :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             autofocus
             :rules="[validatePaymentInput]"
           />
@@ -199,7 +200,12 @@
         <q-card-section class="contact-list-section">
           <!-- Empty State -->
           <div v-if="contacts.length === 0" class="contact-empty-state">
-            <Icon icon="tabler:users" width="48" height="48" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
+            <img
+              src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
+              class="empty-illustration-img empty-illustration-img--compact"
+              alt=""
+              aria-hidden="true"
+            />
             <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('No contacts yet') }}
             </div>
@@ -552,7 +558,6 @@ export default {
           message: this.$t('Invalid QR code'),
           caption: this.$t('Please try a different code'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }
@@ -595,7 +600,6 @@ export default {
               ? `${merchant.displayName} - ${this.$t('not yet supported')}`
               : this.$t('This retailer is not yet supported'),
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }],
           });
           this.isProcessing = false;
           return;
@@ -626,7 +630,6 @@ export default {
             caption: this.$t('Switch to Spark wallet to pay this address'),
             
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
 
@@ -638,7 +641,6 @@ export default {
             caption: this.$t('Switch to Spark wallet to send to Bitcoin addresses'),
             
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
 
@@ -781,7 +783,6 @@ export default {
         message: this.$t('Paste into the input field'),
         caption: this.$t('Long-press the text field and tap Paste'),
         timeout: 4000,
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
     },
 
@@ -807,7 +808,6 @@ export default {
           caption: this.getContactDisabledReason(contact),
           
           timeout: 3500,
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
       }
@@ -909,7 +909,6 @@ export default {
           message: this.$t('Invalid payment request'),
           caption: this.$t('Please check the format and try again'),
           
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }
@@ -947,14 +946,15 @@ export default {
 }
 
 .send-card-light {
-  background: #FFF;
-  color: #212121;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* Header */
 .send-header {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem;
+  padding-top: calc(var(--safe-top, 0px) + 1rem);
   flex-shrink: 0;
   position: relative;
   z-index: 10;
@@ -1046,8 +1046,35 @@ export default {
   line-height: 1.5;
 }
 
+/* Error-recovery button — neutral translucent tint. Not a primary
+   CTA, just a "try again" affordance, so we keep it quiet and let
+   the error message do the talking. */
 .retry-btn {
-  border-radius: 24px;
+  border-radius: 12px;
+  padding: 10px 20px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: background-color 0.18s ease;
+}
+
+.retry-btn-dark {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.retry-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.retry-btn-light {
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: rgba(0, 0, 0, 0.75) !important;
+}
+
+.retry-btn-light:hover {
+  background: rgba(0, 0, 0, 0.08) !important;
 }
 
 /* Scanning Frame */
@@ -1101,6 +1128,7 @@ export default {
 .send-actions {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   flex-shrink: 0;
 }
 
@@ -1110,31 +1138,36 @@ export default {
   gap: 1rem;
 }
 
+/* Manual / Paste / Contacts — three equal mode-pickers, neutral
+   translucent tint. Secondary weight: they direct the user to an
+   input method, they don't commit anything. Icons stay neutral too
+   so the trio reads as "pick your input" instead of three coloured
+   buttons competing for attention. */
 .action-btn {
   flex: 1;
   height: 80px;
   border-radius: 16px;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .action-btn-dark {
-  background: rgba(42, 52, 42, 0.5);
-  color: white;
-}
-
-.action-btn-light {
-  background: rgba(0, 0, 0, 0.05);
-  color: #212121;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .action-btn-dark:hover {
-  background: rgba(42, 52, 42, 0.8);
-  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.action-btn-light {
+  background: rgba(15, 23, 42, 0.04);
+  color: rgba(15, 23, 42, 0.75);
 }
 
 .action-btn-light:hover {
-  background: rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
+  background: rgba(15, 23, 42, 0.07);
 }
 
 .btn-content {
@@ -1145,13 +1178,15 @@ export default {
 }
 
 .btn-icon {
-  color: #15DE72;
+  color: inherit;
+  opacity: 0.85;
 }
 
 .btn-label {
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
+  letter-spacing: -0.005em;
 }
 
 /* Manual Input Dialog */
@@ -1233,7 +1268,7 @@ export default {
 }
 
 .manual-input-light :deep(.q-field__label) {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .manual-input-light :deep(.q-field--focused .q-field__label),
@@ -1345,6 +1380,19 @@ export default {
   text-align: center;
 }
 
+.empty-illustration-img {
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+  margin-bottom: 0.5rem;
+  user-select: none;
+  pointer-events: none;
+}
+
+.empty-illustration-img--compact {
+  max-width: 140px;
+}
+
 .empty-title {
   font-family: 'Manrope', sans-serif;
   font-size: 16px;
@@ -1394,7 +1442,7 @@ export default {
 }
 
 .section-header-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 .contact-item {

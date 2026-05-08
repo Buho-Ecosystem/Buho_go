@@ -3,7 +3,7 @@
 
 import { defineConfig } from '#q-app/wrappers'
 
-export default defineConfig((/* ctx */) => {
+export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
     // preFetch: true,
@@ -15,8 +15,10 @@ export default defineConfig((/* ctx */) => {
       'axios',
       'i18n',
       'iconify',
-      'safe-area'
-    ],
+      'safe-area',
+      'kiosk',
+      ctx.mode.capacitor ? 'deep-links' : ''
+    ].filter(Boolean),
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: [
@@ -83,8 +85,12 @@ export default defineConfig((/* ctx */) => {
       config: {
         dark: true,
         notify: {
-          position: 'top',
-          timeout: 2500
+          position: 'bottom',
+          timeout: 2500,
+          classes: 'buho-notify',
+          textColor: 'white',
+          progress: true,
+          actions: [{ icon: 'close', color: 'white', dense: true, flat: true, round: true, size: 'sm' }]
         }
       },
 

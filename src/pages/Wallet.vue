@@ -51,7 +51,7 @@
 
     <!-- Backup Reminder Banner -->
     <BackupBanner
-      :visible="walletStore.shouldPromptBackup"
+      :visible="walletStore.shouldPromptBackup && walletStore.isActiveWalletSpark"
       @backup="goToBackup"
       @dismiss="walletStore.dismissBackupPrompt()"
     />
@@ -73,17 +73,58 @@
         </div>
       </div>
 
-      <!-- Transaction History Button skeleton -->
-      <div class="transaction-icon-section">
-        <q-skeleton type="circle" size="48px" animation="wave" />
+      <!-- Last transaction preview skeleton -->
+      <div class="last-tx-section">
+        <div class="last-tx-card-skeleton" :class="$q.dark.isActive ? 'last-tx-skeleton-dark' : 'last-tx-skeleton-light'">
+          <q-skeleton type="circle" size="36px" animation="wave" />
+          <div class="last-tx-card-skeleton-text">
+            <q-skeleton type="text" width="60%" height="14px" animation="wave" />
+            <q-skeleton type="text" width="40%" height="12px" animation="wave" />
+          </div>
+          <div class="last-tx-card-skeleton-amount">
+            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+            <q-skeleton type="text" width="56px" height="12px" animation="wave" />
+          </div>
+        </div>
+        <q-skeleton type="text" width="72px" height="14px" animation="wave" class="history-link-skeleton" />
       </div>
     </div>
 
     <!-- Main Content -->
     <div v-else class="main-content">
-      <!-- Wallet Name Badge -->
+      <!-- Spark Tab Bar: [Business | Personal | Wallet icon] -->
+      <div v-if="showSparkTabs" class="spark-tabs-wrap">
+        <div class="spark-tabs" :class="$q.dark.isActive ? 'spark-tabs-dark' : 'spark-tabs-light'">
+          <div class="spark-tabs-slider" :class="{ 'spark-tabs-slider--right': isPersonalActive }"></div>
+          <button
+            class="spark-tab"
+            :class="{ 'spark-tab--active': !isPersonalActive }"
+            :disabled="sparkTabSwitching"
+            @click="switchSparkTab(sparkWalletPair[0]?.id)"
+          >
+            <Icon icon="tabler:building-store" width="14" height="14" />
+            <span>{{ sparkWalletPair[0]?.name }}</span>
+          </button>
+          <div class="spark-tab-divider"></div>
+          <button class="spark-tab spark-tab-center" @click="openWalletManagement">
+            <Icon icon="tabler:wallet" width="16" height="16" />
+          </button>
+          <div class="spark-tab-divider"></div>
+          <button
+            class="spark-tab"
+            :class="{ 'spark-tab--active': isPersonalActive }"
+            :disabled="sparkTabSwitching"
+            @click="switchSparkTab(sparkWalletPair[1]?.id)"
+          >
+            <Icon icon="tabler:user" width="14" height="14" />
+            <span>{{ sparkWalletPair[1]?.name }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Non-Spark: Original chip -->
       <q-chip
-        v-if="activeWallet"
+        v-else-if="activeWallet"
         clickable
         outline
         :ripple="false"
@@ -91,12 +132,8 @@
         :class="$q.dark.isActive ? 'wallet-chip-dark' : 'wallet-chip-light'"
         @click="openWalletManagement"
       >
-        <!-- Spark Logo -->
-        <svg v-if="activeWallet.type === 'spark'" width="12" height="11" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
-        </svg>
         <!-- NWC Logo -->
-        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
+        <svg v-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
           <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
         </svg>
@@ -106,7 +143,7 @@
         </svg>
         <!-- Default wallet icon -->
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
-        {{ activeWallet.name }}
+        {{ walletDisplayName }}
         <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
       </q-chip>
 
@@ -114,17 +151,18 @@
       <div class="balance-section">
         <div class="balance-container" @click="toggleCurrency" :class="{ 'switching': isSwitchingCurrency }">
           <div class="balance-amount">
-            <transition name="balance-fade" mode="out-in">
-              <div :key="currentDisplayMode" class="amount-display">
-                <span class="amount-number" :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'">{{
-                    formatMainBalance(walletState.balance)
-                  }}</span>
-                <!-- Fiat icon on the right -->
-                <span v-if="currentDisplayMode === 'fiat'" class="currency-icon-right">
-                  <Icon :icon="getFiatCurrencyIcon()" width="28" height="28" :class="$q.dark.isActive ? 'amount-unit-dark' : 'amount-unit-light'" />
-                </span>
-              </div>
-            </transition>
+            <div class="amount-display">
+              <NumberFlow
+                :value="balanceNumericValue"
+                :format="balanceNumberFormat"
+                :prefix="balancePrefix"
+                :suffix="balanceSuffix"
+                class="amount-number"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
+                :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
+              />
+            </div>
           </div>
           <transition name="secondary-fade" mode="out-in">
             <div :key="currentDisplayMode" class="balance-secondary"
@@ -138,18 +176,80 @@
         </div>
       </div>
 
-      <!-- Transaction History Icon -->
-      <div class="transaction-icon-section">
-        <q-btn
-          flat
-          round
-          size="md"
-          @click="$router.push('/transactions')"
-          :class="[$q.dark.isActive ? 'transaction-history-btn-dark' : 'transaction-history-btn-light', { 'pulse': shouldPulse }]"
-          aria-label="Transaction History"
+      <!--
+        Last-transaction preview + History link.
+
+        When a last transaction is available we show it as a tappable
+        card above the History link. When it's loading we show a
+        skeleton card. When there is no transaction we render only the
+        History link (no placeholder / empty-state copy here — the
+        /transactions page handles empty state itself).
+
+        Everything routes to /transactions; the card is just a richer,
+        more informative entry point than the old round icon button.
+      -->
+      <div class="last-tx-section">
+        <!-- Loading: skeleton -->
+        <div
+          v-if="isLoadingLastTransaction"
+          class="last-tx-card-skeleton"
+          :class="$q.dark.isActive ? 'last-tx-skeleton-dark' : 'last-tx-skeleton-light'"
         >
-          <Icon icon="tabler:history" width="20" height="20" />
-        </q-btn>
+          <q-skeleton type="circle" size="36px" animation="wave" />
+          <div class="last-tx-card-skeleton-text">
+            <q-skeleton type="text" width="60%" height="14px" animation="wave" />
+            <q-skeleton type="text" width="40%" height="12px" animation="wave" />
+          </div>
+          <div class="last-tx-card-skeleton-amount">
+            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+            <q-skeleton type="text" width="56px" height="12px" animation="wave" />
+          </div>
+        </div>
+
+        <!-- Loaded: the most recent transaction -->
+        <button
+          v-else-if="lastTransaction"
+          type="button"
+          class="last-tx-card"
+          :class="$q.dark.isActive ? 'last-tx-card-dark' : 'last-tx-card-light'"
+          @click="openTransactionHistory"
+          :aria-label="$t('Open transaction history')"
+        >
+          <span class="last-tx-icon" :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'">
+            <Icon :icon="lastTxIcon" width="18" height="18" />
+          </span>
+          <span class="last-tx-info">
+            <span class="last-tx-title" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
+              {{ lastTxTitle }}
+            </span>
+            <span class="last-tx-time" :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'">
+              {{ lastTxTimeAgo }}
+            </span>
+          </span>
+          <span class="last-tx-amount-wrap">
+            <span class="last-tx-amount" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
+              {{ lastTxAmountDisplay }}
+            </span>
+            <span
+              v-if="lastTxFiatDisplay"
+              class="last-tx-fiat"
+              :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'"
+            >
+              {{ lastTxFiatDisplay }}
+            </span>
+          </span>
+        </button>
+
+        <!-- Always: the History link row -->
+        <button
+          type="button"
+          class="history-link"
+          :class="$q.dark.isActive ? 'history-link-dark' : 'history-link-light'"
+          @click="openTransactionHistory"
+        >
+          <Icon icon="tabler:list" width="16" height="16" />
+          <span>{{ $t('History') }}</span>
+        </button>
       </div>
     </div>
 
@@ -157,24 +257,24 @@
     <div class="bottom-actions">
       <div class="action-buttons">
         <q-btn
-          :class="$q.dark.isActive ? 'action-btn receive-btn-dark' : 'action-btn receive-btn-light'"
-          @click="showReceiveModal = true"
+          class="action-btn action-btn-receive"
+          @click="openReceive"
           no-caps
           unelevated
-          aria-label="Receive payment"
+          :aria-label="$t('Receive payment')"
         >
-          <Icon icon="tabler:arrow-down" width="24" height="24" />
-          <div class="btn-text">{{ $t('Receive') }}</div>
+          <Icon icon="tabler:scan" width="20" height="20" />
+          <span class="btn-text">{{ $t('Receive') }}</span>
         </q-btn>
         <q-btn
-          :class="$q.dark.isActive ? 'action-btn send-btn-dark' : 'action-btn send-btn-light'"
-          @click="showSendModal = true"
+          class="action-btn action-btn-send"
+          @click="openSend"
           no-caps
           unelevated
-          aria-label="Send payment"
+          :aria-label="$t('Send payment')"
         >
-          <Icon icon="tabler:arrow-up" width="24" height="24" />
-          <div class="btn-text">{{ $t('Send') }}</div>
+          <Icon icon="tabler:scan" width="20" height="20" />
+          <span class="btn-text">{{ $t('Send') }}</span>
         </q-btn>
       </div>
     </div>
@@ -183,7 +283,6 @@
     <ReceiveModal
       ref="receiveModal"
       v-model="showReceiveModal"
-      @invoice-created="onInvoiceCreated"
       @bitcoin-deposits-updated="handleBitcoinDepositsUpdated"
       @scan-withdraw="handleScanWithdraw"
     />
@@ -194,15 +293,47 @@
       @payment-detected="onPaymentDetected"
     />
 
-    <!-- PIN Entry Dialog for Spark Wallet -->
-    <PinEntryDialog
-      v-model="showPinDialog"
-      :title="$t('Unlock Wallet')"
-      :subtitle="$t('Enter your PIN to unlock your Spark wallet')"
-      :error-message="pinError"
-      @pin-complete="handlePinComplete"
-      @cancel="handlePinCancel"
-    />
+    <!-- One-time PIN Migration Dialog (for existing users updating from PIN to device key) -->
+    <q-dialog v-model="showMigrationDialog" persistent :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="max-width: 400px;">
+        <q-card-section>
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Security Upgrade') }}
+          </div>
+        </q-card-section>
+        <q-card-section>
+          <p :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'" style="font-size: 14px; margin-bottom: 16px;">
+            {{ $t('We\'ve replaced the in-app PIN with biometric security. Enter your PIN one last time to complete the upgrade.') }}
+          </p>
+          <q-input
+            v-model="migrationPin"
+            type="password"
+            :placeholder="$t('Your 6-digit PIN')"
+            maxlength="6"
+            mask="######"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            borderless
+            input-class="q-px-md text-center"
+            dense
+            autofocus
+            :error="!!migrationError"
+            :error-message="migrationError"
+            @keyup.enter="handleMigration"
+          />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn
+            flat
+            no-caps
+            :label="$t('Unlock')"
+            :loading="isMigrating"
+            :disable="!migrationPin || migrationPin.length < 6"
+            @click="handleMigration"
+            class="dialog_add_btn_dark"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
 
     <!-- Wallet Switcher Dialog -->
     <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
@@ -221,9 +352,11 @@
 
         <q-card-section class="switcher-content">
           <div class="wallet-switch-list">
-            <div
+            <template
               v-for="wallet in storeWallets"
               :key="wallet.id"
+            >
+            <div
               class="wallet-switch-card"
               :class="{
                 'wallet-switch-card-active': wallet.id === storeActiveWalletId,
@@ -289,7 +422,8 @@
                   <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
-                  {{ formatBalance(storeBalances[wallet.id] || 0) }}
+                  <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
+                  <template v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</template>
                 </div>
               </div>
 
@@ -302,6 +436,8 @@
                 class="switch-check-icon"
               />
             </div>
+
+            </template>
           </div>
         </q-card-section>
 
@@ -391,7 +527,7 @@
               </div>
               <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
                    style="cursor: pointer;" @click="toggleWithdrawDenomination">
-                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <q-icon name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
+                <span v-if="withdrawSecondaryDisplay">{{ withdrawSecondaryDisplay }} <Icon icon="tabler:refresh" width="12" height="12" :class="{ 'denomination-spin': denominationSpinning }" /></span>
               </div>
             </div>
 
@@ -406,7 +542,9 @@
               </div>
               <div class="detail-item" v-if="!pendingPayment.isFixedAmount">
                 <span class="detail-label" :class="$q.dark.isActive ? 'detail_label_dark' : 'detail_label_light'">{{ $t('Redeemable') }}:</span>
-                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'">{{ withdrawRedeemableRange }}</span>
+                <span class="detail-value" :class="$q.dark.isActive ? 'detail_value_dark' : 'detail_value_light'" style="cursor: pointer;" @click="toggleWithdrawDenomination">
+                  {{ withdrawRedeemableRange }} <Icon icon="tabler:refresh" width="12" height="12" :class="{ 'denomination-spin': denominationSpinning }" />
+                </span>
               </div>
             </div>
 
@@ -422,14 +560,11 @@
                 :disable="lnurlWithdrawStatus !== 'idle'"
               >
                 <template v-slot:append>
-                  <q-btn flat dense round
-                    size="sm"
+                  <Icon icon="tabler:refresh" width="18" height="18"
+                    :class="{ 'denomination-spin': denominationSpinning }"
+                    class="denomination-toggle-icon"
                     @click="toggleWithdrawDenomination"
-                    :disable="lnurlWithdrawStatus !== 'idle'"
-                  >
-                    <q-icon name="las la-sync" :class="{ 'denomination-spin': denominationSpinning }" />
-                    <q-tooltip>{{ withdrawDenomination === 'sats' ? withdrawFiatCurrency : 'sats' }}</q-tooltip>
-                  </q-btn>
+                  />
                 </template>
               </q-input>
             </div>
@@ -467,8 +602,9 @@
               <div class="amount-display" :class="$q.dark.isActive ? 'amount_display_dark' : 'amount_display_light'">
                 {{ formatPaymentAmount() }}
               </div>
-              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'">
-                <span v-if="paymentFiatValue">{{ paymentFiatValue }}</span>
+              <div class="amount-fiat" :class="$q.dark.isActive ? 'amount_fiat_dark' : 'amount_fiat_light'"
+                   :style="needsAmountInput ? 'cursor: pointer;' : ''" @click="needsAmountInput ? toggleSendDenomination() : null">
+                <span v-if="paymentFiatValue">{{ paymentFiatValue }} <q-icon v-if="needsAmountInput" name="las la-sync" size="12px" :class="{ 'denomination-spin': denominationSpinning }" /></span>
                 <span v-else-if="pendingPayment && (pendingPayment.amount > 0 || paymentAmount)"
                       class="loading-fiat">{{ $t('Loading...') }}</span>
               </div>
@@ -541,13 +677,19 @@
               <q-input
                 v-model="paymentAmount"
                 outlined
-                :label="$t('Amount')"
+                :label="sendDenomination === 'fiat' ? preferredFiatCurrency : $t('Amount')"
                 type="number"
-                :min="pendingPayment.minSendable ? Math.floor(pendingPayment.minSendable / 1000) : 1"
-                :max="pendingPayment.maxSendable ? Math.floor(pendingPayment.maxSendable / 1000) : 100000000"
                 :class="$q.dark.isActive ? 'amount_input_dark' : 'amount_input_light'"
                 :rules="[validatePaymentAmount]"
-              />
+              >
+                <template v-slot:append>
+                  <Icon icon="tabler:refresh" width="18" height="18"
+                    :class="{ 'denomination-spin': denominationSpinning }"
+                    class="denomination-toggle-icon"
+                    @click="toggleSendDenomination"
+                  />
+                </template>
+              </q-input>
 
               <q-input
                 v-if="pendingPayment.commentAllowed > 0"
@@ -677,13 +819,14 @@ import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
+import {haptics} from '../utils/haptics.js';
+import NumberFlow from '@number-flow/vue';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
-import PinEntryDialog from '../components/PinEntryDialog.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
@@ -692,19 +835,20 @@ import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
+import {EventBus} from '../utils/eventBus';
 
 export default {
   name: 'WalletPage',
   components: {
     ReceiveModal,
     SendModal,
-    PinEntryDialog,
     L1BitcoinWithdraw,
     InternalTransferModal,
     AddressBookQuickModal,
     PaymentModal,
     BatchSendModal,
     PaymentConfirmation,
+    NumberFlow,
     BackupBanner
   },
   setup() {
@@ -714,6 +858,18 @@ export default {
   },
   data() {
     return {
+      // Spark tab switching
+      sparkTabSwitching: false,
+
+      // Wallet switcher: per-wallet balance loading
+      refreshingWalletIds: {},
+
+      // PIN migration (one-time, for existing users)
+      showMigrationDialog: false,
+      migrationPin: '',
+      migrationError: '',
+      isMigrating: false,
+
       walletState: {
         balance: 312,
         connectedWallets: [],
@@ -726,7 +882,14 @@ export default {
         denominationCurrency: 'bitcoin',
         displayMode: 'bitcoin'
       },
-      recentTransactions: [],
+      // Last transaction preview shown above the History link.
+      // `null` before the first fetch completes (we render a skeleton
+      // instead while `isLoadingLastTransaction` is true). Populated
+      // with the raw provider tx object; formatting happens in
+      // computed properties.
+      lastTransaction: null,
+      isLoadingLastTransaction: true,
+
       showReceiveModal: false,
       showSendModal: false,
       showPaymentConfirmation: false,
@@ -735,6 +898,7 @@ export default {
       merchantCountdownTimer: null,
       paymentAmount: '',
       paymentComment: '',
+      sendDenomination: 'sats', // 'sats' or 'fiat' — for LNURL/Lightning Address send flow
       slidePosition: 0,
       slideConfirmed: false,
       isSliding: false,
@@ -742,25 +906,16 @@ export default {
       maxSlideDistance: 0,
       parsedInvoice: null,
       lightningAddress: '',
-      generatedInvoice: null,
       refreshInterval: null,
-      pulseInterval: null,
-      currentInvoicePaymentHash: null,
-      invoiceCheckInterval: null,
-      waitingForPayment: false,
       showLoadingScreen: true,
-      currentDisplayMode: 'bitcoin',
+      currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
-      shouldPulse: false,
       paymentData: null,
-      invoicePaid: false,
       isSendingPayment: false,
       fiatRatesLoaded: false,
       secondaryValue: '',
       paymentFiatValue: '',
       showWalletSwitcher: false,
-      showPinDialog: false,
-      pinError: '',
       // Fee estimation for Spark Lightning payments
       estimatedFee: null,
       isEstimatingFee: false,
@@ -803,8 +958,85 @@ export default {
         w => w.id === this.walletState.activeWalletId
       ) || null;
     },
+
+    /**
+     * Whether the last transaction represents an incoming payment.
+     * Handles the provider's direct types ('receive' / 'send') and the
+     * legacy 'incoming' / 'outgoing' shape that the rest of the app
+     * also recognises, plus a defensive amount-sign fallback for any
+     * future provider that forgets to set `type`.
+     */
+    lastTxIsIncoming() {
+      const tx = this.lastTransaction;
+      if (!tx) return false;
+      const t = (tx.type || '').toLowerCase();
+      if (t === 'receive' || t === 'received' || t === 'incoming') return true;
+      if (t === 'send' || t === 'sent' || t === 'outgoing') return false;
+      // Last-resort fallback — some providers encode direction in the sign.
+      return Number(tx.amount) > 0;
+    },
+
+    lastTxIcon() {
+      return this.lastTxIsIncoming ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right';
+    },
+
+    lastTxTitle() {
+      return this.lastTxIsIncoming
+        ? this.$t('Payment Received')
+        : this.$t('Payment Sent');
+    },
+
+    lastTxTimeAgo() {
+      if (!this.lastTransaction) return '';
+      // Providers variously expose timestamp / settled_at / createdTime
+      // depending on the underlying SDK. Try each in order.
+      const ts =
+        this.lastTransaction.timestamp ??
+        this.lastTransaction.settled_at ??
+        this.lastTransaction.createdTime ??
+        null;
+      return this.formatRelativeTime(ts);
+    },
+
+    lastTxAmountDisplay() {
+      if (!this.lastTransaction) return '';
+      const rawAmount = Math.abs(Number(this.lastTransaction.amount) || 0);
+      const sign = this.lastTxIsIncoming ? '+' : '-';
+      // Use the same formatter the rest of the app uses so unit
+      // (sats / BTC) and BIP-177 formatting match.
+      const formatted = formatAmount(rawAmount, this.walletStore.useBip177Format);
+      return `${sign}${formatted}`;
+    },
+
+    lastTxFiatDisplay() {
+      if (!this.lastTransaction) return '';
+      const sats = Math.abs(Number(this.lastTransaction.amount) || 0);
+      if (sats === 0) return '';
+      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
+      if (fiat === null || fiat === undefined) return '';
+      // "about $0.02" matches the reference mock's softer tone vs an
+      // exact value, which is appropriate for a preview.
+      return `${this.$t('about')} ${fiatRatesService.formatFiatAmount(fiat, currency)}`;
+    },
+    walletDisplayName() {
+      if (!this.activeWallet) return '';
+      return this.activeWallet.name;
+    },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
+    },
+    sparkWalletPair() {
+      return this.walletStore.sparkWallets.sort(
+        (a, b) => (a.connectionData?.accountNumber || 0) - (b.connectionData?.accountNumber || 0)
+      );
+    },
+    showSparkTabs() {
+      return this.walletStore.isActiveWalletSpark && this.sparkWalletPair.length === 2;
+    },
+    isPersonalActive() {
+      const active = this.walletStore.activeWallet;
+      return active?.type === 'spark' && active?.connectionData?.accountNumber === 2;
     },
     isAutoTransferActive() {
       if (!this.activeWallet) return false;
@@ -856,10 +1088,20 @@ export default {
       return (this.pendingPayment.type === 'lightning_invoice' && this.pendingPayment.amount === 0) ||
              (this.pendingPayment.type === 'invoice' && this.pendingPayment.amount === 0);
     },
+    sendAmountSats() {
+      if (!this.needsAmountInput) return 0;
+      const val = parseFloat(this.paymentAmount);
+      if (!val || val <= 0) return 0;
+      if (this.sendDenomination === 'fiat') {
+        return fiatRatesService.convertFiatToSatsSync(val, this.preferredFiatCurrency) || 0;
+      }
+      return Math.floor(val);
+    },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
       if (this.needsAmountInput) {
-        return this.paymentAmount && this.paymentAmount > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
+        const sats = this.sendAmountSats;
+        return sats > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
       }
       return true;
     },
@@ -887,6 +1129,41 @@ export default {
     storeBalances() {
       return this.walletStore.balances || {};
     },
+
+    balanceNumericValue() {
+      const balance = this.walletState.balance || 0;
+      if (this.currentDisplayMode === 'fiat') {
+        const btcAmount = balance / 100000000;
+        const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+        if (!rate) return 0;
+        return btcAmount * rate;
+      }
+      // BIP-177: display sats as whole integers (1 bitcoin = 1 sat)
+      return balance;
+    },
+
+    balanceNumberFormat() {
+      if (this.currentDisplayMode === 'fiat') {
+        return { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+      }
+      // Both BIP-177 and legacy: whole integers with thousands grouping
+      return { useGrouping: true, maximumFractionDigits: 0 };
+    },
+
+    balancePrefix() {
+      if (this.currentDisplayMode === 'fiat') {
+        const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF ', AUD: 'A$', JPY: '¥' };
+        return symbols[this.walletState.preferredFiatCurrency] || '';
+      }
+      if (this.walletStore.useBip177Format) return '₿';
+      return '';
+    },
+
+    balanceSuffix() {
+      if (this.currentDisplayMode === 'fiat') return '';
+      if (this.walletStore.useBip177Format) return '';
+      return ' sats';
+    },
     storeConnectionStates() {
       return this.walletStore.connectionStates || {};
     },
@@ -894,8 +1171,11 @@ export default {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       return !this.pendingPayment.isFixedAmount;
     },
-    withdrawFiatCurrency() {
+    preferredFiatCurrency() {
       return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    withdrawFiatCurrency() {
+      return this.preferredFiatCurrency;
     },
     withdrawAmountSats() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return 0;
@@ -949,11 +1229,13 @@ export default {
       const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 0);
       const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 0);
       if (!minSats || !maxSats || minSats === maxSats) return '';
-      const currency = this.withdrawFiatCurrency;
-      const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
-      const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
-      if (minFiat !== null && maxFiat !== null) {
-        return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)} (${minSats} - ${maxSats} sats)`;
+      if (this.sendDenomination === 'fiat') {
+        const currency = this.preferredFiatCurrency;
+        const minFiat = fiatRatesService.convertSatsToFiatSync(minSats, currency);
+        const maxFiat = fiatRatesService.convertSatsToFiatSync(maxSats, currency);
+        if (minFiat !== null && maxFiat !== null) {
+          return `${fiatRatesService.formatFiatAmount(minFiat, currency)} - ${fiatRatesService.formatFiatAmount(maxFiat, currency)}`;
+        }
       }
       return `${minSats} - ${maxSats} sats`;
     },
@@ -981,19 +1263,23 @@ export default {
     setTimeout(() => {
       this.showLoadingScreen = false;
     }, 15000);
+    // Restore display currency from user preference
+    this.currentDisplayMode = this.walletStore.defaultDisplayCurrency || 'bitcoin';
+    this.addressBookStore.initialize();
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
+    // Check if existing Spark wallets need one-time PIN migration
+    this.$watch(() => this.walletStore.needsPinMigration, (needs) => {
+      if (needs) this.showMigrationDialog = true;
+    }, { immediate: true });
+    // Listen for deep link events (Android intent filters: lightning:, bitcoin:, lnurlp://, lnurlw://)
+    this._deepLinkHandler = (paymentData) => this.onPaymentDetected(paymentData);
+    EventBus.on('deep-link', this._deepLinkHandler);
   },
   beforeUnmount() {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
-    }
-    if (this.pulseInterval) {
-      clearInterval(this.pulseInterval);
-    }
-    if (this.invoiceCheckInterval) {
-      clearInterval(this.invoiceCheckInterval);
     }
     if (this.qrScanner) {
       this.qrScanner.destroy();
@@ -1004,11 +1290,31 @@ export default {
     this.stopWithdrawMonitor();
     // Stop merchant countdown if active
     this.stopMerchantCountdown();
+    // Clean up deep link listener
+    if (this._deepLinkHandler) {
+      EventBus.off('deep-link', this._deepLinkHandler);
+    }
   },
   watch: {
     'walletState.balance': {
-      handler: 'updateSecondaryValue',
+      handler() {
+        this.updateSecondaryValue();
+      },
       immediate: true
+    },
+
+    /**
+     * Refresh the last-transaction card whenever the active wallet
+     * changes (e.g. user switches between Business and Personal via
+     * the Spark tab bar, or picks a different connected wallet).
+     * Flip the skeleton back on briefly so the card feels responsive
+     * to the switch rather than silently swapping its contents.
+     */
+    'walletState.activeWalletId'(next, prev) {
+      if (next === prev) return;
+      this.isLoadingLastTransaction = true;
+      this.lastTransaction = null;
+      this.loadLastTransaction();
     },
 
     currentDisplayMode: {
@@ -1021,6 +1327,9 @@ export default {
         this.startMerchantCountdown();
       } else {
         this.stopMerchantCountdown();
+      }
+      if (!open) {
+        this.sendDenomination = 'sats';
       }
     },
 
@@ -1064,9 +1373,26 @@ export default {
     },
 
     async openWalletManagement() {
-      // Initialize the store to ensure we have the latest wallet data
-      await this.walletStore.initialize();
+      if (this.showWalletSwitcher) return; // Prevent double-open
       this.showWalletSwitcher = true;
+
+      // Refresh balances for all wallets — track loading state per wallet
+      const wallets = this.walletStore.wallets;
+      for (const w of wallets) {
+        // Show skeleton for wallets without a cached balance
+        if (this.walletStore.balances[w.id] === undefined) {
+          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: true };
+        }
+      }
+
+      await Promise.allSettled(
+        wallets.map(async (w) => {
+          try {
+            await this.walletStore.refreshWalletData(w.id);
+          } catch { /* ignore */ }
+          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
+        })
+      );
     },
 
     /**
@@ -1277,7 +1603,6 @@ export default {
         caption: this.$t('Your withdrawal is being processed'),
 
         timeout: 4000,
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
 
       // Refresh balance
@@ -1316,6 +1641,24 @@ export default {
       }
     },
 
+    async switchSparkTab(walletId) {
+      if (walletId === this.storeActiveWalletId || this.sparkTabSwitching) return;
+      this.sparkTabSwitching = true;
+
+      try {
+        await this.walletStore.switchActiveWallet(walletId);
+        this.walletState.activeWalletId = walletId;
+        this.walletState.balance = this.storeBalances[walletId] || 0;
+        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        this.updateWalletBalance();
+      } catch (error) {
+        console.error('Error switching Spark tab:', error);
+        this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t switch wallet') });
+      } finally {
+        this.sparkTabSwitching = false;
+      }
+    },
+
     async switchToWallet(walletId) {
       if (walletId === this.storeActiveWalletId) {
         this.showWalletSwitcher = false;
@@ -1341,7 +1684,6 @@ export default {
           type: 'positive',
           message: this.$t('Wallet switched'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
         // Check if Spark wallet needs PIN unlock
@@ -1355,14 +1697,13 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t switch wallet'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       }
     },
 
     goToSettings() {
       this.showWalletSwitcher = false;
-      this.$router.push('/settings');
+      this.$router.push('/settings?section=wallets');
     },
 
     // ==========================================
@@ -1386,7 +1727,6 @@ export default {
         message: this.$t('Transfer complete'),
         caption: `${result.amount.toLocaleString()} sats`,
         timeout: 4000,
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
       });
 
       // Refresh wallet balance
@@ -1437,11 +1777,10 @@ export default {
         this.startBitcoinDepositPolling();
 
         await this.loadFiatRates();
-        await this.loadTransactions();
+        await this.loadLastTransaction();
         await this.loadNostrProfiles();
 
         this.startPeriodicRefresh();
-        this.startPulseAnimation();
 
         this.showLoadingScreen = false;
 
@@ -1454,51 +1793,49 @@ export default {
     },
 
     async checkSparkWalletUnlock() {
-      // Check if active wallet is Spark and needs unlocking
+      // Skip if migration is pending — the migration dialog handles connection
+      if (this.walletStore.needsPinMigration) return;
+
+      // Auto-connect Spark wallet if not already connected
       if (this.walletStore.isActiveWalletSpark) {
         const provider = this.walletStore.getActiveProvider();
         if (!provider) {
-          // Spark wallet exists but not unlocked - show PIN dialog
-          this.pinError = '';
-          this.showPinDialog = true;
+          try {
+            await this.walletStore.connectAllSparkWallets();
+            await this.updateWalletBalance();
+            this.checkPendingBitcoinDeposits();
+          } catch (error) {
+            console.warn('Spark auto-connect failed:', error.message);
+          }
         }
       }
     },
 
-    async handlePinComplete(pin) {
+    async handleMigration() {
+      if (!this.migrationPin || this.migrationPin.length < 6) return;
+
+      this.isMigrating = true;
+      this.migrationError = '';
+
       try {
-        this.pinError = '';
-        await this.walletStore.unlockSparkWallet(pin);
-        this.showPinDialog = false;
+        await this.walletStore.migrateSparkWallets(this.migrationPin);
+        this.showMigrationDialog = false;
+        this.migrationPin = '';
 
-        // Refresh balance after unlock
         await this.updateWalletBalance();
-
-        // Check for pending Bitcoin deposits immediately after unlock
         this.checkPendingBitcoinDeposits();
 
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Wallet unlocked'),
-
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
+          message: this.$t('Wallet unlocked - upgrade complete'),
         });
       } catch (error) {
-        console.error('PIN unlock failed:', error);
-        this.pinError = this.$t('Incorrect PIN. Please try again.');
+        console.error('Migration failed:', error);
+        this.migrationError = this.$t('Incorrect PIN. Please try again.');
+        this.migrationPin = '';
+      } finally {
+        this.isMigrating = false;
       }
-    },
-
-    handlePinCancel() {
-      this.showPinDialog = false;
-      // Optionally redirect or show warning that wallet features are limited
-      this.$q.notify({
-        type: 'warning',
-        message: this.$t('Wallet locked'),
-        caption: this.$t('Some features require PIN unlock'),
-
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-      });
     },
 
     async loadWalletState() {
@@ -1602,10 +1939,103 @@ export default {
       } catch (error) {
         console.error('Failed to update balance:', error);
       }
+
+      // Refresh the last-transaction preview alongside the balance so
+      // the wallet screen stays consistent after a send/receive event.
+      // Fire-and-forget; errors inside are swallowed by the method.
+      this.loadLastTransaction();
     },
 
-    async loadTransactions() {
-      this.recentTransactions = [];
+    /**
+     * Fetch the single most recent transaction for the active wallet
+     * and store it in `lastTransaction`. Best-effort: when the active
+     * wallet isn't connected yet, or its provider doesn't expose
+     * `getTransactions`, we silently clear to null so the UI falls
+     * back to just the "History" link without an error state.
+     *
+     * Called from created() after initial connect, periodically every
+     * 30s alongside balance refresh, after send/receive completes
+     * (via updateWalletBalance), and whenever the user switches the
+     * active wallet.
+     */
+    async loadLastTransaction() {
+      const walletId = this.activeWallet?.id;
+      if (!walletId) {
+        this.lastTransaction = null;
+        this.isLoadingLastTransaction = false;
+        return;
+      }
+
+      try {
+        const provider = this.walletStore.providers?.[walletId];
+        if (!provider || typeof provider.getTransactions !== 'function') {
+          this.lastTransaction = null;
+          return;
+        }
+
+        const result = await provider.getTransactions({ limit: 1, offset: 0 });
+        // Providers return either an array or `{ transactions: [...] }`
+        // depending on the implementation. Handle both so new providers
+        // don't silently break this card.
+        const txs = Array.isArray(result) ? result : (result?.transactions || []);
+        this.lastTransaction = txs.length > 0 ? txs[0] : null;
+      } catch (err) {
+        console.warn('Failed to load last transaction:', err);
+        this.lastTransaction = null;
+      } finally {
+        this.isLoadingLastTransaction = false;
+      }
+    },
+
+    openTransactionHistory() {
+      haptics.tap();
+      this.$router.push('/transactions');
+    },
+
+    openReceive() {
+      haptics.tap();
+      this.showReceiveModal = true;
+    },
+
+    openSend() {
+      haptics.tap();
+      this.showSendModal = true;
+    },
+
+    /**
+     * Build a best-effort relative time string without pulling in a
+     * date library. Falls back to a short absolute date for anything
+     * older than a week.
+     */
+    formatRelativeTime(timestamp) {
+      if (!timestamp) return '';
+      const ts = typeof timestamp === 'number' ? timestamp : new Date(timestamp).getTime();
+      if (!Number.isFinite(ts)) return '';
+      const diffMs = Date.now() - ts;
+      if (diffMs < 0) return this.$t('just now');
+      const minute = 60 * 1000;
+      const hour = 60 * minute;
+      const day = 24 * hour;
+      const week = 7 * day;
+      if (diffMs < minute) return this.$t('just now');
+      if (diffMs < hour) {
+        const n = Math.floor(diffMs / minute);
+        return `${n} ${n === 1 ? this.$t('min ago') : this.$t('mins ago')}`;
+      }
+      if (diffMs < day) {
+        const n = Math.floor(diffMs / hour);
+        return `${n} ${n === 1 ? this.$t('hr ago') : this.$t('hrs ago')}`;
+      }
+      if (diffMs < week) {
+        const n = Math.floor(diffMs / day);
+        return `${n} ${n === 1 ? this.$t('day ago') : this.$t('days ago')}`;
+      }
+      // Older than a week: show a short absolute date, localised.
+      try {
+        return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      } catch {
+        return '';
+      }
     },
 
     loadNostrProfiles() {
@@ -1622,7 +2052,7 @@ export default {
     startPeriodicRefresh() {
       this.refreshInterval = setInterval(async () => {
         await this.updateWalletBalance();
-        await this.loadTransactions();
+        await this.loadLastTransaction();
         await this.loadFiatRates();
       }, 30000);
     },
@@ -1661,15 +2091,6 @@ export default {
           };
         }
       }
-    },
-
-    startPulseAnimation() {
-      this.pulseInterval = setInterval(() => {
-        this.shouldPulse = true;
-        setTimeout(() => {
-          this.shouldPulse = false;
-        }, 1000);
-      }, 25000);
     },
 
     async toggleCurrency() {
@@ -1902,11 +2323,10 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.withdrawDenomination === 'fiat'
-            ? this.$t('Fiat rates unavailable — switch to sats or refresh the app')
+            ? this.$t('Fiat rates unavailable - switch to sats or refresh the app')
             : this.$t('Invalid amount'),
           icon: 'las la-exclamation-triangle',
           timeout: 10000,
-          actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
         });
         return;
       }
@@ -2177,7 +2597,6 @@ export default {
             caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
             icon: 'las la-exclamation-triangle',
             timeout: 10000,
-            actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
           });
           return;
         }
@@ -2191,6 +2610,35 @@ export default {
         this.withdrawDenomination = 'sats';
         if (currentAmount > 0) {
           const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.withdrawFiatCurrency);
+          this.paymentAmount = sats !== null ? sats.toString() : '';
+        }
+      }
+    },
+
+    toggleSendDenomination() {
+      this.denominationSpinning = true;
+      setTimeout(() => { this.denominationSpinning = false; }, 500);
+      const currentAmount = parseFloat(this.paymentAmount);
+      if (this.sendDenomination === 'sats') {
+        if (!fiatRatesService.ratesAvailable) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Fiat rates unavailable'),
+            caption: this.$t('Use sats denomination or refresh the app to load exchange rates'),
+            icon: 'las la-exclamation-triangle',
+            timeout: 10000,
+          });
+          return;
+        }
+        this.sendDenomination = 'fiat';
+        if (currentAmount > 0) {
+          const fiat = fiatRatesService.convertSatsToFiatSync(currentAmount, this.preferredFiatCurrency);
+          this.paymentAmount = fiat !== null ? fiat.toFixed(2) : '';
+        }
+      } else {
+        this.sendDenomination = 'sats';
+        if (currentAmount > 0) {
+          const sats = fiatRatesService.convertFiatToSatsSync(currentAmount, this.preferredFiatCurrency);
           this.paymentAmount = sats !== null ? sats.toString() : '';
         }
       }
@@ -2211,7 +2659,6 @@ export default {
             caption: this.$t('The merchant QR code has expired. Please scan again.'),
             icon: 'schedule',
             timeout: 5000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
       }, 1000);
@@ -2302,11 +2749,9 @@ export default {
           if (lnurlInfo.error || !lnurlInfo.lnurlType) {
             this.$q.notify({
               type: 'negative',
-              message: this.$t('Withdraw link expired or already used'),
-              caption: lnurlInfo.reason || this.$t('Could not retrieve payment details from this link'),
-              icon: 'las la-exclamation-circle',
-              timeout: 10000,
-              actions: [{ icon: 'las la-times', color: 'white', round: true, handler: () => {} }]
+              message: this.$t('Could not process this link'),
+              caption: lnurlInfo.reason || this.$t('The server did not respond or the link is no longer valid'),
+              timeout: 6000,
             });
             return;
           }
@@ -2399,7 +2844,6 @@ export default {
                   amount: paymentSats,
                   balance: this.walletState.balance
                 }),
-                actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
               });
               return;
             }
@@ -2431,62 +2875,7 @@ export default {
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
-      }
-    },
-
-    async checkInvoiceStatus() {
-      if (!this.currentInvoicePaymentHash || this.invoicePaid) return;
-
-      try {
-        let isPaid = false;
-
-        if (this.walletStore.isActiveWalletSpark) {
-          // Spark wallet - ensure connected and use provider's lookupInvoice
-          try {
-            const provider = await this.walletStore.ensureSparkConnected();
-            const result = await provider.lookupInvoice(this.currentInvoicePaymentHash);
-            isPaid = result.paid;
-          } catch (e) {
-            // Silently fail if wallet not connected during background check
-            return;
-          }
-        } else {
-          // NWC wallet
-          const activeWallet = this.getActiveWallet();
-          if (!activeWallet?.nwcString) return;
-
-          const nwc = new NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
-          await nwc.enable();
-
-          const transactions = await nwc.getTransactions();
-          const paidInvoice = transactions.find(tx =>
-            tx.type === 'incoming' &&
-            tx.payment_hash === this.currentInvoicePaymentHash
-          );
-          isPaid = !!paidInvoice;
-        }
-
-        if (isPaid) {
-          console.log('Invoice paid!');
-          this.invoicePaid = true;
-          this.waitingForPayment = false;
-          this.stopInvoiceMonitoring();
-
-          await this.updateWalletBalance();
-
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Payment received'),
-
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-          });
-        }
-      } catch (error) {
-        console.error('Error checking invoice status:', error);
       }
     },
 
@@ -2495,7 +2884,12 @@ export default {
 
       // Variable amount - user needs to input
       if (this.needsAmountInput) {
-        return this.paymentAmount ? formatAmount(parseInt(this.paymentAmount), this.walletStore.useBip177Format) : 'Enter amount';
+        if (!this.paymentAmount) return 'Enter amount';
+        if (this.sendDenomination === 'fiat') {
+          const val = parseFloat(this.paymentAmount);
+          return val > 0 ? fiatRatesService.formatFiatAmount(val, this.preferredFiatCurrency) : 'Enter amount';
+        }
+        return formatAmount(parseInt(this.paymentAmount), this.walletStore.useBip177Format);
       }
 
       // Fixed-amount LNURL/Lightning Address - use fixedAmountSats if available
@@ -2527,6 +2921,12 @@ export default {
         // Handled by withdrawSecondaryDisplay computed
         return '';
       } else if (this.needsAmountInput) {
+        // When user is entering in fiat, show sats equivalent instead
+        if (this.sendDenomination === 'fiat') {
+          const sats = this.sendAmountSats;
+          if (sats > 0) return '≈ ' + formatAmount(sats, this.walletStore.useBip177Format);
+          return '';
+        }
         amount = parseInt(this.paymentAmount) || 0;
       } else if (this.pendingPayment.type === 'lnurl' ||
                  this.pendingPayment.type === 'lnurl_pay' ||
@@ -2562,7 +2962,7 @@ export default {
     validatePaymentAmount(amount) {
       if (!this.pendingPayment) return 'No payment details';
 
-      const amountNum = parseInt(amount);
+      const amountNum = parseFloat(amount);
       if (isNaN(amountNum) || amountNum <= 0) {
         return 'Amount must be greater than 0';
       }
@@ -2571,11 +2971,19 @@ export default {
       const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 1);
       const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
 
-      if (amountNum < minSats) {
+      // Convert to sats if user is entering in fiat
+      let satsToValidate = amountNum;
+      if (this.sendDenomination === 'fiat') {
+        const converted = fiatRatesService.convertFiatToSatsSync(amountNum, this.preferredFiatCurrency);
+        if (converted === null) return 'Exchange rate unavailable';
+        satsToValidate = converted;
+      }
+
+      if (satsToValidate < minSats) {
         return `Minimum amount is ${formatAmount(minSats, this.walletStore.useBip177Format)}`;
       }
 
-      if (amountNum > maxSats) {
+      if (satsToValidate > maxSats) {
         return `Maximum amount is ${formatAmount(maxSats, this.walletStore.useBip177Format)}`;
       }
 
@@ -2591,8 +2999,8 @@ export default {
         // Determine the amount to send
         let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
-          // Variable amount - user entered value
-          amount = parseInt(this.paymentAmount);
+          // Variable amount - convert to sats if user entered in fiat
+          amount = this.sendAmountSats;
         } else if (this.pendingPayment.fixedAmountSats) {
           // Fixed-amount LNURL/Lightning Address - use fixedAmountSats from lightning.js
           amount = this.pendingPayment.fixedAmountSats;
@@ -2645,7 +3053,6 @@ export default {
           type: 'positive',
           message: this.$t('Sent'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
 
         // Offer to save contact if this is a new recipient
@@ -2669,7 +3076,6 @@ export default {
           message: this.$t('Payment failed'),
           caption: this.$t('Please try again'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } finally {
         this.isSendingPayment = false;
@@ -2819,7 +3225,6 @@ export default {
           type: 'positive',
           message: this.$t('Contact saved'),
 
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
       } catch (error) {
         console.error('Error saving contact:', error);
@@ -3197,30 +3602,6 @@ export default {
       return 0;
     },
 
-    startInvoiceMonitoring() {
-      if (this.invoiceCheckInterval) {
-        clearInterval(this.invoiceCheckInterval);
-      }
-
-      this.invoiceCheckInterval = setInterval(async () => {
-        await this.checkInvoiceStatus();
-      }, 2000);
-    },
-
-    stopInvoiceMonitoring() {
-      if (this.invoiceCheckInterval) {
-        clearInterval(this.invoiceCheckInterval);
-        this.invoiceCheckInterval = null;
-      }
-    },
-
-    onInvoiceCreated(invoice) {
-      console.log('Invoice created:', invoice);
-      this.generatedInvoice = invoice;
-      this.currentInvoicePaymentHash = invoice.paymentHash;
-      this.waitingForPayment = true;
-      this.startInvoiceMonitoring();
-    }
   }
 };
 </script>
@@ -3237,7 +3618,8 @@ export default {
 }
 
 .wallet-page-light {
-  background: #f8f9fa;
+  /* Single source of truth lives in app.css → body.body--light → --bg-primary */
+  background: var(--bg-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -3330,11 +3712,11 @@ export default {
 }
 
 .modern-menu-btn-light {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .modern-menu-btn-light:hover {
-  background: #f1f5f9;
+  background: var(--bg-input);
 }
 
 .menu-icon {
@@ -3356,7 +3738,7 @@ export default {
 }
 
 .menu-line-light {
-  background: #374151;
+  background: var(--text-primary);
 }
 
 /* Main Content */
@@ -3372,6 +3754,114 @@ export default {
 }
 
 /* Wallet Chip (q-chip) */
+/* ===== Spark Tab Bar ===== */
+.spark-tabs-wrap {
+  margin-bottom: 1rem;
+  padding: 0 1rem;
+  width: 100%;
+  max-width: 320px;
+}
+
+.spark-tabs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  padding: 3px;
+  gap: 0;
+}
+
+.spark-tabs-dark {
+  background: #1A1A1A;
+}
+
+.spark-tabs-light {
+  background: var(--bg-input);
+}
+
+.spark-tabs-slider {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 24px);
+  height: calc(100% - 6px);
+  border-radius: 10px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+
+.spark-tabs-slider--right {
+  transform: translateX(calc(100% + 46px));
+}
+
+.spark-tabs-dark .spark-tabs-slider {
+  background: #2A2A2A;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.spark-tabs-light .spark-tabs-slider {
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(40, 34, 20, 0.08), 0 1px 2px rgba(40, 34, 20, 0.04);
+  border: 1px solid var(--border-card);
+}
+
+.spark-tab {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.spark-tab--active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.spark-tab:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.spark-tab-divider {
+  width: 1px;
+  height: 16px;
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.spark-tabs-dark .spark-tab-divider {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.spark-tabs-light .spark-tab-divider {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.spark-tab-center {
+  flex: 0 0 40px;
+  padding: 8px 0;
+  color: var(--text-muted);
+}
+
+.spark-tab-center:hover {
+  color: var(--text-primary);
+}
+
 .wallet-chip {
   margin-bottom: 1rem;
   font-size: 12px;
@@ -3461,8 +3951,9 @@ export default {
 }
 
 .amount-number-light {
-  color: #1F2937;
+  color: var(--text-primary);
 }
+
 
 .amount-unit {
   font-size: 1.5rem;
@@ -3474,7 +3965,7 @@ export default {
 }
 
 .amount-unit-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .currency-icon-left {
@@ -3565,60 +4056,218 @@ export default {
   transform: translateY(10px);
 }
 
-/* Transaction History Button */
-.transaction-icon-section {
+/* ------------------------------------------------------------------
+   Last-transaction preview + History link.
+   Neutral palette only — deliberately no green accents here. The
+   balance above carries the brand colour; this block stays quiet so
+   the eye lands on the amount, not the last-tx direction.
+------------------------------------------------------------------ */
+.last-tx-section {
   display: flex;
-  justify-content: center;
-  margin-bottom: 2rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 1.25rem;
+  margin-bottom: 1.5rem;
 }
 
-.transaction-history-btn-dark,
-.transaction-history-btn-light {
-  width: 48px;
-  height: 48px;
+/* ── Card ──────────────────────────────────────────────────────── */
+.last-tx-card {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  font-family: 'Manrope', sans-serif;
+}
+
+.last-tx-card:active {
+  transform: scale(0.99);
+}
+
+.last-tx-card-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.last-tx-card-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.last-tx-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  transition: transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.last-tx-icon-light {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.last-tx-icon-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.last-tx-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.last-tx-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.last-tx-title-light {
+  color: #0f172a;
+}
+
+.last-tx-title-dark {
+  color: #f1f5f9;
+}
+
+.last-tx-time,
+.last-tx-fiat {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.last-tx-muted-light {
+  color: #64748b;
+}
+
+.last-tx-muted-dark {
+  color: #94a3b8;
+}
+
+.last-tx-amount-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.last-tx-amount {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── History link ─────────────────────────────────────────────── */
+.history-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border: none;
+  background: none;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.history-link:active {
   opacity: 0.6;
 }
 
-.transaction-history-btn-dark {
-  background: #2A342A;
-  color: #B0B0B0;
+.history-link-light {
+  color: #475569;
 }
 
-.transaction-history-btn-light {
-  background: #f8f9fa;
-  color: #6b7280;
+.history-link-dark {
+  color: #cbd5e1;
 }
 
-.transaction-history-btn-dark:active,
-.transaction-history-btn-light:active {
-  transform: scale(0.95);
+/* ── Skeleton ─────────────────────────────────────────────────── */
+.last-tx-card-skeleton {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid;
 }
 
-.transaction-history-btn-dark.pulse,
-.transaction-history-btn-light.pulse {
-  animation: subtle-pulse 1s ease-out;
+.last-tx-skeleton-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
 }
 
-@keyframes subtle-pulse {
-  0% {
-    opacity: 0.6;
-    transform: scale(1);
+.last-tx-skeleton-dark {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.last-tx-card-skeleton-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.last-tx-card-skeleton-amount {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.history-link-skeleton {
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .last-tx-card,
+  .history-link {
+    transition: none;
   }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.02);
-  }
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
+  .last-tx-card:active {
+    transform: none;
   }
 }
 
 /* Bottom Actions */
 .bottom-actions {
-  padding: 1rem 1.5rem 2rem 1.5rem;
+  padding: 1rem 1.5rem;
+  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
   position: fixed;
   bottom: 0;
   left: 0;
@@ -3635,57 +4284,125 @@ export default {
   margin: 0 auto;
 }
 
+/* Twin tinted-fill buttons. Send and Receive are equal, co-primary
+   actions — no outlined-vs-filled hierarchy. Each carries a soft
+   wash of its brand colour with full-saturation label and icon; the
+   background is atmosphere, the foreground is meaning. Sharper 18px
+   radius matches the app's card language and drops the pill that
+   fought the rest of the wallet UI. */
 .action-btn {
   flex: 1;
-  height: 72px;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  font-weight: 600;
-  transition: all 0.2s ease;
+  height: 56px;
+  min-height: 56px;
+  min-width: 120px;
+  border-radius: 18px;
+  padding: 0 20px;
   position: relative;
   overflow: hidden;
-  min-height: 72px;
-  min-width: 120px;
+  transition:
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    filter 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+/* Identical layout on both: icon + label in a single row, centered.
+   Neutralises Quasar's internal content padding which otherwise
+   offsets one button against the other. */
+.action-btn :deep(.q-btn__content) {
+  padding: 0;
+  flex-direction: row;
+  column-gap: 10px;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Micro top-edge sheen — a barely-there light source. Adds form
+   without introducing a new colour or animation surface. */
+.action-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0) 40%
+  );
+  pointer-events: none;
 }
 
 .action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  filter: brightness(1.08);
 }
 
 .action-btn:active {
-  transform: translateY(0) scale(0.98);
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+  filter: brightness(0.92);
 }
 
-.receive-btn-dark,
-.receive-btn-light {
-  background: linear-gradient(135deg, #059573, #43B65B);
-  color: white;
+/* Receive — green tinted fill. Uses the same #15DE72 accent as the
+   ReceiveModal so the button and the modal it opens feel like one
+   continuous surface. */
+.action-btn-receive {
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
+  border: 1px solid rgba(21, 222, 114, 0.22);
 }
 
-.receive-btn-dark:hover,
-.receive-btn-light:hover {
-  background: linear-gradient(135deg, #047857, #059573);
+/* Send — blue tinted fill. #3B82F6 chosen over #2563EB for the
+   icon/label because it has stronger contrast on the tinted wash
+   in dark mode. The shade still belongs to the brand-blue family. */
+.action-btn-send {
+  background: rgba(59, 130, 246, 0.14);
+  color: #3B82F6;
+  border: 1px solid rgba(59, 130, 246, 0.22);
 }
 
-.send-btn-dark,
-.send-btn-light {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-  color: white;
+/* Light mode: tinted fills must be slightly denser to remain
+   legible on white, and the label/icon drop to the deeper shades
+   (#059573 / #2563EB) for WCAG AA contrast on a light wash. */
+.body--light .action-btn-receive {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
+  border-color: rgba(5, 149, 115, 0.20);
 }
 
-.send-btn-dark:hover,
-.send-btn-light:hover {
-  background: linear-gradient(135deg, #2563EB, #1D4ED8);
+.body--light .action-btn-send {
+  background: rgba(37, 99, 235, 0.10);
+  color: #2563EB;
+  border-color: rgba(37, 99, 235, 0.20);
 }
 
 .btn-text {
-  font-size: 1rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.9375rem; /* 15px */
   font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-btn,
+  .action-btn:hover,
+  .action-btn:active {
+    transition: none;
+    transform: none;
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-btn,
+  .action-btn:hover,
+  .action-btn:active {
+    transition: none;
+    transform: none;
+    filter: none;
+  }
 }
 
 /* Dialog Header Styles */
@@ -3739,9 +4456,9 @@ export default {
 }
 
 .payment_input_light :deep(.q-field__control) {
-  background: white;
-  color: #1f2937;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
   border-radius: 12px;
 }
 
@@ -3860,11 +4577,11 @@ export default {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: #6b7280;
-  background: white;
+  color: var(--text-secondary);
+  background: var(--bg-input);
   padding: 0.75rem;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-card);
 }
 
 .limits-icon {
@@ -3941,6 +4658,16 @@ export default {
 
 .denomination-spin {
   animation: denomination-rotate 0.5s ease-in-out;
+}
+
+.denomination-toggle-icon {
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.denomination-toggle-icon:hover {
+  opacity: 1;
 }
 
 @keyframes denomination-rotate {
@@ -4071,9 +4798,9 @@ export default {
 
 .amount_input_light :deep(.q-field__control),
 .comment_input_light :deep(.q-field__control) {
-  background: white;
-  color: #1f2937;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
   border-radius: 12px;
   margin-bottom: 1rem;
 }
@@ -4085,8 +4812,8 @@ export default {
 }
 
 .payment_actions_light {
-  background: #f8f9fa;
-  border-top: 1px solid #e5e7eb;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-card);
 }
 
 .cancel_btn_dark {
@@ -4094,7 +4821,7 @@ export default {
 }
 
 .cancel_btn_light {
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 /* Invoice Form */
@@ -4112,9 +4839,9 @@ export default {
 }
 
 .description_input_light :deep(.q-field__control) {
-  background: white;
-  color: #1f2937;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
   border-radius: 12px;
 }
 
@@ -4752,7 +5479,7 @@ export default {
 }
 
 .switch-balance-light {
-  color: #9CA3AF;
+  color: var(--text-muted);
 }
 
 /* Check Icon */
@@ -4766,7 +5493,7 @@ export default {
   padding: 0.75rem 1rem;
   border-top: 1px solid;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: 8px;
 }
@@ -4777,8 +5504,8 @@ export default {
 }
 
 .switcher-footer-light {
-  border-top-color: #E5E7EB;
-  background: #F8F9FA;
+  border-top-color: var(--border-card);
+  background: var(--bg-primary);
 }
 
 /* Transfer Funds Button */
@@ -4788,6 +5515,7 @@ export default {
   font-weight: 600;
   border-radius: 10px;
   padding: 0.5rem 1rem;
+  flex: 1;
   transition: all 0.15s ease;
 }
 
@@ -4815,6 +5543,7 @@ export default {
   font-weight: 500;
   border-radius: 10px;
   padding: 0.5rem 1rem;
+  flex: 1;
   transition: all 0.15s ease;
 }
 
@@ -4823,7 +5552,7 @@ export default {
 }
 
 .manage-btn-light {
-  color: #6B7280;
+  color: var(--text-secondary);
 }
 
 .manage-wallets-btn:hover {
@@ -4835,7 +5564,7 @@ export default {
 }
 
 .manage-btn-light:hover {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 /* Save Contact Dialog */

@@ -63,6 +63,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         payoutType: config.payoutType ?? 'lightning',
         lightningAddress: config.lightningAddress ?? '',
         bitcoinAddress: config.bitcoinAddress ?? '',
+        sparkAddress: config.sparkAddress ?? '',
         feeSpeed: config.feeSpeed ?? 'medium',
         lastTriggeredAt: config.lastTriggeredAt ?? null
       }
@@ -97,8 +98,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
      * Check if auto-withdraw should trigger and execute it.
      * Called after every balance update.
      */
-    async checkAndExecute(walletId, balanceSats, walletStore) {
-      const config = this.configs[walletId]
+    async checkAndExecute(configKey, balanceSats, walletStore) {
+      const config = this.configs[configKey]
       if (!config?.enabled) return
 
       const threshold = Number(config.thresholdSats)
@@ -107,19 +108,22 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       const balance = Number(balanceSats)
       if (balance <= threshold) return
 
-      // Lock guard — prevent concurrent execution for same wallet
-      if (_activeWithdrawals.has(walletId)) return
+      // Lock guard — prevent concurrent execution for same config
+      if (_activeWithdrawals.has(configKey)) return
 
       // Cooldown guard — prevent rapid re-triggers
-      const lastTrigger = _lastTriggerTime.get(walletId) || 0
+      const lastTrigger = _lastTriggerTime.get(configKey) || 0
       if (Date.now() - lastTrigger < COOLDOWN_MS) return
 
       // Lock + set cooldown immediately (before any await)
-      _activeWithdrawals.add(walletId)
-      _lastTriggerTime.set(walletId, Date.now())
+      _activeWithdrawals.add(configKey)
+      _lastTriggerTime.set(configKey, Date.now())
+
+      // Resolve base walletId from composite key (e.g. 'walletId:2' → 'walletId')
+      const baseWalletId = configKey.includes(':') ? configKey.split(':').slice(0, -1).join(':') : configKey
 
       try {
-        const wallet = walletStore.wallets.find(w => w.id === walletId)
+        const wallet = walletStore.wallets.find(w => w.id === baseWalletId)
         if (!wallet) return
 
         const sendAmount = Math.floor(balance * 0.97)
@@ -130,12 +134,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         let destination = ''
 
         if (walletType === WALLET_TYPES.SPARK) {
-          result = await this._executeSparkPayout(walletId, sendAmount, config, walletStore)
-          destination = config.payoutType === 'onchain'
-            ? config.bitcoinAddress
-            : config.lightningAddress
+          result = await this._executeSparkPayout(configKey, sendAmount, config, walletStore)
+          if (config.payoutType === 'spark') destination = config.sparkAddress
+          else if (config.payoutType === 'onchain') destination = config.bitcoinAddress
+          else destination = config.lightningAddress
         } else {
-          result = await this._executeLightningPayout(walletId, sendAmount, config, walletStore, walletType)
+          result = await this._executeLightningPayout(configKey, sendAmount, config, walletStore, walletType)
           destination = config.lightningAddress
         }
 
@@ -154,7 +158,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         }
 
         // Persist last triggered timestamp
-        this.configs[walletId].lastTriggeredAt = Date.now()
+        this.configs[configKey].lastTriggeredAt = Date.now()
         await this.persistConfigs()
 
         // Notify UI — success
@@ -168,24 +172,34 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         console.error('[Auto-withdraw] Failed:', error.message)
 
         // Notify UI — error
+        const baseId = configKey.includes(':') ? configKey.split(':').slice(0, -1).join(':') : configKey
         this.lastResult = {
           type: 'error',
           message: error.message,
-          walletName: walletStore.wallets.find(w => w.id === walletId)?.name || 'Wallet'
+          walletName: walletStore.wallets.find(w => w.id === baseId)?.name || 'Wallet'
         }
       } finally {
-        _activeWithdrawals.delete(walletId)
+        _activeWithdrawals.delete(configKey)
       }
     },
 
     /**
      * Execute payout from Spark wallet (lightning or on-chain)
+     * @param {string} configKey - walletId or walletId:accountNumber for pockets
      */
-    async _executeSparkPayout(walletId, sendAmount, config, walletStore) {
-      const provider = walletStore.providers[walletId]
+    async _executeSparkPayout(configKey, sendAmount, config, walletStore) {
+      // For composite keys (pockets), get provider directly; for plain walletIds, use getProvider
+      const provider = configKey.includes(':')
+        ? walletStore.providers[configKey]
+        : walletStore.getProvider(configKey)
       if (!provider) throw new Error('Wallet provider not available')
 
-      if (config.payoutType === 'onchain') {
+      if (config.payoutType === 'spark') {
+        if (!config.sparkAddress) throw new Error('No Spark address configured')
+
+        const result = await provider.transferToSparkAddress(config.sparkAddress, sendAmount)
+        return { id: result.id, status: result.status }
+      } else if (config.payoutType === 'onchain') {
         if (!config.bitcoinAddress) throw new Error('No Bitcoin address configured')
 
         const feeQuote = await provider.getWithdrawalFeeQuote(sendAmount, config.bitcoinAddress)
@@ -241,7 +255,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
       // Pay via wallet-specific provider
       if (walletType === WALLET_TYPES.LNBITS) {
-        const provider = walletStore.providers[walletId]
+        const provider = walletStore.getProvider(walletId)
         if (!provider) throw new Error('LNBits provider not available')
         const result = await provider.payInvoice({ invoice })
         return { id: result.payment_hash || result.id || null, status: 'completed' }

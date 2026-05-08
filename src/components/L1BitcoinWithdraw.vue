@@ -160,11 +160,11 @@
     <!-- Send Button -->
     <q-btn
       v-if="canSend"
-      color="primary"
       size="lg"
       no-caps
       unelevated
       class="send-btn"
+      :class="$q.dark.isActive ? 'send-btn-dark' : 'send-btn-light'"
       :loading="isSending"
       @click="executeWithdrawal"
     >
@@ -881,13 +881,52 @@ export default {
 }
 
 /* Send Button */
+/* Send Bitcoin — blue-tinted primary CTA for the send flow, same
+   grammar as the wallet's Send button and PaymentModal's Send
+   Payment. */
 .send-btn {
   width: 100%;
   height: 54px;
-  border-radius: 14px;
-  font-size: 16px;
-  font-weight: 700;
+  border-radius: 16px;
   margin-top: 0.5rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease,
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.send-btn-dark {
+  background: rgba(59, 130, 246, 0.14) !important;
+  color: #3B82F6 !important;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
+}
+
+.send-btn-light {
+  background: rgba(37, 99, 235, 0.10) !important;
+  color: #2563EB !important;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.20);
+}
+
+.send-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  transition-duration: 0.08s;
+  filter: brightness(0.94);
+}
+
+.send-btn:disabled,
+.send-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Mobile Responsiveness */
