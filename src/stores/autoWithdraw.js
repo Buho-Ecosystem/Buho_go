@@ -2,10 +2,14 @@ import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
 import { LightningAddress } from '@getalby/lightning-tools'
+import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 const STORAGE_KEY = 'buhoGO_auto_withdraw'
-const SPEED_MAP = { low: 'SLOW', medium: 'MEDIUM', high: 'FAST' }
 const SPEED_LABELS = { low: 'Economy', medium: 'Standard', high: 'Priority' }
+// Settings persists feeSpeed as low/medium/high. The Spark provider's
+// fee quote is keyed by slow/medium/fast. Translate at the boundary so
+// Settings UX stays stable while the provider speaks the SDK's language.
+const FEE_SPEED_TO_QUOTE_KEY = { low: 'slow', medium: 'medium', high: 'fast' }
 const COOLDOWN_MS = 60_000 // 60s between triggers per wallet
 const MIN_SEND_SATS = 10   // Don't send dust
 
@@ -175,7 +179,10 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const baseId = configKey.includes(':') ? configKey.split(':').slice(0, -1).join(':') : configKey
         this.lastResult = {
           type: 'error',
-          message: error.message,
+          // The store has no $t (Pinia stores run outside the Vue component
+          // tree); the utility falls back to its English keys, which the UI
+          // layer can re-translate if it ever surfaces this message.
+          message: getUserFriendlyErrorMessage(error, 'withdraw'),
           walletName: walletStore.wallets.find(w => w.id === baseId)?.name || 'Wallet'
         }
       } finally {
@@ -203,15 +210,16 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         if (!config.bitcoinAddress) throw new Error('No Bitcoin address configured')
 
         const feeQuote = await provider.getWithdrawalFeeQuote(sendAmount, config.bitcoinAddress)
-        const speedKey = config.feeSpeed || 'medium'
-        const quote = feeQuote[speedKey] || feeQuote.medium
-        const sparkSpeed = SPEED_MAP[speedKey] || 'MEDIUM'
+        const quoteKey = FEE_SPEED_TO_QUOTE_KEY[config.feeSpeed] || 'medium'
+        const quote = feeQuote[quoteKey] || feeQuote.medium
 
         const result = await provider.withdrawToL1({
           amountSats: sendAmount,
           destinationAddress: config.bitcoinAddress,
-          speed: sparkSpeed,
-          feeQuoteId: quote.feeQuoteId
+          speed: quoteKey,
+          feeQuoteId: quote.feeQuoteId,
+          feeAmountSats: quote.totalFee,
+          deductFeeFromWithdrawalAmount: false
         })
 
         return { id: result.requestId, status: result.status }

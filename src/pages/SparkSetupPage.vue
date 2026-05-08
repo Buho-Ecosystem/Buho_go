@@ -46,6 +46,11 @@ export default {
     }
   },
   async mounted() {
+    if (typeof window !== 'undefined' && window.__AUDIT__) {
+      this.mnemonic = 'audit stub mnemonic twelve words for visual capture only skip real sdk'
+      this.creatingStatus = this.$t('Encrypting wallet...')
+      return
+    }
     await this.generateAndCreate();
   },
   methods: {

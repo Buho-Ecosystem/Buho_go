@@ -1,689 +1,327 @@
-# BuhoGO Developer Guide
+# BuhoGO — Developer Guide
 
-Technical documentation for developers contributing to BuhoGO.
+> Architecture in one read. Code samples over prose.
 
-Back to [README](README.md) | For users: [User Guide](Guide.md)
+[← README](README.md) · [Contribute](CONTRIBUTING.md) · [User Guide](Guide.md)
 
-<br>
+---
 
-## Table of Contents
+## Stack
 
-1. [Architecture Overview](#architecture-overview)
-2. [Project Structure](#project-structure)
-3. [Wallet Provider System](#wallet-provider-system)
-4. [L1 Bitcoin Integration](#l1-bitcoin-integration)
-5. [State Management](#state-management)
-6. [Key Components](#key-components)
-7. [Boot Files](#boot-files)
-8. [Adding Features](#adding-features)
-9. [Styling Guidelines](#styling-guidelines)
-10. [Building for Mobile](#building-for-mobile)
-11. [Testing](#testing)
+| Layer | Choice |
+| --- | --- |
+| UI | Vue 3 + Quasar |
+| State | Pinia |
+| Build | Vite |
+| Mobile | Capacitor (Android shipped, iOS planned) |
+| Lightning | `@buildonspark/spark-sdk` · `@getalby/sdk` · LNBits REST |
 
-<br>
-
-## Architecture Overview
-
-BuhoGO is built with Vue.js 3 and the Quasar Framework. The application follows a provider pattern for wallet operations, allowing different wallet types (Spark, NWC, LNBits) to implement a common interface.
-
-### Core Technologies
-
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| UI Framework | Vue.js 3 | Component-based UI |
-| Component Library | Quasar | Pre-built components, theming |
-| State Management | Pinia | Centralized reactive state |
-| Routing | Vue Router | SPA navigation |
-| Build | Vite | Fast development and builds |
-| Lightning (Spark) | @buildonspark/spark-sdk | Self-custodial wallet |
-| Lightning (NWC) | @getalby/sdk | Wallet connect protocol |
-| Lightning (LNBits) | LNBits REST API | Direct API integration |
-| Mobile | Capacitor | Android builds |
-
-### Data Flow
+## Data flow
 
 ```
-User Action
-    |
-    v
-Vue Component
-    |
-    v
-Pinia Store (wallet.js, addressBook.js, autoWithdraw.js, transactionMetadata.js)
-    |
-    v
-Wallet Provider (SparkWalletProvider, NWCWalletProvider, LNBitsWalletProvider)
-    |
-    v
-External SDK/API (@buildonspark/spark-sdk, @getalby/sdk, or LNBits REST API)
+Component → Pinia store → WalletProvider → SDK / REST API
 ```
 
-<br>
+All wallet operations route through a **provider** so components stay wallet-agnostic.
 
-## Project Structure
+---
+
+## Repository layout
 
 ```
 src/
-  boot/
-    axios.js               # HTTP client setup
-    deep-links.js           # URI scheme handling (lightning:, bitcoin:, lnurl)
-    i18n.js                 # Internationalization setup
-    iconify.js              # Icon library
-    kiosk.js                # Navigation guard for kiosk mode
-    safe-area.js            # Android notch/gesture bar detection
-
-  components/
-    AddressBookQuickModal.vue  # Quick contact access
-    BatchSendModal.vue         # Multi-contact batch payments
-    InternalTransferModal.vue  # Transfer between wallets
-    KioskPinPad.vue            # 4-digit PIN entry for kiosk
-    L1BitcoinReceive.vue       # On-chain Bitcoin deposit UI
-    L1BitcoinWithdraw.vue      # On-chain Bitcoin withdrawal UI
-    MnemonicDisplay.vue        # Seed phrase display
-    MnemonicOrderVerify.vue    # Tap-to-order seed verification
-    PaymentModal.vue           # Payment confirmation dialog
-    PinEntryDialog.vue         # PIN input component
-    ReceiveModal.vue           # Invoice/address generation
-    SendModal.vue              # Payment input and scanning
-
-  pages/
-    AddressBook.vue            # Contact management
-    IndexPage.vue              # NWC connection page
-    KioskDashboard.vue         # Point of sale interface
-    LNBitsSetupPage.vue        # LNBits wallet setup
-    NWCSetupPage.vue           # NWC wallet setup
-    Settings.vue               # App settings
-    SparkRestorePage.vue       # Seed phrase restore flow
-    SparkSetupPage.vue         # New Spark wallet creation
-    SparkSuccessWizard.vue     # Post-setup onboarding
-    TransactionDetails.vue     # Single transaction view
-    TransactionHistory.vue     # Transaction list with filters
-    Wallet.vue                 # Main wallet dashboard
-    WelcomePage.vue            # Initial wallet type selection
-
-  providers/
-    WalletProvider.js          # Abstract base class
-    SparkWalletProvider.js     # Spark wallet implementation
-    NWCWalletProvider.js       # NWC wallet implementation
-    LNBitsWalletProvider.js    # LNBits wallet implementation
-    WalletFactory.js           # Provider creation and payment parsing
-
-  stores/
-    wallet.js                  # Wallet state, kiosk config, encryption
-    addressBook.js             # Contact management
-    autoWithdraw.js            # Threshold-based auto payouts
-    transactionMetadata.js     # Notes, tags, contact linking per TX
-
-  utils/
-    addressUtils.js            # Address formatting/validation
-    amountFormatting.js        # Sat/fiat conversion and display
-    biometric.js               # Fingerprint/face auth wrapper
-    eventBus.js                # Component event communication
-    fiatRates.js               # Bitcoin price fetching
-    haptics.js                 # Vibration feedback
-    lightning.js               # Lightning payment utilities
-    share.js                   # OS share API wrapper
-
-  css/
-    app.css                    # Global styles, safe-area variables, theming
-
-  i18n/                        # Translations (en, de, es)
-  router/                      # Route definitions
+├── boot/         # axios, i18n, deep-links, kiosk guard, safe-area
+├── components/   # Send/Receive/Payment modals, Kiosk PIN pad, L1 UI…
+├── pages/        # Wallet, Settings, KioskDashboard, Setup pages…
+├── providers/    # WalletProvider (base) + Spark/NWC/LNBits + Factory
+├── stores/       # wallet, addressBook, autoWithdraw, transactionMetadata
+├── utils/        # address, amount, biometric, lightning, fiatRates…
+├── i18n/         # en, de, es
+└── css/app.css   # design tokens, safe-area vars, themes
 ```
 
-<br>
+---
 
-## Wallet Provider System
+## Wallet Provider pattern
 
-The provider pattern abstracts wallet operations so components do not need to know which wallet type is active.
+All providers implement the same interface (`src/providers/WalletProvider.js`):
 
-### Base Provider Interface
-
-`WalletProvider.js` defines the interface all providers must implement:
-
-```javascript
+```js
 class WalletProvider {
-  // Identity
-  getType()              // Returns 'spark', 'nwc', or 'lnbits'
-  isSpark()              // Boolean check
-
-  // Connection
-  connect()              // Establish connection
-  disconnect()           // Clean up resources
-
-  // Balance and Info
-  getBalance()           // Returns { balance, pending, tokenBalances }
-  getInfo()              // Returns wallet metadata
-
-  // Payments
+  getType()                                       // 'spark' | 'nwc' | 'lnbits'
+  connect() / disconnect()
+  getBalance()                                    // { balance, pending, tokenBalances }
   createInvoice({ amount, description, expiry })
   payInvoice({ invoice, maxFee })
-  lookupInvoice(paymentHash)
   getTransactions({ limit, offset })
 
-  // Spark-specific (no-op in NWC/LNBits)
+  // Spark-only (no-op elsewhere)
   getSparkAddress()
-  transferToSparkAddress(sparkAddress, amount)
-  payLightningAddress(lightningAddress, amountSats, comment)
+  transferToSparkAddress(addr, amount)
+  payLightningAddress(addr, sats, comment)
 
-  // L1 Bitcoin (Spark-only)
+  // L1 (Spark-only)
   getL1DepositAddress()
   getPendingDeposits()
-  getClaimFeeQuote(txId, outputIndex)
   claimDeposit(txId, quoteData, outputIndex)
-  refundDeposit(txId, outputIndex)
-  getWithdrawalFeeQuote(amountSats, address)
   withdrawToL1({ amountSats, destinationAddress, speed })
-  getWithdrawalStatus(requestId)
 }
 ```
 
-### SparkWalletProvider
+<details>
+<summary><b>SparkWalletProvider</b></summary>
 
-Implements the full interface using `@buildonspark/spark-sdk`:
-
-```javascript
-// Initialization requires mnemonic (after device key decryption)
-await provider.initializeWithMnemonic(mnemonic)
-
-// Zero-fee Spark transfer
-await provider.transferToSparkAddress('spark1...', 10000)
-
-// Pay Lightning address (fetches invoice via LNURL)
-await provider.payLightningAddress('user@domain.com', 5000, 'Payment note')
-
-// L1 Bitcoin Operations
-const address = await provider.getL1DepositAddress()  // Returns bc1p...
-const deposits = await provider.getPendingDeposits()
-await provider.claimDeposit(txId, quoteData)
-await provider.withdrawToL1({ amountSats, destinationAddress, speed })
+```js
+await provider.initializeWithMnemonic(mnemonic)         // after device-key decrypt
+await provider.transferToSparkAddress('spark1…', 10000) // zero fee
+await provider.payLightningAddress('a@b.com', 5000)
 ```
 
-Multi-account support: each Spark mnemonic creates Business (account 1) and Personal (account 0) wallets. The derivation path is `m/8797555'/accountNumber'/keyType'`.
+Each seed yields **Business** (account 1) + **Personal** (account 0). Derivation: `m/8797555'/account'/keyType'`.
 
-### NWCWalletProvider
+</details>
 
-Wraps `@getalby/sdk` NostrWebLNProvider:
+<details>
+<summary><b>NWCWalletProvider</b></summary>
 
-```javascript
-const provider = new NWCWalletProvider(walletId, {
-  nwcUrl: 'nostr+walletconnect://...'
-})
-await provider.connect()
-
-const balance = await provider.getBalance()
-await provider.payInvoice({ invoice: 'lnbc...' })
+```js
+const p = new NWCWalletProvider(walletId, { nwcUrl: 'nostr+walletconnect://…' })
+await p.connect()
+await p.payInvoice({ invoice: 'lnbc…' })
 ```
 
-### LNBitsWalletProvider
+</details>
 
-Connects directly to LNBits via REST API:
+<details>
+<summary><b>LNBitsWalletProvider</b></summary>
 
-```javascript
-const provider = new LNBitsWalletProvider(walletId, {
+```js
+const p = new LNBitsWalletProvider(walletId, {
   serverUrl: 'https://demo.lnbits.com',
-  walletId: 'abc123...',
-  adminKey: 'xyz789...'
+  walletId: '…',
+  adminKey: '…',
 })
-await provider.connect()
-
-const balance = await provider.getBalance()
-await provider.payInvoice({ invoice: 'lnbc...' })
-const invoice = await provider.createInvoice({ amount: 1000, description: 'Test' })
 ```
 
-**API Endpoints Used:**
-- `GET /api/v1/wallet` - Get wallet info and balance
-- `POST /api/v1/payments` - Create invoice or pay invoice
-- `GET /api/v1/payments/{hash}` - Check payment status
-- `GET /api/v1/payments` - List transactions
-- `POST /api/v1/payments/decode` - Decode invoice
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/wallet` | balance + info |
+| `POST /api/v1/payments` | create invoice / pay |
+| `GET /api/v1/payments/{hash}` | status |
+| `GET /api/v1/payments` | history |
+| `POST /api/v1/payments/decode` | decode invoice |
 
-**Authentication:** All requests include the `X-Api-Key` header with the Admin API key.
+Auth: `X-Api-Key: <admin>`.
+
+</details>
 
 ### WalletFactory
 
-Utility functions for provider creation and payment parsing:
-
-```javascript
+```js
 import { createWalletProvider, parsePaymentDestination } from '@/providers/WalletFactory'
 
-// Create appropriate provider based on wallet data
 const provider = createWalletProvider(walletId, walletData)
-
-// Parse any payment format
-const result = parsePaymentDestination('lnbc10u1...')
-// Returns: { type: 'bolt11', invoice: '...', amount: 1000 }
-
-const result = parsePaymentDestination('spark1qw3...')
-// Returns: { type: 'spark_address', address: 'spark1qw3...' }
+parsePaymentDestination('lnbc10u1…')  // { type: 'bolt11', invoice, amount }
+parsePaymentDestination('spark1qw3…') // { type: 'spark_address', address }
 ```
 
-**Supported address prefixes:**
-- New format: `spark1` (mainnet), `sparkrt1` (regtest), `sparkt1` (testnet), `sparks1` (signet)
-- Legacy: `sp1` (mainnet), `tsp1` (testnet), `sprt1` (regtest)
+Spark address prefixes: `spark1` (mainnet) · `sparkt1` / `sparkrt1` / `sparks1` (testnet/regtest/signet) · legacy `sp1` / `tsp1` / `sprt1`.
 
-<br>
+---
 
-## L1 Bitcoin Integration
-
-Spark wallets support on-chain Bitcoin (Layer 1) deposits and withdrawals.
-
-### Architecture
+## L1 Bitcoin (Spark)
 
 ```
-On-Chain Bitcoin
-       |
-       v
-Bitcoin Network (mempool.space API for monitoring)
-       |
-       v
-Spark SDK (deposit address, claim, withdraw)
-       |
-       v
-L1BitcoinReceive.vue / L1BitcoinWithdraw.vue
-       |
-       v
-Spark Balance (available for Lightning)
+On-chain BTC → mempool.space (monitor) → Spark SDK (claim/withdraw) → Lightning-spendable
 ```
 
-### L1 Constants
+**Constants** (in `SparkWalletProvider.js`):
 
-Defined in `SparkWalletProvider.js`:
+| Constant | Value |
+| --- | --- |
+| `REQUIRED_CONFIRMATIONS` | 3 |
+| `MIN_DEPOSIT_SATS` | 500 |
+| `DEFAULT_MEMPOOL_API` | `https://mempool.space/api` |
+| `TYPICAL_TX_VBYTES` | 140 |
 
-```javascript
-const BITCOIN_L1 = {
-  REQUIRED_CONFIRMATIONS: 3,
-  MIN_DEPOSIT_SATS: 500,
-  DEFAULT_MEMPOOL_API: 'https://mempool.space/api',
-  TYPICAL_TX_VBYTES: 140
-}
-```
+**Deposit:** `getL1DepositAddress()` (P2TR, reusable) → `getPendingDeposits()` → `getClaimFeeQuote()` → `claimDeposit()`.
 
-### Deposit Flow (Receiving On-Chain)
+**Withdraw:** `getWithdrawalFeeQuote()` → `withdrawToL1({ speed: 'slow' | 'medium' | 'fast' })` → `getWithdrawalStatus()`.
 
-1. `getL1DepositAddress()` returns a P2TR (Taproot) address, static and reusable
-2. `getPendingDeposits()` polls mempool.space for UTXOs
-3. `getClaimFeeQuote(txId, outputIndex)` returns fee and credit amount
-4. `claimDeposit(txId, quoteData, outputIndex)` finalizes the deposit
+---
 
-### Withdrawal Flow (Sending On-Chain)
+## Stores
 
-1. `getWithdrawalFeeQuote(amountSats, address)` returns `{ slow, medium, fast, expiresAt }`
-2. `withdrawToL1({ amountSats, destinationAddress, speed, feeQuoteId })` executes
-3. `getWithdrawalStatus(requestId)` tracks completion
+<details>
+<summary><b>wallet.js</b> — wallet CRUD, kiosk config, encryption</summary>
 
-<br>
-
-## State Management
-
-### Wallet Store (`stores/wallet.js`)
-
-Central store for all wallet operations and kiosk configuration.
-
-**Key Actions**
-```javascript
-// Wallet management
+```js
 addSparkWallet({ mnemonic, name, network })
 addNWCWallet({ nwcUrl, name })
 addLNBitsWallet({ serverUrl, walletId, adminKey, name })
-removeWallet(walletId)
-setActiveWallet(walletId)
+setActiveWallet(id)
+getDecryptedMnemonic(id)        // device-key AES-256-GCM
 
-// Spark security
-getDecryptedMnemonic(walletId)  // Decrypt with device key
-
-// Kiosk
-setKioskEnabled(enabled)
-setKioskWalletId(walletId)
-setKioskTipEnabled(enabled)
-setKioskTipValues(values)       // Array of 3 percentages
-setKioskRoundUpEnabled(enabled)
-setKioskDisplayCurrency(currency)
+setKioskEnabled / WalletId / TipEnabled / TipValues / RoundUpEnabled / DisplayCurrency
 ```
 
-**Key Getters**
-```javascript
-activeWallet          // Current wallet object
-activeBalance         // Balance for active wallet
-isActiveWalletSpark
-isActiveWalletNWC
-isActiveWalletLNBits
-activeSparkAddress
-hasSparkWallet
+Getters: `activeWallet`, `activeBalance`, `isActiveWalletSpark`, `activeSparkAddress`, …
+
+</details>
+
+<details>
+<summary><b>addressBook.js</b></summary>
+
+```js
+{ id, name, address, addressType: 'lightning'|'spark'|'bitcoin', color, isFavorite, notes, createdAt }
 ```
 
-### AddressBook Store (`stores/addressBook.js`)
+</details>
 
-```javascript
-{
-  id: 'addr-123...',
-  name: 'Alice',
-  address: 'alice@wallet.com',
-  addressType: 'lightning',    // 'lightning', 'spark', or 'bitcoin'
-  color: '#3B82F6',
-  isFavorite: false,
-  notes: '',
-  createdAt: 1699999999999
-}
+<details>
+<summary><b>autoWithdraw.js</b> — threshold sweeps</summary>
+
+```js
+{ walletId, enabled, threshold, destinationType, destination, feeSpeed }
 ```
 
-### AutoWithdraw Store (`stores/autoWithdraw.js`)
+60-second cooldown. Min send 10 sats.
 
-Threshold-based automatic payouts per wallet.
+</details>
 
-```javascript
-// Rule structure
-{
-  walletId: '...',
-  enabled: true,
-  threshold: 100000,           // sats
-  destinationType: 'lightning', // 'lightning', 'bitcoin', or 'spark'
-  destination: 'user@wallet.com',
-  feeSpeed: 'MEDIUM'          // for bitcoin destinations
-}
+<details>
+<summary><b>transactionMetadata.js</b> — notes/tags/contact link, keyed by payment hash</summary>
+</details>
+
+---
+
+## Boot files
+
+| File | Job |
+| --- | --- |
+| `deep-links.js` | Handle `lightning:`, `bitcoin:`, `lnurlp://`, `lnurlw://`. Blocked while kiosk is locked. |
+| `kiosk.js` | Router guard: redirects all routes to `/kiosk` when locked; checks localStorage on cold start. |
+| `safe-area.js` | Android notch / gesture-bar detection → `--safe-top`, `--safe-bottom` CSS vars. |
+
+---
+
+## Security
+
+**Spark seed encryption** — AES-256-GCM, key derived via PBKDF2 (100k iterations, SHA-256) from a per-device random key. Stored as `salt:iv:ciphertext` (base64). Legacy PIN-encrypted wallets auto-migrate.
+
+```js
+const key = await crypto.subtle.deriveKey(
+  { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
+  keyMaterial,
+  { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+)
 ```
 
-60-second cooldown between triggers. Minimum send: 10 sats.
+> [!IMPORTANT]
+> Contributor rules:
+> 1. **Never** log mnemonics, PINs, private keys, NWC strings, or LNBits keys.
+> 2. Session-only state must clear on app close.
+> 3. Validate all payment inputs (destination + amount) at the boundary.
+> 4. Web Crypto needs a secure context — use `localhost`, not LAN IPs.
 
-### TransactionMetadata Store (`stores/transactionMetadata.js`)
+---
 
-Per-transaction notes, tags, and contact linking. Keyed by payment hash.
+## Styling
 
-<br>
+Design tokens live in `src/css/app.css`. Every component must support both themes:
 
-## Key Components
+```vue
+<q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+```
 
-### SendModal.vue
+| Token | Value |
+| --- | --- |
+| Primary gradient | `#059573` → `#78D53C` |
+| Accent green | `#15DE72` |
+| Error red | `#FF0000` |
+| Dark bg / input | `#0C0C0C` / `#171717` |
+| Light bg | `#FFFFFF` / `#F8F8F8` |
+| Card radius | 24px |
+| Button radius | 12–14px |
 
-Handles payment input and QR scanning.
+**Safe area** — fixed/absolute bottom elements:
 
-- Camera-based QR scanning with `qr-scanner` library
-- Automatic payment type detection
-- Contact picker with wallet compatibility filtering
-- Clipboard paste support
+```css
+padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+```
 
-### ReceiveModal.vue
+`var(--safe-top)` is auto-applied to `.q-page`.
 
-Generates invoices and displays receive addresses.
+---
 
-- Toggle between Lightning invoice, Spark address, and Bitcoin (L1)
-- QR code generation
-- Copy and share functionality
-- Invoice expiry countdown
+## Adding things
 
-### BatchSendModal.vue
+<details>
+<summary><b>A new payment type</b></summary>
 
-5-step wizard for multi-contact payments:
+1. `WalletFactory.parsePaymentDestination()` — detect format
+2. `SendModal.determinePaymentType()` — wire UI
+3. Implement on relevant providers
+4. `PaymentModal.sendPayment()` — route correctly
 
-1. Select contacts (with search and select-all)
-2. Enter amounts (same for all, or custom per contact)
-3. Review totals
-4. Execute payments with real-time progress
-5. Summary with retry for failures
+</details>
 
-### KioskDashboard.vue
+<details>
+<summary><b>A new wallet provider</b></summary>
 
-Full POS interface:
+1. New class extending `WalletProvider`
+2. Implement the interface (no-op what doesn't apply)
+3. Register in `WalletFactory.createWalletProvider()`
+4. Add a setup page + route + store action
 
-- Numeric keypad for amount entry
-- Tip selection (configurable percentages)
-- QR code generation for customer scanning
-- Payment success/failure display
-- PIN-locked owner access
+</details>
 
-### PinEntryDialog.vue
+<details>
+<summary><b>A new Pinia store</b></summary>
 
-6-digit numpad input for wallet security. Supports confirm mode for new PIN setup.
-
-### KioskPinPad.vue
-
-4-digit numpad input for kiosk owner access.
-
-<br>
-
-## Boot Files
-
-### `deep-links.js`
-
-Handles URI schemes when the app is opened via `lightning:`, `bitcoin:`, `lnurlp://`, or `lnurlw://` links. Blocks deep links when kiosk mode is active. Deduplicates events on app resume.
-
-### `kiosk.js`
-
-Vue Router navigation guard. When kiosk is locked, all routes redirect to `/kiosk`. Allows wallet setup routes through even when locked. Checks localStorage as a fallback on cold start before Pinia is ready.
-
-### `safe-area.js`
-
-Android-specific. Detects display cutouts (notch, punch-hole camera) and gesture navigation bar height at runtime. Sets `--safe-top` and `--safe-bottom` CSS variables. Falls back to 24px top / 16px bottom when detection fails.
-
-<br>
-
-## Adding Features
-
-### Adding a New Payment Type
-
-1. Update `WalletFactory.parsePaymentDestination()` to detect the format
-2. Add handling in `SendModal.determinePaymentType()`
-3. Implement the payment method in relevant providers
-4. Update `PaymentModal.sendPayment()` to route appropriately
-
-### Adding a New Wallet Provider
-
-1. Create new provider class extending `WalletProvider`
-2. Implement all required interface methods
-3. Update `WalletFactory.createWalletProvider()` to handle new type
-4. Add wallet creation flow in a new setup page
-5. Update wallet store with new add method
-6. Add route in `router/routes.js`
-
-### Adding a New Store
-
-```javascript
-// stores/newStore.js
+```js
 import { defineStore } from 'pinia'
-
 export const useNewStore = defineStore('newStore', {
-  state: () => ({
-    // Initial state
-  }),
-
-  getters: {
-    // Computed properties
-  },
-
+  state: () => ({}),
   actions: {
-    async initialize() {
-      // Load from localStorage if needed
-    },
-
-    async persist() {
-      localStorage.setItem('buhoGO_new_store', JSON.stringify(this.$state))
-    }
-  }
+    initialize() { /* hydrate from localStorage */ },
+    persist()    { localStorage.setItem('buhoGO_new_store', JSON.stringify(this.$state)) },
+  },
 })
 ```
 
-<br>
+</details>
 
-## Styling Guidelines
+---
 
-BuhoGO uses a consistent design system defined in `src/css/app.css`.
-
-### Theme Classes
-
-All components must support both themes using Quasar's dark mode detection:
-
-```vue
-<template>
-  <q-card :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-    <q-btn :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'">
-      Submit
-    </q-btn>
-  </q-card>
-</template>
-```
-
-### Color Palette
-
-| Color | Hex | Usage |
-|-------|-----|-------|
-| Primary gradient | `#059573` to `#78D53C` | Primary buttons |
-| Accent green | `#15DE72` | Success, receive amounts |
-| Error red | `#FF0000` | Errors, send amounts |
-| Warning | `#AFF24B` | Warnings |
-| Dark background | `#0C0C0C` | Dark mode backgrounds |
-| Dark input | `#171717` | Dark mode inputs |
-| Light background | `#FFFFFF`, `#F8F8F8` | Light mode backgrounds |
-
-### Border Radius
-
-| Element | Radius |
-|---------|--------|
-| Cards | 24px |
-| Buttons | 12-14px |
-| Inputs | 12px (filled, not outlined in dark mode) |
-| Menus | 16px |
-
-### Safe Area
-
-All fixed/absolute bottom elements must include:
-```css
-padding-bottom: max(Npx, env(safe-area-inset-bottom, 0px));
-```
-
-Use `var(--safe-top)` for top safe area (auto-applied to `.q-page`).
-
-<br>
-
-## Building for Mobile
-
-### Android
+## Build
 
 ```bash
-# Build and open in Android Studio
-quasar build -m capacitor -T android --ide
+npm run dev          # hot reload at :9000
+npm run build        # → dist/spa
+npx serve dist/spa   # preview prod build
 
-# Or build APK directly
-quasar build -m capacitor -T android
+quasar build -m capacitor -T android        # APK
+quasar build -m capacitor -T android --ide  # open Android Studio
 ```
 
-Capacitor config is in `src-capacitor/capacitor.config.json`. The app registers intent filters for `lightning:`, `bitcoin:`, `lnurlp://`, and `lnurlw://` URI schemes in the Android manifest.
+Capacitor config: `src-capacitor/capacitor.config.json`. Intent filters for `lightning:` / `bitcoin:` / `lnurlp://` / `lnurlw://` are declared in the Android manifest.
 
-### iOS (Planned)
+---
 
-```bash
-quasar build -m capacitor -T ios
-npx cap open ios
-```
+## Common dev gotchas
 
-<br>
+| Symptom | Likely cause |
+| --- | --- |
+| `crypto.subtle is undefined` | Insecure context — use `localhost`, not `192.168.x.x` |
+| Spark SDK init throws | Wrong network in wallet vs SDK config, or invalid BIP-39 |
+| NWC times out | Stale connection string, or NWC service down |
+| LNBits 401 | You used the Invoice key — needs Admin |
+| LNBits CORS | Add your origin to LNBits server config |
+| Android content under status bar | `viewport-fit=cover` missing, or media query overrode safe-area padding |
 
-## Testing
-
-### Running the App Locally
-
-```bash
-# Development with hot reload
-npm run dev
-
-# Production build
-npm run build
-
-# Serve production build locally
-npx serve dist/spa
-```
-
-<br>
-
-## Security Considerations
-
-For user-facing security info, see [Security](README.md#security) in the README.
-
-### Spark Mnemonic Encryption
-
-Mnemonics are encrypted using Web Crypto API with a device key (not PIN):
-
-1. A random device key is generated on first use and stored in localStorage
-2. Key is derived via PBKDF2 (100,000 iterations) with random salt
-3. AES-256-GCM provides authenticated encryption with random IV
-4. Stored as `salt:iv:ciphertext` (base64)
-
-Legacy wallets that used PIN-based encryption are automatically migrated to device-key encryption.
-
-```javascript
-// Encryption flow (simplified)
-const keyMaterial = await crypto.subtle.importKey('raw', deviceKeyBuffer, 'PBKDF2', false, ['deriveBits', 'deriveKey'])
-const key = await crypto.subtle.deriveKey(
-  { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
-  keyMaterial,
-  { name: 'AES-GCM', length: 256 },
-  false,
-  ['encrypt', 'decrypt']
-)
-const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data)
-```
-
-### Security Best Practices for Contributors
-
-1. **Never log sensitive data**: No console.log of mnemonics, PINs, or private keys
-2. **Clear sensitive state**: Session data is memory-only, cleared on app close
-3. **Validate all inputs**: Especially payment destinations and amounts
-4. **Use constant-time comparisons**: For PIN verification where applicable
-
-<br>
-
-## Common Issues
-
-For user-facing troubleshooting, see [Troubleshooting](Guide.md#troubleshooting) in the User Guide.
-
-### WebCrypto Not Available
-
-Web Crypto API requires secure context (HTTPS or localhost). For local development, use `localhost` not IP address.
-
-### Spark SDK Initialization Fails
-
-- Check network setting matches intended environment (MAINNET/REGTEST)
-- Verify mnemonic is valid 12-word BIP39
-- Check console for specific SDK errors
-
-### NWC Connection Timeout
-
-- Verify NWC URL is complete and valid
-- Check wallet provider service is running
-- Try generating fresh NWC connection string
-
-### LNBits Connection Issues
-
-- Verify server URL includes protocol (`https://`)
-- Check API key is Admin key, not Invoice key
-- Ensure LNBits server is accessible
-- For self-hosted: verify CORS is configured correctly
-
-### Android Safe Area Issues
-
-If content overlaps the status bar or navigation bar:
-- Check `viewport-fit=cover` is set in `index.html`
-- Verify `safe-area.js` boot file is loaded in `quasar.config.js`
-- Use `max(Npx, env(safe-area-inset-bottom, 0px))` on fixed bottom elements
-- Check responsive media queries don't clobber safe area padding with shorthand
-
-<br>
+---
 
 ## Resources
 
-- [Vue.js Documentation](https://vuejs.org/)
-- [Quasar Framework](https://quasar.dev/)
-- [Pinia State Management](https://pinia.vuejs.org/)
-- [Spark SDK](https://github.com/buildonspark/spark-sdk)
-- [Alby SDK (NWC)](https://github.com/getAlby/js-sdk)
-- [NIP-47 Specification](https://github.com/nostr-protocol/nips/blob/master/47.md)
-- [LNBits API](https://demo.lnbits.com/docs)
-- [Capacitor Documentation](https://capacitorjs.com/docs)
-
-<br>
-
-## Related Documentation
-
-- [README](README.md) - Project overview, features, and quick start
-- [User Guide](Guide.md) - Step-by-step instructions for end users
-- [Use Cases](use_cases.md) - Real-world scenarios and examples
+[Vue 3](https://vuejs.org/) · [Quasar](https://quasar.dev/) · [Pinia](https://pinia.vuejs.org/) · [Spark SDK](https://github.com/buildonspark/spark-sdk) · [Alby SDK](https://github.com/getAlby/js-sdk) · [NIP-47](https://github.com/nostr-protocol/nips/blob/master/47.md) · [LNBits API](https://demo.lnbits.com/docs) · [Capacitor](https://capacitorjs.com/docs)

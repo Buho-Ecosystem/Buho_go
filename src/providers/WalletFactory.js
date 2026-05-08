@@ -9,6 +9,13 @@ import { SparkWalletProvider } from './SparkWalletProvider';
 import { NWCWalletProvider } from './NWCWalletProvider';
 import { LNBitsWalletProvider } from './LNBitsWalletProvider';
 import { WalletProvider } from './WalletProvider';
+import { parseBip21, selectBip21Destination } from '../utils/bip21';
+import {
+  isSparkAddress,
+  isLightningInvoice,
+  isLnurl,
+  isBitcoinAddress,
+} from '../utils/addressUtils';
 
 /**
  * Create a wallet provider instance based on wallet type
@@ -97,14 +104,8 @@ export function inferWalletType(wallet) {
   return 'nwc';
 }
 
-/**
- * Check if an address is a Spark address
- * @param {string} address - Address to check
- * @returns {boolean}
- */
-export function isSparkAddress(address) {
-  return WalletProvider.isSparkAddress(address);
-}
+// `isSparkAddress` is re-exported from addressUtils below — no wrapper needed.
+export { isSparkAddress } from '../utils/addressUtils';
 
 /**
  * Parse a payment destination and determine its type
@@ -117,77 +118,76 @@ export function parsePaymentDestination(input) {
   }
 
   let cleaned = input.trim();
-  // Strip common URI prefixes (lightning:, bitcoin:, LIGHTNING:, etc.)
-  if (cleaned.toLowerCase().startsWith('lightning:')) {
+
+  // BIP21 (bitcoin:<addr>?amount=...&lightning=lnbc...) needs structured
+  // parsing — a naive prefix strip would leave the query string glued to the
+  // address. We resolve to the preferred inner destination (LN > on-chain)
+  // and let the existing prefix-based branches below handle the result.
+  let bip21 = null;
+  const bip21Parsed = parseBip21(cleaned);
+  if (bip21Parsed) {
+    bip21 = bip21Parsed;
+    const destination = selectBip21Destination(bip21Parsed);
+    if (!destination) {
+      return { type: 'unknown', valid: false, bip21 };
+    }
+    cleaned = destination.value;
+  } else if (cleaned.toLowerCase().startsWith('lightning:')) {
     cleaned = cleaned.substring(10);
-  } else if (cleaned.toLowerCase().startsWith('bitcoin:')) {
-    cleaned = cleaned.substring(8);
   }
 
-  const normalized = cleaned.toLowerCase();
+  // Attach BIP21 metadata (amount, label, message, ...) to every result so
+  // downstream UI can prefill where useful.
+  const withBip21 = (result) => (bip21 ? { ...result, bip21 } : result);
 
-  // Spark address (zero-fee transfer)
-  // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
-  // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
-  const sparkNewPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1'];
-  const sparkLegacyPrefixes = ['sp1', 'tsp1', 'sprt1'];
-  const isSparkAddr = sparkNewPrefixes.some(p => normalized.startsWith(p)) ||
-                      sparkLegacyPrefixes.some(p => normalized.startsWith(p));
-
-  if (isSparkAddr) {
-    return {
+  if (isSparkAddress(cleaned)) {
+    return withBip21({
       type: 'spark_address',
       address: cleaned,
       isZeroFee: true,
-      valid: true
-    };
+      valid: true,
+    });
   }
 
-  // Lightning invoice (BOLT11): lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
-  if (normalized.startsWith('lnbc') || normalized.startsWith('lntb') ||
-      normalized.startsWith('lntbs') || normalized.startsWith('lnbcrt')) {
-    return {
+  if (isLightningInvoice(cleaned)) {
+    return withBip21({
       type: 'lightning_invoice',
       invoice: cleaned,
-      valid: true
-    };
+      valid: true,
+    });
   }
 
-  // Lightning address
+  // Lightning address (user@domain) — cheap structural check; full regex
+  // validation lives in addressUtils.isLightningAddress when needed.
   if (cleaned.includes('@') && cleaned.split('@').length === 2) {
     const [name, domain] = cleaned.split('@');
     if (name.length > 0 && domain.includes('.')) {
-      return {
+      return withBip21({
         type: 'lightning_address',
         address: cleaned.toLowerCase(),
-        valid: true
-      };
+        valid: true,
+      });
     }
   }
 
-  // LNURL (bech32 LUD-01 or URL scheme LUD-17)
-  if (normalized.startsWith('lnurl1') || normalized.startsWith('lnurlp://') ||
-      normalized.startsWith('lnurlw://') || normalized.startsWith('lnurlc://') ||
-      normalized.startsWith('keyauth://')) {
-    return {
+  if (isLnurl(cleaned)) {
+    return withBip21({
       type: 'lnurl',
       lnurl: cleaned,
-      valid: true
-    };
+      valid: true,
+    });
   }
 
-  // Bitcoin on-chain address (supported by Spark wallets for L1 withdrawals)
-  if (normalized.startsWith('bc1') || normalized.startsWith('tb1') ||
-      normalized.startsWith('1') || normalized.startsWith('3')) {
-    return {
+  // Bitcoin on-chain (only Spark wallets can pay these; UI layer decides).
+  if (isBitcoinAddress(cleaned)) {
+    return withBip21({
       type: 'bitcoin_address',
       address: cleaned,
-      valid: true
-      // Note: UI will check if active wallet supports L1 withdrawals
-    };
+      valid: true,
+    });
   }
 
-  return { type: 'unknown', valid: false };
+  return withBip21({ type: 'unknown', valid: false });
 }
 
 /**

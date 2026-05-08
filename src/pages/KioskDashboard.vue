@@ -168,6 +168,7 @@ import { useQuasar } from 'quasar'
 import { useWalletStore } from 'stores/wallet'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
+import { getUserFriendlyErrorMessage } from 'src/utils/userErrors'
 
 export default defineComponent({
   name: 'KioskDashboard',
@@ -280,7 +281,11 @@ export default defineComponent({
         invoiceData.value = result
         qrDataUrl.value = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
         state.value = 'payment'; startPolling()
-      } catch (err) { console.error('[kiosk] charge error:', err); $q.notify({ message: err.message || 'Failed to create invoice', color: 'negative' }); state.value = 'input' }
+      } catch (err) {
+        console.error('[kiosk] charge error:', err)
+        $q.notify({ type: 'negative', message: getUserFriendlyErrorMessage(err, 'kiosk', t) })
+        state.value = 'input'
+      }
     }
     function startPolling() {
       clearPolling(); const ib = store.balances[store.kioskWalletId] || 0
@@ -410,7 +415,7 @@ export default defineComponent({
 .kiosk-light .kiosk-lock-btn { background: var(--bg-input); }
 
 /* State center */
-.pos-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 20px; padding-bottom: max(24px, env(safe-area-inset-bottom)); text-align: center; }
+.pos-state-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 20px; padding-bottom: max(24px, var(--safe-bottom, 16px)); text-align: center; }
 .pos-state-title { font-size: 1rem; font-weight: 700; font-family: 'Manrope', sans-serif; }
 .pos-state-sub { font-size: 0.75rem; color: #6b7280; margin-top: 4px; }
 .mt-2 { margin-top: 0.5rem; } .mt-4 { margin-top: 1rem; } .mt-6 { margin-top: 1.5rem; } .mt-8 { margin-top: 2rem; }
@@ -424,9 +429,11 @@ export default defineComponent({
 .kiosk-light .pos-btn-disabled { background: var(--border-card) !important; color: var(--text-muted) !important; }
 
 /* Text btn */
-.pos-text-btn { background: none; border: none; color: #6b7280; font-size: 14px; font-family: 'Manrope', sans-serif; font-weight: 500; cursor: pointer; padding: 12px 16px; margin-top: 4px; -webkit-tap-highlight-color: transparent; }
-.pos-text-btn:active { opacity: 0.6; }
-.pos-cancel-btn { color: #ef4444; }
+.pos-text-btn { background: transparent; border: 1px solid rgba(107,114,128,0.45); border-radius: 10px; color: #6b7280; font-size: 14px; font-family: 'Manrope', sans-serif; font-weight: 600; cursor: pointer; padding: 10px 22px; margin-top: 4px; -webkit-tap-highlight-color: transparent; transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease; }
+.pos-text-btn:active { transform: scale(0.96); background: rgba(107,114,128,0.08); }
+.kiosk-light .pos-text-btn { border-color: rgba(107,114,128,0.5); }
+.pos-cancel-btn { color: #ef4444; border-color: rgba(239,68,68,0.5); }
+.pos-cancel-btn:active { background: rgba(239,68,68,0.08); }
 
 /* Sats pill */
 .pos-amount-pill { display: inline-flex; align-items: center; gap: 4px; background: rgba(5,149,115,0.08); border: 1px solid rgba(5,149,115,0.18); border-radius: 9999px; padding: 5px 14px; font-size: 0.875rem; font-weight: 700; color: #059573; letter-spacing: 0.01em; font-family: 'Manrope', sans-serif; }
@@ -515,14 +522,14 @@ export default defineComponent({
 .pos-key-action:active { color: inherit; transform: scale(0.94); }
 
 /* Actions */
-.pos-actions { display: flex; gap: 10px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.pos-actions { display: flex; gap: 10px; padding-bottom: max(16px, var(--safe-bottom, 16px)); }
 .pos-add-btn { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0; background: rgba(5,149,115,0.08); color: #059573; border: 1.5px solid rgba(5,149,115,0.25); border-radius: 14px; cursor: pointer; transition: transform 0.08s ease, background 0.08s ease; -webkit-tap-highlight-color: transparent; }
 .pos-add-btn:active:not(:disabled) { transform: scale(0.94); background: rgba(5,149,115,0.15); }
 .kiosk-light .pos-add-btn { background: rgba(5,149,115,0.05); }
 .pos-charge-btn { flex: 1; }
 
 /* Tipping */
-.tip-screen { flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem 1.25rem; padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px)); opacity: 0; transition: opacity 0.3s ease; }
+.tip-screen { flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem 1.25rem; padding-bottom: calc(1.5rem + var(--safe-bottom, 0px)); opacity: 0; transition: opacity 0.3s ease; }
 .tip-screen.tip-ready { opacity: 1; }
 .tip-header { text-align: center; flex-shrink: 0; padding-bottom: 0.75rem; }
 .tip-prompt { display: block; font-size: 1.25rem; font-weight: 700; font-family: 'Manrope', sans-serif; line-height: 1.3; margin-bottom: 1rem; }

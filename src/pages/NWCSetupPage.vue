@@ -234,6 +234,7 @@ import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import { useWalletStore } from '../stores/wallet'
 import { mapActions } from 'pinia'
+import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 export default {
   name: 'NWCSetupPage',
@@ -329,7 +330,7 @@ export default {
       } catch (error) {
         console.error('Failed to connect NWC wallet:', error);
         this.showLoadingScreen = false;
-        this.errorMessage = error.message || this.$t('Connection failed');
+        this.errorMessage = getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this));
       } finally {
         this.isConnecting = false;
       }

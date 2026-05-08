@@ -12,6 +12,7 @@ import { SparkWalletProvider, SPARK_ACCOUNT_DEFAULTS } from '../providers/SparkW
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { getUserFriendlyErrorMessage } from '../utils/userErrors';
 
 /**
  * Storage keys for persistence
@@ -214,6 +215,28 @@ export const useWalletStore = defineStore('wallet', {
 
     // Error tracking
     lastError: null,
+
+    // Bitcoin L1 deposit-claim coordination.
+    //
+    // Two flows can claim the same UTXO concurrently: the silent auto-claim
+    // in Wallet.vue and the manual "Add to Wallet" sheet in
+    // L1BitcoinReceive.vue. Whichever lands second gets a misleading SDK
+    // error ("needs more confirmations") because the UTXO is already gone.
+    //
+    // We mark a txId here the moment any flow starts a claim and clear it
+    // when the flow finishes (success OR error). The UI uses
+    // `isDepositClaimInFlight(txId)` to lock the manual button while
+    // auto-claim is running, and the auto-claim path checks the same flag
+    // before submitting a duplicate.
+    //
+    // Stored as a plain object map (not a Set) for Pinia reactivity.
+    inFlightDepositClaims: {},
+
+    // Bumped after a deposit claim completes so subscribed components
+    // (L1BitcoinReceive) can refresh their pending-deposit list immediately
+    // instead of waiting for the next 30s poll tick. Counter, not boolean,
+    // so each completion triggers a fresh watcher fire.
+    depositsRefreshSignal: 0,
   }),
 
   getters: {
@@ -280,7 +303,16 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Lightning address of the active wallet (from NWC lud16 parameter)
+     * Lightning address of the active wallet (user@domain), if any.
+     *
+     * Resolution order (wallet-type agnostic):
+     *   1. `wallet.metadata.lud16` — the canonical storage slot, set by any flow
+     *      that configures a lightning address (NWC lud16 param, LNBits lnurlp setup, etc.)
+     *   2. For NWC wallets only: parse the `lud16` query param from `nwcUrl` as a fallback
+     *      so wallets added before lud16 extraction was implemented still light up.
+     *
+     * Always returns a validated `user@domain` string or null. Spark wallets don't
+     * support lightning addresses and always return null.
      */
     activeWalletLightningAddress: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
@@ -514,6 +546,46 @@ export const useWalletStore = defineStore('wallet', {
 
   actions: {
     /**
+     * Mark a Bitcoin L1 deposit txId as currently being claimed. Idempotent.
+     * Called by both the auto-claim flow (Wallet.vue) and the manual sheet
+     * (L1BitcoinReceive.vue) so neither submits a duplicate to the SSP.
+     */
+    markDepositClaimInFlight(txId) {
+      if (!txId) return;
+      if (!this.inFlightDepositClaims[txId]) {
+        this.inFlightDepositClaims[txId] = true;
+      }
+    },
+
+    /**
+     * Clear the in-flight marker for a txId. Always call from a `finally`
+     * so a thrown error can't leave the UI permanently locked.
+     */
+    clearDepositClaimInFlight(txId) {
+      if (!txId) return;
+      if (this.inFlightDepositClaims[txId]) {
+        delete this.inFlightDepositClaims[txId];
+      }
+    },
+
+    /**
+     * Reactive predicate: is this txId currently being claimed somewhere?
+     * Use from templates as `walletStore.isDepositClaimInFlight(deposit.txId)`.
+     */
+    isDepositClaimInFlight(txId) {
+      return !!this.inFlightDepositClaims[txId];
+    },
+
+    /**
+     * Tell subscribed views (L1BitcoinReceive) to re-fetch their pending
+     * deposit list now instead of waiting for the next poll. Bump the
+     * counter so a `watch` on `depositsRefreshSignal` fires every time.
+     */
+    signalDepositsRefresh() {
+      this.depositsRefreshSignal += 1;
+    },
+
+    /**
      * Initialize the store from localStorage
      */
     async initialize() {
@@ -684,13 +756,17 @@ export const useWalletStore = defineStore('wallet', {
 
         // Auto-connect Spark wallets — detect if migration from PIN is needed
         if (this.sparkWallets.length > 0) {
-          const firstSpark = this.sparkWallets[0];
-          const isOld = await CryptoUtils.isOldPinFormat(firstSpark.connectionData.encryptedMnemonic);
-          if (isOld) {
-            this.needsPinMigration = true;
-            console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
+          if (typeof window !== 'undefined' && window.__AUDIT__) {
+            // Audit harness: skip migration detection and provider init entirely
           } else {
-            await this.connectAllSparkWallets();
+            const firstSpark = this.sparkWallets[0];
+            const isOld = await CryptoUtils.isOldPinFormat(firstSpark.connectionData.encryptedMnemonic);
+            if (isOld) {
+              this.needsPinMigration = true;
+              console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
+            } else {
+              await this.connectAllSparkWallets();
+            }
           }
         }
 
@@ -1698,6 +1774,34 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Set (or clear) the lightning address for a wallet.
+     *
+     * Stored in `metadata.lud16` — the same slot used for NWC-provided addresses —
+     * so the `activeWalletLightningAddress` getter picks it up uniformly across
+     * wallet types (LNBits, NWC, etc.). Spark wallets are rejected; they don't
+     * support lightning addresses.
+     *
+     * @param {string} walletId
+     * @param {string|null} address - Full `user@domain` address, or null/empty to clear
+     */
+    async setWalletLightningAddress(walletId, address) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      if (!wallet) return;
+      if (wallet.type === WALLET_TYPES.SPARK) return;
+
+      if (!wallet.metadata) wallet.metadata = {};
+
+      const cleaned = typeof address === 'string' ? address.trim() : '';
+      if (cleaned) {
+        wallet.metadata.lud16 = cleaned;
+      } else {
+        delete wallet.metadata.lud16;
+      }
+
+      await this.persistState();
+    },
+
+    /**
      * Set a wallet as the default
      * @param {string} walletId - The wallet ID to make default
      */
@@ -1972,19 +2076,21 @@ export const useWalletStore = defineStore('wallet', {
 
     /**
      * Turn a raw SDK/transport error into a user-facing string.
-     * Transport-class failures get a generic "network" message; everything
-     * else keeps the original message but is scoped to the relevant wallet
-     * and phase (invoice creation vs. payment).
+     *
+     * Routes the error through `getUserFriendlyErrorMessage` so technical
+     * details (gRPC paths, SDK internals, stack traces) never reach the UI.
+     * The wallet name is appended for context — phase-specific messages help
+     * the user understand which step failed (invoice vs. payment) without
+     * exposing the underlying error class.
+     *
+     * The raw error is logged at the call site via `console.error` for
+     * debugging; the return value here is what the user actually sees.
      */
     _friendlyTransferError(error, fromWallet, toWallet, phase = 'transfer') {
-      const msg = error?.message || String(error || '');
-      const isTransport = /Transport error|Load failed|Failed to fetch|NetworkError|fetch failed/i.test(msg);
-      if (isTransport) {
-        return 'Network issue reaching the wallet service. Please check your connection and try again.';
-      }
-      if (phase === 'invoice') return `Failed to create invoice from ${toWallet.name}: ${msg}`;
-      if (phase === 'pay') return `Failed to send payment from ${fromWallet.name}: ${msg}`;
-      return `Transfer from ${fromWallet.name} to ${toWallet.name} failed: ${msg}`;
+      const friendly = getUserFriendlyErrorMessage(error, 'transfer');
+      if (phase === 'invoice') return `${friendly} (${toWallet.name})`;
+      if (phase === 'pay')     return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
+      return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
     },
 
     /**

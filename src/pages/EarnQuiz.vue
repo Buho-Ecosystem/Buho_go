@@ -336,7 +336,7 @@ export default {
   left: 0;
   right: 0;
   padding: 16px 24px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-bottom: max(16px, var(--safe-bottom, 16px));
   text-align: center;
 }
 
@@ -510,7 +510,7 @@ export default {
 /* Next button */
 .sheet-next-wrap {
   padding: 8px 20px 20px;
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  padding-bottom: max(20px, var(--safe-bottom, 16px));
 }
 
 .sheet-next-btn {

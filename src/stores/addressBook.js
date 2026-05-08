@@ -1,4 +1,9 @@
 import { defineStore } from 'pinia'
+import {
+  isSparkAddress,
+  isBitcoinAddress,
+  isLightningAddress,
+} from '../utils/addressUtils'
 
 // Address type constants
 export const ADDRESS_TYPES = {
@@ -287,64 +292,27 @@ export const useAddressBookStore = defineStore('addressBook', {
       return this.isValidLightningAddress(address)
     },
 
-    // Validate lightning address format
+    // Validation predicates — delegated to the shared addressUtils module so
+    // every part of the app recognizes the same set of identifiers.
     isValidLightningAddress(address) {
-      // Basic validation for Lightning address format (user@domain.com)
-      const lightningAddressRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-      return lightningAddressRegex.test(address.trim())
+      return isLightningAddress(address)
     },
 
-    // Validate Spark address format
     isValidSparkAddress(address) {
-      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
-      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
-      const trimmed = address.trim().toLowerCase()
-      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1']
-      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1']
-      return newPrefixes.some(p => trimmed.startsWith(p)) ||
-             legacyPrefixes.some(p => trimmed.startsWith(p))
+      return isSparkAddress(address)
     },
 
-    // Validate Bitcoin address format (on-chain L1)
     isValidBitcoinAddress(address) {
-      const trimmed = address.trim()
-      // Mainnet: bc1 (bech32/bech32m native segwit), 1 (P2PKH legacy), 3 (P2SH)
-      // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
-      const mainnetBech32Regex = /^bc1[a-zA-HJ-NP-Z0-9]{39,62}$/i
-      const mainnetLegacyRegex = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/
-      const testnetBech32Regex = /^tb1[a-zA-HJ-NP-Z0-9]{39,62}$/i
-      const testnetLegacyRegex = /^[mn2][a-km-zA-HJ-NP-Z1-9]{25,34}$/
-
-      return mainnetBech32Regex.test(trimmed) ||
-             mainnetLegacyRegex.test(trimmed) ||
-             testnetBech32Regex.test(trimmed) ||
-             testnetLegacyRegex.test(trimmed)
+      return isBitcoinAddress(address)
     },
 
-    // Detect address type from input
+    // Detect address type from input. Order matters: Spark addresses can look
+    // vaguely like base58 if misread, so we check them first.
     detectAddressType(address) {
       if (!address) return null
-      const trimmed = address.trim().toLowerCase()
-
-      // Check for Spark address (new and legacy formats)
-      const sparkNewPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1']
-      const sparkLegacyPrefixes = ['sp1', 'tsp1', 'sprt1']
-      const isSpark = sparkNewPrefixes.some(p => trimmed.startsWith(p)) ||
-                      sparkLegacyPrefixes.some(p => trimmed.startsWith(p))
-      if (isSpark) {
-        return 'spark'
-      }
-
-      // Check for Bitcoin address (on-chain L1)
-      if (this.isValidBitcoinAddress(address)) {
-        return 'bitcoin'
-      }
-
-      // Check for Lightning address
-      if (this.isValidLightningAddress(address)) {
-        return 'lightning'
-      }
-
+      if (isSparkAddress(address)) return 'spark'
+      if (isBitcoinAddress(address)) return 'bitcoin'
+      if (isLightningAddress(address)) return 'lightning'
       return null
     },
 

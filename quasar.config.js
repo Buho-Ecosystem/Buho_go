@@ -12,12 +12,16 @@ export default defineConfig((ctx) => {
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
     boot: [
+      // 'theme' runs first so the persisted light/dark choice is applied
+      // before any component renders — avoids a flash of the wrong theme.
+      'theme',
       'axios',
       'i18n',
       'iconify',
       'safe-area',
       'kiosk',
-      ctx.mode.capacitor ? 'deep-links' : ''
+      ctx.mode.capacitor ? 'deep-links' : '',
+      ctx.dev ? 'audit' : ''
     ].filter(Boolean),
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
