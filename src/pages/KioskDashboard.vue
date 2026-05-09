@@ -193,6 +193,8 @@ export default defineComponent({
     const invoiceData = ref(null)
     const qrDataUrl = ref('')
     let pollTimer = null
+    let sparkPollState = null // { cancelled: boolean } cancellation token for Spark invoice polling
+    let sparkVisHandler = null // visibilitychange listener for mobile resume catch-up
     let successTimer = null
     const showCartSheet = ref(false)
     const parkedInvoice = ref(null)
@@ -288,10 +290,65 @@ export default defineComponent({
       }
     }
     function startPolling() {
-      clearPolling(); const ib = store.balances[store.kioskWalletId] || 0
-      pollTimer = setInterval(async () => { try { const p = store.providers[store.kioskWalletId]; if (!p) return; const b = await p.getBalance(); if (b > ib) { store.balances[store.kioskWalletId] = b; clearPolling(); showSuccess() } } catch (e) {} }, 2000)
+      clearPolling()
+      const provider = store.providers[store.kioskWalletId]
+      const isSpark = store.kioskWallet?.type === 'spark'
+      const invoiceId = invoiceData.value?.id
+
+      // Spark with a known invoice id: poll getLightningReceiveRequest by id.
+      // Balance-diff polling can mis-attribute a concurrent inbound payment
+      // to the kiosk charge; querying by invoice id is unambiguous and works
+      // for both Spark-native and Lightning receive paths.
+      if (isSpark && invoiceId && provider && typeof provider.getLightningReceiveStatus === 'function') {
+        sparkPollState = { cancelled: false }
+        const state = sparkPollState
+        const intervalMs = 3000
+
+        const tick = async () => {
+          if (state.cancelled) return
+          try {
+            const status = await provider.getLightningReceiveStatus(invoiceId)
+            if (state.cancelled) return
+            if (status.isPaid) {
+              try {
+                const b = await provider.getBalance()
+                store.balances[store.kioskWalletId] = b
+              } catch (_) { /* balance refresh is best-effort */ }
+              clearPolling()
+              showSuccess()
+              return
+            }
+            if (status.isExpired) { clearPolling(); return }
+          } catch (_) { /* transient — keep polling */ }
+          if (!state.cancelled) pollTimer = setTimeout(tick, intervalMs)
+        }
+        pollTimer = setTimeout(tick, intervalMs)
+
+        sparkVisHandler = () => {
+          if (document.visibilityState === 'visible' && !state.cancelled) tick()
+        }
+        document.addEventListener('visibilitychange', sparkVisHandler)
+        return
+      }
+
+      // Non-Spark or no invoice id: legacy balance-diff polling.
+      const ib = store.balances[store.kioskWalletId] || 0
+      pollTimer = setInterval(async () => {
+        try {
+          const p = store.providers[store.kioskWalletId]; if (!p) return
+          const b = await p.getBalance()
+          if (b > ib) { store.balances[store.kioskWalletId] = b; clearPolling(); showSuccess() }
+        } catch (e) {}
+      }, 2000)
     }
-    function clearPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }
+    function clearPolling() {
+      if (pollTimer) { clearInterval(pollTimer); clearTimeout(pollTimer); pollTimer = null }
+      if (sparkPollState) { sparkPollState.cancelled = true; sparkPollState = null }
+      if (sparkVisHandler) {
+        document.removeEventListener('visibilitychange', sparkVisHandler)
+        sparkVisHandler = null
+      }
+    }
     function cancelPayment() { clearPolling(); parkedInvoice.value = null; state.value = 'input' }
 
     function parkInvoice() {

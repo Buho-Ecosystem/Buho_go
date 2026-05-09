@@ -369,6 +369,8 @@ export default {
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
       nwcNotificationUnsubscribe: null, // For NWC notification-based monitoring
+      sparkPollState: null, // { cancelled: boolean } cancellation token for Spark invoice polling
+      sparkVisibilityHandler: null, // visibilitychange listener for mobile resume catch-up
       paymentStatus: PaymentStatus.PENDING,
       paymentStatusMessage: '',
       isPaymentConfirmed: false,
@@ -601,6 +603,16 @@ export default {
         this.nwcNotificationUnsubscribe();
         this.nwcNotificationUnsubscribe = null;
       }
+      // Cancel Spark invoice polling
+      if (this.sparkPollState) {
+        this.sparkPollState.cancelled = true;
+        this.sparkPollState = null;
+      }
+      // Remove visibility-change listener
+      if (this.sparkVisibilityHandler) {
+        document.removeEventListener('visibilitychange', this.sparkVisibilityHandler);
+        this.sparkVisibilityHandler = null;
+      }
     },
 
     /**
@@ -626,13 +638,31 @@ export default {
     },
 
     /**
-     * Start Spark event-based payment monitoring (real-time, no polling)
+     * Start Spark payment monitoring.
+     *
+     * Uses two independent paths so a stuck event or stalled poll cannot
+     * block confirmation:
+     *   1. SDK `transfer:claimed` event — instant for Spark-to-Spark
+     *      transfers, but unreliable for Lightning invoice receives.
+     *   2. `getLightningReceiveRequest(id)` polling — ground truth for any
+     *      receive path (Spark address, Spark invoice, or BOLT11).
+     *
+     * Whichever path detects payment first wins; the second is a no-op via
+     * the `isPaymentConfirmed` idempotency guard in handlePaymentStatus.
+     * On mobile resume we run an immediate catch-up check because JS timers
+     * stall while the app is backgrounded.
      */
     async startSparkEventMonitor() {
+      let provider;
       try {
-        const provider = await this.walletStore.ensureSparkConnected();
+        provider = await this.walletStore.ensureSparkConnected();
+      } catch (error) {
+        console.warn('Could not connect Spark provider for monitoring:', error);
+        return;
+      }
 
-        // Subscribe to payment events
+      // Fast path: SDK event (best-effort — may not fire for Lightning)
+      try {
         this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
             transferId,
@@ -641,9 +671,73 @@ export default {
           });
         });
       } catch (error) {
-        console.warn('Could not start Spark event monitoring, falling back to polling:', error);
-        // Fallback to polling if events fail
-        await this.startNWCPollingMonitor();
+        console.warn('Could not subscribe to Spark transfer:claimed event:', error);
+      }
+
+      // Ground-truth poll
+      const invoiceId = this.generatedInvoice?.invoice_id;
+      if (invoiceId && typeof provider.getLightningReceiveStatus === 'function') {
+        this.startSparkInvoicePolling(provider, invoiceId);
+
+        this.sparkVisibilityHandler = () => {
+          if (document.visibilityState === 'visible') {
+            this.checkSparkInvoiceOnce(provider, this.generatedInvoice?.invoice_id);
+          }
+        };
+        document.addEventListener('visibilitychange', this.sparkVisibilityHandler);
+      }
+    },
+
+    /**
+     * Poll Spark `getLightningReceiveRequest(id)` until paid, expired, or
+     * cancelled. Runs alongside the SDK event subscription; the first to
+     * detect a settled payment wins (idempotency is enforced in
+     * handlePaymentStatus).
+     */
+    startSparkInvoicePolling(provider, invoiceId) {
+      const intervalMs = 3000;
+      this.sparkPollState = { cancelled: false };
+      const state = this.sparkPollState;
+
+      const tick = async () => {
+        if (state.cancelled || this.isPaymentConfirmed) return;
+        try {
+          const status = await provider.getLightningReceiveStatus(invoiceId);
+          if (state.cancelled || this.isPaymentConfirmed) return;
+          if (status.isPaid) {
+            this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
+              amount: status.amount || this.generatedInvoice?.amount,
+              preimage: status.preimage
+            });
+            return;
+          }
+          if (status.isExpired) {
+            this.handlePaymentStatus(PaymentStatus.EXPIRED, {});
+            return;
+          }
+        } catch (e) {
+          // Transient error (wallet relocked, network blip) — keep polling.
+        }
+        if (!state.cancelled && !this.isPaymentConfirmed) {
+          setTimeout(tick, intervalMs);
+        }
+      };
+      setTimeout(tick, intervalMs);
+    },
+
+    async checkSparkInvoiceOnce(provider, invoiceId) {
+      if (!invoiceId || this.isPaymentConfirmed) return;
+      try {
+        const status = await provider.getLightningReceiveStatus(invoiceId);
+        if (this.isPaymentConfirmed) return;
+        if (status.isPaid) {
+          this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
+            amount: status.amount || this.generatedInvoice?.amount,
+            preimage: status.preimage
+          });
+        }
+      } catch (e) {
+        // Catch-up check is best-effort; the polling tick will retry.
       }
     },
 
@@ -804,6 +898,8 @@ export default {
 
       switch (status) {
         case PaymentStatus.CONFIRMED:
+          // Idempotency guard — event and poll can both fire for the same payment.
+          if (this.isPaymentConfirmed) return;
           this.isPaymentConfirmed = true;
           this.paymentStatusMessage = this.$t('Payment received!');
 
@@ -964,6 +1060,7 @@ export default {
           invoice = {
             paymentRequest: result.paymentRequest,
             payment_hash: result.paymentHash,
+            invoice_id: result.id,
             amount: this.amountInSats,
             description: invoiceParams.description,
             expires_at: result.expiresAt
@@ -1017,6 +1114,7 @@ export default {
         const processedInvoice = {
           payment_request: paymentRequest,
           payment_hash: paymentHash,
+          invoice_id: invoice.invoice_id || invoice.id || null,
           amount: invoice.amount || this.amountInSats,
           description: invoice.description || this.description || 'BuhoGO Payment',
           expires_at: invoice.expires_at || invoice.expiresAt,
