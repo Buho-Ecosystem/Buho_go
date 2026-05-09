@@ -298,49 +298,65 @@
           </div>
         </div>
 
-        <!-- Amount Section (keypad) -->
-        <div class="amount-section" v-else-if="showAmountKeypadView">
-          <!-- Currency Toggle -->
-          <div class="currency-toggle" @click="toggleCurrency"
-               :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
-            <span class="currency-label">{{ currentCurrency }}</span>
-            <Icon icon="tabler:refresh" class="toggle-icon"/>
-          </div>
-
-          <!-- Amount Input -->
-          <div class="amount-input-container">
-            <div class="amount-display">
-              <!--              <span class="currency-symbol"-->
-              <!--                    :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">{{ getCurrencySymbol() }}</span>-->
-              <input
-                v-model="displayAmount"
-                @input="onAmountChange"
-                @focus="onAmountFocus"
-                @blur="onAmountBlur"
-                type="text"
-                inputmode="decimal"
-                class="amount-input"
-                :class="$q.dark.isActive ? 'amount-input-dark' : 'amount-input-light'"
-                :placeholder="getAmountPlaceholder()"
-              />
+        <!-- Keypad View: amount display + description link + numeric grid -->
+        <div class="keypad-view" v-else-if="showAmountKeypadView">
+          <!-- Amount display: primary on top, secondary (with swap) below -->
+          <div class="keypad-amount">
+            <div
+              class="keypad-amount-primary"
+              :class="[
+                $q.dark.isActive ? 'text-white' : 'text-grey-9',
+                amountInSats === 0 ? 'keypad-amount-empty' : ''
+              ]"
+            >
+              {{ primaryDisplay }}<span v-if="!isFiatMode" class="keypad-amount-suffix">sats</span>
+            </div>
+            <div
+              class="keypad-amount-secondary"
+              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+              @click="swapKeypadMode"
+            >
+              <span>{{ secondaryDisplay }}</span>
+              <Icon v-if="fiatRate" icon="tabler:arrows-up-down" width="16" height="16" class="keypad-swap-icon" />
             </div>
           </div>
-        </div>
 
-        <!-- Description Section (only on the keypad) -->
-        <div class="description-section" v-if="showAmountKeypadView">
-          <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Description (optional)') }}
-          </div>
-          <div class="description-input-container">
-            <input
-              v-model="description"
-              type="text"
-              :placeholder="$t('No description')"
-              class="description-input"
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-              maxlength="100"
-            />
+          <!-- Description: link if empty, chip if set. Both open the sheet. -->
+          <button
+            v-if="!description"
+            type="button"
+            class="keypad-desc-link"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+            @click="openDescriptionSheet"
+          >
+            <Icon icon="tabler:notes" width="18" height="18" />
+            <span>{{ $t('Add Description') }}</span>
+          </button>
+          <button
+            v-else
+            type="button"
+            class="keypad-desc-chip"
+            :class="$q.dark.isActive ? 'desc-chip-dark' : 'desc-chip-light'"
+            @click="openDescriptionSheet"
+          >
+            <Icon icon="tabler:notes" width="14" height="14" />
+            <span class="keypad-desc-chip-text">{{ description }}</span>
+            <Icon icon="tabler:edit" width="14" height="14" />
+          </button>
+
+          <!-- Numeric keypad grid -->
+          <div class="keypad-grid">
+            <button
+              v-for="key in keypadKeys"
+              :key="key"
+              type="button"
+              class="keypad-key"
+              :class="$q.dark.isActive ? 'keypad-key-dark' : 'keypad-key-light'"
+              @click="keypadTap(key)"
+            >
+              <Icon v-if="key === 'del'" icon="tabler:backspace" width="22" height="22" />
+              <template v-else>{{ key }}</template>
+            </button>
           </div>
         </div>
       </q-card-section>
@@ -377,6 +393,40 @@
         </div>
       </q-card-section>
     </q-card>
+
+    <!-- Description bottom sheet (opens on top of the receive modal). -->
+    <q-dialog v-model="showDescriptionSheet" position="bottom">
+      <q-card class="desc-sheet" :class="$q.dark.isActive ? 'desc-sheet-dark' : 'desc-sheet-light'">
+        <q-card-section class="desc-sheet-section">
+          <div class="desc-sheet-header">
+            <span class="desc-sheet-title" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+              {{ $t('Add Description') }}
+            </span>
+            <q-btn flat round dense @click="closeDescriptionSheet" class="desc-sheet-close">
+              <Icon icon="tabler:x" width="20" height="20" />
+            </q-btn>
+          </div>
+          <input
+            v-model="description"
+            type="text"
+            :placeholder="$t('What is this payment for?')"
+            class="desc-sheet-input"
+            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
+            maxlength="100"
+            @keyup.enter="closeDescriptionSheet"
+          />
+          <q-btn
+            class="desc-sheet-save"
+            :class="$q.dark.isActive ? 'create-invoice-btn-dark' : 'create-invoice-btn-light'"
+            @click="closeDescriptionSheet"
+            no-caps
+            unelevated
+          >
+            {{ $t('Save') }}
+          </q-btn>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </q-dialog>
 
   <!-- Payment Confirmation Screen -->
@@ -424,14 +474,16 @@ export default {
   emits: ['update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw'],
   data() {
     return {
-      displayAmount: '',
+      // In-app keypad state. `keypadValue` is the raw string the user has
+      // typed in the *current* mode (digits + optional `.` in fiat mode;
+      // digits only in sats mode). The actual sats amount is computed.
+      keypadValue: '',
+      isFiatMode: false,
+      showDescriptionSheet: false,
       description: '',
-      currentCurrency: 'sats',
       isCreatingInvoice: false,
       generatedInvoice: null,
       walletState: {},
-      amountInSats: 0,
-      isAmountFocused: false,
       // True after the user taps the "Amount" button to override the default
       // QR view (LN address or zero-amount BOLT11) and enter the keypad.
       // Stays false for wallets that have no default view — those land on
@@ -469,6 +521,78 @@ export default {
     },
     isValidAmount() {
       return this.amountInSats > 0;
+    },
+    /**
+     * Source of truth for invoice amount. Derived from the keypad input
+     * + current mode. Fiat mode converts via the live exchange rate; sats
+     * mode parses the integer directly.
+     */
+    amountInSats() {
+      if (this.isFiatMode) {
+        const fiat = parseFloat(this.keypadValue) || 0;
+        return this.fiatToSats(fiat);
+      }
+      return parseInt(this.keypadValue, 10) || 0;
+    },
+    /**
+     * Active fiat currency for the keypad's secondary display + fiat-mode
+     * conversion. Falls back to USD if the user hasn't picked one.
+     */
+    fiatCode() {
+      return (this.walletState.preferredFiatCurrency || 'USD').toLowerCase();
+    },
+    fiatRate() {
+      return this.walletState.exchangeRates?.[this.fiatCode] || 0;
+    },
+    fiatSymbol() {
+      switch (this.fiatCode) {
+        case 'usd': return '$';
+        case 'eur': return '€';
+        case 'gbp': return '£';
+        case 'jpy': return '¥';
+        default: return this.fiatCode.toUpperCase() + ' ';
+      }
+    },
+    /**
+     * Keys for the 3x4 keypad grid. The bottom-left key swaps between
+     * `000` (sats mode — fast PoS-style entry) and `.` (fiat mode — for
+     * cents). Bottom-right is always backspace.
+     */
+    keypadKeys() {
+      return [
+        '1', '2', '3',
+        '4', '5', '6',
+        '7', '8', '9',
+        this.isFiatMode ? '.' : '000',
+        '0',
+        'del',
+      ];
+    },
+    /**
+     * Primary display: what the user is actively typing.
+     * Sats mode: "1,000 sats". Fiat mode: "$ 0.00".
+     */
+    primaryDisplay() {
+      if (this.isFiatMode) {
+        return `${this.fiatSymbol}${this.keypadValue || '0'}`;
+      }
+      const formatted = this.keypadValue
+        ? Number(this.keypadValue).toLocaleString('en-US')
+        : '0';
+      return formatted;
+    },
+    /**
+     * Secondary display: the *other* unit's value, derived from the
+     * primary input. Tapping the swap icon promotes this to primary.
+     */
+    secondaryDisplay() {
+      if (this.isFiatMode) {
+        const sats = this.amountInSats;
+        return sats > 0 ? `${sats.toLocaleString('en-US')} sats` : '0 sats';
+      }
+      if (!this.fiatRate) return `${this.fiatSymbol}0.00`;
+      const fiat = this.satsToFiat(this.amountInSats);
+      return `${this.fiatSymbol}${fiat.toFixed(2)}`;
     },
     hasLightningAddress() {
       return !!this.walletStore.activeWalletLightningAddress;
@@ -528,7 +652,7 @@ export default {
         ));
     },
     headerTitle() {
-      if (this.showSpecificInvoiceView || this.showAmountInput) {
+      if (this.showSpecificInvoiceView || this.showAmountKeypadView) {
         return this.$t('Invoice');
       }
       return this.$t('Receive');
@@ -692,10 +816,11 @@ export default {
 
     resetForm() {
       this.stopPaymentMonitor();
-      this.displayAmount = '';
+      this.keypadValue = '';
+      this.isFiatMode = false;
+      this.showDescriptionSheet = false;
       this.description = '';
       this.generatedInvoice = null;
-      this.amountInSats = 0;
       this.showAmountInput = false;
       this.isMintingDefaultZero = false;
       this.receiveMode = 'lightning';
@@ -727,8 +852,7 @@ export default {
         || (this.isSparkWallet && this.receiveMode === 'lightning');
       if (this.showAmountInput && canReturnToDefault) {
         this.showAmountInput = false;
-        this.displayAmount = '';
-        this.amountInSats = 0;
+        this.keypadValue = '';
         if (this.isSparkWallet
             && this.receiveMode === 'lightning'
             && !this.generatedInvoice) {
@@ -754,8 +878,7 @@ export default {
         this.paymentStatusMessage = '';
       }
       this.showAmountInput = true;
-      this.displayAmount = '';
-      this.amountInSats = 0;
+      this.keypadValue = '';
     },
 
     /**
@@ -769,8 +892,7 @@ export default {
       this.paymentStatus = PaymentStatus.PENDING;
       this.paymentStatusMessage = '';
       this.isPaymentConfirmed = false;
-      this.displayAmount = '';
-      this.amountInSats = 0;
+      this.keypadValue = '';
       this.description = '';
 
       if (this.isSparkWallet && this.receiveMode === 'lightning') {
@@ -1262,93 +1384,81 @@ export default {
       }
     },
 
-    toggleCurrency() {
-      const currencies = ['sats', this.walletState.preferredFiatCurrency?.toLowerCase() || 'usd'];
-      const currentIndex = currencies.indexOf(this.currentCurrency);
-      const nextIndex = (currentIndex + 1) % currencies.length;
-      this.currentCurrency = currencies[nextIndex];
-      this.convertAmount();
+    /**
+     * Handle a key press from the in-app keypad.
+     * - digits: append, collapsing leading zeros (so '0' + '5' = '5', not '05')
+     * - '0': allowed as a stable single-zero state
+     * - '000' (sats mode): append three zeros
+     * - '.' (fiat mode): append decimal if not already present; cap to 2 places
+     * - 'del': pop last char
+     */
+    keypadTap(key) {
+      if (key === 'del') {
+        this.keypadValue = this.keypadValue.slice(0, -1);
+        return;
+      }
+      if (key === '.') {
+        if (this.keypadValue.includes('.')) return;
+        this.keypadValue = (this.keypadValue || '0') + '.';
+        return;
+      }
+      // Cap input length to keep the display readable.
+      if (this.keypadValue.length >= 12) return;
+
+      // Fiat mode: enforce 2 decimal places max.
+      if (this.isFiatMode && this.keypadValue.includes('.')) {
+        const decimals = this.keypadValue.split('.')[1] || '';
+        if (decimals.length >= 2) return;
+      }
+
+      let next = this.keypadValue + key;
+      // Collapse leading zeros (e.g. '00' → '0', '05' → '5'), but keep
+      // '0.' / '0.5' intact for fiat decimal entry.
+      while (next.length > 1 && next.startsWith('0') && !next.startsWith('0.')) {
+        next = next.slice(1);
+      }
+      // Re-cap after the 000 expansion may have pushed us over.
+      if (next.length > 12) next = next.slice(0, 12);
+      this.keypadValue = next;
     },
 
-    getCurrencySymbol() {
-      switch (this.currentCurrency) {
-        case 'sats':
-          return 'Sats';
-        case 'btc':
-          return '₿';
-        case 'usd':
-          return '$';
-        case 'eur':
-          return '€';
-        case 'gbp':
-          return '£';
-        case 'jpy':
-          return '¥';
-        default:
-          return '$';
+    /**
+     * Swap the primary input mode (sats ↔ fiat) and convert the current
+     * value so the displayed amount stays roughly the same. Conversions
+     * are floor-rounded for sats and 2-decimal for fiat.
+     */
+    swapKeypadMode() {
+      if (!this.fiatRate) return; // Can't swap without an exchange rate.
+      if (this.isFiatMode) {
+        const sats = this.amountInSats;
+        this.keypadValue = sats > 0 ? String(sats) : '';
+        this.isFiatMode = false;
+      } else {
+        const fiat = this.satsToFiat(this.amountInSats);
+        this.keypadValue = fiat > 0 ? fiat.toFixed(2) : '';
+        this.isFiatMode = true;
       }
     },
 
-    getAmountPlaceholder() {
-      switch (this.currentCurrency) {
-        case 'sats':
-          return '0';
-        case 'btc':
-          return '0.00000000';
-        default:
-          return '0.00';
-      }
+    /** Convert a fiat amount (in fiatCode) to integer sats. */
+    fiatToSats(fiat) {
+      if (!this.fiatRate || fiat <= 0) return 0;
+      const btc = fiat / this.fiatRate;
+      return Math.floor(btc * 100000000);
     },
 
-    onAmountChange() {
-      this.convertAmount();
+    /** Convert integer sats to fiat (in fiatCode). */
+    satsToFiat(sats) {
+      if (!this.fiatRate || sats <= 0) return 0;
+      return (sats / 100000000) * this.fiatRate;
     },
 
-    onAmountFocus() {
-      this.isAmountFocused = true;
+    openDescriptionSheet() {
+      this.showDescriptionSheet = true;
     },
 
-    onAmountBlur() {
-      this.isAmountFocused = false;
-      this.formatDisplayAmount();
-    },
-
-    convertAmount() {
-      const amount = parseFloat(this.displayAmount) || 0;
-
-      switch (this.currentCurrency) {
-        case 'sats':
-          this.amountInSats = Math.floor(amount);
-          break;
-        case 'btc':
-          this.amountInSats = Math.floor(amount * 100000000);
-          break;
-        default:
-          const rate = this.walletState.exchangeRates?.[this.currentCurrency];
-          if (!rate) return;
-          const btcAmount = amount / rate;
-          this.amountInSats = Math.floor(btcAmount * 100000000);
-          break;
-      }
-    },
-
-    formatDisplayAmount() {
-      if (!this.isAmountFocused && this.displayAmount) {
-        const amount = parseFloat(this.displayAmount);
-        if (!isNaN(amount)) {
-          switch (this.currentCurrency) {
-            case 'sats':
-              this.displayAmount = Math.floor(amount).toString();
-              break;
-            case 'btc':
-              this.displayAmount = amount.toFixed(8);
-              break;
-            default:
-              this.displayAmount = amount.toFixed(2);
-              break;
-          }
-        }
-      }
+    closeDescriptionSheet() {
+      this.showDescriptionSheet = false;
     },
 
     async createInvoice() {
@@ -1717,6 +1827,15 @@ export default {
   flex: 1;
   text-align: center;
   margin: 0 1rem;
+}
+
+/* Phantom right-side spacer that mirrors the back button's footprint, so
+   the centered title is visually centered on screen rather than centered
+   between the back button and the right edge. */
+.header-actions {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
 }
 
 .address-btn {
@@ -2720,5 +2839,230 @@ export default {
   .spark-actions {
     max-width: 280px;
   }
+}
+
+/* ===========================================
+   In-app Keypad (Alby-inspired)
+   =========================================== */
+.keypad-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 0.5rem;
+  min-height: 0;
+}
+
+/* Amount display */
+.keypad-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 0 0.5rem;
+}
+
+.keypad-amount-primary {
+  font-family: 'Manrope', sans-serif;
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.keypad-amount-primary.keypad-amount-empty {
+  opacity: 0.35;
+}
+
+.keypad-amount-suffix {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.6;
+}
+
+.keypad-amount-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+
+.keypad-amount-secondary:active {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.keypad-swap-icon {
+  opacity: 0.6;
+}
+
+/* Description link / chip */
+.keypad-desc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.keypad-desc-link:active {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.keypad-desc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  max-width: 80%;
+}
+
+.desc-chip-light {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.desc-chip-dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.keypad-desc-chip-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 3x4 keypad grid */
+.keypad-grid {
+  width: 100%;
+  max-width: 360px;
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.keypad-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60px;
+  border: none;
+  border-radius: 14px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.08s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.keypad-key:active {
+  transform: scale(0.96);
+}
+
+.keypad-key-light {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1A1A1A;
+}
+
+.keypad-key-light:active {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+.keypad-key-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #FFFFFF;
+}
+
+.keypad-key-dark:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@media (max-width: 360px) {
+  .keypad-amount-primary { font-size: 36px; }
+  .keypad-amount-suffix { font-size: 15px; }
+  .keypad-key { height: 52px; font-size: 22px; }
+}
+
+/* Description bottom sheet */
+.desc-sheet {
+  width: 100%;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.desc-sheet-light { background: #FFFFFF; }
+.desc-sheet-dark { background: #1A1A1A; }
+
+.desc-sheet-section {
+  padding: 1.25rem 1rem 1rem;
+}
+
+.desc-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.desc-sheet-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.desc-sheet-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 0.875rem;
+  border-radius: 12px;
+  border: none;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.desc-sheet-input:focus {
+  outline: none;
+}
+
+.desc-sheet-save {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
 }
 </style>

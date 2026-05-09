@@ -8,6 +8,7 @@ node_modules
 /cloud_backup.md
 /audit
 /playwright.config.mjs
+.playwright-mcp
 
 # Quasar core related directories
 .quasar
