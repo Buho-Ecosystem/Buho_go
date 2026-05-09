@@ -1892,6 +1892,46 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Ensure an LNBits wallet has a connected provider, connecting with
+     * stored credentials if needed. Mirrors `ensureSparkConnected` so all
+     * call sites (balance poll, send, batch send, auto-withdraw, internal
+     * transfer, kiosk) can get a usable provider in one call without
+     * worrying about lifecycle state.
+     *
+     * In normal operation `LNBitsWalletProvider.setError` no longer flips
+     * `isConnected` on errors, so this method is a cheap getter once the
+     * provider has been validated once. It still does meaningful work on
+     * cold start, after an explicit `disconnect()`, or if the provider was
+     * never created — in which case `connectLNBitsWallet` validates the
+     * credentials against the server and either succeeds or throws an
+     * actionable auth error.
+     *
+     * @param {string} [walletId] - Optional wallet ID; defaults to the active wallet
+     * @returns {Promise<Object>} Connected LNBits provider
+     * @throws {Error} If the wallet is not LNBits or connection fails
+     */
+    async ensureLNBitsConnected(walletId) {
+      const targetId = walletId || this.activeWalletId;
+      const wallet = this.wallets.find((w) => w.id === targetId);
+      if (!wallet || wallet.type !== WALLET_TYPES.LNBITS) {
+        throw new Error('Not an LNBits wallet');
+      }
+
+      const cached = this.getProvider(targetId);
+      if (cached && cached.isConnected) {
+        return cached;
+      }
+
+      await this.connectLNBitsWallet(targetId);
+      const provider = this.getProvider(targetId);
+      if (provider && provider.isConnected) {
+        return provider;
+      }
+
+      throw new Error('LNBits wallet could not be connected.');
+    },
+
+    /**
      * Validate all wallets and remove invalid ones
      */
     async validateWallets() {
@@ -2032,7 +2072,14 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Ensure a wallet is connected for transfer
+     * Ensure a wallet is connected for transfer.
+     *
+     * Delegates LNBits to `ensureLNBitsConnected` so every LNBits send/transfer
+     * path uses one source of truth for connect/reconnect. Spark and NWC keep
+     * their own connect calls because their connection models differ (Spark
+     * needs a device-key auto-connect; NWC tracks connection in a side
+     * `nwcInstance` rather than on the provider).
+     *
      * @param {string} walletId - Wallet ID to connect
      * @returns {Promise<Object>} Provider instance
      */
@@ -2042,13 +2089,13 @@ export const useWalletStore = defineStore('wallet', {
         throw new Error('Wallet not found');
       }
 
-      // Get current provider
-      let provider = this.getProvider(walletId);
+      if (wallet.type === WALLET_TYPES.LNBITS) {
+        return await this.ensureLNBitsConnected(walletId);
+      }
 
-      // Check if provider exists and is actually connected
+      let provider = this.getProvider(walletId);
       const isActuallyConnected = provider && (
         (wallet.type === WALLET_TYPES.SPARK && provider.isConnected) ||
-        (wallet.type === WALLET_TYPES.LNBITS && provider.isConnected) ||
         (wallet.type === WALLET_TYPES.NWC && this.connectionStates[walletId]?.nwcInstance)
       );
 
@@ -2056,16 +2103,12 @@ export const useWalletStore = defineStore('wallet', {
         return provider;
       }
 
-      // Connect based on wallet type
       if (wallet.type === WALLET_TYPES.SPARK) {
         await this.connectSparkWallet(walletId);
-      } else if (wallet.type === WALLET_TYPES.LNBITS) {
-        await this.connectLNBitsWallet(walletId);
       } else {
         await this.connectWallet(walletId);
       }
 
-      // Get the newly connected provider
       provider = this.getProvider(walletId);
       if (!provider) {
         throw new Error(`Failed to connect ${wallet.name}`);

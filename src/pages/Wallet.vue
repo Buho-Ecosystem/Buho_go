@@ -2218,27 +2218,29 @@ export default {
         // Check if active wallet is LNBits
         if (this.walletStore.isActiveWalletLNBits) {
           try {
-            const provider = this.walletStore.getActiveProvider();
-            if (provider) {
-              const balanceResult = await provider.getBalance();
-              this.walletState.balance = balanceResult.balance;
+            const provider = await this.walletStore.ensureLNBitsConnected();
+            const balanceResult = await provider.getBalance();
+            this.walletState.balance = balanceResult.balance;
 
-              // Update wallet in store
-              const activeWallet = this.walletState.connectedWallets.find(
-                w => w.id === this.walletState.activeWalletId
-              );
-              if (activeWallet) {
-                activeWallet.balance = balanceResult.balance;
-              }
+            // Update wallet in store
+            const activeWallet = this.walletState.connectedWallets.find(
+              w => w.id === this.walletState.activeWalletId
+            );
+            if (activeWallet) {
+              activeWallet.balance = balanceResult.balance;
+            }
 
-              localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-              // Auto-withdraw check
-              if (balanceResult.balance > 0 && activeWalletId) {
-                awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
-              }
+            // Auto-withdraw check
+            if (balanceResult.balance > 0 && activeWalletId) {
+              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
             }
           } catch (err) {
+            // Background refresh failures are non-fatal: cached balance
+            // stays visible and the next tick will retry. We log so issues
+            // are debuggable but don't surface a UI error for a transient
+            // blip.
             console.warn('LNBits balance refresh failed:', err.message);
           }
           return;
@@ -3379,10 +3381,10 @@ export default {
     },
 
     async sendLNBitsPayment(amount, comment) {
-      const provider = await this.walletStore.getProvider(this.walletStore.activeWalletId);
-      if (!provider) {
-        throw new Error('LNBits wallet not connected');
-      }
+      // Route through ensureLNBitsConnected so a stale `isConnected` flag
+      // (e.g. cleared by a prior 401) self-heals before the send rather than
+      // failing with "wallet is not connected" until app restart.
+      const provider = await this.walletStore.ensureLNBitsConnected();
 
       // Lightning invoice payment
       if (this.pendingPayment.invoice) {

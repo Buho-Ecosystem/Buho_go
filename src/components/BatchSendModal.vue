@@ -1198,9 +1198,13 @@ async function startBatch() {
           await provider.payLightningAddress(address, result.amount)
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.LNBITS) {
-          // LNBits: fetch invoice then pay
+          // LNBits: fetch invoice then pay. Route through ensureLNBitsConnected
+          // per-iteration so a mid-batch credential failure self-heals (or
+          // surfaces cleanly) rather than every remaining payment throwing
+          // "wallet is not connected".
+          const lnbitsProvider = await walletStore.ensureLNBitsConnected()
           const invoice = await fetchLightningAddressInvoice(address, result.amount)
-          await provider.payInvoice({ invoice })
+          await lnbitsProvider.payInvoice({ invoice })
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.NWC) {
           // NWC: create service and pay

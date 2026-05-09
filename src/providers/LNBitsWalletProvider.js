@@ -54,43 +54,55 @@ export class LNBitsWalletProvider extends WalletProvider {
   }
 
   /**
-   * Make authenticated API request to LNBits
+   * Make an authenticated API request to LNBits.
+   *
+   * Errors thrown from here carry classification metadata so callers (most
+   * importantly `setError`) can tell a credential failure apart from a
+   * transient connectivity blip:
+   *   - `error.status`         : HTTP status code, when the server responded
+   *   - `error.isNetworkError` : true when fetch itself rejected (offline,
+   *                              DNS, TLS, refused). No status available.
    */
   async _apiRequest(endpoint, options = {}) {
     const url = `${this.serverUrl}${endpoint}`;
     const headers = {
       'X-Api-Key': this.adminKey,
       'Content-Type': 'application/json',
-      ...options.headers
+      ...options.headers,
     };
 
+    let response;
     try {
-      const response = await fetch(url, {
-        ...options,
-        headers
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.detail || errorJson.message || errorText;
-        } catch {
-          errorMessage = errorText || `HTTP ${response.status}`;
-        }
-        throw new Error(`LNBits API error: ${errorMessage}`);
-      }
-
-      const text = await response.text();
-      if (!text) return null;
-      return JSON.parse(text);
+      response = await fetch(url, { ...options, headers });
     } catch (error) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error('Network error: Unable to reach LNBits server');
+      // fetch() rejects with TypeError for genuine transport failures.
+      // The credentials may still be perfectly valid, so we tag the error
+      // rather than letting it look like a credential problem upstream.
+      if (error.name === 'TypeError') {
+        const networkError = new Error('Network error: Unable to reach LNBits server');
+        networkError.isNetworkError = true;
+        throw networkError;
       }
       throw error;
     }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      let detail;
+      try {
+        const errorJson = JSON.parse(errorText);
+        detail = errorJson.detail || errorJson.message || errorText;
+      } catch {
+        detail = errorText || `HTTP ${response.status}`;
+      }
+      const apiError = new Error(`LNBits API error: ${detail}`);
+      apiError.status = response.status;
+      throw apiError;
+    }
+
+    const text = await response.text();
+    if (!text) return null;
+    return JSON.parse(text);
   }
 
   async connect() {
@@ -617,6 +629,33 @@ export class LNBitsWalletProvider extends WalletProvider {
   // ==========================================
   // Private helper methods
   // ==========================================
+
+  /**
+   * Override the base-class behaviour, which flips `isConnected = false`
+   * on every recorded error.
+   *
+   * LNBits has no persistent connection — just stateless HTTPS authenticated
+   * by the admin key. Every request stands on its own; a failed call (timeout,
+   * 5xx, brief Wi-Fi drop, even a revoked-key 404) is not evidence the
+   * underlying state is broken, and there is nothing to "reconnect" that
+   * could recover from a real credential failure: the next request would
+   * fail identically with the same key.
+   *
+   * Tearing down `isConnected` on every error is what caused the long-running
+   * "payments fail until app restart" bug — any single hiccup from the 30-second
+   * balance poll would permanently mark the wallet disconnected, and every
+   * subsequent send would throw "wallet is not connected" until relaunch.
+   *
+   * We therefore only record the error message. The connection state is
+   * cleared exclusively by `disconnect()` (explicit logout / wallet removal).
+   * Real credential failures propagate to the caller as the original API
+   * error (e.g. LNBits returns HTTP 404 "Wallet not found." when a key has
+   * been revoked), which is far more actionable than a generic
+   * "wallet is not connected".
+   */
+  setError(error) {
+    this.connectionError = error instanceof Error ? error.message : String(error);
+  }
 
   _ensureConnected() {
     if (!this.isConnected) {

@@ -221,8 +221,10 @@ export default {
       }
 
       if (walletType === 'lnbits') {
-        const provider = walletStore.getActiveProvider()
-        if (!provider) throw new Error('LNBITS_NOT_CONNECTED')
+        // Route through ensureLNBitsConnected so a stale `isConnected` flag
+        // (e.g. from a prior 401) self-heals before we attempt the payment,
+        // instead of failing with "wallet is not connected" until app restart.
+        const provider = await walletStore.ensureLNBitsConnected()
 
         if (this.isLightningInvoice(address)) {
           return await provider.payInvoice({ invoice: address })

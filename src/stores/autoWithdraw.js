@@ -263,8 +263,10 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
       // Pay via wallet-specific provider
       if (walletType === WALLET_TYPES.LNBITS) {
-        const provider = walletStore.getProvider(walletId)
-        if (!provider) throw new Error('LNBits provider not available')
+        // Route through ensureLNBitsConnected so a stale `isConnected`
+        // (e.g. cleared by a prior 401) self-heals before the auto-withdraw
+        // attempt rather than failing silently in the background.
+        const provider = await walletStore.ensureLNBitsConnected(walletId)
         const result = await provider.payInvoice({ invoice })
         return { id: result.payment_hash || result.id || null, status: 'completed' }
       } else {
