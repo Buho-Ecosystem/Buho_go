@@ -21,6 +21,7 @@ export default defineConfig((ctx) => {
       'safe-area',
       'kiosk',
       ctx.mode.capacitor ? 'deep-links' : '',
+      ctx.mode.capacitor ? 'nfc' : '',
       ctx.dev ? 'audit' : ''
     ].filter(Boolean),
 
