@@ -394,7 +394,7 @@ async function reconnectAll() {
   state.isReconnecting = true;
   for (const w of store.wallets) {
     const connected = store.connectionStates[w.id]?.connected;
-    connStatus[w.id] = connected ? 'connected' : (w.type === 'spark' && !store.sessionPin) ? 'pin_required' : 'connecting';
+    connStatus[w.id] = connected ? 'connected' : 'connecting';
   }
   await Promise.allSettled(store.wallets.map(async (w) => {
     if (connStatus[w.id] !== 'connecting') return;
@@ -822,11 +822,100 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 /* ════════════════════════════════════════════════════════════
    Footer
    ════════════════════════════════════════════════════════════ */
-.modal-footer { display: flex; align-items: center; padding: 16px 20px; padding-bottom: max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--c-border); gap: 12px; }
+.modal-footer { display: flex; align-items: center; padding: 16px 20px; padding-bottom: max(16px, var(--safe-bottom, 16px)); border-top: 1px solid var(--c-border); gap: 12px; }
 .btn-back { display: flex; align-items: center; gap: 4px; padding: 10px 16px; font-size: 15px; font-weight: 500; color: var(--c-text2); }
-.btn-main { display: flex; align-items: center; gap: 6px; padding: 12px 24px; font-size: 15px; font-weight: 600; background: var(--gradient-green) !important; color: #fff !important; border-radius: var(--radius-md); }
-.btn-main:hover { opacity: 0.9; }
-.btn-main:disabled { opacity: .5; }
+/* Primary CTA — tinted green, matches the Create Invoice / Continue
+   pattern used across the app. */
+.btn-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 24px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  background: rgba(21, 222, 114, 0.14) !important;
+  color: #15DE72 !important;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+  transition: filter 0.18s ease, transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-main:hover:not(:disabled) { filter: brightness(1.06); }
+.btn-main:active:not(:disabled) { transform: scale(0.98); filter: brightness(0.94); }
+.btn-main:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ════════════════════════════════════════════════════════════
+   Light mode — remap brand-green accents to the cream palette.
+   Dark mode keeps the bright #15DE72 everywhere above; on cream
+   the same hex reads as a loud neon, so we use the darker shade
+   #059573 for decoration and flip the primary CTA to the neutral
+   dark-pill language shared across the app (Create Invoice,
+   Restore Spark Wallet, Add Contact, …).
+
+   Only decorative greens are remapped — "success" greens on the
+   transfer-complete ring and amount stay coloured because that
+   state *is* the semantic confirmation; muting them to grey would
+   erase the "done" feedback.
+   ════════════════════════════════════════════════════════════ */
+.body--light .header-icon { color: #059573; }
+
+.body--light .step.active .step-dot { background: #059573; }
+.body--light .step-line.active { background: #059573; }
+
+.body--light .wallet-btn.selected { border-color: #059573; }
+.body--light .wallet-bal { color: #059573; }
+
+.body--light .direction-line { background: linear-gradient(to bottom, var(--c-bg3), #059573); }
+.body--light .direction-icon {
+  background: rgba(5, 149, 115, 0.08);
+  border-color: rgba(5, 149, 115, 0.35);
+  color: #059573;
+}
+.body--light .direction-line-bottom { background: linear-gradient(to bottom, #059573, var(--c-bg3)); }
+
+.body--light .banner--info { background: rgba(5, 149, 115, 0.08); color: #059573; }
+
+.body--light .route-arrow {
+  background: rgba(5, 149, 115, 0.08);
+  color: #059573;
+}
+
+.body--light .quick-chip--max {
+  background: rgba(5, 149, 115, 0.08);
+  color: #059573;
+}
+.body--light .quick-chip--max:hover { background: rgba(5, 149, 115, 0.16); }
+
+.body--light .confirm-amount { color: var(--text-primary); }
+
+.body--light .connector-line { background: linear-gradient(to right, var(--c-bg3), #059573); }
+.body--light .connector-line:last-child { background: linear-gradient(to right, #059573, var(--c-bg3)); }
+.body--light .connector-arrow {
+  background: rgba(5, 149, 115, 0.08);
+  border-color: rgba(5, 149, 115, 0.35);
+  color: #059573;
+}
+
+/* Transfer-complete ring and amount stay coloured — this is the
+   semantic "success" state, not decoration. Softened to the muted
+   dark-green so it sits naturally on cream. */
+.body--light .success-ring { background: rgba(5, 149, 115, 0.12); color: #059573; }
+.body--light .success-amount { color: #059573; }
+
+.body--light .check { color: #059573; }
+.body--light .dot--ok { background: #059573; }
+.body--light .picker-row.selected { background: rgba(5, 149, 115, 0.08); }
+
+/* Primary CTA — neutral dark pill on cream, same as every other
+   "Continue / Confirm / Done" button across the app. Overrides the
+   base tinted-green via selector specificity (body--light + class)
+   plus !important to beat the upstream !important. */
+.body--light .btn-main {
+  background: var(--btn-neutral-bg) !important;
+  color: var(--btn-neutral-fg) !important;
+  box-shadow: none !important;
+}
 
 /* ════════════════════════════════════════════════════════════
    Picker

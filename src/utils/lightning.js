@@ -12,6 +12,11 @@
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { LightningAddress, Invoice } from '@getalby/lightning-tools';
 import { bech32 } from 'bech32';
+import {
+  isLightningAddress as isLightningAddressShared,
+  isLightningInvoice as isLightningInvoiceShared,
+  isLnurl as isLnurlShared,
+} from './addressUtils';
 
 /**
  * LUD-17 URL scheme prefixes mapped to their LNURL type.
@@ -99,40 +104,11 @@ export class LightningPaymentService {
   // Payment Input Detection
   // ============================================================================
 
-  /**
-   * Detects if the input is a Lightning address (email-like format)
-   * @param {string} input - The input string to check
-   * @returns {boolean}
-   */
-  isLightningAddress(input) {
-    const pattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    return pattern.test(input);
-  }
-
-  /**
-   * Detects if the input is an LNURL
-   * @param {string} input - The input string to check
-   * @returns {boolean}
-   */
-  isLNURL(input) {
-    const lower = input.toLowerCase();
-    return lower.startsWith('lnurl') || lower.startsWith('lightning:lnurl') || lower.startsWith('keyauth://');
-  }
-
-  /**
-   * Detects if the input is a Lightning invoice (BOLT11)
-   * @param {string} input - The input string to check
-   * @returns {boolean}
-   */
-  isLightningInvoice(input) {
-    const lower = input.toLowerCase().replace(/^lightning:/i, '');
-    return (
-      lower.startsWith('lnbc') ||   // Mainnet
-      lower.startsWith('lntb') ||   // Testnet
-      lower.startsWith('lnbcrt') || // Regtest
-      lower.startsWith('lntbs')     // Signet
-    );
-  }
+  // Input-type predicates delegate to the shared addressUtils module to keep
+  // recognition consistent across the app.
+  isLightningAddress(input) { return isLightningAddressShared(input); }
+  isLNURL(input)            { return isLnurlShared(input); }
+  isLightningInvoice(input) { return isLightningInvoiceShared(input); }
 
   /**
    * Validates and identifies the payment input type
@@ -145,29 +121,15 @@ export class LightningPaymentService {
     if (!cleanInput) {
       return { valid: false, error: 'Please enter a payment request' };
     }
-
-    // Check Lightning Address
-    if (/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(cleanInput)) {
+    if (isLightningAddressShared(cleanInput)) {
       return { valid: true, type: PaymentType.LIGHTNING_ADDRESS };
     }
-
-    // Check LNURL (could be pay or withdraw - determined after fetching endpoint)
-    const lowerInput = cleanInput.toLowerCase();
-    if (lowerInput.startsWith('lnurl') || lowerInput.startsWith('lightning:lnurl')) {
+    if (isLnurlShared(cleanInput)) {
       return { valid: true, type: 'lnurl' };
     }
-
-    // Check Lightning Invoice
-    const invoiceCheck = lowerInput.replace(/^lightning:/i, '');
-    if (
-      invoiceCheck.startsWith('lnbc') ||
-      invoiceCheck.startsWith('lntb') ||
-      invoiceCheck.startsWith('lnbcrt') ||
-      invoiceCheck.startsWith('lntbs')
-    ) {
+    if (isLightningInvoiceShared(cleanInput)) {
       return { valid: true, type: PaymentType.LIGHTNING_INVOICE };
     }
-
     return {
       valid: false,
       error: 'Invalid format. Please enter a Lightning invoice, LNURL, or Lightning address.',

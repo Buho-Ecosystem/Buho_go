@@ -6,6 +6,8 @@ node_modules
 /.claude
 /Plans WIP
 /cloud_backup.md
+/audit
+/playwright.config.mjs
 
 # Quasar core related directories
 .quasar

@@ -5,6 +5,8 @@
  * All wallet providers must implement these methods.
  */
 
+import { isSparkAddress as isSparkAddressPredicate } from '../utils/addressUtils';
+
 export class WalletProvider {
   constructor(walletId, walletData) {
     if (this.constructor === WalletProvider) {
@@ -138,19 +140,7 @@ export class WalletProvider {
    * @returns {boolean}
    */
   static isSparkAddress(address) {
-    if (!address || typeof address !== 'string') return false;
-    const normalized = address.toLowerCase().trim();
-
-    // New format prefixes (Bech32m encoded)
-    // spark1 - mainnet, sparkrt1 - regtest, sparkt1 - testnet, sparks1 - signet, sparkl1 - local
-    const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1'];
-
-    // Legacy format prefixes (still supported)
-    // sp1 - mainnet, tsp1 - testnet, sprt1 - regtest
-    const legacyPrefixes = ['sp1', 'tsp1', 'sprt1'];
-
-    return newPrefixes.some(prefix => normalized.startsWith(prefix)) ||
-           legacyPrefixes.some(prefix => normalized.startsWith(prefix));
+    return isSparkAddressPredicate(address);
   }
 
   // ==========================================

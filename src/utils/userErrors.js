@@ -3,15 +3,20 @@
  *
  * Maps technical errors to user-friendly messages.
  * NEVER show technical terms to users like:
- * - SDK, API, provider, mnemonic, UTXO, LNURL, BOLT, etc.
+ * - SDK, API, provider, mnemonic, UTXO, LNURL, BOLT, ClientError, gRPC, etc.
  *
  * All messages should be understandable by non-technical users.
+ *
+ * Usage rule: never put a raw `error.message` into a user-visible string.
+ * Always pass the error through `getUserFriendlyError` (or
+ * `getUserFriendlyErrorMessage`) and surface only the returned title/
+ * description. Keep the raw error in `console.error` for debugging.
  */
 
 /**
  * Map a technical error to a user-friendly message
  * @param {Error|string} error - The error object or message
- * @param {string} context - Context: 'payment', 'receive', 'claim', 'withdraw', 'general'
+ * @param {string} context - Context: 'payment', 'receive', 'transfer', 'connect', 'claim', 'withdraw', 'kiosk', 'general'
  * @param {Function} $t - Translation function (optional)
  * @returns {{ title: string, description: string }}
  */
@@ -19,6 +24,20 @@ export function getUserFriendlyError(error, context = 'general', $t = null) {
   const t = $t || ((s) => s); // Use translation function or passthrough
   const errorStr = error?.message || error?.toString() || '';
   const errorLower = errorStr.toLowerCase();
+
+  // === SDK / Service version mismatch ===
+  // gRPC `UNIMPLEMENTED` and "deprecated endpoint" responses mean the wallet
+  // software is too old to talk to the current backend. Surface as a clear
+  // "update needed" message rather than leaking the gRPC service path.
+  if (errorLower.includes('unimplemented') ||
+      errorLower.includes('deprecated') ||
+      errorLower.includes('clienterror') ||
+      /\/[a-z.]+\.[a-z]+service\//i.test(errorStr)) {
+    return {
+      title: t('Update needed'),
+      description: t('Please update the app to the latest version and try again.')
+    };
+  }
 
   // === Balance/Amount Issues ===
   if (errorLower.includes('insufficient') ||
@@ -127,6 +146,18 @@ export function getUserFriendlyError(error, context = 'general', $t = null) {
     },
     receive: {
       title: t('Couldn\'t create invoice'),
+      description: t('Please try again.')
+    },
+    transfer: {
+      title: t('Transfer failed'),
+      description: t('Please try again.')
+    },
+    connect: {
+      title: t('Couldn\'t connect'),
+      description: t('Please check the details and try again.')
+    },
+    kiosk: {
+      title: t('Couldn\'t start payment'),
       description: t('Please try again.')
     },
     claim: {

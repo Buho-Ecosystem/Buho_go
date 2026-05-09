@@ -3,7 +3,7 @@
 
 import { defineConfig } from '#q-app/wrappers'
 
-export default defineConfig((/* ctx */) => {
+export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
     // preFetch: true,
@@ -12,11 +12,17 @@ export default defineConfig((/* ctx */) => {
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
     boot: [
+      // 'theme' runs first so the persisted light/dark choice is applied
+      // before any component renders — avoids a flash of the wrong theme.
+      'theme',
       'axios',
       'i18n',
       'iconify',
-      'safe-area'
-    ],
+      'safe-area',
+      'kiosk',
+      ctx.mode.capacitor ? 'deep-links' : '',
+      ctx.dev ? 'audit' : ''
+    ].filter(Boolean),
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: [
@@ -83,8 +89,12 @@ export default defineConfig((/* ctx */) => {
       config: {
         dark: true,
         notify: {
-          position: 'top',
-          timeout: 2500
+          position: 'bottom',
+          timeout: 2500,
+          classes: 'buho-notify',
+          textColor: 'white',
+          progress: true,
+          actions: [{ icon: 'close', color: 'white', dense: true, flat: true, round: true, size: 'sm' }]
         }
       },
 
