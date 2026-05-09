@@ -15,7 +15,7 @@
             flat
             round
             dense
-            @click="closeModal"
+            @click="handleHeaderBack"
             class="back-btn"
             :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
           >
@@ -32,28 +32,16 @@
             </svg>
           </q-btn>
           <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Receive') }}
+            {{ headerTitle }}
           </div>
-          <div class="header-actions">
-            <q-btn
-              v-if="hasLightningAddress"
-              flat
-              round
-              dense
-              @click="showLightningAddress"
-              class="address-btn"
-              :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
-            >
-              <Icon icon="tabler:at" width="20" height="20" />
-            </q-btn>
-          </div>
+          <div class="header-actions"></div>
         </div>
       </q-card-section>
 
       <!-- Content -->
       <q-card-section class="receive-content">
         <!-- Receive Mode Toggle (for Spark wallets) -->
-        <div v-if="isSparkWallet && !generatedInvoice && !showAddressView" class="receive-type-toggle">
+        <div v-if="isSparkWallet && !showSpecificInvoiceView && !showAmountInput" class="receive-type-toggle">
           <q-btn-toggle
             v-model="receiveMode"
             :options="receiveModeOptions"
@@ -141,8 +129,16 @@
           @deposits-updated="handleBitcoinDepositsUpdated"
         />
 
-        <!-- Lightning Invoice Display -->
-        <div class="lightning-receive" v-if="generatedInvoice">
+        <!-- Loading: minting default zero-amount Spark invoice -->
+        <div v-if="showDefaultZeroLoading" class="default-zero-loading">
+          <q-spinner-dots size="40px" :color="$q.dark.isActive ? 'white' : 'grey-7'" />
+          <div class="default-zero-loading-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Preparing invoice...') }}
+          </div>
+        </div>
+
+        <!-- Specific-amount Lightning Invoice Display -->
+        <div class="lightning-receive" v-else-if="showSpecificInvoiceView">
           <!-- Amount Section -->
           <div class="ln-amount-section">
             <span class="ln-amount" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
@@ -197,13 +193,64 @@
           </div>
         </div>
 
-        <!-- Lightning Address View -->
-        <div v-else-if="showAddressView && hasLightningAddress" class="address-view">
+        <!-- Default Zero-amount Spark Lightning Invoice -->
+        <div class="lightning-receive" v-else-if="showDefaultZeroInvoiceView">
+          <div class="qr-section">
+            <div class="qr-card" @click="copyInvoice">
+              <div class="qr-frame">
+                <vue-qrcode
+                  ref="invoiceQr"
+                  :value="'lightning:' + generatedInvoice.payment_request.toUpperCase()"
+                  :options="invoiceQrOptions"
+                  class="qr-code"
+                />
+              </div>
+            </div>
+            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Any amount · tap QR to copy') }}
+            </div>
+            <div class="ln-status" :class="paymentStatusClass">
+              <div class="ln-status-dot"></div>
+              <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
+            </div>
+          </div>
+
+          <div class="action-buttons action-buttons-three">
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="$emit('scan-withdraw')"
+            >
+              <Icon icon="tabler:download" width="18" height="18" />
+              <span>{{ $t('Redeem') }}</span>
+            </button>
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="shareInvoice"
+            >
+              <Icon icon="tabler:share" width="18" height="18" />
+              <span>{{ $t('Share') }}</span>
+            </button>
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="tapAmountButton"
+            >
+              <Icon icon="tabler:edit" width="18" height="18" />
+              <span>{{ $t('Amount') }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Lightning Address View (default for NWC/LNbits with LN address) -->
+        <div v-else-if="showLightningAddressView" class="address-view">
           <!-- Centered QR Section -->
           <div class="address-qr-section">
             <div class="qr-container" @click="copyLightningAddress">
               <div class="qr-wrapper">
                 <vue-qrcode
+                  ref="lightningAddressQr"
                   :value="'lightning:' + lightningAddress"
                   :options="qrOptions"
                   class="qr-code"
@@ -221,16 +268,38 @@
               <span class="address-text-value">{{ lightningAddress }}</span>
               <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
             </div>
+          </div>
 
-            <!-- User Hint -->
-            <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-              {{ $t('Your permanent payment address. Share this QR or address to receive payments anytime.') }}
-            </div>
+          <div class="action-buttons action-buttons-three">
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="$emit('scan-withdraw')"
+            >
+              <Icon icon="tabler:download" width="18" height="18" />
+              <span>{{ $t('Redeem') }}</span>
+            </button>
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="shareLightningAddress"
+            >
+              <Icon icon="tabler:share" width="18" height="18" />
+              <span>{{ $t('Share') }}</span>
+            </button>
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="tapAmountButton"
+            >
+              <Icon icon="tabler:edit" width="18" height="18" />
+              <span>{{ $t('Amount') }}</span>
+            </button>
           </div>
         </div>
 
-        <!-- Amount Section (only for invoice creation, not for static address views) -->
-        <div class="amount-section" v-else-if="!showSparkAddressView && !showBitcoinReceiveView">
+        <!-- Amount Section (keypad) -->
+        <div class="amount-section" v-else-if="showAmountKeypadView">
           <!-- Currency Toggle -->
           <div class="currency-toggle" @click="toggleCurrency"
                :class="$q.dark.isActive ? 'currency-toggle-dark' : 'currency-toggle-light'">
@@ -258,8 +327,8 @@
           </div>
         </div>
 
-        <!-- Description Section (only for invoice creation) -->
-        <div class="description-section" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView && !showBitcoinReceiveView">
+        <!-- Description Section (only on the keypad) -->
+        <div class="description-section" v-if="showAmountKeypadView">
           <div class="description-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
             {{ $t('Description (optional)') }}
           </div>
@@ -276,8 +345,8 @@
         </div>
       </q-card-section>
 
-      <!-- Footer (only for invoice creation) -->
-      <q-card-section class="receive-footer" v-if="!generatedInvoice && !showAddressView && !showSparkAddressView && !showBitcoinReceiveView">
+      <!-- Footer (only on the keypad) -->
+      <q-card-section class="receive-footer" v-if="showAmountKeypadView">
         <div class="receive-footer-buttons">
           <q-btn
             flat
@@ -363,7 +432,14 @@ export default {
       walletState: {},
       amountInSats: 0,
       isAmountFocused: false,
-      showAddressView: false,
+      // True after the user taps the "Amount" button to override the default
+      // QR view (LN address or zero-amount BOLT11) and enter the keypad.
+      // Stays false for wallets that have no default view — those land on
+      // the keypad directly because nothing else makes sense.
+      showAmountInput: false,
+      // Guard so we don't fire two parallel mints if the modal-open and
+      // tab-change paths both trigger.
+      isMintingDefaultZero: false,
       receiveMode: 'lightning', // 'lightning', 'spark', or 'bitcoin'
       // Payment monitoring
       paymentMonitor: null,
@@ -414,6 +490,69 @@ export default {
     },
     showBitcoinReceiveView() {
       return this.isSparkWallet && this.receiveMode === 'bitcoin' && !this.generatedInvoice;
+    },
+    // The user-created specific-amount invoice screen. Distinct from the
+    // default zero-amount view, which also lives in `generatedInvoice` but
+    // with `amount === 0`.
+    showSpecificInvoiceView() {
+      return !!this.generatedInvoice && this.generatedInvoice.amount > 0;
+    },
+    // Spark Lightning tab default: a zero-amount BOLT11 we mint lazily so
+    // the user can be paid without typing anything. Re-uses `generatedInvoice`
+    // as storage so the existing payment monitor wiring works unchanged.
+    showDefaultZeroInvoiceView() {
+      return !!this.generatedInvoice
+        && this.generatedInvoice.amount === 0
+        && this.isSparkWallet
+        && this.receiveMode === 'lightning'
+        && !this.showAmountInput;
+    },
+    // LN-address-capable wallets (NWC/LNbits with an address attached) open
+    // straight to this view. Spark is excluded because it has its own zero-
+    // amount default and a separate Spark-address tab.
+    showLightningAddressView() {
+      return !this.showAmountInput
+        && !this.generatedInvoice
+        && !this.isSparkWallet
+        && this.hasLightningAddress;
+    },
+    // True when the wallet has any default QR view to fall back to. Drives
+    // back-arrow behavior: with a default view, back returns there; without
+    // one, back closes the modal.
+    hasDefaultView() {
+      return this.showLightningAddressView
+        || this.showDefaultZeroInvoiceView
+        || (this.showAmountInput && (
+          this.hasLightningAddress
+          || (this.isSparkWallet && this.receiveMode === 'lightning')
+        ));
+    },
+    headerTitle() {
+      if (this.showSpecificInvoiceView || this.showAmountInput) {
+        return this.$t('Invoice');
+      }
+      return this.$t('Receive');
+    },
+    // The keypad view is the catch-all when no other view matches. Wallets
+    // without a LN address (and that aren't on Spark Lightning) land here
+    // by default; users with a default view land here only after tapping
+    // the "Amount" button.
+    showAmountKeypadView() {
+      if (this.showDefaultZeroLoading) return false;
+      return !this.showSparkAddressView
+        && !this.showBitcoinReceiveView
+        && !this.showSpecificInvoiceView
+        && !this.showDefaultZeroInvoiceView
+        && !this.showLightningAddressView;
+    },
+    // Brief loading state while we mint the Spark zero-amount default. Without
+    // this, the user would see the keypad flash before the QR appears.
+    showDefaultZeroLoading() {
+      return this.isSparkWallet
+        && this.receiveMode === 'lightning'
+        && this.isMintingDefaultZero
+        && !this.generatedInvoice
+        && !this.showAmountInput;
     },
     paymentStatusClass() {
       switch (this.paymentStatus) {
@@ -493,9 +632,36 @@ export default {
       if (newVal) {
         this.loadWalletState();
         this.resetForm();
+        // Mint the default zero-amount Spark Lightning invoice on open so
+        // the user lands on a scannable QR with no taps. Skipped for
+        // non-Spark wallets and for Spark when the active tab is Spark or
+        // Bitcoin (the receiveMode watcher handles tab-driven mints).
+        this.$nextTick(() => {
+          if (this.isSparkWallet && this.receiveMode === 'lightning') {
+            this.mintDefaultZeroInvoice();
+          }
+        });
       } else {
-        // Stop monitoring when modal closes
         this.stopPaymentMonitor();
+      }
+    },
+    // Spark wallets have a tab toggle. Mint when entering Lightning, tear
+    // down when leaving — but only for the *default zero-amount* invoice.
+    // A user-created specific-amount invoice (`amount > 0`) is left alone
+    // so switching tabs while waiting for a fixed-amount payment doesn't
+    // silently kill the monitor.
+    receiveMode(newMode, oldMode) {
+      if (newMode === oldMode) return;
+      const isDefaultZero = !!this.generatedInvoice && this.generatedInvoice.amount === 0;
+      if (oldMode === 'lightning' && newMode !== 'lightning' && isDefaultZero) {
+        this.stopPaymentMonitor();
+        this.generatedInvoice = null;
+        this.paymentStatus = PaymentStatus.PENDING;
+        this.paymentStatusMessage = '';
+      } else if (newMode === 'lightning' && oldMode !== 'lightning') {
+        if (this.isSparkWallet && !this.generatedInvoice && !this.showAmountInput) {
+          this.mintDefaultZeroInvoice();
+        }
       }
     }
   },
@@ -530,7 +696,8 @@ export default {
       this.description = '';
       this.generatedInvoice = null;
       this.amountInSats = 0;
-      this.showAddressView = false;
+      this.showAmountInput = false;
+      this.isMintingDefaultZero = false;
       this.receiveMode = 'lightning';
       this.paymentStatus = PaymentStatus.PENDING;
       this.paymentStatusMessage = '';
@@ -543,6 +710,151 @@ export default {
     closeModal() {
       this.stopPaymentMonitor();
       this.show = false;
+    },
+
+    /**
+     * Header back-arrow handler. Context-aware:
+     * - Specific-amount invoice → return to default view (or close).
+     * - Keypad after tapping Amount → return to default view.
+     * - No default view → close the modal.
+     */
+    handleHeaderBack() {
+      if (this.showSpecificInvoiceView) {
+        this.backFromInvoice();
+        return;
+      }
+      const canReturnToDefault = this.hasLightningAddress
+        || (this.isSparkWallet && this.receiveMode === 'lightning');
+      if (this.showAmountInput && canReturnToDefault) {
+        this.showAmountInput = false;
+        this.displayAmount = '';
+        this.amountInSats = 0;
+        if (this.isSparkWallet
+            && this.receiveMode === 'lightning'
+            && !this.generatedInvoice) {
+          this.mintDefaultZeroInvoice();
+        }
+        return;
+      }
+      this.closeModal();
+    },
+
+    /**
+     * Tap "Amount" on a default QR view. Tear down the default zero-amount
+     * monitor (if running), clear the default invoice, and switch to the
+     * keypad.
+     */
+    tapAmountButton() {
+      const wasDefaultZero = !!this.generatedInvoice
+        && this.generatedInvoice.amount === 0;
+      if (wasDefaultZero) {
+        this.stopPaymentMonitor();
+        this.generatedInvoice = null;
+        this.paymentStatus = PaymentStatus.PENDING;
+        this.paymentStatusMessage = '';
+      }
+      this.showAmountInput = true;
+      this.displayAmount = '';
+      this.amountInSats = 0;
+    },
+
+    /**
+     * Back from a specific-amount invoice. Returns to whatever default view
+     * the wallet has — LN address, or a freshly minted Spark zero-amount.
+     * Closes the modal if there is no default view to return to.
+     */
+    backFromInvoice() {
+      this.stopPaymentMonitor();
+      this.generatedInvoice = null;
+      this.paymentStatus = PaymentStatus.PENDING;
+      this.paymentStatusMessage = '';
+      this.isPaymentConfirmed = false;
+      this.displayAmount = '';
+      this.amountInSats = 0;
+      this.description = '';
+
+      if (this.isSparkWallet && this.receiveMode === 'lightning') {
+        this.showAmountInput = false;
+        this.mintDefaultZeroInvoice();
+      } else if (!this.isSparkWallet && this.hasLightningAddress) {
+        this.showAmountInput = false;
+      } else {
+        // No default view — close out.
+        this.closeModal();
+      }
+    },
+
+    /**
+     * Mint a zero-amount BOLT11 for the Spark Lightning tab and start the
+     * payment monitor. No-op on non-Spark wallets, on non-Lightning tabs, or
+     * if a mint is already in flight / cached.
+     *
+     * The invoice is stored in `generatedInvoice` (with `amount === 0`) so
+     * the existing Spark monitor wiring in `startSparkEventMonitor()` works
+     * unchanged. Views distinguish between this default and a user-created
+     * specific-amount invoice via the `amount > 0` check.
+     */
+    async mintDefaultZeroInvoice() {
+      if (this.isMintingDefaultZero) return;
+      if (this.generatedInvoice) return;
+      if (!this.isSparkWallet || this.receiveMode !== 'lightning') return;
+      if (this.showAmountInput) return;
+
+      this.isMintingDefaultZero = true;
+      try {
+        const provider = this.walletStore.getActiveProvider();
+        if (!provider) {
+          // Wallet locked or unavailable. The user can still tap Amount to
+          // create a fixed-amount invoice (which will prompt for unlock).
+          return;
+        }
+
+        const result = await provider.createInvoice({
+          amount: 0,
+          description: 'BuhoGO Payment',
+        });
+
+        // Race guard: the user may have switched tabs, tapped Amount, or
+        // closed the modal while the mint was in flight (e.g.
+        // openReceiveModalBitcoin sets the tab via $nextTick). Drop the
+        // result silently in those cases — we'd otherwise leak an orphaned
+        // invoice + monitor.
+        if (!this.show
+            || this.receiveMode !== 'lightning'
+            || this.showAmountInput
+            || this.generatedInvoice) {
+          return;
+        }
+
+        const paymentRequest = result.paymentRequest;
+        if (!paymentRequest) {
+          console.warn('Zero-amount mint returned no paymentRequest');
+          return;
+        }
+
+        let paymentHash = result.paymentHash;
+        if (!paymentHash) {
+          paymentHash = this._extractPaymentHashFromBolt11(paymentRequest);
+        }
+
+        this.generatedInvoice = {
+          payment_request: paymentRequest,
+          payment_hash: paymentHash,
+          invoice_id: result.id || null,
+          amount: 0,
+          description: 'BuhoGO Payment',
+          expires_at: result.expiresAt,
+          created_at: Math.floor(Date.now() / 1000),
+        };
+
+        this.startPaymentMonitor();
+      } catch (error) {
+        // Non-fatal — the user can still tap Amount to create a fixed-
+        // amount invoice. Network blips, wallet relocked, etc.
+        console.warn('Failed to mint default zero-amount invoice:', error?.message || error);
+      } finally {
+        this.isMintingDefaultZero = false;
+      }
     },
 
     /**
@@ -705,8 +1017,12 @@ export default {
           const status = await provider.getLightningReceiveStatus(invoiceId);
           if (state.cancelled || this.isPaymentConfirmed) return;
           if (status.isPaid) {
+            // `amountReceived` is the actual paid amount — required for
+            // zero-amount invoices where `status.amount` is 0.
             this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
-              amount: status.amount || this.generatedInvoice?.amount,
+              amount: status.amountReceived
+                || status.amount
+                || this.generatedInvoice?.amount,
               preimage: status.preimage
             });
             return;
@@ -732,7 +1048,9 @@ export default {
         if (this.isPaymentConfirmed) return;
         if (status.isPaid) {
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
-            amount: status.amount || this.generatedInvoice?.amount,
+            amount: status.amountReceived
+              || status.amount
+              || this.generatedInvoice?.amount,
             preimage: status.preimage
           });
         }
@@ -1169,9 +1487,24 @@ export default {
       }
     },
 
-    showLightningAddress() {
-      this.showAddressView = true;
-      this.generatedInvoice = null;
+    async shareLightningAddress() {
+      if (!this.lightningAddress) return;
+
+      const qrBlob = await qrBlobFromRef(this.$refs.lightningAddressQr);
+      const result = await shareContent({
+        title: this.$t('Lightning Address'),
+        text: this.lightningAddress,
+        files: qrBlob ? [{ blob: qrBlob, name: 'lightning-address.png', mimeType: 'image/png' }] : undefined,
+      });
+
+      if (result.success) {
+        this.$q.notify({ type: 'positive', message: this.$t('Shared') });
+      } else if (result.reason === 'unsupported') {
+        await this.copyLightningAddress();
+      } else if (result.reason === 'error') {
+        console.error('Failed to share Lightning address:', result.error);
+        await this.copyLightningAddress();
+      }
     },
 
     async copyLightningAddress() {
@@ -1607,6 +1940,40 @@ export default {
   justify-content: center;
   gap: 12px;
   margin-top: 12px;
+}
+
+/* Default zero-amount loading state */
+.default-zero-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 48px 16px;
+}
+.default-zero-loading-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* 3-button row: icon above label, equal width. Used on default-QR views
+   (LN address, Spark Lightning zero-amount) for Redeem/Share/Amount.
+   `margin-top: auto` anchors the row to the bottom of its flex-column
+   parent so the QR sits up top and the actions live at the bottom edge. */
+.action-buttons-three {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 16px;
+}
+.action-buttons-three .action-btn {
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 8px;
+  min-height: 68px;
+  font-size: 13px;
 }
 
 /* Share Invoice gradient button */
