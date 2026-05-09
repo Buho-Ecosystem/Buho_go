@@ -23,15 +23,19 @@
           ></div>
         </div>
 
-        <!-- Amount Display -->
+        <!-- Amount Display. The amount + fiat lines are hidden when we
+             can't determine the paid amount (zero-amount invoice paid via
+             the Spark event path, which carries no amount info). The
+             "Payment Received" label still shows so the user gets clear
+             confirmation. -->
         <div class="amount-section" :class="{ 'fade-in': showAmount }">
           <div class="amount-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
             {{ label || $t('Payment Received') }}
           </div>
-          <div class="amount-value" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+          <div v-if="amount > 0" class="amount-value" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
             {{ formatAmount(amount) }}
           </div>
-          <div v-if="fiatAmount" class="fiat-value" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+          <div v-if="amount > 0 && fiatAmount" class="fiat-value" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             {{ fiatAmount }}
           </div>
         </div>
