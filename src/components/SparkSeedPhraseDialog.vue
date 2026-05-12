@@ -390,6 +390,15 @@ export default {
     async onReady() {
       if (this.isAuthenticating || this.isLoadingMnemonic) return;
 
+      // Only re-prompt for biometrics when the user has opted into App
+      // Lock. If they haven't, the "I'm ready" tap is the consent and we
+      // go straight to reveal — matches the gate in App.vue (which also
+      // keys off walletStore.biometricsEnabled) and the coinsnap flow.
+      if (!this.walletStore.biometricsEnabled) {
+        await this.loadMnemonicAndReveal();
+        return;
+      }
+
       // Keep the button in a loading state for the whole probe so a slow
       // plugin response (100-300ms on Android cold calls) doesn't invite
       // a double-tap.
@@ -402,8 +411,8 @@ export default {
         if (!this.modelValue) return;
 
         if (!available) {
-          // Web or devices without any lock — no system prompt exists,
-          // go straight to the reveal. The user approved via "I'm ready".
+          // App Lock is on but the device no longer reports a usable
+          // credential. Fall through rather than dead-end the user.
           await this.loadMnemonicAndReveal();
           return;
         }
@@ -434,7 +443,15 @@ export default {
         if (!ok) {
           // Cancelled or failed. Stay on authExplain so retry is one tap
           // away — going all the way back to context punishes the user
-          // for a mis-tap on the system sheet.
+          // for a mis-tap on the system sheet. Surface a notify so a
+          // genuine plugin failure (no biometrics enrolled + fallback
+          // misfires on Android) doesn't read as a dead button.
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Verification was not completed'),
+            caption: this.$t('Try again, or check that your phone has a screen lock set up.'),
+            timeout: 3500,
+          });
           return;
         }
 
