@@ -15,6 +15,12 @@ public class MainActivity extends BridgeActivity {
     private PendingIntent nfcPendingIntent;
     private IntentFilter[] nfcIntentFilters;
 
+    /**
+     * Register Capacitor plugins and prepare foreground NFC dispatch.
+     * Foreground dispatch lets this activity claim exclusive tag
+     * priority over any other installed wallet while it is in the
+     * foreground, bypassing the Android app chooser entirely.
+     */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NfcPlugin.class);
@@ -32,15 +38,31 @@ public class MainActivity extends BridgeActivity {
             flags
         );
 
+        // Mirror the manifest's NFC intent-filters so foreground dispatch
+        // catches every action dispatchNfcIntent() knows how to route.
+        // Without TAG_DISCOVERED and TECH_DISCOVERED the system would fall
+        // back to the manifest for non-NDEF tags and the chooser could
+        // reappear.
         try {
             IntentFilter ndef = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
             ndef.addDataType("*/*");
-            nfcIntentFilters = new IntentFilter[]{ ndef };
+            IntentFilter tag = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
+            IntentFilter tech = new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED);
+            nfcIntentFilters = new IntentFilter[]{ ndef, tag, tech };
         } catch (IntentFilter.MalformedMimeTypeException e) {
-            nfcIntentFilters = null;
+            // "*/*" is well-formed so this branch is unreachable in
+            // practice. If it ever fired we'd rather disable foreground
+            // dispatch entirely than register a null filter array, which
+            // would silently widen registration to every NDEF tag the
+            // device sees.
+            nfcAdapter = null;
         }
     }
 
+    /**
+     * Re-enable foreground dispatch and process any tag intent the
+     * activity was launched with (cold start via tag scan).
+     */
     @Override
     protected void onResume() {
         super.onResume();
@@ -50,6 +72,10 @@ public class MainActivity extends BridgeActivity {
         dispatchNfcIntent(getIntent());
     }
 
+    /**
+     * Release foreground dispatch so the rest of the system regains
+     * its normal NFC routing while the activity is not visible.
+     */
     @Override
     protected void onPause() {
         super.onPause();
@@ -58,6 +84,11 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /**
+     * Receive tag intents delivered while the activity is already
+     * running. setIntent() caches the intent so onResume sees the
+     * same value on the next lifecycle pass.
+     */
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -75,6 +106,10 @@ public class MainActivity extends BridgeActivity {
             if (plugin != null) {
                 plugin.handleNfcIntent(intent);
             }
+            // Consume the intent so a subsequent onResume cycle cannot
+            // re-dispatch the same tag (e.g. user backgrounds and
+            // returns after a Boltcard scan would otherwise replay it).
+            setIntent(new Intent());
         }
     }
 }
