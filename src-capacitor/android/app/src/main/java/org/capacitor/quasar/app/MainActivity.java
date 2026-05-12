@@ -28,7 +28,7 @@ public class MainActivity extends BridgeActivity {
      * Called on app start — handles the case where the app was launched via NFC tag scan.
      */
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         dispatchNfcIntent(getIntent());
     }
