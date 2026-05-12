@@ -59,8 +59,7 @@
             class="seed-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="readyLabel"
-            :loading="isAuthenticating"
-            :disable="isLoadingMnemonic"
+            :loading="isAuthenticating || isLoadingMnemonic"
             @click="onReady"
           />
         </q-card-actions>
