@@ -380,7 +380,7 @@
             :class="$q.dark.isActive ? 'create-invoice-btn-dark' : 'create-invoice-btn-light'"
             :loading="isCreatingInvoice"
             @click="createInvoice"
-            :disable="!isValidAmount"
+            :disable="!isValidAmount || !hasActiveWallet"
             no-caps
             unelevated
           >
@@ -521,6 +521,17 @@ export default {
     },
     isValidAmount() {
       return this.amountInSats > 0;
+    },
+    /**
+     * True when the Pinia wallet store has an active wallet that exists.
+     * Used to short-circuit createInvoice and disable the button when the
+     * store is empty (fresh install, HMR state wipe, etc.) instead of
+     * letting `activeWalletType` crash inside `inferWalletType(undefined)`.
+     */
+    hasActiveWallet() {
+      const id = this.walletStore.activeWalletId;
+      const wallets = this.walletStore.wallets || [];
+      return !!id && wallets.some((w) => w.id === id);
     },
     /**
      * Source of truth for invoice amount. Derived from the keypad input
@@ -1463,6 +1474,17 @@ export default {
 
     async createInvoice() {
       if (!this.isValidAmount) return;
+
+      // Guard against missing active wallet — the activeWalletType getter
+      // crashes inside inferWalletType(undefined) and surfaces an opaque
+      // TypeError. Catch it here with a clear message instead.
+      if (!this.hasActiveWallet) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('No active wallet. Please connect a wallet first.'),
+        });
+        return;
+      }
 
       this.isCreatingInvoice = true;
       try {
