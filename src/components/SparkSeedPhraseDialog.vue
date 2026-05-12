@@ -88,10 +88,7 @@
             </div>
             <div class="seed-callout-body">
               <div class="seed-callout-text">
-                {{ isDevicePinOnly
-                  ? $t('You are seeing this because no fingerprint or face is set up on this device. Your device lock is used instead.')
-                  : $t('Your biometric is processed by your phone, not by BuhoGO. We never see it.')
-                }}
+                {{ authPrivacyText }}
               </div>
             </div>
           </div>
@@ -315,6 +312,16 @@ export default {
 
     authBody() {
       return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can see your recovery phrase, even if they have your unlocked phone.')}`;
+    },
+
+    authPrivacyText() {
+      if (this.isDevicePinOnly) {
+        return this.$t('You are seeing this because no fingerprint or face is set up on this device. Your device lock is used instead.');
+      }
+      // OS sheet still exposes a "Use PIN" fallback (useFallback: true).
+      // Tell the user so the PIN path is discoverable without having to
+      // first tap the biometric prompt and look for the small label.
+      return `${this.$t('Your biometric is processed by your phone, not by BuhoGO. We never see it.')} ${this.$t("Your phone's PIN, pattern, or password also works.")}`;
     },
 
     countdownText() {

@@ -140,9 +140,14 @@ export default {
     },
 
     privacyText() {
-      return this.copy.isDevicePinOnly
-        ? this.$t('You are seeing this because no fingerprint or face is set up on this device. Your phone will ask for your PIN, pattern, or password when the app opens.')
-        : this.$t('Your biometric is processed by your phone, not by BuhoGO. We never see it.');
+      if (this.copy.isDevicePinOnly) {
+        return this.$t('You are seeing this because no fingerprint or face is set up on this device. Your phone will ask for your PIN, pattern, or password when the app opens.');
+      }
+      // Biometrics are enrolled, but the OS sheet still offers a
+      // "Use PIN" fallback (we pass useFallback: true). Spell that out
+      // so users who would rather skip biometrics know the device PIN
+      // is an accepted path too.
+      return `${this.$t('Your biometric is processed by your phone, not by BuhoGO. We never see it.')} ${this.$t("Your phone's PIN, pattern, or password also works.")}`;
     },
   },
 
