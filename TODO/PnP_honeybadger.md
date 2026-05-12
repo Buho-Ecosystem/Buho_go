@@ -158,18 +158,6 @@ function convertMerchantQRToLightningAddress(qrContent, network = 'mainnet') {
 | Blink/Galoy | [PR #331](https://github.com/GaloyMoney/galoy-client/pull/331) — `src/parsing/merchants.ts` |
 | MoneyBadger WooCommerce | [GitHub](https://github.com/MoneyBadgers/moneybadger-woocommerce) |
 
----
-
-## Questions for MoneyBadger
-
-- [ ] Is a partnership/API agreement required for wallet integration, or is the LNURL-pay resolution on `cryptoqr.net` open to any Lightning wallet?
-- [ ] Are there rate limits on Lightning Address resolution?
-- [ ] Is there a fee structure for wallet providers?
-- [ ] Can we get official merchant logos for use in-app?
-- [ ] Is the staging environment (`staging.cryptoqr.net`) available for testing?
-- [ ] Are there plans to add more merchants beyond the current list?
-- [ ] Do they have a webhook or callback for payment confirmation on the wallet side?
-- [ ] Contact: `info@moneybadger.co.za` or `info@cryptoconvert.co.za`
 
 ---
 

@@ -16,7 +16,21 @@
  * - GET  /api/v1/payments/<hash> - Check payment status
  * - GET  /api/v1/payments - List payments
  * - POST /api/v1/payments/decode - Decode invoice
+ *
+ * Optional (lnurlp extension, feature-detected at runtime):
+ * - GET  /lnurlp/api/v1/links - List pay links (lightning addresses when `username` is set)
+ * - POST /lnurlp/api/v1/links - Create a pay link / lightning address
  */
+
+// Defaults applied when creating a new lightning address via the lnurlp extension.
+// These are chosen for a good out-of-the-box experience; power users can still
+// fine-tune any link directly in the LNBits admin UI afterwards.
+const LN_ADDRESS_DEFAULTS = Object.freeze({
+  minSats: 1,
+  maxSats: 1_000_000,
+  commentChars: 300,  // generous comment field so senders can leave a message
+  zapsEnabled: true,  // nostr zaps on by default
+});
 
 import { WalletProvider } from './WalletProvider';
 
@@ -40,43 +54,55 @@ export class LNBitsWalletProvider extends WalletProvider {
   }
 
   /**
-   * Make authenticated API request to LNBits
+   * Make an authenticated API request to LNBits.
+   *
+   * Errors thrown from here carry classification metadata so callers (most
+   * importantly `setError`) can tell a credential failure apart from a
+   * transient connectivity blip:
+   *   - `error.status`         : HTTP status code, when the server responded
+   *   - `error.isNetworkError` : true when fetch itself rejected (offline,
+   *                              DNS, TLS, refused). No status available.
    */
   async _apiRequest(endpoint, options = {}) {
     const url = `${this.serverUrl}${endpoint}`;
     const headers = {
       'X-Api-Key': this.adminKey,
       'Content-Type': 'application/json',
-      ...options.headers
+      ...options.headers,
     };
 
+    let response;
     try {
-      const response = await fetch(url, {
-        ...options,
-        headers
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.detail || errorJson.message || errorText;
-        } catch {
-          errorMessage = errorText || `HTTP ${response.status}`;
-        }
-        throw new Error(`LNBits API error: ${errorMessage}`);
-      }
-
-      const text = await response.text();
-      if (!text) return null;
-      return JSON.parse(text);
+      response = await fetch(url, { ...options, headers });
     } catch (error) {
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error('Network error: Unable to reach LNBits server');
+      // fetch() rejects with TypeError for genuine transport failures.
+      // The credentials may still be perfectly valid, so we tag the error
+      // rather than letting it look like a credential problem upstream.
+      if (error.name === 'TypeError') {
+        const networkError = new Error('Network error: Unable to reach LNBits server');
+        networkError.isNetworkError = true;
+        throw networkError;
       }
       throw error;
     }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      let detail;
+      try {
+        const errorJson = JSON.parse(errorText);
+        detail = errorJson.detail || errorJson.message || errorText;
+      } catch {
+        detail = errorText || `HTTP ${response.status}`;
+      }
+      const apiError = new Error(`LNBits API error: ${detail}`);
+      apiError.status = response.status;
+      throw apiError;
+    }
+
+    const text = await response.text();
+    if (!text) return null;
+    return JSON.parse(text);
   }
 
   async connect() {
@@ -275,7 +301,8 @@ export class LNBitsWalletProvider extends WalletProvider {
         timestamp: this._parseTimestamp(tx.time || tx.created_at),
         description: tx.memo || '',
         status: this._parsePaymentStatus(tx.status, tx.pending),
-        fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0
+        fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,
+        extra: tx.extra || null
       }));
     } catch (error) {
       console.warn('getTransactions error:', error.message);
@@ -469,8 +496,166 @@ export class LNBitsWalletProvider extends WalletProvider {
   }
 
   // ==========================================
+  // Lightning Address support (lnurlp extension)
+  // ==========================================
+
+  /**
+   * Check whether the lnurlp extension is installed and reachable on this server.
+   * Used to decide whether it's worth prompting the user to add a lightning address.
+   *
+   * @returns {Promise<boolean>} true if the extension responds, false otherwise
+   */
+  async checkLnurlpAvailable() {
+    try {
+      await this._apiRequest('/lnurlp/api/v1/links?all_wallets=false');
+      return true;
+    } catch (error) {
+      // Any failure (extension missing, 404, network, auth) → treat as unavailable.
+      // We intentionally don't surface the error: this is a passive capability probe.
+      return false;
+    }
+  }
+
+  /**
+   * List lightning addresses already configured on this wallet.
+   *
+   * Only pay links that have a `username` set are returned — those are the ones
+   * that resolve as `username@domain` lightning addresses. Regular pay links
+   * (no username) are filtered out.
+   *
+   * @returns {Promise<Array<{id: string, username: string, address: string, min: number, max: number}>>}
+   */
+  async listLightningAddresses() {
+    let links;
+    try {
+      links = await this._apiRequest('/lnurlp/api/v1/links?all_wallets=false');
+    } catch (error) {
+      // Caller should have already called checkLnurlpAvailable; but be defensive.
+      return [];
+    }
+
+    if (!Array.isArray(links)) return [];
+
+    const domain = this._getServerDomain();
+
+    return links
+      .filter((link) => link && typeof link.username === 'string' && link.username.trim().length > 0)
+      .map((link) => ({
+        id: link.id,
+        username: link.username,
+        // Prefer the server-reported domain if present (handles custom LN-address domains),
+        // otherwise derive from serverUrl.
+        address: `${link.username}@${link.domain || domain}`,
+        min: link.min,
+        max: link.max,
+      }));
+  }
+
+  /**
+   * Create a new lightning address (lnurlp pay link with a username) on this wallet.
+   *
+   * Applies BuhoGO's sensible defaults: 1-1,000,000 sat range, 300-char comments,
+   * and nostr zaps enabled. These are overridable by passing explicit fields.
+   *
+   * @param {Object} params
+   * @param {string} params.username - Desired username (the part before the @)
+   * @param {string} [params.description] - Human-readable description shown to senders
+   * @param {number} [params.min] - Minimum amount in sats
+   * @param {number} [params.max] - Maximum amount in sats
+   * @param {number} [params.commentChars] - Max comment length (0-799)
+   * @param {boolean} [params.zaps] - Enable nostr zaps
+   * @returns {Promise<{id: string, username: string, address: string}>}
+   * @throws {Error} if the username is already taken or the server rejects the request
+   */
+  async createLightningAddress({
+    username,
+    description,
+    min = LN_ADDRESS_DEFAULTS.minSats,
+    max = LN_ADDRESS_DEFAULTS.maxSats,
+    commentChars = LN_ADDRESS_DEFAULTS.commentChars,
+    zaps = LN_ADDRESS_DEFAULTS.zapsEnabled,
+  } = {}) {
+    const cleanUsername = (username || '').trim().toLowerCase();
+    if (!cleanUsername) {
+      throw new Error('Username is required');
+    }
+
+    const walletLabel = this.walletInfo?.name || this.walletData?.name || 'BuhoGO';
+    const payload = {
+      description: description || `Lightning Address for ${walletLabel}`,
+      min,
+      max,
+      comment_chars: commentChars,
+      username: cleanUsername,
+      zaps,
+      // Fiat fields left null so the paylink operates in sats. Users can switch
+      // to fiat-denominated paylinks via the LNBits admin UI if they want to.
+      currency: null,
+      fiat_base_multiplier: 100,
+    };
+
+    const response = await this._apiRequest('/lnurlp/api/v1/links', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (!response || !response.id) {
+      throw new Error('Unexpected response from server when creating the lightning address');
+    }
+
+    const domain = response.domain || this._getServerDomain();
+    return {
+      id: response.id,
+      username: response.username || cleanUsername,
+      address: `${response.username || cleanUsername}@${domain}`,
+    };
+  }
+
+  /**
+   * Extract the hostname portion of the LNBits server URL for use as the
+   * lightning-address domain (e.g. "https://my.lnbits.com" → "my.lnbits.com").
+   *
+   * @returns {string} hostname, or the raw serverUrl if parsing fails
+   * @private
+   */
+  _getServerDomain() {
+    try {
+      return new URL(this.serverUrl).hostname;
+    } catch {
+      return this.serverUrl;
+    }
+  }
+
+  // ==========================================
   // Private helper methods
   // ==========================================
+
+  /**
+   * Override the base-class behaviour, which flips `isConnected = false`
+   * on every recorded error.
+   *
+   * LNBits has no persistent connection — just stateless HTTPS authenticated
+   * by the admin key. Every request stands on its own; a failed call (timeout,
+   * 5xx, brief Wi-Fi drop, even a revoked-key 404) is not evidence the
+   * underlying state is broken, and there is nothing to "reconnect" that
+   * could recover from a real credential failure: the next request would
+   * fail identically with the same key.
+   *
+   * Tearing down `isConnected` on every error is what caused the long-running
+   * "payments fail until app restart" bug — any single hiccup from the 30-second
+   * balance poll would permanently mark the wallet disconnected, and every
+   * subsequent send would throw "wallet is not connected" until relaunch.
+   *
+   * We therefore only record the error message. The connection state is
+   * cleared exclusively by `disconnect()` (explicit logout / wallet removal).
+   * Real credential failures propagate to the caller as the original API
+   * error (e.g. LNBits returns HTTP 404 "Wallet not found." when a key has
+   * been revoked), which is far more actionable than a generic
+   * "wallet is not connected".
+   */
+  setError(error) {
+    this.connectionError = error instanceof Error ? error.message : String(error);
+  }
 
   _ensureConnected() {
     if (!this.isConnected) {

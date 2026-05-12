@@ -1,3 +1,20 @@
+<!--
+  SendModal
+  Camera-first scan flow opened from the wallet's Send button. Below the
+  scanner sit three soft pill tiles ("Manual" / "Paste" / "Contacts") that
+  cover every non-QR input path:
+
+    - Manual:   bottom sheet with one auto-detecting input field. Friendly
+                placeholder, type chip appears as the user types or pastes.
+    - Paste:    reads the clipboard, fills the Manual sheet, lets the user
+                verify before committing. No silent fire-and-forget.
+    - Contacts: delegates to AddressBookQuickModal — same UI used from the
+                wallet home, single source of truth for the contact picker.
+
+  All payment-routing logic (BIP21 unwrap, SA-retailer QR conversion,
+  Lightning/LNURL/Spark/Bitcoin detection, parent emit) is unchanged from
+  the previous version — only the presentation layer was rebuilt.
+-->
 <template>
   <q-dialog
     v-model="show"
@@ -19,17 +36,7 @@
             class="back-btn"
             :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
           >
-            <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
-                 fill="none">
-              <path
-                d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-                fill="white"/>
-            </svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path
-                d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z"
-                fill="#6D6D6D"/>
-            </svg>
+            <Icon icon="tabler:chevron-left" width="20" height="20" />
           </q-btn>
           <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
             {{ $t('Send') }}
@@ -48,9 +55,10 @@
           playsinline
         />
 
-        <!-- Processing Overlay -->
+        <!-- Processing Overlay — neutral grey, no brand accents in the
+             scanner per design direction. -->
         <div v-if="isProcessing" class="processing-overlay">
-          <q-spinner-dots color="#15DE72" size="3rem"/>
+          <q-spinner-dots color="grey-5" size="3rem" />
           <div class="processing-text">{{ $t('Processing payment...') }}</div>
         </div>
 
@@ -61,288 +69,134 @@
           <div class="error-subtitle">{{ cameraError }}</div>
           <q-btn
             class="retry-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :class="$q.dark.isActive ? 'retry-btn-dark' : 'retry-btn-light'"
             :label="$t('Retry')"
             @click="initializeCamera"
             no-caps
+            unelevated
           />
-        </div>
-
-        <!-- Scanning Frame -->
-        <div v-if="showCamera && !isProcessing" class="scanning-frame">
-          <div class="frame-corner top-left"></div>
-          <div class="frame-corner top-right"></div>
-          <div class="frame-corner bottom-left"></div>
-          <div class="frame-corner bottom-right"></div>
         </div>
       </div>
 
-      <!-- Bottom Actions -->
-      <q-card-section class="send-actions">
+      <!-- Bottom Actions: three pill tiles. Same horizontal rhythm,
+           softer language. -->
+      <q-card-section class="send-actions" :class="$q.dark.isActive ? 'actions-dark' : 'actions-light'">
         <div class="action-buttons">
-          <q-btn
-            flat
-            class="action-btn"
-            :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-            @click="showManualInput"
+          <button
+            type="button"
+            class="action-tile"
+            :class="$q.dark.isActive ? 'action-tile-dark' : 'action-tile-light'"
+            @click="openManual"
           >
-            <div class="btn-content">
-              <Icon icon="tabler:keyboard" width="22" height="22" class="btn-icon" />
-              <span class="btn-label">{{ $t('Manual') }}</span>
-            </div>
-          </q-btn>
+            <Icon icon="tabler:keyboard" width="22" height="22" class="tile-icon" />
+            <span class="tile-label">{{ $t('Manual') }}</span>
+          </button>
 
-          <q-btn
-            flat
-            class="action-btn"
-            :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+          <button
+            type="button"
+            class="action-tile"
+            :class="$q.dark.isActive ? 'action-tile-dark' : 'action-tile-light'"
             @click="pasteFromClipboard"
           >
-            <div class="btn-content">
-              <Icon icon="tabler:clipboard" width="22" height="22" class="btn-icon" />
-              <span class="btn-label">{{ $t('Paste') }}</span>
-            </div>
-          </q-btn>
+            <Icon icon="tabler:clipboard" width="22" height="22" class="tile-icon" />
+            <span class="tile-label">{{ $t('Paste') }}</span>
+          </button>
 
-          <q-btn
-            flat
-            class="action-btn"
-            :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-            @click="showContactPicker"
+          <button
+            type="button"
+            class="action-tile"
+            :class="$q.dark.isActive ? 'action-tile-dark' : 'action-tile-light'"
+            @click="openContacts"
           >
-            <div class="btn-content">
-              <Icon icon="tabler:address-book" width="22" height="22" class="btn-icon" />
-              <span class="btn-label">{{ $t('Contacts') }}</span>
-            </div>
-          </q-btn>
+            <Icon icon="tabler:address-book" width="22" height="22" class="tile-icon" />
+            <span class="tile-label">{{ $t('Contacts') }}</span>
+          </button>
         </div>
       </q-card-section>
     </q-card>
 
-    <!-- Manual Input Dialog -->
-    <q-dialog v-model="showManualDialog" class="manual-dialog-backdrop">
-      <q-card class="manual-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="manual-header">
-          <div class="manual-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Who do you want to pay?') }}
-          </div>
-          <q-btn flat round dense v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
-        </q-card-section>
+    <!-- ─────────────  MANUAL INPUT (bottom sheet)  ───────────── -->
+    <q-dialog
+      v-model="showManualDialog"
+      position="bottom"
+      class="manual-sheet-dialog"
+    >
+      <q-card class="manual-sheet" :class="$q.dark.isActive ? 'manual-sheet-dark' : 'manual-sheet-light'">
+        <div class="grab-bar"></div>
 
-        <q-card-section class="manual-content">
-          <q-input
+        <header class="sheet-top">
+          <q-btn flat round dense v-close-popup class="sheet-top-btn">
+            <Icon icon="tabler:x" width="20" height="20" />
+          </q-btn>
+          <div class="sheet-top-title">{{ $t('Pay anyone') }}</div>
+          <div class="sheet-top-spacer"></div>
+        </header>
+
+        <section class="sheet-body">
+          <div class="input-label-row">
+            <div class="input-label">{{ $t('Payment address or invoice') }}</div>
+            <transition name="type-pill">
+              <div
+                v-if="detectedInputType"
+                class="detected-pill"
+                :class="`detected-pill--${detectedInputType}`"
+              >
+                <img
+                  v-if="detectedInputType === 'spark'"
+                  width="11" height="11"
+                  :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
+                  alt="Spark"
+                />
+                <Icon v-else :icon="detectedInputIcon" width="12" height="12" />
+                <span>{{ detectedInputLabel }}</span>
+              </div>
+            </transition>
+          </div>
+
+          <textarea
             v-model="manualInput"
-            outlined
-            :label="$t('Paste invoice or enter address')"
-            :placeholder="manualInputPlaceholder"
-            class="manual-input"
-            :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
-            color="green"
-            autofocus
-            :rules="[validatePaymentInput]"
+            class="manual-textarea"
+            :class="[
+              $q.dark.isActive ? 'manual-textarea-dark' : 'manual-textarea-light',
+              manualInputShowsError ? 'manual-textarea--error' : ''
+            ]"
+            :placeholder="$t('Paste an invoice or enter an address from your friend or shop')"
+            rows="3"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            ref="manualTextarea"
           />
-        </q-card-section>
 
-        <q-card-actions align="right" class="manual-actions" :class="$q.dark.isActive ? 'actions-dark' : 'actions-light'">
-          <q-btn flat :label="$t('Cancel')" v-close-popup :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"/>
-          <q-btn
-            flat
-            :label="$t('Continue')"
-            class="continue-btn"
+          <div class="input-helper">
+            <template v-if="manualInputShowsError">
+              <Icon icon="tabler:alert-circle" width="13" height="13" class="helper-icon-error" />
+              <span>{{ $t("We don't recognize this format") }}</span>
+            </template>
+            <template v-else>
+              <span>{{ $t('Works with Lightning, Spark, Bitcoin, and LNURL') }}</span>
+            </template>
+          </div>
+        </section>
+
+        <footer class="sheet-footer">
+          <button
+            type="button"
+            class="primary-cta"
+            :disabled="!isValidManualInput"
             @click="processManualInput"
-            :disable="!isValidManualInput"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <!-- Contact Picker Dialog -->
-    <q-dialog v-model="showContactDialog" class="contact-dialog-backdrop">
-      <q-card class="contact-picker-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="contact-picker-header">
-          <div class="contact-picker-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Choose a contact') }}
-          </div>
-          <q-btn flat round dense v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
-        </q-card-section>
-
-        <!-- Search (only show if 5+ contacts) -->
-        <q-card-section v-if="contacts.length >= 5" class="contact-search-section">
-          <q-input
-            v-model="contactSearch"
-            outlined
-            dense
-            :placeholder="$t('Search contacts...')"
-            class="contact-search"
-            :class="$q.dark.isActive ? 'manual-input-dark' : 'manual-input-light'"
           >
-            <template v-slot:prepend>
-              <Icon icon="tabler:search" :style="{ color: $q.dark.isActive ? '#9e9e9e' : '#757575' }" />
-            </template>
-            <template v-slot:append v-if="contactSearch">
-              <Icon icon="tabler:x" class="cursor-pointer" @click="contactSearch = ''" />
-            </template>
-          </q-input>
-        </q-card-section>
-
-        <!-- Contact List -->
-        <q-card-section class="contact-list-section">
-          <!-- Empty State -->
-          <div v-if="contacts.length === 0" class="contact-empty-state">
-            <Icon icon="tabler:users" width="48" height="48" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
-            <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('No contacts yet') }}
-            </div>
-            <div class="empty-subtitle" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-              {{ $t('Save contacts in the Address Book to quickly pay them') }}
-            </div>
-            <q-btn
-              unelevated
-              no-caps
-              class="add-contact-cta"
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-              @click="goToAddressBook"
-            >
-              <Icon icon="tabler:plus" class="q-mr-sm" />
-              {{ $t('Add Contact') }}
-            </q-btn>
-          </div>
-
-          <!-- No Results -->
-          <div v-else-if="!hasContactsToShow" class="contact-empty-state">
-            <Icon icon="tabler:search" width="48" height="48" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
-            <div class="empty-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('No matches found') }}
-            </div>
-          </div>
-
-          <!-- Sectioned Contact List -->
-          <div v-else class="contact-list">
-            <!-- Favorites Section -->
-            <template v-if="favoriteContacts.length > 0">
-              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
-                <Icon icon="tabler:star" width="14" height="14" style="color: #ffc107;" />
-                <span>{{ $t('Favorites') }}</span>
-              </div>
-              <div
-                v-for="contact in favoriteContacts"
-                :key="'fav-' + contact.id"
-                class="contact-item"
-                :class="[
-                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
-                  { 'contact-disabled': !canPayContact(contact) }
-                ]"
-                @click="selectContact(contact)"
-              >
-                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
-                  {{ contact.name.charAt(0).toUpperCase() }}
-                </div>
-                <div class="contact-info">
-                  <div class="contact-name-row">
-                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
-                      {{ contact.name }}
-                    </div>
-                    <Icon icon="tabler:star" width="12" height="12" style="color: #ffc107;" class="q-ml-xs" />
-                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
-                      <Icon :icon="getContactTypeIcon(contact)" width="10" height="10" />
-                      <span>{{ getContactTypeLabel(contact) }}</span>
-                    </div>
-                  </div>
-                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                    {{ getContactAddress(contact) }}
-                  </div>
-                </div>
-                <Icon icon="tabler:chevron-right" width="20" height="20" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
-              </div>
-            </template>
-
-            <!-- Recent Section -->
-            <template v-if="recentContacts.length > 0">
-              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
-                <Icon icon="tabler:clock" width="14" height="14" />
-                <span>{{ $t('Recent') }}</span>
-              </div>
-              <div
-                v-for="contact in recentContacts"
-                :key="'recent-' + contact.id"
-                class="contact-item"
-                :class="[
-                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
-                  { 'contact-disabled': !canPayContact(contact) }
-                ]"
-                @click="selectContact(contact)"
-              >
-                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
-                  {{ contact.name.charAt(0).toUpperCase() }}
-                </div>
-                <div class="contact-info">
-                  <div class="contact-name-row">
-                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
-                      {{ contact.name }}
-                    </div>
-                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
-                      <Icon :icon="getContactTypeIcon(contact)" width="10" height="10" />
-                      <span>{{ getContactTypeLabel(contact) }}</span>
-                    </div>
-                  </div>
-                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                    {{ getContactAddress(contact) }}
-                  </div>
-                </div>
-                <Icon icon="tabler:chevron-right" width="20" height="20" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
-              </div>
-            </template>
-
-            <!-- All Contacts Section -->
-            <template v-if="otherContacts.length > 0">
-              <div class="contact-section-header" :class="$q.dark.isActive ? 'section-header-dark' : 'section-header-light'">
-                <Icon icon="tabler:users" width="14" height="14" />
-                <span>{{ $t('All Contacts') }}</span>
-              </div>
-              <div
-                v-for="contact in otherContacts"
-                :key="'other-' + contact.id"
-                class="contact-item"
-                :class="[
-                  $q.dark.isActive ? 'contact-item-dark' : 'contact-item-light',
-                  { 'contact-disabled': !canPayContact(contact) }
-                ]"
-                @click="selectContact(contact)"
-              >
-                <div class="contact-avatar" :style="{ backgroundColor: contact.color }">
-                  {{ contact.name.charAt(0).toUpperCase() }}
-                </div>
-                <div class="contact-info">
-                  <div class="contact-name-row">
-                    <div class="contact-name" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
-                      {{ contact.name }}
-                    </div>
-                    <div class="contact-type-badge" :class="getContactTypeBadgeClass(contact)">
-                      <Icon :icon="getContactTypeIcon(contact)" width="10" height="10" />
-                      <span>{{ getContactTypeLabel(contact) }}</span>
-                    </div>
-                  </div>
-                  <div class="contact-address" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                    {{ getContactAddress(contact) }}
-                  </div>
-                </div>
-                <Icon icon="tabler:chevron-right" width="20" height="20" :style="{ color: $q.dark.isActive ? '#757575' : '#9e9e9e' }" />
-              </div>
-            </template>
-          </div>
-        </q-card-section>
+            {{ $t('Continue') }}
+          </button>
+        </footer>
       </q-card>
     </q-dialog>
+
+    <!-- ─────────────  CONTACTS (delegated)  ───────────── -->
+    <AddressBookQuickModal
+      v-model="showQuickContacts"
+      @pay-contact="onContactPicked"
+    />
   </q-dialog>
 </template>
 
@@ -351,9 +205,19 @@ import QrScanner from 'qr-scanner';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
+import { parseBip21, selectBip21Destination } from '../utils/bip21';
+import {
+  isSparkAddress,
+  isLightningInvoice,
+  isLnurl,
+  isBitcoinAddress,
+  isLightningAddress,
+} from '../utils/addressUtils';
+import AddressBookQuickModal from './AddressBookQuickModal.vue';
 
 export default {
   name: 'SendModal',
+  components: { AddressBookQuickModal },
   props: {
     modelValue: {
       type: Boolean,
@@ -372,8 +236,7 @@ export default {
       isProcessing: false,
       cameraError: null,
       showManualDialog: false,
-      showContactDialog: false,
-      contactSearch: '',
+      showQuickContacts: false,
       manualInput: '',
       qrScanner: null,
       videoElement: null
@@ -388,56 +251,69 @@ export default {
         this.$emit('update:modelValue', value);
       }
     },
-    isValidManualInput() {
-      return this.manualInput.trim().length > 0 && this.validatePaymentInput(this.manualInput) === true;
-    },
-    contacts() {
-      return this.addressBookStore.entries || [];
-    },
-    // Favorite contacts (filtered by search)
-    favoriteContacts() {
-      return (this.addressBookStore.favoriteEntries || [])
-        .filter(c => this.matchesSearch(c));
-    },
-    // Recent contacts (filtered by search)
-    recentContacts() {
-      return (this.addressBookStore.recentEntries || [])
-        .filter(c => this.matchesSearch(c));
-    },
-    // Other contacts (not in favorites or recent, filtered by search)
-    otherContacts() {
-      const favoriteIds = new Set((this.addressBookStore.favoriteEntries || []).map(c => c.id));
-      const recentIds = new Set((this.addressBookStore.recentEntries || []).map(c => c.id));
-      return this.contacts
-        .filter(c => !favoriteIds.has(c.id) && !recentIds.has(c.id))
-        .filter(c => this.matchesSearch(c))
-        .sort((a, b) => a.name.localeCompare(b.name));
-    },
-    // All filtered contacts (for backward compatibility and empty state check)
-    filteredContacts() {
-      if (!this.contactSearch) return this.contacts;
-      const search = this.contactSearch.toLowerCase();
-      return this.contacts.filter(c => {
-        const address = c.address || c.lightningAddress || '';
-        const notes = c.notes || '';
-        return c.name.toLowerCase().includes(search) ||
-          address.toLowerCase().includes(search) ||
-          notes.toLowerCase().includes(search);
-      });
-    },
-    // Check if we have any contacts to show in sections
-    hasContactsToShow() {
-      return this.favoriteContacts.length > 0 ||
-             this.recentContacts.length > 0 ||
-             this.otherContacts.length > 0;
-    },
+
     isActiveWalletSpark() {
       return this.walletStore.isActiveWalletSpark;
     },
-    manualInputPlaceholder() {
-      return this.isActiveWalletSpark
-        ? this.$t('e.g. name@wallet.com, lnbc..., or spark1...')
-        : this.$t('e.g. name@wallet.com or lnbc...');
+
+    // Live detection mirrors AddressBookModal's pattern. We strip URI
+    // wrappers (lightning:, bitcoin:) so a paste like
+    // "lightning:lnbc1..." resolves to lightning_invoice rather than
+    // the raw scheme.
+    detectedInputType() {
+      const raw = (this.manualInput || '').trim();
+      if (!raw) return null;
+      const lower = raw.toLowerCase();
+
+      // BIP21 first — bitcoin:<addr>?... is structurally distinct and
+      // we want the "Bitcoin (BIP21)" label even when the inner is an
+      // on-chain address that would also pass isBitcoinAddress.
+      if (lower.startsWith('bitcoin:')) {
+        const parsed = parseBip21(raw);
+        if (parsed) return 'bip21';
+      }
+
+      const cleaned = lower.startsWith('lightning:')
+        ? raw.substring(10).trim()
+        : raw;
+
+      if (isSparkAddress(cleaned)) return 'spark';
+      if (isLightningInvoice(cleaned)) return 'lightning_invoice';
+      if (isLightningAddress(cleaned)) return 'lightning_address';
+      if (isLnurl(cleaned)) return 'lnurl';
+      if (isBitcoinAddress(cleaned)) return 'bitcoin_address';
+      return null;
+    },
+
+    detectedInputLabel() {
+      const labels = {
+        spark: this.$t('Spark'),
+        lightning_invoice: this.$t('Lightning Invoice'),
+        lightning_address: this.$t('Lightning Address'),
+        lnurl: this.$t('LNURL'),
+        bitcoin_address: this.$t('Bitcoin'),
+        bip21: this.$t('Bitcoin (BIP21)')
+      };
+      return labels[this.detectedInputType] || '';
+    },
+
+    detectedInputIcon() {
+      const icons = {
+        lightning_invoice: 'tabler:bolt',
+        lightning_address: 'tabler:bolt',
+        lnurl: 'tabler:link',
+        bitcoin_address: 'tabler:currency-bitcoin',
+        bip21: 'tabler:currency-bitcoin'
+      };
+      return icons[this.detectedInputType] || '';
+    },
+
+    manualInputShowsError() {
+      return this.manualInput.trim().length > 0 && !this.detectedInputType;
+    },
+
+    isValidManualInput() {
+      return !!this.detectedInputType;
     }
   },
   watch: {
@@ -455,28 +331,15 @@ export default {
     this.stopQrScanner();
   },
   methods: {
-    // Search filter helper
-    matchesSearch(contact) {
-      if (!this.contactSearch) return true;
-      const search = this.contactSearch.toLowerCase();
-      const address = contact.address || contact.lightningAddress || '';
-      const notes = contact.notes || '';
-      return contact.name.toLowerCase().includes(search) ||
-        address.toLowerCase().includes(search) ||
-        notes.toLowerCase().includes(search);
-    },
-
     async initializeCamera() {
       this.cameraError = null;
       try {
-        // Check if QrScanner has camera support
         const hasCamera = await QrScanner.hasCamera();
         if (!hasCamera) {
           throw new Error('No camera found on this device.');
         }
 
         this.showCamera = true;
-        // Wait for the next tick to ensure the video element is rendered
         await this.$nextTick();
         await this.startQrScanner();
       } catch (error) {
@@ -493,11 +356,9 @@ export default {
 
         this.videoElement = this.$refs.videoElement;
 
-        // Create QR scanner instance
         this.qrScanner = new QrScanner(
           this.videoElement,
           (result) => {
-            // Handle both string and object result formats from qr-scanner
             const data = typeof result === 'string' ? result : (result?.data || result?.text || '');
             this.onQRDetect(data);
           },
@@ -509,9 +370,7 @@ export default {
           }
         );
 
-        // Start scanning
         await this.qrScanner.start();
-
       } catch (error) {
         console.error('Error starting QR scanner:', error);
         this.handleCameraError(error);
@@ -551,8 +410,6 @@ export default {
           type: 'negative',
           message: this.$t('Invalid QR code'),
           caption: this.$t('Please try a different code'),
-          
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }
@@ -560,12 +417,10 @@ export default {
 
     async processPaymentData(paymentData) {
       try {
-        // Ensure paymentData is a string
         const inputData = typeof paymentData === 'string'
           ? paymentData
           : (paymentData?.data || paymentData?.text || String(paymentData || ''));
 
-        // Basic validation
         if (!inputData || inputData.trim().length === 0) {
           throw new Error(this.$t('Invalid payment data'));
         }
@@ -576,7 +431,6 @@ export default {
         if (isSARetailerQR(trimmedData)) {
           const result = convertToLightningAddress(trimmedData);
           if (result) {
-            // EMVCo QR converted to lightning address via cryptoqr.net
             this.$emit('payment-detected', {
               data: result.lightningAddress,
               type: 'lightning_address',
@@ -586,7 +440,6 @@ export default {
             this.closeModal();
             return;
           }
-          // URL-based SA retailer QR - needs Scanner API (Phase 2)
           const merchant = getMerchantInfo(trimmedData);
           this.$q.notify({
             type: 'warning',
@@ -595,57 +448,45 @@ export default {
               ? `${merchant.displayName} - ${this.$t('not yet supported')}`
               : this.$t('This retailer is not yet supported'),
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }],
           });
           this.isProcessing = false;
           return;
         }
 
-        // Handle lightning: prefix and extract the actual invoice
-        let cleanData = trimmedData.toLowerCase().startsWith('lightning:')
-          ? trimmedData.substring(10)
-          : trimmedData;
+        // Resolve URI wrappers: strip `lightning:`, and for BIP21
+        // (`bitcoin:<addr>?amount=...&lightning=lnbc...`) prefer the embedded
+        // BOLT11 invoice over the on-chain address.
+        const { cleaned: resolved, bip21 } = this.normalizePaymentInput(trimmedData);
+        let cleanData = resolved;
 
-        // Handle bitcoin: URI scheme (BIP21) - strip prefix and query params
-        if (cleanData.toLowerCase().startsWith('bitcoin:')) {
-          cleanData = cleanData.substring(8).split('?')[0];
-        }
-
-        // Normalize lightning addresses to lowercase (LN address standard)
         if (cleanData.includes('@') && cleanData.includes('.')) {
           cleanData = cleanData.toLowerCase();
         }
 
         const paymentType = this.determinePaymentType(cleanData);
 
-        // Early warning: NWC wallet cannot pay Spark addresses
         if (paymentType === 'spark_address' && !this.isActiveWalletSpark) {
           this.$q.notify({
             type: 'warning',
             message: this.$t('Spark address detected'),
             caption: this.$t('Switch to Spark wallet to pay this address'),
-            
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
 
-        // Early warning: NWC wallet cannot send to Bitcoin addresses
         if (paymentType === 'bitcoin_address' && !this.isActiveWalletSpark) {
           this.$q.notify({
             type: 'warning',
             message: this.$t('Bitcoin address detected'),
             caption: this.$t('Switch to Spark wallet to send to Bitcoin addresses'),
-            
             timeout: 4000,
-            actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
           });
         }
 
-        // Emit the detected payment data to parent component
         this.$emit('payment-detected', {
           data: cleanData,
-          type: paymentType
+          type: paymentType,
+          ...(bip21 ? { bip21 } : {})
         });
 
         this.closeModal();
@@ -655,89 +496,53 @@ export default {
       }
     },
 
-    determinePaymentType(data) {
-      const trimmed = data.trim().toLowerCase();
-      // Handle lightning: prefix
-      let cleanData = trimmed.startsWith('lightning:') ? trimmed.substring(10) : trimmed;
-      // Handle bitcoin: URI scheme
-      if (cleanData.startsWith('bitcoin:')) {
-        cleanData = cleanData.substring(8).split('?')[0]; // Remove URI params
+    /**
+     * Unwrap URI schemes to the inner payment destination.
+     *
+     * - `lightning:<...>`      → strip prefix
+     * - `bitcoin:<addr>?...`   → parse BIP21, prefer embedded `lightning=`
+     *                            invoice over on-chain address
+     */
+    normalizePaymentInput(input) {
+      const trimmed = (input || '').trim();
+
+      const bip21 = parseBip21(trimmed);
+      if (bip21) {
+        const destination = selectBip21Destination(bip21);
+        return { cleaned: destination ? destination.value : '', bip21 };
       }
 
-      // Spark addresses - Zero fee transfers
-      // New format: spark1 (mainnet), sparkrt1 (regtest), sparkt1 (testnet), sparks1 (signet), sparkl1 (local)
-      // Legacy format: sp1 (mainnet), tsp1 (testnet), sprt1 (regtest)
-      if (this.isSparkAddress(cleanData)) return 'spark_address';
-      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
-      if (cleanData.startsWith('lnbc') || cleanData.startsWith('lntb') ||
-          cleanData.startsWith('lntbs') || cleanData.startsWith('lnbcrt')) return 'lightning_invoice';
-      if (cleanData.includes('@') && cleanData.includes('.')) return 'lightning_address';
-      if (cleanData.startsWith('lnurl') || cleanData.startsWith('keyauth://')) return 'lnurl';
-      // Bitcoin on-chain addresses (L1)
-      if (this.isBitcoinAddress(cleanData)) return 'bitcoin_address';
+      if (trimmed.toLowerCase().startsWith('lightning:')) {
+        return { cleaned: trimmed.substring(10), bip21: null };
+      }
+
+      return { cleaned: trimmed, bip21: null };
+    },
+
+    determinePaymentType(data) {
+      const { cleaned } = this.normalizePaymentInput(data);
+      if (!cleaned) return 'unknown';
+
+      if (isSparkAddress(cleaned)) return 'spark_address';
+      if (isLightningInvoice(cleaned)) return 'lightning_invoice';
+      if (isLightningAddress(cleaned)) return 'lightning_address';
+      if (isLnurl(cleaned)) return 'lnurl';
+      if (isBitcoinAddress(cleaned)) return 'bitcoin_address';
       return 'unknown';
     },
 
-    /**
-     * Check if address is a valid Bitcoin on-chain address
-     */
-    isBitcoinAddress(address) {
-      if (!address) return false;
-      const normalized = address.trim();
-      // Mainnet: bc1 (bech32/bech32m), 1 (P2PKH), 3 (P2SH)
-      // Testnet: tb1 (bech32), m/n (P2PKH), 2 (P2SH)
-      const mainnetRegex = /^(bc1[a-zA-HJ-NP-Z0-9]{39,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/i;
-      const testnetRegex = /^(tb1[a-zA-HJ-NP-Z0-9]{39,62}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/i;
-      return mainnetRegex.test(normalized) || testnetRegex.test(normalized);
-    },
-
-    isSparkAddress(address) {
-      if (!address) return false;
-      const normalized = address.toLowerCase().trim();
-      // New format prefixes
-      const newPrefixes = ['spark1', 'sparkrt1', 'sparkt1', 'sparks1', 'sparkl1'];
-      // Legacy format prefixes
-      const legacyPrefixes = ['sp1', 'tsp1', 'sprt1'];
-      return newPrefixes.some(p => normalized.startsWith(p)) ||
-             legacyPrefixes.some(p => normalized.startsWith(p));
-    },
-
-    validatePaymentInput(input) {
-      if (!input || input.trim().length === 0) {
-        return this.$t('Please enter a payment request');
-      }
-
-      let trimmed = input.trim().toLowerCase();
-      // Strip lightning: prefix if present
-      if (trimmed.startsWith('lightning:')) {
-        trimmed = trimmed.substring(10);
-      }
-      // Strip bitcoin: URI prefix if present
-      if (trimmed.startsWith('bitcoin:')) {
-        trimmed = trimmed.substring(8).split('?')[0];
-      }
-      // Lightning invoices: lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest)
-      const isLightningInvoice = trimmed.startsWith('lnbc') || trimmed.startsWith('lntb') ||
-        trimmed.startsWith('lntbs') || trimmed.startsWith('lnbcrt');
-      const isLightningAddress = trimmed.includes('@') && trimmed.includes('.');
-      const isLnurl = trimmed.startsWith('lnurl');
-      const isSparkAddr = this.isSparkAddress(trimmed);
-      const isBitcoinAddr = this.isBitcoinAddress(trimmed);
-
-      const isValid = isLightningInvoice || isLightningAddress || isLnurl || isSparkAddr || isBitcoinAddr;
-
-      return isValid ? true : this.$t('Invalid payment format');
-    },
-
-    showManualInput() {
-      this.showManualDialog = true;
+    openManual() {
       this.manualInput = '';
+      this.showManualDialog = true;
+      this.$nextTick(() => {
+        this.$refs.manualTextarea?.focus();
+      });
     },
 
     async pasteFromClipboard() {
       let clipboardText = '';
 
-      // 1) Try navigator.clipboard.readText (modern API)
+      // Modern Clipboard API
       if (navigator.clipboard && navigator.clipboard.readText) {
         try {
           clipboardText = await navigator.clipboard.readText();
@@ -746,8 +551,7 @@ export default {
         }
       }
 
-      // 2) Fallback: navigator.clipboard.read() — works on some Android
-      //    devices where readText() is denied but read() is allowed
+      // Some Android WebViews block readText() but allow read()
       if (!clipboardText && navigator.clipboard && navigator.clipboard.read) {
         try {
           const items = await navigator.clipboard.read();
@@ -763,67 +567,50 @@ export default {
         }
       }
 
-      // 3) Success — process the pasted data
-      if (clipboardText && clipboardText.trim()) {
-        await this.processPaymentData(clipboardText.trim());
-        return;
-      }
-
-      // 4) Clipboard API unavailable or empty — fall back to manual input
+      // Always pre-fill the Manual sheet for the user to verify before
+      // committing. No silent auto-process from the clipboard — too easy
+      // to send to a stale or wrong address otherwise.
+      this.manualInput = (clipboardText || '').trim();
       this.showManualDialog = true;
-      this.manualInput = '';
       this.$nextTick(() => {
-        const input = this.$el?.querySelector('.manual-input input, .manual-input textarea');
-        if (input) input.focus();
+        this.$refs.manualTextarea?.focus();
       });
-      this.$q.notify({
-        type: 'info',
-        message: this.$t('Paste into the input field'),
-        caption: this.$t('Long-press the text field and tap Paste'),
-        timeout: 4000,
-        actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
-      });
+
+      if (!clipboardText) {
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('Paste into the input field'),
+          caption: this.$t('Long-press the text field and tap Paste'),
+          timeout: 4000,
+        });
+      }
     },
 
-    async showContactPicker() {
-      // Initialize the address book store to load contacts from localStorage
-      await this.addressBookStore.initialize();
-      this.showContactDialog = true;
-      this.contactSearch = '';
+    async openContacts() {
+      // The quick-contacts modal calls store.initialize() on its own
+      // @show hook, so we don't pre-init here.
+      this.showQuickContacts = true;
     },
 
-    goToAddressBook() {
-      this.showContactDialog = false;
-      this.closeModal();
-      this.$router.push('/address-book');
-    },
-
-    async selectContact(contact) {
-      // Check if user can pay this contact
+    async onContactPicked(contact) {
+      // Defensive — block payment paths the active wallet can't satisfy.
       if (!this.canPayContact(contact)) {
         this.$q.notify({
           type: 'warning',
           message: this.$t('Cannot pay this contact'),
           caption: this.getContactDisabledReason(contact),
-          
           timeout: 3500,
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         return;
       }
 
-      // Use store methods for consistent address/type detection
       const address = this.getContactAddress(contact);
       const addressType = this.getContactAddressType(contact);
 
-      // Update last used timestamp for recent contacts tracking
-      await this.addressBookStore.updateLastUsed(contact.id);
-
-      // Map contact address type to payment type
       const paymentTypeMap = {
-        'spark': 'spark_address',
-        'bitcoin': 'bitcoin_address',
-        'lightning': 'lightning_address'
+        spark: 'spark_address',
+        bitcoin: 'bitcoin_address',
+        lightning: 'lightning_address'
       };
       const paymentType = paymentTypeMap[addressType] || 'lightning_address';
 
@@ -831,11 +618,11 @@ export default {
         data: address,
         type: paymentType
       });
-      this.showContactDialog = false;
+      this.showQuickContacts = false;
       this.closeModal();
     },
 
-    // Contact type helper methods - use store methods for consistency and auto-detection
+    // Contact helpers (used by the contact-picker handler above).
     getContactAddress(contact) {
       return this.addressBookStore.getEntryAddress(contact);
     },
@@ -844,43 +631,11 @@ export default {
       return this.addressBookStore.getEntryAddressType(contact);
     },
 
-    getContactTypeIcon(contact) {
-      const type = this.getContactAddressType(contact);
-      const icons = {
-        lightning: 'tabler:bolt',
-        spark: 'tabler:flame',
-        bitcoin: 'tabler:currency-bitcoin'
-      };
-      return icons[type] || icons.lightning;
-    },
-
-    getContactTypeLabel(contact) {
-      const type = this.getContactAddressType(contact);
-      const labels = {
-        lightning: 'Lightning',
-        spark: 'Spark',
-        bitcoin: 'Bitcoin'
-      };
-      return labels[type] || labels.lightning;
-    },
-
-    getContactTypeBadgeClass(contact) {
-      const type = this.getContactAddressType(contact);
-      const classes = {
-        lightning: 'badge-lightning',
-        spark: 'badge-spark',
-        bitcoin: 'badge-bitcoin'
-      };
-      return classes[type] || classes.lightning;
-    },
-
     canPayContact(contact) {
       const type = this.getContactAddressType(contact);
       if (type === 'spark' || type === 'bitcoin') {
-        // Spark and Bitcoin contacts can only be paid from Spark wallet
         return this.isActiveWalletSpark;
       }
-      // Lightning contacts can be paid from any wallet
       return true;
     },
 
@@ -908,8 +663,6 @@ export default {
           type: 'negative',
           message: this.$t('Invalid payment request'),
           caption: this.$t('Please check the format and try again'),
-          
-          actions: [{ icon: 'close', color: 'white', round: true, flat: true }]
         });
         this.isProcessing = false;
       }
@@ -924,6 +677,7 @@ export default {
       this.cameraError = null;
       this.manualInput = '';
       this.showManualDialog = false;
+      this.showQuickContacts = false;
     }
   }
 }
@@ -947,18 +701,22 @@ export default {
 }
 
 .send-card-light {
-  background: #FFF;
-  color: #212121;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* Header */
 .send-header {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 1rem;
   padding-top: calc(var(--safe-top, 0px) + 1rem);
   flex-shrink: 0;
   position: relative;
   z-index: 10;
+}
+
+.send-card-light .send-header {
+  border-bottom-color: var(--border-card);
 }
 
 .header-content {
@@ -980,7 +738,13 @@ export default {
   width: 40px;
 }
 
-/* Camera Container */
+/* ─────────────────────────────────────────────────────────────
+   Camera Container
+   QR-scanner library injects its own scan-region overlay (default
+   yellow). We desaturate it via :deep so the scanner reads as a
+   neutral, soft-black-on-grey treatment per design direction —
+   no green or yellow accents inside the scanner surface.
+   ───────────────────────────────────────────────────────────── */
 .camera-container {
   flex: 1;
   position: relative;
@@ -994,13 +758,22 @@ export default {
   object-fit: cover;
 }
 
+.camera-container :deep(.scan-region-highlight) {
+  border-color: rgba(255, 255, 255, 0.55) !important;
+}
+.camera-container :deep(.scan-region-highlight-svg) {
+  stroke: rgba(255, 255, 255, 0.55) !important;
+  fill: transparent !important;
+}
+.camera-container :deep(.code-outline-highlight) {
+  stroke: #1A1A1A !important;
+  fill: rgba(26, 26, 26, 0.18) !important;
+}
+
 .processing-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1009,19 +782,17 @@ export default {
 }
 
 .processing-text {
-  color: white;
+  color: rgba(255, 255, 255, 0.78);
   font-family: 'Manrope', sans-serif;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
   margin-top: 1rem;
+  letter-spacing: -0.005em;
 }
 
 .camera-error {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: #1f2937;
   display: flex;
   flex-direction: column;
@@ -1048,480 +819,362 @@ export default {
 }
 
 .retry-btn {
-  border-radius: 24px;
+  border-radius: 12px;
+  padding: 10px 20px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: background-color 0.18s ease;
 }
 
-/* Scanning Frame */
-.scanning-frame {
-  display: none !Important;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 250px;
-  height: 250px;
-  pointer-events: none;
+.retry-btn-dark {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 
-.frame-corner {
-  position: absolute;
-  width: 30px;
-  height: 30px;
-  border: 3px solid #15DE72;
+.retry-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
 }
 
-.frame-corner.top-left {
-  top: 0;
-  left: 0;
-  border-right: none;
-  border-bottom: none;
+.retry-btn-light {
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: rgba(0, 0, 0, 0.75) !important;
 }
 
-.frame-corner.top-right {
-  top: 0;
-  right: 0;
-  border-left: none;
-  border-bottom: none;
+.retry-btn-light:hover {
+  background: rgba(0, 0, 0, 0.08) !important;
 }
 
-.frame-corner.bottom-left {
-  bottom: 0;
-  left: 0;
-  border-right: none;
-  border-top: none;
-}
-
-.frame-corner.bottom-right {
-  bottom: 0;
-  right: 0;
-  border-left: none;
-  border-top: none;
-}
-
-/* Bottom Actions */
+/* ─────────────────────────────────────────────────────────────
+   Bottom Actions — three pill tiles
+   ───────────────────────────────────────────────────────────── */
 .send-actions {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid;
   padding: 1rem;
+  padding-bottom: max(1rem, var(--safe-bottom, 1rem));
   flex-shrink: 0;
 }
+
+.actions-dark { border-top-color: rgba(255, 255, 255, 0.08); }
+.actions-light { border-top-color: var(--border-card); }
 
 .action-buttons {
   display: flex;
-  justify-content: space-around;
-  gap: 1rem;
+  gap: 10px;
 }
 
-.action-btn {
+.action-tile {
   flex: 1;
-  height: 80px;
-  border-radius: 16px;
-  transition: all 0.2s ease;
-}
-
-.action-btn-dark {
-  background: rgba(42, 52, 42, 0.5);
-  color: white;
-}
-
-.action-btn-light {
-  background: rgba(0, 0, 0, 0.05);
-  color: #212121;
-}
-
-.action-btn-dark:hover {
-  background: rgba(42, 52, 42, 0.8);
-  transform: translateY(-2px);
-}
-
-.action-btn-light:hover {
-  background: rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-.btn-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.btn-icon {
-  color: #15DE72;
-}
-
-.btn-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* Manual Input Dialog */
-.manual-dialog :deep(.q-dialog__inner) {
-  padding: 1rem;
-}
-
-.manual-card {
-  width: 100%;
-  max-width: min(500px, 95vw);
-  border-radius: 24px;
-}
-
-.manual-header {
-  border-bottom: 1px solid;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.manual-title {
-  font-family: 'Manrope', sans-serif;
-}
-
-.close-btn {
-  color: #6b7280;
-}
-
-/* Blur backdrop for manual dialog */
-.manual-dialog-backdrop :deep(.q-dialog__backdrop) {
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.manual-content {
-  padding: 1.5rem;
-}
-
-.manual-input {
-  margin-bottom: 0.5rem;
-}
-
-.manual-input :deep(.q-field__control) {
-  border-radius: 12px;
-}
-
-/* Dark mode input styling - green instead of blue */
-.manual-input-dark :deep(.q-field__control) {
-  background: var(--bg-input) !important;
-  border-color: rgba(255, 255, 255, 0.2) !important;
-}
-
-.manual-input-dark :deep(.q-field--focused .q-field__control) {
-  border-color: #15DE72 !important;
-}
-
-.manual-input-dark :deep(.q-field__label) {
-  color: #B0B0B0;
-}
-
-.manual-input-dark :deep(.q-field--focused .q-field__label),
-.manual-input-dark :deep(.q-field--float .q-field__label) {
-  color: #15DE72 !important;
-}
-
-.manual-input-dark :deep(.q-field__native) {
-  color: #FFF !important;
-}
-
-/* Light mode input styling - green instead of blue */
-.manual-input-light :deep(.q-field__control) {
-  background: var(--bg-input) !important;
-  border-color: rgba(0, 0, 0, 0.15) !important;
-}
-
-.manual-input-light :deep(.q-field--focused .q-field__control) {
-  border-color: #15DE72 !important;
-}
-
-.manual-input-light :deep(.q-field__label) {
-  color: #6B7280;
-}
-
-.manual-input-light :deep(.q-field--focused .q-field__label),
-.manual-input-light :deep(.q-field--float .q-field__label) {
-  color: #15DE72 !important;
-}
-
-.manual-input-light :deep(.q-field__native) {
-  color: #212121 !important;
-}
-
-/* Continue button - green text */
-.continue-btn {
-  color: #15DE72 !important;
-  font-weight: 600;
-}
-
-.continue-btn:disabled {
-  color: #6b7280 !important;
-  opacity: 0.5;
-}
-
-/* Action buttons border colors */
-.actions-dark {
-  border-top-color: rgba(255, 255, 255, 0.1);
-}
-
-.actions-light {
-  border-top-color: rgba(0, 0, 0, 0.1);
-}
-
-.manual-actions {
-  border-top: 1px solid;
-}
-
-/* Responsive Design */
-@media (max-width: 480px) {
-  .scanning-frame {
-    width: 200px;
-    height: 200px;
-  }
-
-  .action-buttons {
-    gap: 0.5rem;
-  }
-
-  .action-btn {
-    height: 70px;
-  }
-
-  .btn-label {
-    font-size: 12px;
-  }
-
-  .manual-content {
-    padding: 1rem;
-  }
-}
-
-/* Contact Picker Dialog */
-.contact-dialog-backdrop :deep(.q-dialog__backdrop) {
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.contact-picker-card {
-  width: 100%;
-  max-width: 400px;
-  border-radius: 24px;
-  overflow: hidden;
-}
-
-.contact-picker-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
-}
-
-.contact-picker-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.contact-search-section {
-  padding: 0.75rem 1rem 0;
-}
-
-.contact-search :deep(.q-field__control) {
-  border-radius: 12px;
-}
-
-.contact-list-section {
-  padding: 0.5rem 0;
-  max-height: 350px;
-  overflow-y: auto;
-}
-
-/* Empty State */
-.contact-empty-state {
+  height: 84px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2.5rem 1.5rem;
-  text-align: center;
+  gap: 8px;
+  border: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.08s ease;
 }
 
-.empty-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 16px;
-  font-weight: 600;
-  margin-top: 1rem;
+.action-tile:active {
+  transform: scale(0.97);
 }
 
-.empty-subtitle {
-  font-family: 'Manrope', sans-serif;
+.action-tile-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.action-tile-dark:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: #FFF;
+}
+
+.action-tile-light {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--border-card);
+}
+
+.action-tile-light:hover {
+  background: rgba(17, 24, 39, 0.05);
+  color: var(--text-primary);
+}
+
+.tile-icon {
+  opacity: 0.85;
+}
+
+.tile-label {
   font-size: 13px;
-  margin-top: 0.5rem;
-  line-height: 1.4;
-  max-width: 250px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
 }
 
-.add-contact-cta {
-  margin-top: 1.25rem;
-  height: 44px;
-  border-radius: 22px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 0 1.5rem;
+/* ─────────────────────────────────────────────────────────────
+   Manual sheet (bottom)
+   ───────────────────────────────────────────────────────────── */
+.manual-sheet-dialog :deep(.q-dialog__inner) {
+  padding: 0;
 }
 
-/* Contact List */
-.contact-list {
+.manual-sheet-dialog :deep(.q-dialog__backdrop) {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.manual-sheet {
+  width: 100%;
+  max-width: 520px;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--bg-card);
   display: flex;
   flex-direction: column;
+  font-family: 'Manrope', sans-serif;
+  padding-bottom: max(1rem, var(--safe-bottom, 0px));
 }
 
-/* Contact Section Headers */
-.contact-section-header {
+.manual-sheet-dark {
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55);
+}
+
+.manual-sheet-light {
+  border-top: 1px solid var(--border-card);
+  box-shadow: 0 -20px 50px rgba(40, 34, 20, 0.12);
+}
+
+.grab-bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: 0.45;
+  margin: 8px auto 4px;
+}
+
+.sheet-top {
   display: flex;
   align-items: center;
+  padding: 4px 12px 8px;
+}
+
+.sheet-top-btn {
+  width: 36px;
+  height: 36px;
+  color: var(--text-secondary);
+}
+
+.sheet-top-title {
+  flex: 1;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.005em;
+}
+
+.sheet-top-spacer {
+  width: 36px;
+}
+
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 20px 4px;
+}
+
+.input-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.625rem 1.25rem 0.5rem;
-  font-family: 'Manrope', sans-serif;
+  min-height: 22px;
+}
+
+.input-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* Auto-detection chip — same vocabulary as AddressBookModal so users
+   recognize the affordance across surfaces. */
+.detected-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.2px;
+  line-height: 1;
 }
 
-.section-header-dark {
-  color: #777;
+.detected-pill--lightning_address,
+.detected-pill--lightning_invoice,
+.detected-pill--lnurl {
+  background: rgba(5, 149, 115, 0.12);
+  color: #059573;
+  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.22);
 }
 
-.section-header-light {
-  color: #9CA3AF;
+.body--dark .detected-pill--lightning_address,
+.body--dark .detected-pill--lightning_invoice,
+.body--dark .detected-pill--lnurl {
+  background: rgba(21, 222, 114, 0.16);
+  color: #15DE72;
+  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.28);
 }
 
-.contact-item {
-  display: flex;
-  align-items: center;
-  padding: 0.875rem 1.25rem;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  gap: 0.875rem;
+.detected-pill--spark {
+  background: rgba(120, 120, 120, 0.12);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px rgba(120, 120, 120, 0.25);
 }
 
-.contact-item-dark:hover {
-  background: rgba(21, 222, 114, 0.08);
+.detected-pill--bitcoin_address,
+.detected-pill--bip21 {
+  background: rgba(247, 147, 26, 0.14);
+  color: #C97A0F;
+  box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.28);
 }
 
-.contact-item-dark:active {
-  background: rgba(21, 222, 114, 0.15);
+.body--dark .detected-pill--bitcoin_address,
+.body--dark .detected-pill--bip21 {
+  color: #F7931A;
+  box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.36);
 }
 
-.contact-item-light:hover {
-  background: rgba(21, 222, 114, 0.08);
+.type-pill-enter-active,
+.type-pill-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.type-pill-enter-from,
+.type-pill-leave-to {
+  opacity: 0;
+  transform: translateY(-2px) scale(0.96);
 }
 
-.contact-item-light:active {
-  background: rgba(21, 222, 114, 0.12);
+/* Textarea — single field, same shape as AddressBook's address input. */
+.manual-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-mono), 'Manrope', sans-serif;
+  font-size: 13.5px;
+  line-height: 1.45;
+  outline: none;
+  resize: none;
+  transition: border-color 0.18s ease;
+  word-break: break-all;
 }
 
-.contact-disabled {
-  opacity: 0.5;
+.manual-textarea-dark {
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
-.contact-disabled:hover {
-  background: transparent !important;
-  cursor: not-allowed;
+.manual-textarea-light {
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
-.contact-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.manual-textarea:focus {
+  border-color: var(--color-green);
+}
+
+.body--light .manual-textarea:focus {
+  border-color: var(--text-primary);
+}
+
+.manual-textarea--error,
+.manual-textarea--error:focus {
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.manual-textarea::placeholder {
+  color: var(--text-muted);
   font-family: 'Manrope', sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-  color: white;
-  flex-shrink: 0;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-.contact-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.contact-name-row {
+.input-helper {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  padding-left: 2px;
+  min-height: 16px;
 }
 
-.contact-name {
+.helper-icon-error {
+  color: #EF4444;
+  flex-shrink: 0;
+}
+
+.sheet-footer {
+  padding: 14px 20px 6px;
+}
+
+/* Primary CTA — gradient-green on dark, neutral-dark pill on cream.
+   Same language as PaymentModal, AddressBookModal, etc. */
+.primary-cta {
+  width: 100%;
+  height: 50px;
+  border-radius: var(--radius-pill);
+  border: none;
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  background: var(--gradient-green);
+  color: #fff;
+  transition: filter 0.15s ease, transform 0.08s ease, opacity 0.15s ease;
 }
 
-.contact-type-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 6px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  flex-shrink: 0;
+.body--light .primary-cta {
+  background: var(--btn-neutral-bg);
+  color: var(--btn-neutral-fg);
 }
 
-.badge-lightning {
-  background: linear-gradient(135deg, #F59E0B, #D97706);
-  color: white;
+.primary-cta:hover:not(:disabled) {
+  filter: brightness(1.05);
 }
 
-.badge-spark {
-  background: linear-gradient(135deg, #15DE72, #059573);
-  color: white;
+.primary-cta:active:not(:disabled) {
+  transform: scale(0.985);
+  filter: brightness(0.95);
 }
 
-.badge-bitcoin {
-  background: linear-gradient(135deg, #F7931A, #E67E00);
-  color: white;
+.primary-cta:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-.contact-address {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* Responsive */
+@media (max-width: 480px) {
+  .action-tile {
+    height: 76px;
+  }
 
-/* Scrollbar styling for contact list */
-.contact-list-section::-webkit-scrollbar {
-  width: 4px;
-}
+  .tile-label {
+    font-size: 12.5px;
+  }
 
-.contact-list-section::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.contact-list-section::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.3);
-  border-radius: 2px;
-}
-
-.contact-list-section::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.5);
+  .sheet-body {
+    padding: 6px 16px 2px;
+  }
 }
 </style>

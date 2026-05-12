@@ -63,7 +63,7 @@
               ></div>
             </div>
 
-            <q-spinner-dots size="40px" color="green" />
+            <q-spinner-dots size="40px" color="brand-green" />
             <div class="unlock-loading-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
               {{ $t('Unlocking your wallet...') }}
             </div>
@@ -385,6 +385,7 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 2rem 1.5rem;
+  padding-bottom: max(2rem, var(--safe-bottom, 0px));
   gap: 1rem;
 }
 
@@ -492,7 +493,7 @@ export default {
 }
 
 .pin-dot-light {
-  border-color: #D1D5DB;
+  border-color: var(--border-card);
   background: transparent;
 }
 
@@ -651,6 +652,7 @@ export default {
 @media (max-width: 480px) {
   .pin-content {
     padding: 1.5rem 1.25rem;
+    padding-bottom: max(1.5rem, var(--safe-bottom, 0px));
     gap: 0.75rem;
   }
 
@@ -682,6 +684,7 @@ export default {
 @media (max-height: 700px) {
   .pin-content {
     padding: 1rem;
+    padding-bottom: max(1rem, var(--safe-bottom, 0px));
     gap: 0.5rem;
   }
 
