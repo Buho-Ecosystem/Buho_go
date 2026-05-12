@@ -38,11 +38,10 @@ public class MainActivity extends BridgeActivity {
             flags
         );
 
-        // Mirror the manifest's NFC intent-filters so foreground dispatch
-        // catches every action dispatchNfcIntent() knows how to route.
-        // Without TAG_DISCOVERED and TECH_DISCOVERED the system would fall
-        // back to the manifest for non-NDEF tags and the chooser could
-        // reappear.
+        // Cover every action dispatchNfcIntent() routes. Without
+        // TAG_DISCOVERED and TECH_DISCOVERED in the filter, non-NDEF
+        // tags fall back to the manifest path where the chooser can
+        // reappear if another wallet declares the same filters.
         try {
             IntentFilter ndef = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
             ndef.addDataType("*/*");
@@ -52,9 +51,9 @@ public class MainActivity extends BridgeActivity {
         } catch (IntentFilter.MalformedMimeTypeException e) {
             // "*/*" is well-formed so this branch is unreachable in
             // practice. If it ever fired we'd rather disable foreground
-            // dispatch entirely than register a null filter array, which
-            // would silently widen registration to every NDEF tag the
-            // device sees.
+            // dispatch entirely than register a null filter array,
+            // which would silently intercept every tag the device
+            // sees while the activity is in the foreground.
             nfcAdapter = null;
         }
     }
@@ -85,9 +84,11 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Receive tag intents delivered while the activity is already
-     * running. setIntent() caches the intent so onResume sees the
-     * same value on the next lifecycle pass.
+     * Receive tag and deep-link intents delivered while the activity
+     * is already running. setIntent() keeps getIntent() in sync with
+     * the most recent delivery so Capacitor and any later readers see
+     * the same value; dispatchNfcIntent() then routes NFC actions and
+     * consumes the intent so onResume cannot replay them.
      */
     @Override
     protected void onNewIntent(Intent intent) {
