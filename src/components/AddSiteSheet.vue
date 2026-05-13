@@ -183,7 +183,7 @@
 <script>
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
-import { looksLikeLud04, parseLud04Input } from '../utils/lud4';
+import { LUD04_ERROR, looksLikeLud04, parseLud04Input } from '../utils/lud4';
 
 export default {
   name: 'AddSiteSheet',
@@ -306,7 +306,7 @@ export default {
         // Distinguish HTTPS-rejection from other parse failures so we
         // can tell the user *why* the link won't work — they may have a
         // perfectly valid LUD-04 link that just happens to be http://.
-        if (err?.code === 'LUD04_INSECURE_SCHEME') {
+        if (err?.code === LUD04_ERROR.INSECURE_SCHEME) {
           this.errorText = this.$t('That link uses an insecure connection. Sign-in only works over HTTPS.');
         } else {
           this.errorText = this.$t('That link is not a Lightning login. Check the site and copy the link again.');

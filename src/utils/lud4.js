@@ -24,6 +24,35 @@ export const LUD04_ACTIONS = Object.freeze(['register', 'login', 'link', 'auth']
 const DEFAULT_ACTION = 'login';
 
 /**
+ * Stable error codes attached to every Error thrown from this module.
+ * Consumers should branch on these — never on the human-readable message,
+ * which can change for copy reasons. Tests assert on these directly.
+ */
+export const LUD04_ERROR = Object.freeze({
+  /** Input was not a string or didn't match a known LUD-04 carrier. */
+  UNSUPPORTED_INPUT: 'LUD04_UNSUPPORTED_INPUT',
+  /** Bech32-decoded HRP was not "lnurl". */
+  WRONG_BECH32_PREFIX: 'LUD04_WRONG_BECH32_PREFIX',
+  /** URL string did not parse as a URL. */
+  INVALID_URL: 'LUD04_INVALID_URL',
+  /** URL used http: (or any non-https scheme). */
+  INSECURE_SCHEME: 'LUD04_INSECURE_SCHEME',
+  /** `tag` query param was missing or not "login". */
+  WRONG_TAG: 'LUD04_WRONG_TAG',
+  /** `k1` query param was missing. */
+  MISSING_K1: 'LUD04_MISSING_K1',
+  /** `k1` was present but not valid 32-byte hex. */
+  INVALID_K1: 'LUD04_INVALID_K1',
+});
+
+/** Internal helper: attach a code to an Error in one line. */
+function lud04Error(code, message, ErrorCtor = Error) {
+  const err = new ErrorCtor(message);
+  err.code = code;
+  return err;
+}
+
+/**
  * Decode any of the LUD-04 input forms into a plain HTTPS URL that the
  * caller can fetch (or, for `tag=login`, parse directly).
  *
@@ -38,7 +67,13 @@ const DEFAULT_ACTION = 'login';
  */
 export function decodeLnurlAuthInput(input) {
   if (typeof input !== 'string') {
-    throw new TypeError('LNURL-auth input must be a string');
+    // TypeError kept for backwards compatibility with existing call sites;
+    // also carries the LUD-04 code for consumers branching on it.
+    throw lud04Error(
+      LUD04_ERROR.UNSUPPORTED_INPUT,
+      'LNURL-auth input must be a string',
+      TypeError,
+    );
   }
   let value = input.trim();
   // The `lightning:` BIP-21 wrapper is allowed in front of any LUD-17 URI.
@@ -65,13 +100,16 @@ export function decodeLnurlAuthInput(input) {
   if (lower.startsWith('lnurl1')) {
     const decoded = bech32.decode(value, 4096);
     if (decoded.prefix.toLowerCase() !== 'lnurl') {
-      throw new Error(`Unexpected bech32 prefix: ${decoded.prefix}`);
+      throw lud04Error(
+        LUD04_ERROR.WRONG_BECH32_PREFIX,
+        `Unexpected bech32 prefix: ${decoded.prefix}`,
+      );
     }
     const bytes = Uint8Array.from(bech32.fromWords(decoded.words));
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   }
 
-  throw new Error('Not a LUD-04 input');
+  throw lud04Error(LUD04_ERROR.UNSUPPORTED_INPUT, 'Not a LUD-04 input');
 }
 
 /**
@@ -97,7 +135,7 @@ export function parseLud04Url(url) {
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error('LNURL-auth URL is not a valid URL');
+    throw lud04Error(LUD04_ERROR.INVALID_URL, 'LNURL-auth URL is not a valid URL');
   }
 
   // LUD-04 is an authentication protocol — the signature is domain-bound,
@@ -106,9 +144,10 @@ export function parseLud04Url(url) {
   // and read the response. No localhost exception: dev environments use
   // HTTPS (self-signed / ngrok / mkcert) the same as production.
   if (parsed.protocol !== 'https:') {
-    const err = new Error(`LNURL-auth requires HTTPS (got ${parsed.protocol})`);
-    err.code = 'LUD04_INSECURE_SCHEME';
-    throw err;
+    throw lud04Error(
+      LUD04_ERROR.INSECURE_SCHEME,
+      `LNURL-auth requires HTTPS (got ${parsed.protocol})`,
+    );
   }
 
   const params = parsed.searchParams;
@@ -117,20 +156,29 @@ export function parseLud04Url(url) {
   const rawAction = params.get('action');
 
   if (tag !== 'login') {
-    throw new Error(`Not a LUD-04 login request (tag=${tag ?? 'none'})`);
+    throw lud04Error(
+      LUD04_ERROR.WRONG_TAG,
+      `Not a LUD-04 login request (tag=${tag ?? 'none'})`,
+    );
   }
   if (!k1Hex) {
-    throw new Error('LNURL-auth URL is missing the k1 challenge');
+    throw lud04Error(
+      LUD04_ERROR.MISSING_K1,
+      'LNURL-auth URL is missing the k1 challenge',
+    );
   }
 
   let k1;
   try {
     k1 = hexToBytes(k1Hex);
   } catch {
-    throw new Error('k1 challenge is not valid hex');
+    throw lud04Error(LUD04_ERROR.INVALID_K1, 'k1 challenge is not valid hex');
   }
   if (k1.length !== 32) {
-    throw new Error(`k1 challenge must be 32 bytes, got ${k1.length}`);
+    throw lud04Error(
+      LUD04_ERROR.INVALID_K1,
+      `k1 challenge must be 32 bytes, got ${k1.length}`,
+    );
   }
 
   const action = LUD04_ACTIONS.includes(rawAction) ? rawAction : DEFAULT_ACTION;
