@@ -30,7 +30,11 @@
         :aria-label="$t('Manage your BuhoGO identity')"
         @click="showManageSheet = true"
       >
-        <Icon icon="tabler:settings" width="18" height="18" />
+        <!-- Kebab/more affordance. Deliberately NOT a gear: the
+             global Settings page already owns that glyph; using
+             it here too would muddy the meaning. The dots match
+             the modern "more options for this surface" convention. -->
+        <Icon icon="tabler:dots-vertical" width="18" height="18" />
       </q-btn>
     </div>
 

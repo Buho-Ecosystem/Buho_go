@@ -25,7 +25,24 @@
           ]"
           aria-hidden="true"
         >
-          <Icon icon="tabler:user" width="22" height="22" />
+          <!-- Show the user's actual profile picture when one is set;
+               fall back to the silhouette glyph for fresh identities
+               and after a load failure. Same `avatarBroken` pattern
+               the page hero uses, so a broken URL isn't retried on
+               every re-render. -->
+          <img
+            v-if="visibleAvatarUrl"
+            :src="visibleAvatarUrl"
+            alt=""
+            class="sheet-avatar-img"
+            @error="onAvatarLoadError"
+          />
+          <Icon
+            v-else
+            icon="tabler:user"
+            width="22"
+            height="22"
+          />
         </div>
         <div class="sheet-meta">
           <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
@@ -160,6 +177,7 @@
 <script>
 import { Icon } from '@iconify/vue';
 import { useIdentityStore } from '../stores/identity';
+import { useProfileStore } from '../stores/profile';
 
 export default {
   name: 'IdentityManageSheet',
@@ -174,7 +192,20 @@ export default {
 
   setup() {
     const identity = useIdentityStore();
-    return { identity };
+    const profile = useProfileStore();
+    return { identity, profile };
+  },
+
+  data() {
+    return {
+      /**
+       * Sticky flag for a failed avatar load — same pattern the
+       * page hero uses. Once an `<img>` 404s in this session we
+       * silently fall back to the silhouette glyph instead of
+       * retrying the broken URL on every re-render.
+       */
+      avatarBroken: false,
+    };
   },
 
   computed: {
@@ -182,9 +213,34 @@ export default {
       get() { return this.modelValue; },
       set(v) { this.$emit('update:modelValue', v); },
     },
+
+    /**
+     * Resolved avatar URL for the sheet header. Reads
+     * `profileStore.picture` (the source of truth) and respects
+     * the runtime `avatarBroken` flag so a failing URL falls back
+     * to the silhouette without a retry loop.
+     */
+    visibleAvatarUrl() {
+      if (!this.profile.picture) return '';
+      if (this.avatarBroken) return '';
+      return this.profile.picture;
+    },
+  },
+
+  watch: {
+    'profile.picture'() {
+      // Avatar URL changed (likely a fresh upload) → reset the
+      // failure flag so the new URL gets a fresh fetch attempt.
+      this.avatarBroken = false;
+    },
   },
 
   methods: {
+    onAvatarLoadError() {
+      this.avatarBroken = true;
+    },
+
+
     /**
      * Close the sheet *before* emitting the action. The parent then
      * opens its own dialog (seed phrase view, restore, regenerate) on
@@ -268,6 +324,19 @@ export default {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  /* Clip the inner <img> to the circle. The warn ring (when set)
+     uses an outer box-shadow so it sits OUTSIDE this clip. */
+  overflow: hidden;
+}
+
+.sheet-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .sheet-avatar-light {
