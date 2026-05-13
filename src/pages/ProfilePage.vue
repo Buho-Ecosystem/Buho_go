@@ -151,16 +151,16 @@
           </span>
         </div>
 
-        <!-- Primary + optional secondary CTA. Both gated on
-             `identity.bootstrapped` so the row stays empty during
-             the sub-100ms passive-bootstrap window; the layout
-             reserves space via `min-height` on `.hero-actions` so
-             the page never jumps when the buttons appear. -->
+        <!-- Two equal-width neutral pills side by side — Instagram /
+             Threads style. Both gated on `identity.bootstrapped` so
+             the row stays empty during the sub-100ms passive-
+             bootstrap window; `min-height` on `.hero-actions`
+             reserves the vertical slot so the page never jumps. -->
         <div class="hero-actions" v-if="identity.bootstrapped">
           <button
             type="button"
-            class="hero-cta hero-cta--primary"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            class="hero-cta"
+            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
             @click="openProfileEditor"
           >
             <Icon icon="tabler:pencil" width="15" height="15" />
@@ -170,8 +170,8 @@
           <button
             v-if="!profile.isEmpty"
             type="button"
-            class="hero-cta hero-cta--secondary"
-            :class="$q.dark.isActive ? 'hero-cta-secondary-dark' : 'hero-cta-secondary-light'"
+            class="hero-cta"
+            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
             @click="showProfileShareSheet = true"
           >
             <Icon icon="tabler:share-2" width="15" height="15" />
@@ -1075,10 +1075,14 @@ button.hero-pill:focus-visible {
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* ---------- Hero CTAs ---------- */
+/* ---------- Hero CTAs ----------
+   Two equal-width neutral pills sharing one row. Same surface on
+   both buttons — no primary/secondary hierarchy — so the hero row
+   reads as a calm pair of options rather than a green CTA fighting
+   a grey one. Modern social-app convention (Instagram, Threads). */
 .hero-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: stretch;
   gap: 10px;
   width: 100%;
@@ -1086,53 +1090,48 @@ button.hero-pill:focus-visible {
   margin-top: 6px;
   /* Reserve vertical space so the layout never jumps during the
      sub-100ms passive-bootstrap window when the buttons aren't
-     rendered yet. 44px primary CTA + 10px gap + 44px secondary CTA
-     would be 98px, but the secondary only shows for non-empty
-     profiles — 44px is the floor and the safest lower bound. */
+     rendered yet. */
   min-height: 44px;
 }
 
 .hero-cta {
+  flex: 1 1 0;
   height: 44px;
-  padding: 0 18px;
+  padding: 0 14px;
   border-radius: 22px;
-  border: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   font-family: 'Manrope', sans-serif;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.005em;
   cursor: pointer;
-  transition: filter 0.18s ease, transform 0.12s ease, background-color 0.18s ease;
+  transition: background-color 0.18s ease, transform 0.12s ease;
 }
 
 .hero-cta:active {
   transform: scale(0.98);
 }
 
-.hero-cta--primary:hover {
-  filter: brightness(1.05);
-}
-
-.hero-cta-secondary-light {
-  background: rgba(15, 23, 42, 0.04);
+.hero-cta-light {
+  background: rgba(15, 23, 42, 0.06);
   color: #0f172a;
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.hero-cta-secondary-light:hover {
-  background: rgba(15, 23, 42, 0.07);
+.hero-cta-light:hover {
+  background: rgba(15, 23, 42, 0.10);
 }
 
-.hero-cta-secondary-dark {
+.hero-cta-dark {
   background: rgba(255, 255, 255, 0.06);
   color: #f8fafc;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.hero-cta-secondary-dark:hover {
+.hero-cta-dark:hover {
   background: rgba(255, 255, 255, 0.10);
 }
 
