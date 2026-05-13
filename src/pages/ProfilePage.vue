@@ -296,6 +296,11 @@
       @removed="returnToProfileEditor"
     />
 
+    <!-- Share profile — QR + npub + native share. Self-contained;
+         the only signal it needs from the page is `v-model` for
+         visibility, and identityStore for the cached npub. -->
+    <ProfileShareSheet v-model="showProfileShareSheet" />
+
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
          challenge, hands it to the IdentityAuthDialog below for the
          familiar approve/sign/submit flow. -->
@@ -406,6 +411,7 @@ import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
 import ProfileEditSheet from '../components/ProfileEditSheet.vue';
 import ProfileAvatarPickerSheet from '../components/ProfileAvatarPickerSheet.vue';
+import ProfileShareSheet from '../components/ProfileShareSheet.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
@@ -429,6 +435,7 @@ export default {
     NostrIdentityDialog,
     ProfileEditSheet,
     ProfileAvatarPickerSheet,
+    ProfileShareSheet,
     AddSiteSheet,
     SiteFavicon,
     ConnectedSiteSheet,

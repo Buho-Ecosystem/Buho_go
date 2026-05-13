@@ -1331,6 +1331,10 @@ export default {
   "Couldn't save your profile": "No se pudo guardar tu perfil",
   "Check your connection and try again.": "Comprueba tu conexión e inténtalo de nuevo.",
   "Looks like an unfamiliar format. Try name@example.com.": "Parece un formato poco común. Prueba con nombre{'@'}ejemplo.com.",
+
+  // ----- Profile share sheet (Plan 09 §7d) -----
+  "Scan to open in a compatible app": "Escanea para abrir en una app compatible",
+  "Couldn't share": "No se pudo compartir",
   "Share profile": "Compartir perfil",
   "Edit profile picture": "Editar foto de perfil",
   "Profile picture": "Foto de perfil",

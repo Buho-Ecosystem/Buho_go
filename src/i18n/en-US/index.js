@@ -1407,6 +1407,10 @@ export default {
   "Couldn't save your profile": "Couldn't save your profile",
   "Check your connection and try again.": "Check your connection and try again.",
   "Looks like an unfamiliar format. Try name@example.com.": "Looks like an unfamiliar format. Try name{'@'}example.com.",
+
+  // ----- Profile share sheet (Plan 09 §7d) -----
+  "Scan to open in a compatible app": "Scan to open in a compatible app",
+  "Couldn't share": "Couldn't share",
   "Share profile": "Share profile",
   "Edit profile picture": "Edit profile picture",
   "Profile picture": "Profile picture",
