@@ -1310,5 +1310,24 @@ export default {
   "Couldn't copy": "No se pudo copiar",
   "Copied": "Copiado",
   "Copied. Clears in 30s.": "Copiado. El portapapeles se borra en 30s.",
-  "Clipboard clears in": "El portapapeles se borra en"
+  "Clipboard clears in": "El portapapeles se borra en",
+
+  // ----- Profile hero (Plan 09 §7a) -----
+  "Set up your profile": "Configura tu perfil",
+  "Your profile travels with your recovery phrase": "Tu perfil viaja con tu frase de recuperación",
+  "Add your name and a picture": "Añade tu nombre y una foto",
+  "Tap to make your profile yours": "Toca para hacer tu perfil tuyo",
+  "Your profile": "Tu perfil",
+  "Get started": "Empezar",
+  "Edit profile": "Editar perfil",
+  "Share profile": "Compartir perfil",
+  "Edit profile picture": "Editar foto de perfil",
+  "Profile picture": "Foto de perfil",
+  "Recovery phrase backed up": "Frase de recuperación guardada",
+  "Recovery phrase not backed up yet": "Frase de recuperación aún no guardada",
+  "Publishing…": "Publicando…",
+  "Public": "Público",
+  "Retrying": "Reintentando",
+  "Publish failed": "Publicación fallida",
+  "Not published yet": "Aún no publicado"
 }

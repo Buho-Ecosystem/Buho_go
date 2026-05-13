@@ -1311,6 +1311,25 @@ export default {
   "Couldn't copy": "Konnte nicht kopiert werden",
   "Copied": "Kopiert",
   "Copied. Clears in 30s.": "Kopiert. Zwischenablage wird in 30s geleert.",
-  "Clipboard clears in": "Zwischenablage wird geleert in"
+  "Clipboard clears in": "Zwischenablage wird geleert in",
+
+  // ----- Profile hero (Plan 09 §7a) -----
+  "Set up your profile": "Profil einrichten",
+  "Your profile travels with your recovery phrase": "Dein Profil reist mit deinen Wiederherstellungswörtern",
+  "Add your name and a picture": "Füge deinen Namen und ein Bild hinzu",
+  "Tap to make your profile yours": "Tippen, um dein Profil persönlich zu machen",
+  "Your profile": "Dein Profil",
+  "Get started": "Loslegen",
+  "Edit profile": "Profil bearbeiten",
+  "Share profile": "Profil teilen",
+  "Edit profile picture": "Profilbild bearbeiten",
+  "Profile picture": "Profilbild",
+  "Recovery phrase backed up": "Wiederherstellungswörter gesichert",
+  "Recovery phrase not backed up yet": "Wiederherstellungswörter noch nicht gesichert",
+  "Publishing…": "Wird veröffentlicht…",
+  "Public": "Öffentlich",
+  "Retrying": "Erneuter Versuch",
+  "Publish failed": "Veröffentlichung fehlgeschlagen",
+  "Not published yet": "Noch nicht veröffentlicht"
 
 }

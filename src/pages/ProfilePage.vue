@@ -1,7 +1,12 @@
 <template>
   <q-page class="profile-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <!-- Header -->
-    <div class="profile-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
+    <!-- Header. Back · centred title · gear (manage). The gear opens
+         the IdentityManageSheet, which still owns the lower-frequency
+         actions (seed phrase, restore, regenerate, public-profile-
+         details). It used to be the only way into those — now the
+         profile header below owns the everyday actions and the gear
+         is a deliberate, one-tap step away. -->
+    <div class="page-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
       <q-btn
         flat
         round
@@ -16,73 +21,168 @@
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Profile') }}
       </div>
-      <div class="header-spacer"></div>
-    </div>
-
-    <div class="profile-content">
-      <!-- Identity strip. Tappable: opens the manage sheet with every
-           identity-related action (View, Restore, Generate new). Means
-           the page stays at two visible sections (identity + sites)
-           and the lower-frequency, scarier actions stay one tap away
-           but out of sight. -->
-      <button
-        type="button"
-        class="identity-strip"
-        :class="$q.dark.isActive ? 'identity-strip-dark' : 'identity-strip-light'"
+      <q-btn
+        flat
+        round
+        dense
+        class="manage-btn"
+        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
         :aria-label="$t('Manage your BuhoGO identity')"
         @click="showManageSheet = true"
       >
-        <div
-          class="identity-strip-avatar"
-          :class="[
-            $q.dark.isActive ? 'identity-strip-avatar-dark' : 'identity-strip-avatar-light',
-            { 'identity-strip-avatar--warn': identity.bootstrapped && !identity.backupConfirmed },
-          ]"
-          aria-hidden="true"
+        <Icon icon="tabler:settings" width="18" height="18" />
+      </q-btn>
+    </div>
+
+    <div class="profile-content">
+      <!-- Profile header. Three state variations driven entirely by
+           identity.bootstrapped + profile.isEmpty:
+             1. !bootstrapped       → "Set up your profile" + Get started
+             2. bootstrapped, empty → "Add your name and a picture"
+             3. fully set up        → avatar / name / pills / Edit + Share
+           See the UX contract in Plan 09 build guide §7a. -->
+      <section
+        class="profile-hero"
+        :class="$q.dark.isActive ? 'hero-dark' : 'hero-light'"
+      >
+        <!-- Avatar block. Tap opens edit (or "get started" for fresh
+             installs). Backup-warn ring lights up amber whenever the
+             user has an identity but hasn't written down their seed. -->
+        <button
+          type="button"
+          class="hero-avatar-btn"
+          :aria-label="
+            identity.bootstrapped
+              ? $t('Edit profile picture')
+              : $t('Set up your profile')
+          "
+          @click="openProfileEditor"
         >
-          <Icon icon="tabler:user" width="22" height="22" />
-        </div>
-        <div class="identity-strip-meta">
-          <div class="identity-strip-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-            {{ $t('Your BuhoGO identity') }}
+          <div
+            class="hero-avatar"
+            :class="[
+              $q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light',
+              { 'hero-avatar--warn': identity.bootstrapped && !identity.backupConfirmed },
+            ]"
+          >
+            <img
+              v-if="resolvedAvatarUrl"
+              :src="resolvedAvatarUrl"
+              :alt="$t('Profile picture')"
+              class="hero-avatar-img"
+              @error="onAvatarLoadError"
+            />
+            <Icon
+              v-else
+              icon="tabler:user"
+              width="40"
+              height="40"
+              class="hero-avatar-glyph"
+              aria-hidden="true"
+            />
+            <span class="hero-avatar-edit-badge" aria-hidden="true">
+              <Icon icon="tabler:camera" width="14" height="14" />
+            </span>
           </div>
-          <div class="identity-strip-status">
-            <template v-if="!identity.bootstrapped">
-              <Icon icon="tabler:sparkles" width="13" height="13" class="identity-strip-status-icon" />
-              <span :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                {{ $t('Tap to set up') }}
-              </span>
-            </template>
-            <template v-else>
-              <Icon
-                :icon="identity.backupConfirmed ? 'tabler:shield-check' : 'tabler:shield-exclamation'"
-                width="13"
-                height="13"
-                :class="['identity-strip-status-icon', identity.backupConfirmed ? 'is-ok' : 'is-warn']"
-              />
-              <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                <template v-if="identity.backupConfirmed">
-                  {{ $t('Backed up') }}
-                </template>
-                <template v-else>
-                  {{ $t('Backup needed') }}
-                </template>
-                <template v-if="connectedSites.length > 0">
-                  <span class="identity-strip-status-sep" aria-hidden="true"></span>
-                  {{ siteCountLine }}
-                </template>
-              </span>
-            </template>
+        </button>
+
+        <!-- Name + subline. Tappable as one block so any reasonable
+             miss-tap on the headline area still lands in the editor. -->
+        <button
+          type="button"
+          class="hero-meta-btn"
+          :aria-label="$t('Edit profile')"
+          @click="openProfileEditor"
+        >
+          <div
+            class="hero-name"
+            :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+          >
+            {{ heroHeadline }}
           </div>
+          <div
+            v-if="heroSubline"
+            class="hero-subline"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          >
+            {{ heroSubline }}
+          </div>
+        </button>
+
+        <!-- Status pills. Only render once an identity exists — fresh
+             installs see only the Get-started CTA below. -->
+        <div v-if="identity.bootstrapped" class="hero-pills">
+          <button
+            type="button"
+            class="hero-pill"
+            :class="[
+              $q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light',
+              identity.backupConfirmed ? 'is-ok' : 'is-warn',
+            ]"
+            role="status"
+            aria-live="polite"
+            :aria-label="
+              identity.backupConfirmed
+                ? $t('Recovery phrase backed up')
+                : $t('Recovery phrase not backed up yet')
+            "
+            @click="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
+          >
+            <Icon
+              :icon="identity.backupConfirmed ? 'tabler:shield-check' : 'tabler:shield-exclamation'"
+              width="13"
+              height="13"
+            />
+            <span>
+              {{ identity.backupConfirmed ? $t('Backed up') : $t('Backup needed') }}
+            </span>
+          </button>
+
+          <span
+            v-if="!profile.isEmpty"
+            class="hero-pill"
+            :class="[
+              $q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light',
+              publishPillTone,
+            ]"
+            role="status"
+            aria-live="polite"
+          >
+            <Icon
+              :icon="publishPillIcon"
+              width="13"
+              height="13"
+            />
+            <span>{{ publishPillLabel }}</span>
+          </span>
         </div>
-        <Icon
-          icon="tabler:chevron-right"
-          width="18"
-          height="18"
-          class="identity-strip-chevron"
-          :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"
-        />
-      </button>
+
+        <!-- Primary + optional secondary CTA. Fresh installs see only
+             a single "Get started" button so the screen never asks
+             the user to choose between actions they haven't set up. -->
+        <div class="hero-actions">
+          <button
+            type="button"
+            class="hero-cta hero-cta--primary"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            @click="openProfileEditor"
+          >
+            <Icon icon="tabler:pencil" width="15" height="15" />
+            <span>{{ identity.bootstrapped ? $t('Edit profile') : $t('Get started') }}</span>
+          </button>
+
+          <button
+            v-if="identity.bootstrapped && !profile.isEmpty"
+            type="button"
+            class="hero-cta hero-cta--secondary"
+            :class="$q.dark.isActive ? 'hero-cta-secondary-dark' : 'hero-cta-secondary-light'"
+            @click="showProfileShareSheet = true"
+          >
+            <Icon icon="tabler:share-2" width="15" height="15" />
+            <span>{{ $t('Share profile') }}</span>
+          </button>
+        </div>
+      </section>
 
       <!-- Attention banner. Only renders when there's something to act
            on — keeps the page calm when everything's healthy. Pulls the
@@ -325,6 +425,7 @@ import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
 import { useIdentityStore } from '../stores/identity';
+import { useProfileStore } from '../stores/profile';
 
 // The typed confirmation phrase. Matched verbatim to the wallet-removal
 // flow ("I understand") so users build the same muscle memory across
@@ -348,7 +449,8 @@ export default {
 
   setup() {
     const identity = useIdentityStore();
-    return { identity };
+    const profile = useProfileStore();
+    return { identity, profile };
   },
 
   data() {
@@ -360,6 +462,15 @@ export default {
 
       // Identity manage bottom sheet (View / Restore / Generate new).
       showManageSheet: false,
+
+      // Profile bottom sheets — the components themselves land in 7b/7d.
+      showProfileEditSheet: false,
+      showProfileShareSheet: false,
+
+      // Avatar load error sticky: once an avatar URL has failed to load
+      // in this session, we silently fall back to the silhouette so we
+      // don't keep retrying a broken URL on every re-render.
+      avatarBroken: false,
 
       // Add-site flow. `pendingChallenge` is the parsed LUD-04 challenge
       // produced by the AddSiteSheet paste/parse step; the auth dialog
@@ -392,16 +503,114 @@ export default {
     },
 
     /**
-     * Single-line site count for the identity-strip subtitle. Skips the
-     * line entirely when the user hasn't linked any sites yet so we
-     * don't read "0 sites linked" on a fresh install — silence beats
-     * vanity metrics.
+     * Resolved avatar URL. Honours the runtime `avatarBroken` flag so
+     * a failed load falls back to the silhouette without us retrying
+     * the broken URL on every render. Cleared via `onAvatarReset()`
+     * whenever the underlying `profile.picture` actually changes.
      */
-    siteCountLine() {
-      const n = this.connectedSites.length;
-      if (n === 0) return this.$t('No sites yet');
-      if (n === 1) return this.$t('1 site linked');
-      return this.$t('{n} sites linked', { n });
+    resolvedAvatarUrl() {
+      if (!this.profile.picture) return '';
+      if (this.avatarBroken) return '';
+      return this.profile.picture;
+    },
+
+    /**
+     * Headline shown in the hero block. Three states, one source of
+     * truth — every other piece of UI (subline, CTA label) reads from
+     * the same `identity.bootstrapped` / `profile.isEmpty` signals.
+     */
+    heroHeadline() {
+      if (!this.identity.bootstrapped) return this.$t('Set up your profile');
+      if (this.profile.isEmpty) return this.$t('Add your name and a picture');
+      // Prefer display_name; fall back to name (handle) before the
+      // shortened pubkey, because in NIP-01 some clients only set
+      // `name`. Last resort is the placeholder.
+      return this.profile.displayName
+        || this.profile.name
+        || this.shortNpub
+        || this.$t('Your profile');
+    },
+
+    /**
+     * Subline under the headline. Stays empty whenever there's
+     * nothing trustworthy to show (no identity yet, or no profile
+     * fields yet) — better than rendering a stale label that the
+     * user can't trust.
+     */
+    heroSubline() {
+      if (!this.identity.bootstrapped) {
+        return this.$t('Your profile travels with your recovery phrase');
+      }
+      if (this.profile.isEmpty) {
+        return this.$t('Tap to make your profile yours');
+      }
+      // Prefer the Lightning Address (NIP-05/LUD-16 form) over the
+      // shortened pubkey — it's the version a friend can actually
+      // type into another app.
+      if (this.profile.lud16) return this.profile.lud16;
+      return this.shortNpub;
+    },
+
+    /**
+     * Compact `npub1abc…wxyz` form for places that don't want to
+     * blow up the layout. Falls back to '' before the cache lands.
+     */
+    shortNpub() {
+      const npub = this.identity.nostrNpub;
+      if (typeof npub !== 'string' || npub.length < 16) return '';
+      return `${npub.slice(0, 10)}…${npub.slice(-6)}`;
+    },
+
+    /**
+     * Publish-status pill. Five states cover the publish lifecycle:
+     *   idle              → grey "Not published yet"
+     *   publishing        → blue "Publishing…"
+     *   published         → green "Public"
+     *   retrying          → amber "Retrying"
+     *   failed            → red    "Publish failed"
+     * The retrying / failed split is only meaningful once Step 8 wires
+     * background retry; until then a total failure shows as "Publish
+     * failed" so the user knows there's something to do.
+     */
+    publishPillState() {
+      if (this.profile.isPublishing) return 'publishing';
+      if (this.profile.lastPublishedAt) {
+        if (this.profile.isDirty) return 'retrying';
+        return 'published';
+      }
+      if (Array.isArray(this.profile.lastPublishResult)
+          && this.profile.lastPublishResult.length > 0
+          && this.profile.lastPublishResult.every((r) => !r.ok)) {
+        return 'failed';
+      }
+      return 'idle';
+    },
+    publishPillIcon() {
+      switch (this.publishPillState) {
+        case 'publishing': return 'tabler:loader-2';
+        case 'published':  return 'tabler:circle-check';
+        case 'retrying':   return 'tabler:refresh';
+        case 'failed':     return 'tabler:alert-circle';
+        default:           return 'tabler:cloud-off';
+      }
+    },
+    publishPillLabel() {
+      switch (this.publishPillState) {
+        case 'publishing': return this.$t('Publishing…');
+        case 'published':  return this.$t('Public');
+        case 'retrying':   return this.$t('Retrying');
+        case 'failed':     return this.$t('Publish failed');
+        default:           return this.$t('Not published yet');
+      }
+    },
+    publishPillTone() {
+      switch (this.publishPillState) {
+        case 'publishing': return 'is-busy';
+        case 'published':  return 'is-ok';
+        case 'retrying':   return 'is-warn';
+        case 'failed':     return 'is-danger';
+        default:           return 'is-muted';
+      }
     },
 
     /**
@@ -420,9 +629,41 @@ export default {
 
   created() {
     this.identity.hydrate();
+    this.profile.hydrate();
+  },
+
+  watch: {
+    'profile.picture'() {
+      // Avatar URL changed → reset the load-failure flag so a fresh
+      // upload gets a fresh fetch attempt. Cheap; no debounce needed
+      // because the URL only changes via uploadAvatar.
+      this.avatarBroken = false;
+    },
   },
 
   methods: {
+    /**
+     * Single entry point into the editor sheet. Fresh installs hit
+     * `ensureIdentity()` first so the BIP-39 seed exists by the time
+     * the editor opens — otherwise the user would land in an editor
+     * that can't publish anything until they tap "manage" → "set up
+     * identity" elsewhere.
+     */
+    async openProfileEditor() {
+      if (!this.identity.bootstrapped) {
+        await this.identity.ensureIdentity();
+      }
+      this.showProfileEditSheet = true;
+    },
+
+    /**
+     * The hero <img> failed to load. Stop trying — fall back to the
+     * silhouette glyph until the user picks a new avatar.
+     */
+    onAvatarLoadError() {
+      this.avatarBroken = true;
+    },
+
     async openIdentitySeedDialog(mode) {
       await this.identity.ensureIdentity();
       this.identitySeedDialogMode = mode;
@@ -540,7 +781,7 @@ export default {
   max-width: 100vw;
 }
 
-.profile-header {
+.page-header {
   display: flex;
   align-items: center;
   padding: 1rem;
@@ -563,7 +804,7 @@ export default {
   font-weight: 600;
 }
 
-.header-spacer {
+.manage-btn {
   width: 40px;
 }
 
@@ -578,140 +819,308 @@ export default {
   margin: 0 auto;
 }
 
-/* ---------- Identity strip ----------
-   Compact horizontal header replacing the old hero card. Pattern from
-   Cash App / Strike / 1Password mobile: the user's identity is a thin
-   anchor at the top, not a vanity panel. */
+/* ---------- Profile hero ----------
+   The trust-anchor surface of the page: one 96px avatar, name,
+   subline, status pills, primary + secondary CTA. Replaces the old
+   identity strip outright. State variations (fresh install / empty /
+   fully set up) are driven by `identity.bootstrapped` + `profile.isEmpty`;
+   the markup below is single-template-conditional-light because the
+   three states share most of their structure. */
 
-.identity-strip {
+.profile-hero {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 14px;
-  width: 100%;
-  margin: 16px 0 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  /* `<button>` reset — every appearance, every margin, every focus
-     outline comes from us so the strip reads as a row, not a system
-     button. */
-  border: 1px solid transparent;
-  font-family: 'Manrope', sans-serif;
-  text-align: left;
-  cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  padding: 28px 16px 24px;
+  margin: 8px 0 16px;
+  border-radius: 18px;
+  text-align: center;
 }
 
-.identity-strip:focus-visible {
-  outline: 2px solid #0f172a;
-  outline-offset: 2px;
-}
-
-.identity-strip:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-}
-
-.identity-strip:active {
-  transform: translateY(0);
-  transition-duration: 0.06s;
-}
-
-.identity-strip-chevron {
-  flex: 0 0 auto;
-  opacity: 0.6;
-}
-
-.identity-strip-light {
+.hero-light {
   background: #ffffff;
-  border-color: rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(15, 23, 42, 0.06);
 }
 
-.identity-strip-dark {
+.hero-dark {
   background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Avatar: 44px circle, same dark-neutral palette as the primary CTA
-   buttons. Status communicated via an optional 2px ring rather than a
-   coloured background — keeps the surface monochrome and on-brand. */
-.identity-strip-avatar {
+/* ---------- Hero avatar ----------
+   96px circle. Tap-target wraps the avatar so a generous miss-tap
+   region opens the editor. The camera badge in the bottom-right says
+   "this is tappable" without needing a caption. */
+.hero-avatar-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hero-avatar-btn:focus-visible {
+  outline: 2px solid #15DE72;
+  outline-offset: 4px;
+  border-radius: 50%;
+}
+
+.hero-avatar {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  transition: box-shadow 0.18s ease;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
-.identity-strip-avatar-light {
-  background: var(--btn-neutral-bg, #0f172a);
-  color: var(--btn-neutral-fg, #ffffff);
+.hero-avatar-btn:active .hero-avatar {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
 }
 
-.identity-strip-avatar-dark {
-  background: rgba(21, 222, 114, 0.14);
-  color: #15DE72;
-  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
+.hero-avatar-light {
+  background: rgba(15, 23, 42, 0.04);
+  color: #0f172a;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
-/* Amber ring around the avatar when the seed has not been written
-   down yet. Visual nag the user sees every time they land on this
-   page until they back up. Disappears the moment backup is done. */
-.identity-strip-avatar--warn {
-  box-shadow: 0 0 0 2px #f59e0b;
+.hero-avatar-dark {
+  background: rgba(255, 255, 255, 0.04);
+  color: #f8fafc;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
 }
 
-.identity-strip-meta {
-  flex: 1 1 auto;
-  min-width: 0;
+/* Backup-warn ring — same amber semantics as the old identity strip,
+   bumped to 3px so it reads at 96px without competing with the inner
+   ring. Overrides the inner box-shadow when present. */
+.hero-avatar--warn {
+  box-shadow: 0 0 0 3px #f59e0b;
 }
 
-.identity-strip-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  line-height: 1.2;
+.hero-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Suppress the iOS image-tap callout */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
-.identity-strip-status {
+.hero-avatar-glyph {
+  opacity: 0.7;
+}
+
+.hero-avatar-edit-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  border: 2px solid var(--surface-card, #ffffff);
+}
+
+body.body--dark .hero-avatar-edit-badge {
+  background: #15DE72;
+  color: #052016;
+  border-color: rgba(15, 23, 42, 1);
+}
+
+/* ---------- Name + subline ----------
+   Whole block is one tap target so a near-miss still opens the
+   editor. Padding mirrors the avatar gap so the row reads as the
+   same surface visually. */
+.hero-meta-btn {
+  background: transparent;
+  border: 0;
+  padding: 4px 12px;
+  margin: -4px 0 0;
+  cursor: pointer;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hero-meta-btn:focus-visible {
+  outline: 2px solid #15DE72;
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.hero-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  max-width: 320px;
+  /* Wrap on small screens rather than truncating to ellipsis — long
+     names are part of the user's identity, not noise. */
+  word-break: break-word;
+}
+
+.hero-subline {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  max-width: 320px;
+  word-break: break-word;
+}
+
+/* ---------- Hero status pills ----------
+   Tappable rounded chips. Tone classes are semantic only (is-ok /
+   is-warn / is-busy / is-muted / is-danger); the base pill carries
+   the layout + light/dark surface. */
+.hero-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.hero-pill {
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-top: 4px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: default;
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
-  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.18s ease, transform 0.12s ease;
 }
 
-.identity-strip-status-icon {
-  flex: 0 0 auto;
+button.hero-pill {
+  cursor: pointer;
+}
+
+button.hero-pill:active {
+  transform: scale(0.97);
+  transition-duration: 0.06s;
+}
+
+button.hero-pill:focus-visible {
+  outline: 2px solid #15DE72;
+  outline-offset: 2px;
+}
+
+.hero-pill-light {
+  background: rgba(15, 23, 42, 0.04);
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.06);
+}
+
+.hero-pill-dark {
+  background: rgba(255, 255, 255, 0.04);
+  color: #f8fafc;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.hero-pill.is-ok {
+  background: rgba(15, 156, 84, 0.10);
+  color: #0f9c54;
+  border-color: rgba(15, 156, 84, 0.22);
+}
+
+.hero-pill.is-warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b06d00;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.hero-pill.is-busy {
+  background: rgba(59, 130, 246, 0.10);
+  color: #2563eb;
+  border-color: rgba(59, 130, 246, 0.22);
+}
+
+.hero-pill.is-danger {
+  background: rgba(239, 68, 68, 0.10);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.22);
+}
+
+.hero-pill.is-muted {
+  /* Same surface as the base pill; tone is just "neutral chrome". */
   opacity: 0.85;
 }
 
-.identity-strip-status-icon.is-ok {
-  color: #0f9c54;
-  opacity: 1;
+/* ---------- Hero CTAs ---------- */
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 6px;
 }
 
-.identity-strip-status-icon.is-warn {
-  color: #b06d00;
-  opacity: 1;
-}
-
-.identity-strip-status-sep {
-  opacity: 0.55;
-  margin: 0 6px;
+.hero-cta {
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 22px;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14.5px;
   font-weight: 600;
-  /* Bullet rather than middle dot — slightly larger glyph, reads better
-     at this small size against the warm cream background. */
+  cursor: pointer;
+  transition: filter 0.18s ease, transform 0.12s ease, background-color 0.18s ease;
 }
 
-.identity-strip-status-sep::before {
-  content: '\2022';
+.hero-cta:active {
+  transform: scale(0.98);
+}
+
+.hero-cta--primary:hover {
+  filter: brightness(1.05);
+}
+
+.hero-cta-secondary-light {
+  background: rgba(15, 23, 42, 0.04);
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.hero-cta-secondary-light:hover {
+  background: rgba(15, 23, 42, 0.07);
+}
+
+.hero-cta-secondary-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hero-cta-secondary-dark:hover {
+  background: rgba(255, 255, 255, 0.10);
 }
 
 /* ---------- Attention banner ----------
