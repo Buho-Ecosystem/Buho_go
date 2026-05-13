@@ -12,7 +12,7 @@ import { SparkWalletProvider, SPARK_ACCOUNT_DEFAULTS } from '../providers/SparkW
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
-import { getUserFriendlyErrorMessage } from '../utils/userErrors';
+import { buildPaymentError, getUserFriendlyError } from '../utils/userErrors';
 
 /**
  * Storage keys for persistence
@@ -187,6 +187,18 @@ export const useWalletStore = defineStore('wallet', {
 
     // Biometric lock
     biometricsEnabled: false,
+
+    // Global payment-error dialog state. A single global instance lives
+    // in App.vue; any page or store funnels failures here via
+    // showPaymentError() instead of building its own toast.
+    paymentError: {
+      visible: false,
+      title: '',
+      reason: '',
+      reasonSource: null,        // 'upstream' | 'curated' | 'fallback'
+      reasonAttribution: null,   // set when reasonSource === 'upstream'
+      technical: null,
+    },
 
     // Internal flag: set true when user explicitly removes wallets (bypasses persist guard)
     _walletRemovalInProgress: false,
@@ -545,6 +557,46 @@ export const useWalletStore = defineStore('wallet', {
   },
 
   actions: {
+    /**
+     * Surface a payment failure to the user via the global error dialog.
+     * Funnels every user-initiated payment, withdraw, transfer, and
+     * kiosk failure into one consistent surface so the upstream prose
+     * from LUD-06 / NWC / LNbits reaches the user verbatim.
+     *
+     * @param {Error|string} error
+     * @param {object} ctx
+     * @param {string} [ctx.context]    See buildPaymentError docs.
+     * @param {string} [ctx.walletType]
+     * @param {string} [ctx.route]
+     * @param {number} [ctx.amountSats]
+     * @param {Function} [ctx.t]        Translation function ($t bound).
+     */
+    showPaymentError(error, ctx = {}) {
+      const built = buildPaymentError(error, ctx, ctx.t || null);
+      this.paymentError = {
+        visible: true,
+        title: built.title,
+        reason: built.reason,
+        reasonSource: built.reasonSource,
+        reasonAttribution: built.reasonAttribution,
+        technical: built.technical,
+      };
+    },
+
+    /**
+     * Close the global payment-error dialog and drop the held detail.
+     */
+    dismissPaymentError() {
+      this.paymentError = {
+        visible: false,
+        title: '',
+        reason: '',
+        reasonSource: null,
+        reasonAttribution: null,
+        technical: null,
+      };
+    },
+
     /**
      * Mark a Bitcoin L1 deposit txId as currently being claimed. Idempotent.
      * Called by both the auto-claim flow (Wallet.vue) and the manual sheet
@@ -2118,22 +2170,22 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Turn a raw SDK/transport error into a user-facing string.
-     *
-     * Routes the error through `getUserFriendlyErrorMessage` so technical
-     * details (gRPC paths, SDK internals, stack traces) never reach the UI.
-     * The wallet name is appended for context — phase-specific messages help
-     * the user understand which step failed (invoice vs. payment) without
-     * exposing the underlying error class.
+     * Turn a raw SDK/transport error into a user-facing string for the
+     * internal-transfer modal. Surfaces the upstream prose (LUD-06
+     * reason, NWC message, LNbits detail) verbatim when it's safe, so
+     * the modal shows "Insufficient balance (A → B)" instead of the
+     * generic "Transfer failed (A → B)". Tech-only failures fall back
+     * to a curated string inside getUserFriendlyError.
      *
      * The raw error is logged at the call site via `console.error` for
      * debugging; the return value here is what the user actually sees.
      */
     _friendlyTransferError(error, fromWallet, toWallet, phase = 'transfer') {
-      const friendly = getUserFriendlyErrorMessage(error, 'transfer');
-      if (phase === 'invoice') return `${friendly} (${toWallet.name})`;
-      if (phase === 'pay')     return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
-      return `${friendly} (${fromWallet.name} → ${toWallet.name})`;
+      const { description } = getUserFriendlyError(error, 'transfer');
+      const suffix = phase === 'invoice'
+        ? `(${toWallet.name})`
+        : `(${fromWallet.name} → ${toWallet.name})`;
+      return `${description} ${suffix}`;
     },
 
     /**

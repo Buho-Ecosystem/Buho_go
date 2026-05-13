@@ -14,6 +14,10 @@
   </div>
 
   <router-view />
+
+  <!-- Global payment-error dialog. Wired to walletStore.paymentError so
+       any page or store can surface a failure via showPaymentError(). -->
+  <PaymentErrorDialog />
 </template>
 
 <script>
@@ -22,9 +26,12 @@ import { Capacitor } from '@capacitor/core'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from 'src/stores/wallet'
 import { authenticate as biometricAuth } from 'src/utils/biometric'
+import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 
 export default defineComponent({
   name: 'App',
+
+  components: { PaymentErrorDialog },
 
   setup () {
     const store = useWalletStore()
