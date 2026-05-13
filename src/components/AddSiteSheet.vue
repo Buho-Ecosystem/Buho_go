@@ -41,7 +41,7 @@
             class="add-site-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Point your camera at the "Login with Bitcoin" QR code.') }}
+            {{ $t('Point your camera at the Lightning login QR code.') }}
           </p>
 
           <div
@@ -102,7 +102,7 @@
             class="add-site-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Open a site that supports Lightning login, tap "Login with Bitcoin", then copy the link and paste it here.') }}
+            {{ $t('Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.') }}
           </p>
 
           <div

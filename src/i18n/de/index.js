@@ -1226,10 +1226,10 @@ export default {
 
   // Leerer Zustand + Seite hinzufügen
   "Sign in to your first site": "Melde dich bei deiner ersten Seite an",
-  "Any site that supports \"Login with Bitcoin\" works. No passwords, no email.": "Funktioniert mit jeder Seite, die \"Login with Bitcoin\" anbietet. Ohne Passwörter, ohne E-Mail.",
+  "Any site with Lightning login works. No passwords, no email.": "Funktioniert mit jeder Seite, die einen Lightning-Login anbietet. Ohne Passwörter, ohne E-Mail.",
   "Sign in to a site": "Bei einer Seite anmelden",
   "Sign in to a new site": "Bei einer neuen Seite anmelden",
-  "Open a site that supports Lightning login, tap \"Login with Bitcoin\", then copy the link and paste it here.": "Öffne eine Seite, die Lightning-Login unterstützt, tippe auf \"Login with Bitcoin\", kopiere den Link und füge ihn hier ein.",
+  "Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.": "Öffne eine Seite mit Lightning-Login, tippe auf die Anmelde-Option, kopiere den Link und füge ihn hier ein.",
   "Paste login link": "Anmelde-Link einfügen",
   "Clear": "Löschen",
   "Paste": "Einfügen",
@@ -1237,7 +1237,7 @@ export default {
   "That link is not a Lightning login. Check the site and copy the link again.": "Das ist kein Lightning-Login. Prüfe die Seite und kopiere den Link erneut.",
 
   // Scanner für neue Seiten
-  "Point your camera at the \"Login with Bitcoin\" QR code.": "Richte deine Kamera auf den \"Login with Bitcoin\"-QR-Code.",
+  "Point your camera at the Lightning login QR code.": "Richte deine Kamera auf den Lightning-Login-QR-Code.",
   "Or paste a link instead": "Oder Link einfügen",
   "Or scan with camera": "Oder mit der Kamera scannen",
   "No camera found on this device.": "Auf diesem Gerät wurde keine Kamera gefunden.",

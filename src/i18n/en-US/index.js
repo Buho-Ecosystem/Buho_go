@@ -1299,10 +1299,10 @@ export default {
 
   // Empty state + Add-site sheet
   "Sign in to your first site": "Sign in to your first site",
-  "Any site that supports \"Login with Bitcoin\" works. No passwords, no email.": "Any site that supports \"Login with Bitcoin\" works. No passwords, no email.",
+  "Any site with Lightning login works. No passwords, no email.": "Any site with Lightning login works. No passwords, no email.",
   "Sign in to a site": "Sign in to a site",
   "Sign in to a new site": "Sign in to a new site",
-  "Open a site that supports Lightning login, tap \"Login with Bitcoin\", then copy the link and paste it here.": "Open a site that supports Lightning login, tap \"Login with Bitcoin\", then copy the link and paste it here.",
+  "Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.": "Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.",
   "Paste login link": "Paste login link",
   "Clear": "Clear",
   "Paste": "Paste",
@@ -1310,7 +1310,7 @@ export default {
   "That link uses an insecure connection. Sign-in only works over HTTPS.": "That link uses an insecure connection. Sign-in only works over HTTPS.",
 
   // Add-site scanner
-  "Point your camera at the \"Login with Bitcoin\" QR code.": "Point your camera at the \"Login with Bitcoin\" QR code.",
+  "Point your camera at the Lightning login QR code.": "Point your camera at the Lightning login QR code.",
   "Or paste a link instead": "Or paste a link instead",
   "Or scan with camera": "Or scan with camera",
   "No camera found on this device.": "No camera found on this device.",

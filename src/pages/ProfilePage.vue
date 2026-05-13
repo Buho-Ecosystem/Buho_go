@@ -251,7 +251,7 @@
             {{ $t('Sign in to your first site') }}
           </div>
           <p class="sites-empty-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('Any site that supports "Login with Bitcoin" works. No passwords, no email.') }}
+            {{ $t('Any site with Lightning login works. No passwords, no email.') }}
           </p>
           <button
             type="button"
