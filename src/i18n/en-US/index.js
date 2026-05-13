@@ -1383,5 +1383,6 @@ export default {
   "Your old profile is forgotten on this device.": "Your old profile is forgotten on this device.",
   "Couldn't reset your profile": "Couldn't reset your profile",
   "Couldn't copy": "Couldn't copy",
-  "Copied": "Copied"
+  "Copied": "Copied",
+  "Copied. Clears in 30s.": "Copied. Clears in 30s."
 }

@@ -1307,5 +1307,6 @@ export default {
   "Your old profile is forgotten on this device.": "Este dispositivo olvida tu perfil anterior.",
   "Couldn't reset your profile": "No se pudo restablecer tu perfil",
   "Couldn't copy": "No se pudo copiar",
-  "Copied": "Copiado"
+  "Copied": "Copiado",
+  "Copied. Clears in 30s.": "Copiado. El portapapeles se borra en 30s."
 }

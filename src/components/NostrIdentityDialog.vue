@@ -237,7 +237,7 @@
                 height="14"
                 style="margin-right: 4px;"
               />
-              {{ copiedNsec ? $t('Copied') : $t('Copy') }}
+              {{ copiedNsec ? $t('Copied. Clears in 30s.') : $t('Copy') }}
             </q-btn>
           </div>
 
@@ -341,6 +341,7 @@ import { useIdentityStore } from '../stores/identity';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { getBiometricMethodCopy } from '../utils/biometricCopy';
 import { secureScreen } from '../utils/secureScreen';
+import { copySensitive } from '../utils/sensitiveClipboard';
 
 const REVEAL_DURATION_SECONDS = 120;
 const COUNTDOWN_TICK_MS = 1000;
@@ -471,6 +472,9 @@ export default {
   beforeUnmount() {
     this.stopCountdown();
     this.wipeSecret();
+    // Intentionally do NOT cancel the pending clipboard wipe here. The
+    // user opted into the 30s auto-clear by tapping Copy; we honour
+    // that promise even if they navigate away before it fires.
     if (this.secureScreenActive) {
       secureScreen.disable();
       this.secureScreenActive = false;
@@ -627,9 +631,12 @@ export default {
     async copyNsec() {
       if (!this.revealedNsec || this.nsecBlurred) return;
       try {
-        await navigator.clipboard.writeText(this.revealedNsec);
+        // Auto-wipe the clipboard 30s after this copy so a stray paste
+        // later (chat box, social-media compose, keyboard preview app)
+        // doesn't leak the private key.
+        await copySensitive(this.revealedNsec);
         this.copiedNsec = true;
-        setTimeout(() => { this.copiedNsec = false; }, 1500);
+        setTimeout(() => { this.copiedNsec = false; }, 2500);
       } catch (err) {
         console.error('[NostrIdentityDialog] copy nsec failed', err);
         this.$q.notify({ type: 'negative', message: this.$t("Couldn't copy") });

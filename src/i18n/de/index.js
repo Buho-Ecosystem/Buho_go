@@ -1308,6 +1308,7 @@ export default {
   "Your old profile is forgotten on this device.": "Dein altes Profil ist auf diesem Gerät vergessen.",
   "Couldn't reset your profile": "Profil konnte nicht zurückgesetzt werden",
   "Couldn't copy": "Konnte nicht kopiert werden",
-  "Copied": "Kopiert"
+  "Copied": "Kopiert",
+  "Copied. Clears in 30s.": "Kopiert. Zwischenablage wird in 30s geleert."
 
 }
