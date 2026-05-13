@@ -45,7 +45,7 @@
  */
 
 import { defineStore } from 'pinia';
-import { encryptString, decryptString } from '../utils/deviceCrypto';
+import { encryptString, decryptString } from '../utils/deviceCrypto.js';
 import {
   generateIdentityMnemonic,
   isValidIdentityMnemonic,
@@ -55,7 +55,7 @@ import {
   signLud04Challenge,
   computeIdentityFingerprint,
   bytesToHex,
-} from '../utils/identityCrypto';
+} from '../utils/identityCrypto.js';
 
 const STORAGE_KEYS = Object.freeze({
   METADATA: 'buhoGO_identity_v1',
