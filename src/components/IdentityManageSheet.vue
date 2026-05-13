@@ -56,10 +56,12 @@
       <!-- Primary actions list. Identity-card rows from the old page
            are gathered here so the main Profile screen can stay calm. -->
       <q-list class="sheet-list">
+        <!-- View / set up the seed phrase. Reachable for fresh installs:
+             ProfilePage.openIdentitySeedDialog() calls ensureIdentity()
+             before opening, so the first tap also creates the seed. -->
         <q-item
           clickable
           v-ripple
-          :disable="!identity.bootstrapped"
           @click="emitView"
         >
           <q-item-section side>
@@ -67,10 +69,10 @@
           </q-item-section>
           <q-item-section>
             <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('View seed phrase') }}
+              {{ identity.bootstrapped ? $t('View seed phrase') : $t('Set up identity') }}
             </q-item-label>
             <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('Show your 12 recovery words') }}
+              {{ identity.bootstrapped ? $t('Show your 12 recovery words') : $t('Create your 12 recovery words and back them up') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -79,35 +81,34 @@
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
 
-        <!-- Nostr identity row. Derived from the same recovery phrase via
-             NIP-06, so it lives in the same umbrella as the seed phrase
-             rather than as a separate identity. -->
-        <q-item
-          clickable
-          v-ripple
-          :disable="!identity.bootstrapped"
-          @click="emitViewNostr"
-        >
-          <q-item-section side>
-            <img
-              src="/nostr/nostr.png"
-              alt=""
-              class="nostr-row-icon"
-            />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Nostr identity') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('View your public key and reveal your secret key') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        <!-- Nostr identity row. Hidden until a BuhoGO identity exists,
+             because Nostr is derived from the BIP-39 seed via NIP-06 —
+             there's nothing to show until the seed exists. Once the
+             user creates their identity from the row above, this row
+             appears with the derived npub. -->
+        <template v-if="identity.bootstrapped">
+          <q-item clickable v-ripple @click="emitViewNostr">
+            <q-item-section side>
+              <img
+                src="/nostr/nostr.png"
+                alt=""
+                class="nostr-row-icon"
+              />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Public profile') }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ $t('View your address and reveal your private key') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+          </q-item>
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+        </template>
 
         <q-item clickable v-ripple @click="emitRestore">
           <q-item-section side>

@@ -149,7 +149,7 @@
              PaymentConfirmSheet wallet-hint so the UI stays unified. -->
         <div v-if="insufficientBalance && amountSats > 0" class="wallet-hint">
           <Icon icon="tabler:alert-triangle" width="14" height="14" />
-          <span>{{ $t('Total exceeds your balance — try a smaller amount') }}</span>
+          <span>{{ $t('Total exceeds your balance, try a smaller amount') }}</span>
         </div>
 
         <!-- Slide-to-send. Bitcoin sends are always above the threshold

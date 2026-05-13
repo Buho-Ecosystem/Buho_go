@@ -669,7 +669,7 @@ import BackupBanner from '../components/BackupBanner.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {useIdentityStore} from '../stores/identity';
-import {parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
+import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
 import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
 import {
   useBitcoinPreferencesStore,
@@ -3699,8 +3699,20 @@ export default {
       try {
         challenge = parseLud04Input(lnurl);
       } catch (err) {
-        // `tag=login` is the discriminator. If parsing failed because the
-        // URL doesn't have it, it's a payment LNURL and we don't claim it.
+        // The URL was recognisably LUD-04 but used `http:` — surface a
+        // toast and consume the input so no downstream handler retries
+        // it. Other parse failures (e.g. `tag=login` missing) fall
+        // through with `return false` so payment LNURLs can be handled
+        // by the payment path.
+        if (err?.code === LUD04_ERROR.INSECURE_SCHEME) {
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t("Couldn't sign you in"),
+            caption: this.$t('That link uses an insecure connection. Sign-in only works over HTTPS.'),
+            timeout: 4500,
+          });
+          return true;
+        }
         return false;
       }
 

@@ -270,7 +270,7 @@
           </div>
           <div class="danger-title">{{ $t('Generate new identity?') }}</div>
           <div class="danger-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('This wipes your current BuhoGO identity, including the Nostr key derived from it, and creates a fresh one. Every site you have linked will see you as a new user, and Nostr clients will see a new account. Your wallets are not affected.') }}
+            {{ $t('This wipes your current BuhoGO identity, including the public profile derived from it, and creates a fresh one. Every site you have linked will see you as a new user, and other apps will see a new profile. Your wallets are not affected.') }}
           </div>
         </q-card-section>
 

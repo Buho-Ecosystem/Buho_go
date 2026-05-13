@@ -29,7 +29,9 @@
         </q-btn>
       </q-card-section>
 
-      <!-- Overview step: public Nostr identity (npub) + actions -->
+      <!-- Overview step: public profile address (mainstream framing) + actions.
+           The bech32 value still carries the `npub1…` prefix so power
+           users recognise the underlying protocol; the label stays plain. -->
       <template v-if="step === 'overview'">
         <q-card-section class="nostr-step-body overview-body">
           <div class="overview-illustration">
@@ -43,13 +45,13 @@
             class="overview-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Your Nostr identity') }}
+            {{ $t('Your public profile') }}
           </h2>
           <p
             class="overview-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your Nostr identity too.') }}
+            {{ $t('Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your profile too.') }}
           </p>
 
           <div
@@ -57,7 +59,7 @@
             :class="$q.dark.isActive ? 'key-card-dark' : 'key-card-light'"
           >
             <div class="key-card-label">
-              {{ $t('Public key (npub)') }}
+              {{ $t('Profile address') }}
             </div>
             <div class="key-card-value">
               <code class="key-card-code">{{ identity.nostrNpub || '…' }}</code>
@@ -66,7 +68,7 @@
                 dense
                 round
                 :disable="!identity.nostrNpub"
-                :aria-label="$t('Copy public key')"
+                :aria-label="$t('Copy profile address')"
                 @click="copyNpub"
               >
                 <Icon
@@ -87,7 +89,7 @@
             </div>
             <div class="nostr-callout-body">
               <div class="nostr-callout-text">
-                {{ $t('Share your public key freely. Paste it into any Nostr client to find yourself.') }}
+                {{ $t('Share this address. Friends can find you on compatible apps.') }}
               </div>
             </div>
           </div>
@@ -99,7 +101,7 @@
             no-caps
             class="nostr-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :label="$t('Reveal secret key')"
+            :label="$t('Show private key')"
             :loading="isAuthenticating || isLoadingSecret"
             @click="onRevealRequested"
           />
@@ -111,7 +113,7 @@
             flat
             no-caps
             class="nostr-danger-link"
-            :label="$t('Create new Nostr key')"
+            :label="$t('Reset your profile')"
             @click="step = 'rotateConfirm'"
           />
           -->
@@ -172,9 +174,9 @@
         </q-card-actions>
       </template>
 
-      <!-- Secret reveal step. nsec is shown blurred by default; user taps
-           to unblur and a countdown auto-hides it. Mirrors the seed-phrase
-           dialog so the protection model feels familiar. -->
+      <!-- Private-key reveal step. The bech32 value carries an `nsec1…`
+           prefix that power users will recognise; the label stays plain
+           so mainstream users see "private key" instead of crypto jargon. -->
       <template v-else-if="step === 'reveal'">
         <q-card-section class="nostr-step-body reveal-body">
           <div
@@ -205,11 +207,11 @@
               $q.dark.isActive ? 'secret-card-dark' : 'secret-card-light',
               { 'secret-card--blurred': nsecBlurred },
             ]"
-            :aria-label="nsecBlurred ? $t('Show secret key') : $t('Hide secret key')"
+            :aria-label="nsecBlurred ? $t('Show private key') : $t('Hide private key')"
             @click="toggleNsec"
           >
             <div class="secret-card-label">
-              {{ $t('Secret key (nsec)') }}
+              {{ $t('Private key') }}
             </div>
             <div class="secret-card-value">
               <code class="secret-card-code">{{ revealedNsec || '…' }}</code>
@@ -239,6 +241,21 @@
             </q-btn>
           </div>
 
+          <!-- Persistent reassurance while the clipboard auto-clear is
+               pending. Shows the countdown until the wipe fires so the
+               user knows their clipboard isn't holding the secret
+               indefinitely. Disappears the moment the wipe lands. -->
+          <div
+            v-if="clipboardWipeSecondsLeft > 0"
+            class="clipboard-clear-hint"
+            :class="$q.dark.isActive ? 'clipboard-clear-hint-dark' : 'clipboard-clear-hint-light'"
+            role="status"
+            aria-live="polite"
+          >
+            <Icon icon="tabler:clock" width="13" height="13" />
+            <span>{{ $t('Clipboard clears in') }} {{ clipboardWipeSecondsLeft }}s</span>
+          </div>
+
           <div
             class="nostr-callout nostr-callout--warn"
             :class="$q.dark.isActive ? 'nostr-callout-dark' : 'nostr-callout-light'"
@@ -248,7 +265,7 @@
             </div>
             <div class="nostr-callout-body">
               <div class="nostr-callout-text">
-                {{ $t('Anyone with this key can post as you on Nostr. Treat it like your recovery phrase. Never paste it into a website.') }}
+                {{ $t('Anyone with this key can sign and post as you on compatible apps. Treat it like your recovery phrase. Never paste it into a website.') }}
               </div>
             </div>
           </div>
@@ -281,13 +298,13 @@
             class="overview-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Create new Nostr key?') }}
+            {{ $t('Reset your profile?') }}
           </h2>
           <p
             class="overview-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Your recovery phrase stays the same. A fresh Nostr key replaces this one. Anything you signed before will still verify, but new clients will see you as a new account.') }}
+            {{ $t('Your recovery phrase stays the same. A fresh profile replaces this one. Anything you signed before will still verify, but other apps will see you as new.') }}
           </p>
 
           <div class="confirm-instruction" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
@@ -318,7 +335,7 @@
           <q-btn
             unelevated
             no-caps
-            :label="$t('Create new key')"
+            :label="$t('Reset profile')"
             :disable="rotateConfirmInput !== confirmPhrase"
             :loading="isRotating"
             class="danger-action-btn"
@@ -339,10 +356,16 @@ import { useIdentityStore } from '../stores/identity';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { getBiometricMethodCopy } from '../utils/biometricCopy';
 import { secureScreen } from '../utils/secureScreen';
+import { copySensitive } from '../utils/sensitiveClipboard';
+
+const CLIPBOARD_WIPE_TICK_MS = 1000;
 
 const REVEAL_DURATION_SECONDS = 120;
 const COUNTDOWN_TICK_MS = 1000;
-const CONFIRM_PHRASE = 'I understand';
+// WIP_PLAN: nostr-identity-recovery — used by the rotation confirmation
+// step, which is currently disabled. Keeping the constant so the
+// uncomment step is a single grep.
+// const CONFIRM_PHRASE = 'I understand';
 
 export default {
   name: 'NostrIdentityDialog',
@@ -382,10 +405,17 @@ export default {
       copiedNpub: false,
       copiedNsec: false,
 
-      // Rotate flow
-      rotateConfirmInput: '',
-      isRotating: false,
-      confirmPhrase: CONFIRM_PHRASE,
+      // Persistent clipboard-clear countdown. Set to a positive number
+      // while a sensitive copy's auto-wipe is pending; the template
+      // renders the hint while this is > 0.
+      clipboardWipeSecondsLeft: 0,
+      clipboardWipeInterval: null,
+
+      // WIP_PLAN: nostr-identity-recovery — rotation flow state.
+      // Disabled until we publish the rotated account index to relays.
+      // rotateConfirmInput: '',
+      // isRotating: false,
+      // confirmPhrase: CONFIRM_PHRASE,
     };
   },
 
@@ -397,9 +427,10 @@ export default {
 
     headerTitle() {
       if (this.step === 'authExplain') return this.$t('Verify it is you');
-      if (this.step === 'reveal') return this.$t('Your Nostr secret key');
-      if (this.step === 'rotateConfirm') return this.$t('Create new Nostr key');
-      return this.$t('Your Nostr identity');
+      if (this.step === 'reveal') return this.$t('Your private key');
+      // WIP_PLAN: nostr-identity-recovery — rotation step header.
+      // if (this.step === 'rotateConfirm') return this.$t('Reset your profile');
+      return this.$t('Your public profile');
     },
 
     authMethodCopy() {
@@ -418,7 +449,7 @@ export default {
     },
 
     authBody() {
-      return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can reveal your Nostr secret key, even if they have your unlocked phone.')}`;
+      return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can reveal your private key, even if they have your unlocked phone.')}`;
     },
 
     authPrivacyText() {
@@ -463,7 +494,12 @@ export default {
 
   beforeUnmount() {
     this.stopCountdown();
+    this.stopClipboardWipeCountdown();
     this.wipeSecret();
+    // Intentionally do NOT call cancelPendingSensitiveClear() here. The
+    // user opted into the 30s auto-clear by tapping Copy; we honour
+    // that promise even if they navigate away before it fires. Only
+    // the visible countdown UI is torn down with the component.
     if (this.secureScreenActive) {
       secureScreen.disable();
       this.secureScreenActive = false;
@@ -481,9 +517,11 @@ export default {
       this.countdownSeconds = REVEAL_DURATION_SECONDS;
       this.copiedNpub = false;
       this.copiedNsec = false;
-      this.rotateConfirmInput = '';
-      this.isRotating = false;
+      // WIP_PLAN: nostr-identity-recovery — rotation state reset.
+      // this.rotateConfirmInput = '';
+      // this.isRotating = false;
       this.stopCountdown();
+      this.stopClipboardWipeCountdown();
       this.wipeSecret();
     },
 
@@ -520,9 +558,9 @@ export default {
       this.isAuthenticating = true;
       try {
         const ok = await authenticate({
-          reason: this.$t('Verify it is you to reveal your Nostr secret key'),
+          reason: this.$t('Verify it is you to reveal your private key'),
           title: 'BuhoGO',
-          subtitle: this.$t('Nostr secret key'),
+          subtitle: this.$t('Private key'),
           useFallback: true,
         });
         if (!this.modelValue) return;
@@ -566,7 +604,7 @@ export default {
         console.error('[NostrIdentityDialog] reveal failed', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("We couldn't reveal your Nostr secret key"),
+          message: this.$t("We couldn't reveal your private key"),
           caption: this.$t('Please try again.'),
         });
         this.close();
@@ -619,44 +657,72 @@ export default {
     async copyNsec() {
       if (!this.revealedNsec || this.nsecBlurred) return;
       try {
-        await navigator.clipboard.writeText(this.revealedNsec);
+        // Auto-wipe the clipboard 30s after this copy so a stray paste
+        // later (chat box, social-media compose, keyboard preview app)
+        // doesn't leak the private key.
+        const { durationMs } = await copySensitive(this.revealedNsec);
         this.copiedNsec = true;
-        setTimeout(() => { this.copiedNsec = false; }, 1500);
+        setTimeout(() => { this.copiedNsec = false; }, 2500);
+        // Surface a persistent visible countdown while the wipe is
+        // pending so the user isn't left wondering whether it actually
+        // happens.
+        this.startClipboardWipeCountdown(durationMs);
       } catch (err) {
         console.error('[NostrIdentityDialog] copy nsec failed', err);
         this.$q.notify({ type: 'negative', message: this.$t("Couldn't copy") });
       }
     },
 
-    cancelRotate() {
-      this.rotateConfirmInput = '';
-      this.step = 'overview';
+    startClipboardWipeCountdown(durationMs) {
+      this.stopClipboardWipeCountdown();
+      this.clipboardWipeSecondsLeft = Math.ceil(durationMs / 1000);
+      this.clipboardWipeInterval = setInterval(() => {
+        this.clipboardWipeSecondsLeft -= 1;
+        if (this.clipboardWipeSecondsLeft <= 0) {
+          this.stopClipboardWipeCountdown();
+        }
+      }, CLIPBOARD_WIPE_TICK_MS);
     },
 
-    async executeRotate() {
-      if (this.rotateConfirmInput !== this.confirmPhrase) return;
-      this.isRotating = true;
-      try {
-        await this.identity.rotateNostrIdentity();
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('New Nostr key created'),
-          caption: this.$t('Your old key is forgotten in BuhoGO.'),
-          timeout: 4000,
-        });
-        this.rotateConfirmInput = '';
-        this.step = 'overview';
-      } catch (error) {
-        console.error('[NostrIdentityDialog] rotate failed', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t("Couldn't create a new Nostr key"),
-          caption: this.$t('Please try again.'),
-        });
-      } finally {
-        this.isRotating = false;
+    stopClipboardWipeCountdown() {
+      if (this.clipboardWipeInterval) {
+        clearInterval(this.clipboardWipeInterval);
+        this.clipboardWipeInterval = null;
       }
+      this.clipboardWipeSecondsLeft = 0;
     },
+
+    // WIP_PLAN: nostr-identity-recovery — rotation handlers.
+    // Disabled until we publish the rotated account index to relays.
+    // cancelRotate() {
+    //   this.rotateConfirmInput = '';
+    //   this.step = 'overview';
+    // },
+    //
+    // async executeRotate() {
+    //   if (this.rotateConfirmInput !== this.confirmPhrase) return;
+    //   this.isRotating = true;
+    //   try {
+    //     await this.identity.rotateNostrIdentity();
+    //     this.$q.notify({
+    //       type: 'positive',
+    //       message: this.$t('Profile reset'),
+    //       caption: this.$t('Your old profile is forgotten on this device.'),
+    //       timeout: 4000,
+    //     });
+    //     this.rotateConfirmInput = '';
+    //     this.step = 'overview';
+    //   } catch (error) {
+    //     console.error('[NostrIdentityDialog] rotate failed', error);
+    //     this.$q.notify({
+    //       type: 'negative',
+    //       message: this.$t("Couldn't reset your profile"),
+    //       caption: this.$t('Please try again.'),
+    //     });
+    //   } finally {
+    //     this.isRotating = false;
+    //   }
+    // },
 
     close() {
       this.open = false;
@@ -664,6 +730,7 @@ export default {
 
     async onDialogHidden() {
       this.stopCountdown();
+      this.stopClipboardWipeCountdown();
       this.wipeSecret();
       if (this.secureScreenActive) {
         await secureScreen.disable();
@@ -948,6 +1015,35 @@ export default {
   display: flex;
   justify-content: center;
   margin-top: -6px;
+}
+
+/* ---------- Persistent clipboard-clear countdown ----------
+   Visible whenever a sensitive copy's auto-wipe is still pending.
+   Same visual idiom as the reveal-countdown pill (rounded, muted,
+   monospace digits) so the two countdowns feel related. */
+
+.clipboard-clear-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.clipboard-clear-hint-light {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.clipboard-clear-hint-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
 }
 
 /* ---------- Rotate confirm step ---------- */

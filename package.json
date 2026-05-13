@@ -7,7 +7,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "echo \"No test specified\" && exit 0",
+    "test": "node src/utils/__tests__/identityCrypto.spec.js && node src/utils/__tests__/lud4.spec.js && node src/utils/__tests__/sensitiveClipboard.spec.js && node src/stores/__tests__/identity.spec.js",
     "dev": "quasar dev",
     "build": "quasar build",
     "postinstall": "quasar prepare"
@@ -15,6 +15,7 @@
   "dependencies": {
     "@buildonspark/spark-sdk": "^0.7.15",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/clipboard": "^8.0.1",
     "@capacitor/core": "^8.3.0",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/ios": "^8.0.0",
