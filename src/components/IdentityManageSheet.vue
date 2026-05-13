@@ -79,6 +79,36 @@
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
 
+        <!-- Nostr identity row. Derived from the same recovery phrase via
+             NIP-06, so it lives in the same umbrella as the seed phrase
+             rather than as a separate identity. -->
+        <q-item
+          clickable
+          v-ripple
+          :disable="!identity.bootstrapped"
+          @click="emitViewNostr"
+        >
+          <q-item-section side>
+            <img
+              src="/nostr/nostr.png"
+              alt=""
+              class="nostr-row-icon"
+            />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Nostr identity') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ $t('View your public key and reveal your secret key') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+
         <q-item clickable v-ripple @click="emitRestore">
           <q-item-section side>
             <Icon icon="tabler:reload" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
@@ -139,7 +169,7 @@ export default {
     modelValue: { type: Boolean, required: true },
   },
 
-  emits: ['update:modelValue', 'view-seed', 'restore', 'regenerate'],
+  emits: ['update:modelValue', 'view-seed', 'restore', 'regenerate', 'view-nostr'],
 
   setup() {
     const identity = useIdentityStore();
@@ -174,6 +204,10 @@ export default {
     emitRegenerate() {
       this.open = false;
       setTimeout(() => this.$emit('regenerate'), 180);
+    },
+    emitViewNostr() {
+      this.open = false;
+      setTimeout(() => this.$emit('view-nostr'), 180);
     },
   },
 };
@@ -302,6 +336,16 @@ export default {
 .sheet-danger-label {
   color: #ef4444;
   font-weight: 500;
+}
+
+/* Nostr logo — rendered as-is in its brand colour. Sized to match a
+   20px tabler icon so it lines up visually with the rows above and below. */
+.nostr-row-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 /* Dark-mode separators */

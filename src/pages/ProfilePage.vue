@@ -210,6 +210,7 @@
       @view-seed="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
       @restore="showIdentityRestoreDialog = true"
       @regenerate="openRegenerateDialog"
+      @view-nostr="openNostrIdentityDialog"
     />
 
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
@@ -242,6 +243,12 @@
       @verified="onIdentitySeedVerified"
     />
 
+    <!-- Nostr identity dialog (view npub, reveal nsec, rotate key).
+         Derived from the same recovery phrase via NIP-06, so it lives
+         alongside the seed-phrase dialog rather than as a separate
+         identity surface. -->
+    <NostrIdentityDialog v-model="showNostrIdentityDialog" />
+
     <!-- Restore from seed phrase -->
     <IdentityRestoreDialog
       v-model="showIdentityRestoreDialog"
@@ -263,7 +270,7 @@
           </div>
           <div class="danger-title">{{ $t('Generate new identity?') }}</div>
           <div class="danger-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('This wipes your current BuhoGO identity and creates a fresh one. Every site you have linked will see you as a new user. Your wallets are not affected.') }}
+            {{ $t('This wipes your current BuhoGO identity, including the Nostr key derived from it, and creates a fresh one. Every site you have linked will see you as a new user, and Nostr clients will see a new account. Your wallets are not affected.') }}
           </div>
         </q-card-section>
 
@@ -313,6 +320,7 @@ import IdentitySeedPhraseDialog from '../components/IdentitySeedPhraseDialog.vue
 import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
 import IdentityManageSheet from '../components/IdentityManageSheet.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
+import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
@@ -332,6 +340,7 @@ export default {
     IdentityRestoreDialog,
     IdentityManageSheet,
     IdentityAuthDialog,
+    NostrIdentityDialog,
     AddSiteSheet,
     SiteFavicon,
     ConnectedSiteSheet,
@@ -371,6 +380,9 @@ export default {
       regenerateConfirmInput: '',
       isRegenerating: false,
       confirmPhrase: CONFIRM_PHRASE,
+
+      // Nostr identity dialog (view npub, reveal nsec, rotate key).
+      showNostrIdentityDialog: false,
     };
   },
 
@@ -473,6 +485,15 @@ export default {
     openRegenerateDialog() {
       this.regenerateConfirmInput = '';
       this.showRegenerateConfirm = true;
+    },
+
+    async openNostrIdentityDialog() {
+      // Make sure an identity exists before opening — same lazy pattern
+      // as the seed-phrase dialog. The dialog itself calls
+      // `identity.loadNostrIdentity()` on mount to populate the cached
+      // npub for users whose metadata predates this feature.
+      await this.identity.ensureIdentity();
+      this.showNostrIdentityDialog = true;
     },
 
     async executeRegenerate() {

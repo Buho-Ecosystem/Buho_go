@@ -24,9 +24,11 @@ import {
   bytesToHex,
   computeIdentityFingerprint,
   deriveLinkingKey,
+  deriveNostrIdentity,
   generateIdentityMnemonic,
   hexToBytes,
   isValidIdentityMnemonic,
+  npubFromHex,
   signLud04Challenge,
 } from '../identityCrypto.js';
 
@@ -165,6 +167,96 @@ test('computeIdentityFingerprint differs across mnemonics', () => {
     computeIdentityFingerprint(fixedMnemonic),
     computeIdentityFingerprint(fresh),
   );
+});
+
+// ---------------------------------------------------------------------------
+// NIP-06 spec vectors (https://github.com/nostr-protocol/nips/blob/master/06.md)
+//
+// Two official vectors are published in NIP-06. We pin both — any drift in
+// BIP-39 → BIP-32 → schnorr x-only public key conversion would change one
+// or both, and Nostr identity must be deterministic across clients.
+// ---------------------------------------------------------------------------
+
+const NIP06_VECTOR_1 = {
+  mnemonic:
+    'leader monkey parrot ring guide accident before fence cannon height naive bean',
+  privateKey:
+    '7f7ff03d123792d6ac594bfa67bf6d0c0ab55b6b1fdb6249303fe861f1ccba9a',
+  publicKey:
+    '17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917',
+  npub: 'npub1zutzeysacnf9rru6zqwmxd54mud0k44tst6l70ja5mhv8jjumytsd2x7nu',
+};
+
+const NIP06_VECTOR_2 = {
+  mnemonic:
+    'what bleak badge arrange retreat wolf trade produce cricket blur garlic valid proud rude strong choose busy staff weather area salt hollow arm fade',
+  privateKey:
+    'c15d739894c81a2fcfd3a2df85a0d2c0dbc47a280d092799f144d73d7ae78add',
+  publicKey:
+    'd41b22899549e1f3d335a31002cfd382174006e166d3e658e3a5eecdb6463573',
+  npub: 'npub16sdj9zv4f8sl85e45vgq9n7nsgt5qphpvmf7vk8r5hhvmdjxx4es8rq74h',
+};
+
+test('deriveNostrIdentity matches NIP-06 vector 1 (12-word mnemonic)', () => {
+  const key = deriveNostrIdentity(NIP06_VECTOR_1.mnemonic);
+  assert.equal(bytesToHex(key.privateKey), NIP06_VECTOR_1.privateKey);
+  assert.equal(key.publicKeyHex, NIP06_VECTOR_1.publicKey);
+  assert.equal(key.npub, NIP06_VECTOR_1.npub);
+  assert.equal(key.path, "m/44'/1237'/0'/0/0");
+});
+
+test('deriveNostrIdentity matches NIP-06 vector 2 (24-word mnemonic)', () => {
+  const key = deriveNostrIdentity(NIP06_VECTOR_2.mnemonic);
+  assert.equal(bytesToHex(key.privateKey), NIP06_VECTOR_2.privateKey);
+  assert.equal(key.publicKeyHex, NIP06_VECTOR_2.publicKey);
+  assert.equal(key.npub, NIP06_VECTOR_2.npub);
+});
+
+test('deriveNostrIdentity returns an x-only public key (32 bytes hex)', () => {
+  const key = deriveNostrIdentity(fixedMnemonic);
+  assert.equal(key.publicKeyHex.length, 64);
+  assert.match(key.publicKeyHex, /^[0-9a-f]{64}$/);
+  assert.equal(key.privateKey.length, 32);
+});
+
+test('deriveNostrIdentity produces a valid nsec', () => {
+  const key = deriveNostrIdentity(NIP06_VECTOR_1.mnemonic);
+  assert.match(key.nsec, /^nsec1[02-9ac-hj-np-z]+$/);
+});
+
+test('deriveNostrIdentity is deterministic for the same (mnemonic, account)', () => {
+  const a = deriveNostrIdentity(fixedMnemonic, 0);
+  const b = deriveNostrIdentity(fixedMnemonic, 0);
+  assert.equal(a.publicKeyHex, b.publicKeyHex);
+  assert.equal(bytesToHex(a.privateKey), bytesToHex(b.privateKey));
+});
+
+test('deriveNostrIdentity produces a different key per account index', () => {
+  const a = deriveNostrIdentity(fixedMnemonic, 0);
+  const b = deriveNostrIdentity(fixedMnemonic, 1);
+  assert.notEqual(a.publicKeyHex, b.publicKeyHex);
+  assert.notEqual(a.npub, b.npub);
+  assert.equal(b.path, "m/44'/1237'/1'/0/0");
+});
+
+test('deriveNostrIdentity rejects invalid mnemonics', () => {
+  assert.throws(() => deriveNostrIdentity('not a real seed phrase'), /Invalid identity mnemonic/);
+});
+
+test('deriveNostrIdentity rejects out-of-range account indices', () => {
+  assert.throws(() => deriveNostrIdentity(fixedMnemonic, -1), RangeError);
+  assert.throws(() => deriveNostrIdentity(fixedMnemonic, 2 ** 31), RangeError);
+  assert.throws(() => deriveNostrIdentity(fixedMnemonic, 1.5), RangeError);
+});
+
+test('npubFromHex round-trips with deriveNostrIdentity', () => {
+  const key = deriveNostrIdentity(NIP06_VECTOR_1.mnemonic);
+  assert.equal(npubFromHex(key.publicKeyHex), key.npub);
+});
+
+test('npubFromHex rejects malformed hex', () => {
+  assert.throws(() => npubFromHex('deadbeef'), /64 hex characters/);
+  assert.throws(() => npubFromHex(null), /64 hex characters/);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

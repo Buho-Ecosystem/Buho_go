@@ -29,6 +29,7 @@ import { HDKey, HARDENED_OFFSET } from '@scure/bip32';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { nip06, nip19 } from 'nostr-core';
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -207,6 +208,75 @@ export function signLud04Challenge(k1, privateKey) {
   // `prehash: false` because LUD-04 signs the raw 32-byte challenge — k1
   // already IS the message digest. `format: 'der'` matches the spec.
   return secp256k1.sign(k1, privateKey, { format: 'der', prehash: false });
+}
+
+// ----------------------------------------------------------------------------
+// NIP-06 derivation + NIP-19 encoding
+//
+// Delegated to NostrCore (`nostr-core` on npm), which uses the same noble /
+// scure primitives as the rest of this module. Keeping a thin wrapper here —
+// rather than calling NostrCore from the store — gives every consumer of the
+// identity a single, normalised entry point and lets the tests pin behaviour
+// independent of NostrCore version changes.
+//
+// Spec: https://github.com/nostr-protocol/nips/blob/master/06.md
+//       https://github.com/nostr-protocol/nips/blob/master/19.md
+// ----------------------------------------------------------------------------
+
+/**
+ * Derive the Nostr keypair for the given identity mnemonic and account.
+ *
+ * Path is `m/44'/1237'/<account>'/0/0` (NIP-06). The returned `publicKeyHex`
+ * is the 32-byte x-only schnorr public key required by NIP-01 — NOT the
+ * 33-byte compressed secp256k1 form used elsewhere in this module.
+ *
+ * @param {string} mnemonic
+ * @param {number} [account=0]
+ * @returns {{
+ *   privateKey: Uint8Array,   // 32 bytes
+ *   publicKeyHex: string,     // 64 hex chars (x-only)
+ *   npub: string,             // bech32, NIP-19
+ *   nsec: string,             // bech32, NIP-19
+ *   path: string,             // canonical NIP-06 derivation path
+ * }}
+ */
+export function deriveNostrIdentity(mnemonic, account = 0) {
+  const normalised = normaliseMnemonic(mnemonic);
+  if (!isValidIdentityMnemonic(normalised)) {
+    const err = new Error('Invalid identity mnemonic');
+    err.code = 'IDENTITY_INVALID_MNEMONIC';
+    throw err;
+  }
+  if (!Number.isInteger(account) || account < 0 || account >= HARDENED_OFFSET) {
+    throw new RangeError(
+      'Nostr account index must be a non-negative integer below 2^31',
+    );
+  }
+
+  const { secretKey, publicKey } = nip06.mnemonicToKey(normalised, account);
+  return {
+    privateKey: secretKey,
+    publicKeyHex: publicKey,
+    npub: nip19.npubEncode(publicKey),
+    nsec: nip19.nsecEncode(secretKey),
+    path: nip06.getDerivationPath(account),
+  };
+}
+
+/**
+ * Encode a 32-byte x-only public key to its NIP-19 `npub` form.
+ *
+ * Exposed so callers that already hold a hex pubkey (e.g. from a cached
+ * store field) don't need to re-derive from the mnemonic just to render.
+ *
+ * @param {string} publicKeyHex - 64 hex chars
+ * @returns {string}
+ */
+export function npubFromHex(publicKeyHex) {
+  if (typeof publicKeyHex !== 'string' || publicKeyHex.length !== 64) {
+    throw new TypeError('publicKeyHex must be 64 hex characters');
+  }
+  return nip19.npubEncode(publicKeyHex);
 }
 
 // ----------------------------------------------------------------------------

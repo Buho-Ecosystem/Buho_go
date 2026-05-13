@@ -46,7 +46,7 @@
             class="restore-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Sites you have linked to this BuhoGO will see you as a new user. The replacement only affects logins, not your wallets.') }}
+            {{ $t('Your current sign-in keys and Nostr key are replaced by the ones derived from the seed phrase you enter. Your wallets are not affected.') }}
           </p>
           <div
             class="restore-bullets"
@@ -62,7 +62,7 @@
             </div>
             <div class="restore-bullet">
               <Icon icon="tabler:x" width="14" height="14" class="bullet-warn" />
-              <span>{{ $t('Sites you logged into with the old identity will treat you as a stranger.') }}</span>
+              <span>{{ $t('Sites you logged into with the old identity, and your old Nostr key, are forgotten on this device.') }}</span>
             </div>
           </div>
         </q-card-section>
@@ -342,7 +342,7 @@ export default {
         this.$q.notify({
           type: 'positive',
           message: this.$t('Identity restored'),
-          caption: this.$t('You can now sign in to your previously linked sites.'),
+          caption: this.$t('Your sign-in keys and Nostr key are back.'),
           timeout: 4000,
         });
         this.$emit('restored');
