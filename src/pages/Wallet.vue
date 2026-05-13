@@ -1410,12 +1410,16 @@ export default {
           timeout: 4000
         })
       } else if (result.type === 'error') {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Auto-transfer failed'),
-          caption: result.message,
-          icon: 'error',
-          timeout: 5000
+        // Background flows funnel through the same dialog as
+        // user-initiated payments so the failure UI is consistent
+        // app-wide. The wallet name is woven into the route label
+        // so a copied report still says which wallet auto-fired.
+        this.walletStore.showPaymentError(result.error, {
+          context: 'withdraw',
+          walletType: result.walletType,
+          route: `Auto-transfer (${result.walletName})`,
+          amountSats: typeof result.amountSats === 'number' ? result.amountSats : undefined,
+          t: this.$t.bind(this),
         })
       }
       awStore.lastResult = null
@@ -2742,6 +2746,13 @@ export default {
         console.error('Withdraw failed:', error);
         this.lnurlWithdrawStatus = 'error';
         this.lnurlWithdrawError = error.message || 'Something went wrong';
+        this.walletStore.showPaymentError(error, {
+          context: 'withdraw',
+          walletType: this.walletStore.activeWalletType,
+          route: 'LNURL-withdraw',
+          amountSats: typeof amountSats === 'number' ? amountSats : undefined,
+          t: this.$t.bind(this),
+        });
         // Reset to idle after showing error briefly
         setTimeout(() => {
           if (this.lnurlWithdrawStatus === 'error') {
@@ -3207,11 +3218,11 @@ export default {
         }
       } catch (error) {
         console.error('Error processing payment:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Payment failed'),
-          caption: this.$t('Please try again'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'payment',
+          walletType: this.walletStore.activeWalletType,
+          route: 'Payment dispatch',
+          t: this.$t.bind(this),
         });
       }
     },
@@ -3252,9 +3263,14 @@ export default {
 
       this.isSendingPayment = true;
 
+      // Lifted out of the try block so the catch can hand the
+      // attempted amount to the payment-error dialog (used by the
+      // insufficient-funds enhancer to break the upstream total into
+      // send + fee).
+      let amount = null;
+
       try {
         // Determine the amount to send
-        let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
           // Variable amount - convert to sats if user entered in fiat
           amount = this.sendAmountSats;
@@ -3327,15 +3343,34 @@ export default {
 
       } catch (error) {
         console.error('Payment failed:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Payment failed'),
-          caption: this.$t('Please try again'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'payment',
+          walletType: this.walletStore.activeWalletType,
+          route: this.routeLabelForPendingPayment(),
+          amountSats: typeof amount === 'number' ? amount : undefined,
+          t: this.$t.bind(this),
         });
       } finally {
         this.isSendingPayment = false;
       }
+    },
+
+    /**
+     * Short, debug-friendly label describing how the current
+     * pendingPayment is being routed. Included in the technical
+     * details panel of the global payment-error dialog so a copied
+     * report tells a developer what path actually ran.
+     */
+    routeLabelForPendingPayment() {
+      const p = this.pendingPayment;
+      if (!p) return null;
+      if (p.bitcoinAddress)    return 'Bitcoin on-chain';
+      if (p.sparkAddress)      return 'Spark transfer';
+      if (p.invoice)           return 'BOLT11 invoice';
+      if (p.lightningAddress)  return 'Lightning Address';
+      if (p.lnurl)             return 'LNURL-pay';
+      if (p.type === 'lnurl_withdraw') return 'LNURL-withdraw';
+      return p.type || null;
     },
 
     /**
