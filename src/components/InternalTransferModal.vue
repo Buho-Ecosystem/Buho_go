@@ -242,13 +242,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, h } from 'vue';
+import { ref, reactive, computed, watch, nextTick, h, getCurrentInstance } from 'vue';
 import { useQuasar } from 'quasar';
-import { useI18n } from 'vue-i18n';
 import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
 
-const { t } = useI18n();
+// vue-i18n is configured in legacy mode (see src/boot/i18n.js), so
+// useI18n() throws "Not available in legacy mode". Reach $t through the
+// component proxy — same pattern as BatchSendModal.
+const { proxy } = getCurrentInstance();
+const t = (key, params) => proxy.$t(key, params);
 
 // ─────────────────────────────────────────────────────────────
 // Sub-components (functional)
