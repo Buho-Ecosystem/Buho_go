@@ -34,6 +34,33 @@ const DEFAULT_DURATION_MS = 30_000;
 let active = null;
 
 /**
+ * Write a string to the system clipboard. Routes through Capacitor's
+ * native plugin when the app is running inside iOS/Android, so the
+ * write lands on the OS pasteboard rather than only the WebView's
+ * view of it. Falls back to the web Clipboard API everywhere else
+ * (browser PWA, dev server, test environments).
+ *
+ * Kept private; the only callers are `copySensitive` and the timer-
+ * fired wipe.
+ *
+ * @param {string} text
+ */
+async function writeClipboard(text) {
+  try {
+    const cap = await import('@capacitor/core');
+    if (cap?.Capacitor?.isNativePlatform?.()) {
+      const { Clipboard } = await import('@capacitor/clipboard');
+      await Clipboard.write({ string: text });
+      return;
+    }
+  } catch {
+    // Not running inside Capacitor (or the plugin isn't installed in
+    // this build target) — fall through to the web Clipboard API.
+  }
+  await navigator.clipboard.writeText(text);
+}
+
+/**
  * Copy a secret to the clipboard and schedule its wipe.
  *
  * @param {string} text
@@ -53,13 +80,13 @@ export async function copySensitive(text, opts = {}) {
   // value if it fired first.
   cancelPendingSensitiveClear();
 
-  await navigator.clipboard.writeText(text);
+  await writeClipboard(text);
 
   const timeoutId = setTimeout(() => {
     // Best-effort wipe. Swallow errors: a permission failure here just
     // means the user has to clear their clipboard manually, which is
     // strictly no worse than not having the feature at all.
-    navigator.clipboard.writeText('').catch(() => {});
+    writeClipboard('').catch(() => {});
     active = null;
   }, durationMs);
 
