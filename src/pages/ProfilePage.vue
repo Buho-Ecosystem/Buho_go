@@ -56,10 +56,7 @@
         >
           <div
             class="hero-avatar"
-            :class="[
-              $q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light',
-              { 'hero-avatar--warn': identity.bootstrapped && !identity.backupConfirmed },
-            ]"
+            :class="$q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light'"
           >
             <img
               v-if="resolvedAvatarUrl"
@@ -105,16 +102,15 @@
           </div>
         </button>
 
-        <!-- Status pills. Only render once an identity exists — fresh
-             installs see only the Get-started CTA below. -->
+        <!-- Status pills. Single neutral style across every state —
+             the icon carries the meaning, not a tinted background.
+             Keeps the page monochrome so the primary CTA below is
+             the only saturated element above the fold. -->
         <div v-if="identity.bootstrapped" class="hero-pills">
           <button
             type="button"
             class="hero-pill"
-            :class="[
-              $q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light',
-              identity.backupConfirmed ? 'is-ok' : 'is-warn',
-            ]"
+            :class="$q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light'"
             role="status"
             aria-live="polite"
             :aria-label="
@@ -137,10 +133,7 @@
           <span
             v-if="!profile.isEmpty"
             class="hero-pill"
-            :class="[
-              $q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light',
-              publishPillTone,
-            ]"
+            :class="$q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light'"
             role="status"
             aria-live="polite"
           >
@@ -181,36 +174,6 @@
           </button>
         </div>
       </section>
-
-      <!-- Attention banner. Only renders when there's something to act
-           on — keeps the page calm when everything's healthy. Pulls the
-           Back-up action out of the Identity card so the user only sees
-           the call to action once, where it matters most. -->
-      <transition name="attention-fade">
-        <button
-          v-if="identity.bootstrapped && !identity.backupConfirmed"
-          class="attention-card"
-          :class="$q.dark.isActive ? 'attention-card-dark' : 'attention-card-light'"
-          type="button"
-          @click="openIdentitySeedDialog('backup')"
-        >
-          <div class="attention-icon" aria-hidden="true">
-            <Icon icon="tabler:shield-exclamation" width="20" height="20" />
-          </div>
-          <div class="attention-body">
-            <div class="attention-title">
-              {{ $t('Back up your identity') }}
-            </div>
-            <div class="attention-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Write down your 12 recovery words so you can sign back in on any device.') }}
-            </div>
-          </div>
-          <div class="attention-cta">
-            <span class="attention-cta-label">{{ $t('Back up') }}</span>
-            <Icon icon="tabler:chevron-right" width="16" height="16" />
-          </div>
-        </button>
-      </transition>
 
       <!-- Sites the user has signed in to. Has three states:
            – Bootstrapped + sites: list each one, "+" in the header.
@@ -317,6 +280,15 @@
     <ProfileEditSheet
       v-model="showProfileEditSheet"
       @open-picker="openAvatarPicker"
+    />
+
+    <!-- Avatar picker. Chains *back* into the edit sheet when the
+         upload succeeds (or when the user removes the avatar), so
+         the user always returns to the surface they opened it from. -->
+    <ProfileAvatarPickerSheet
+      v-model="showProfileAvatarPicker"
+      @uploaded="returnToProfileEditor"
+      @removed="returnToProfileEditor"
     />
 
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
@@ -428,6 +400,7 @@ import IdentityManageSheet from '../components/IdentityManageSheet.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
 import ProfileEditSheet from '../components/ProfileEditSheet.vue';
+import ProfileAvatarPickerSheet from '../components/ProfileAvatarPickerSheet.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
@@ -450,6 +423,7 @@ export default {
     IdentityAuthDialog,
     NostrIdentityDialog,
     ProfileEditSheet,
+    ProfileAvatarPickerSheet,
     AddSiteSheet,
     SiteFavicon,
     ConnectedSiteSheet,
@@ -615,15 +589,6 @@ export default {
         default:           return this.$t('Not published yet');
       }
     },
-    publishPillTone() {
-      switch (this.publishPillState) {
-        case 'publishing': return 'is-busy';
-        case 'published':  return 'is-ok';
-        case 'retrying':   return 'is-warn';
-        case 'failed':     return 'is-danger';
-        default:           return 'is-muted';
-      }
-    },
 
     /**
      * Always read from the store rather than caching the site object in
@@ -690,12 +655,26 @@ export default {
      * Chain from the edit sheet into the avatar picker. Same
      * 180ms gap pattern the manage sheet uses to make sheet
      * transitions feel like one fluid flow rather than overlapping
-     * cards. The picker component itself lands in Step 7c.
+     * cards.
      */
     openAvatarPicker() {
       this.showProfileEditSheet = false;
       setTimeout(() => {
         this.showProfileAvatarPicker = true;
+      }, 180);
+    },
+
+    /**
+     * Picker → edit-sheet return chain. Fired by both `@uploaded`
+     * (avatar successfully written) and `@removed` (avatar wiped)
+     * so the user always lands back where they started.
+     */
+    returnToProfileEditor() {
+      // The picker emits before closing itself, so by the time this
+      // runs the picker is already in its leave animation. Re-open
+      // the edit sheet after the same 180ms gap.
+      setTimeout(() => {
+        this.showProfileEditSheet = true;
       }, 180);
     },
 
@@ -927,14 +906,7 @@ export default {
 .hero-avatar-dark {
   background: rgba(255, 255, 255, 0.04);
   color: #f8fafc;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
-}
-
-/* Backup-warn ring — same amber semantics as the old identity strip,
-   bumped to 3px so it reads at 96px without competing with the inner
-   ring. Overrides the inner box-shadow when present. */
-.hero-avatar--warn {
-  box-shadow: 0 0 0 3px #f59e0b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .hero-avatar-img {
@@ -952,6 +924,9 @@ export default {
   opacity: 0.7;
 }
 
+/* Camera badge — neutral monochrome on both themes. The avatar
+   itself is the affordance; the badge is just a glanceable hint
+   that the area is tappable. No brand colour here. */
 .hero-avatar-edit-badge {
   position: absolute;
   right: -2px;
@@ -969,9 +944,9 @@ export default {
 }
 
 body.body--dark .hero-avatar-edit-badge {
-  background: #15DE72;
-  color: #052016;
-  border-color: rgba(15, 23, 42, 1);
+  background: rgba(255, 255, 255, 0.10);
+  color: #f8fafc;
+  border-color: rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- Name + subline ----------
@@ -1062,45 +1037,20 @@ button.hero-pill:focus-visible {
   outline-offset: 2px;
 }
 
+/* Single neutral surface across every pill state. The icon to the
+   left carries the meaning (shield-check vs shield-exclamation,
+   cloud-off vs circle-check, etc); the chip background stays
+   monochrome so the row never reads as alarm-coloured noise. */
 .hero-pill-light {
   background: rgba(15, 23, 42, 0.04);
-  color: #0f172a;
+  color: #475569;
   border-color: rgba(15, 23, 42, 0.06);
 }
 
 .hero-pill-dark {
   background: rgba(255, 255, 255, 0.04);
-  color: #f8fafc;
+  color: #cbd5e1;
   border-color: rgba(255, 255, 255, 0.06);
-}
-
-.hero-pill.is-ok {
-  background: rgba(15, 156, 84, 0.10);
-  color: #0f9c54;
-  border-color: rgba(15, 156, 84, 0.22);
-}
-
-.hero-pill.is-warn {
-  background: rgba(245, 158, 11, 0.12);
-  color: #b06d00;
-  border-color: rgba(245, 158, 11, 0.28);
-}
-
-.hero-pill.is-busy {
-  background: rgba(59, 130, 246, 0.10);
-  color: #2563eb;
-  border-color: rgba(59, 130, 246, 0.22);
-}
-
-.hero-pill.is-danger {
-  background: rgba(239, 68, 68, 0.10);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.22);
-}
-
-.hero-pill.is-muted {
-  /* Same surface as the base pill; tone is just "neutral chrome". */
-  opacity: 0.85;
 }
 
 /* ---------- Hero CTAs ---------- */
@@ -1162,110 +1112,6 @@ button.hero-pill:focus-visible {
 
 .hero-cta-secondary-dark:hover {
   background: rgba(255, 255, 255, 0.10);
-}
-
-/* ---------- Attention banner ----------
-   Renders only when the user has something concrete to do (right now:
-   back up the seed). Pulls the call-to-action out of the regular list
-   so it can't be missed, and frees the Identity card from carrying a
-   row that flips meaning between states. */
-
-.attention-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 14px;
-  margin: 0 0 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  font-family: 'Manrope', sans-serif;
-  text-align: left;
-  cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.18s ease, background-color 0.18s ease;
-}
-
-.attention-card-light {
-  background: #fffaf0;
-  color: #0f172a;
-}
-
-.attention-card-dark {
-  background: rgba(245, 158, 11, 0.08);
-  color: #f8fafc;
-}
-
-.attention-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(245, 158, 11, 0.18);
-}
-
-.attention-card:active {
-  transform: translateY(0);
-  transition-duration: 0.06s;
-}
-
-.attention-icon {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(245, 158, 11, 0.14);
-  color: #b06d00;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.attention-body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.attention-title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-
-.attention-text {
-  font-size: 12px;
-  line-height: 1.4;
-  margin-top: 2px;
-}
-
-.attention-cta {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  color: #b06d00;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.attention-cta-label {
-  white-space: nowrap;
-}
-
-/* Hide the inline label below ~360px so the card never wraps the CTA
-   onto a second line on small phones; the chevron still communicates
-   tap-able. */
-@media (max-width: 360px) {
-  .attention-cta-label {
-    display: none;
-  }
-}
-
-.attention-fade-enter-active,
-.attention-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.attention-fade-enter-from,
-.attention-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
 }
 
 /* ---------- Section labels (cloned from Settings.vue) ---------- */

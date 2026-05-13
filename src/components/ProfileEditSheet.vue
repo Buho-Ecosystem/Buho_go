@@ -217,10 +217,7 @@
         <div
           v-if="inlineStatus"
           class="action-status"
-          :class="[
-            $q.dark.isActive ? 'text-grey-4' : 'text-grey-7',
-            statusTone,
-          ]"
+          :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           aria-live="polite"
         >
           {{ inlineStatus }}
@@ -375,14 +372,6 @@ export default {
       return this.$t('Published');
     },
 
-    statusTone() {
-      if (this.profile.isPublishing) return 'is-busy';
-      if (!this.publishLanded || !this.profile.lastPublishResult) return '';
-      const accepted = this.profile.lastPublishResult.filter((r) => r.ok).length;
-      if (accepted === 0) return 'is-danger';
-      if (accepted < this.profile.lastPublishResult.length) return 'is-warn';
-      return 'is-ok';
-    },
   },
 
   methods: {
@@ -565,7 +554,7 @@ export default {
 .avatar-dark {
   background: rgba(255, 255, 255, 0.04);
   color: #f8fafc;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .avatar-img {
@@ -580,6 +569,8 @@ export default {
 
 .avatar-glyph { opacity: 0.7; }
 
+/* Camera badge — neutral monochrome on both themes. No brand colour
+   here; the avatar surface itself is the affordance. */
 .avatar-edit-badge {
   position: absolute;
   right: -2px;
@@ -597,9 +588,9 @@ export default {
 }
 
 body.body--dark .avatar-edit-badge {
-  background: #15DE72;
-  color: #052016;
-  border-color: rgba(15, 23, 42, 1);
+  background: rgba(255, 255, 255, 0.10);
+  color: #f8fafc;
+  border-color: rgba(0, 0, 0, 0.4);
 }
 
 /* In-flight upload spinner overlay */
@@ -763,17 +754,15 @@ body.body--dark .avatar-edit-badge {
 .primary-cta:not(:disabled):hover { filter: brightness(1.05); }
 .primary-cta:not(:disabled):active { transform: scale(0.98); }
 
+/* Inline publish-status caption. Stays in the muted greyscale band
+   so the action bar never reads as alarm-coloured. The Save &
+   Publish button is the only saturated element in this row. */
 .action-status {
   text-align: center;
   font-family: 'Manrope', sans-serif;
   font-size: 12.5px;
   font-weight: 500;
 }
-
-.action-status.is-busy   { color: #2563eb; }
-.action-status.is-ok     { color: #0f9c54; }
-.action-status.is-warn   { color: #b06d00; }
-.action-status.is-danger { color: #ef4444; }
 
 .item-label-light { color: #0f172a; }
 .item-label-dark  { color: #f8fafc; }
