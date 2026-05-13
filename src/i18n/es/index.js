@@ -1309,5 +1309,6 @@ export default {
   "Couldn't reset your profile": "No se pudo restablecer tu perfil",
   "Couldn't copy": "No se pudo copiar",
   "Copied": "Copiado",
-  "Copied. Clears in 30s.": "Copiado. El portapapeles se borra en 30s."
+  "Copied. Clears in 30s.": "Copiado. El portapapeles se borra en 30s.",
+  "Clipboard clears in": "El portapapeles se borra en"
 }

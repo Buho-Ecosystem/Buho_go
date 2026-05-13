@@ -1310,6 +1310,7 @@ export default {
   "Couldn't reset your profile": "Profil konnte nicht zurückgesetzt werden",
   "Couldn't copy": "Konnte nicht kopiert werden",
   "Copied": "Kopiert",
-  "Copied. Clears in 30s.": "Kopiert. Zwischenablage wird in 30s geleert."
+  "Copied. Clears in 30s.": "Kopiert. Zwischenablage wird in 30s geleert.",
+  "Clipboard clears in": "Zwischenablage wird geleert in"
 
 }

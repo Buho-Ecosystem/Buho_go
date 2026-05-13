@@ -237,8 +237,23 @@
                 height="14"
                 style="margin-right: 4px;"
               />
-              {{ copiedNsec ? $t('Copied. Clears in 30s.') : $t('Copy') }}
+              {{ copiedNsec ? $t('Copied') : $t('Copy') }}
             </q-btn>
+          </div>
+
+          <!-- Persistent reassurance while the clipboard auto-clear is
+               pending. Shows the countdown until the wipe fires so the
+               user knows their clipboard isn't holding the secret
+               indefinitely. Disappears the moment the wipe lands. -->
+          <div
+            v-if="clipboardWipeSecondsLeft > 0"
+            class="clipboard-clear-hint"
+            :class="$q.dark.isActive ? 'clipboard-clear-hint-dark' : 'clipboard-clear-hint-light'"
+            role="status"
+            aria-live="polite"
+          >
+            <Icon icon="tabler:clock" width="13" height="13" />
+            <span>{{ $t('Clipboard clears in') }} {{ clipboardWipeSecondsLeft }}s</span>
           </div>
 
           <div
@@ -343,6 +358,8 @@ import { getBiometricMethodCopy } from '../utils/biometricCopy';
 import { secureScreen } from '../utils/secureScreen';
 import { copySensitive } from '../utils/sensitiveClipboard';
 
+const CLIPBOARD_WIPE_TICK_MS = 1000;
+
 const REVEAL_DURATION_SECONDS = 120;
 const COUNTDOWN_TICK_MS = 1000;
 // WIP_PLAN: nostr-identity-recovery — used by the rotation confirmation
@@ -387,6 +404,12 @@ export default {
       // Copy feedback
       copiedNpub: false,
       copiedNsec: false,
+
+      // Persistent clipboard-clear countdown. Set to a positive number
+      // while a sensitive copy's auto-wipe is pending; the template
+      // renders the hint while this is > 0.
+      clipboardWipeSecondsLeft: 0,
+      clipboardWipeInterval: null,
 
       // WIP_PLAN: nostr-identity-recovery — rotation flow state.
       // Disabled until we publish the rotated account index to relays.
@@ -471,10 +494,12 @@ export default {
 
   beforeUnmount() {
     this.stopCountdown();
+    this.stopClipboardWipeCountdown();
     this.wipeSecret();
-    // Intentionally do NOT cancel the pending clipboard wipe here. The
+    // Intentionally do NOT call cancelPendingSensitiveClear() here. The
     // user opted into the 30s auto-clear by tapping Copy; we honour
-    // that promise even if they navigate away before it fires.
+    // that promise even if they navigate away before it fires. Only
+    // the visible countdown UI is torn down with the component.
     if (this.secureScreenActive) {
       secureScreen.disable();
       this.secureScreenActive = false;
@@ -496,6 +521,7 @@ export default {
       // this.rotateConfirmInput = '';
       // this.isRotating = false;
       this.stopCountdown();
+      this.stopClipboardWipeCountdown();
       this.wipeSecret();
     },
 
@@ -634,13 +660,36 @@ export default {
         // Auto-wipe the clipboard 30s after this copy so a stray paste
         // later (chat box, social-media compose, keyboard preview app)
         // doesn't leak the private key.
-        await copySensitive(this.revealedNsec);
+        const { durationMs } = await copySensitive(this.revealedNsec);
         this.copiedNsec = true;
         setTimeout(() => { this.copiedNsec = false; }, 2500);
+        // Surface a persistent visible countdown while the wipe is
+        // pending so the user isn't left wondering whether it actually
+        // happens.
+        this.startClipboardWipeCountdown(durationMs);
       } catch (err) {
         console.error('[NostrIdentityDialog] copy nsec failed', err);
         this.$q.notify({ type: 'negative', message: this.$t("Couldn't copy") });
       }
+    },
+
+    startClipboardWipeCountdown(durationMs) {
+      this.stopClipboardWipeCountdown();
+      this.clipboardWipeSecondsLeft = Math.ceil(durationMs / 1000);
+      this.clipboardWipeInterval = setInterval(() => {
+        this.clipboardWipeSecondsLeft -= 1;
+        if (this.clipboardWipeSecondsLeft <= 0) {
+          this.stopClipboardWipeCountdown();
+        }
+      }, CLIPBOARD_WIPE_TICK_MS);
+    },
+
+    stopClipboardWipeCountdown() {
+      if (this.clipboardWipeInterval) {
+        clearInterval(this.clipboardWipeInterval);
+        this.clipboardWipeInterval = null;
+      }
+      this.clipboardWipeSecondsLeft = 0;
     },
 
     // WIP_PLAN: nostr-identity-recovery — rotation handlers.
@@ -681,6 +730,7 @@ export default {
 
     async onDialogHidden() {
       this.stopCountdown();
+      this.stopClipboardWipeCountdown();
       this.wipeSecret();
       if (this.secureScreenActive) {
         await secureScreen.disable();
@@ -965,6 +1015,35 @@ export default {
   display: flex;
   justify-content: center;
   margin-top: -6px;
+}
+
+/* ---------- Persistent clipboard-clear countdown ----------
+   Visible whenever a sensitive copy's auto-wipe is still pending.
+   Same visual idiom as the reveal-countdown pill (rounded, muted,
+   monospace digits) so the two countdowns feel related. */
+
+.clipboard-clear-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.clipboard-clear-hint-light {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.clipboard-clear-hint-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
 }
 
 /* ---------- Rotate confirm step ---------- */

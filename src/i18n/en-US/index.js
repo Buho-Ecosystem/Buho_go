@@ -1385,5 +1385,6 @@ export default {
   "Couldn't reset your profile": "Couldn't reset your profile",
   "Couldn't copy": "Couldn't copy",
   "Copied": "Copied",
-  "Copied. Clears in 30s.": "Copied. Clears in 30s."
+  "Copied. Clears in 30s.": "Copied. Clears in 30s.",
+  "Clipboard clears in": "Clipboard clears in"
 }
