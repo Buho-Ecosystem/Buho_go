@@ -48,9 +48,8 @@ import { defineStore } from 'pinia';
 import { useIdentityStore } from './identity.js';
 import {
   DEFAULT_RELAYS,
-  anyAccepted,
   getRelayPool,
-  publishToRelays,
+  publishToRelaysEager,
 } from '../utils/nostrRelays.js';
 import {
   buildKind0Event,
@@ -457,30 +456,37 @@ export const useProfileStore = defineStore('profile', {
      *   1. kind:0   — profile metadata (display name, bio, avatar URL, …)
      *   2. kind:10002 — relay list (NIP-65)
      *
-     * Both are fanned out to every URL in `DEFAULT_RELAYS`. A relay
-     * counts as "accepted" only if it took *both* events; per-relay
-     * mixed outcomes (e.g. accepted kind:0 but rejected kind:10002)
-     * surface as `ok: false` with the first underlying error. Step 8
-     * adds background retry for the partial-success path.
+     * Success is decided on kind:0 alone with eager semantics: the
+     * moment a single relay acks the profile event, the publish is
+     * "done" from the user's perspective. The remaining kind:0
+     * attempts and the entire kind:10002 fan-out continue in the
+     * background — their full per-relay outcome lands on
+     * `lastPublishResult` once every WebSocket settles.
      *
-     * Product rule (from Plan 09): a publish is considered successful
-     * if at least one relay accepted both events. Clearing `isDirty`
-     * follows that rule. A total failure keeps `isDirty` so the
-     * editor's "Save & Publish" button stays available without the
-     * user having to re-type anything.
+     * Product rule (Plan 09): a publish is considered successful if
+     * at least one relay accepted the profile. Clearing `isDirty`
+     * follows that rule. A total kind:0 failure keeps `isDirty` so
+     * the editor's "Save & Publish" button stays available without
+     * the user having to re-type anything.
      *
      * Secret-key handling: we ask `identityStore` for fresh schnorr
      * bytes, hand them to the two builders, and immediately zero the
      * buffer. The signed events themselves carry only the signature,
      * never the key.
      *
-     * Re-entrancy: the action is a no-op (returns `null`) while a
-     * previous publish is still in flight. The UI already disables
-     * the button on `isPublishing`; this is defense-in-depth.
+     * Re-entrancy: no-op while a previous publish is still in flight.
+     *
+     * Return shape:
+     *   `{ ok: true,  acceptedRelay, settled }` — first relay accepted
+     *   `{ ok: false, results, settled }`      — every kind:0 relay refused
+     *
+     * `settled` is a promise that resolves with the full per-relay
+     * result array once every WebSocket settles. UI callers can
+     * ignore it; tests await it for full coverage.
      *
      * Test injection: `opts.pool`, `opts.relays`, `opts.createdAt`,
-     * and `opts.timeoutMs` exist purely so the spec can pin behaviour
-     * with a fake pool. Production callers pass nothing.
+     * `opts.timeoutMs` are for the spec; production callers pass
+     * nothing.
      *
      * @param {{
      *   pool?: import('nostr-core').RelayPool,
@@ -488,7 +494,11 @@ export const useProfileStore = defineStore('profile', {
      *   createdAt?: number,
      *   timeoutMs?: number,
      * }} [opts]
-     * @returns {Promise<Array<{ relay: string, ok: boolean, error: string | null }> | null>}
+     * @returns {Promise<
+     *   | { ok: true,  acceptedRelay: string, settled: Promise<Array<{relay,ok,error}>> }
+     *   | { ok: false, results: Array<{relay,ok,error}>, settled: Promise<Array<{relay,ok,error}>> }
+     *   | null
+     * >}
      */
     async publish(opts = {}) {
       if (this.isPublishing) return null;
@@ -502,13 +512,15 @@ export const useProfileStore = defineStore('profile', {
 
       const pool = opts.pool ?? getRelayPool();
       const relays = Array.isArray(opts.relays) ? opts.relays : DEFAULT_RELAYS;
+      const publishOpts = Number.isFinite(opts.timeoutMs)
+        ? { timeoutMs: opts.timeoutMs }
+        : undefined;
 
       this.isPublishing = true;
       try {
-        // Sign first, publish second — keep the secret key window as
-        // narrow as we can. If signing throws (impossible with the
-        // current builders for valid inputs, but cheap insurance) the
-        // finally below still wipes the bytes.
+        // Sign first, publish second — keep the secret-key window as
+        // narrow as we can. The finally below wipes the buffer even
+        // if signing throws (which the builders don't for valid input).
         const secretKey = await identity.getNostrSecretKeyBytes();
         let profileEvent;
         let relayListEvent;
@@ -526,51 +538,46 @@ export const useProfileStore = defineStore('profile', {
           secretKey.fill(0);
         }
 
-        const publishOpts = Number.isFinite(opts.timeoutMs)
-          ? { timeoutMs: opts.timeoutMs }
-          : undefined;
+        // Fire both events in parallel. kind:10002 is genuinely
+        // background — we log its outcome but never gate the UI on
+        // it. kind:0 drives the success/failure decision.
+        const profileFanout = publishToRelaysEager(pool, relays, profileEvent, publishOpts);
+        const relayListFanout = publishToRelaysEager(pool, relays, relayListEvent, publishOpts);
 
-        // Two independent fanouts — run them in parallel. Both calls
-        // are non-throwing (publishToRelays normalises any pool-level
-        // error to per-relay failure entries).
-        const [profileResults, relayListResults] = await Promise.all([
-          publishToRelays(pool, relays, profileEvent, publishOpts),
-          publishToRelays(pool, relays, relayListEvent, publishOpts),
-        ]);
+        // Background log for the relay-list fan-out so we have
+        // visibility without making the user wait.
+        relayListFanout.allSettled.then((results) => {
+          console.info('[profile] relay list publish settled:', results);
+        }).catch(() => { /* allSettled never rejects */ });
 
-        // Collapse the two per-relay arrays into one entry per relay.
-        // The merged `error` field carries whichever event first
-        // refused, so the UI has a useful string to render without
-        // having to know about the kind:0 vs kind:10002 split.
-        const merged = relays.map((url, idx) => {
-          const profile = profileResults[idx] ?? {
-            relay: url, ok: false, error: 'Missing profile result',
-          };
-          const relayList = relayListResults[idx] ?? {
-            relay: url, ok: false, error: 'Missing relay-list result',
-          };
-          const ok = profile.ok && relayList.ok;
-          const error = ok
-            ? null
-            : (profile.error || relayList.error || 'Relay did not accept');
-          return { relay: url, ok, error };
+        // Combined "settle" promise: resolves with the full kind:0
+        // per-relay results AND updates `lastPublishResult` as a
+        // side-effect. Exposed on the return value so tests + future
+        // UI surfaces can subscribe to it.
+        const settled = profileFanout.allSettled.then((results) => {
+          this.lastPublishResult = results;
+          return results;
         });
 
-        this.lastPublishResult = merged;
+        const firstAccept = await profileFanout.firstAccept;
 
-        if (anyAccepted(merged)) {
+        if (firstAccept) {
           this.lastPublishedAt = Date.now();
           this.isDirty = false;
           this._persistMetadata();
-        } else {
-          // Zero relays took it. Log the per-relay outcomes so future
-          // debugging never has to guess whether a publish actually
-          // hit the wire — the merged array carries the underlying
-          // error message for every URL we attempted.
-          console.warn('[profile] publish landed on zero relays:', merged);
+          return {
+            ok: true,
+            acceptedRelay: firstAccept.relay,
+            settled,
+          };
         }
 
-        return merged;
+        // First-accept resolved null → every kind:0 relay refused.
+        // Wait for the full settle to get the error detail the UI
+        // can render in its failure banner.
+        const results = await settled;
+        console.warn('[profile] publish landed on zero relays:', results);
+        return { ok: false, results, settled: Promise.resolve(results) };
       } finally {
         this.isPublishing = false;
       }

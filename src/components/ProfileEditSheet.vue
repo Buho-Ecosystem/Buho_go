@@ -450,15 +450,14 @@ export default {
       }
       this.profile.applyEdits(patch);
 
-      // Now publish. profileStore.publish never throws — failures
-      // surface as a `lastPublishResult` array. The button itself
-      // shows a spinner during in-flight; the result lands either
-      // on a positive toast + sheet dismiss (success) or on a
-      // persistent inline banner the user can read and retry from
-      // (failure).
+      // Now publish. profileStore.publish never throws — it returns
+      // `{ ok, acceptedRelay?, results?, settled }`. With eager
+      // semantics, `ok=true` flips as soon as a single relay accepts;
+      // the remaining attempts continue in the background.
       const result = await this.profile.publish();
+      if (result === null) return; // re-entrancy guard fired
 
-      if (Array.isArray(result) && result.some((r) => r.ok)) {
+      if (result.ok) {
         this.open = false;
         this.$q.notify({
           type: 'positive',
@@ -466,11 +465,11 @@ export default {
           timeout: 2500,
         });
       } else {
-        // Total failure. Keep the sheet open and surface a
-        // persistent banner the user can read. Tapping
-        // Save & Publish again is the retry path; the store still
-        // carries `isDirty: true` so the button stays enabled.
-        this.publishError = this.describePublishFailure(result);
+        // Every relay refused the kind:0 event. The store waited
+        // for the full settle before returning `ok: false`, so the
+        // `results` array carries per-relay error detail we can map
+        // to specific copy.
+        this.publishError = this.describePublishFailure(result.results);
       }
     },
   },

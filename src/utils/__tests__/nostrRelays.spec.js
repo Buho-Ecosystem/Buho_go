@@ -1,10 +1,11 @@
 /**
  * Relay layer tests.
  *
- * The default relay set is a frozen product decision and the publish-
- * fanout wrapper is the single normalisation point for every event we
- * send. Coverage here protects the contract every higher-level module
- * (profileStore, address book, etc) depends on.
+ * The default relay set is a frozen product decision and the
+ * publish-fanout wrapper is the single normalisation point for every
+ * event we send. Coverage here protects the eager-success contract
+ * every higher-level module (profileStore, address book, etc) depends
+ * on.
  *
  * Run directly with Node:
  *   node src/utils/__tests__/nostrRelays.spec.js
@@ -16,7 +17,7 @@ import {
   DEFAULT_PUBLISH_TIMEOUT_MS,
   DEFAULT_RELAYS,
   anyAccepted,
-  publishToRelays,
+  publishToRelaysEager,
 } from '../nostrRelays.js';
 
 let passed = 0;
@@ -38,30 +39,49 @@ async function test(name, fn) {
 // ---------------------------------------------------------------------------
 // Fake pool factory
 //
-// The signature mirrors RelayPool.publish from nostr-core:
-//   publish(urls: string[], event: NostrEvent): Promise<string[]>
-// Each behaviour models one production failure mode we care about.
+// Mirrors the small slice of nostr-core's `RelayPool` we actually
+// use: `ensureRelay(url)` returns a Relay-like object whose
+// `publish(event)` either resolves (relay accepted) or rejects
+// (relay refused). Each test wires its own per-URL behaviour and an
+// optional artificial delay so we can verify the eager-success
+// property — the outer promise must resolve on the *first* ok,
+// regardless of how slow the other relays are.
 // ---------------------------------------------------------------------------
 
-function fakePool(behaviour) {
+function fakePool(behaviour = {}, opts = {}) {
+  const calls = [];
   return {
-    publish(urls /* , event */) {
-      switch (behaviour) {
-        case 'all':
-          return Promise.resolve([...urls]);
-        case 'partial':
-          // Accept only the first URL, rest fail.
-          return Promise.resolve(urls.slice(0, 1));
-        case 'none':
-          return Promise.resolve([]);
-        case 'throw':
-          return Promise.reject(new Error('event validation failed'));
-        case 'hang':
-          // Never resolves — exercises the timeout safety net.
-          return new Promise(() => {});
-        default:
-          throw new Error(`unknown fake pool behaviour: ${behaviour}`);
+    calls,
+    ensureRelay(url) {
+      if (opts.ensureRelayFails === true || opts.ensureRelayFails === url) {
+        return Promise.reject(new Error('connection refused'));
       }
+      return Promise.resolve({
+        url,
+        publish(event) {
+          const decision = behaviour[url] ?? 'ok';
+          const delay = (opts.delays && opts.delays[url]) || 0;
+          calls.push({ url, event, decision });
+          return new Promise((resolve, reject) => {
+            setTimeout(() => {
+              if (decision === 'ok') {
+                resolve('OK');
+              } else if (decision === 'reject') {
+                reject(new Error('Relay did not accept'));
+              } else if (decision === 'throw-bare') {
+                // Non-Error rejection — exercises the defensive
+                // fallback message path.
+                // eslint-disable-next-line prefer-promise-reject-errors
+                reject('bare string');
+              } else if (decision === 'hang') {
+                // Never resolves — hits the per-relay timeout.
+              } else {
+                reject(new Error(`unknown decision: ${decision}`));
+              }
+            }, delay);
+          });
+        },
+      });
     },
   };
 }
@@ -75,6 +95,12 @@ const SAMPLE_EVENT = Object.freeze({
   content: '{}',
   sig: '0'.repeat(128),
 });
+
+const RELAYS = Object.freeze([
+  'wss://relay-a.test',
+  'wss://relay-b.test',
+  'wss://relay-c.test',
+]);
 
 console.log('nostrRelays');
 
@@ -94,8 +120,6 @@ await test('DEFAULT_RELAYS contains exactly the five locked URLs in order', () =
 
 await test('DEFAULT_RELAYS is frozen at runtime', () => {
   assert.ok(Object.isFrozen(DEFAULT_RELAYS));
-  // Strict mode would throw on mutation; in non-strict it silently fails.
-  // Asserting on the length is enough proof the array is locked.
   assert.equal(DEFAULT_RELAYS.length, 5);
 });
 
@@ -109,82 +133,201 @@ await test('DEFAULT_PUBLISH_TIMEOUT_MS is a positive finite number', () => {
 });
 
 // ---------------------------------------------------------------------------
-// publishToRelays — every path
+// publishToRelaysEager — shape
 // ---------------------------------------------------------------------------
 
-await test('publishToRelays returns one result per input URL, in order', async () => {
-  const results = await publishToRelays(fakePool('all'), DEFAULT_RELAYS, SAMPLE_EVENT);
-  assert.equal(results.length, DEFAULT_RELAYS.length);
-  for (let i = 0; i < DEFAULT_RELAYS.length; i += 1) {
-    assert.equal(results[i].relay, DEFAULT_RELAYS[i]);
-  }
+await test('publishToRelaysEager returns an object with firstAccept and allSettled', () => {
+  const fanout = publishToRelaysEager(fakePool(), RELAYS, SAMPLE_EVENT);
+  assert.ok(fanout.firstAccept instanceof Promise);
+  assert.ok(fanout.allSettled instanceof Promise);
 });
 
-await test('publishToRelays marks every relay ok when the pool accepts all', async () => {
-  const results = await publishToRelays(fakePool('all'), DEFAULT_RELAYS, SAMPLE_EVENT);
-  for (const r of results) {
+await test('publishToRelaysEager: empty URL list resolves immediately to null + []', async () => {
+  let touched = false;
+  const pool = {
+    ensureRelay() { touched = true; return Promise.resolve({}); },
+  };
+  const fanout = publishToRelaysEager(pool, [], SAMPLE_EVENT);
+  assert.equal(await fanout.firstAccept, null);
+  assert.deepEqual(await fanout.allSettled, []);
+  assert.equal(touched, false, 'should not touch the pool for an empty URL list');
+});
+
+await test('publishToRelaysEager: non-array urls collapses to empty fan-out', async () => {
+  const fanout = publishToRelaysEager(fakePool(), null, SAMPLE_EVENT);
+  assert.equal(await fanout.firstAccept, null);
+  assert.deepEqual(await fanout.allSettled, []);
+});
+
+// ---------------------------------------------------------------------------
+// publishToRelaysEager — success paths
+// ---------------------------------------------------------------------------
+
+await test('publishToRelaysEager: all accept → firstAccept resolves with first ok, allSettled has every ok=true', async () => {
+  const fanout = publishToRelaysEager(fakePool(), RELAYS, SAMPLE_EVENT);
+  const first = await fanout.firstAccept;
+  assert.ok(first && first.ok === true);
+  assert.ok(RELAYS.includes(first.relay));
+  const settled = await fanout.allSettled;
+  assert.equal(settled.length, RELAYS.length);
+  for (const r of settled) {
     assert.equal(r.ok, true);
     assert.equal(r.error, null);
   }
 });
 
-await test('publishToRelays surfaces partial failure cleanly', async () => {
-  const results = await publishToRelays(fakePool('partial'), DEFAULT_RELAYS, SAMPLE_EVENT);
-  assert.equal(results[0].ok, true);
-  assert.equal(results[0].error, null);
-  for (let i = 1; i < results.length; i += 1) {
-    assert.equal(results[i].ok, false);
-    assert.match(results[i].error, /did not accept/);
+await test('publishToRelaysEager: allSettled preserves input URL order', async () => {
+  const fanout = publishToRelaysEager(fakePool(), RELAYS, SAMPLE_EVENT);
+  const settled = await fanout.allSettled;
+  for (let i = 0; i < RELAYS.length; i += 1) {
+    assert.equal(settled[i].relay, RELAYS[i]);
   }
 });
 
-await test('publishToRelays marks every relay failed when the pool accepts none', async () => {
-  const results = await publishToRelays(fakePool('none'), DEFAULT_RELAYS, SAMPLE_EVENT);
-  for (const r of results) {
+await test('publishToRelaysEager: ONE accepting relay is enough for firstAccept', async () => {
+  const fanout = publishToRelaysEager(
+    fakePool({
+      'wss://relay-a.test': 'reject',
+      'wss://relay-b.test': 'reject',
+      'wss://relay-c.test': 'ok',
+    }),
+    RELAYS,
+    SAMPLE_EVENT,
+  );
+  const first = await fanout.firstAccept;
+  assert.ok(first && first.ok === true);
+  assert.equal(first.relay, 'wss://relay-c.test');
+});
+
+await test('publishToRelaysEager: firstAccept wins before slow relays finish (eager semantics)', async () => {
+  // relay-a is instant; relay-b and -c take 200ms. firstAccept should
+  // resolve well before allSettled.
+  const fanout = publishToRelaysEager(
+    fakePool({}, { delays: {
+      'wss://relay-a.test': 0,
+      'wss://relay-b.test': 200,
+      'wss://relay-c.test': 200,
+    }}),
+    RELAYS,
+    SAMPLE_EVENT,
+    { timeoutMs: 2000 },
+  );
+  const t0 = Date.now();
+  const first = await fanout.firstAccept;
+  const elapsedFirst = Date.now() - t0;
+  assert.ok(first && first.ok);
+  assert.ok(
+    elapsedFirst < 150,
+    `firstAccept should resolve quickly, took ${elapsedFirst}ms`,
+  );
+  // allSettled still has to wait for the slow ones.
+  await fanout.allSettled;
+  const elapsedSettle = Date.now() - t0;
+  assert.ok(
+    elapsedSettle >= 200,
+    `allSettled should wait for slow relays, took ${elapsedSettle}ms`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// publishToRelaysEager — failure paths
+// ---------------------------------------------------------------------------
+
+await test('publishToRelaysEager: all reject → firstAccept resolves null, allSettled carries errors', async () => {
+  const fanout = publishToRelaysEager(
+    fakePool({
+      'wss://relay-a.test': 'reject',
+      'wss://relay-b.test': 'reject',
+      'wss://relay-c.test': 'reject',
+    }),
+    RELAYS,
+    SAMPLE_EVENT,
+  );
+  assert.equal(await fanout.firstAccept, null);
+  const settled = await fanout.allSettled;
+  for (const r of settled) {
     assert.equal(r.ok, false);
     assert.match(r.error, /did not accept/);
   }
 });
 
-await test('publishToRelays collapses a pool-level throw to per-relay failure carrying the message', async () => {
-  const results = await publishToRelays(fakePool('throw'), DEFAULT_RELAYS, SAMPLE_EVENT);
-  for (const r of results) {
-    assert.equal(r.ok, false);
-    assert.equal(r.error, 'event validation failed');
-  }
+await test('publishToRelaysEager: ensureRelay failure becomes per-relay ok=false', async () => {
+  const fanout = publishToRelaysEager(
+    fakePool({}, { ensureRelayFails: 'wss://relay-a.test' }),
+    RELAYS,
+    SAMPLE_EVENT,
+  );
+  const settled = await fanout.allSettled;
+  const a = settled.find((r) => r.relay === 'wss://relay-a.test');
+  assert.equal(a.ok, false);
+  assert.match(a.error, /connection refused/);
+  // The other two still accept, so firstAccept resolves with one of them.
+  const first = await fanout.firstAccept;
+  assert.ok(first && first.ok);
+  assert.notEqual(first.relay, 'wss://relay-a.test');
 });
 
-await test('publishToRelays times out a hanging publish and reports it', async () => {
-  // 30 ms is plenty for a test; production uses DEFAULT_PUBLISH_TIMEOUT_MS.
-  const results = await publishToRelays(
-    fakePool('hang'),
-    DEFAULT_RELAYS,
+await test('publishToRelaysEager: a hanging publish hits the per-relay timeout', async () => {
+  const fanout = publishToRelaysEager(
+    fakePool({
+      'wss://relay-a.test': 'hang',
+      'wss://relay-b.test': 'hang',
+      'wss://relay-c.test': 'hang',
+    }),
+    RELAYS,
     SAMPLE_EVENT,
-    { timeoutMs: 30 },
+    { timeoutMs: 40 },
   );
-  for (const r of results) {
+  assert.equal(await fanout.firstAccept, null);
+  const settled = await fanout.allSettled;
+  for (const r of settled) {
     assert.equal(r.ok, false);
     assert.match(r.error, /timed out/i);
   }
 });
 
-await test('publishToRelays returns [] for an empty URL list without calling the pool', async () => {
-  let called = false;
-  const pool = { publish() { called = true; return Promise.resolve([]); } };
-  const results = await publishToRelays(pool, [], SAMPLE_EVENT);
-  assert.deepEqual(results, []);
-  assert.equal(called, false);
+await test('publishToRelaysEager: non-Error rejection from a misbehaving relay stays safe', async () => {
+  const fanout = publishToRelaysEager(
+    fakePool({
+      'wss://relay-a.test': 'throw-bare',
+      'wss://relay-b.test': 'throw-bare',
+      'wss://relay-c.test': 'throw-bare',
+    }),
+    RELAYS,
+    SAMPLE_EVENT,
+  );
+  assert.equal(await fanout.firstAccept, null);
+  const settled = await fanout.allSettled;
+  for (const r of settled) {
+    assert.equal(r.ok, false);
+    // Falls back to the generic message when err.message is missing.
+    assert.equal(r.error, 'Relay did not accept');
+  }
 });
 
-await test('publishToRelays never throws, even when the pool misbehaves', async () => {
-  // Pool that rejects with a non-Error value — defensive against bad
-  // third-party code in the future.
-  const oddPool = { publish() { return Promise.reject('bare string'); } };
-  const results = await publishToRelays(oddPool, ['wss://x'], SAMPLE_EVENT);
-  assert.equal(results.length, 1);
-  assert.equal(results[0].ok, false);
-  // Non-Error rejection falls back to the generic message.
-  assert.equal(results[0].error, 'Relay did not accept');
+await test('publishToRelaysEager: one accept + others fail still keeps firstAccept resolved with the ok', async () => {
+  const fanout = publishToRelaysEager(
+    fakePool(
+      {
+        'wss://relay-a.test': 'reject',
+        'wss://relay-b.test': 'ok',
+        'wss://relay-c.test': 'hang',
+      },
+      { delays: { 'wss://relay-b.test': 30 } },
+    ),
+    RELAYS,
+    SAMPLE_EVENT,
+    { timeoutMs: 80 },
+  );
+  const first = await fanout.firstAccept;
+  assert.ok(first && first.ok);
+  assert.equal(first.relay, 'wss://relay-b.test');
+  const settled = await fanout.allSettled;
+  assert.deepEqual(settled.map((r) => [r.relay, r.ok]), [
+    ['wss://relay-a.test', false],
+    ['wss://relay-b.test', true],
+    ['wss://relay-c.test', false],
+  ]);
 });
 
 // ---------------------------------------------------------------------------
@@ -205,7 +348,7 @@ await test('anyAccepted returns false when every relay failed', () => {
   ]), false);
 });
 
-await test('anyAccepted returns false for an empty array or non-array input', () => {
+await test('anyAccepted returns false for empty / non-array input', () => {
   assert.equal(anyAccepted([]), false);
   assert.equal(anyAccepted(null), false);
   assert.equal(anyAccepted(undefined), false);

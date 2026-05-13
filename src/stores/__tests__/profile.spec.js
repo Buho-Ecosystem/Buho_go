@@ -83,25 +83,42 @@ async function freshEnvWithIdentity() {
 }
 
 /**
- * Factory for a deterministic fake `RelayPool`. The behaviour map
- * lets each test pick its outcome per relay URL: `'ok'` accepts the
- * event, `'reject'` rejects it, `'throw'` makes the whole publish
- * call reject. Defaults to `'ok'` for any URL not explicitly listed.
+ * Factory for a deterministic fake `RelayPool` that matches the
+ * shape `publishToRelaysEager` consumes: `ensureRelay(url)` returns
+ * a Relay-like object with `publish(event)`. The behaviour map
+ * picks the per-relay decision; `delays` adds an artificial latency
+ * so tests can assert eager-success timing.
  *
- * Every call to `publish()` is recorded on the returned `calls`
- * array so tests can assert what was sent to whom.
+ * `calls` records every per-relay publish attempt (one entry per
+ * URL per event) so the spec can assert exactly what hit the wire.
+ *
+ *   behaviour: { [url]: 'ok' | 'reject' | 'hang' }      (default 'ok')
+ *   options:   { delays?: { [url]: ms }, ensureRelayFails?: boolean }
  */
 function fakePool(behaviour = {}, options = {}) {
   const calls = [];
   return {
     calls,
-    publish(urls, event) {
-      calls.push({ urls: [...urls], event });
-      if (options.throwAll) {
-        return Promise.reject(new Error('pool blew up'));
+    ensureRelay(url) {
+      if (options.ensureRelayFails === true || options.ensureRelayFails === url) {
+        return Promise.reject(new Error('connection refused'));
       }
-      const accepted = urls.filter((url) => (behaviour[url] ?? 'ok') === 'ok');
-      return Promise.resolve(accepted);
+      return Promise.resolve({
+        url,
+        publish(event) {
+          const decision = behaviour[url] ?? 'ok';
+          const delay = (options.delays && options.delays[url]) || 0;
+          calls.push({ url, event, kind: event.kind });
+          return new Promise((resolve, reject) => {
+            setTimeout(() => {
+              if (decision === 'ok') resolve('OK');
+              else if (decision === 'reject') reject(new Error('Relay did not accept'));
+              else if (decision === 'hang') { /* never resolves */ }
+              else reject(new Error(`unknown decision: ${decision}`));
+            }, delay);
+          });
+        },
+      });
     },
   };
 }
@@ -392,58 +409,65 @@ await test('publish throws IDENTITY_NOT_BOOTSTRAPPED when no identity exists', a
   );
 });
 
-await test('publish sends one kind:0 event and one kind:10002 event to every relay', async () => {
+await test('publish: fires one kind:0 attempt and one kind:10002 attempt per relay', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi', about: 'Hi there' });
   const pool = fakePool();
-  await profile.publish({ pool, relays: TEST_RELAYS });
+  const result = await profile.publish({ pool, relays: TEST_RELAYS });
+  // Wait for both events' full settle so the relay-list calls land
+  // before we count them.
+  await result.settled;
 
-  assert.equal(pool.calls.length, 2);
-  // Both publish calls hit the exact relay set we passed.
-  for (const call of pool.calls) {
-    assert.deepEqual(call.urls, [...TEST_RELAYS]);
+  // Total calls = 2 events × 3 relays = 6 per-relay publish attempts.
+  assert.equal(pool.calls.length, TEST_RELAYS.length * 2);
+  const kinds = pool.calls.map((c) => c.kind).sort();
+  assert.deepEqual(kinds, [0, 0, 0, 10002, 10002, 10002]);
+  // Every URL got both kinds.
+  for (const url of TEST_RELAYS) {
+    const sent = pool.calls.filter((c) => c.url === url).map((c) => c.kind).sort();
+    assert.deepEqual(sent, [0, 10002], `${url} should receive both event kinds`);
   }
-  const kinds = pool.calls.map((c) => c.event.kind).sort();
-  assert.deepEqual(kinds, [0, 10002]);
 });
 
-await test('publish kind:0 content is the profile payload as JSON', async () => {
+await test('publish: kind:0 content is the profile payload as JSON', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi', lud16: 'sat@example.com' });
   const pool = fakePool();
-  await profile.publish({ pool, relays: TEST_RELAYS });
-  const kind0 = pool.calls.find((c) => c.event.kind === 0).event;
+  const r = await profile.publish({ pool, relays: TEST_RELAYS });
+  await r.settled;
+  const kind0 = pool.calls.find((c) => c.kind === 0).event;
   assert.deepEqual(JSON.parse(kind0.content), {
     display_name: 'Satoshi',
     lud16: 'sat@example.com',
   });
 });
 
-await test('publish kind:10002 carries an r tag per relay in input order', async () => {
+await test('publish: kind:10002 carries an r tag per relay in input order', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
   const pool = fakePool();
-  await profile.publish({ pool, relays: TEST_RELAYS });
-  const kind10002 = pool.calls.find((c) => c.event.kind === 10002).event;
+  const r = await profile.publish({ pool, relays: TEST_RELAYS });
+  await r.settled;
+  const kind10002 = pool.calls.find((c) => c.kind === 10002).event;
   assert.equal(kind10002.tags.length, TEST_RELAYS.length);
   for (let i = 0; i < TEST_RELAYS.length; i += 1) {
     assert.equal(kind10002.tags[i][0], 'r');
-    // nostr-core normalises URLs but should preserve order.
     assert.ok(typeof kind10002.tags[i][1] === 'string');
   }
 });
 
-await test('publish events verify under nostr-core verifyEvent', async () => {
+await test('publish: signed events verify under nostr-core verifyEvent', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
   const pool = fakePool();
-  await profile.publish({ pool, relays: TEST_RELAYS });
+  const r = await profile.publish({ pool, relays: TEST_RELAYS });
+  await r.settled;
   for (const call of pool.calls) {
     assert.equal(verifyEvent(call.event), true);
   }
 });
 
-await test('publish: all relays accept → isDirty cleared, lastPublishedAt set, blob updated', async () => {
+await test('publish: all relays accept → ok=true, acceptedRelay set, blob updated', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
   assert.equal(profile.isDirty, true);
@@ -452,64 +476,72 @@ await test('publish: all relays accept → isDirty cleared, lastPublishedAt set,
   const result = await profile.publish({ pool: fakePool(), relays: TEST_RELAYS });
   const after = Date.now();
 
+  assert.equal(result.ok, true);
+  assert.ok(TEST_RELAYS.includes(result.acceptedRelay));
   assert.equal(profile.isDirty, false);
   assert.ok(profile.lastPublishedAt >= before && profile.lastPublishedAt <= after);
-  for (const r of result) assert.equal(r.ok, true);
-  // Pinia wraps array state in a reactive proxy, so reference-equality
-  // doesn't hold — assert structural equality instead.
-  assert.deepEqual(JSON.parse(JSON.stringify(profile.lastPublishResult)), result);
 
+  const settled = await result.settled;
+  assert.equal(settled.length, TEST_RELAYS.length);
+  for (const r of settled) assert.equal(r.ok, true);
+
+  // lastPublishResult lands once the settle promise resolves.
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(profile.lastPublishResult)),
+    settled,
+  );
   // Persisted blob picks up the new timestamp.
-  const persisted = readPersisted();
-  assert.equal(persisted.lastPublishedAt, profile.lastPublishedAt);
+  assert.equal(readPersisted().lastPublishedAt, profile.lastPublishedAt);
 });
 
-await test('publish: one relay accepts both → still considered success (success-if-one rule)', async () => {
+await test('publish: one relay accepts → eager success (the other relays still pending)', async () => {
+  // Eager-success contract: the moment one relay accepts kind:0, the
+  // publish action resolves with `ok: true`. The other relays may
+  // still be in-flight (mid-WebSocket) when this fires; the spec
+  // uses non-zero delays so the difference is observable.
+  const { profile } = await freshEnvWithIdentity();
+  profile.applyEdits({ displayName: 'Satoshi' });
+  const pool = fakePool({}, {
+    delays: {
+      'wss://relay-a.test': 0,
+      'wss://relay-b.test': 80,
+      'wss://relay-c.test': 80,
+    },
+  });
+
+  const t0 = Date.now();
+  const result = await profile.publish({ pool, relays: TEST_RELAYS, timeoutMs: 500 });
+  const elapsed = Date.now() - t0;
+  assert.equal(result.ok, true);
+  assert.ok(elapsed < 60, `publish should resolve eagerly, took ${elapsed}ms`);
+
+  // Full settle still has to wait for the slow ones.
+  await result.settled;
+  const elapsedFull = Date.now() - t0;
+  assert.ok(elapsedFull >= 80, `full settle takes longer, observed ${elapsedFull}ms`);
+});
+
+await test('publish: only ONE relay accepts → still ok=true (success-if-one rule)', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
   const pool = fakePool({
-    'wss://relay-a.test': 'ok',
-    'wss://relay-b.test': 'reject',
+    'wss://relay-a.test': 'reject',
+    'wss://relay-b.test': 'ok',
     'wss://relay-c.test': 'reject',
   });
-  const result = await profile.publish({ pool, relays: TEST_RELAYS });
+  const result = await profile.publish({ pool, relays: TEST_RELAYS, timeoutMs: 500 });
+  assert.equal(result.ok, true);
+  assert.equal(result.acceptedRelay, 'wss://relay-b.test');
   assert.equal(profile.isDirty, false);
   assert.ok(profile.lastPublishedAt > 0);
-  assert.equal(result[0].ok, true);
-  assert.equal(result[1].ok, false);
-  assert.equal(result[2].ok, false);
+  // Per-relay detail eventually lands.
+  const settled = await result.settled;
+  assert.equal(settled.find((r) => r.relay === 'wss://relay-a.test').ok, false);
+  assert.equal(settled.find((r) => r.relay === 'wss://relay-b.test').ok, true);
+  assert.equal(settled.find((r) => r.relay === 'wss://relay-c.test').ok, false);
 });
 
-await test('publish: relay accepts kind:0 but rejects kind:10002 → ok=false for that relay', async () => {
-  // Mixed-kind acceptance is rare in practice but real (relay policy
-  // may differ per kind). The merge rule is strict: both events must
-  // land or the relay is marked failed.
-  const { profile } = await freshEnvWithIdentity();
-  profile.applyEdits({ displayName: 'Satoshi' });
-
-  let callIdx = 0;
-  const pool = {
-    calls: [],
-    publish(urls, event) {
-      this.calls.push({ urls: [...urls], event });
-      callIdx += 1;
-      // First call (kind:0) — relay-a accepts; second call (kind:10002)
-      // — relay-a rejects. Both order-of-call paths covered.
-      const acceptList = event.kind === 0
-        ? ['wss://relay-a.test']
-        : ['wss://relay-b.test'];
-      return Promise.resolve(urls.filter((u) => acceptList.includes(u)));
-    },
-  };
-
-  const result = await profile.publish({ pool, relays: TEST_RELAYS });
-  for (const r of result) assert.equal(r.ok, false);
-  // The pool-call order doesn't matter; merge ignores ordering.
-  void callIdx;
-  assert.equal(profile.isDirty, true);
-});
-
-await test('publish: total failure leaves isDirty=true and no lastPublishedAt', async () => {
+await test('publish: every relay refuses kind:0 → ok=false, results populated, isDirty stays true', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
   const pool = fakePool({
@@ -517,43 +549,75 @@ await test('publish: total failure leaves isDirty=true and no lastPublishedAt', 
     'wss://relay-b.test': 'reject',
     'wss://relay-c.test': 'reject',
   });
-  const result = await profile.publish({ pool, relays: TEST_RELAYS });
-  assert.equal(profile.isDirty, true);
-  assert.equal(profile.lastPublishedAt, null);
-  for (const r of result) {
+  const result = await profile.publish({ pool, relays: TEST_RELAYS, timeoutMs: 500 });
+  assert.equal(result.ok, false);
+  assert.ok(Array.isArray(result.results));
+  assert.equal(result.results.length, TEST_RELAYS.length);
+  for (const r of result.results) {
     assert.equal(r.ok, false);
     assert.match(r.error, /did not accept/);
   }
-});
-
-await test('publish: pool-level throw collapses to per-relay failure, isDirty stays true', async () => {
-  const { profile } = await freshEnvWithIdentity();
-  profile.applyEdits({ displayName: 'Satoshi' });
-  const pool = fakePool({}, { throwAll: true });
-  const result = await profile.publish({ pool, relays: TEST_RELAYS });
   assert.equal(profile.isDirty, true);
   assert.equal(profile.lastPublishedAt, null);
-  for (const r of result) {
+});
+
+await test('publish: ensureRelay failure on every relay collapses to ok=false', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.applyEdits({ displayName: 'Satoshi' });
+  const pool = fakePool({}, { ensureRelayFails: true });
+  const result = await profile.publish({ pool, relays: TEST_RELAYS, timeoutMs: 500 });
+  assert.equal(result.ok, false);
+  for (const r of result.results) {
     assert.equal(r.ok, false);
-    assert.match(r.error, /pool blew up/);
+    assert.match(r.error, /connection refused/);
   }
+});
+
+await test('publish: relay rejects kind:0 but other relay accepts → still ok=true (kind:10002 doesn\'t gate)', async () => {
+  // Mixed-kind acceptance was a hard merge rule before. Eager
+  // semantics: only kind:0 success matters; kind:10002 is background.
+  const { profile } = await freshEnvWithIdentity();
+  profile.applyEdits({ displayName: 'Satoshi' });
+
+  const calls = [];
+  const pool = {
+    calls,
+    ensureRelay(url) {
+      return Promise.resolve({
+        url,
+        publish(event) {
+          calls.push({ url, event, kind: event.kind });
+          // relay-a takes kind:0 only; others take kind:10002 only.
+          if (url === 'wss://relay-a.test') {
+            return event.kind === 0 ? Promise.resolve('OK') : Promise.reject(new Error('no'));
+          }
+          return event.kind === 0 ? Promise.reject(new Error('no')) : Promise.resolve('OK');
+        },
+      });
+    },
+  };
+  const result = await profile.publish({ pool, relays: TEST_RELAYS });
+  assert.equal(result.ok, true, 'kind:0 acceptance alone makes publish ok');
+  assert.equal(result.acceptedRelay, 'wss://relay-a.test');
+  assert.equal(profile.isDirty, false);
 });
 
 await test('publish: isPublishing flips true during the call and false after', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
 
-  // Pool that lets us observe `isPublishing` mid-flight.
   let observed = null;
   const pool = {
-    calls: [],
-    publish(urls, event) {
-      this.calls.push({ urls: [...urls], event });
-      observed = profile.isPublishing;
-      return Promise.resolve([...urls]);
+    ensureRelay(url) {
+      return Promise.resolve({
+        url,
+        publish() {
+          if (observed === null) observed = profile.isPublishing;
+          return Promise.resolve('OK');
+        },
+      });
     },
   };
-
   assert.equal(profile.isPublishing, false);
   await profile.publish({ pool, relays: TEST_RELAYS });
   assert.equal(observed, true);
@@ -563,21 +627,18 @@ await test('publish: isPublishing flips true during the call and false after', a
 await test('publish: re-entrancy returns null without double-publishing', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
-  // Manually hold the flag to simulate an in-flight publish.
   profile.isPublishing = true;
   const result = await profile.publish({ pool: fakePool(), relays: TEST_RELAYS });
   assert.equal(result, null);
-  // Restore for cleanliness — no real publish happened.
   profile.isPublishing = false;
 });
 
-await test('publish never lands secret material on the persisted blob', async () => {
+await test('publish: never lands secret material on the persisted blob', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi', about: 'Building things.' });
-  await profile.publish({ pool: fakePool(), relays: TEST_RELAYS });
+  const r = await profile.publish({ pool: fakePool(), relays: TEST_RELAYS });
+  await r.settled;
 
-  // Pull the pubkey + the secret bytes so we have concrete values to
-  // grep the persisted blob against.
   const persistedRaw = globalThis.localStorage.getItem(STORAGE_KEY);
   assert.ok(persistedRaw, 'profile blob should exist after publish');
 
@@ -587,20 +648,18 @@ await test('publish never lands secret material on the persisted blob', async ()
   assert.ok(!persistedRaw.includes(skHex), 'profile blob must not contain secret key hex');
   assert.ok(!persistedRaw.includes('nsec1'), 'profile blob must not contain nsec bech32');
 
-  // Identity blob also untouched by the publish flow — its shape is
-  // owned by identityStore and we should not be smuggling profile
-  // state into it.
   const identityRaw = globalThis.localStorage.getItem('buhoGO_identity_v1');
   assert.ok(identityRaw && !identityRaw.includes(skHex));
 });
 
-await test('publish honours opts.createdAt for deterministic ids in tests', async () => {
+await test('publish: opts.createdAt threads through to both kind:0 and kind:10002', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
   const pool = fakePool();
-  await profile.publish({
+  const r = await profile.publish({
     pool, relays: TEST_RELAYS, createdAt: 1700000000,
   });
+  await r.settled;
   for (const call of pool.calls) {
     assert.equal(call.event.created_at, 1700000000);
   }
