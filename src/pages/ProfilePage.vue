@@ -300,15 +300,23 @@
     </div>
 
     <!-- Identity manage bottom sheet (View / Restore / Generate new).
-         Opened by tapping the identity strip. Keeps these three actions
-         off the page itself so a non-technical user sees a calm two-
-         section layout by default. -->
+         Opened by tapping the gear icon in the page header. Keeps these
+         lower-frequency actions one tap away from the everyday flows. -->
     <IdentityManageSheet
       v-model="showManageSheet"
       @view-seed="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
       @restore="showIdentityRestoreDialog = true"
       @regenerate="openRegenerateDialog"
       @view-nostr="openNostrIdentityDialog"
+    />
+
+    <!-- Profile edit sheet — owns its own local form state and
+         commits to profileStore on Save & Publish. The avatar
+         picker (Step 7c) lives below and is chained in via the
+         @open-picker emit. -->
+    <ProfileEditSheet
+      v-model="showProfileEditSheet"
+      @open-picker="openAvatarPicker"
     />
 
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
@@ -419,6 +427,7 @@ import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
 import IdentityManageSheet from '../components/IdentityManageSheet.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
+import ProfileEditSheet from '../components/ProfileEditSheet.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
@@ -440,6 +449,7 @@ export default {
     IdentityManageSheet,
     IdentityAuthDialog,
     NostrIdentityDialog,
+    ProfileEditSheet,
     AddSiteSheet,
     SiteFavicon,
     ConnectedSiteSheet,
@@ -461,9 +471,10 @@ export default {
       // Identity manage bottom sheet (View / Restore / Generate new).
       showManageSheet: false,
 
-      // Profile bottom sheets — the components themselves land in 7b/7d.
+      // Profile bottom sheets.
       showProfileEditSheet: false,
       showProfileShareSheet: false,
+      showProfileAvatarPicker: false,
 
       // Avatar load error sticky: once an avatar URL has failed to load
       // in this session, we silently fall back to the silhouette so we
@@ -673,6 +684,19 @@ export default {
      */
     onAvatarLoadError() {
       this.avatarBroken = true;
+    },
+
+    /**
+     * Chain from the edit sheet into the avatar picker. Same
+     * 180ms gap pattern the manage sheet uses to make sheet
+     * transitions feel like one fluid flow rather than overlapping
+     * cards. The picker component itself lands in Step 7c.
+     */
+    openAvatarPicker() {
+      this.showProfileEditSheet = false;
+      setTimeout(() => {
+        this.showProfileAvatarPicker = true;
+      }, 180);
     },
 
     async openIdentitySeedDialog(mode) {
