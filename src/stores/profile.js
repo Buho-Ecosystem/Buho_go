@@ -45,6 +45,17 @@
  */
 
 import { defineStore } from 'pinia';
+import { useIdentityStore } from './identity.js';
+import {
+  DEFAULT_RELAYS,
+  anyAccepted,
+  getRelayPool,
+  publishToRelays,
+} from '../utils/nostrRelays.js';
+import {
+  buildKind0Event,
+  buildKind10002Event,
+} from '../utils/nostrProfile.js';
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -324,6 +335,130 @@ export const useProfileStore = defineStore('profile', {
       if (changed) {
         this.isDirty = true;
         this._persistMetadata();
+      }
+    },
+
+    // -------------------------------------------------------------------
+    // Publish
+    // -------------------------------------------------------------------
+
+    /**
+     * Publish the current profile to the default relay set.
+     *
+     * Two events go out per publish:
+     *   1. kind:0   — profile metadata (display name, bio, avatar URL, …)
+     *   2. kind:10002 — relay list (NIP-65)
+     *
+     * Both are fanned out to every URL in `DEFAULT_RELAYS`. A relay
+     * counts as "accepted" only if it took *both* events; per-relay
+     * mixed outcomes (e.g. accepted kind:0 but rejected kind:10002)
+     * surface as `ok: false` with the first underlying error. Step 8
+     * adds background retry for the partial-success path.
+     *
+     * Product rule (from Plan 09): a publish is considered successful
+     * if at least one relay accepted both events. Clearing `isDirty`
+     * follows that rule. A total failure keeps `isDirty` so the
+     * editor's "Save & Publish" button stays available without the
+     * user having to re-type anything.
+     *
+     * Secret-key handling: we ask `identityStore` for fresh schnorr
+     * bytes, hand them to the two builders, and immediately zero the
+     * buffer. The signed events themselves carry only the signature,
+     * never the key.
+     *
+     * Re-entrancy: the action is a no-op (returns `null`) while a
+     * previous publish is still in flight. The UI already disables
+     * the button on `isPublishing`; this is defense-in-depth.
+     *
+     * Test injection: `opts.pool`, `opts.relays`, `opts.createdAt`,
+     * and `opts.timeoutMs` exist purely so the spec can pin behaviour
+     * with a fake pool. Production callers pass nothing.
+     *
+     * @param {{
+     *   pool?: import('nostr-core').RelayPool,
+     *   relays?: readonly string[],
+     *   createdAt?: number,
+     *   timeoutMs?: number,
+     * }} [opts]
+     * @returns {Promise<Array<{ relay: string, ok: boolean, error: string | null }> | null>}
+     */
+    async publish(opts = {}) {
+      if (this.isPublishing) return null;
+
+      const identity = useIdentityStore();
+      if (!identity.bootstrapped) {
+        const err = new Error('No identity seed');
+        err.code = 'IDENTITY_NOT_BOOTSTRAPPED';
+        throw err;
+      }
+
+      const pool = opts.pool ?? getRelayPool();
+      const relays = Array.isArray(opts.relays) ? opts.relays : DEFAULT_RELAYS;
+
+      this.isPublishing = true;
+      try {
+        // Sign first, publish second — keep the secret key window as
+        // narrow as we can. If signing throws (impossible with the
+        // current builders for valid inputs, but cheap insurance) the
+        // finally below still wipes the bytes.
+        const secretKey = await identity.getNostrSecretKeyBytes();
+        let profileEvent;
+        let relayListEvent;
+        try {
+          profileEvent = buildKind0Event(this.publishablePayload, secretKey, {
+            createdAt: opts.createdAt,
+          });
+          relayListEvent = buildKind10002Event(relays, secretKey, {
+            createdAt: opts.createdAt,
+          });
+        } finally {
+          // Best-effort wipe. V8 may still hold finalised copies of
+          // the buffer, but our reference is gone and the array
+          // itself is zeroed before falling out of scope.
+          secretKey.fill(0);
+        }
+
+        const publishOpts = Number.isFinite(opts.timeoutMs)
+          ? { timeoutMs: opts.timeoutMs }
+          : undefined;
+
+        // Two independent fanouts — run them in parallel. Both calls
+        // are non-throwing (publishToRelays normalises any pool-level
+        // error to per-relay failure entries).
+        const [profileResults, relayListResults] = await Promise.all([
+          publishToRelays(pool, relays, profileEvent, publishOpts),
+          publishToRelays(pool, relays, relayListEvent, publishOpts),
+        ]);
+
+        // Collapse the two per-relay arrays into one entry per relay.
+        // The merged `error` field carries whichever event first
+        // refused, so the UI has a useful string to render without
+        // having to know about the kind:0 vs kind:10002 split.
+        const merged = relays.map((url, idx) => {
+          const profile = profileResults[idx] ?? {
+            relay: url, ok: false, error: 'Missing profile result',
+          };
+          const relayList = relayListResults[idx] ?? {
+            relay: url, ok: false, error: 'Missing relay-list result',
+          };
+          const ok = profile.ok && relayList.ok;
+          const error = ok
+            ? null
+            : (profile.error || relayList.error || 'Relay did not accept');
+          return { relay: url, ok, error };
+        });
+
+        this.lastPublishResult = merged;
+
+        if (anyAccepted(merged)) {
+          this.lastPublishedAt = Date.now();
+          this.isDirty = false;
+          this._persistMetadata();
+        }
+
+        return merged;
+      } finally {
+        this.isPublishing = false;
       }
     },
 
