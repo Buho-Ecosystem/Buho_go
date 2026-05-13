@@ -2098,7 +2098,6 @@ import {shareContent} from '../utils/share.js'
 import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
 import {truncateAddress} from '../utils/addressUtils.js'
-import {getUserFriendlyErrorMessage} from '../utils/userErrors.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
@@ -2806,9 +2805,11 @@ export default {
         this.$router.push('/kiosk');
       } catch (err) {
         console.error('Kiosk activation failed:', err);
-        this.$q.notify({
-          type: 'negative',
-          message: getUserFriendlyErrorMessage(err, 'kiosk', this.$t.bind(this))
+        this.walletStore.showPaymentError(err, {
+          context: 'kiosk',
+          walletType: this.walletStore.activeWalletType,
+          route: 'Kiosk activation',
+          t: this.$t.bind(this),
         });
       } finally {
         this.kioskActivating = false;
