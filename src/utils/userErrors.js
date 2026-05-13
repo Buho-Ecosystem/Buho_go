@@ -168,6 +168,13 @@ export function getUserFriendlyError(error, context = 'general', $t = null) {
       title: t('Withdrawal failed'),
       description: t('Please try again.')
     },
+    // LUD-04 login flow. Distinct from `connect` (which is wallet setup)
+    // because the user-facing action here is "log in to a site", not
+    // "configure a wallet" — different mental model, different copy.
+    identity: {
+      title: t('Couldn\'t sign you in'),
+      description: t('Please try again.')
+    },
     general: {
       title: t('Something went wrong'),
       description: t('Please try again.')

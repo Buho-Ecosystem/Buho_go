@@ -253,6 +253,38 @@
         </div>
       </template>
 
+      <!-- PROFILE link — the full identity surface (avatar, backup, view,
+           restore, connected sites, regenerate) lives at /profile so it
+           has room to grow (Nostr, NIP-05, contacts, badges). We keep a
+           single discoverable row here so users browsing Settings can
+           still find it. -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Profile') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item clickable v-ripple @click="$router.push('/profile')">
+          <q-item-section side>
+            <Icon icon="tabler:user" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Profile') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ $t('Identity, connected sites, recovery') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side v-if="identityStore.bootstrapped && !identityStore.backupConfirmed">
+            <span class="backup-status-badge badge-unverified">
+              {{ $t('Backup needed') }}
+            </span>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+      </div>
+
       <!-- LEARN & EARN — promoted near the top so the value features
            (Onboarding guide, Bitcoin Lessons that pay real sats) are
            actually findable. Same card/item markup as everywhere
@@ -2058,6 +2090,7 @@
 import {useWalletStore} from '../stores/wallet'
 import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
+import {useIdentityStore} from '../stores/identity'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
@@ -2107,6 +2140,7 @@ export default {
       showNotificationsDialog: false,
       showSecurityDialog: false,
       showMempoolDialog: false,
+
 
       // Danger zone is collapsed by default — adds a deliberate extra
       // tap before destructive actions (delete Spark wallets, remove
@@ -2291,6 +2325,17 @@ export default {
     bitcoinPrefsStore() {
       return useBitcoinPreferencesStore();
     },
+
+    /**
+     * The Identity store underpins LUD-04 (LNURL-auth) and, in the
+     * future, NIP-06 / NIP-05 derivation. It is intentionally not tied
+     * to any payment stream so the section here is visible to every
+     * user regardless of which wallet types they have configured.
+     */
+    identityStore() {
+      return useIdentityStore();
+    },
+
 
     /**
      * The auto-add-incoming-Bitcoin setting only applies to Spark
@@ -2609,6 +2654,9 @@ export default {
     this.loadMempoolSettings();
     this.loadLanguagePreference();
     this.checkBiometricAvailability();
+    // Hydrate the Identity store so the section renders with the right
+    // bootstrapped/backup state on first paint. Idempotent; cheap.
+    this.identityStore.hydrate();
   },
 
   mounted() {
@@ -3540,6 +3588,7 @@ export default {
       // `activeSparkBackedUp` computed.
     },
 
+
     confirmDeleteSparkWallet() {
       if (!this.sparkWallets.length) return;
 
@@ -3820,6 +3869,17 @@ export default {
 .section-label-light {
   color: var(--text-muted);
 }
+
+/* Small inline count next to a section header (e.g. "Connected sites · 3").
+   Keeps the prominence on the label itself while still giving the user a
+   glanceable total. */
+.connected-count {
+  font-weight: 500;
+  text-transform: none;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
 
 /* Danger zone collapse toggle. Shares the section-label typography so
    it slots in where the static label used to sit, but is a button so

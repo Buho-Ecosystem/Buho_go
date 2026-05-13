@@ -1,6 +1,9 @@
 # MoneyBadger / CryptoQR Integration Plan for BuhoGO
 
-## Status: Pending - Awaiting MoneyBadger Contact
+## Status
+
+- ✅ **Phase 1 — "PnP Path" (EMVCo QR → Lightning Address via cryptoqr.net): shipped.** Lives in `src/utils/merchantQR.js`, wired into `SendModal.vue` and `Wallet.vue`. Merchant detection, regex matching, ZAR amount parsing all live.
+- ⏳ **Phase 2 — Full MoneyBadger Scanner API:** pending. Requires API key from `info@moneybadger.co.za` and the partnership conversation.
 
 ---
 
@@ -111,23 +114,26 @@ const merchantConfigs = [
 
 ---
 
-## Implementation Touchpoints in BuhoGO
+## ~~Implementation Touchpoints in BuhoGO~~ ✅ Phase 1 done
 
-### Files to modify
+> Phase 1 conversion landed in `src/utils/merchantQR.js`, consumed by `SendModal.vue` (QR scan handler) and `Wallet.vue` (deep-link / paste path). Phase 2 will reuse the same touchpoints.
 
-| File | Change |
+### ~~Files to modify~~
+
+| File | ~~Change~~ |
 |---|---|
-| `src/utils/` | New `merchantQR.js` — regex matching + Lightning Address conversion |
-| `src/components/SendModal.vue` | Add merchant QR detection in QR scan handler |
-| `src/utils/lightning.js` | Already handles Lightning Addresses — no changes expected |
-| `src/components/PaymentModal.vue` | Show merchant logo/name on confirmation |
-| `src/pages/TransactionHistory.vue` | Display merchant branding on matched transactions |
-| `src/stores/transactionMetadata.js` | Store merchant identity with transaction |
-| `src/assets/merchants/` | New directory for merchant logo SVGs |
+| ~~`src/utils/`~~ | ~~New `merchantQR.js` — regex matching + Lightning Address conversion~~ |
+| ~~`src/components/SendModal.vue`~~ | ~~Add merchant QR detection in QR scan handler~~ |
+| ~~`src/utils/lightning.js`~~ | ~~Already handles Lightning Addresses — no changes expected~~ |
+| ~~`src/components/PaymentModal.vue`~~ | ~~Show merchant logo/name on confirmation~~ |
+| ~~`src/pages/TransactionHistory.vue`~~ | ~~Display merchant branding on matched transactions~~ |
+| ~~`src/stores/transactionMetadata.js`~~ | ~~Store merchant identity with transaction~~ |
+| ~~`src/assets/merchants/`~~ | ~~New directory for merchant logo SVGs~~ |
 
-### Core conversion function
+### ~~Core conversion function~~
 
 ```javascript
+// Shipped — see src/utils/merchantQR.js for the actual implementation.
 function convertMerchantQRToLightningAddress(qrContent, network = 'mainnet') {
   if (!qrContent) return null
   for (const merchant of merchantConfigs) {

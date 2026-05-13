@@ -5,6 +5,11 @@
   "server": {
     "androidScheme": "https"
   },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
   "packageClassList": [
     "AppPlugin",
     "PreferencesPlugin"

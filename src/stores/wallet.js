@@ -13,6 +13,7 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { getUserFriendlyErrorMessage } from '../utils/userErrors';
+import * as deviceCrypto from '../utils/deviceCrypto';
 
 /**
  * Storage keys for persistence
@@ -24,133 +25,16 @@ const STORAGE_KEYS = {
 };
 
 /**
- * Encryption utilities for Spark wallet mnemonic.
- * Uses a random 256-bit device key stored in localStorage.
- * The mnemonic is never stored in plaintext — AES-256-GCM encryption at rest.
+ * Thin adapter exposing the device-key crypto under the historical
+ * `CryptoUtils.encryptMnemonic` / `decryptMnemonic` shape so the rest of
+ * this 2.5k-line file doesn't churn. New code should import the shared
+ * helpers from `utils/deviceCrypto` directly.
  */
 const CryptoUtils = {
-  /**
-   * Get or create the device encryption key.
-   * Generated once, stored in localStorage as base64.
-   */
-  async getDeviceKey() {
-    // crypto.subtle only exists in a secure context (HTTPS or localhost).
-    // Serving over a LAN IP / plain http:// leaves it undefined, which
-    // otherwise surfaces as a cryptic "Cannot read properties of undefined".
-    if (!globalThis.crypto?.subtle) {
-      throw new Error(
-        'Secure context required. Open this app over HTTPS or from localhost. ' +
-        'Browsers disable Web Crypto on plain http:// LAN addresses.'
-      );
-    }
-
-    let keyB64 = localStorage.getItem(STORAGE_KEYS.DEVICE_KEY);
-
-    if (!keyB64) {
-      const raw = crypto.getRandomValues(new Uint8Array(32));
-      keyB64 = btoa(String.fromCharCode(...raw));
-      localStorage.setItem(STORAGE_KEYS.DEVICE_KEY, keyB64);
-    }
-
-    const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
-    return crypto.subtle.importKey(
-      'raw',
-      raw,
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt', 'decrypt']
-    );
-  },
-
-  /**
-   * Encrypt mnemonic with device key
-   */
-  async encryptMnemonic(mnemonic) {
-    const encoder = new TextEncoder();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await this.getDeviceKey();
-
-    const encrypted = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encoder.encode(mnemonic)
-    );
-
-    // Combine iv + encrypted data
-    const result = new Uint8Array(iv.length + encrypted.byteLength);
-    result.set(iv, 0);
-    result.set(new Uint8Array(encrypted), iv.length);
-
-    return btoa(String.fromCharCode(...result));
-  },
-
-  /**
-   * Decrypt mnemonic with device key
-   */
-  async decryptMnemonic(encryptedData) {
-    const data = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
-    const iv = data.slice(0, 12);
-    const encrypted = data.slice(12);
-    const key = await this.getDeviceKey();
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encrypted
-    );
-
-    return new TextDecoder().decode(decrypted);
-  },
-
-  /**
-   * Migrate a PIN-encrypted mnemonic to device-key encryption.
-   * Used once for existing users who had a PIN.
-   */
-  async migrateFromPin(encryptedData, pin) {
-    // Decrypt with old PIN-based scheme (salt + iv + ciphertext)
-    const data = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
-    const salt = data.slice(0, 16);
-    const iv = data.slice(16, 28);
-    const encrypted = data.slice(28);
-
-    const encoder = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw', encoder.encode(pin), 'PBKDF2', false, ['deriveKey']
-    );
-    const oldKey = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
-      keyMaterial,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['decrypt']
-    );
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      oldKey,
-      encrypted
-    );
-
-    const mnemonic = new TextDecoder().decode(decrypted);
-
-    // Re-encrypt with device key
-    return this.encryptMnemonic(mnemonic);
-  },
-
-  /**
-   * Check if encrypted data uses the old PIN-based format.
-   * Old format: salt(16) + iv(12) + ciphertext (base64 decodes to > 28 bytes with salt prefix)
-   * New format: iv(12) + ciphertext (no salt)
-   * We detect by trying device-key decryption — if it fails, it's old format.
-   */
-  async isOldPinFormat(encryptedData) {
-    try {
-      await this.decryptMnemonic(encryptedData);
-      return false; // Device key worked — already migrated
-    } catch {
-      return true; // Device key failed — still PIN-encrypted
-    }
-  }
+  encryptMnemonic: deviceCrypto.encryptString,
+  decryptMnemonic: deviceCrypto.decryptString,
+  migrateFromPin: deviceCrypto.migrateFromPin,
+  isOldPinFormat: deviceCrypto.isOldPinFormat,
 };
 
 export const useWalletStore = defineStore('wallet', {
@@ -213,8 +97,21 @@ export const useWalletStore = defineStore('wallet', {
     isConnecting: false,
     walletSwitching: false,
 
+    // Buffered payment intent from a boot-time deep link / NFC scan.
+    // Boot files (deep-links.js, nfc.js) write here when a payment URI arrives
+    // before Wallet.vue has mounted. Wallet.vue's watcher (with immediate: true)
+    // drains and clears this on mount, so the intent is never lost to the race
+    // between Capacitor's getLaunchUrl resolution and Vue's component lifecycle.
+    pendingDeepLink: null,
+
     // Error tracking
     lastError: null,
+
+    // Runtime-only initialization guards. These are not persisted; they
+    // prevent boot flows (deep links, Wallet.vue) from racing each other
+    // into duplicate store hydration / auto-connect work on cold start.
+    isInitialized: false,
+    _initializePromise: null,
 
     // Bitcoin L1 deposit-claim coordination.
     //
@@ -589,206 +486,221 @@ export const useWalletStore = defineStore('wallet', {
      * Initialize the store from localStorage
      */
     async initialize() {
-      try {
-        // Load saved state
-        const savedState = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
-        if (savedState) {
-          const parsed = JSON.parse(savedState);
+      if (this.isInitialized) {
+        return;
+      }
 
-          // Check if cached exchange rates are still valid (less than 1 hour old)
-          let ratesStillValid = false;
-          if (parsed.exchangeRatesLastUpdate) {
-            const lastUpdate = new Date(parsed.exchangeRatesLastUpdate);
-            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-            ratesStillValid = lastUpdate > oneHourAgo;
-          }
+      if (this._initializePromise) {
+        return this._initializePromise;
+      }
 
-          // Migrate old wallets without type field
-          const storeBackedUp = parsed.hasBackedUp || false;
-          const migratedWallets = (parsed.wallets || []).map(wallet => {
-            const migrated = {
-              ...wallet,
-              type: wallet.type || inferWalletType(wallet)
-            };
-            // Migrate hasBackedUp from store-level to per-wallet metadata (pre-1.6.0 wallets)
-            if (migrated.type === WALLET_TYPES.SPARK && migrated.metadata && migrated.metadata.hasBackedUp === undefined) {
-              migrated.metadata.hasBackedUp = storeBackedUp;
+      this._initializePromise = (async () => {
+        try {
+          // Load saved state
+          const savedState = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
+          if (savedState) {
+            const parsed = JSON.parse(savedState);
+
+            // Check if cached exchange rates are still valid (less than 1 hour old)
+            let ratesStillValid = false;
+            if (parsed.exchangeRatesLastUpdate) {
+              const lastUpdate = new Date(parsed.exchangeRatesLastUpdate);
+              const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+              ratesStillValid = lastUpdate > oneHourAgo;
             }
-            return migrated;
-          });
 
-          // Migrate to Business/Personal pair
-          // Find all existing Spark wallets
-          const sparkWallets = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
+            // Migrate old wallets without type field
+            const storeBackedUp = parsed.hasBackedUp || false;
+            const migratedWallets = (parsed.wallets || []).map(wallet => {
+              const migrated = {
+                ...wallet,
+                type: wallet.type || inferWalletType(wallet)
+              };
+              // Migrate hasBackedUp from store-level to per-wallet metadata (pre-1.6.0 wallets)
+              if (migrated.type === WALLET_TYPES.SPARK && migrated.metadata && migrated.metadata.hasBackedUp === undefined) {
+                migrated.metadata.hasBackedUp = storeBackedUp;
+              }
+              return migrated;
+            });
 
-          if (sparkWallets.length > 0) {
-            // First, migrate pockets (metadata.accounts[]) to top-level wallets
-            for (const wallet of [...sparkWallets]) {
-              if (wallet.metadata?.accounts?.length) {
-                const walletGroupId = wallet.connectionData.walletGroupId
+            // Migrate to Business/Personal pair
+            // Find all existing Spark wallets
+            const sparkWallets = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
+
+            if (sparkWallets.length > 0) {
+              // First, migrate pockets (metadata.accounts[]) to top-level wallets
+              for (const wallet of [...sparkWallets]) {
+                if (wallet.metadata?.accounts?.length) {
+                  const walletGroupId = wallet.connectionData.walletGroupId
+                    || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                  wallet.connectionData.walletGroupId = walletGroupId;
+
+                  for (const account of wallet.metadata.accounts) {
+                    const newWalletId = `wallet-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+                    migratedWallets.push({
+                      id: newWalletId,
+                      type: WALLET_TYPES.SPARK,
+                      name: account.name || 'Personal',
+                      isActive: false,
+                      isDefault: false,
+                      createdAt: Date.now(),
+                      lastUsed: Date.now(),
+                      connectionData: {
+                        encryptedMnemonic: wallet.connectionData.encryptedMnemonic,
+                        network: wallet.connectionData.network,
+                        accountNumber: account.accountNumber,
+                        walletGroupId: walletGroupId,
+                      },
+                      metadata: {
+                        sparkAddress: account.sparkAddress || null,
+                        hasBackedUp: wallet.metadata?.hasBackedUp || false,
+                        cachedBalance: account.cachedBalance || 0,
+                      },
+                    });
+
+                    if (parsed.activeWalletId === wallet.id
+                      && wallet.metadata.activeAccountNumber === account.accountNumber) {
+                      parsed.activeWalletId = newWalletId;
+                    }
+                  }
+                  delete wallet.metadata.accounts;
+                  delete wallet.metadata.activeAccountNumber;
+                }
+              }
+
+              // Now ensure Business/Personal pair exists
+              // Re-scan after pocket migration
+              const allSpark = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
+              const hasAccNum1 = allSpark.find(w => w.connectionData?.accountNumber === 1);
+              const hasAccNum2 = allSpark.find(w => w.connectionData?.accountNumber === 2);
+
+              if (hasAccNum1 && !hasAccNum2) {
+                // Has Business (acc 1) but no Personal (acc 2) — create Personal
+                const walletGroupId = hasAccNum1.connectionData.walletGroupId
                   || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-                wallet.connectionData.walletGroupId = walletGroupId;
+                hasAccNum1.connectionData.walletGroupId = walletGroupId;
+                hasAccNum1.name = 'Business';
 
-                for (const account of wallet.metadata.accounts) {
-                  const newWalletId = `wallet-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-                  migratedWallets.push({
-                    id: newWalletId,
-                    type: WALLET_TYPES.SPARK,
-                    name: account.name || 'Personal',
-                    isActive: false,
-                    isDefault: false,
-                    createdAt: Date.now(),
-                    lastUsed: Date.now(),
-                    connectionData: {
-                      encryptedMnemonic: wallet.connectionData.encryptedMnemonic,
-                      network: wallet.connectionData.network,
-                      accountNumber: account.accountNumber,
-                      walletGroupId: walletGroupId,
-                    },
-                    metadata: {
-                      sparkAddress: account.sparkAddress || null,
-                      hasBackedUp: wallet.metadata?.hasBackedUp || false,
-                      cachedBalance: account.cachedBalance || 0,
-                    },
-                  });
+                migratedWallets.push({
+                  id: `wallet-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+                  type: WALLET_TYPES.SPARK,
+                  name: 'Personal',
+                  isActive: false,
+                  isDefault: false,
+                  createdAt: Date.now(),
+                  lastUsed: Date.now(),
+                  connectionData: {
+                    encryptedMnemonic: hasAccNum1.connectionData.encryptedMnemonic,
+                    network: hasAccNum1.connectionData.network,
+                    accountNumber: 2,
+                    walletGroupId: walletGroupId,
+                  },
+                  metadata: {
+                    sparkAddress: null,
+                    hasBackedUp: hasAccNum1.metadata?.hasBackedUp || false,
+                    cachedBalance: 0,
+                  },
+                });
+              } else if (hasAccNum1 && hasAccNum2) {
+                // Both exist — ensure they share a walletGroupId and have correct names
+                const walletGroupId = hasAccNum1.connectionData.walletGroupId
+                  || hasAccNum2.connectionData.walletGroupId
+                  || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                hasAccNum1.connectionData.walletGroupId = walletGroupId;
+                hasAccNum2.connectionData.walletGroupId = walletGroupId;
+              }
 
-                  if (parsed.activeWalletId === wallet.id
-                    && wallet.metadata.activeAccountNumber === account.accountNumber) {
-                    parsed.activeWalletId = newWalletId;
+              // Remove any extra Spark wallets beyond the Business/Personal pair
+              // (from old multi-wallet system with different mnemonics)
+              const finalSpark = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
+              if (finalSpark.length > 2) {
+                const keepGroup = finalSpark.find(w => w.connectionData?.accountNumber === 1)?.connectionData?.walletGroupId;
+                for (let i = migratedWallets.length - 1; i >= 0; i--) {
+                  const w = migratedWallets[i];
+                  if (w.type === WALLET_TYPES.SPARK && w.connectionData?.walletGroupId !== keepGroup) {
+                    migratedWallets.splice(i, 1);
                   }
                 }
-                delete wallet.metadata.accounts;
-                delete wallet.metadata.activeAccountNumber;
               }
             }
 
-            // Now ensure Business/Personal pair exists
-            // Re-scan after pocket migration
-            const allSpark = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
-            const hasAccNum1 = allSpark.find(w => w.connectionData?.accountNumber === 1);
-            const hasAccNum2 = allSpark.find(w => w.connectionData?.accountNumber === 2);
+            console.log(`[wallet-store] Loading ${migratedWallets.length} wallet(s):`, migratedWallets.map(w => `${w.type}:${w.name}`));
 
-            if (hasAccNum1 && !hasAccNum2) {
-              // Has Business (acc 1) but no Personal (acc 2) — create Personal
-              const walletGroupId = hasAccNum1.connectionData.walletGroupId
-                || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-              hasAccNum1.connectionData.walletGroupId = walletGroupId;
-              hasAccNum1.name = 'Business';
+            this.$patch({
+              wallets: migratedWallets,
+              activeWalletId: parsed.activeWalletId || null,
+              preferredFiatCurrency: parsed.preferredFiatCurrency || 'USD',
+              defaultDisplayCurrency: parsed.defaultDisplayCurrency || 'bitcoin',
+              denominationCurrency: parsed.denominationCurrency || 'sats',
+              useBip177Format: parsed.useBip177Format !== undefined ? parsed.useBip177Format : true,
+              exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
+              exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
+              exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
+              hasBackedUp: parsed.hasBackedUp || false,
+              biometricsEnabled: parsed.biometricsEnabled || false,
+              // Kiosk
+              kioskEnabled: parsed.kioskEnabled || false,
+              kioskPin: parsed.kioskPin || '',
+              kioskOwnerAccess: this.kioskOwnerAccess || false, // preserve if already unlocked this session
+              kioskWalletId: parsed.kioskWalletId || null,
+              kioskTipEnabled: parsed.kioskTipEnabled || false,
+              kioskTipValues: parsed.kioskTipValues || [5, 10, 20],
+              kioskRoundUpEnabled: parsed.kioskRoundUpEnabled || false,
+              kioskDisplayCurrency: parsed.kioskDisplayCurrency || 'sats',
+            });
+          }
 
-              migratedWallets.push({
-                id: `wallet-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-                type: WALLET_TYPES.SPARK,
-                name: 'Personal',
-                isActive: false,
-                isDefault: false,
-                createdAt: Date.now(),
-                lastUsed: Date.now(),
-                connectionData: {
-                  encryptedMnemonic: hasAccNum1.connectionData.encryptedMnemonic,
-                  network: hasAccNum1.connectionData.network,
-                  accountNumber: 2,
-                  walletGroupId: walletGroupId,
-                },
-                metadata: {
-                  sparkAddress: null,
-                  hasBackedUp: hasAccNum1.metadata?.hasBackedUp || false,
-                  cachedBalance: 0,
-                },
-              });
-            } else if (hasAccNum1 && hasAccNum2) {
-              // Both exist — ensure they share a walletGroupId and have correct names
-              const walletGroupId = hasAccNum1.connectionData.walletGroupId
-                || hasAccNum2.connectionData.walletGroupId
-                || `spark_group_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-              hasAccNum1.connectionData.walletGroupId = walletGroupId;
-              hasAccNum2.connectionData.walletGroupId = walletGroupId;
-            }
+          // Validate wallets
+          await this.validateWallets();
 
-            // Remove any extra Spark wallets beyond the Business/Personal pair
-            // (from old multi-wallet system with different mnemonics)
-            const finalSpark = migratedWallets.filter(w => w.type === WALLET_TYPES.SPARK);
-            if (finalSpark.length > 2) {
-              const keepGroup = finalSpark.find(w => w.connectionData?.accountNumber === 1)?.connectionData?.walletGroupId;
-              for (let i = migratedWallets.length - 1; i >= 0; i--) {
-                const w = migratedWallets[i];
-                if (w.type === WALLET_TYPES.SPARK && w.connectionData?.walletGroupId !== keepGroup) {
-                  migratedWallets.splice(i, 1);
-                }
+          // Load exchange rates
+          await this.loadExchangeRates();
+
+          // Initialize auto-withdraw store
+          const autoWithdrawStore = useAutoWithdrawStore();
+          await autoWithdrawStore.initialize();
+
+          // Auto-connect Spark wallets — detect if migration from PIN is needed
+          if (this.sparkWallets.length > 0) {
+            if (typeof window !== 'undefined' && window.__AUDIT__) {
+              // Audit harness: skip migration detection and provider init entirely
+            } else {
+              const firstSpark = this.sparkWallets[0];
+              const isOld = await CryptoUtils.isOldPinFormat(firstSpark.connectionData.encryptedMnemonic);
+              if (isOld) {
+                this.needsPinMigration = true;
+                console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
+              } else {
+                await this.connectAllSparkWallets();
               }
             }
           }
 
-          console.log(`[wallet-store] Loading ${migratedWallets.length} wallet(s):`, migratedWallets.map(w => `${w.type}:${w.name}`));
-
-          this.$patch({
-            wallets: migratedWallets,
-            activeWalletId: parsed.activeWalletId || null,
-            preferredFiatCurrency: parsed.preferredFiatCurrency || 'USD',
-            defaultDisplayCurrency: parsed.defaultDisplayCurrency || 'bitcoin',
-            denominationCurrency: parsed.denominationCurrency || 'sats',
-            useBip177Format: parsed.useBip177Format !== undefined ? parsed.useBip177Format : true,
-            exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
-            exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
-            exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
-            hasBackedUp: parsed.hasBackedUp || false,
-            biometricsEnabled: parsed.biometricsEnabled || false,
-            // Kiosk
-            kioskEnabled: parsed.kioskEnabled || false,
-            kioskPin: parsed.kioskPin || '',
-            kioskOwnerAccess: this.kioskOwnerAccess || false, // preserve if already unlocked this session
-            kioskWalletId: parsed.kioskWalletId || null,
-            kioskTipEnabled: parsed.kioskTipEnabled || false,
-            kioskTipValues: parsed.kioskTipValues || [5, 10, 20],
-            kioskRoundUpEnabled: parsed.kioskRoundUpEnabled || false,
-            kioskDisplayCurrency: parsed.kioskDisplayCurrency || 'sats',
-          });
-        }
-
-        // Validate wallets
-        await this.validateWallets();
-
-        // Load exchange rates
-        await this.loadExchangeRates();
-
-        // Initialize auto-withdraw store
-        const autoWithdrawStore = useAutoWithdrawStore();
-        await autoWithdrawStore.initialize();
-
-        // Auto-connect Spark wallets — detect if migration from PIN is needed
-        if (this.sparkWallets.length > 0) {
-          if (typeof window !== 'undefined' && window.__AUDIT__) {
-            // Audit harness: skip migration detection and provider init entirely
-          } else {
-            const firstSpark = this.sparkWallets[0];
-            const isOld = await CryptoUtils.isOldPinFormat(firstSpark.connectionData.encryptedMnemonic);
-            if (isOld) {
-              this.needsPinMigration = true;
-              console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
-            } else {
-              await this.connectAllSparkWallets();
+          // Auto-connect active non-Spark wallet
+          if (this.activeWalletId) {
+            const activeWallet = this.wallets.find(w => w.id === this.activeWalletId);
+            if (activeWallet && activeWallet.type !== WALLET_TYPES.SPARK) {
+              if (activeWallet.type === WALLET_TYPES.LNBITS) {
+                await this.connectLNBitsWallet(this.activeWalletId).catch((err) => {
+                  console.warn('LNBits auto-connect failed:', err.message);
+                });
+              } else {
+                await this.connectWallet(this.activeWalletId).catch((err) => {
+                  console.warn('Auto-connect failed:', err.message);
+                });
+              }
             }
           }
+        } catch (error) {
+          console.error('Wallet store initialization error:', error);
+          this.lastError = error.message;
+        } finally {
+          this.isInitialized = true;
+          this._initializePromise = null;
         }
+      })();
 
-        // Auto-connect active non-Spark wallet
-        if (this.activeWalletId) {
-          const activeWallet = this.wallets.find(w => w.id === this.activeWalletId);
-          if (activeWallet && activeWallet.type !== WALLET_TYPES.SPARK) {
-            if (activeWallet.type === WALLET_TYPES.LNBITS) {
-              await this.connectLNBitsWallet(this.activeWalletId).catch((err) => {
-                console.warn('LNBits auto-connect failed:', err.message);
-              });
-            } else {
-              await this.connectWallet(this.activeWalletId).catch((err) => {
-                console.warn('Auto-connect failed:', err.message);
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Wallet store initialization error:', error);
-        this.lastError = error.message;
-      }
+      return this._initializePromise;
     },
 
 

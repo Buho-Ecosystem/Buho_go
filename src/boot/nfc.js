@@ -3,7 +3,6 @@ import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
 import { addNfcListener, addNfcErrorListener, isNfcAvailable } from '../utils/nfc'
 import { parsePaymentDestination } from '../providers/WalletFactory'
-import { EventBus } from '../utils/eventBus'
 
 /**
  * NFC boot plugin for Android.
@@ -11,9 +10,9 @@ import { EventBus } from '../utils/eventBus'
  * Only loaded in Capacitor builds (see quasar.config.js).
  *
  * Listens for NFC tag scans via the custom NfcPlugin Capacitor bridge.
- * Parsed payment data is emitted on EventBus as 'deep-link' —
- * the same event that deep-links.js uses — so Wallet.vue picks it up
- * via onPaymentDetected() without any additional wiring.
+ * Parsed payment data is buffered on walletStore.pendingDeepLink — the same
+ * channel deep-links.js writes to — so Wallet.vue's watcher picks it up
+ * without any additional wiring and without timing races.
  *
  * Supported tag formats:
  *   - Bolt Card  → lnurlw:// URL (LNURL-withdraw with HMAC)
@@ -83,16 +82,12 @@ export default boot(async ({ router }) => {
       type: parsed.type
     }
 
-    // Reuse the deep-link event → Wallet.vue handles it automatically
-    const currentPath = router.currentRoute.value?.path
-    if (currentPath === '/wallet') {
-      EventBus.emit('deep-link', paymentData)
-    } else {
-      router.push('/wallet').then(() => {
-        setTimeout(() => {
-          EventBus.emit('deep-link', paymentData)
-        }, 300)
-      })
+    // Buffer on the store; Wallet.vue's watcher consumes it. Same channel as
+    // deep-links.js, so the rest of the flow is shared.
+    walletStore.pendingDeepLink = paymentData
+
+    if (router.currentRoute.value?.path !== '/wallet') {
+      router.push('/wallet').catch(() => { /* navigation rejection is non-fatal */ })
     }
   })
 
