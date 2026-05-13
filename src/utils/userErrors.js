@@ -104,15 +104,59 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
   };
 }
 
-/**
- * Backwards-compatible wrapper returning { title, description }.
- * `description` is the same upstream-passthrough string used by the
- * payment error dialog, so toast call sites that surface
- * caption: description now show the real reason too.
- */
-export function getUserFriendlyError(error, context = 'general', $t = null) {
-  const e = buildPaymentError(error, { context }, $t);
-  return { title: e.title, description: e.reason };
+  // === Fee Issues ===
+  if (errorLower.includes('fee') ||
+      errorLower.includes('maxfee')) {
+    return {
+      title: t('Fee issue'),
+      description: t('Please try again with a different amount.')
+    };
+  }
+
+  // === Context-Specific Fallbacks ===
+  const fallbacks = {
+    payment: {
+      title: t('Payment failed'),
+      description: t('Please try again.')
+    },
+    receive: {
+      title: t('Couldn\'t create invoice'),
+      description: t('Please try again.')
+    },
+    transfer: {
+      title: t('Transfer failed'),
+      description: t('Please try again.')
+    },
+    connect: {
+      title: t('Couldn\'t connect'),
+      description: t('Please check the details and try again.')
+    },
+    kiosk: {
+      title: t('Couldn\'t start payment'),
+      description: t('Please try again.')
+    },
+    claim: {
+      title: t('Couldn\'t complete'),
+      description: t('Please try again.')
+    },
+    withdraw: {
+      title: t('Withdrawal failed'),
+      description: t('Please try again.')
+    },
+    // LUD-04 login flow. Distinct from `connect` (which is wallet setup)
+    // because the user-facing action here is "log in to a site", not
+    // "configure a wallet" — different mental model, different copy.
+    identity: {
+      title: t('Couldn\'t sign you in'),
+      description: t('Please try again.')
+    },
+    general: {
+      title: t('Something went wrong'),
+      description: t('Please try again.')
+    }
+  };
+
+  return fallbacks[context] || fallbacks.general;
 }
 
 /**

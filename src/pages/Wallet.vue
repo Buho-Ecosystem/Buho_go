@@ -24,6 +24,24 @@
       </transition>
 
       <q-space/>
+      <!-- Header icon row. Order is intentional: Address Book (least
+           personal, far left), Settings (configuration, middle),
+           Profile (you, right edge — matches every other app's
+           convention). The Profile button uses the same plain-icon
+           treatment as the Settings cog so it reads as a peer
+           destination. -->
+      <q-btn
+        flat
+        round
+        class="float-right q-mr-sm"
+        :class="$q.dark.isActive ? 'dark-mode-btn-dark' : 'dark-mode-btn-light'"
+        @click="showAddressBookQuick = true"
+        padding="sm sm"
+        style="border-radius: 12px"
+        aria-label="Address Book"
+      >
+        <Icon icon="tabler:address-book" width="18" height="18" />
+      </q-btn>
       <q-btn
         flat
         round
@@ -38,14 +56,13 @@
       <q-btn
         flat
         round
+        dense
         class="float-right"
-        :class="$q.dark.isActive ? 'dark-mode-btn-dark' : 'dark-mode-btn-light'"
-        @click="showAddressBookQuick = true"
-        padding="sm sm"
-        style="border-radius: 12px"
-        aria-label="Address Book"
+        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
+        @click="$router.push('/profile')"
+        aria-label="Profile"
       >
-        <Icon icon="tabler:address-book" width="18" height="18" />
+        <Icon icon="tabler:user" width="18" height="18" />
       </q-btn>
     </q-toolbar>
 
@@ -547,6 +564,14 @@
       @closed="onWithdrawSuccessClosed"
     />
 
+    <!-- LUD-04 (LNURL-auth) identity dialog. Mounted at the wallet page
+         level so deep-link, QR scan, and pasted-input flows all funnel
+         into the same confirm → sign → submit → record pipeline. -->
+    <IdentityAuthDialog
+      v-model="showIdentityAuthDialog"
+      :challenge="identityAuthChallenge"
+    />
+
     <!-- Save Contact Dialog -->
     <q-dialog v-model="showSaveContactDialog" persistent class="save-contact-dialog">
       <q-card class="save-contact-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
@@ -641,7 +666,11 @@ import PaymentModal from '../components/PaymentModal.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
+import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
+import {useIdentityStore} from '../stores/identity';
+import {parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
+import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
 import {
   useBitcoinPreferencesStore,
   BITCOIN_DEPOSIT_POLL_MS,
@@ -649,7 +678,6 @@ import {
 } from '../stores/bitcoinPreferences';
 import { track as telemetryTrack } from '../utils/telemetry';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
-import {EventBus} from '../utils/eventBus';
 
 export default {
   name: 'WalletPage',
@@ -664,13 +692,15 @@ export default {
     BatchSendModal,
     PaymentConfirmation,
     NumberFlow,
-    BackupBanner
+    BackupBanner,
+    IdentityAuthDialog,
   },
   setup() {
     const walletStore = useWalletStore();
     const addressBookStore = useAddressBookStore();
     const bitcoinPrefsStore = useBitcoinPreferencesStore();
-    return { walletStore, addressBookStore, bitcoinPrefsStore };
+    const identityStore = useIdentityStore();
+    return { walletStore, addressBookStore, bitcoinPrefsStore, identityStore };
   },
   data() {
     return {
@@ -769,7 +799,12 @@ export default {
       withdrawSparkUnsubscribe: null,
       showWithdrawSuccess: false,
       withdrawConfirmedAmount: 0,
-      withdrawConfirmedFiat: ''
+      withdrawConfirmedFiat: '',
+      // LUD-04 (LNURL-auth) — the dialog re-renders the same parsed
+      // challenge across steps, so we hold it here rather than passing
+      // through emit chains.
+      showIdentityAuthDialog: false,
+      identityAuthChallenge: null,
     };
   },
   computed: {
@@ -777,6 +812,20 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       ) || null;
+    },
+
+    /**
+     * Inline gradient for the small Profile avatar in the header. Derived
+     * from the identity fingerprint so the icon visually matches the big
+     * avatar on the Profile page itself — same identity, same colour.
+     * Before bootstrap, the helper returns a tasteful default so the
+     * button never renders flat or empty.
+     */
+    profileAvatarStyle() {
+      const { from, to } = identityFingerprintToGradient(
+        this.identityStore?.fingerprint,
+      );
+      return { background: `linear-gradient(135deg, ${from} 0%, ${to} 100%)` };
     },
 
     /**
@@ -1218,6 +1267,10 @@ export default {
     // Restore display currency from user preference
     this.currentDisplayMode = this.walletStore.defaultDisplayCurrency || 'bitcoin';
     this.addressBookStore.initialize();
+    // Hydrate the Identity store so the header avatar paints with the
+    // right gradient (and the backup-pip with the right state) on first
+    // mount. Idempotent and cheap.
+    this.identityStore.hydrate();
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
@@ -1225,9 +1278,21 @@ export default {
     this.$watch(() => this.walletStore.needsPinMigration, (needs) => {
       if (needs) this.showMigrationDialog = true;
     }, { immediate: true });
-    // Listen for deep link events (Android intent filters: lightning:, bitcoin:, lnurlp://, lnurlw://)
-    this._deepLinkHandler = (paymentData) => this.onPaymentDetected(paymentData);
-    EventBus.on('deep-link', this._deepLinkHandler);
+    // Drain any buffered deep-link / NFC payment intent. Boot files write to
+    // walletStore.pendingDeepLink instead of using a transient event so that
+    // intents arriving before this component mounts are never lost. The
+    // watcher fires immediately with the current value, then reactively on
+    // any subsequent write while we are mounted. We clear the buffer before
+    // processing so a remount does not double-process.
+    this.$watch(
+      () => this.walletStore.pendingDeepLink,
+      (paymentData) => {
+        if (!paymentData) return;
+        this.walletStore.pendingDeepLink = null;
+        this.onPaymentDetected(paymentData);
+      },
+      { immediate: true }
+    );
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -1242,10 +1307,6 @@ export default {
     this.stopWithdrawMonitor();
     // Stop merchant countdown if active
     this.stopMerchantCountdown();
-    // Clean up deep link listener
-    if (this._deepLinkHandler) {
-      EventBus.off('deep-link', this._deepLinkHandler);
-    }
   },
   watch: {
     'walletState.balance': {
@@ -3010,6 +3071,16 @@ export default {
             description: parsedInvoice.description
           };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
+          // LUD-04 (LNURL-auth) is identity, not payment. It uses the same
+          // bech32 carrier (lnurl1...) and the same lightning: deep-link
+          // scheme as LNURL-pay/withdraw, so the WalletFactory hands it to
+          // us classified as 'lnurl'. Detect it locally first — `tag=login`
+          // means we must NOT hit the callback URL with a plain GET (that
+          // would burn the k1 challenge before we sign it).
+          if (looksLikeLud04(paymentData.data) && this.openIdentityAuthFromLnurl(paymentData.data)) {
+            return;
+          }
+
           // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
 
@@ -3606,6 +3677,36 @@ export default {
         console.warn('Failed to fetch Lightning address info:', error.message);
         return {};
       }
+    },
+
+    /**
+     * Try to interpret an inbound LNURL string as a LUD-04 (LNURL-auth)
+     * challenge. If it parses as one, open the identity-auth dialog and
+     * return true so the caller short-circuits the regular pay/withdraw
+     * flow. If the input is a different LNURL variant, return false and
+     * let the caller proceed.
+     *
+     * We deliberately do not surface parsing errors as user-facing
+     * notifications — a malformed `keyauth://` URL still has a chance of
+     * being something else, and the regular LNURL fetch path will return
+     * its own descriptive error if it can't reach the server either.
+     *
+     * @param {string} lnurl
+     * @returns {boolean} whether the input was consumed as LUD-04
+     */
+    openIdentityAuthFromLnurl(lnurl) {
+      let challenge;
+      try {
+        challenge = parseLud04Input(lnurl);
+      } catch (err) {
+        // `tag=login` is the discriminator. If parsing failed because the
+        // URL doesn't have it, it's a payment LNURL and we don't claim it.
+        return false;
+      }
+
+      this.identityAuthChallenge = challenge;
+      this.showIdentityAuthDialog = true;
+      return true;
     },
 
     /**

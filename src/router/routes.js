@@ -11,6 +11,7 @@ const routes = [
       { path: '/lnbits-setup', component: () => import('pages/LNBitsSetupPage.vue') },
       { path: '/wallet', component: () => import('pages/Wallet.vue') },
       { path: '/settings', component: () => import('pages/Settings.vue') },
+      { path: '/profile', component: () => import('pages/ProfilePage.vue') },
       { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
