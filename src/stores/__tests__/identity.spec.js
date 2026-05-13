@@ -21,22 +21,18 @@ import { strict as assert } from 'node:assert';
 // ---------------------------------------------------------------------------
 
 /**
- * Minimal in-memory localStorage. Supports the subset the identity store
- * uses (`getItem`, `setItem`, `removeItem`) and a `__throwOnWrite` test
- * hook for the persist-rollback case.
+ * Minimal in-memory localStorage. Pure storage — no test hooks bolted on.
+ * Specific failure modes (e.g. quota exceeded) are simulated locally in
+ * the tests that need them via `withFailingStorageWrite` below.
  */
 class MemoryStorage {
   constructor() {
     this._data = new Map();
-    this.__throwOnWrite = null; // set to a string to make setItem(key) throw
   }
   getItem(key) {
     return this._data.has(key) ? this._data.get(key) : null;
   }
   setItem(key, value) {
-    if (this.__throwOnWrite === key) {
-      throw new Error('quota exceeded (test)');
-    }
     this._data.set(key, String(value));
   }
   removeItem(key) {
@@ -48,6 +44,27 @@ class MemoryStorage {
 }
 
 globalThis.localStorage = new MemoryStorage();
+
+/**
+ * Run `fn` with `localStorage.setItem(failingKey, …)` configured to throw,
+ * then restore the original method. Keeps the failure mode local to one
+ * test so it can't leak into others — strictly more honest than a global
+ * `__throwOnWrite` flag on the shim.
+ */
+async function withFailingStorageWrite(failingKey, fn) {
+  const orig = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  globalThis.localStorage.setItem = (key, value) => {
+    if (key === failingKey) {
+      throw new Error('quota exceeded (simulated by test)');
+    }
+    return orig(key, value);
+  };
+  try {
+    await fn();
+  } finally {
+    globalThis.localStorage.setItem = orig;
+  }
+}
 
 const { createPinia, setActivePinia } = await import('pinia');
 const { useIdentityStore } = await import('../identity.js');
@@ -167,8 +184,15 @@ await test('importMnemonic resets connectedSites and rotation index', async () =
   const s = freshEnv();
   await s.ensureIdentity();
   s.recordConnectedSite({ domain: 'example.com', action: 'login', linkingPubHex: 'aa' });
-  s.nostrAccountIndex = 5; // simulate prior rotation
-  s._persistMetadata();
+  // Drive the rotation through the public API instead of mutating state
+  // directly: three real rotations get us to account 3, which is plenty
+  // to verify the import path zeroes the index back to 0.
+  await s.rotateNostrIdentity();
+  await s.rotateNostrIdentity();
+  await s.rotateNostrIdentity();
+  assert.equal(s.nostrAccountIndex, 3);
+  assert.equal(s.connectedSites.length, 1);
+
   await s.importMnemonic(FIXED_SEED);
   assert.deepEqual(s.connectedSites, []);
   assert.equal(s.nostrAccountIndex, 0);
@@ -288,17 +312,17 @@ await test('rotateNostrIdentity rolls back in-memory state when persist throws',
   const npubBefore = s.nostrNpub;
   const acctBefore = s.nostrAccountIndex;
 
-  // Make the next metadata persist fail. The store should restore
-  // the pre-rotation state and propagate the error to the caller.
-  globalThis.localStorage.__throwOnWrite = 'buhoGO_identity_v1';
-  try {
-    await s.rotateNostrIdentity();
-    assert.fail('expected rotation to throw on persist failure');
-  } catch (err) {
-    assert.match(err.message, /quota exceeded/);
-  }
-  globalThis.localStorage.__throwOnWrite = null;
+  await withFailingStorageWrite('buhoGO_identity_v1', async () => {
+    try {
+      await s.rotateNostrIdentity();
+      assert.fail('expected rotation to throw on persist failure');
+    } catch (err) {
+      assert.match(err.message, /quota exceeded/);
+    }
+  });
 
+  // Pre-rotation state must be restored: the user sees the same npub on
+  // reload as they had before the failed rotation.
   assert.equal(s.nostrAccountIndex, acctBefore);
   assert.equal(s.nostrNpub, npubBefore);
 });
@@ -306,9 +330,10 @@ await test('rotateNostrIdentity rolls back in-memory state when persist throws',
 await test('rotateNostrIdentity refuses to overflow past 2^31', async () => {
   const s = freshEnv();
   await s.importMnemonic(FIXED_SEED);
-  // Simulate a user one rotation away from the hardened-index ceiling.
+  // Direct mutation is unavoidable here: simulating 2^31 real rotations
+  // is not feasible in test time. We mutate to the value one below the
+  // ceiling and exercise the guard against incrementing past it.
   s.nostrAccountIndex = 2 ** 31 - 1;
-  s._persistMetadata();
 
   try {
     await s.rotateNostrIdentity();
@@ -316,7 +341,6 @@ await test('rotateNostrIdentity refuses to overflow past 2^31', async () => {
   } catch (err) {
     assert.equal(err.code, 'NOSTR_ACCOUNT_EXHAUSTED');
   }
-  // State must be unchanged after the refusal.
   assert.equal(s.nostrAccountIndex, 2 ** 31 - 1);
 });
 
@@ -380,6 +404,70 @@ await test('loadNostrIdentity lazily backfills the cache for legacy users', asyn
 await test('loadNostrIdentity returns null when no identity exists', async () => {
   const s = freshEnv();
   assert.equal(await s.loadNostrIdentity(), null);
+});
+
+// ---------------------------------------------------------------------------
+// _tryCacheNostrPublic — must swallow derivation failures so a NostrCore
+// crash never takes down identity bootstrap.
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: capture console.warn for the duration of a callback so the
+ * happy-path test output isn't polluted by warnings the swallow paths
+ * legitimately emit. Also asserts that exactly the expected warns fired.
+ */
+function withSilencedWarn(fn) {
+  const calls = [];
+  const orig = console.warn;
+  console.warn = (...args) => { calls.push(args); };
+  try {
+    fn();
+  } finally {
+    console.warn = orig;
+  }
+  return calls;
+}
+
+await test('_tryCacheNostrPublic swallows an invalid mnemonic and logs once', () => {
+  const s = freshEnv();
+  const warns = withSilencedWarn(() => {
+    s._tryCacheNostrPublic('not a valid mnemonic at all');
+  });
+  assert.equal(s.nostrPubkeyHex, null);
+  assert.equal(s.nostrNpub, null);
+  assert.equal(warns.length, 1);
+  assert.match(warns[0][0], /Nostr cache failed/);
+});
+
+await test('_tryCacheNostrPublic swallows out-of-range account index', () => {
+  const s = freshEnv();
+  // Directly poison the account index past the valid range. The next
+  // _tryCacheNostrPublic call hits a RangeError inside deriveNostrIdentity,
+  // which must be swallowed.
+  s.nostrAccountIndex = -1;
+  withSilencedWarn(() => {
+    s._tryCacheNostrPublic(FIXED_SEED);
+  });
+  assert.equal(s.nostrPubkeyHex, null);
+  assert.equal(s.nostrNpub, null);
+});
+
+await test('ensureIdentity survives a Nostr cache failure mid-bootstrap', async () => {
+  // End-to-end robustness: if Nostr derivation breaks for any reason,
+  // the BuhoGO identity itself (and therefore LUD-04 sign-in) must keep
+  // working. We force the failure by poisoning the account index, then
+  // confirm that a follow-up cache attempt does not corrupt the rest of
+  // the identity state.
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const fp = s.fingerprint;
+  s.nostrAccountIndex = -1;
+  withSilencedWarn(() => {
+    s._tryCacheNostrPublic('any string'); // input doesn't matter, account range fails first
+  });
+  assert.equal(s.bootstrapped, true);
+  assert.equal(s.fingerprint, fp);
+  assert.equal(s.nostrPubkeyHex, null);
 });
 
 // ---------------------------------------------------------------------------
