@@ -1272,6 +1272,10 @@ export default {
   "Your phone's PIN, pattern, or password also works.": "Die PIN, das Muster oder das Passwort deines Handys funktionieren ebenfalls.",
   "Please try again.": "Bitte versuche es erneut.",
 
+  // ----- Identity creation entry points (manage sheet rows for fresh users) -----
+  "Set up identity": "Identität einrichten",
+  "Create your 12 recovery words and back them up": "Erstelle deine 12 Wiederherstellungswörter und sichere sie",
+
   // ----- Nostr identity (NIP-06 / NIP-19) -----
   "Nostr identity": "Nostr-Identität",
   "View your public key and reveal your secret key": "Öffentlichen Schlüssel ansehen und geheimen Schlüssel einblenden",

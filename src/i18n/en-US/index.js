@@ -1347,6 +1347,10 @@ export default {
   "Your phone's PIN, pattern, or password also works.": "Your phone's PIN, pattern, or password also works.",
   "Please try again.": "Please try again.",
 
+  // ----- Identity creation entry points (manage sheet rows for fresh users) -----
+  "Set up identity": "Set up identity",
+  "Create your 12 recovery words and back them up": "Create your 12 recovery words and back them up",
+
   // ----- Nostr identity (NIP-06 / NIP-19) -----
   "Nostr identity": "Nostr identity",
   "View your public key and reveal your secret key": "View your public key and reveal your secret key",

@@ -342,7 +342,10 @@ import { secureScreen } from '../utils/secureScreen';
 
 const REVEAL_DURATION_SECONDS = 120;
 const COUNTDOWN_TICK_MS = 1000;
-const CONFIRM_PHRASE = 'I understand';
+// WIP_PLAN: nostr-identity-recovery — used by the rotation confirmation
+// step, which is currently disabled. Keeping the constant so the
+// uncomment step is a single grep.
+// const CONFIRM_PHRASE = 'I understand';
 
 export default {
   name: 'NostrIdentityDialog',
@@ -382,10 +385,11 @@ export default {
       copiedNpub: false,
       copiedNsec: false,
 
-      // Rotate flow
-      rotateConfirmInput: '',
-      isRotating: false,
-      confirmPhrase: CONFIRM_PHRASE,
+      // WIP_PLAN: nostr-identity-recovery — rotation flow state.
+      // Disabled until we publish the rotated account index to relays.
+      // rotateConfirmInput: '',
+      // isRotating: false,
+      // confirmPhrase: CONFIRM_PHRASE,
     };
   },
 
@@ -398,7 +402,8 @@ export default {
     headerTitle() {
       if (this.step === 'authExplain') return this.$t('Verify it is you');
       if (this.step === 'reveal') return this.$t('Your Nostr secret key');
-      if (this.step === 'rotateConfirm') return this.$t('Create new Nostr key');
+      // WIP_PLAN: nostr-identity-recovery — rotation step header.
+      // if (this.step === 'rotateConfirm') return this.$t('Create new Nostr key');
       return this.$t('Your Nostr identity');
     },
 
@@ -481,8 +486,9 @@ export default {
       this.countdownSeconds = REVEAL_DURATION_SECONDS;
       this.copiedNpub = false;
       this.copiedNsec = false;
-      this.rotateConfirmInput = '';
-      this.isRotating = false;
+      // WIP_PLAN: nostr-identity-recovery — rotation state reset.
+      // this.rotateConfirmInput = '';
+      // this.isRotating = false;
       this.stopCountdown();
       this.wipeSecret();
     },
@@ -628,35 +634,37 @@ export default {
       }
     },
 
-    cancelRotate() {
-      this.rotateConfirmInput = '';
-      this.step = 'overview';
-    },
-
-    async executeRotate() {
-      if (this.rotateConfirmInput !== this.confirmPhrase) return;
-      this.isRotating = true;
-      try {
-        await this.identity.rotateNostrIdentity();
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('New Nostr key created'),
-          caption: this.$t('Your old key is forgotten in BuhoGO.'),
-          timeout: 4000,
-        });
-        this.rotateConfirmInput = '';
-        this.step = 'overview';
-      } catch (error) {
-        console.error('[NostrIdentityDialog] rotate failed', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t("Couldn't create a new Nostr key"),
-          caption: this.$t('Please try again.'),
-        });
-      } finally {
-        this.isRotating = false;
-      }
-    },
+    // WIP_PLAN: nostr-identity-recovery — rotation handlers.
+    // Disabled until we publish the rotated account index to relays.
+    // cancelRotate() {
+    //   this.rotateConfirmInput = '';
+    //   this.step = 'overview';
+    // },
+    //
+    // async executeRotate() {
+    //   if (this.rotateConfirmInput !== this.confirmPhrase) return;
+    //   this.isRotating = true;
+    //   try {
+    //     await this.identity.rotateNostrIdentity();
+    //     this.$q.notify({
+    //       type: 'positive',
+    //       message: this.$t('New Nostr key created'),
+    //       caption: this.$t('Your old key is forgotten in BuhoGO.'),
+    //       timeout: 4000,
+    //     });
+    //     this.rotateConfirmInput = '';
+    //     this.step = 'overview';
+    //   } catch (error) {
+    //     console.error('[NostrIdentityDialog] rotate failed', error);
+    //     this.$q.notify({
+    //       type: 'negative',
+    //       message: this.$t("Couldn't create a new Nostr key"),
+    //       caption: this.$t('Please try again.'),
+    //     });
+    //   } finally {
+    //     this.isRotating = false;
+    //   }
+    // },
 
     close() {
       this.open = false;
