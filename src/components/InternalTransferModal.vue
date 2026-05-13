@@ -160,10 +160,6 @@
           <p class="success-route">{{ state.fromWallet?.name }} → {{ state.toWallet?.name }}</p>
         </section>
 
-        <div v-if="state.transferError" class="banner banner--error banner--lg">
-          <Icon icon="tabler:alert-triangle" width="18" height="18" />
-          <span>{{ state.transferError }}</span>
-        </div>
       </main>
 
       <!-- Footer -->
@@ -248,8 +244,11 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, h } from 'vue';
 import { useQuasar } from 'quasar';
+import { useI18n } from 'vue-i18n';
 import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
+
+const { t } = useI18n();
 
 // ─────────────────────────────────────────────────────────────
 // Sub-components (functional)
@@ -352,7 +351,6 @@ const state = reactive({
   showToPicker: false,
   isTransferring: false,
   transferComplete: false,
-  transferError: '',
   isReconnecting: false,
   isMaxAmount: false
 });
@@ -489,7 +487,6 @@ function goBack() {
 async function doTransfer() {
   if (state.isTransferring) return;
   state.isTransferring = true;
-  state.transferError = '';
   try {
     haptics.medium();
     await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, parseInt(state.amount));
@@ -497,7 +494,17 @@ async function doTransfer() {
     haptics.success();
     emit('transfer-complete', { fromWallet: state.fromWallet, toWallet: state.toWallet, amount: parseInt(state.amount) });
   } catch (e) {
-    state.transferError = e.message || 'Transfer failed';
+    // Surface the failure in the global payment-error dialog so the
+    // transfer-fail screen looks the same as every other payment
+    // surface. The inline banner that used to live on step 3 has
+    // been retired in favour of the dialog.
+    store.showPaymentError(e, {
+      context: 'transfer',
+      walletType: state.fromWallet?.type || null,
+      route: `Transfer (${state.fromWallet?.name || '?'} → ${state.toWallet?.name || '?'})`,
+      amountSats: parseInt(state.amount) || undefined,
+      t: t,
+    });
     haptics.error();
   } finally {
     state.isTransferring = false;
@@ -513,7 +520,6 @@ function resetState() {
     amountError: '',
     isTransferring: false,
     transferComplete: false,
-    transferError: '',
     isMaxAmount: false,
     isReconnecting: false
   });

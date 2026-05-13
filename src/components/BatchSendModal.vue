@@ -611,7 +611,7 @@ import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
 import LightningPaymentService from '../utils/lightning.js'
-import { getUserFriendlyErrorMessage } from '../utils/userErrors'
+import { getUserFriendlyError } from '../utils/userErrors'
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -1241,7 +1241,11 @@ async function startBatch() {
     } catch (error) {
       console.error('Batch send payment failed:', error)
       result.status = 'failed'
-      result.error = getUserFriendlyErrorMessage(error, 'payment', t)
+      // Show the upstream reason on the row so a 20-recipient batch
+      // summary lists what actually went wrong per address, not 20
+      // copies of "Payment failed". Fires no global dialog: batch
+      // failures are surfaced inline in the summary step.
+      result.error = getUserFriendlyError(error, 'payment', t).description
     }
 
     // Small delay for UI feedback
