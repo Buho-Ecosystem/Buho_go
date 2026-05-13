@@ -606,5 +606,174 @@ await test('publish honours opts.createdAt for deterministic ids in tests', asyn
   }
 });
 
+// ---------------------------------------------------------------------------
+// uploadAvatar()
+// ---------------------------------------------------------------------------
+
+function fakeFile(bytes = new Uint8Array([1, 2, 3]), type = 'image/png') {
+  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return {
+    size: buf.byteLength,
+    type,
+    arrayBuffer() {
+      const copy = new ArrayBuffer(buf.byteLength);
+      new Uint8Array(copy).set(buf);
+      return Promise.resolve(copy);
+    },
+  };
+}
+
+/**
+ * Fake Blossom uploader. Records every call and returns either the
+ * configured success payload or rejects with the configured error.
+ */
+function fakeUploader(behaviour = {}) {
+  const calls = [];
+  const fn = (file, secretKey, opts) => {
+    calls.push({ file, secretKey, opts });
+    if (behaviour.throwError) return Promise.reject(behaviour.throwError);
+    return Promise.resolve(behaviour.result ?? {
+      url: 'https://blossom.test/avatar.png',
+      hash: 'a'.repeat(64),
+      mime: 'image/png',
+      size: 3,
+      server: 'https://blossom.test',
+    });
+  };
+  return Object.assign(fn, { calls });
+}
+
+await test('uploadAvatar reports IDENTITY_NOT_BOOTSTRAPPED when no identity exists', async () => {
+  const s = freshEnv();
+  const uploader = fakeUploader();
+  const r = await s.uploadAvatar(fakeFile(), { uploader });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'IDENTITY_NOT_BOOTSTRAPPED');
+  assert.equal(uploader.calls.length, 0, 'uploader should not be called');
+});
+
+await test('uploadAvatar happy path: sets picture, marks dirty, persists, returns ok=true result', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  const uploader = fakeUploader();
+  const r = await profile.uploadAvatar(fakeFile(), { uploader });
+  assert.equal(r.ok, true);
+  assert.equal(r.url, 'https://blossom.test/avatar.png');
+  assert.equal(profile.picture, 'https://blossom.test/avatar.png');
+  assert.equal(profile.isDirty, true);
+  const persisted = readPersisted();
+  assert.equal(persisted.picture, 'https://blossom.test/avatar.png');
+});
+
+await test('uploadAvatar passes server/maxBytes opts straight through to the helper', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  const uploader = fakeUploader();
+  await profile.uploadAvatar(fakeFile(), {
+    uploader,
+    server: 'https://custom.test',
+    maxBytes: 1024,
+  });
+  const [{ opts }] = uploader.calls;
+  assert.equal(opts.server, 'https://custom.test');
+  assert.equal(opts.maxBytes, 1024);
+});
+
+await test('uploadAvatar hands the uploader a 32-byte secret key', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  const uploader = fakeUploader();
+  await profile.uploadAvatar(fakeFile(), { uploader });
+  const [{ secretKey }] = uploader.calls;
+  assert.ok(secretKey instanceof Uint8Array);
+  assert.equal(secretKey.length, 32);
+});
+
+await test('uploadAvatar wipes the secret-key bytes after the upload', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  let capturedSk = null;
+  const uploader = (file, sk) => {
+    capturedSk = sk;
+    return Promise.resolve({
+      url: 'x', hash: 'h', mime: 'image/png', size: 1, server: 's',
+    });
+  };
+  await profile.uploadAvatar(fakeFile(), { uploader });
+  assert.ok(capturedSk instanceof Uint8Array);
+  // Every byte zeroed after the call returned.
+  for (let i = 0; i < capturedSk.length; i += 1) {
+    assert.equal(capturedSk[i], 0);
+  }
+});
+
+await test('uploadAvatar failure: prior picture preserved, isDirty unchanged, typed result returned', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.setField('picture', 'https://old.test/avatar.png');
+  profile.isDirty = false;
+
+  const oversize = new Error('Image too large (max 5 MB)');
+  oversize.code = 'AVATAR_TOO_LARGE';
+  const uploader = fakeUploader({ throwError: oversize });
+
+  const r = await profile.uploadAvatar(fakeFile(), { uploader });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'AVATAR_TOO_LARGE');
+  assert.match(r.message, /too large/i);
+  // Existing avatar URL stays.
+  assert.equal(profile.picture, 'https://old.test/avatar.png');
+  assert.equal(profile.isDirty, false);
+});
+
+await test('uploadAvatar collapses an Error without a code to AVATAR_UNKNOWN_ERROR', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  const uploader = fakeUploader({ throwError: new Error('boom') });
+  const r = await profile.uploadAvatar(fakeFile(), { uploader });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'AVATAR_UNKNOWN_ERROR');
+  assert.equal(r.message, 'boom');
+});
+
+await test('uploadAvatar: isUploadingAvatar flips true mid-flight and false after', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  let observed = null;
+  const uploader = () => {
+    observed = profile.isUploadingAvatar;
+    return Promise.resolve({
+      url: 'x', hash: 'h', mime: 'image/png', size: 1, server: 's',
+    });
+  };
+  assert.equal(profile.isUploadingAvatar, false);
+  await profile.uploadAvatar(fakeFile(), { uploader });
+  assert.equal(observed, true);
+  assert.equal(profile.isUploadingAvatar, false);
+});
+
+await test('uploadAvatar: re-entrancy returns the prior result without re-calling the uploader', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  const uploader = fakeUploader();
+  // First call seeds lastAvatarUploadResult.
+  await profile.uploadAvatar(fakeFile(), { uploader });
+  // Hold the flag to simulate an in-flight upload.
+  profile.isUploadingAvatar = true;
+  const r = await profile.uploadAvatar(fakeFile(), { uploader });
+  assert.equal(uploader.calls.length, 1);
+  assert.equal(r.ok, true); // prior result is the success result
+  profile.isUploadingAvatar = false;
+});
+
+await test('uploadAvatar: same URL → no redundant persist or dirty flip', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.setField('picture', 'https://blossom.test/avatar.png');
+  profile.isDirty = false;
+  const uploader = fakeUploader({
+    result: {
+      url: 'https://blossom.test/avatar.png',
+      hash: 'a'.repeat(64),
+      mime: 'image/png',
+      size: 3,
+      server: 'https://blossom.test',
+    },
+  });
+  await profile.uploadAvatar(fakeFile(), { uploader });
+  assert.equal(profile.isDirty, false);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

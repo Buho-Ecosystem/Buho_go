@@ -56,6 +56,7 @@ import {
   buildKind0Event,
   buildKind10002Event,
 } from '../utils/nostrProfile.js';
+import { uploadAvatar as uploadAvatarToBlossom } from '../utils/blossomProfileMedia.js';
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -186,6 +187,16 @@ export const useProfileStore = defineStore('profile', {
      * Not persisted — it's transient UI feedback, not source-of-truth state.
      */
     lastPublishResult: null,
+
+    /** True while a Blossom avatar upload is in flight. */
+    isUploadingAvatar: false,
+    /**
+     * Outcome of the most recent avatar upload, shape:
+     *   { ok: true,  url, hash, mime, size, server }
+     *   | { ok: false, code: string, message: string }
+     * Not persisted — purely UI feedback for the avatar picker.
+     */
+    lastAvatarUploadResult: null,
   }),
 
   getters: {
@@ -339,6 +350,103 @@ export const useProfileStore = defineStore('profile', {
     },
 
     // -------------------------------------------------------------------
+    // Avatar upload
+    // -------------------------------------------------------------------
+
+    /**
+     * Upload a new avatar to Blossom, set the `picture` field to the
+     * returned URL, and mark the profile dirty so the next "Save &
+     * Publish" picks it up.
+     *
+     * The avatar URL is *not* published by this action — the user
+     * still has to confirm the rest of their edits and hit publish.
+     * That keeps a partially-typed display name from going out on the
+     * wire just because someone picked a new photo.
+     *
+     * Failure handling: the prior `picture` value is preserved (no
+     * destructive write on error), and `lastAvatarUploadResult`
+     * carries the typed error code so the UI can render a specific
+     * message — "too large", "unsupported format", "network", etc.
+     *
+     * Re-entrancy: no-op while a previous upload is still running.
+     *
+     * Test injection: `opts.uploader` lets the spec swap in a fake
+     * Blossom helper. Production callers pass nothing.
+     *
+     * @param {{ size: number, type: string, arrayBuffer: () => Promise<ArrayBuffer> }} file
+     * @param {{
+     *   server?:   string,
+     *   maxBytes?: number,
+     *   fetch?:    typeof fetch,
+     *   uploader?: typeof uploadAvatarToBlossom,
+     * }} [opts]
+     * @returns {Promise<
+     *   | { ok: true,  url: string, hash: string, mime: string, size: number, server: string }
+     *   | { ok: false, code: string, message: string }
+     * >}
+     */
+    async uploadAvatar(file, opts = {}) {
+      if (this.isUploadingAvatar) {
+        return this.lastAvatarUploadResult ?? { ok: false, code: 'BUSY', message: 'Upload already in flight' };
+      }
+
+      const identity = useIdentityStore();
+      if (!identity.bootstrapped) {
+        const result = {
+          ok: false,
+          code: 'IDENTITY_NOT_BOOTSTRAPPED',
+          message: 'No identity seed',
+        };
+        this.lastAvatarUploadResult = result;
+        return result;
+      }
+
+      const upload = opts.uploader ?? uploadAvatarToBlossom;
+      const uploadOpts = {};
+      if (opts.server) uploadOpts.server = opts.server;
+      if (Number.isFinite(opts.maxBytes)) uploadOpts.maxBytes = opts.maxBytes;
+      if (opts.fetch) uploadOpts.fetch = opts.fetch;
+
+      this.isUploadingAvatar = true;
+      try {
+        const secretKey = await identity.getNostrSecretKeyBytes();
+        let upshot;
+        try {
+          upshot = await upload(file, secretKey, uploadOpts);
+        } finally {
+          // Wipe the key bytes regardless of whether the upload
+          // succeeded — the helper signs once before any network I/O
+          // so the key is no longer needed by the time we hit this
+          // line.
+          secretKey.fill(0);
+        }
+
+        // Success: commit the new URL into `picture` and mark dirty
+        // so the next publish carries it. Persist immediately so a
+        // crash between upload and publish doesn't lose the URL.
+        if (this.picture !== upshot.url) {
+          this.picture = upshot.url;
+          this.isDirty = true;
+          this._persistMetadata();
+        }
+
+        const result = { ok: true, ...upshot };
+        this.lastAvatarUploadResult = result;
+        return result;
+      } catch (err) {
+        const result = {
+          ok: false,
+          code: err?.code || 'AVATAR_UNKNOWN_ERROR',
+          message: err?.message || 'Avatar upload failed',
+        };
+        this.lastAvatarUploadResult = result;
+        return result;
+      } finally {
+        this.isUploadingAvatar = false;
+      }
+    },
+
+    // -------------------------------------------------------------------
     // Publish
     // -------------------------------------------------------------------
 
@@ -475,6 +583,8 @@ export const useProfileStore = defineStore('profile', {
       this.isPublishing = false;
       this.lastPublishedAt = null;
       this.lastPublishResult = null;
+      this.isUploadingAvatar = false;
+      this.lastAvatarUploadResult = null;
       localStorage.removeItem(STORAGE_KEY);
     },
   },
