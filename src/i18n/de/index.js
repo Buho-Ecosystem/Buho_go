@@ -1232,6 +1232,7 @@ export default {
   "Paste login link": "Anmelde-Link einfügen",
   "Clear": "Löschen",
   "Paste": "Einfügen",
+  "That link uses an insecure connection. Sign-in only works over HTTPS.": "Dieser Link nutzt eine unsichere Verbindung. Anmelden funktioniert nur über HTTPS.",
   "That link is not a Lightning login. Check the site and copy the link again.": "Das ist kein Lightning-Login. Prüfe die Seite und kopiere den Link erneut.",
 
   // Scanner für neue Seiten

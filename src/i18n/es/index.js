@@ -1231,6 +1231,7 @@ export default {
   "Paste login link": "Pega el enlace de inicio de sesión",
   "Clear": "Borrar",
   "Paste": "Pegar",
+  "That link uses an insecure connection. Sign-in only works over HTTPS.": "Ese enlace usa una conexión insegura. Iniciar sesión solo funciona por HTTPS.",
   "That link is not a Lightning login. Check the site and copy the link again.": "Ese enlace no es un inicio de sesión Lightning. Revisa el sitio y copia el enlace otra vez.",
 
   // Escáner para añadir sitios

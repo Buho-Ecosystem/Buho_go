@@ -100,8 +100,15 @@ export function parseLud04Url(url) {
     throw new Error('LNURL-auth URL is not a valid URL');
   }
 
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error(`Unsupported LNURL-auth protocol: ${parsed.protocol}`);
+  // LUD-04 is an authentication protocol — the signature is domain-bound,
+  // but the callback round-trip itself must run over TLS. A malicious or
+  // downgraded `http:` link would let an on-path attacker swap challenges
+  // and read the response. No localhost exception: dev environments use
+  // HTTPS (self-signed / ngrok / mkcert) the same as production.
+  if (parsed.protocol !== 'https:') {
+    const err = new Error(`LNURL-auth requires HTTPS (got ${parsed.protocol})`);
+    err.code = 'LUD04_INSECURE_SCHEME';
+    throw err;
   }
 
   const params = parsed.searchParams;

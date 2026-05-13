@@ -302,8 +302,15 @@ export default {
       let challenge;
       try {
         challenge = parseLud04Input(text);
-      } catch {
-        this.errorText = this.$t('That link is not a Lightning login. Check the site and copy the link again.');
+      } catch (err) {
+        // Distinguish HTTPS-rejection from other parse failures so we
+        // can tell the user *why* the link won't work — they may have a
+        // perfectly valid LUD-04 link that just happens to be http://.
+        if (err?.code === 'LUD04_INSECURE_SCHEME') {
+          this.errorText = this.$t('That link uses an insecure connection. Sign-in only works over HTTPS.');
+        } else {
+          this.errorText = this.$t('That link is not a Lightning login. Check the site and copy the link again.');
+        }
         if (this.mode === 'scan') {
           // Surface the error inline by flipping back to paste so the
           // user sees the bad text and can fix or replace it.

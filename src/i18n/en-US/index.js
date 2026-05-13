@@ -1306,6 +1306,7 @@ export default {
   "Clear": "Clear",
   "Paste": "Paste",
   "That link is not a Lightning login. Check the site and copy the link again.": "That link is not a Lightning login. Check the site and copy the link again.",
+  "That link uses an insecure connection. Sign-in only works over HTTPS.": "That link uses an insecure connection. Sign-in only works over HTTPS.",
 
   // Add-site scanner
   "Point your camera at the \"Login with Bitcoin\" QR code.": "Point your camera at the \"Login with Bitcoin\" QR code.",
