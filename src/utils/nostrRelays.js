@@ -127,6 +127,19 @@ export async function publishToRelays(pool, urls, event, opts = {}) {
     ]);
   } catch (err) {
     publishError = err;
+    // Surface the underlying reason to the console so callers can
+    // diagnose without having to pierce the layered fallback. Kept
+    // as a warn (not an error) because publishToRelays itself never
+    // throws — the caller still gets a per-relay result array and
+    // can choose its own recovery strategy.
+    console.warn(
+      '[nostr] publish failed for kind',
+      event?.kind,
+      'on',
+      urls.length,
+      'relay(s):',
+      err,
+    );
   }
 
   const acceptedSet = new Set(Array.isArray(accepted) ? accepted : []);

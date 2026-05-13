@@ -1406,6 +1406,13 @@ export default {
   "Profile saved": "Profile saved",
   "Couldn't save your profile": "Couldn't save your profile",
   "Check your connection and try again.": "Check your connection and try again.",
+  "Couldn't reach the network in time": "Couldn't reach the network in time",
+  "Your connection is slow or offline. Check it and try again.": "Your connection is slow or offline. Check it and try again.",
+  "The servers refused this profile": "The servers refused this profile",
+  "This is usually temporary. Wait a moment and try again.": "This is usually temporary. Wait a moment and try again.",
+  "Something went wrong on this device. Please try again.": "Something went wrong on this device. Please try again.",
+  "Try again": "Try again",
+  "Dismiss": "Dismiss",
   "Looks like an unfamiliar format. Try name@example.com.": "Looks like an unfamiliar format. Try name{'@'}example.com.",
 
   // ----- Profile share sheet (Plan 09 §7d) -----

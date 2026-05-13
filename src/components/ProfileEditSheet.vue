@@ -175,6 +175,37 @@
         </label>
       </div>
 
+      <!-- Persistent publish-error banner. Lives next to the action
+           bar so the user can read what went wrong and tap Save &
+           Publish to retry without losing their place in the form.
+           Same visual shape the avatar picker uses for its upload
+           errors — one alert idiom across every profile surface. -->
+      <div
+        v-if="publishError"
+        class="publish-error-block"
+        :class="$q.dark.isActive ? 'publish-error-block-dark' : 'publish-error-block-light'"
+        role="alert"
+        aria-live="assertive"
+      >
+        <Icon icon="tabler:alert-circle" width="20" height="20" class="publish-error-icon" />
+        <div class="publish-error-text">
+          <div class="publish-error-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+            {{ publishError.title }}
+          </div>
+          <div class="publish-error-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ publishError.caption }}
+          </div>
+        </div>
+        <button
+          type="button"
+          class="publish-error-dismiss"
+          :aria-label="$t('Dismiss')"
+          @click="dismissPublishError"
+        >
+          <Icon icon="tabler:x" width="14" height="14" />
+        </button>
+      </div>
+
       <!-- Sticky bottom action bar. The button is disabled until
            either the form has local changes or the store carries an
            unsaved publish from a previous session. -->
@@ -190,7 +221,7 @@
           @click="onSave"
         >
           <q-spinner v-if="profile.isPublishing" size="18px" />
-          <span>{{ $t('Save & Publish') }}</span>
+          <span>{{ publishError ? $t('Try again') : $t('Save & Publish') }}</span>
         </button>
       </div>
     </q-card>
@@ -252,6 +283,18 @@ export default {
 
       /** Avatar fallback flag — same pattern the page uses. */
       avatarBroken: false,
+
+      /**
+       * Inline publish-error block. Stays visible until the user
+       * either retries successfully or dismisses it manually — a
+       * transient toast would have vanished before they could read
+       * what went wrong.
+       *
+       * Shape: `{ title: string, caption: string }` when set, `null`
+       * otherwise. The mode is encoded in the title/caption pair
+       * picked by `describePublishFailure`.
+       */
+      publishError: null,
     };
   },
 
@@ -310,6 +353,58 @@ export default {
       this.form.lud16       = this.profile.lud16;
       this.errors.lud16     = '';
       this.avatarBroken     = false;
+      this.publishError     = null;
+    },
+
+    /**
+     * Inspect the per-relay result array and return the most
+     * specific failure description we can offer the user. Three
+     * shapes worth distinguishing:
+     *
+     *   - Every error reads "timed out" → network is slow or down;
+     *     retry has a real chance of working.
+     *   - Every error reads "did not accept" → relays are reachable
+     *     but bouncing the event; usually transient (rate limit,
+     *     load-shedding), occasionally the event itself.
+     *   - Mixed or unknown → fall back to a generic message but
+     *     still offer retry.
+     *
+     * The `[profile] publish landed on zero relays` console.warn
+     * from the store carries the raw detail for support; this
+     * function just turns it into something a human can act on.
+     */
+    describePublishFailure(result) {
+      const errors = Array.isArray(result)
+        ? result.map((r) => (r && r.error) || '').filter(Boolean)
+        : [];
+      if (errors.length === 0) {
+        return {
+          title: this.$t("Couldn't save your profile"),
+          caption: this.$t('Something went wrong on this device. Please try again.'),
+        };
+      }
+      const allTimedOut = errors.every((e) => /timed?\s*out/i.test(e));
+      const allRejected = errors.every((e) => /did not accept/i.test(e));
+      if (allTimedOut) {
+        return {
+          title: this.$t("Couldn't reach the network in time"),
+          caption: this.$t('Your connection is slow or offline. Check it and try again.'),
+        };
+      }
+      if (allRejected) {
+        return {
+          title: this.$t('The servers refused this profile'),
+          caption: this.$t('This is usually temporary. Wait a moment and try again.'),
+        };
+      }
+      return {
+        title: this.$t("Couldn't save your profile"),
+        caption: this.$t('Check your connection and try again.'),
+      };
+    },
+
+    dismissPublishError() {
+      this.publishError = null;
     },
 
     onHide() {
@@ -340,6 +435,10 @@ export default {
       if (!this.canPublish || this.profile.isPublishing) return;
       if (!this.validate()) return;
 
+      // Clear any previous error before kicking off the next attempt
+      // so the banner doesn't linger from a stale failure.
+      this.publishError = null;
+
       // Snapshot the form into the store as a single atomic edit.
       // `applyEdits` ignores unknown keys and is no-op on equal
       // values, so this is safe even if nothing actually changed.
@@ -353,15 +452,13 @@ export default {
 
       // Now publish. profileStore.publish never throws — failures
       // surface as a `lastPublishResult` array. The button itself
-      // shows a spinner during in-flight; the result lands on a
-      // toast (success or failure) so the action bar stays quiet
-      // and the sheet stops trying to be a status surface.
+      // shows a spinner during in-flight; the result lands either
+      // on a positive toast + sheet dismiss (success) or on a
+      // persistent inline banner the user can read and retry from
+      // (failure).
       const result = await this.profile.publish();
 
       if (Array.isArray(result) && result.some((r) => r.ok)) {
-        // At least one relay took it. Close the sheet, surface a
-        // positive toast — mirrors the pattern the identity dialogs
-        // already use elsewhere in the app.
         this.open = false;
         this.$q.notify({
           type: 'positive',
@@ -369,14 +466,11 @@ export default {
           timeout: 2500,
         });
       } else {
-        // Total failure. Keep the sheet open so the user can adjust
-        // and retry; explain what happened via a friendly toast.
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t("Couldn't save your profile"),
-          caption: this.$t('Check your connection and try again.'),
-          timeout: 4000,
-        });
+        // Total failure. Keep the sheet open and surface a
+        // persistent banner the user can read. Tapping
+        // Save & Publish again is the retry path; the store still
+        // carries `isDirty: true` so the button stays enabled.
+        this.publishError = this.describePublishFailure(result);
       }
     },
   },
@@ -695,6 +789,72 @@ body.body--dark .avatar-edit-badge {
 
 .primary-cta:not(:disabled):hover { filter: brightness(1.05); }
 .primary-cta:not(:disabled):active { transform: scale(0.98); }
+
+/* Persistent publish-error banner. Same shape as the avatar
+   picker's `.error-block`; lives between the field group and the
+   action bar so the user reads it on their way to the Retry CTA. */
+.publish-error-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  margin: 0 16px 8px;
+  border-radius: 12px;
+}
+
+.publish-error-block-light {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+.publish-error-block-dark {
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.publish-error-icon {
+  flex: 0 0 auto;
+  color: #ef4444;
+  margin-top: 1px;
+}
+
+.publish-error-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.publish-error-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.publish-error-caption {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.publish-error-dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, background-color 0.18s ease;
+}
+
+.publish-error-dismiss:hover {
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.10);
+}
 
 .item-label-light { color: #0f172a; }
 .item-label-dark  { color: #f8fafc; }

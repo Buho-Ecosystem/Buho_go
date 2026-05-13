@@ -562,6 +562,12 @@ export const useProfileStore = defineStore('profile', {
           this.lastPublishedAt = Date.now();
           this.isDirty = false;
           this._persistMetadata();
+        } else {
+          // Zero relays took it. Log the per-relay outcomes so future
+          // debugging never has to guess whether a publish actually
+          // hit the wire — the merged array carries the underlying
+          // error message for every URL we attempted.
+          console.warn('[profile] publish landed on zero relays:', merged);
         }
 
         return merged;

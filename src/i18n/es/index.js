@@ -1330,6 +1330,13 @@ export default {
   "Profile saved": "Perfil guardado",
   "Couldn't save your profile": "No se pudo guardar tu perfil",
   "Check your connection and try again.": "Comprueba tu conexión e inténtalo de nuevo.",
+  "Couldn't reach the network in time": "No se pudo contactar con la red a tiempo",
+  "Your connection is slow or offline. Check it and try again.": "Tu conexión es lenta o está sin servicio. Compruébala e inténtalo de nuevo.",
+  "The servers refused this profile": "Los servidores rechazaron este perfil",
+  "This is usually temporary. Wait a moment and try again.": "Suele ser temporal. Espera un momento e inténtalo de nuevo.",
+  "Something went wrong on this device. Please try again.": "Algo salió mal en este dispositivo. Vuelve a intentarlo.",
+  "Try again": "Reintentar",
+  "Dismiss": "Descartar",
   "Looks like an unfamiliar format. Try name@example.com.": "Parece un formato poco común. Prueba con nombre{'@'}ejemplo.com.",
 
   // ----- Profile share sheet (Plan 09 §7d) -----
