@@ -29,7 +29,9 @@
         </q-btn>
       </q-card-section>
 
-      <!-- Overview step: public Nostr identity (npub) + actions -->
+      <!-- Overview step: public profile address (mainstream framing) + actions.
+           The bech32 value still carries the `npub1…` prefix so power
+           users recognise the underlying protocol; the label stays plain. -->
       <template v-if="step === 'overview'">
         <q-card-section class="nostr-step-body overview-body">
           <div class="overview-illustration">
@@ -43,13 +45,13 @@
             class="overview-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Your Nostr identity') }}
+            {{ $t('Your public profile') }}
           </h2>
           <p
             class="overview-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your Nostr identity too.') }}
+            {{ $t('Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your profile too.') }}
           </p>
 
           <div
@@ -57,7 +59,7 @@
             :class="$q.dark.isActive ? 'key-card-dark' : 'key-card-light'"
           >
             <div class="key-card-label">
-              {{ $t('Public key (npub)') }}
+              {{ $t('Profile address') }}
             </div>
             <div class="key-card-value">
               <code class="key-card-code">{{ identity.nostrNpub || '…' }}</code>
@@ -66,7 +68,7 @@
                 dense
                 round
                 :disable="!identity.nostrNpub"
-                :aria-label="$t('Copy public key')"
+                :aria-label="$t('Copy profile address')"
                 @click="copyNpub"
               >
                 <Icon
@@ -87,7 +89,7 @@
             </div>
             <div class="nostr-callout-body">
               <div class="nostr-callout-text">
-                {{ $t('Share your public key freely. Paste it into any Nostr client to find yourself.') }}
+                {{ $t('Share this address. Friends can find you on compatible apps.') }}
               </div>
             </div>
           </div>
@@ -99,7 +101,7 @@
             no-caps
             class="nostr-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :label="$t('Reveal secret key')"
+            :label="$t('Show private key')"
             :loading="isAuthenticating || isLoadingSecret"
             @click="onRevealRequested"
           />
@@ -111,7 +113,7 @@
             flat
             no-caps
             class="nostr-danger-link"
-            :label="$t('Create new Nostr key')"
+            :label="$t('Reset your profile')"
             @click="step = 'rotateConfirm'"
           />
           -->
@@ -172,9 +174,9 @@
         </q-card-actions>
       </template>
 
-      <!-- Secret reveal step. nsec is shown blurred by default; user taps
-           to unblur and a countdown auto-hides it. Mirrors the seed-phrase
-           dialog so the protection model feels familiar. -->
+      <!-- Private-key reveal step. The bech32 value carries an `nsec1…`
+           prefix that power users will recognise; the label stays plain
+           so mainstream users see "private key" instead of crypto jargon. -->
       <template v-else-if="step === 'reveal'">
         <q-card-section class="nostr-step-body reveal-body">
           <div
@@ -205,11 +207,11 @@
               $q.dark.isActive ? 'secret-card-dark' : 'secret-card-light',
               { 'secret-card--blurred': nsecBlurred },
             ]"
-            :aria-label="nsecBlurred ? $t('Show secret key') : $t('Hide secret key')"
+            :aria-label="nsecBlurred ? $t('Show private key') : $t('Hide private key')"
             @click="toggleNsec"
           >
             <div class="secret-card-label">
-              {{ $t('Secret key (nsec)') }}
+              {{ $t('Private key') }}
             </div>
             <div class="secret-card-value">
               <code class="secret-card-code">{{ revealedNsec || '…' }}</code>
@@ -248,7 +250,7 @@
             </div>
             <div class="nostr-callout-body">
               <div class="nostr-callout-text">
-                {{ $t('Anyone with this key can post as you on Nostr. Treat it like your recovery phrase. Never paste it into a website.') }}
+                {{ $t('Anyone with this key can sign and post as you on compatible apps. Treat it like your recovery phrase. Never paste it into a website.') }}
               </div>
             </div>
           </div>
@@ -281,13 +283,13 @@
             class="overview-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Create new Nostr key?') }}
+            {{ $t('Reset your profile?') }}
           </h2>
           <p
             class="overview-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Your recovery phrase stays the same. A fresh Nostr key replaces this one. Anything you signed before will still verify, but new clients will see you as a new account.') }}
+            {{ $t('Your recovery phrase stays the same. A fresh profile replaces this one. Anything you signed before will still verify, but other apps will see you as new.') }}
           </p>
 
           <div class="confirm-instruction" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
@@ -318,7 +320,7 @@
           <q-btn
             unelevated
             no-caps
-            :label="$t('Create new key')"
+            :label="$t('Reset profile')"
             :disable="rotateConfirmInput !== confirmPhrase"
             :loading="isRotating"
             class="danger-action-btn"
@@ -401,10 +403,10 @@ export default {
 
     headerTitle() {
       if (this.step === 'authExplain') return this.$t('Verify it is you');
-      if (this.step === 'reveal') return this.$t('Your Nostr secret key');
+      if (this.step === 'reveal') return this.$t('Your private key');
       // WIP_PLAN: nostr-identity-recovery — rotation step header.
-      // if (this.step === 'rotateConfirm') return this.$t('Create new Nostr key');
-      return this.$t('Your Nostr identity');
+      // if (this.step === 'rotateConfirm') return this.$t('Reset your profile');
+      return this.$t('Your public profile');
     },
 
     authMethodCopy() {
@@ -423,7 +425,7 @@ export default {
     },
 
     authBody() {
-      return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can reveal your Nostr secret key, even if they have your unlocked phone.')}`;
+      return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can reveal your private key, even if they have your unlocked phone.')}`;
     },
 
     authPrivacyText() {
@@ -526,9 +528,9 @@ export default {
       this.isAuthenticating = true;
       try {
         const ok = await authenticate({
-          reason: this.$t('Verify it is you to reveal your Nostr secret key'),
+          reason: this.$t('Verify it is you to reveal your private key'),
           title: 'BuhoGO',
-          subtitle: this.$t('Nostr secret key'),
+          subtitle: this.$t('Private key'),
           useFallback: true,
         });
         if (!this.modelValue) return;
@@ -572,7 +574,7 @@ export default {
         console.error('[NostrIdentityDialog] reveal failed', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("We couldn't reveal your Nostr secret key"),
+          message: this.$t("We couldn't reveal your private key"),
           caption: this.$t('Please try again.'),
         });
         this.close();
@@ -648,8 +650,8 @@ export default {
     //     await this.identity.rotateNostrIdentity();
     //     this.$q.notify({
     //       type: 'positive',
-    //       message: this.$t('New Nostr key created'),
-    //       caption: this.$t('Your old key is forgotten in BuhoGO.'),
+    //       message: this.$t('Profile reset'),
+    //       caption: this.$t('Your old profile is forgotten on this device.'),
     //       timeout: 4000,
     //     });
     //     this.rotateConfirmInput = '';
@@ -658,7 +660,7 @@ export default {
     //     console.error('[NostrIdentityDialog] rotate failed', error);
     //     this.$q.notify({
     //       type: 'negative',
-    //       message: this.$t("Couldn't create a new Nostr key"),
+    //       message: this.$t("Couldn't reset your profile"),
     //       caption: this.$t('Please try again.'),
     //     });
     //   } finally {

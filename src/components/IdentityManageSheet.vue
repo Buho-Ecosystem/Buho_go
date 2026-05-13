@@ -97,10 +97,10 @@
             </q-item-section>
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Nostr identity') }}
+                {{ $t('Public profile') }}
               </q-item-label>
               <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('View your public key and reveal your secret key') }}
+                {{ $t('View your address and reveal your private key') }}
               </q-item-label>
             </q-item-section>
             <q-item-section side>
