@@ -164,7 +164,7 @@ export default {
      * device language without us having to ship translation tables.
      */
     formatAbsolute(epochMs) {
-      if (!epochMs) return '—';
+      if (!epochMs) return '-';
       try {
         return new Intl.DateTimeFormat(undefined, {
           year: 'numeric', month: 'short', day: 'numeric',
