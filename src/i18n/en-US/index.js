@@ -1418,6 +1418,19 @@ export default {
   // ----- Profile share sheet (Plan 09 §7d) -----
   "Scan to open in a compatible app": "Scan to open in a compatible app",
   "Couldn't share": "Couldn't share",
+  "Share your public profile": "Share your public profile",
+  "Tap to copy. Scan to add this profile.": "Tap to copy. Scan to add this profile.",
+  "Friends can scan this to add you to their address book and pay you.": "Friends can scan this to add you to their address book and pay you.",
+
+  // ----- Seed-phrase reveal dialog -----
+  "Keep it offline": "Keep it offline",
+  "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.": "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.",
+  "I'm ready": "I'm ready",
+  "Tap Show words to reveal.": "Tap Show words to reveal.",
+  "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.": "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.",
+  "Show words": "Show words",
+  "Hide words": "Hide words",
+  "I have it written down": "I have it written down",
   "Share profile": "Share profile",
   "Edit profile picture": "Edit profile picture",
   "Profile picture": "Profile picture",

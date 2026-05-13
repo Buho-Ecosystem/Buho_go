@@ -1342,6 +1342,19 @@ export default {
   // ----- Profile share sheet (Plan 09 §7d) -----
   "Scan to open in a compatible app": "Escanea para abrir en una app compatible",
   "Couldn't share": "No se pudo compartir",
+  "Share your public profile": "Comparte tu perfil público",
+  "Tap to copy. Scan to add this profile.": "Toca para copiar. Escanea para añadir este perfil.",
+  "Friends can scan this to add you to their address book and pay you.": "Tus amigos pueden escanearlo para añadirte a su agenda y enviarte pagos.",
+
+  // ----- Seed-phrase reveal dialog -----
+  "Keep it offline": "Guárdala sin conexión",
+  "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.": "Escríbela en papel. No le hagas foto. No la guardes en notas en la nube ni en un gestor de contraseñas que no controles tú.",
+  "I'm ready": "Estoy listo",
+  "Tap Show words to reveal.": "Toca Mostrar palabras para verlas.",
+  "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.": "Nunca escribas esta frase en un sitio web. Nunca la compartas en chats, fotos ni notas en la nube.",
+  "Show words": "Mostrar palabras",
+  "Hide words": "Ocultar palabras",
+  "I have it written down": "Ya la tengo anotada",
   "Share profile": "Compartir perfil",
   "Edit profile picture": "Editar foto de perfil",
   "Profile picture": "Foto de perfil",
