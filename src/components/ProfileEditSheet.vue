@@ -45,38 +45,45 @@
           :disabled="profile.isUploadingAvatar"
           @click="$emit('open-picker')"
         >
-          <div
-            class="avatar"
-            :class="$q.dark.isActive ? 'avatar-dark' : 'avatar-light'"
-          >
-            <img
-              v-if="visibleAvatarUrl"
-              :src="visibleAvatarUrl"
-              :alt="$t('Profile picture')"
-              class="avatar-img"
-              @error="onAvatarLoadError"
-            />
-            <Icon
-              v-else
-              icon="tabler:user"
-              width="40"
-              height="40"
-              class="avatar-glyph"
-              aria-hidden="true"
-            />
+          <!-- Avatar slot: the circle clips its own image fill via
+               overflow:hidden, but the camera badge lives *outside*
+               that clip so it never gets cropped at the avatar
+               border. The wrapper is positioned so the badge can
+               anchor to the bottom-right of the visible circle. -->
+          <div class="avatar-wrap">
+            <div
+              class="avatar"
+              :class="$q.dark.isActive ? 'avatar-dark' : 'avatar-light'"
+            >
+              <img
+                v-if="visibleAvatarUrl"
+                :src="visibleAvatarUrl"
+                :alt="$t('Profile picture')"
+                class="avatar-img"
+                @error="onAvatarLoadError"
+              />
+              <Icon
+                v-else
+                icon="tabler:user"
+                width="40"
+                height="40"
+                class="avatar-glyph"
+                aria-hidden="true"
+              />
+              <span
+                v-if="profile.isUploadingAvatar"
+                class="avatar-upload-overlay"
+                aria-hidden="true"
+              >
+                <q-spinner color="white" size="22px" />
+              </span>
+            </div>
             <span
               v-if="!profile.isUploadingAvatar"
               class="avatar-edit-badge"
               aria-hidden="true"
             >
               <Icon icon="tabler:camera" width="14" height="14" />
-            </span>
-            <span
-              v-else
-              class="avatar-upload-overlay"
-              aria-hidden="true"
-            >
-              <q-spinner color="white" size="22px" />
             </span>
           </div>
         </button>
@@ -138,35 +145,6 @@
           </span>
         </label>
 
-        <!-- Website (single line, URL validated on save) -->
-        <label class="field">
-          <span class="field-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('Website') }}
-          </span>
-          <div
-            class="field-input-wrap"
-            :class="[
-              $q.dark.isActive ? 'field-input-wrap-dark' : 'field-input-wrap-light',
-              { 'field-input-wrap--error': errors.website },
-            ]"
-          >
-            <input
-              v-model="form.website"
-              type="url"
-              placeholder="https://your-site.example"
-              spellcheck="false"
-              autocomplete="off"
-              autocapitalize="none"
-              maxlength="200"
-              class="field-input"
-              :class="$q.dark.isActive ? 'field-input-dark' : 'field-input-light'"
-            />
-          </div>
-          <span v-if="errors.website" class="field-error" role="alert">
-            {{ errors.website }}
-          </span>
-        </label>
-
         <!-- Lightning address (lud16, optional) -->
         <label class="field">
           <span class="field-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
@@ -214,14 +192,6 @@
           <q-spinner v-if="profile.isPublishing" size="18px" />
           <span>{{ $t('Save & Publish') }}</span>
         </button>
-        <div
-          v-if="inlineStatus"
-          class="action-status"
-          :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-          aria-live="polite"
-        >
-          {{ inlineStatus }}
-        </div>
       </div>
     </q-card>
   </q-dialog>
@@ -230,25 +200,13 @@
 <script>
 import { Icon } from '@iconify/vue';
 import { useProfileStore, PROFILE_FIELDS } from '../stores/profile';
-import { DEFAULT_RELAYS } from '../utils/nostrRelays.js';
-
 /**
- * Lightweight shape validators. We accept anything that looks
- * roughly right; full URL / lud16 parsing belongs further upstream
- * (the relays themselves will reject malformed payloads). Goal here
- * is to catch the obvious typos that would otherwise eat a publish
- * round-trip.
+ * Lightweight shape validator. Lud16 only — accept anything that
+ * looks roughly like `local@domain.tld`; canonical validation
+ * belongs further upstream (the relays themselves will reject
+ * malformed payloads). Goal here is to catch the obvious typos
+ * that would otherwise eat a publish round-trip.
  */
-function isLikelyUrl(s) {
-  if (!s) return true;
-  try {
-    const u = new URL(s);
-    return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
 function isLikelyLud16(s) {
   if (!s) return true;
   // local-part@domain.tld — at most one @, no whitespace, a dot in
@@ -284,25 +242,16 @@ export default {
       form: {
         displayName: '',
         about: '',
-        website: '',
         lud16: '',
       },
 
       /** Shape-validation errors keyed by field. Cleared on each edit. */
       errors: {
-        website: '',
         lud16: '',
       },
 
       /** Avatar fallback flag — same pattern the page uses. */
       avatarBroken: false,
-
-      /**
-       * Whether the most recent publish attempt has completed; lets
-       * the inline status text reflect the outcome before the user
-       * closes the sheet themselves.
-       */
-      publishLanded: false,
     };
   },
 
@@ -349,29 +298,6 @@ export default {
       return this.isLocalDirty || this.profile.isDirty;
     },
 
-    /**
-     * Status line under the action button. Mirrors the
-     * profileStore's publish lifecycle. The "settled" branch waits
-     * until `publishLanded` flips so we don't show "Published" the
-     * very moment the sheet opens (stale state from a previous
-     * publish).
-     */
-    inlineStatus() {
-      if (this.profile.isPublishing) {
-        return this.$t('Publishing to {n} relays…', { n: DEFAULT_RELAYS.length });
-      }
-      if (!this.publishLanded) return '';
-      if (!this.profile.lastPublishResult) return '';
-      const accepted = this.profile.lastPublishResult.filter((r) => r.ok).length;
-      if (accepted === 0) {
-        return this.$t("Couldn't reach the relays. Try again in a moment.");
-      }
-      if (accepted < this.profile.lastPublishResult.length) {
-        return this.$t('Saved. Some relays still catching up.');
-      }
-      return this.$t('Published');
-    },
-
   },
 
   methods: {
@@ -381,19 +307,15 @@ export default {
       // user dismissed without saving.
       this.form.displayName = this.profile.displayName;
       this.form.about       = this.profile.about;
-      this.form.website     = this.profile.website;
       this.form.lud16       = this.profile.lud16;
-      this.errors.website   = '';
       this.errors.lud16     = '';
       this.avatarBroken     = false;
-      this.publishLanded    = false;
     },
 
     onHide() {
-      // Best-effort: also reset publishLanded so the next open is
-      // clean. The form values are repopulated on `onShow` so no
-      // explicit reset needed here.
-      this.publishLanded = false;
+      // Nothing to tear down — the form is repopulated on the next
+      // `onShow` and the publish lifecycle lives entirely on the
+      // store, surfaced via toasts rather than sheet-local state.
     },
 
     onAvatarLoadError() {
@@ -405,20 +327,13 @@ export default {
      * false if any field carries a shape error.
      */
     validate() {
-      this.errors.website = '';
-      this.errors.lud16   = '';
-      let ok = true;
-      const website = (this.form.website || '').trim();
-      const lud16   = (this.form.lud16   || '').trim();
-      if (!isLikelyUrl(website)) {
-        this.errors.website = this.$t('Please include http:// or https://');
-        ok = false;
-      }
+      this.errors.lud16 = '';
+      const lud16 = (this.form.lud16 || '').trim();
       if (!isLikelyLud16(lud16)) {
         this.errors.lud16 = this.$t('Looks like an unfamiliar format. Try name@example.com.');
-        ok = false;
+        return false;
       }
-      return ok;
+      return true;
     },
 
     async onSave() {
@@ -437,20 +352,31 @@ export default {
       this.profile.applyEdits(patch);
 
       // Now publish. profileStore.publish never throws — failures
-      // surface as a `lastPublishResult` array we render via the
-      // computed `inlineStatus`.
-      this.publishLanded = false;
+      // surface as a `lastPublishResult` array. The button itself
+      // shows a spinner during in-flight; the result lands on a
+      // toast (success or failure) so the action bar stays quiet
+      // and the sheet stops trying to be a status surface.
       const result = await this.profile.publish();
-      this.publishLanded = true;
 
-      // If at least one relay accepted, auto-dismiss the sheet
-      // shortly after showing the "Published" status. Total failure
-      // keeps the sheet open so the user can adjust and retry.
       if (Array.isArray(result) && result.some((r) => r.ok)) {
-        // Brief pause so the user sees the success confirmation.
-        setTimeout(() => {
-          if (!this.profile.isPublishing) this.open = false;
-        }, 900);
+        // At least one relay took it. Close the sheet, surface a
+        // positive toast — mirrors the pattern the identity dialogs
+        // already use elsewhere in the app.
+        this.open = false;
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Profile saved'),
+          timeout: 2500,
+        });
+      } else {
+        // Total failure. Keep the sheet open so the user can adjust
+        // and retry; explain what happened via a friendly toast.
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t("Couldn't save your profile"),
+          caption: this.$t('Check your connection and try again.'),
+          timeout: 4000,
+        });
       }
     },
   },
@@ -534,8 +460,17 @@ export default {
   cursor: default;
 }
 
-.avatar {
+/* Positioning anchor for the camera badge — the badge has to sit
+   outside the avatar's overflow-hidden clip so the icon never gets
+   cropped at the circle border. The wrap is the relative parent;
+   the avatar inside it still owns the clip for the image fill. */
+.avatar-wrap {
   position: relative;
+  width: 96px;
+  height: 96px;
+}
+
+.avatar {
   width: 96px;
   height: 96px;
   border-radius: 50%;
@@ -543,6 +478,7 @@ export default {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
 }
 
 .avatar-light {
@@ -720,13 +656,19 @@ body.body--dark .avatar-edit-badge {
   border-top: 1px solid transparent;
 }
 
+/* Action bar paints its OWN background — explicitly the same
+   colour the q-card uses (`card_dark_style` ⇒ #0C0C0C,
+   `card_light_style` ⇒ var(--bg-card)). Going transparent risked
+   exposing Quasar's default q-card layers underneath, which read
+   as a faint navy tint on dark mode. Painting the band ourselves
+   keeps the surface clean. */
 .sheet-actions-light {
-  background: var(--card-bg, #ffffff);
+  background: var(--bg-card, #FAF7EF);
   border-top-color: rgba(15, 23, 42, 0.06);
 }
 
 .sheet-actions-dark {
-  background: var(--card-bg, #0f172a);
+  background: #0C0C0C;
   border-top-color: rgba(255, 255, 255, 0.06);
 }
 
@@ -753,16 +695,6 @@ body.body--dark .avatar-edit-badge {
 
 .primary-cta:not(:disabled):hover { filter: brightness(1.05); }
 .primary-cta:not(:disabled):active { transform: scale(0.98); }
-
-/* Inline publish-status caption. Stays in the muted greyscale band
-   so the action bar never reads as alarm-coloured. The Save &
-   Publish button is the only saturated element in this row. */
-.action-status {
-  text-align: center;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  font-weight: 500;
-}
 
 .item-label-light { color: #0f172a; }
 .item-label-dark  { color: #f8fafc; }

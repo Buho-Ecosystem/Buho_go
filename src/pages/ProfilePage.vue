@@ -54,25 +54,30 @@
           :aria-label="$t('Edit profile picture')"
           @click="openProfileEditor"
         >
-          <div
-            class="hero-avatar"
-            :class="$q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light'"
-          >
-            <img
-              v-if="resolvedAvatarUrl"
-              :src="resolvedAvatarUrl"
-              :alt="$t('Profile picture')"
-              class="hero-avatar-img"
-              @error="onAvatarLoadError"
-            />
-            <Icon
-              v-else
-              icon="tabler:user"
-              width="40"
-              height="40"
-              class="hero-avatar-glyph"
-              aria-hidden="true"
-            />
+          <!-- Avatar slot. The circle clips its own image fill;
+               the camera badge anchors to the wrap so it never
+               gets cropped at the circle border. -->
+          <div class="hero-avatar-wrap">
+            <div
+              class="hero-avatar"
+              :class="$q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light'"
+            >
+              <img
+                v-if="resolvedAvatarUrl"
+                :src="resolvedAvatarUrl"
+                :alt="$t('Profile picture')"
+                class="hero-avatar-img"
+                @error="onAvatarLoadError"
+              />
+              <Icon
+                v-else
+                icon="tabler:user"
+                width="40"
+                height="40"
+                class="hero-avatar-glyph"
+                aria-hidden="true"
+              />
+            </div>
             <span class="hero-avatar-edit-badge" aria-hidden="true">
               <Icon icon="tabler:camera" width="14" height="14" />
             </span>
@@ -880,8 +885,17 @@ export default {
   border-radius: 50%;
 }
 
-.hero-avatar {
+/* Positioning anchor for the camera badge — the badge sits OUTSIDE
+   the avatar's overflow-hidden clip so the icon is never cropped
+   at the circle's border. The wrap is the relative parent; the
+   avatar inside still owns the clip for the image fill. */
+.hero-avatar-wrap {
   position: relative;
+  width: 96px;
+  height: 96px;
+}
+
+.hero-avatar {
   width: 96px;
   height: 96px;
   border-radius: 50%;
@@ -890,6 +904,7 @@ export default {
   justify-content: center;
   overflow: hidden;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
 }
 
 .hero-avatar-btn:active .hero-avatar {
