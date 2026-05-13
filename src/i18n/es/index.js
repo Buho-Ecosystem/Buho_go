@@ -1313,12 +1313,9 @@ export default {
   "Clipboard clears in": "El portapapeles se borra en",
 
   // ----- Profile hero (Plan 09 §7a) -----
-  "Set up your profile": "Configura tu perfil",
-  "Your profile travels with your recovery phrase": "Tu perfil viaja con tu frase de recuperación",
   "Add your name and a picture": "Añade tu nombre y una foto",
   "Tap to make your profile yours": "Toca para hacer tu perfil tuyo",
   "Your profile": "Tu perfil",
-  "Get started": "Empezar",
   "Edit profile": "Editar perfil",
   "Share profile": "Compartir perfil",
   "Edit profile picture": "Editar foto de perfil",

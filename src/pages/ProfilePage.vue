@@ -51,11 +51,7 @@
         <button
           type="button"
           class="hero-avatar-btn"
-          :aria-label="
-            identity.bootstrapped
-              ? $t('Edit profile picture')
-              : $t('Set up your profile')
-          "
+          :aria-label="$t('Edit profile picture')"
           @click="openProfileEditor"
         >
           <div
@@ -157,10 +153,12 @@
           </span>
         </div>
 
-        <!-- Primary + optional secondary CTA. Fresh installs see only
-             a single "Get started" button so the screen never asks
-             the user to choose between actions they haven't set up. -->
-        <div class="hero-actions">
+        <!-- Primary + optional secondary CTA. Both gated on
+             `identity.bootstrapped` so the row stays empty during
+             the sub-100ms passive-bootstrap window; the layout
+             reserves space via `min-height` on `.hero-actions` so
+             the page never jumps when the buttons appear. -->
+        <div class="hero-actions" v-if="identity.bootstrapped">
           <button
             type="button"
             class="hero-cta hero-cta--primary"
@@ -168,11 +166,11 @@
             @click="openProfileEditor"
           >
             <Icon icon="tabler:pencil" width="15" height="15" />
-            <span>{{ identity.bootstrapped ? $t('Edit profile') : $t('Get started') }}</span>
+            <span>{{ $t('Edit profile') }}</span>
           </button>
 
           <button
-            v-if="identity.bootstrapped && !profile.isEmpty"
+            v-if="!profile.isEmpty"
             type="button"
             class="hero-cta hero-cta--secondary"
             :class="$q.dark.isActive ? 'hero-cta-secondary-dark' : 'hero-cta-secondary-light'"
@@ -515,12 +513,18 @@ export default {
     },
 
     /**
-     * Headline shown in the hero block. Three states, one source of
-     * truth — every other piece of UI (subline, CTA label) reads from
-     * the same `identity.bootstrapped` / `profile.isEmpty` signals.
+     * Headline shown in the hero block. Identity is bootstrapped
+     * passively in `created()`, so by the time the user has anything
+     * to look at there are only two meaningful states: empty profile
+     * (prompt to fill it in) or populated profile (show the name).
+     *
+     * The brief !bootstrapped window between created() firing and
+     * ensureIdentity() resolving renders as an empty string — the
+     * avatar block alone holds the visual layout for that single
+     * frame so the page never flashes a stale label.
      */
     heroHeadline() {
-      if (!this.identity.bootstrapped) return this.$t('Set up your profile');
+      if (!this.identity.bootstrapped) return '';
       if (this.profile.isEmpty) return this.$t('Add your name and a picture');
       // Prefer display_name; fall back to name (handle) before the
       // shortened pubkey, because in NIP-01 some clients only set
@@ -533,14 +537,11 @@ export default {
 
     /**
      * Subline under the headline. Stays empty whenever there's
-     * nothing trustworthy to show (no identity yet, or no profile
-     * fields yet) — better than rendering a stale label that the
-     * user can't trust.
+     * nothing trustworthy to show — better than rendering a stale
+     * label that the user can't trust.
      */
     heroSubline() {
-      if (!this.identity.bootstrapped) {
-        return this.$t('Your profile travels with your recovery phrase');
-      }
+      if (!this.identity.bootstrapped) return '';
       if (this.profile.isEmpty) {
         return this.$t('Tap to make your profile yours');
       }
@@ -627,9 +628,18 @@ export default {
     },
   },
 
-  created() {
-    this.identity.hydrate();
-    this.profile.hydrate();
+  async created() {
+    await this.identity.hydrate();
+    await this.profile.hydrate();
+    // Passive identity bootstrap. The user never sees an "onboarding"
+    // step for the BuhoGO seed or the derived Nostr key — opening the
+    // Profile page is itself the signal that they're ready to use it.
+    // Backup of the recovery phrase is a separate, non-blocking nag
+    // surfaced by the attention card lower on the page; it does not
+    // gate any flow here.
+    if (!this.identity.bootstrapped) {
+      await this.identity.ensureIdentity();
+    }
   },
 
   watch: {
@@ -643,11 +653,12 @@ export default {
 
   methods: {
     /**
-     * Single entry point into the editor sheet. Fresh installs hit
-     * `ensureIdentity()` first so the BIP-39 seed exists by the time
-     * the editor opens — otherwise the user would land in an editor
-     * that can't publish anything until they tap "manage" → "set up
-     * identity" elsewhere.
+     * Single entry point into the editor sheet. Identity is
+     * bootstrapped passively in `created()`, but we still re-await
+     * here as belt-and-braces: a user who somehow opens the editor
+     * via a deep link (or before `created()` resolves on a very
+     * slow device) still gets a working seed by the time the sheet
+     * appears.
      */
     async openProfileEditor() {
       if (!this.identity.bootstrapped) {
@@ -1077,6 +1088,12 @@ button.hero-pill:focus-visible {
   width: 100%;
   max-width: 360px;
   margin-top: 6px;
+  /* Reserve vertical space so the layout never jumps during the
+     sub-100ms passive-bootstrap window when the buttons aren't
+     rendered yet. 44px primary CTA + 10px gap + 44px secondary CTA
+     would be 98px, but the secondary only shows for non-empty
+     profiles — 44px is the floor and the safest lower bound. */
+  min-height: 44px;
 }
 
 .hero-cta {

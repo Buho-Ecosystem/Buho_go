@@ -1389,12 +1389,9 @@ export default {
   "Clipboard clears in": "Clipboard clears in",
 
   // ----- Profile hero (Plan 09 §7a) -----
-  "Set up your profile": "Set up your profile",
-  "Your profile travels with your recovery phrase": "Your profile travels with your recovery phrase",
   "Add your name and a picture": "Add your name and a picture",
   "Tap to make your profile yours": "Tap to make your profile yours",
   "Your profile": "Your profile",
-  "Get started": "Get started",
   "Edit profile": "Edit profile",
   "Share profile": "Share profile",
   "Edit profile picture": "Edit profile picture",
