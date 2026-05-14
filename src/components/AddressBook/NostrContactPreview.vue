@@ -5,22 +5,12 @@
   >
     <!-- Header row: avatar + name + nip05 -->
     <div class="preview-head">
-      <div class="preview-avatar-wrap">
-        <img
-          v-if="visibleAvatarUrl"
-          class="preview-avatar-img"
-          :src="visibleAvatarUrl"
-          :alt="''"
-          @error="onAvatarError"
-        />
-        <div
-          v-else
-          class="preview-avatar-fallback"
-          :style="{ backgroundColor: fallbackColor }"
-        >
-          <span class="preview-avatar-initial">{{ initial }}</span>
-        </div>
-      </div>
+      <ContactAvatar
+        class="preview-avatar"
+        :picture="profile && profile.picture"
+        :name="displayName"
+        :color="fallbackColor"
+      />
 
       <div class="preview-identity">
         <div class="preview-name" :title="displayName">
@@ -137,8 +127,12 @@
  *                     decision #6 forbids saving a contact without a
  *                     Lightning address)
  */
+import ContactAvatar from './ContactAvatar.vue';
+
 export default {
   name: 'NostrContactPreview',
+
+  components: { ContactAvatar },
 
   props: {
     /** 64-char lowercase hex. */
@@ -170,12 +164,6 @@ export default {
 
   emits: ['save', 'open-existing', 'copy-npub'],
 
-  data() {
-    return {
-      avatarBroken: false,
-    };
-  },
-
   computed: {
     displayName() {
       const candidates = [
@@ -187,13 +175,6 @@ export default {
         if (typeof c === 'string' && c.trim()) return c.trim().slice(0, 80);
       }
       return this.shortenedNpub;
-    },
-
-    initial() {
-      const name = this.displayName;
-      if (!name) return '?';
-      const ch = name.replace(/[^\p{L}\p{N}]/u, '').charAt(0);
-      return (ch || '?').toUpperCase();
     },
 
     about() {
@@ -227,32 +208,6 @@ export default {
       if (n.length <= 16) return n;
       return `${n.slice(0, 10)}…${n.slice(-4)}`;
     },
-
-    visibleAvatarUrl() {
-      if (this.avatarBroken) return '';
-      const raw = this.profile?.picture;
-      if (typeof raw !== 'string') return '';
-      const trimmed = raw.trim();
-      if (!trimmed) return '';
-      // Refuse anything that isn't https / http / data — same gate
-      // the profile sheets use to defend against javascript: URLs.
-      if (!/^(https?:|data:image\/)/i.test(trimmed)) return '';
-      return trimmed;
-    },
-  },
-
-  watch: {
-    'profile.picture'() {
-      // Reset broken-state when the upstream URL changes — the new
-      // URL deserves its own chance at loading.
-      this.avatarBroken = false;
-    },
-  },
-
-  methods: {
-    onAvatarError() {
-      this.avatarBroken = true;
-    },
   },
 };
 </script>
@@ -280,37 +235,12 @@ export default {
   min-width: 0;
 }
 
-.preview-avatar-wrap {
-  flex-shrink: 0;
+/* ContactAvatar inherits this class for sizing. */
+.preview-avatar {
   width: 52px;
   height: 52px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 1px solid var(--border-card);
-  background: var(--bg-card, #FAF7EF);
-}
-
-.preview-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.preview-avatar-fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.preview-avatar-initial {
-  color: white;
-  font-family: 'Manrope', sans-serif;
   font-size: 22px;
-  font-weight: 700;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-card);
 }
 
 .preview-identity {

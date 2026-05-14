@@ -456,13 +456,12 @@
                 >
                   <!-- Icon / avatar -->
                   <span class="tx-row-icon-wrap">
-                    <span
+                    <ContactAvatar
                       v-if="getContactForTransaction(tx)"
                       class="tx-row-avatar"
-                      :style="{ backgroundColor: getContactForTransaction(tx).color }"
-                    >
-                      {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
-                    </span>
+                      :entry="getContactForTransaction(tx)"
+                      :initial-length="2"
+                    />
                     <span
                       v-else
                       class="tx-row-icon"
@@ -641,6 +640,7 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
@@ -652,7 +652,8 @@ import { groupMicropayments } from '../composables/useTransactionGrouping';
 export default {
   name: 'TransactionHistoryPage',
   components: {
-    PaymentConfirmation
+    PaymentConfirmation,
+    ContactAvatar
   },
   data() {
     return {

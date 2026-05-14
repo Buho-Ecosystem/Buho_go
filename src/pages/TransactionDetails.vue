@@ -232,9 +232,11 @@
 
           <q-item v-else>
             <q-item-section avatar>
-              <div class="contact-avatar-small" :style="{ backgroundColor: assignedContact.color }">
-                {{ assignedContact.name.substring(0, 2).toUpperCase() }}
-              </div>
+              <ContactAvatar
+                class="contact-avatar-small"
+                :entry="assignedContact"
+                :initial-length="2"
+              />
             </q-item-section>
             <q-item-section>
               <q-item-label class="item-label">
@@ -439,9 +441,11 @@
               class="contact-item"
             >
               <q-item-section avatar>
-                <div class="contact-avatar-picker" :style="{ backgroundColor: contact.color }">
-                  {{ contact.name.substring(0, 2).toUpperCase() }}
-                </div>
+                <ContactAvatar
+                  class="contact-avatar-picker"
+                  :entry="contact"
+                  :initial-length="2"
+                />
               </q-item-section>
               <q-item-section>
                 <q-item-label class="item-label">
@@ -487,10 +491,11 @@ import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 import { shareContent } from '../utils/share';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 
 export default {
   name: 'TransactionDetailsPage',
-  components: {},
+  components: { ContactAvatar },
   data() {
     return {
       loading: true,
