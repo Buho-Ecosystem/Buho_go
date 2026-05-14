@@ -456,13 +456,12 @@
                 >
                   <!-- Icon / avatar -->
                   <span class="tx-row-icon-wrap">
-                    <span
+                    <ContactAvatar
                       v-if="getContactForTransaction(tx)"
                       class="tx-row-avatar"
-                      :style="{ backgroundColor: getContactForTransaction(tx).color }"
-                    >
-                      {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
-                    </span>
+                      :entry="getContactForTransaction(tx)"
+                      :initial-length="2"
+                    />
                     <span
                       v-else
                       class="tx-row-icon"
@@ -641,6 +640,7 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
@@ -652,7 +652,8 @@ import { groupMicropayments } from '../composables/useTransactionGrouping';
 export default {
   name: 'TransactionHistoryPage',
   components: {
-    PaymentConfirmation
+    PaymentConfirmation,
+    ContactAvatar
   },
   data() {
     return {
@@ -1054,6 +1055,17 @@ export default {
     async autoAssignContacts() {
       if (!this.transactions || !this.addressBookStore || !this.metadataStore) {
         return;
+      }
+
+      // First pass: drain pending-contact links queued by the send
+      // flow. This stamps outgoing txs whose recipient we already
+      // knew at send time but whose provider-assigned id we couldn't
+      // predict. Reliable for every wallet rail because we match on
+      // amount + recent timestamp, not on a derived id.
+      try {
+        await this.metadataStore.consumePendingContactLinks(this.transactions);
+      } catch (err) {
+        console.warn('[txHistory] pending-contact-link drain failed:', err);
       }
 
       console.log('Auto-assigning contacts for transactions...');

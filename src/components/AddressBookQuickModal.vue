@@ -78,13 +78,11 @@
                   :key="contact.id"
                   type="button"
                   class="contact-chip"
-                  :class="themeClass"
+                  :class="[themeClass, { 'contact-chip--unpayable': !addressBookStore.isEntryPayable(contact) }]"
                   @click="selectContact(contact)"
                 >
                   <div class="chip-avatar-wrap">
-                    <div class="chip-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                      <span class="avatar-letter">{{ getInitial(contact.name) }}</span>
-                    </div>
+                    <ContactAvatar class="chip-avatar" :entry="contact" />
                     <div class="chip-type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
@@ -114,13 +112,11 @@
                   :key="contact.id"
                   type="button"
                   class="contact-chip"
-                  :class="themeClass"
+                  :class="[themeClass, { 'contact-chip--unpayable': !addressBookStore.isEntryPayable(contact) }]"
                   @click="selectContact(contact)"
                 >
                   <div class="chip-avatar-wrap">
-                    <div class="chip-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                      <span class="avatar-letter">{{ getInitial(contact.name) }}</span>
-                    </div>
+                    <ContactAvatar class="chip-avatar" :entry="contact" />
                     <div class="chip-type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
@@ -169,12 +165,10 @@
                   :key="contact.id"
                   type="button"
                   class="contact-row"
-                  :class="themeClass"
+                  :class="[themeClass, { 'contact-row--unpayable': !addressBookStore.isEntryPayable(contact) }]"
                   @click="selectContact(contact)"
                 >
-                  <div class="row-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                    <span class="avatar-letter">{{ getInitial(contact.name) }}</span>
-                  </div>
+                  <ContactAvatar class="row-avatar" :entry="contact" />
                   <div class="row-details">
                     <div class="row-name">
                       {{ contact.name }}
@@ -235,11 +229,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, getCurrentInstance } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
 import { useAddressBookStore } from '../stores/addressBook';
 import AddressBookModal from './AddressBook/AddressBookModal.vue';
+import ContactAvatar from './AddressBook/ContactAvatar.vue';
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -252,6 +247,14 @@ const emit = defineEmits(['update:modelValue', 'pay-contact', 'open-batch-send']
 // ─────────────────────────────────────────────────────────────
 const $q = useQuasar();
 const router = useRouter();
+// vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws
+// "Not available in legacy mode". Reach $t through the component proxy —
+// same pattern as InternalTransferModal / BatchSendModal. The local must
+// NOT be named `$t`: a $-prefixed script-setup binding collides with
+// vue-i18n's own legacy `$t` injection ("set on proxy trap returned
+// falsish"). Templates still use the global `$t` directly.
+const { proxy } = getCurrentInstance();
+const t = (key, params) => proxy.$t(key, params);
 const addressBookStore = useAddressBookStore();
 
 // ─────────────────────────────────────────────────────────────
@@ -353,6 +356,22 @@ async function onShow() {
 }
 
 function selectContact(contact) {
+  // Identity-only Nostr contact — no Lightning address resolved yet.
+  // Shown in the picker (so the user knows they're saved) but not
+  // routable into a send. Explain instead of emitting a pay event
+  // that the send flow can't complete.
+  if (contact.source === 'nostr' && !addressBookStore.isEntryPayable(contact)) {
+    $q.notify({
+      type: 'info',
+      message: t('No Lightning address yet'),
+      caption: t(
+        "{name} hasn't published a Lightning address. Open Address Book to check again later.",
+        { name: contact.name },
+      ),
+      timeout: 4500,
+    });
+    return;
+  }
   addressBookStore.updateLastUsed(contact.id);
   emit('pay-contact', contact);
 }
@@ -567,6 +586,12 @@ function close() {
 .contact-chip.theme-light { background: var(--bg-input); }
 .contact-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .contact-chip:active { transform: scale(0.96); }
+
+/* Identity-only Nostr contact — dimmed so it reads as "saved but not
+   payable yet". Still tappable: the tap surfaces the explanatory
+   notify rather than silently doing nothing. */
+.contact-chip--unpayable,
+.contact-row--unpayable { opacity: 0.5; }
 
 .chip-avatar-wrap { position: relative; }
 .chip-avatar {

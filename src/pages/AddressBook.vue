@@ -14,16 +14,60 @@
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Address Book') }}
       </div>
-      <q-btn
-        no-caps
-        unelevated
-        class="add-contact-btn"
-        :class="$q.dark.isActive ? 'add-contact-btn-dark' : 'add-contact-btn-light'"
-        @click="showAddModal"
-      >
-        <Icon icon="tabler:plus" width="16" height="16" class="q-mr-xs" />
-        {{ $t('Add Contact') }}
-      </q-btn>
+      <div class="header-actions">
+        <q-btn
+          flat
+          round
+          dense
+          class="ab-icon-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          :aria-label="$t('Add Contact')"
+          @click="showAddModal"
+        >
+          <Icon icon="tabler:plus" width="20" height="20" />
+        </q-btn>
+        <!-- Power-user overflow. The only thing here is "restore from
+             Nostr" — every other sync action is automatic (publish on
+             change, recover on identity restore). Keeping it in a
+             kebab keeps the normal UI uncluttered. -->
+        <q-btn
+          flat
+          round
+          dense
+          class="ab-icon-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          :aria-label="$t('More options')"
+        >
+          <Icon icon="tabler:dots-vertical" width="18" height="18" />
+          <q-menu
+            anchor="bottom right"
+            self="top right"
+            :class="$q.dark.isActive ? 'overflow-menu-dark' : 'overflow-menu-light'"
+          >
+            <q-list style="min-width: 220px">
+              <q-item clickable v-close-popup @click="runRecovery" :disable="isRecovering">
+                <q-item-section avatar style="min-width: 32px;">
+                  <Icon
+                    :icon="isRecovering ? 'tabler:loader-2' : 'tabler:cloud-download'"
+                    width="16"
+                    height="16"
+                    :class="{ 'ab-spin': isRecovering }"
+                    style="color: var(--text-secondary)"
+                  />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label :class="$q.dark.isActive ? 'menu-label-dark' : 'menu-label-light'">
+                    {{ $t('Restore contacts from Nostr') }}
+                  </q-item-label>
+                  <q-item-label caption>
+                    {{ $t('Pull contacts you saved on another device') }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </q-menu>
+        </q-btn>
+      </div>
     </div>
 
     <!-- Content -->
@@ -40,6 +84,7 @@
       v-model="showModal"
       :entry="selectedEntry"
       @saved="handleEntrySaved"
+      @open-existing="handleOpenExisting"
     />
 
     <!-- Payment Modal -->
@@ -60,7 +105,21 @@
 
 <script>
 import { useAddressBookStore } from '../stores/addressBook'
-import { mapActions } from 'pinia'
+import { useIdentityStore } from '../stores/identity'
+import { mapActions, mapState } from 'pinia'
+
+// Nostr contacts get a quiet re-sync the moment the user reaches for
+// them. Locked decision #2: only on tap, never periodic, so a stale
+// avatar / lud16 corrects itself the next time the user opens the
+// payment flow without ever blocking the tap on a network call.
+const RESYNC_COOLDOWN_MS = 60 * 1000
+
+// Debounce window between a local contact mutation and the silent
+// NIP-51 publish. Long enough that a burst of edits (add three
+// contacts in a row) collapses to one publish; short enough that the
+// backup feels current.
+const AUTO_SYNC_DEBOUNCE_MS = 1500
+
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import PaymentModal from '../components/PaymentModal.vue'
@@ -80,14 +139,41 @@ export default {
       selectedEntry: null,
       showPayment: false,
       selectedContact: null,
-      showBatchSend: false
+      showBatchSend: false,
+      _autoSyncTimer: null,
     }
+  },
+  computed: {
+    // Surfaced for the kebab's disabled state. `isSyncing` is read by
+    // the status component directly off the store.
+    ...mapState(useAddressBookStore, ['isRecovering', 'syncDirty']),
+  },
+  watch: {
+    /**
+     * The store flips `syncDirty` after every nostr-contact mutation
+     * — add via Search/Scan, delete, petname edit — regardless of
+     * which child component triggered it. Watching the flag here is
+     * the single, gap-free hook: the page never has to wire a
+     * `@saved` / `@deleted` event per mutation path.
+     */
+    syncDirty(isDirty) {
+      if (isDirty) this._scheduleAutoSync()
+    },
   },
   async created() {
     await this.initializeAddressBook()
+    // Catch-up: a contact added in a previous session (the dirty
+    // flag persists to localStorage) syncs the moment the page opens.
+    if (this.syncDirty) this._scheduleAutoSync()
+  },
+  beforeUnmount() {
+    if (this._autoSyncTimer) {
+      clearTimeout(this._autoSyncTimer)
+      this._autoSyncTimer = null
+    }
   },
   methods: {
-    ...mapActions(useAddressBookStore, ['initialize']),
+    ...mapActions(useAddressBookStore, ['initialize', 'syncToNostr', 'recoverFromNostr', 'isEntryPayable']),
 
     async initializeAddressBook() {
       try {
@@ -102,6 +188,97 @@ export default {
       }
     },
 
+    /**
+     * Debounced, silent auto-sync. Fires after the dirty flag settles.
+     * `getMnemonic()` is a device-key decrypt — no biometric prompt —
+     * so this is genuinely invisible in the happy path. Failures are
+     * NOT toasted here: the status row already shows the error state
+     * and offers a tap-to-retry. Toasting an automatic background
+     * action the user didn't initiate would be noise.
+     */
+    _scheduleAutoSync() {
+      if (this._autoSyncTimer) clearTimeout(this._autoSyncTimer)
+      this._autoSyncTimer = setTimeout(() => {
+        this._autoSyncTimer = null
+        this.runSync({ silent: true })
+      }, AUTO_SYNC_DEBOUNCE_MS)
+    },
+
+    /**
+     * Publish the contact list to the user's private NIP-51 event.
+     * `silent` distinguishes the automatic debounced path (no toast)
+     * from the explicit status-row tap (toast on hard failure so the
+     * user knows their deliberate action didn't land).
+     */
+    async runSync({ silent = false } = {}) {
+      const identityStore = useIdentityStore()
+      if (!identityStore.bootstrapped) return
+      const result = await this.syncToNostr({ identityStore })
+      if (!silent && result && result.ok === false) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t sync contacts'),
+          caption: this.$t('Check your connection and try again.'),
+          timeout: 4000,
+        })
+      }
+    },
+
+    /**
+     * Pull the user's private address book from Nostr and merge.
+     * Always an explicit action (kebab tap), so it always reports a
+     * result — including the calm "nothing to restore" case so the
+     * user isn't left wondering whether the tap did anything.
+     */
+    async runRecovery() {
+      const identityStore = useIdentityStore()
+      if (!identityStore.bootstrapped) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('No identity yet'),
+          caption: this.$t('Set up or restore your BuhoGO identity first.'),
+          timeout: 4000,
+        })
+        return
+      }
+      const result = await this.recoverFromNostr({ identityStore })
+      if (!result || result.ok === false) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t restore contacts'),
+          caption: this.$t('Check your connection and try again.'),
+          timeout: 4000,
+        })
+        return
+      }
+      if (!result.hadRemote) {
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('Nothing to restore'),
+          caption: this.$t('No contacts have been synced from this identity yet.'),
+          timeout: 3500,
+        })
+        return
+      }
+      if (result.restored === 0) {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Contacts already up to date'),
+          timeout: 3000,
+        })
+        return
+      }
+      const caption = result.unpayable > 0
+        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
+        : undefined
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Restored {n} contacts', { n: result.restored }),
+        caption,
+        timeout: 4500,
+      })
+    },
+
     showAddModal() {
       this.selectedEntry = null
       this.showModal = true
@@ -113,6 +290,30 @@ export default {
     },
 
     showPaymentModal(contact) {
+      // Kick off a silent profile re-sync before we even decide the
+      // routing — fire-and-forget so it never blocks the tap. The
+      // refresh updates the avatar / lud16 in place; if it errors,
+      // the user still pays with the last-known data.
+      this.maybeRefreshContact(contact)
+
+      // Identity-only Nostr contact — restored (or saved) without a
+      // current Lightning address. We don't route into a payment flow
+      // it can't finish; instead we explain, and the silent refresh
+      // fired above will promote them to payable the moment they
+      // publish a lud16.
+      if (contact.source === 'nostr' && !this.isEntryPayable(contact)) {
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('No Lightning address yet'),
+          caption: this.$t(
+            "{name} hasn't published a Lightning address. We'll use it automatically once they do.",
+            { name: contact.name },
+          ),
+          timeout: 4500,
+        })
+        return
+      }
+
       // Bitcoin contacts need the L1 withdrawal flow - navigate directly to Wallet
       if (contact.addressType === 'bitcoin') {
         this.navigateToBitcoinWithdrawal(contact)
@@ -122,6 +323,27 @@ export default {
       // Lightning and Spark contacts use PaymentModal
       this.selectedContact = contact
       this.showPayment = true
+    },
+
+    /**
+     * Silent re-sync hook for Nostr-sourced contacts. Skips:
+     *   - manual contacts (nothing to sync against)
+     *   - contacts we've re-synced within the cooldown window
+     *     (defends a rage-tap from hammering the relays)
+     *
+     * Errors are swallowed by `refreshContact` itself (it returns a
+     * typed result, never throws) so this stays fire-and-forget.
+     */
+    maybeRefreshContact(contact) {
+      if (!contact || contact.source !== 'nostr' || !contact.nostr_pubkey) return
+      const last = Number(contact.last_synced_at) || 0
+      if (Date.now() - last < RESYNC_COOLDOWN_MS) return
+      const store = useAddressBookStore()
+      store.refreshContact(contact.id).catch((err) => {
+        // refreshContact never throws — this is purely defensive in
+        // case a future change drops that invariant.
+        console.warn('[addressBook] silent refresh threw:', err)
+      })
     },
 
     navigateToBitcoinWithdrawal(contact) {
@@ -139,6 +361,17 @@ export default {
     handleEntrySaved() {
       this.selectedEntry = null
       // Modal will close automatically
+    },
+
+    /**
+     * The search/scan flow surfaced an "Open contact" affordance for
+     * a Nostr profile already in the address book. The modal closes
+     * itself before bubbling this up, so we just need to surface the
+     * existing entry — payment is the most useful next action.
+     */
+    handleOpenExisting(entry) {
+      if (!entry) return
+      this.showPaymentModal(entry)
     },
 
     handlePaymentSent() {
@@ -263,35 +496,28 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
-/* Add Contact button — unified neutral translucent style, same
-   treatment as the empty-state CTA and the Copy/Share buttons in
-   the receive flow. No greens; the icon carries the intent. */
-.add-contact-btn {
+/* Right-side header cluster: add + overflow, both icon buttons. */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ab-icon-btn {
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: 'Manrope', sans-serif;
-  letter-spacing: -0.005em;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.add-contact-btn-dark {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+.ab-spin {
+  animation: ab-spin 0.9s linear infinite;
 }
 
-.add-contact-btn-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.add-contact-btn-light {
-  background: rgba(0, 0, 0, 0.05);
-  color: rgba(0, 0, 0, 0.75);
-}
-
-.add-contact-btn-light:hover {
-  background: rgba(0, 0, 0, 0.08);
+@keyframes ab-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Content */
@@ -313,11 +539,6 @@ export default {
 
   .page-content {
     height: calc(100vh - 70px);
-  }
-
-  .add-contact-btn {
-    padding: 5px 12px;
-    font-size: 12px;
   }
 }
 </style>

@@ -7,7 +7,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node src/utils/__tests__/identityCrypto.spec.js && node src/utils/__tests__/lud4.spec.js && node src/utils/__tests__/sensitiveClipboard.spec.js && node src/utils/__tests__/nostrRelays.spec.js && node src/utils/__tests__/nostrProfile.spec.js && node src/utils/__tests__/blossomProfileMedia.spec.js && node src/stores/__tests__/identity.spec.js && node src/stores/__tests__/profile.spec.js",
+    "test": "node src/utils/__tests__/identityCrypto.spec.js && node src/utils/__tests__/lud4.spec.js && node src/utils/__tests__/sensitiveClipboard.spec.js && node src/utils/__tests__/nostrRelays.spec.js && node src/utils/__tests__/nostrProfile.spec.js && node src/utils/__tests__/blossomProfileMedia.spec.js && node src/utils/__tests__/nip05.spec.js && node src/utils/__tests__/nostrFetch.spec.js && node src/utils/__tests__/nostrLookup.spec.js && node src/utils/__tests__/nostrAddressBook.spec.js && node src/stores/__tests__/identity.spec.js && node src/stores/__tests__/profile.spec.js && node src/stores/__tests__/addressBook.spec.js",
     "dev": "quasar dev",
     "build": "quasar build",
     "postinstall": "quasar prepare"

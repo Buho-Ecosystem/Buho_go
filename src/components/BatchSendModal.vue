@@ -108,9 +108,7 @@
 
               <!-- Avatar with Type Indicator -->
               <div class="avatar-wrap">
-                <div class="contact-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                  <span>{{ getInitial(contact.name) }}</span>
-                </div>
+                <ContactAvatar class="contact-avatar" :entry="contact" />
                 <div class="type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                   <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -169,9 +167,7 @@
                 class="mini-avatar-wrap"
                 :style="{ zIndex: 10 - idx }"
               >
-                <div class="mini-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                  {{ getInitial(contact.name) }}
-                </div>
+                <ContactAvatar class="mini-avatar" :entry="contact" />
                 <div class="mini-type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                   <svg v-if="contact.addressType === 'spark'" width="6" height="6" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -281,9 +277,7 @@
               >
                 <div class="custom-contact">
                   <div class="avatar-wrap">
-                    <div class="custom-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                      {{ getInitial(contact.name) }}
-                    </div>
+                    <ContactAvatar class="custom-avatar" :entry="contact" />
                     <div class="type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -367,9 +361,7 @@
               class="review-item"
             >
               <div class="avatar-wrap">
-                <div class="review-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                  {{ getInitial(contact.name) }}
-                </div>
+                <ContactAvatar class="review-avatar" :entry="contact" />
                 <div class="type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                   <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -427,9 +419,7 @@
               :class="'status-' + result.status"
             >
               <div class="avatar-wrap avatar-wrap-sm">
-                <div class="exec-avatar" :style="{ background: result.contact.color || '#3B82F6' }">
-                  {{ getInitial(result.contact.name) }}
-                </div>
+                <ContactAvatar class="exec-avatar" :entry="result.contact" />
                 <div class="type-dot type-dot-sm" :style="{ background: getTypeColor(result.contact.addressType) }">
                   <svg v-if="result.contact.addressType === 'spark'" width="8" height="8" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -612,6 +602,7 @@ import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
 import LightningPaymentService from '../utils/lightning.js'
 import { getUserFriendlyError } from '../utils/userErrors'
+import ContactAvatar from './AddressBook/ContactAvatar.vue'
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -943,6 +934,14 @@ function getStepClass(n) {
 }
 
 function canSelectContact(contact) {
+  // Identity-only Nostr contact — no resolved Lightning address yet,
+  // so it can't be a batch recipient. Still rendered in the list
+  // (dimmed via the existing `contact-disabled` class) so the user
+  // sees it's saved; it just isn't selectable until a refresh lands
+  // a lud16.
+  if (!addressBookStore.isEntryPayable(contact)) {
+    return false
+  }
   // Bitcoin and Spark contacts only available with Spark wallet
   if ((contact.addressType === 'bitcoin' || contact.addressType === 'spark') && !isSparkWallet.value) {
     return false

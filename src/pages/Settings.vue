@@ -261,7 +261,13 @@
       <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
         {{ $t('Profile') }}
       </div>
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+      <div class="settings-card settings-card--experimental" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <span
+          class="experimental-tag"
+          :class="$q.dark.isActive ? 'experimental-tag-dark' : 'experimental-tag-light'"
+        >
+          {{ $t('Experimental') }}
+        </span>
         <q-item clickable v-ripple @click="$router.push('/profile')">
           <q-item-section side>
             <Icon icon="tabler:user" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
@@ -6026,6 +6032,40 @@ export default {
 .badge-unverified {
   background: rgba(251, 191, 36, 0.12);
   color: #F59E0B;
+}
+
+/* "Experimental" corner tag — the profile / identity surface (Nostr,
+   NIP-05, recovery) is still maturing, so we mark it plainly. Neutral
+   greys only: it informs, it must not read as a warning the way the
+   amber backup badge does. */
+.settings-card--experimental {
+  position: relative;
+}
+
+.experimental-tag {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 1;
+  pointer-events: none;
+  font-family: 'Manrope', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.experimental-tag-light {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.42);
+}
+
+.experimental-tag-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.42);
 }
 
 /* Accounts Dialog */

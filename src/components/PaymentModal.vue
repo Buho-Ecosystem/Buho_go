@@ -106,11 +106,20 @@ export default {
      */
     sheetPayment() {
       if (!this.contact) return null
+      // Surface the Nostr profile picture (when this contact came from
+      // a kind:0 sync) so the confirm sheet shows the real avatar
+      // instead of the colored initial. The sheet already supports
+      // `logoUrl` for merchant QRs — same plumbing.
+      const nostrPicture = typeof this.contact.nostr_profile?.picture === 'string'
+        ? this.contact.nostr_profile.picture.trim()
+        : ''
+      const safeLogoUrl = /^(https?:|data:image\/)/i.test(nostrPicture) ? nostrPicture : ''
       return {
         recipient: {
           name: this.contact.name,
           color: this.contact.color || '#3B82F6',
           initial: this.contact.name ? this.contact.name.charAt(0).toUpperCase() : '?',
+          logoUrl: safeLogoUrl,
           addressType: this.contactAddressType,
           address: this.contactAddress
         },

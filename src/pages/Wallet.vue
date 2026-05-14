@@ -232,7 +232,19 @@
           @click="openTransactionHistory"
           :aria-label="$t('Open transaction history')"
         >
-          <span class="last-tx-icon" :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'">
+          <!-- Contact-linked preview: render the contact's avatar
+               (real Nostr picture when present) so the home-screen
+               row looks like a person, not a generic direction icon. -->
+          <ContactAvatar
+            v-if="lastTxContact"
+            class="last-tx-avatar"
+            :entry="lastTxContact"
+          />
+          <span
+            v-else
+            class="last-tx-icon"
+            :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'"
+          >
             <Icon :icon="lastTxIcon" width="18" height="18" />
           </span>
           <span class="last-tx-info">
@@ -657,6 +669,7 @@ import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../uti
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
+import {useTransactionMetadataStore} from '../stores/transactionMetadata';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
@@ -664,6 +677,7 @@ import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
@@ -694,13 +708,15 @@ export default {
     NumberFlow,
     BackupBanner,
     IdentityAuthDialog,
+    ContactAvatar,
   },
   setup() {
     const walletStore = useWalletStore();
     const addressBookStore = useAddressBookStore();
+    const transactionMetadataStore = useTransactionMetadataStore();
     const bitcoinPrefsStore = useBitcoinPreferencesStore();
     const identityStore = useIdentityStore();
-    return { walletStore, addressBookStore, bitcoinPrefsStore, identityStore };
+    return { walletStore, addressBookStore, transactionMetadataStore, bitcoinPrefsStore, identityStore };
   },
   data() {
     return {
@@ -777,7 +793,12 @@ export default {
         address: '',
         addressType: 'lightning',
         name: '',
-        notes: ''
+        notes: '',
+        // Set when the save-as-contact dialog is offered right after a
+        // successful send — saveRecipientAsContact queues a pending
+        // link with this amount so the freshly created contact gets
+        // its first tx stamped on the next list refresh.
+        amountSats: 0,
       },
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
@@ -849,7 +870,31 @@ export default {
       return this.lastTxIsIncoming ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right';
     },
 
+    /**
+     * Address-book contact linked to the most recent transaction, if
+     * any. Drives the preview widget's avatar + title so the user
+     * sees "DrShift  ←  picture" instead of the generic
+     * "Payment Sent ← up-arrow" once a contact is associated. The
+     * association is written at send time by confirmPayment.
+     */
+    lastTxContact() {
+      const tx = this.lastTransaction;
+      if (!tx || !tx.id || !this.transactionMetadataStore || !this.addressBookStore) {
+        return null;
+      }
+      try {
+        const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id);
+        if (!meta?.contactId) return null;
+        return this.addressBookStore.getEntryById(meta.contactId) || null;
+      } catch {
+        return null;
+      }
+    },
+
     lastTxTitle() {
+      // Prefer the linked contact's name so the home-screen preview
+      // reads as "DrShift" instead of the generic direction label.
+      if (this.lastTxContact?.name) return this.lastTxContact.name;
       return this.lastTxIsIncoming
         ? this.$t('Payment Received')
         : this.$t('Payment Sent');
@@ -1001,19 +1046,26 @@ export default {
           address: ''
         };
       } else if (p.lightningAddress) {
-        recipient = {
-          name: p.lightningAddress,
-          color: '#F59E0B',
+        // If the destination matches a saved contact, surface their
+        // local name + color (and Nostr avatar when present) instead
+        // of the raw address. Works for every entry path — picker,
+        // typed address, or pasted link — because the lookup is on
+        // the resolved address, not on how it arrived.
+        const contact = this.addressBookStore.findContactByAddress(p.lightningAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: p.lightningAddress,
+          fallbackColor: '#F59E0B',
           addressType: 'lightning',
-          address: p.lightningAddress
-        };
+          address: p.lightningAddress,
+        });
       } else if (p.sparkAddress) {
-        recipient = {
-          name: this.$t('Spark address'),
-          color: '#6B7280',
+        const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: this.$t('Spark address'),
+          fallbackColor: '#6B7280',
           addressType: 'spark',
-          address: p.sparkAddress
-        };
+          address: p.sparkAddress,
+        });
       } else if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
         recipient = {
           name: this.$t('LNURL payment'),
@@ -1426,6 +1478,36 @@ export default {
     }
   },
   methods: {
+    /**
+     * Build a PaymentConfirmSheet recipient payload from a saved
+     * address-book contact, falling back to the supplied defaults
+     * when no contact is found. Threads the Nostr `picture` field
+     * through the sheet's existing `logoUrl` slot so the real
+     * avatar appears on the Send-to screen — same plumbing the
+     * merchant QR flow uses.
+     */
+    recipientFromContact(contact, fallback) {
+      if (!contact) {
+        return {
+          name: fallback.fallbackName,
+          color: fallback.fallbackColor,
+          addressType: fallback.addressType,
+          address: fallback.address,
+        };
+      }
+      const nostrPicture = typeof contact.nostr_profile?.picture === 'string'
+        ? contact.nostr_profile.picture.trim()
+        : '';
+      const safeLogoUrl = /^(https?:|data:image\/)/i.test(nostrPicture) ? nostrPicture : '';
+      return {
+        name: contact.name || fallback.fallbackName,
+        color: contact.color || fallback.fallbackColor,
+        logoUrl: safeLogoUrl,
+        addressType: fallback.addressType,
+        address: fallback.address,
+      };
+    },
+
     goToBackup() {
       this.$router.push('/settings?section=backup');
     },
@@ -2370,11 +2452,23 @@ export default {
           return;
         }
 
-        const result = await provider.getTransactions({ limit: 1, offset: 0 });
-        // Providers return either an array or `{ transactions: [...] }`
-        // depending on the implementation. Handle both so new providers
-        // don't silently break this card.
+        // Fetch a small batch (not just the top one) so the pending-
+        // contact-link consumer has something to match against —
+        // settlement latency on some rails means our just-sent tx may
+        // not yet be the freshest row, or the user may have multiple
+        // sends in flight.
+        const result = await provider.getTransactions({ limit: 10, offset: 0 });
         const txs = Array.isArray(result) ? result : (result?.transactions || []);
+
+        // Drain the queued contact links before we publish the new
+        // lastTransaction, so the home-screen preview reads the
+        // freshly-stamped metadata on the same paint.
+        try {
+          await this.transactionMetadataStore.consumePendingContactLinks(txs);
+        } catch (err) {
+          console.warn('[wallet] pending-contact-link drain failed:', err);
+        }
+
         this.lastTransaction = txs.length > 0 ? txs[0] : null;
       } catch (err) {
         console.warn('Failed to load last transaction:', err);
@@ -3310,7 +3404,28 @@ export default {
         // Check if we should offer to save this recipient as a contact
         const recipientAddress = this.getRecipientAddress();
         const recipientAddressType = this.getRecipientAddressType();
-        const shouldOfferSave = recipientAddress && !this.addressBookStore.findContactByAddress(recipientAddress);
+        const existingContact = recipientAddress
+          ? this.addressBookStore.findContactByAddress(recipientAddress)
+          : null;
+        const shouldOfferSave = recipientAddress && !existingContact;
+
+        // Queue the contact link by recipient address + amount + send
+        // time. The next tx-list refresh drains the queue and stamps
+        // the newly observed outgoing tx — wallet-agnostic, so it
+        // works the same for Spark (transfer id ≠ payment id), LNBits
+        // (payment_hash directly), and NWC (only `preimage` comes
+        // back) without us having to know which provider is active.
+        if (existingContact && recipientAddress) {
+          try {
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: existingContact.id,
+              recipientAddress,
+              amountSats: amount,
+            });
+          } catch (err) {
+            console.warn('[wallet] could not queue contact link:', err);
+          }
+        }
 
         const pendingPaymentBackup = this.pendingPayment; // Keep reference for save dialog
         this.pendingPayment = null;
@@ -3333,7 +3448,11 @@ export default {
             address: recipientAddress,
             addressType: recipientAddressType,
             name: '',
-            notes: ''
+            notes: '',
+            // Carry the amount so the post-save handler can queue a
+            // pending contact link against the same outgoing tx the
+            // existing-contact path uses.
+            amountSats: amount,
           };
           // Small delay so the success notification is seen first
           setTimeout(() => {
@@ -3561,12 +3680,28 @@ export default {
           return;
         }
 
-        await this.addressBookStore.addEntry({
+        const newContact = await this.addressBookStore.addEntry({
           name: this.saveContactData.name.trim(),
           address: this.saveContactData.address,
           addressType: this.saveContactData.addressType,
           notes: this.saveContactData.notes?.trim() || ''
         });
+
+        // Queue the contact link for the outgoing tx that just landed
+        // (or is about to land). The pending-link consumer matches by
+        // address + amount + recent timestamp on the next tx-list
+        // refresh, so we don't need to know the provider-assigned id.
+        if (newContact?.id) {
+          try {
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: newContact.id,
+              recipientAddress: this.saveContactData.address,
+              amountSats: this.saveContactData.amountSats,
+            });
+          } catch (err) {
+            console.warn('[wallet] could not queue contact link for new contact:', err);
+          }
+        }
 
         this.showSaveContactDialog = false;
         this.$q.notify({
@@ -3592,7 +3727,8 @@ export default {
         address: '',
         addressType: 'lightning',
         name: '',
-        notes: ''
+        notes: '',
+        amountSats: 0,
       };
     },
 
@@ -4509,6 +4645,16 @@ export default {
 .last-tx-icon-dark {
   background: rgba(255, 255, 255, 0.06);
   color: #cbd5e1;
+}
+
+/* Inherit-class slot for the ContactAvatar substitution — matches the
+   icon's footprint so the row's rhythm stays identical whether the
+   preview shows a contact picture or the generic arrow. */
+.last-tx-avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
 }
 
 .last-tx-info {

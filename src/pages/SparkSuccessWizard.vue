@@ -341,7 +341,7 @@ export default {
     expandWizard() {
       this.showExtended = true
       this.$nextTick(() => {
-        this.currentSlide = EXTENDED_SLIDES[0]
+        this.currentSlide = ALL_FEATURES[0]
       })
     },
     goToWallet() {

@@ -421,6 +421,7 @@ import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
 import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
+import { useAddressBookStore } from '../stores/addressBook';
 
 // The typed confirmation phrase. Matched verbatim to the wallet-removal
 // flow ("I understand") so users build the same muscle memory across
@@ -704,8 +705,38 @@ export default {
       // No-op: the store flips backupConfirmed and the hero re-renders.
     },
 
-    onIdentityRestored() {
-      // No-op: notify is fired inside the dialog itself.
+    async onIdentityRestored() {
+      // The restore dialog already fired its own "Identity restored"
+      // notify. Recovery rides on top of that: pull the user's
+      // private NIP-51 address book so "your people came back too"
+      // — the whole point of syncing contacts to Nostr.
+      //
+      // Fire-and-forget with its own follow-up notify. We don't block
+      // the restore dialog's close on a relay round-trip, and a
+      // failure here never undoes the successful identity restore.
+      const addressBook = useAddressBookStore();
+      const identity = useIdentityStore();
+      try {
+        const result = await addressBook.recoverFromNostr({ identityStore: identity });
+        if (result && result.ok && result.hadRemote && result.restored > 0) {
+          const caption = result.unpayable > 0
+            ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
+            : undefined;
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Restored {n} contacts', { n: result.restored }),
+            caption,
+            timeout: 4500,
+          });
+        }
+        // hadRemote=false / restored=0 stays silent — a fresh
+        // identity with no synced contacts is the expected case and
+        // shouldn't earn a toast.
+      } catch (err) {
+        // Non-fatal. The user can retry from Address Book → kebab →
+        // "Restore contacts from Nostr".
+        console.warn('[profile] address-book recovery after restore failed:', err);
+      }
     },
 
     openSiteSheet(domain) {
