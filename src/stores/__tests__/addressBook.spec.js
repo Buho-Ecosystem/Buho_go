@@ -8,6 +8,9 @@
  *   - refreshContact merges newer events; ignores older ones; never
  *     overwrites a name the user locally edited; tolerates fetch
  *     failures without throwing
+ *   - syncToNostr / recoverFromNostr fetch-merge-publish against the
+ *     NIP-51 list so no device clobbers another's writes; deletes
+ *     travel as tombstones; identity-only contacts survive recovery
  *
  * The legacy add/update/delete paths are smoke-tested only — they were
  * exercised through the live app for months before this extension and
@@ -88,6 +91,12 @@ const ALICE_NPUB = nip19.npubEncode(ALICE_PUBKEY);
 const BOB_SECRET = new Uint8Array(32).fill(0x22);
 const BOB_PUBKEY = getPublicKey(BOB_SECRET);
 const BOB_NPUB = nip19.npubEncode(BOB_PUBKEY);
+
+// A third identity — only the union-merge tests need it, where the
+// local book and the remote list each know a *different* contact.
+const CAROL_SECRET = new Uint8Array(32).fill(0x33);
+const CAROL_PUBKEY = getPublicKey(CAROL_SECRET);
+const CAROL_NPUB = nip19.npubEncode(CAROL_PUBKEY);
 
 function makeKind0(secret, content, createdAt = Math.floor(Date.now() / 1000)) {
   return finalizeEvent({
@@ -747,7 +756,7 @@ await test('addNostrContact + reload: entry survives a localStorage roundtrip', 
 });
 
 // ---------------------------------------------------------------------------
-// syncToNostr — pushes the contact list to the user's NIP-51 event
+// syncToNostr — fetch, merge, publish, reconcile against the NIP-51 list
 // ---------------------------------------------------------------------------
 
 const {
@@ -802,6 +811,24 @@ function syncFakePool({ publish = 'ok', events = {} } = {}) {
   };
 }
 
+/**
+ * Build a signed + NIP-44-self-encrypted kind:30000 address-book event,
+ * exactly as a *different device* (or an earlier session) would have
+ * published it. The store's fetch-merge-publish path consumes this as
+ * "the remote list".
+ */
+async function makeRemoteEvent(payload, { secret, pubkey, createdAt = 1_700_000_000 } = {}) {
+  const { finalizeEvent, nip44 } = await import('nostr-core');
+  const key = nip44.getConversationKey(new Uint8Array(secret), pubkey);
+  const content = nip44.encrypt(JSON.stringify(payload), key);
+  return finalizeEvent({
+    kind: ADDRESS_BOOK_KIND,
+    created_at: createdAt,
+    tags: [['d', ADDRESS_BOOK_D_TAG]],
+    content,
+  }, new Uint8Array(secret));
+}
+
 await test('syncToNostr: skipped when identity not bootstrapped', async () => {
   const store = freshStore();
   const result = await store.syncToNostr({ identityStore: { bootstrapped: false } });
@@ -809,15 +836,20 @@ await test('syncToNostr: skipped when identity not bootstrapped', async () => {
   assert.equal(result.reason, 'identity-not-bootstrapped');
 });
 
-await test('syncToNostr: skipped when there are no nostr-sourced contacts', async () => {
+await test('syncToNostr: no contacts and no remote list is a clean no-op', async () => {
   const store = freshStore();
   await store.addEntry({ name: 'Plain', address: 'plain@a.test', addressType: 'lightning' });
+  const pool = syncFakePool();
   const result = await store.syncToNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
-    pool: syncFakePool(),
+    pool,
+    relays: ['wss://r.test'],
   });
-  assert.equal(result?.skipped, true);
-  assert.equal(result.reason, 'no-nostr-contacts');
+  // Nothing local, nothing remote — succeed without ever publishing.
+  assert.equal(result.ok, true);
+  assert.equal(result.hadRemote, false);
+  assert.equal(result.published, false);
+  assert.equal(pool.calls.publish.length, 0);
 });
 
 await test('syncToNostr: publishes a signed kind:30000 with the buhogo d tag', async () => {
@@ -835,7 +867,7 @@ await test('syncToNostr: publishes a signed kind:30000 with the buhogo d tag', a
   });
   assert.equal(result.ok, true);
   assert.equal(result.acceptedRelay, 'wss://r.test');
-  assert.equal(result.contactsPublished, 1);
+  assert.equal(result.published, true);
   // The actual event hit the publish call.
   assert.equal(pool.calls.publish.length, 1);
   const sent = pool.calls.publish[0].event;
@@ -906,6 +938,106 @@ await test('syncToNostr: every-relay-rejects yields ok:false + records error cod
   assert.equal(result.ok, false);
   assert.equal(store.lastSyncError, 'ALL_RELAYS_REJECTED');
   assert.equal(store.syncDirty, true); // unchanged — caller may retry
+});
+
+// --- Fetch-merge-publish: the no-data-loss guarantee (Findings 1 & 2) -------
+
+await test('syncToNostr: union-merges the remote list so a contact on either side survives', async () => {
+  const store = freshStore();
+  // Local knows Bob.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  // The remote list (published by another device) knows Carol.
+  const remoteEvent = await makeRemoteEvent(
+    [{ pubkey: CAROL_PUBKEY, addedAt: 1_700_000_000 }],
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
+  );
+  const carolProfile = makeKind0(CAROL_SECRET, { name: 'Carol', lud16: 'carol@c.test' });
+
+  const pool = syncFakePool({ events: { 'wss://r.test': [remoteEvent] } });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async (pk) => (pk === CAROL_PUBKEY ? carolProfile : null),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.hadRemote, true);
+  assert.equal(result.restored, 1); // Carol pulled in from the remote list
+  // Neither side's contact was lost.
+  assert.equal(store.entries.length, 2);
+  assert.ok(store.findContactByPubkey(BOB_PUBKEY));
+  assert.ok(store.findContactByPubkey(CAROL_PUBKEY));
+  // And the event we published is the union, not just our local half.
+  const sent = pool.calls.publish[0].event;
+  const key = deriveSelfConversationKey(new Uint8Array(ALICE_SECRET), ALICE_PUBKEY);
+  const payload = decryptAddressBookContent(sent.content, key);
+  assert.equal(payload.length, 2);
+});
+
+await test('syncToNostr: deleting the last contact publishes a tombstone, never a skip', async () => {
+  const store = freshStore();
+  const e = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event: makeKind0(ALICE_SECRET, { name: 'Alice', lud16: 'a@a.test' }),
+  });
+  await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: syncFakePool(),
+    relays: ['wss://r.test'],
+  });
+  // Delete the one and only contact.
+  await store.deleteEntry(e.id);
+
+  // The next sync must still publish — an empty book goes out as a
+  // tombstone, otherwise the delete never reaches the other devices
+  // and a stale copy resurrects the contact on restore.
+  const pool = syncFakePool();
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.published, true);
+  assert.equal(pool.calls.publish.length, 1);
+  const sent = pool.calls.publish[0].event;
+  const key = deriveSelfConversationKey(new Uint8Array(ALICE_SECRET), ALICE_PUBKEY);
+  const payload = decryptAddressBookContent(sent.content, key);
+  assert.equal(payload.length, 1);
+  assert.equal(payload[0].pubkey, ALICE_PUBKEY);
+  assert.equal(payload[0].deleted, true);
+});
+
+await test('syncToNostr: a remote tombstone removes a locally-live contact', async () => {
+  const store = freshStore();
+  // Bob is live locally.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  // The remote list says Bob was deleted on another device, with a
+  // clock strictly newer than our local copy.
+  const remoteEvent = await makeRemoteEvent(
+    [{ pubkey: BOB_PUBKEY, deleted: true, updatedAt: Date.now() + 60_000 }],
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
+  );
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.removed, 1);
+  assert.equal(store.entries.length, 0);
+  // The delete is now a local tombstone too, so it keeps propagating.
+  assert.ok(store.nostrDeletions.some((d) => d.pubkey === BOB_PUBKEY));
 });
 
 await test('addNostrContact: marks syncDirty', async () => {
@@ -992,34 +1124,9 @@ await test('updateEntry: a notes-only change does NOT mark dirty', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// recoverFromNostr
+// recoverFromNostr — same fetch-merge-publish-reconcile core as
+// syncToNostr, framed for the restore wizard
 // ---------------------------------------------------------------------------
-
-function buildRemoteAddressBookEvent(payload, { secret, pubkey, createdAt = 1_700_000_000 } = {}) {
-  const { finalizeEvent, nip44 } = require('nostr-core'); // dynamic import would force async
-  const key = nip44.getConversationKey(new Uint8Array(secret), pubkey);
-  const content = nip44.encrypt(JSON.stringify(payload), key);
-  return finalizeEvent({
-    kind: ADDRESS_BOOK_KIND,
-    created_at: createdAt,
-    tags: [['d', ADDRESS_BOOK_D_TAG]],
-    content,
-  }, new Uint8Array(secret));
-}
-
-// Have to use dynamic import because Node ESM doesn't support require —
-// re-do the helper async-style.
-async function makeRemoteEvent(payload, { secret, pubkey, createdAt = 1_700_000_000 } = {}) {
-  const { finalizeEvent, nip44 } = await import('nostr-core');
-  const key = nip44.getConversationKey(new Uint8Array(secret), pubkey);
-  const content = nip44.encrypt(JSON.stringify(payload), key);
-  return finalizeEvent({
-    kind: ADDRESS_BOOK_KIND,
-    created_at: createdAt,
-    tags: [['d', ADDRESS_BOOK_D_TAG]],
-    content,
-  }, new Uint8Array(secret));
-}
 
 await test('recoverFromNostr: hadRemote=false when relays have no list', async () => {
   const store = freshStore();
@@ -1083,7 +1190,7 @@ await test('recoverFromNostr: applies the synced petname when restoring', async 
   assert.equal(store.entries[0].name_locally_edited, true);
 });
 
-await test('recoverFromNostr: counts unpayable contacts whose kind:0 lacks lud16', async () => {
+await test('recoverFromNostr: a contact whose kind:0 lacks lud16 restores as identity-only', async () => {
   const store = freshStore();
   const remoteList = [{ pubkey: BOB_PUBKEY }];
   const remoteEvent = await makeRemoteEvent(remoteList, {
@@ -1096,12 +1203,18 @@ await test('recoverFromNostr: counts unpayable contacts whose kind:0 lacks lud16
     relays: ['wss://r.test'],
     profileFetcher: async () => bobNoLud16,
   });
-  assert.equal(result.restored, 0);
-  assert.equal(result.unpayable, 1);
-  assert.equal(store.entries.length, 0);
+  // The canonical identity is the pubkey: a contact who currently has
+  // no lud16 still comes back — as an identity-only entry, not a drop.
+  assert.equal(result.restored, 1);
+  assert.equal(result.identityOnly, 1);
+  assert.equal(store.entries.length, 1);
+  const restored = store.entries[0];
+  assert.equal(restored.nostr_pubkey, BOB_PUBKEY);
+  assert.equal(restored.address, '');
+  assert.equal(store.isEntryPayable(restored), false);
 });
 
-await test('recoverFromNostr: skips contacts already in the local book + merges synced petname when local name isnt edited', async () => {
+await test('recoverFromNostr: an already-local contact is reconciled, not re-fetched', async () => {
   const store = freshStore();
   const existing = await store.addNostrContact({
     pubkey: BOB_PUBKEY,
@@ -1110,7 +1223,37 @@ await test('recoverFromNostr: skips contacts already in the local book + merges 
   });
   assert.equal(existing.name_locally_edited, false);
 
-  const remoteList = [{ pubkey: BOB_PUBKEY, petname: 'My Bobby' }];
+  // Remote knows the same pubkey, with an older clock — nothing to converge.
+  const remoteList = [{ pubkey: BOB_PUBKEY, updatedAt: 1 }];
+  const remoteEvent = await makeRemoteEvent(remoteList, {
+    secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
+  });
+  const result = await store.recoverFromNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
+    relays: ['wss://r.test'],
+    // A contact already in the book must never trigger a kind:0 re-fetch.
+    profileFetcher: async () => { throw new Error('must not refetch'); },
+  });
+  assert.equal(result.restored, 0);
+  assert.equal(result.removed, 0);
+  assert.equal(store.entries.length, 1);
+  assert.equal(store.entries[0].name, 'Bob');
+});
+
+await test('recoverFromNostr: a newer remote petname converges onto an un-edited local contact', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+
+  // Remote carries a petname with a clock strictly newer than the local
+  // entry's — last-writer-wins says the petname should land locally.
+  const remoteList = [
+    { pubkey: BOB_PUBKEY, petname: 'My Bobby', updatedAt: Date.now() + 60_000 },
+  ];
   const remoteEvent = await makeRemoteEvent(remoteList, {
     secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
   });
@@ -1120,13 +1263,12 @@ await test('recoverFromNostr: skips contacts already in the local book + merges 
     relays: ['wss://r.test'],
     profileFetcher: async () => { throw new Error('must not refetch'); },
   });
-  assert.equal(result.skipped, 1);
-  // Synced petname adopted because we hadn't locally edited.
+  assert.equal(result.petnameUpdated, 1);
   assert.equal(store.entries[0].name, 'My Bobby');
   assert.equal(store.entries[0].name_locally_edited, true);
 });
 
-await test('recoverFromNostr: keeps local name when user has already locally edited', async () => {
+await test('recoverFromNostr: a locally-edited name outranks a stale remote petname', async () => {
   const store = freshStore();
   const existing = await store.addNostrContact({
     pubkey: BOB_PUBKEY,
@@ -1136,17 +1278,42 @@ await test('recoverFromNostr: keeps local name when user has already locally edi
   await store.updateEntry(existing.id, { name: 'Local Bob' });
   assert.equal(store.entries[0].name_locally_edited, true);
 
-  const remoteList = [{ pubkey: BOB_PUBKEY, petname: 'Remote Bobby' }];
+  // Remote petname carries an older clock, so the local edit wins the merge.
+  const remoteList = [{ pubkey: BOB_PUBKEY, petname: 'Remote Bobby', updatedAt: 1 }];
   const remoteEvent = await makeRemoteEvent(remoteList, {
     secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
   });
-  await store.recoverFromNostr({
+  const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
     relays: ['wss://r.test'],
     profileFetcher: async () => { throw new Error('must not refetch'); },
   });
+  assert.equal(result.petnameUpdated, 0);
   assert.equal(store.entries[0].name, 'Local Bob');
+});
+
+await test('recoverFromNostr: publishes the merged union and clears syncDirty (Finding 5)', async () => {
+  const store = freshStore();
+  // A freshly-added contact leaves the store dirty.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  assert.equal(store.syncDirty, true);
+
+  // Recovery is also a publish: it pushes the merged union back out, so
+  // a successful recovery leaves the store in sync — not dirty.
+  const result = await store.recoverFromNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: syncFakePool(),
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.published, true);
+  assert.equal(store.syncDirty, false);
+  assert.ok(Number.isFinite(store.lastSyncedAt));
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

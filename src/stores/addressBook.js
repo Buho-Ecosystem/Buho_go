@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { verifyEvent } from 'nostr-core'
+import { verifyEvent, nip19 } from 'nostr-core'
 import {
   isSparkAddress,
   isBitcoinAddress,
@@ -11,6 +11,8 @@ import {
   fetchAddressBook,
   publishAddressBook,
   serializeContactPayload,
+  mergeContactPayloads,
+  partitionContactPayload,
 } from '../utils/nostrAddressBook.js'
 
 // Address type constants
@@ -156,6 +158,18 @@ function cloneEvent(event) {
 // still read `buhoGO_address_book` and ignore this sibling.
 const SYNC_META_STORAGE_KEY = 'buhoGO_address_book_sync_v1'
 
+// How long a delete-tombstone is carried in the synced payload. After
+// this window every device that's going to converge has already seen
+// the delete, so the tombstone has done its job; keeping it longer
+// would only bloat the encrypted event.
+const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000
+
+// How many remote-only contacts to rebuild (fetch kind:0 + add) in
+// parallel during a sync/recovery. Bounded so a 50-contact restore
+// is ~8 round-trip batches rather than 50 serial ones, without
+// opening 50 sockets at once.
+const SYNC_FETCH_CONCURRENCY = 6
+
 export const useAddressBookStore = defineStore('addressBook', {
   state: () => ({
     entries: [],
@@ -168,6 +182,10 @@ export const useAddressBookStore = defineStore('addressBook', {
     lastSyncError: null,
     lastRecoveryAt: null,
     syncDirty: false,
+    // Pending delete-tombstones: [{ pubkey, deletedAt }]. A delete is
+    // a tombstone, never an omission — that's how a delete propagates
+    // across devices instead of being "resurrected" by a stale copy.
+    nostrDeletions: [],
     colorPalette: [
       '#3B82F6', // Blue
       '#10B981', // Emerald
@@ -268,6 +286,11 @@ export const useAddressBookStore = defineStore('addressBook', {
             this.lastSyncedAt = Number.isFinite(parsed.lastSyncedAt) ? parsed.lastSyncedAt : null
             this.lastRecoveryAt = Number.isFinite(parsed.lastRecoveryAt) ? parsed.lastRecoveryAt : null
             this.syncDirty = !!parsed.syncDirty
+            this.nostrDeletions = Array.isArray(parsed.nostrDeletions)
+              ? parsed.nostrDeletions.filter(
+                  (d) => d && typeof d.pubkey === 'string' && Number.isFinite(d.deletedAt),
+                )
+              : []
           }
         }
       } catch (error) {
@@ -292,6 +315,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           lastSyncedAt: this.lastSyncedAt,
           lastRecoveryAt: this.lastRecoveryAt,
           syncDirty: this.syncDirty,
+          nostrDeletions: this._prunedDeletions(),
         }))
       } catch (error) {
         console.warn('Error saving address-book sync metadata:', error)
@@ -444,7 +468,13 @@ export const useAddressBookStore = defineStore('addressBook', {
         this.entries.splice(entryIndex, 1)
         await this.persistEntries()
 
-        if (deletedEntry.source === CONTACT_SOURCES.NOSTR) {
+        if (deletedEntry.source === CONTACT_SOURCES.NOSTR && deletedEntry.nostr_pubkey) {
+          // Record a tombstone, not just an omission — that's how the
+          // delete propagates to other devices instead of being
+          // "resurrected" by their stale copy of the list.
+          const pubkey = deletedEntry.nostr_pubkey
+          this.nostrDeletions = (this.nostrDeletions || []).filter((d) => d.pubkey !== pubkey)
+          this.nostrDeletions.push({ pubkey, deletedAt: Date.now() })
           await this._markSyncDirty()
         }
 
@@ -568,6 +598,15 @@ export const useAddressBookStore = defineStore('addressBook', {
         nostr_relay_hints: sanitizedHints,
         last_synced_at: now,
         name_locally_edited: false,
+      }
+
+      // A re-add supersedes any pending delete-tombstone for this
+      // pubkey — otherwise the next merge would resolve the (older)
+      // tombstone against the (newer) live entry and the contact
+      // would survive anyway, but carrying a stale tombstone is just
+      // noise. Drop it here so local state stays clean.
+      if (Array.isArray(this.nostrDeletions) && this.nostrDeletions.some((d) => d.pubkey === pubkey)) {
+        this.nostrDeletions = this.nostrDeletions.filter((d) => d.pubkey !== pubkey)
       }
 
       this.entries.push(newEntry)
@@ -695,256 +734,389 @@ export const useAddressBookStore = defineStore('addressBook', {
     },
 
     /**
-     * Push the current Nostr-sourced contact list to the user's
-     * private NIP-51 kind:30000 event. Wraps the eager fan-out from
-     * `publishAddressBook` in the same UX-facing shape `profileStore.publish`
-     * returns so the UI can surface success / failure identically.
+     * Serialize the local Nostr-sourced contacts + pending deletions
+     * into the wire payload. Single source of truth for "what does
+     * this device currently believe the contact list is."
+     */
+    _localPayload() {
+      return serializeContactPayload(this.entries, this._prunedDeletions())
+    },
+
+    /**
+     * Drop tombstones older than the TTL. After ~90 days every device
+     * that's going to converge has already seen the delete, so the
+     * tombstone has done its job and would only bloat the payload.
+     */
+    _prunedDeletions() {
+      const cutoff = Date.now() - TOMBSTONE_TTL_MS
+      return (this.nostrDeletions || []).filter(
+        (d) => d && Number.isFinite(d.deletedAt) && d.deletedAt >= cutoff,
+      )
+    },
+
+    /**
+     * Shared fetch → merge → publish → reconcile pipeline behind both
+     * `syncToNostr` and `recoverFromNostr`. They are the *same*
+     * operation — pull the remote, union-merge it with local, publish
+     * the union, then reconcile the local store to it. The only
+     * difference is which in-flight flag the caller manages and how
+     * the result is framed for the UI.
      *
-     * Skip cases (return shape includes `skipped: true`):
-     *   - identity not bootstrapped (caller will prompt unlock)
-     *   - no nostr-sourced contacts to publish
+     * The union merge (see `mergeContactPayloads`) is what makes this
+     * safe across devices: a contact present on *either* side
+     * survives, deletes travel as tombstones, and the higher
+     * `updatedAt` wins a field conflict. No device can clobber
+     * another's writes.
      *
-     * The secret-key buffer is wiped immediately after signing — same
-     * pattern as `profileStore.publish` — so the unlocked-mnemonic
-     * exposure window stays narrow.
+     * The secret key is wiped the moment publishing is done — the
+     * reconcile step never needs it.
+     *
+     * @returns {Promise<{
+     *   ok: boolean,
+     *   reason?: string,
+     *   hadRemote: boolean,
+     *   published: boolean,
+     *   acceptedRelay: string | null,
+     *   restored: number, removed: number,
+     *   identityOnly: number, deferred: number, petnameUpdated: number,
+     * }>}
+     */
+    async _runSync({ identityStore, pool, relays, timeoutMs, profileFetcher }) {
+      const pubkey = identityStore?.nostrPubkeyHex
+      if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
+        return { ok: false, reason: 'no-pubkey', hadRemote: false, published: false, acceptedRelay: null,
+          restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
+      }
+
+      let secretKey
+      try {
+        secretKey = await identityStore.getNostrSecretKeyBytes()
+
+        // 1. FETCH the remote list.
+        let remote
+        try {
+          remote = await fetchAddressBook({ pool, relays, pubkey, secretKey, timeoutMs })
+        } catch (err) {
+          const reason = err?.code === 'ADDRESS_BOOK_DECRYPT_FAILED'
+            ? 'decrypt-failed'
+            : 'fetch-failed'
+          return { ok: false, reason, hadRemote: false, published: false, acceptedRelay: null,
+            restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
+        }
+        const hadRemote = !!remote
+
+        // 2. MERGE local ∪ remote. This is the no-data-loss guarantee.
+        const merged = mergeContactPayloads(
+          this._localPayload(),
+          remote ? remote.contacts : [],
+        )
+
+        // 3. PUBLISH the merged union. Skip only when there is
+        //    genuinely nothing — no live records, no tombstones, and
+        //    no remote event ever existed.
+        let published = false
+        let acceptedRelay = null
+        const nothingToDo = merged.length === 0 && !hadRemote
+        if (!nothingToDo) {
+          const event = buildAddressBookEvent({ secretKey, pubkey, payload: merged })
+          const fanout = publishAddressBook({ pool, relays, event, timeoutMs })
+          const firstAccept = await fanout.firstAccept
+          if (firstAccept) {
+            published = true
+            acceptedRelay = firstAccept.relay
+          } else {
+            // Every relay refused — surface for diagnostics, the
+            // caller keeps syncDirty set so it retries.
+            const results = await fanout.allSettled
+            console.warn('[addressBook] sync landed on zero relays:', results)
+          }
+        }
+
+        // Secret key is done — reconcile is pure-local.
+        secretKey.fill(0)
+        secretKey = null
+
+        // 4. RECONCILE the local store to the merged truth.
+        const reconcile = await this._reconcileWithMergedPayload(merged, {
+          fetcher: typeof profileFetcher === 'function' ? profileFetcher : fetchProfile,
+          pool,
+          relays,
+        })
+
+        return {
+          ok: nothingToDo || published,
+          hadRemote,
+          published,
+          acceptedRelay,
+          ...reconcile,
+        }
+      } finally {
+        if (secretKey) secretKey.fill(0)
+      }
+    },
+
+    /**
+     * Reconcile the local store to a freshly-merged payload:
+     *   - remove locally-live entries the merge says are tombstoned
+     *   - rebuild local tombstones from the merge (mirror == canonical)
+     *   - for live records already local: converge the petname to the
+     *     merge's last-writer-wins value
+     *   - for live records not local: fetch their kind:0 and add them,
+     *     with bounded concurrency so a 50-contact restore doesn't
+     *     turn into 50 serial relay round-trips
+     *
+     * @returns {Promise<{ restored: number, removed: number,
+     *   identityOnly: number, deferred: number, petnameUpdated: number }>}
+     */
+    async _reconcileWithMergedPayload(merged, { fetcher, pool, relays }) {
+      const { live, tombstonedPubkeys } = partitionContactPayload(merged)
+      let removed = 0
+      let restored = 0
+      let identityOnly = 0
+      let deferred = 0
+      let petnameUpdated = 0
+
+      // (a) Remove locally-live Nostr entries that are tombstoned in
+      //     the merged truth — this is how a delete on one device
+      //     propagates to every other.
+      for (let i = this.entries.length - 1; i >= 0; i -= 1) {
+        const e = this.entries[i]
+        if (
+          e.source === CONTACT_SOURCES.NOSTR
+          && e.nostr_pubkey
+          && tombstonedPubkeys.has(e.nostr_pubkey)
+        ) {
+          this.entries.splice(i, 1)
+          removed += 1
+        }
+      }
+
+      // (b) Local tombstone set now mirrors the canonical merged set,
+      //     so `_localPayload()` on the next sync stays consistent.
+      this.nostrDeletions = [...tombstonedPubkeys].map((pk) => {
+        const rec = merged.find((m) => m.pubkey === pk && m.deleted)
+        return { pubkey: pk, deletedAt: rec ? rec.updatedAt : Date.now() }
+      })
+
+      // (c) Split live records into "already local" (converge petname)
+      //     and "remote-only" (fetch + add).
+      const localByPubkey = new Map()
+      for (const e of this.entries) {
+        if (e.source === CONTACT_SOURCES.NOSTR && e.nostr_pubkey) {
+          localByPubkey.set(e.nostr_pubkey, e)
+        }
+      }
+      const remoteOnly = []
+      for (const rec of live) {
+        const localEntry = localByPubkey.get(rec.pubkey)
+        if (!localEntry) {
+          remoteOnly.push(rec)
+          continue
+        }
+        // Converge the petname to the merge's LWW value. The merged
+        // record's petname IS the authoritative answer — adopt it.
+        const desiredName = rec.petname
+          ? rec.petname.slice(0, 80)
+          : pickDisplayNameFromProfile(localEntry.nostr_profile, localEntry.nostr_npub)
+        const desiredEdited = !!rec.petname
+        if (
+          localEntry.name !== desiredName
+          || localEntry.name_locally_edited !== desiredEdited
+        ) {
+          const idx = this.entries.findIndex((e) => e.id === localEntry.id)
+          if (idx !== -1) {
+            this.entries.splice(idx, 1, {
+              ...localEntry,
+              name: desiredName,
+              name_locally_edited: desiredEdited,
+              updatedAt: Date.now(),
+            })
+            petnameUpdated += 1
+          }
+        }
+      }
+
+      // (d) Fetch + add the remote-only contacts, bounded concurrency.
+      for (let i = 0; i < remoteOnly.length; i += SYNC_FETCH_CONCURRENCY) {
+        const chunk = remoteOnly.slice(i, i + SYNC_FETCH_CONCURRENCY)
+        const outcomes = await Promise.all(
+          chunk.map((rec) => this._restoreOneRemoteContact(rec, { fetcher, pool, relays })),
+        )
+        for (const outcome of outcomes) {
+          if (outcome === 'restored') restored += 1
+          else if (outcome === 'identity-only') { restored += 1; identityOnly += 1 }
+          else deferred += 1
+        }
+      }
+
+      await this.persistEntries()
+      await this._persistSyncMeta()
+      return { restored, removed, identityOnly, deferred, petnameUpdated }
+    },
+
+    /**
+     * Rebuild one remote-only contact from its latest kind:0.
+     *
+     *   'restored'      — added, has a Lightning address
+     *   'identity-only' — added, but no lud16 yet (still a real contact)
+     *   'deferred'      — couldn't fetch / add right now; the next sync
+     *                     will retry (the record is still in the
+     *                     merged payload, so it isn't lost)
+     */
+    async _restoreOneRemoteContact(rec, { fetcher, pool, relays }) {
+      let event = null
+      try {
+        const fetchOpts = {}
+        if (Array.isArray(rec.relays) && rec.relays.length > 0) {
+          fetchOpts.relays = rec.relays
+        } else if (Array.isArray(relays) && relays.length > 0) {
+          fetchOpts.relays = relays
+        }
+        if (pool) fetchOpts.pool = pool
+        event = await fetcher(rec.pubkey, fetchOpts)
+      } catch (err) {
+        console.warn('[addressBook] recovery: fetchProfile failed for', rec.pubkey, err)
+      }
+      // No kind:0 right now — transient. Leave it for the next sync;
+      // the record is still in the published merged payload.
+      if (!event) return 'deferred'
+
+      let npub
+      try {
+        npub = nip19.npubEncode(rec.pubkey)
+      } catch (err) {
+        console.warn('[addressBook] recovery: npubEncode failed for', rec.pubkey, err)
+        return 'deferred'
+      }
+
+      try {
+        const entry = await this.addNostrContact({
+          pubkey: rec.pubkey,
+          npub,
+          event,
+          relayHints: rec.relays || [],
+          // The canonical identity is the pubkey — a contact who
+          // dropped their lud16 must still come back (identity-only).
+          allowWithoutLightningAddress: true,
+        })
+        if (rec.petname) {
+          await this.updateEntry(entry.id, { name: rec.petname })
+        }
+        if (Number.isFinite(rec.addedAt)) {
+          // Preserve the original add time so the restored list keeps
+          // the user's mental ordering.
+          const idx = this.entries.findIndex((e) => e.id === entry.id)
+          if (idx !== -1) {
+            this.entries.splice(idx, 1, { ...this.entries[idx], createdAt: rec.addedAt })
+          }
+        }
+        return this.isEntryPayable(entry) ? 'restored' : 'identity-only'
+      } catch (err) {
+        // addNostrContact throws on dedupe / schema issues — not fatal
+        // for the rest of the restore.
+        console.warn('[addressBook] recovery: addNostrContact failed for', rec.pubkey, err)
+        return 'deferred'
+      }
+    },
+
+    /**
+     * Push-and-pull the user's private NIP-51 address book: fetch the
+     * remote list, union-merge with local, publish the union, and
+     * reconcile the local store to it.
+     *
+     * Because every publish is a merge of local ∪ remote, no device
+     * can ever clobber another's writes — the failure mode the plain
+     * "publish my local snapshot" approach had.
      *
      * @param {{
-     *   identityStore: any,        // useIdentityStore() instance
-     *   pool?:    any,
-     *   relays?:  readonly string[],
-     *   timeoutMs?: number,
+     *   identityStore: any,
+     *   pool?: any, relays?: readonly string[], timeoutMs?: number,
+     *   profileFetcher?: Function,   // injected in tests
      * }} args
      * @returns {Promise<
-     *   | { ok: true,  acceptedRelay: string, contactsPublished: number, settled: Promise<any[]> }
-     *   | { ok: false, contactsPublished: number, results: any[], settled: Promise<any[]> }
-     *   | { skipped: true, reason: 'identity-not-bootstrapped' | 'no-nostr-contacts' }
+     *   | { ok: true,  hadRemote: boolean, published: boolean, acceptedRelay: string|null,
+     *       restored: number, removed: number, identityOnly: number,
+     *       deferred: number, petnameUpdated: number }
+     *   | { ok: false, reason: string, ... }
+     *   | { skipped: true, reason: 'identity-not-bootstrapped' }
      *   | null  // re-entrant call ignored
      * >}
      */
-    async syncToNostr({ identityStore, pool, relays, timeoutMs } = {}) {
+    async syncToNostr({ identityStore, pool, relays, timeoutMs, profileFetcher } = {}) {
       await this.initialize()
-      if (this.isSyncing) return null
+      // One sync operation at a time — a sync running concurrently
+      // with a recovery could publish a half-merged list.
+      if (this.isSyncing || this.isRecovering) return null
       if (!identityStore || !identityStore.bootstrapped) {
         return { skipped: true, reason: 'identity-not-bootstrapped' }
-      }
-
-      const payload = serializeContactPayload(this.entries)
-      if (payload.length === 0) {
-        // Nothing to publish — but treat this as a successful "synced"
-        // moment so the dirty flag clears (e.g. user deleted their
-        // only nostr contact: we want the next open to not retry).
-        this.syncDirty = false
-        this.lastSyncedAt = Date.now()
-        this.lastSyncError = null
-        await this._persistSyncMeta()
-        return { skipped: true, reason: 'no-nostr-contacts' }
       }
 
       this.isSyncing = true
       this.lastSyncError = null
       try {
-        const pubkey = identityStore.nostrPubkeyHex
-        if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
-          this.lastSyncError = 'NO_PUBKEY'
-          return { ok: false, contactsPublished: 0, results: [], settled: Promise.resolve([]) }
-        }
-
-        let secretKey
-        let event
-        try {
-          secretKey = await identityStore.getNostrSecretKeyBytes()
-          event = buildAddressBookEvent({ secretKey, pubkey, payload })
-        } finally {
-          if (secretKey) secretKey.fill(0)
-        }
-
-        const fanout = publishAddressBook({ pool, relays, event, timeoutMs })
-        const settled = fanout.allSettled
-        const firstAccept = await fanout.firstAccept
-
-        if (firstAccept) {
+        const result = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
+        if (result.ok) {
           this.lastSyncedAt = Date.now()
           this.syncDirty = false
-          await this._persistSyncMeta()
-          return {
-            ok: true,
-            acceptedRelay: firstAccept.relay,
-            contactsPublished: payload.length,
-            settled,
-          }
+          this.lastSyncError = null
+        } else {
+          this.lastSyncError = result.reason === 'decrypt-failed' ? 'DECRYPT_FAILED'
+            : result.reason === 'fetch-failed' ? 'FETCH_FAILED'
+            : result.reason === 'no-pubkey' ? 'NO_PUBKEY'
+            : 'ALL_RELAYS_REJECTED'
+          // syncDirty stays set so the next trigger retries.
         }
-
-        const results = await settled
-        this.lastSyncError = 'ALL_RELAYS_REJECTED'
-        console.warn('[addressBook] sync landed on zero relays:', results)
-        return { ok: false, contactsPublished: payload.length, results, settled: Promise.resolve(results) }
+        await this._persistSyncMeta()
+        return result
       } catch (err) {
         this.lastSyncError = err?.code || err?.message || 'UNKNOWN'
         console.warn('[addressBook] sync failed:', err)
-        return { ok: false, contactsPublished: 0, results: [], settled: Promise.resolve([]) }
+        await this._persistSyncMeta()
+        return { ok: false, reason: 'unknown', hadRemote: false, published: false,
+          acceptedRelay: null, restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
       } finally {
         this.isSyncing = false
       }
     },
 
     /**
-     * Pull the user's private NIP-51 address book from relays and
-     * merge into the local store. Designed to be called after
-     * identity restore — but safe to call any time as a "refresh
-     * from cloud" affordance.
+     * Pull the user's private NIP-51 address book and reconcile it
+     * into the local store. Mechanically identical to `syncToNostr`
+     * (same fetch-merge-publish-reconcile core) — the distinct entry
+     * point exists so the restore wizard and the kebab "Restore from
+     * Nostr" action read clearly and so the UI can show a recovery-
+     * specific spinner via `isRecovering`.
      *
-     * Conflict policy (from the recovery-plan doc):
-     *   - Local entry with the same pubkey wins, BUT we still pick
-     *     up a synced petname if the user hasn't locally edited the
-     *     name on this device.
-     *   - Remote-only entries are added by fetching their current
-     *     kind:0 to rebuild the snapshot. Contacts whose current
-     *     kind:0 lacks a lud16 are recorded under `unpayable` so the
-     *     UI can show "couldn't restore N (no Lightning address)".
-     *
-     * Network and decryption failures collapse to a typed result so
-     * the recovery wizard never has to wrap this in try/catch.
+     * @returns same shape as `syncToNostr`, plus the recovery wizard
+     *          reads `hadRemote` / `restored` / `removed` / `deferred`.
      */
     async recoverFromNostr({ identityStore, pool, relays, timeoutMs, profileFetcher } = {}) {
       await this.initialize()
-      if (this.isRecovering) return null
+      if (this.isSyncing || this.isRecovering) return null
       if (!identityStore || !identityStore.bootstrapped) {
         return { ok: false, reason: 'identity-not-bootstrapped' }
-      }
-      const pubkey = identityStore.nostrPubkeyHex
-      if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
-        return { ok: false, reason: 'no-pubkey' }
       }
 
       this.isRecovering = true
       try {
-        let remote
-        let secretKey
-        try {
-          secretKey = await identityStore.getNostrSecretKeyBytes()
-          remote = await fetchAddressBook({ pool, relays, pubkey, secretKey, timeoutMs })
-        } catch (err) {
-          if (err?.code === 'ADDRESS_BOOK_DECRYPT_FAILED') {
-            return { ok: false, reason: 'decrypt-failed', error: err }
-          }
-          return { ok: false, reason: 'fetch-failed', error: err }
-        } finally {
-          if (secretKey) secretKey.fill(0)
-        }
-
-        if (!remote) {
+        const result = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
+        if (result.ok) {
           this.lastRecoveryAt = Date.now()
-          await this._persistSyncMeta()
-          return { ok: true, hadRemote: false, restored: 0, skipped: 0, unpayable: 0 }
-        }
-
-        const fetcher = typeof profileFetcher === 'function' ? profileFetcher : fetchProfile
-        let restored = 0
-        let skipped = 0
-        let unpayable = 0
-
-        for (const remoteContact of remote.contacts) {
-          const localExisting = this.entries.find(
-            (e) => e.nostr_pubkey === remoteContact.pubkey,
-          )
-          if (localExisting) {
-            // Light-touch merge: adopt the synced petname when this
-            // device hasn't locally edited the name and the remote
-            // has a petname. Otherwise leave the local entry alone —
-            // local always wins on this device.
-            if (remoteContact.petname && !localExisting.name_locally_edited) {
-              const updated = {
-                ...localExisting,
-                name: remoteContact.petname.slice(0, 80),
-                name_locally_edited: true,
-                updatedAt: Date.now(),
-              }
-              const idx = this.entries.findIndex((e) => e.id === localExisting.id)
-              if (idx !== -1) {
-                this.entries.splice(idx, 1, updated)
-              }
-            }
-            skipped += 1
-            continue
-          }
-
-          // Rebuild from the contact's latest kind:0.
-          let event = null
-          try {
-            const fetchOpts = {}
-            if (Array.isArray(remoteContact.relays) && remoteContact.relays.length > 0) {
-              fetchOpts.relays = remoteContact.relays
-            } else if (Array.isArray(relays) && relays.length > 0) {
-              fetchOpts.relays = relays
-            }
-            if (pool) fetchOpts.pool = pool
-            event = await fetcher(remoteContact.pubkey, fetchOpts)
-          } catch (err) {
-            console.warn('[addressBook] recovery: fetchProfile failed for', remoteContact.pubkey, err)
-          }
-
-          if (!event) {
-            unpayable += 1
-            continue
-          }
-
-          const profile = parseProfileContent(event)
-          const lud16Raw = typeof profile.lud16 === 'string' ? profile.lud16.trim() : ''
-          if (!lud16Raw || !isLightningAddress(lud16Raw)) {
-            unpayable += 1
-            continue
-          }
-
-          // Compute npub from pubkey hex. We could lift this into a
-          // util but for the recovery hot-path it stays inline so
-          // each contact restored is a self-contained transaction.
-          let npub = ''
-          try {
-            const { nip19 } = await import('nostr-core')
-            npub = nip19.npubEncode(remoteContact.pubkey)
-          } catch {
-            unpayable += 1
-            continue
-          }
-
-          try {
-            const newEntry = await this.addNostrContact({
-              pubkey: remoteContact.pubkey,
-              npub,
-              event,
-              relayHints: remoteContact.relays || [],
-            })
-            // Apply the synced petname after the add so the regular
-            // `addNostrContact` validation runs unaltered.
-            if (remoteContact.petname) {
-              await this.updateEntry(newEntry.id, { name: remoteContact.petname })
-            }
-            if (Number.isFinite(remoteContact.addedAt)) {
-              // Best-effort: preserve original-add timestamp so the
-              // restored list keeps the user's mental ordering.
-              const idx = this.entries.findIndex((e) => e.id === newEntry.id)
-              if (idx !== -1) {
-                const restored = { ...this.entries[idx], createdAt: remoteContact.addedAt }
-                this.entries.splice(idx, 1, restored)
-                await this.persistEntries()
-              }
-            }
-            restored += 1
-          } catch (err) {
-            // `addNostrContact` throws on dedupe or schema issues —
-            // not fatal for the rest of the restore.
-            console.warn('[addressBook] recovery: addNostrContact failed for', remoteContact.pubkey, err)
-            unpayable += 1
+          // Recovery publishes the merged union too, so when the
+          // publish landed the local state is fully in sync.
+          if (result.published) {
+            this.lastSyncedAt = Date.now()
+            this.syncDirty = false
+            this.lastSyncError = null
           }
         }
-
-        // Recovery DOESN'T clear `syncDirty` automatically — if a
-        // petname-merge happened, those changes should be pushed back
-        // on next sync so the snapshot stays consistent across
-        // devices. We DO record the timestamp.
-        this.lastRecoveryAt = Date.now()
         await this._persistSyncMeta()
-        return { ok: true, hadRemote: true, restored, skipped, unpayable }
+        return result
+      } catch (err) {
+        console.warn('[addressBook] recovery failed:', err)
+        await this._persistSyncMeta()
+        return { ok: false, reason: 'unknown', hadRemote: false, published: false,
+          acceptedRelay: null, restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
       } finally {
         this.isRecovering = false
       }

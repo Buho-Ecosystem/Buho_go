@@ -68,84 +68,132 @@ export const ADDRESS_BOOK_D_TAG = 'buhogo-address-book';
 export const DEFAULT_RECOVERY_TIMEOUT_MS = 6000;
 
 // ----------------------------------------------------------------------------
-// Payload shape
+// Payload shape & merge
+//
+// A NIP-51 kind:30000 event is *replaceable* — each publish overwrites
+// the last. Building the payload from local entries alone is therefore
+// last-writer-wins across devices: device B, starting from a stale
+// local state, would silently erase contacts device A just added.
+//
+// The fix is the standard "sync a list" model: soft-delete + per-record
+// last-writer-wins + union merge.
+//
+//   - every record carries an `updatedAt` (ms) — the LWW clock
+//   - a delete is a *tombstone* record (`{ pubkey, deleted: true,
+//     updatedAt }`), never an omission, so deletes propagate instead
+//     of being "resurrected" by another device's stale copy
+//   - merge is a union by pubkey: a pubkey present in *either* side
+//     survives; the higher `updatedAt` wins the conflicting fields
+//
+// `syncToNostr` always fetch-merge-publishes against this model, so no
+// device can ever clobber another's writes.
 // ----------------------------------------------------------------------------
 
 /**
  * @typedef {{
- *   pubkey:   string,          // 64-char lowercase hex
- *   relays?:  string[],        // wss:// / ws:// hints, may be empty
- *   petname?: string,          // present iff user locally renamed the contact
- *   addedAt?: number,          // ms since epoch — preserves original "added" order
+ *   pubkey:    string,          // 64-char lowercase hex
+ *   updatedAt: number,          // ms — LWW clock; required
+ *   relays?:   string[],        // wss:// / ws:// hints, may be empty
+ *   petname?:  string,          // present iff user locally renamed the contact
+ *   addedAt?:  number,          // ms — preserves original "added" order
  * }} SyncedContact
+ *
+ * @typedef {{
+ *   pubkey:    string,
+ *   deleted:   true,
+ *   updatedAt: number,          // ms — when the delete happened
+ * }} ContactTombstone
+ *
+ * @typedef {SyncedContact | ContactTombstone} ContactRecord
  */
 
-/**
- * Pick the minimum set of fields we need to rebuild a Nostr-sourced
- * contact on another device. Manual address-book entries (no
- * `nostr_pubkey`) are excluded outright — they aren't portable as a
- * Nostr identity reference.
- *
- *   - `pubkey`  is required; entries without one are dropped
- *   - `relays`  is kept as-is when non-empty so the recovery fetch can
- *               prefer the user's own write set
- *   - `petname` is included only when the local name diverges from
- *               what kind:0 would currently produce (mirrors the
- *               `name_locally_edited` flag from the store)
- *   - `addedAt` is the original `createdAt` so the restored ordering
- *               matches the user's mental model
- *
- * Returned array is sorted by pubkey for deterministic output —
- * identical input always produces identical pre-encryption bytes,
- * which makes the test surface simpler.
- *
- * @param {Array<object>} entries  full addressBook entries (any source)
- * @returns {SyncedContact[]}
- */
-export function serializeContactPayload(entries) {
-  if (!Array.isArray(entries)) return [];
-  const out = [];
-  for (const entry of entries) {
-    if (!entry || entry.source !== 'nostr') continue;
-    const pubkey = typeof entry.nostr_pubkey === 'string'
-      ? entry.nostr_pubkey.toLowerCase()
-      : '';
-    if (!/^[0-9a-f]{64}$/.test(pubkey)) continue;
+const PUBKEY_RE = /^[0-9a-f]{64}$/;
 
-    const record = { pubkey };
+function sanitizeRelayList(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((r) => typeof r === 'string' && /^wss?:\/\//i.test(r))
+    .map((r) => r.trim());
+}
 
-    if (Array.isArray(entry.nostr_relay_hints) && entry.nostr_relay_hints.length > 0) {
-      const sanitized = entry.nostr_relay_hints
-        .filter((r) => typeof r === 'string' && /^wss?:\/\//i.test(r))
-        .map((r) => r.trim());
-      if (sanitized.length > 0) record.relays = sanitized;
-    }
-
-    if (entry.name_locally_edited && typeof entry.name === 'string' && entry.name.trim()) {
-      record.petname = entry.name.trim().slice(0, 80);
-    }
-
-    if (Number.isFinite(entry.createdAt)) {
-      record.addedAt = entry.createdAt;
-    }
-
-    out.push(record);
-  }
-  out.sort((a, b) => (a.pubkey < b.pubkey ? -1 : a.pubkey > b.pubkey ? 1 : 0));
-  return out;
+function sortByPubkey(records) {
+  return records.sort((a, b) => (a.pubkey < b.pubkey ? -1 : a.pubkey > b.pubkey ? 1 : 0));
 }
 
 /**
- * Defensive parser for an incoming payload (post-decryption). Rejects
- * any row that can't be made into a usable {@link SyncedContact} —
- * one corrupt entry never poisons the whole list.
+ * Serialize the local address book to the wire payload: one live
+ * record per Nostr-sourced entry, one tombstone per pending deletion.
  *
- * Always returns an array. Throws only when the input is not valid
- * JSON of an array at the root (i.e. the encryption layer succeeded
- * but the plaintext is structurally wrong).
+ * Manual entries (no `nostr_pubkey`) are excluded — they aren't a
+ * portable Nostr identity reference. When a pubkey appears in *both*
+ * the entries and the deletions (a re-add after a delete, or a stale
+ * tombstone), the live record wins on a tie or when newer — losing a
+ * contact is worse than keeping a stale one.
+ *
+ * @param {Array<object>} entries     full addressBook entries (any source)
+ * @param {Array<{pubkey: string, deletedAt: number}>} [deletions]  local tombstones
+ * @returns {ContactRecord[]}  sorted by pubkey — deterministic output
+ */
+export function serializeContactPayload(entries, deletions = []) {
+  /** @type {Map<string, ContactRecord>} */
+  const byPubkey = new Map();
+
+  if (Array.isArray(entries)) {
+    for (const entry of entries) {
+      if (!entry || entry.source !== 'nostr') continue;
+      const pubkey = typeof entry.nostr_pubkey === 'string'
+        ? entry.nostr_pubkey.toLowerCase()
+        : '';
+      if (!PUBKEY_RE.test(pubkey)) continue;
+
+      const updatedAt = Number.isFinite(entry.updatedAt)
+        ? entry.updatedAt
+        : (Number.isFinite(entry.createdAt) ? entry.createdAt : 0);
+      const record = { pubkey, updatedAt };
+
+      const relays = sanitizeRelayList(entry.nostr_relay_hints);
+      if (relays.length > 0) record.relays = relays;
+
+      if (entry.name_locally_edited && typeof entry.name === 'string' && entry.name.trim()) {
+        record.petname = entry.name.trim().slice(0, 80);
+      }
+      if (Number.isFinite(entry.createdAt)) record.addedAt = entry.createdAt;
+
+      byPubkey.set(pubkey, record);
+    }
+  }
+
+  if (Array.isArray(deletions)) {
+    for (const del of deletions) {
+      if (!del) continue;
+      const pubkey = typeof del.pubkey === 'string' ? del.pubkey.toLowerCase() : '';
+      if (!PUBKEY_RE.test(pubkey)) continue;
+      const updatedAt = Number.isFinite(del.deletedAt) ? del.deletedAt : 0;
+      const existing = byPubkey.get(pubkey);
+      // Live record wins on a tie or when strictly newer.
+      if (existing && existing.updatedAt >= updatedAt) continue;
+      byPubkey.set(pubkey, { pubkey, deleted: true, updatedAt });
+    }
+  }
+
+  return sortByPubkey([...byPubkey.values()]);
+}
+
+/**
+ * Defensive parser for an incoming payload (post-decryption). Drops
+ * any row that can't be made into a usable record — one corrupt
+ * entry never poisons the whole list. Tombstones are preserved.
+ *
+ * Forward-tolerant: a v1 payload (no `updatedAt`, no `deleted`) is
+ * read as a live record with `updatedAt` falling back to `addedAt`,
+ * so an address book published by an older build still merges
+ * correctly.
+ *
+ * Always returns an array. Never throws — a structurally-wrong
+ * plaintext just yields `[]`.
  *
  * @param {string} plaintext  result of decrypting the kind:30000 content
- * @returns {SyncedContact[]}
+ * @returns {ContactRecord[]}
  */
 export function deserializeContactPayload(plaintext) {
   if (typeof plaintext !== 'string' || !plaintext.trim()) return [];
@@ -161,28 +209,123 @@ export function deserializeContactPayload(plaintext) {
   for (const raw of parsed) {
     if (!raw || typeof raw !== 'object') continue;
     const pubkey = typeof raw.pubkey === 'string' ? raw.pubkey.toLowerCase() : '';
-    if (!/^[0-9a-f]{64}$/.test(pubkey)) continue;
+    if (!PUBKEY_RE.test(pubkey)) continue;
 
-    const record = { pubkey };
+    // v1 payloads had no `updatedAt`; fall back to `addedAt` so they
+    // still carry a usable LWW clock.
+    const updatedAt = Number.isFinite(raw.updatedAt)
+      ? raw.updatedAt
+      : (Number.isFinite(raw.addedAt) ? raw.addedAt : 0);
 
-    if (Array.isArray(raw.relays)) {
-      const sanitized = raw.relays
-        .filter((r) => typeof r === 'string' && /^wss?:\/\//i.test(r))
-        .map((r) => r.trim());
-      if (sanitized.length > 0) record.relays = sanitized;
+    if (raw.deleted === true) {
+      out.push({ pubkey, deleted: true, updatedAt });
+      continue;
     }
 
+    const record = { pubkey, updatedAt };
+    const relays = sanitizeRelayList(raw.relays);
+    if (relays.length > 0) record.relays = relays;
     if (typeof raw.petname === 'string' && raw.petname.trim()) {
       record.petname = raw.petname.trim().slice(0, 80);
     }
-
-    if (Number.isFinite(raw.addedAt)) {
-      record.addedAt = raw.addedAt;
-    }
-
+    if (Number.isFinite(raw.addedAt)) record.addedAt = raw.addedAt;
     out.push(record);
   }
   return out;
+}
+
+/**
+ * Merge two contact payloads into their union.
+ *
+ * For a pubkey present in only one side, that record carries through.
+ * For a pubkey in both, the record with the higher `updatedAt` wins.
+ * On an exact `updatedAt` tie a *live* record beats a *tombstone* —
+ * "no silent contact loss" is the prime directive, so a same-ms
+ * add-and-delete keeps the contact.
+ *
+ * When both sides are live for the same pubkey, the winner provides
+ * `petname` + `updatedAt`, but `addedAt` is the *earliest* of the two
+ * (preserve the original add time) and `relays` is the *union* (more
+ * discovery hints is strictly better).
+ *
+ * Pure + deterministic: output is sorted by pubkey, so identical
+ * inputs always produce identical bytes.
+ *
+ * @param {ContactRecord[]} a
+ * @param {ContactRecord[]} b
+ * @returns {ContactRecord[]}
+ */
+export function mergeContactPayloads(a, b) {
+  /** @type {Map<string, ContactRecord>} */
+  const byPubkey = new Map();
+  const ingest = (list) => {
+    if (!Array.isArray(list)) return;
+    for (const rec of list) {
+      if (!rec || typeof rec.pubkey !== 'string' || !PUBKEY_RE.test(rec.pubkey)) continue;
+      const existing = byPubkey.get(rec.pubkey);
+      byPubkey.set(rec.pubkey, existing ? mergeRecordPair(existing, rec) : rec);
+    }
+  };
+  ingest(a);
+  ingest(b);
+  return sortByPubkey([...byPubkey.values()]);
+}
+
+/**
+ * Resolve two records for the *same* pubkey into one. Internal —
+ * `mergeContactPayloads` is the public surface.
+ */
+function mergeRecordPair(x, y) {
+  const xu = Number.isFinite(x.updatedAt) ? x.updatedAt : 0;
+  const yu = Number.isFinite(y.updatedAt) ? y.updatedAt : 0;
+
+  let winner;
+  if (xu > yu) winner = x;
+  else if (yu > xu) winner = y;
+  // exact tie — a live record beats a tombstone
+  else if (x.deleted && !y.deleted) winner = y;
+  else if (y.deleted && !x.deleted) winner = x;
+  else winner = x;
+
+  if (winner.deleted) {
+    return { pubkey: winner.pubkey, deleted: true, updatedAt: winner.updatedAt };
+  }
+
+  // Live winner — but addedAt and relays merge across both sides.
+  const merged = { pubkey: winner.pubkey, updatedAt: winner.updatedAt };
+  if (winner.petname) merged.petname = winner.petname;
+
+  const addedCandidates = [x.addedAt, y.addedAt].filter(Number.isFinite);
+  if (addedCandidates.length > 0) merged.addedAt = Math.min(...addedCandidates);
+
+  const relaySet = new Set();
+  for (const rec of [x, y]) {
+    if (rec.deleted || !Array.isArray(rec.relays)) continue;
+    for (const r of rec.relays) relaySet.add(r);
+  }
+  if (relaySet.size > 0) merged.relays = [...relaySet];
+
+  return merged;
+}
+
+/**
+ * Split a merged payload into the live contacts and the set of
+ * tombstoned pubkeys — the shape the store's reconcile step consumes.
+ *
+ * @param {ContactRecord[]} payload
+ * @returns {{ live: SyncedContact[], tombstonedPubkeys: Set<string> }}
+ */
+export function partitionContactPayload(payload) {
+  const live = [];
+  const tombstonedPubkeys = new Set();
+  if (Array.isArray(payload)) {
+    for (const rec of payload) {
+      if (!rec || typeof rec.pubkey !== 'string') continue;
+      if (rec.deleted === true) tombstonedPubkeys.add(rec.pubkey);
+      else live.push(rec);
+    }
+  }
+  return { live, tombstonedPubkeys };
 }
 
 // ----------------------------------------------------------------------------
