@@ -3,6 +3,7 @@
     v-model="show"
     persistent
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    @hide="onHide"
   >
     <q-card
       class="address-modal"
@@ -11,7 +12,7 @@
       <!-- Header -->
       <q-card-section class="modal-header">
         <div class="modal-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-          {{ isEditing ? $t('Edit Contact') : $t('Add Contact') }}
+          {{ isEditing ? $t('Edit contact') : $t('Add contact') }}
         </div>
         <q-btn
           flat
@@ -25,107 +26,152 @@
         </q-btn>
       </q-card-section>
 
-      <!-- Content -->
-      <q-card-section class="modal-content">
-        <!-- Avatar Preview -->
-        <div class="avatar-preview">
-          <div
-            class="preview-circle"
-            :style="{ backgroundColor: formData.color }"
-            @click="showColorPicker = true"
+      <!-- Segmented control (add-mode only). Keeps the existing edit
+           flow uncluttered — there is nothing to "search" for when
+           you're correcting a name. Order: Scan / Search / Enter, but
+           we default to Search so opening the sheet never prompts for
+           camera permission. -->
+      <q-card-section v-if="!isEditing" class="modal-tabs">
+        <div class="seg-control" role="tablist" :aria-label="$t('Add contact method')">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            role="tab"
+            class="seg-tab"
+            :class="{ 'seg-tab--active': activeTab === tab.id }"
+            :aria-selected="activeTab === tab.id"
+            @click="switchTab(tab.id)"
           >
-            <span class="preview-initial">{{ getPreviewInitial() }}</span>
-            <div class="preview-edit-dot">
-              <Icon icon="tabler:palette" width="12" height="12" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Form Fields -->
-        <div class="form-fields">
-          <div class="input-wrapper">
-            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Name') }}
-            </div>
-            <input
-              v-model="formData.name"
-              type="text"
-              :placeholder="$t('Enter contact name')"
-              class="form-input"
-              :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
-              ref="nameInput"
-              maxlength="50"
-            />
-          </div>
-
-          <!-- Unified payment address (auto-detects Lightning / Spark / Bitcoin) -->
-          <div class="input-wrapper">
-            <div class="input-label-row">
-              <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-                {{ $t('Payment address') }}
-              </div>
-              <transition name="type-pill">
-                <div
-                  v-if="detectedType"
-                  class="detected-pill"
-                  :class="`detected-pill--${detectedType}`"
-                >
-                  <img
-                    v-if="detectedType === 'spark'"
-                    width="11" height="11"
-                    :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
-                    alt="Spark"
-                  />
-                  <Icon v-else :icon="detectedIcon" width="12" height="12" />
-                  <span>{{ detectedLabel }}</span>
-                </div>
-              </transition>
-            </div>
-            <input
-              v-model="formData.address"
-              type="text"
-              :placeholder="$t('Paste the address from your friend or shop')"
-              class="form-input"
-              :class="[
-                $q.dark.isActive ? 'form-input-dark' : 'form-input-light',
-                addressShowsError ? 'form-input--error' : ''
-              ]"
-              ref="addressInput"
-              maxlength="150"
-              autocapitalize="off"
-              autocorrect="off"
-              spellcheck="false"
-            />
-            <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
-              <template v-if="addressShowsError">
-                <Icon icon="tabler:alert-circle" width="13" height="13" />
-                <span>{{ $t("We don't recognize this as a Lightning, Spark, or Bitcoin address") }}</span>
-              </template>
-              <template v-else>
-                <span>{{ $t('Works with a Lightning address, Spark address, or Bitcoin address') }}</span>
-              </template>
-            </div>
-          </div>
-
-          <!-- Notes Field -->
-          <div class="input-wrapper">
-            <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Notes') }} <span class="optional-hint">({{ $t('optional') }})</span>
-            </div>
-            <textarea
-              v-model="formData.notes"
-              :placeholder="$t('e.g., Monthly rent, Coffee shop...')"
-              class="form-input notes-textarea"
-              :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
-              maxlength="200"
-              rows="2"
-            />
-          </div>
+            <Icon :icon="tab.icon" width="14" height="14" />
+            <span>{{ $t(tab.label) }}</span>
+          </button>
         </div>
       </q-card-section>
 
-      <!-- Actions -->
-      <q-card-actions align="right" class="modal-actions">
+      <!-- Content router -->
+      <q-card-section class="modal-content">
+        <!-- SCAN -->
+        <AddContactScan
+          v-if="!isEditing && activeTab === 'scan'"
+          :active="show && activeTab === 'scan'"
+          @saved="onChildSaved"
+          @open-existing="onOpenExisting"
+          @switch-to-search="switchTab('search')"
+        />
+
+        <!-- SEARCH -->
+        <AddContactSearch
+          v-else-if="!isEditing && activeTab === 'search'"
+          ref="searchRef"
+          @saved="onChildSaved"
+          @open-existing="onOpenExisting"
+        />
+
+        <!-- MANUAL — also used for the edit flow -->
+        <template v-else>
+          <div class="avatar-preview">
+            <div
+              class="preview-circle"
+              :style="{ backgroundColor: formData.color }"
+              @click="showColorPicker = true"
+            >
+              <span class="preview-initial">{{ getPreviewInitial() }}</span>
+              <div class="preview-edit-dot">
+                <Icon icon="tabler:palette" width="12" height="12" />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-fields">
+            <div class="input-wrapper">
+              <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+                {{ $t('Name') }}
+              </div>
+              <input
+                v-model="formData.name"
+                type="text"
+                :placeholder="$t('Enter contact name')"
+                class="form-input"
+                :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
+                ref="nameInput"
+                maxlength="50"
+              />
+            </div>
+
+            <div class="input-wrapper">
+              <div class="input-label-row">
+                <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+                  {{ $t('Payment address') }}
+                </div>
+                <transition name="type-pill">
+                  <div
+                    v-if="detectedType"
+                    class="detected-pill"
+                    :class="`detected-pill--${detectedType}`"
+                  >
+                    <img
+                      v-if="detectedType === 'spark'"
+                      width="11" height="11"
+                      :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
+                      alt="Spark"
+                    />
+                    <Icon v-else :icon="detectedIcon" width="12" height="12" />
+                    <span>{{ detectedLabel }}</span>
+                  </div>
+                </transition>
+              </div>
+              <input
+                v-model="formData.address"
+                type="text"
+                :placeholder="$t('Paste the address from your friend or shop')"
+                class="form-input"
+                :class="[
+                  $q.dark.isActive ? 'form-input-dark' : 'form-input-light',
+                  addressShowsError ? 'form-input--error' : ''
+                ]"
+                ref="addressInput"
+                maxlength="150"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+              />
+              <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
+                <template v-if="addressShowsError">
+                  <Icon icon="tabler:alert-circle" width="13" height="13" />
+                  <span>{{ $t("We don't recognize this as a Lightning, Spark, or Bitcoin address") }}</span>
+                </template>
+                <template v-else>
+                  <span>{{ $t('Works with a Lightning address, Spark address, or Bitcoin address') }}</span>
+                </template>
+              </div>
+            </div>
+
+            <div class="input-wrapper">
+              <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+                {{ $t('Notes') }} <span class="optional-hint">({{ $t('optional') }})</span>
+              </div>
+              <textarea
+                v-model="formData.notes"
+                :placeholder="$t('e.g., Monthly rent, Coffee shop...')"
+                class="form-input notes-textarea"
+                :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
+                maxlength="200"
+                rows="2"
+              />
+            </div>
+          </div>
+        </template>
+      </q-card-section>
+
+      <!-- Footer — only the manual / edit path needs a global Save
+           button. Search and Scan tabs ship their own save UI inside
+           the preview card. -->
+      <q-card-actions
+        v-if="showManualFooter"
+        align="right"
+        class="modal-actions"
+      >
         <q-btn
           flat
           :label="$t('Cancel')"
@@ -183,7 +229,9 @@ import {
   isSparkAddress,
   isBitcoinAddress,
   isLightningAddress,
-} from '../../utils/addressUtils'
+} from '../../utils/addressUtils.js'
+import AddContactSearch from './AddContactSearch.vue'
+import AddContactScan from './AddContactScan.vue'
 
 // Order matters: Spark addresses are checked before Bitcoin because some
 // Spark prefixes share a base58-ish look and we want them claimed first.
@@ -197,8 +245,20 @@ function detectType(address) {
   return null
 }
 
+const TABS = [
+  // Search is the default entry — it never prompts for camera
+  // permission, and the most common add path (pasting an npub
+  // from a friend or a profile link) lives here. Scan is offered
+  // second so in-person sharing is one tap away. Manual is the
+  // legacy "type a Lightning/Spark/Bitcoin address" form.
+  { id: 'search', label: 'Search', icon: 'tabler:search' },
+  { id: 'scan',   label: 'Scan',   icon: 'tabler:qrcode' },
+  { id: 'manual', label: 'Enter',  icon: 'tabler:keyboard' },
+]
+
 export default {
   name: 'AddressBookModal',
+  components: { AddContactSearch, AddContactScan },
   props: {
     modelValue: {
       type: Boolean,
@@ -209,9 +269,11 @@ export default {
       default: null
     }
   },
-  emits: ['update:modelValue', 'saved'],
+  emits: ['update:modelValue', 'saved', 'open-existing'],
   data() {
     return {
+      activeTab: 'search',
+      tabs: TABS,
       formData: {
         name: '',
         address: '',
@@ -236,6 +298,16 @@ export default {
 
     isEditing() {
       return !!this.entry
+    },
+
+    /**
+     * The global Save/Cancel footer only makes sense for the
+     * legacy manual form — Search/Scan ship their own save UI
+     * inside the preview card so the user's eye doesn't leave
+     * the profile they're confirming.
+     */
+    showManualFooter() {
+      return this.isEditing || this.activeTab === 'manual'
     },
 
     detectedType() {
@@ -271,8 +343,16 @@ export default {
     show(newVal) {
       if (newVal) {
         this.initializeForm()
+        // Editing always lands on the manual form. Add mode resets
+        // back to Search so the next open isn't biased by where the
+        // previous open finished.
+        this.activeTab = this.isEditing ? 'manual' : 'search'
         this.$nextTick(() => {
-          this.$refs.nameInput?.focus()
+          if (this.activeTab === 'manual') {
+            this.$refs.nameInput?.focus()
+          } else if (this.activeTab === 'search') {
+            this.$refs.searchRef?.focus?.()
+          }
         })
       } else {
         this.resetForm()
@@ -281,6 +361,15 @@ export default {
   },
   methods: {
     ...mapActions(useAddressBookStore, ['addEntry', 'updateEntry', 'getRandomColor']),
+
+    switchTab(id) {
+      if (this.activeTab === id) return
+      this.activeTab = id
+      this.$nextTick(() => {
+        if (id === 'manual') this.$refs.nameInput?.focus()
+        else if (id === 'search') this.$refs.searchRef?.focus?.()
+      })
+    },
 
     initializeForm() {
       if (this.entry) {
@@ -309,6 +398,7 @@ export default {
       }
       this.isSaving = false
       this.showColorPicker = false
+      this.activeTab = 'search'
     },
 
     getPreviewInitial() {
@@ -318,6 +408,27 @@ export default {
     selectColor(color) {
       this.formData.color = color
       this.showColorPicker = false
+    },
+
+    /**
+     * Child save callback — fires after AddContactSearch or
+     * AddContactScan have persisted a Nostr contact. Bubbles up so
+     * the list refreshes and the sheet dismisses with the same
+     * `saved` semantics the manual flow uses.
+     */
+    onChildSaved() {
+      this.$emit('saved')
+      this.closeModal()
+    },
+
+    /**
+     * The child preview signals an "already saved" affordance.
+     * Forward upward so the page can open the contact detail or
+     * scroll to its row, then close this sheet to get out of the way.
+     */
+    onOpenExisting(entry) {
+      this.$emit('open-existing', entry)
+      this.closeModal()
     },
 
     async saveEntry() {
@@ -367,6 +478,12 @@ export default {
       this.show = false
     },
 
+    onHide() {
+      // Final cleanup if the dialog was dismissed via escape or
+      // backdrop (the `show` watcher handles regular closes).
+      this.resetForm()
+    },
+
     getErrorMessage(error) {
       const msg = error.message || ''
 
@@ -404,8 +521,7 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border-card);
+  padding: 1.25rem 1.5rem 0.75rem;
 }
 
 .modal-title {
@@ -419,8 +535,60 @@ export default {
   height: 32px;
 }
 
+/* Segmented control */
+.modal-tabs {
+  padding: 0 1.5rem 0.5rem;
+}
+
+.seg-control {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-lg);
+  background: rgba(120, 120, 120, 0.08);
+}
+
+.body--dark .seg-control,
+.q-dark .seg-control {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.seg-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.5rem;
+  border-radius: calc(var(--radius-lg) - 4px);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.seg-tab:hover {
+  color: var(--text-primary);
+}
+
+.seg-tab--active {
+  background: var(--bg-card, #FAF7EF);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.body--dark .seg-tab--active,
+.q-dark .seg-tab--active {
+  background: #1A1A1A;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
 .modal-content {
-  padding: 1.25rem 1.5rem 0.5rem;
+  padding: 0.75rem 1.5rem 0.5rem;
 }
 
 /* Avatar */
@@ -456,8 +624,6 @@ export default {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* Tiny palette badge replaces the "Tap to change color" caption — same
-   affordance, less visual chrome. */
 .preview-edit-dot {
   position: absolute;
   bottom: -2px;
@@ -509,8 +675,6 @@ export default {
   text-align: left;
 }
 
-/* Detected-type pill: the auto-detection feedback that replaces the
-   three-way Lightning/Spark/Bitcoin toggle. */
 .detected-pill {
   display: inline-flex;
   align-items: center;
@@ -565,8 +729,6 @@ export default {
   transform: translateY(-2px) scale(0.96);
 }
 
-/* Input helper line lives under the address field — it carries the
-   "what's accepted" hint and the soft validation message. */
 .input-helper {
   display: flex;
   align-items: center;
@@ -726,11 +888,15 @@ export default {
   }
 
   .modal-header {
-    padding: 1rem 1.25rem;
+    padding: 1rem 1.25rem 0.5rem;
+  }
+
+  .modal-tabs {
+    padding: 0 1.25rem 0.5rem;
   }
 
   .modal-content {
-    padding: 1rem 1.25rem 0.25rem;
+    padding: 0.5rem 1.25rem 0.25rem;
   }
 
   .modal-actions {

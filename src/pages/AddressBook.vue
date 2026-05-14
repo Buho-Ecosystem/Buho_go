@@ -40,6 +40,7 @@
       v-model="showModal"
       :entry="selectedEntry"
       @saved="handleEntrySaved"
+      @open-existing="handleOpenExisting"
     />
 
     <!-- Payment Modal -->
@@ -139,6 +140,17 @@ export default {
     handleEntrySaved() {
       this.selectedEntry = null
       // Modal will close automatically
+    },
+
+    /**
+     * The search/scan flow surfaced an "Open contact" affordance for
+     * a Nostr profile already in the address book. The modal closes
+     * itself before bubbling this up, so we just need to surface the
+     * existing entry — payment is the most useful next action.
+     */
+    handleOpenExisting(entry) {
+      if (!entry) return
+      this.showPaymentModal(entry)
     },
 
     handlePaymentSent() {
