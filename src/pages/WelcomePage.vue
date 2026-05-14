@@ -508,7 +508,10 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 22px 24px calc(var(--safe-bottom, 0px) + 20px);
+  /* 48px floor clears a 3-button Android nav bar on devices where the
+     WebView reports zero bottom inset. On gesture-nav devices and iOS
+     the larger calc() with var(--safe-bottom) wins. */
+  padding: 22px 24px max(48px, calc(var(--safe-bottom, 0px) + 20px));
   background: radial-gradient(80% 60% at 50% 0%, #14161A 0%, #0A0B0C 80%);
   position: relative;
 }

@@ -374,31 +374,38 @@
       @closed="onClaimSuccessClosed"
     />
 
-    <!-- Skeleton loading state — shape matches the live row for a
-         seamless hand-off when real data lands. -->
+    <!-- Skeleton loading state — wraps in .tx-groups > .tx-group > .tx-rows
+         so it inherits the same horizontal padding (16px) and inter-row
+         gap (8px) as the live list, giving a seamless hand-off when real
+         data lands. -->
     <div v-if="showLoadingScreen || isLoading" class="transaction-content" :class="$q.dark.isActive ? 'transaction_content_dark' : 'transaction_content_light'">
-      <div class="tx-group-header-skeleton" :class="$q.dark.isActive ? 'tx-group-header-dark' : 'tx-group-header-light'">
-        <q-skeleton type="text" width="80px" height="14px" animation="wave" />
-        <q-skeleton type="text" width="44px" height="14px" animation="wave" />
-      </div>
-
-      <div
-        v-for="n in 6"
-        :key="'skel-'+n"
-        class="tx-row tx-row-skeleton"
-        :class="$q.dark.isActive ? 'tx-row-dark' : 'tx-row-light'"
-      >
-        <span class="tx-row-icon-wrap">
-          <q-skeleton type="circle" size="36px" animation="wave" />
-        </span>
-        <span class="tx-row-body">
-          <q-skeleton type="text" width="60%" height="14px" animation="wave" />
-          <q-skeleton type="text" width="35%" height="12px" animation="wave" />
-        </span>
-        <span class="tx-row-amount-col">
-          <q-skeleton type="text" width="68px" height="14px" animation="wave" />
-          <q-skeleton type="text" width="46px" height="12px" animation="wave" />
-        </span>
+      <div class="tx-groups">
+        <div class="tx-group">
+          <div class="tx-group-header-skeleton" :class="$q.dark.isActive ? 'tx-group-header-dark' : 'tx-group-header-light'">
+            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+            <q-skeleton type="text" width="44px" height="14px" animation="wave" />
+          </div>
+          <div class="tx-rows">
+            <div
+              v-for="n in 6"
+              :key="'skel-'+n"
+              class="tx-row tx-row-skeleton"
+              :class="$q.dark.isActive ? 'tx-row-dark' : 'tx-row-light'"
+            >
+              <span class="tx-row-icon-wrap">
+                <q-skeleton type="circle" size="36px" animation="wave" />
+              </span>
+              <span class="tx-row-body">
+                <q-skeleton type="text" width="60%" height="14px" animation="wave" />
+                <q-skeleton type="text" width="35%" height="12px" animation="wave" />
+              </span>
+              <span class="tx-row-amount-col">
+                <q-skeleton type="text" width="68px" height="14px" animation="wave" />
+                <q-skeleton type="text" width="46px" height="12px" animation="wave" />
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
