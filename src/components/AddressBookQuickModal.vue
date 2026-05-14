@@ -78,7 +78,7 @@
                   :key="contact.id"
                   type="button"
                   class="contact-chip"
-                  :class="themeClass"
+                  :class="[themeClass, { 'contact-chip--unpayable': !addressBookStore.isEntryPayable(contact) }]"
                   @click="selectContact(contact)"
                 >
                   <div class="chip-avatar-wrap">
@@ -112,7 +112,7 @@
                   :key="contact.id"
                   type="button"
                   class="contact-chip"
-                  :class="themeClass"
+                  :class="[themeClass, { 'contact-chip--unpayable': !addressBookStore.isEntryPayable(contact) }]"
                   @click="selectContact(contact)"
                 >
                   <div class="chip-avatar-wrap">
@@ -165,7 +165,7 @@
                   :key="contact.id"
                   type="button"
                   class="contact-row"
-                  :class="themeClass"
+                  :class="[themeClass, { 'contact-row--unpayable': !addressBookStore.isEntryPayable(contact) }]"
                   @click="selectContact(contact)"
                 >
                   <ContactAvatar class="row-avatar" :entry="contact" />
@@ -232,6 +232,7 @@
 import { ref, computed } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAddressBookStore } from '../stores/addressBook';
 import AddressBookModal from './AddressBook/AddressBookModal.vue';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
@@ -247,6 +248,7 @@ const emit = defineEmits(['update:modelValue', 'pay-contact', 'open-batch-send']
 // ─────────────────────────────────────────────────────────────
 const $q = useQuasar();
 const router = useRouter();
+const { t: $t } = useI18n();
 const addressBookStore = useAddressBookStore();
 
 // ─────────────────────────────────────────────────────────────
@@ -348,6 +350,22 @@ async function onShow() {
 }
 
 function selectContact(contact) {
+  // Identity-only Nostr contact — no Lightning address resolved yet.
+  // Shown in the picker (so the user knows they're saved) but not
+  // routable into a send. Explain instead of emitting a pay event
+  // that the send flow can't complete.
+  if (contact.source === 'nostr' && !addressBookStore.isEntryPayable(contact)) {
+    $q.notify({
+      type: 'info',
+      message: $t('No Lightning address yet'),
+      caption: $t(
+        "{name} hasn't published a Lightning address. Open Address Book to check again later.",
+        { name: contact.name },
+      ),
+      timeout: 4500,
+    });
+    return;
+  }
   addressBookStore.updateLastUsed(contact.id);
   emit('pay-contact', contact);
 }
@@ -562,6 +580,12 @@ function close() {
 .contact-chip.theme-light { background: var(--bg-input); }
 .contact-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .contact-chip:active { transform: scale(0.96); }
+
+/* Identity-only Nostr contact — dimmed so it reads as "saved but not
+   payable yet". Still tappable: the tap surfaces the explanatory
+   notify rather than silently doing nothing. */
+.contact-chip--unpayable,
+.contact-row--unpayable { opacity: 0.5; }
 
 .chip-avatar-wrap { position: relative; }
 .chip-avatar {

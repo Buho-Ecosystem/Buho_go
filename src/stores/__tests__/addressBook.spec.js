@@ -309,6 +309,72 @@ await test('addNostrContact: rejects malformed lud16 values', async () => {
   );
 });
 
+// --- Identity-only contacts (Finding 4) -------------------------------------
+
+await test('addNostrContact: allowWithoutLightningAddress stores an identity-only contact', async () => {
+  const store = freshStore();
+  const event = makeKind0(ALICE_SECRET, { display_name: 'Alice', about: 'no lud16 here' });
+  const entry = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event,
+    allowWithoutLightningAddress: true,
+  });
+  assert.equal(entry.source, CONTACT_SOURCES.NOSTR);
+  assert.equal(entry.nostr_pubkey, ALICE_PUBKEY);
+  assert.equal(entry.address, '');
+  assert.equal(entry.lightningAddress, '');
+  assert.equal(entry.name, 'Alice');
+  assert.equal(store.isEntryPayable(entry), false);
+});
+
+await test('addNostrContact: interactive flow still rejects no-lud16 without the flag', async () => {
+  const store = freshStore();
+  const event = makeKind0(ALICE_SECRET, { display_name: 'Alice' });
+  await assert.rejects(
+    () => store.addNostrContact({ pubkey: ALICE_PUBKEY, npub: ALICE_NPUB, event }),
+    /does not have a Lightning address/,
+  );
+});
+
+await test('isEntryPayable: true for a normal nostr contact, false for identity-only', async () => {
+  const store = freshStore();
+  const payable = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event: makeKind0(ALICE_SECRET, { name: 'Alice', lud16: 'alice@a.test' }),
+  });
+  const identityOnly = await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob' }),
+    allowWithoutLightningAddress: true,
+  });
+  assert.equal(store.isEntryPayable(payable), true);
+  assert.equal(store.isEntryPayable(identityOnly), false);
+});
+
+await test('refreshContact: promotes an identity-only contact to payable when lud16 appears', async () => {
+  const store = freshStore();
+  const t0 = 1_700_000_000;
+  const identityOnly = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event: makeKind0(ALICE_SECRET, { display_name: 'Alice' }, t0),
+    allowWithoutLightningAddress: true,
+  });
+  assert.equal(store.isEntryPayable(identityOnly), false);
+  // Alice publishes a newer kind:0 that now carries a lud16.
+  const newer = makeKind0(ALICE_SECRET, {
+    display_name: 'Alice',
+    lud16: 'alice@a.test',
+  }, t0 + 60);
+  await store.refreshContact(identityOnly.id, { fetcher: async () => newer });
+  const after = store.entries.find(e => e.id === identityOnly.id);
+  assert.equal(after.address, 'alice@a.test');
+  assert.equal(store.isEntryPayable(after), true);
+});
+
 // ---------------------------------------------------------------------------
 // addNostrContact — happy path + dedupe
 // ---------------------------------------------------------------------------

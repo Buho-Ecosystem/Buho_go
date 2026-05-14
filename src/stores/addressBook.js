@@ -477,12 +477,24 @@ export const useAddressBookStore = defineStore('addressBook', {
      *   color?:     string,
      *   isFavorite?: boolean,
      *   notes?:     string,
+     *   allowWithoutLightningAddress?: boolean,  // see below
      * }} input
      * @returns {Promise<object>} the newly stored entry
+     *
+     * `allowWithoutLightningAddress` decouples the contact's durability
+     * from its *current* payment metadata. The interactive add flows
+     * (search / scan) leave it false: there's no point saving someone
+     * you can't pay yet, so a missing lud16 is a hard error. Recovery
+     * passes it true — the canonical identity is the pubkey, and a
+     * contact who temporarily dropped their lud16 must still come back
+     * (as an identity-only entry, address `''`). `refreshContact`
+     * promotes it to payable the moment they re-publish a lud16.
      *
      * @throws Error('Invalid Nostr pubkey')                 — bad hex
      * @throws Error('Invalid Nostr identifier (npub)')      — bad bech32
      * @throws Error('Profile event is missing or invalid')  — event mismatch
+     * @throws Error('Profile event signature is invalid')   — forged event
+     * @throws Error('Profile event is too large')           — oversized content
      * @throws Error('This Nostr profile does not have a Lightning address (lud16) yet')
      * @throws Error('This Nostr contact is already in your address book')
      * @throws Error('A contact with this Lightning address already exists')
@@ -494,6 +506,7 @@ export const useAddressBookStore = defineStore('addressBook', {
       const npub = typeof input?.npub === 'string' ? input.npub : ''
       const event = input?.event
       const relayHints = Array.isArray(input?.relayHints) ? input.relayHints : []
+      const allowWithoutLn = input?.allowWithoutLightningAddress === true
 
       if (!/^[0-9a-f]{64}$/.test(pubkey)) {
         throw new Error('Invalid Nostr pubkey')
@@ -507,17 +520,23 @@ export const useAddressBookStore = defineStore('addressBook', {
 
       const profile = parseProfileContent(event)
       const lud16Raw = typeof profile.lud16 === 'string' ? profile.lud16.trim() : ''
-      if (!lud16Raw || !isLightningAddress(lud16Raw)) {
+      const hasLightningAddress = !!lud16Raw && isLightningAddress(lud16Raw)
+      if (!hasLightningAddress && !allowWithoutLn) {
         throw new Error('This Nostr profile does not have a Lightning address (lud16) yet')
       }
+      // Identity-only contacts carry an empty address until a refresh
+      // picks one up. Every downstream consumer gates on
+      // `isEntryPayable` rather than assuming the address is present.
+      const resolvedAddress = hasLightningAddress ? lud16Raw : ''
 
-      // Dedupe — first by pubkey (the canonical identity), then by
-      // Lightning address (so a manual contact with the same lud16
-      // doesn't end up shadowed by a Nostr duplicate).
+      // Dedupe — always by pubkey (the canonical identity). The
+      // Lightning-address dedup only runs when we actually have one;
+      // it stops a manual contact with the same lud16 being shadowed
+      // by a Nostr duplicate.
       if (this.entries.some(entry => entry.nostr_pubkey === pubkey)) {
         throw new Error('This Nostr contact is already in your address book')
       }
-      if (this.entries.some(
+      if (hasLightningAddress && this.entries.some(
         entry => this.getEntryAddress(entry).toLowerCase() === lud16Raw.toLowerCase(),
       )) {
         throw new Error('A contact with this Lightning address already exists')
@@ -531,9 +550,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       const newEntry = {
         id: `addr-${now}-${Math.random().toString(36).substr(2, 9)}`,
         name: pickDisplayNameFromProfile(profile, npub),
-        address: lud16Raw,
+        address: resolvedAddress,
         addressType: 'lightning',
-        lightningAddress: lud16Raw,
+        lightningAddress: resolvedAddress,
         color: input?.color || this.getRandomColor(),
         notes: typeof input?.notes === 'string' ? input.notes.trim() : '',
         isFavorite: !!input?.isFavorite,
@@ -1034,6 +1053,24 @@ export const useAddressBookStore = defineStore('addressBook', {
       // Fallback: detect type from address
       const address = this.getEntryAddress(entry)
       return this.detectAddressType(address) || 'lightning'
+    },
+
+    /**
+     * True when an entry has a usable payment destination right now.
+     * The single predicate every send surface gates on — list rows,
+     * the send picker, batch send — so an identity-only Nostr contact
+     * (restored without a current lud16) is shown everywhere but never
+     * routed into a payment flow it can't complete.
+     *
+     * Manual entries are payable by construction (addEntry validates
+     * the address up front); the meaningful case this guards is a
+     * Nostr contact whose `address` is `''` until a refresh lands.
+     */
+    isEntryPayable(entry) {
+      if (!entry) return false
+      const address = this.getEntryAddress(entry)
+      if (!address) return false
+      return this.isValidAddress(address, this.getEntryAddressType(entry))
     },
 
     // Persist entries to localStorage

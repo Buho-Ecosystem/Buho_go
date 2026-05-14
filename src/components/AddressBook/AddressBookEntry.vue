@@ -30,8 +30,23 @@
           <span>{{ addressTypeLabel }}</span>
         </div>
       </div>
-      <div class="contact-address" :class="$q.dark.isActive ? 'contact-address-dark' : 'contact-address-light'">
+      <div
+        v-if="isPayable"
+        class="contact-address"
+        :class="$q.dark.isActive ? 'contact-address-dark' : 'contact-address-light'"
+      >
         {{ truncatedAddress }}
+      </div>
+      <!-- Identity-only Nostr contact: restored (or saved) without a
+           current Lightning address. Shown calmly, not as an error —
+           a tap-to-pay still works, it just explains and waits for
+           the contact to publish a lud16. -->
+      <div
+        v-else
+        class="contact-address contact-address--unpayable"
+      >
+        <Icon icon="tabler:bolt-off" width="11" height="11" />
+        <span>{{ $t('No Lightning address yet') }}</span>
       </div>
       <!-- Notes Preview -->
       <div v-if="entry.notes" class="contact-notes" :class="$q.dark.isActive ? 'contact-notes-dark' : 'contact-notes-light'">
@@ -132,6 +147,16 @@ export default {
     },
     displayAddress() {
       return this.entry.address || this.entry.lightningAddress || ''
+    },
+    /**
+     * Whether this entry has a usable payment destination right now.
+     * Mirrors the store's `isEntryPayable` predicate but kept local —
+     * a list row should never reach into the store just to render.
+     * The only entries this flags false are identity-only Nostr
+     * contacts whose `address` hasn't been resolved yet.
+     */
+    isPayable() {
+      return !!this.displayAddress
     },
     truncatedAddress() {
       const address = this.displayAddress
@@ -308,6 +333,24 @@ export default {
 
 .contact-address-light {
   color: var(--text-muted);
+}
+
+/* Identity-only Nostr contact — calm muted hint, not an error tone.
+   Uses the Manrope UI font (not the mono address font) because it's
+   a status phrase, not an address. */
+.contact-address--unpayable {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.contact-address--unpayable :deep(svg),
+.contact-address--unpayable svg {
+  flex-shrink: 0;
 }
 
 /* Notes */

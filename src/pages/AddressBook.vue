@@ -175,7 +175,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions(useAddressBookStore, ['initialize', 'syncToNostr', 'recoverFromNostr']),
+    ...mapActions(useAddressBookStore, ['initialize', 'syncToNostr', 'recoverFromNostr', 'isEntryPayable']),
 
     async initializeAddressBook() {
       try {
@@ -297,6 +297,24 @@ export default {
       // refresh updates the avatar / lud16 in place; if it errors,
       // the user still pays with the last-known data.
       this.maybeRefreshContact(contact)
+
+      // Identity-only Nostr contact — restored (or saved) without a
+      // current Lightning address. We don't route into a payment flow
+      // it can't finish; instead we explain, and the silent refresh
+      // fired above will promote them to payable the moment they
+      // publish a lud16.
+      if (contact.source === 'nostr' && !this.isEntryPayable(contact)) {
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('No Lightning address yet'),
+          caption: this.$t(
+            "{name} hasn't published a Lightning address. We'll use it automatically once they do.",
+            { name: contact.name },
+          ),
+          timeout: 4500,
+        })
+        return
+      }
 
       // Bitcoin contacts need the L1 withdrawal flow - navigate directly to Wallet
       if (contact.addressType === 'bitcoin') {

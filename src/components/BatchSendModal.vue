@@ -934,6 +934,14 @@ function getStepClass(n) {
 }
 
 function canSelectContact(contact) {
+  // Identity-only Nostr contact — no resolved Lightning address yet,
+  // so it can't be a batch recipient. Still rendered in the list
+  // (dimmed via the existing `contact-disabled` class) so the user
+  // sees it's saved; it just isn't selectable until a refresh lands
+  // a lud16.
+  if (!addressBookStore.isEntryPayable(contact)) {
+    return false
+  }
   // Bitcoin and Spark contacts only available with Spark wallet
   if ((contact.addressType === 'bitcoin' || contact.addressType === 'spark') && !isSparkWallet.value) {
     return false
