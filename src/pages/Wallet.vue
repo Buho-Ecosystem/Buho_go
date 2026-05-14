@@ -657,6 +657,7 @@ import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../uti
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
+import {useTransactionMetadataStore} from '../stores/transactionMetadata';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
@@ -698,9 +699,10 @@ export default {
   setup() {
     const walletStore = useWalletStore();
     const addressBookStore = useAddressBookStore();
+    const transactionMetadataStore = useTransactionMetadataStore();
     const bitcoinPrefsStore = useBitcoinPreferencesStore();
     const identityStore = useIdentityStore();
-    return { walletStore, addressBookStore, bitcoinPrefsStore, identityStore };
+    return { walletStore, addressBookStore, transactionMetadataStore, bitcoinPrefsStore, identityStore };
   },
   data() {
     return {
@@ -777,7 +779,11 @@ export default {
         address: '',
         addressType: 'lightning',
         name: '',
-        notes: ''
+        notes: '',
+        // Set when the save-as-contact dialog is offered right after a
+        // successful send — lets saveRecipientAsContact link the
+        // freshly created contact to the tx that triggered the offer.
+        txId: null,
       },
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
@@ -3347,7 +3353,42 @@ export default {
         // Check if we should offer to save this recipient as a contact
         const recipientAddress = this.getRecipientAddress();
         const recipientAddressType = this.getRecipientAddressType();
-        const shouldOfferSave = recipientAddress && !this.addressBookStore.findContactByAddress(recipientAddress);
+        const existingContact = recipientAddress
+          ? this.addressBookStore.findContactByAddress(recipientAddress)
+          : null;
+        const shouldOfferSave = recipientAddress && !existingContact;
+
+        // Derive the tx id assigned by the wallet provider — payment_hash
+        // for Lightning rails, transfer.id for Spark. Used by both the
+        // "saved contact → tag the tx" path below and the post-send
+        // save-as-contact dialog so a freshly created contact also gets
+        // its first transaction linked.
+        const sentTxId = result
+          ? (result.payment_hash ||
+             result.paymentHash ||
+             result.rHash ||
+             result.r_hash ||
+             result.id ||
+             null)
+          : null;
+
+        // Stamp the transaction with the contact it was sent to so the
+        // tx list / details render with the saved name + avatar without
+        // having to fall back to the description-string heuristic that
+        // autoAssignContacts uses.
+        if (existingContact && sentTxId) {
+          try {
+            await this.transactionMetadataStore.setContactForTransaction(
+              sentTxId,
+              existingContact.id,
+            );
+          } catch (err) {
+            // Non-fatal — the user still sees a "Sent" toast, and the
+            // existing autoAssignContacts pass will pick it up on the
+            // next list refresh if the description carries the address.
+            console.warn('[wallet] could not link contact to tx:', err);
+          }
+        }
 
         const pendingPaymentBackup = this.pendingPayment; // Keep reference for save dialog
         this.pendingPayment = null;
@@ -3370,7 +3411,10 @@ export default {
             address: recipientAddress,
             addressType: recipientAddressType,
             name: '',
-            notes: ''
+            notes: '',
+            // Carry the tx id so a freshly saved contact gets linked
+            // to the transaction we just made — see saveRecipientAsContact.
+            txId: sentTxId,
           };
           // Small delay so the success notification is seen first
           setTimeout(() => {
@@ -3598,12 +3642,26 @@ export default {
           return;
         }
 
-        await this.addressBookStore.addEntry({
+        const newContact = await this.addressBookStore.addEntry({
           name: this.saveContactData.name.trim(),
           address: this.saveContactData.address,
           addressType: this.saveContactData.addressType,
           notes: this.saveContactData.notes?.trim() || ''
         });
+
+        // Link the contact we just saved to the transaction that
+        // triggered the save dialog — so the tx list / details show
+        // the new contact's name + avatar immediately.
+        if (newContact?.id && this.saveContactData.txId) {
+          try {
+            await this.transactionMetadataStore.setContactForTransaction(
+              this.saveContactData.txId,
+              newContact.id,
+            );
+          } catch (err) {
+            console.warn('[wallet] could not link new contact to tx:', err);
+          }
+        }
 
         this.showSaveContactDialog = false;
         this.$q.notify({
@@ -3629,7 +3687,8 @@ export default {
         address: '',
         addressType: 'lightning',
         name: '',
-        notes: ''
+        notes: '',
+        txId: null,
       };
     },
 
