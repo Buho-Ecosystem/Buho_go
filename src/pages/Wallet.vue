@@ -684,12 +684,7 @@ import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {useIdentityStore} from '../stores/identity';
 import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
-import {
-  fingerprintToGradient as identityFingerprintToGradient,
-  bytesToHex,
-  hexToBytes,
-} from '../utils/identityCrypto.js';
-import { sha256 } from '@noble/hashes/sha2.js';
+import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
 import {
   useBitcoinPreferencesStore,
   BITCOIN_DEPOSIT_POLL_MS,
@@ -800,9 +795,10 @@ export default {
         name: '',
         notes: '',
         // Set when the save-as-contact dialog is offered right after a
-        // successful send — lets saveRecipientAsContact link the
-        // freshly created contact to the tx that triggered the offer.
-        txId: null,
+        // successful send — saveRecipientAsContact queues a pending
+        // link with this amount so the freshly created contact gets
+        // its first tx stamped on the next list refresh.
+        amountSats: 0,
       },
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
@@ -1482,42 +1478,6 @@ export default {
     }
   },
   methods: {
-    /**
-     * Best-effort tx-id derivation from a send-result.
-     *
-     *   - Spark           → result.id is the transfer UUID the list uses
-     *   - LNBits          → result.paymentHash is set by the provider
-     *   - NWC (NIP-47)    → only `preimage` comes back; sha256(preimage)
-     *                       equals the payment_hash the list keys on
-     *
-     * Returns null when no recognisable field is present; the caller
-     * just skips the metadata write in that case (the autoAssignContacts
-     * fallback in TransactionHistory still has a shot at matching by
-     * description). Kept synchronous — @noble/hashes/sha256 doesn't
-     * touch the network.
-     */
-    deriveTxIdFromSendResult(result) {
-      if (!result) return null;
-      const direct =
-        result.payment_hash ||
-        result.paymentHash ||
-        result.rHash ||
-        result.r_hash ||
-        result.id ||
-        null;
-      if (direct) return direct;
-
-      const preimage = result.preimage;
-      if (typeof preimage === 'string' && /^[0-9a-f]{64}$/i.test(preimage)) {
-        try {
-          return bytesToHex(sha256(hexToBytes(preimage.toLowerCase())));
-        } catch (err) {
-          console.warn('[wallet] could not derive payment_hash from preimage:', err);
-        }
-      }
-      return null;
-    },
-
     /**
      * Build a PaymentConfirmSheet recipient payload from a saved
      * address-book contact, falling back to the supplied defaults
@@ -2492,11 +2452,23 @@ export default {
           return;
         }
 
-        const result = await provider.getTransactions({ limit: 1, offset: 0 });
-        // Providers return either an array or `{ transactions: [...] }`
-        // depending on the implementation. Handle both so new providers
-        // don't silently break this card.
+        // Fetch a small batch (not just the top one) so the pending-
+        // contact-link consumer has something to match against —
+        // settlement latency on some rails means our just-sent tx may
+        // not yet be the freshest row, or the user may have multiple
+        // sends in flight.
+        const result = await provider.getTransactions({ limit: 10, offset: 0 });
         const txs = Array.isArray(result) ? result : (result?.transactions || []);
+
+        // Drain the queued contact links before we publish the new
+        // lastTransaction, so the home-screen preview reads the
+        // freshly-stamped metadata on the same paint.
+        try {
+          await this.transactionMetadataStore.consumePendingContactLinks(txs);
+        } catch (err) {
+          console.warn('[wallet] pending-contact-link drain failed:', err);
+        }
+
         this.lastTransaction = txs.length > 0 ? txs[0] : null;
       } catch (err) {
         console.warn('Failed to load last transaction:', err);
@@ -3437,34 +3409,21 @@ export default {
           : null;
         const shouldOfferSave = recipientAddress && !existingContact;
 
-        // Derive the tx id assigned by the wallet provider — payment_hash
-        // for Lightning rails, transfer.id for Spark. Used by both the
-        // "saved contact → tag the tx" path below and the post-send
-        // save-as-contact dialog so a freshly created contact also gets
-        // its first transaction linked.
-        //
-        // NWC's pay_invoice response (NIP-47) returns only `preimage` —
-        // no payment_hash — so for that path we derive it locally via
-        // sha256(preimage). That's the spec definition (payment_hash IS
-        // sha256 of preimage) and matches the id the NWC provider's
-        // getTransactions mapping assigns to the row (tx.payment_hash).
-        const sentTxId = this.deriveTxIdFromSendResult(result);
-
-        // Stamp the transaction with the contact it was sent to so the
-        // tx list / details render with the saved name + avatar without
-        // having to fall back to the description-string heuristic that
-        // autoAssignContacts uses.
-        if (existingContact && sentTxId) {
+        // Queue the contact link by recipient address + amount + send
+        // time. The next tx-list refresh drains the queue and stamps
+        // the newly observed outgoing tx — wallet-agnostic, so it
+        // works the same for Spark (transfer id ≠ payment id), LNBits
+        // (payment_hash directly), and NWC (only `preimage` comes
+        // back) without us having to know which provider is active.
+        if (existingContact && recipientAddress) {
           try {
-            await this.transactionMetadataStore.setContactForTransaction(
-              sentTxId,
-              existingContact.id,
-            );
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: existingContact.id,
+              recipientAddress,
+              amountSats: amount,
+            });
           } catch (err) {
-            // Non-fatal — the user still sees a "Sent" toast, and the
-            // existing autoAssignContacts pass will pick it up on the
-            // next list refresh if the description carries the address.
-            console.warn('[wallet] could not link contact to tx:', err);
+            console.warn('[wallet] could not queue contact link:', err);
           }
         }
 
@@ -3490,9 +3449,10 @@ export default {
             addressType: recipientAddressType,
             name: '',
             notes: '',
-            // Carry the tx id so a freshly saved contact gets linked
-            // to the transaction we just made — see saveRecipientAsContact.
-            txId: sentTxId,
+            // Carry the amount so the post-save handler can queue a
+            // pending contact link against the same outgoing tx the
+            // existing-contact path uses.
+            amountSats: amount,
           };
           // Small delay so the success notification is seen first
           setTimeout(() => {
@@ -3727,17 +3687,19 @@ export default {
           notes: this.saveContactData.notes?.trim() || ''
         });
 
-        // Link the contact we just saved to the transaction that
-        // triggered the save dialog — so the tx list / details show
-        // the new contact's name + avatar immediately.
-        if (newContact?.id && this.saveContactData.txId) {
+        // Queue the contact link for the outgoing tx that just landed
+        // (or is about to land). The pending-link consumer matches by
+        // address + amount + recent timestamp on the next tx-list
+        // refresh, so we don't need to know the provider-assigned id.
+        if (newContact?.id) {
           try {
-            await this.transactionMetadataStore.setContactForTransaction(
-              this.saveContactData.txId,
-              newContact.id,
-            );
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: newContact.id,
+              recipientAddress: this.saveContactData.address,
+              amountSats: this.saveContactData.amountSats,
+            });
           } catch (err) {
-            console.warn('[wallet] could not link new contact to tx:', err);
+            console.warn('[wallet] could not queue contact link for new contact:', err);
           }
         }
 
@@ -3766,7 +3728,7 @@ export default {
         addressType: 'lightning',
         name: '',
         notes: '',
-        txId: null,
+        amountSats: 0,
       };
     },
 

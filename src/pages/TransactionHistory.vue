@@ -1057,6 +1057,17 @@ export default {
         return;
       }
 
+      // First pass: drain pending-contact links queued by the send
+      // flow. This stamps outgoing txs whose recipient we already
+      // knew at send time but whose provider-assigned id we couldn't
+      // predict. Reliable for every wallet rail because we match on
+      // amount + recent timestamp, not on a derived id.
+      try {
+        await this.metadataStore.consumePendingContactLinks(this.transactions);
+      } catch (err) {
+        console.warn('[txHistory] pending-contact-link drain failed:', err);
+      }
+
       console.log('Auto-assigning contacts for transactions...');
       let assignedCount = 0;
 
