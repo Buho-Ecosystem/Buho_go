@@ -222,6 +222,80 @@ await test('addNostrContact: rejects profiles without lud16', async () => {
   );
 });
 
+// --- Trust-boundary hardening (Finding 6) -----------------------------------
+
+await test('addNostrContact: rejects an event with a forged signature', async () => {
+  const store = freshStore();
+  // Build a genuinely-signed event, then tamper the content with
+  // explicit field copies so nostr-core's verifiedSymbol cache does
+  // NOT carry over — the signature must actually re-fail.
+  const real = makeKind0(ALICE_SECRET, { name: 'Alice', lud16: 'alice@a.test' });
+  const forged = {
+    id: real.id,
+    pubkey: real.pubkey,
+    kind: real.kind,
+    tags: real.tags,
+    content: JSON.stringify({ name: 'Mallory', lud16: 'mallory@evil.test' }),
+    created_at: real.created_at,
+    sig: real.sig,
+  };
+  await assert.rejects(
+    () => store.addNostrContact({ pubkey: ALICE_PUBKEY, npub: ALICE_NPUB, event: forged }),
+    /signature is invalid/,
+  );
+});
+
+await test('addNostrContact: rejects an oversized event content blob', async () => {
+  const store = freshStore();
+  // 70 KB of content — well past the 64 KB ceiling. Genuinely signed
+  // so it gets past the signature gate and trips the size gate.
+  const huge = makeKind0(ALICE_SECRET, {
+    name: 'Alice',
+    lud16: 'alice@a.test',
+    about: 'x'.repeat(70 * 1024),
+  });
+  await assert.rejects(
+    () => store.addNostrContact({ pubkey: ALICE_PUBKEY, npub: ALICE_NPUB, event: huge }),
+    /too large/,
+  );
+});
+
+await test('addNostrContact: clamps oversized profile fields in the stored snapshot', async () => {
+  const store = freshStore();
+  const event = makeKind0(ALICE_SECRET, {
+    name: 'n'.repeat(500),
+    about: 'a'.repeat(5000),
+    lud16: 'alice@a.test',
+  });
+  const entry = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event,
+  });
+  // name capped at 256, about capped at 2048 — the un-clamped truth
+  // still lives in nostr_event.content.
+  assert.equal(entry.nostr_profile.name.length, 256);
+  assert.equal(entry.nostr_profile.about.length, 2048);
+  // Raw event content is untouched — it's the source of record.
+  assert.ok(entry.nostr_event.content.length > 5000);
+});
+
+await test('addNostrContact: drops unknown profile fields from the stored snapshot', async () => {
+  const store = freshStore();
+  const event = makeKind0(ALICE_SECRET, {
+    name: 'Alice',
+    lud16: 'alice@a.test',
+    weird_attacker_field: 'z'.repeat(1000),
+  });
+  const entry = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event,
+  });
+  assert.equal(entry.nostr_profile.weird_attacker_field, undefined);
+  assert.equal(entry.nostr_profile.name, 'Alice');
+});
+
 await test('addNostrContact: rejects malformed lud16 values', async () => {
   const store = freshStore();
   const event = makeKind0(ALICE_SECRET, { name: 'Alice', lud16: 'not-an-email' });

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { verifyEvent } from 'nostr-core'
 import {
   isSparkAddress,
   isBitcoinAddress,
@@ -26,6 +27,87 @@ export const CONTACT_SOURCES = Object.freeze({
   MANUAL: 'manual',
   NOSTR: 'nostr',
 })
+
+// A kind:0 profile is metadata — a name, a bio, a couple of URLs.
+// Anything past this ceiling is either a hostile payload trying to
+// bloat localStorage or a broken client; we reject it at the
+// persistence boundary rather than trusting the fetch layer caught it.
+const MAX_NOSTR_EVENT_CONTENT_BYTES = 64 * 1024
+
+// Per-field length caps for the stored profile snapshot. Generous
+// enough for any genuine profile, tight enough that a malicious
+// kind:0 can't wreck the address-book UI or storage budget. Fields
+// not in this list are dropped from the cached snapshot entirely —
+// the address book only ever renders this known set, and the full
+// raw payload still lives verbatim in `nostr_event.content` for the
+// detail view, so nothing is actually lost.
+const PROFILE_FIELD_LIMITS = Object.freeze({
+  name: 256,
+  display_name: 256,
+  displayName: 256,
+  about: 2048,
+  picture: 2048,
+  banner: 2048,
+  nip05: 256,
+  lud16: 256,
+  lud06: 256,
+  website: 512,
+})
+
+/**
+ * Clamp a parsed kind:0 profile to safe bounds before it is persisted.
+ * Known fields are length-capped; unknown fields are dropped. The
+ * un-clamped truth still lives in `nostr_event.content`, so this only
+ * trims the *render cache* — never the source of record.
+ *
+ * @param {Record<string, unknown> | null | undefined} profile
+ * @returns {Record<string, string>}
+ */
+function sanitizeProfileForStorage(profile) {
+  if (!profile || typeof profile !== 'object') return {}
+  const clean = {}
+  for (const [key, limit] of Object.entries(PROFILE_FIELD_LIMITS)) {
+    const value = profile[key]
+    if (typeof value === 'string' && value) {
+      clean[key] = value.slice(0, limit)
+    }
+  }
+  return clean
+}
+
+/**
+ * The persistence boundary's correctness gate for an incoming kind:0
+ * event. Throws a typed-message Error on the first failure so the
+ * caller (search / scan / recovery / any future call site) gets a
+ * consistent rejection regardless of which check tripped.
+ *
+ *   - kind must be 0 and author must match the claimed pubkey
+ *   - signature must verify — we do NOT assume the fetch layer did it
+ *   - content must be within the size ceiling
+ *
+ * @param {import('nostr-core').NostrEvent} event
+ * @param {string} pubkey  expected 64-char lowercase hex author
+ */
+function assertValidProfileEvent(event, pubkey) {
+  if (!event || event.kind !== 0 || event.pubkey?.toLowerCase() !== pubkey) {
+    throw new Error('Profile event is missing or invalid')
+  }
+  let signatureOk = false
+  try {
+    signatureOk = verifyEvent(event) === true
+  } catch {
+    signatureOk = false
+  }
+  if (!signatureOk) {
+    throw new Error('Profile event signature is invalid')
+  }
+  if (
+    typeof event.content === 'string'
+    && event.content.length > MAX_NOSTR_EVENT_CONTENT_BYTES
+  ) {
+    throw new Error('Profile event is too large')
+  }
+}
 
 /**
  * Pick a display name from a parsed kind:0 profile, falling back
@@ -419,9 +501,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (!/^npub1[0-9a-z]+$/i.test(npub)) {
         throw new Error('Invalid Nostr identifier (npub)')
       }
-      if (!event || event.kind !== 0 || event.pubkey?.toLowerCase() !== pubkey) {
-        throw new Error('Profile event is missing or invalid')
-      }
+      // Trust boundary: verify kind / author / signature / size here
+      // rather than assuming the caller's fetch path did it.
+      assertValidProfileEvent(event, pubkey)
 
       const profile = parseProfileContent(event)
       const lud16Raw = typeof profile.lud16 === 'string' ? profile.lud16.trim() : ''
@@ -463,7 +545,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         nostr_pubkey: pubkey,
         nostr_npub: npub,
         nostr_event: cloneEvent(event),
-        nostr_profile: { ...profile },
+        nostr_profile: sanitizeProfileForStorage(profile),
         nostr_relay_hints: sanitizedHints,
         last_synced_at: now,
         name_locally_edited: false,
@@ -545,6 +627,16 @@ export const useAddressBookStore = defineStore('addressBook', {
         return { updated: false, reason: 'no-event' }
       }
 
+      // Trust boundary: the default fetcher (`fetchProfile`) verifies,
+      // but a caller-injected fetcher might not. Reject anything that
+      // isn't a correctly-signed kind:0 for this exact pubkey before
+      // it touches the persisted snapshot.
+      try {
+        assertValidProfileEvent(event, entry.nostr_pubkey)
+      } catch (err) {
+        return { updated: false, reason: 'invalid-event', error: err }
+      }
+
       const storedCreatedAt = entry.nostr_event?.created_at || 0
       const now = Date.now()
 
@@ -559,7 +651,7 @@ export const useAddressBookStore = defineStore('addressBook', {
       const profile = parseProfileContent(event)
       const updated = { ...entry }
       updated.nostr_event = cloneEvent(event)
-      updated.nostr_profile = { ...profile }
+      updated.nostr_profile = sanitizeProfileForStorage(profile)
       updated.last_synced_at = now
       updated.updatedAt = now
 
