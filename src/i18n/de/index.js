@@ -1226,10 +1226,10 @@ export default {
 
   // Leerer Zustand + Seite hinzufügen
   "Sign in to your first site": "Melde dich bei deiner ersten Seite an",
-  "Any site that supports \"Login with Bitcoin\" works. No passwords, no email.": "Funktioniert mit jeder Seite, die \"Login with Bitcoin\" anbietet. Ohne Passwörter, ohne E-Mail.",
+  "Any site with Lightning login works. No passwords, no email.": "Funktioniert mit jeder Seite, die einen Lightning-Login anbietet. Ohne Passwörter, ohne E-Mail.",
   "Sign in to a site": "Bei einer Seite anmelden",
   "Sign in to a new site": "Bei einer neuen Seite anmelden",
-  "Open a site that supports Lightning login, tap \"Login with Bitcoin\", then copy the link and paste it here.": "Öffne eine Seite, die Lightning-Login unterstützt, tippe auf \"Login with Bitcoin\", kopiere den Link und füge ihn hier ein.",
+  "Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.": "Öffne eine Seite mit Lightning-Login, tippe auf die Anmelde-Option, kopiere den Link und füge ihn hier ein.",
   "Paste login link": "Anmelde-Link einfügen",
   "Clear": "Löschen",
   "Paste": "Einfügen",
@@ -1237,7 +1237,7 @@ export default {
   "That link is not a Lightning login. Check the site and copy the link again.": "Das ist kein Lightning-Login. Prüfe die Seite und kopiere den Link erneut.",
 
   // Scanner für neue Seiten
-  "Point your camera at the \"Login with Bitcoin\" QR code.": "Richte deine Kamera auf den \"Login with Bitcoin\"-QR-Code.",
+  "Point your camera at the Lightning login QR code.": "Richte deine Kamera auf den Lightning-Login-QR-Code.",
   "Or paste a link instead": "Oder Link einfügen",
   "Or scan with camera": "Oder mit der Kamera scannen",
   "No camera found on this device.": "Auf diesem Gerät wurde keine Kamera gefunden.",
@@ -1311,6 +1311,60 @@ export default {
   "Couldn't copy": "Konnte nicht kopiert werden",
   "Copied": "Kopiert",
   "Copied. Clears in 30s.": "Kopiert. Zwischenablage wird in 30s geleert.",
-  "Clipboard clears in": "Zwischenablage wird geleert in"
+  "Clipboard clears in": "Zwischenablage wird geleert in",
+
+  // ----- Profile hero (Plan 09 §7a) -----
+  "Add your name and a picture": "Füge deinen Namen und ein Bild hinzu",
+  "Tap to make your profile yours": "Tippen, um dein Profil persönlich zu machen",
+  "Your profile": "Dein Profil",
+  "Edit profile": "Profil bearbeiten",
+
+  // ----- Profile editor sheet (Plan 09 §7b) -----
+  "Close": "Schließen",
+  "Choose profile picture": "Profilbild wählen",
+  "Display name": "Anzeigename",
+  "Your name": "Dein Name",
+  "About": "Über dich",
+  "A short bio (optional)": "Eine kurze Vorstellung (optional)",
+  "Lightning address": "Lightning-Adresse",
+  "Save & Publish": "Speichern & Veröffentlichen",
+  "Profile saved": "Profil gespeichert",
+  "Couldn't save your profile": "Profil konnte nicht gespeichert werden",
+  "Check your connection and try again.": "Prüfe deine Verbindung und versuche es erneut.",
+  "Couldn't reach the network in time": "Netzwerk war nicht rechtzeitig erreichbar",
+  "Your connection is slow or offline. Check it and try again.": "Deine Verbindung ist langsam oder offline. Prüfe sie und versuche es erneut.",
+  "The servers refused this profile": "Die Server haben dieses Profil abgelehnt",
+  "This is usually temporary. Wait a moment and try again.": "Das ist meist nur vorübergehend. Warte einen Moment und versuche es nochmal.",
+  "Something went wrong on this device. Please try again.": "Auf diesem Gerät ist etwas schiefgelaufen. Bitte versuche es erneut.",
+  "Try again": "Erneut versuchen",
+  "Dismiss": "Verwerfen",
+  "Looks like an unfamiliar format. Try name@example.com.": "Sieht ungewohnt aus. Versuche name{'@'}example.com.",
+
+  // ----- Profile share sheet (Plan 09 §7d) -----
+  "Scan to open in a compatible app": "Scannen, um in einer kompatiblen App zu öffnen",
+  "Couldn't share": "Teilen war nicht möglich",
+  "Share your public profile": "Teile dein öffentliches Profil",
+  "Tap to copy. Scan to add this profile.": "Tippen zum Kopieren. Scannen, um dieses Profil hinzuzufügen.",
+  "Friends can scan this to add you to their address book and pay you.": "Freunde können das scannen, um dich zu ihrem Adressbuch hinzuzufügen und dir zu senden.",
+
+  // ----- Seed-phrase reveal dialog -----
+  "Keep it offline": "Bewahre sie offline auf",
+  "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.": "Schreibe sie auf Papier. Mach kein Foto davon. Speichere sie nicht in Cloud-Notizen oder einem Passwort-Manager, den du nicht selbst kontrollierst.",
+  "I'm ready": "Ich bin bereit",
+  "Tap Show words to reveal.": "Tippe auf Wörter anzeigen, um sie zu sehen.",
+  "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.": "Tippe diese Wörter nie auf einer Website ein. Teile sie nie im Chat, auf Fotos oder in Cloud-Notizen.",
+  "Show words": "Wörter anzeigen",
+  "Hide words": "Wörter verbergen",
+  "I have it written down": "Ich habe sie notiert",
+  "Share profile": "Profil teilen",
+  "Edit profile picture": "Profilbild bearbeiten",
+  "Profile picture": "Profilbild",
+  "Recovery phrase backed up": "Wiederherstellungswörter gesichert",
+  "Recovery phrase not backed up yet": "Wiederherstellungswörter noch nicht gesichert",
+  "Publishing…": "Wird veröffentlicht…",
+  "Public": "Öffentlich",
+  "Retrying": "Erneuter Versuch",
+  "Publish failed": "Veröffentlichung fehlgeschlagen",
+  "Not published yet": "Noch nicht veröffentlicht"
 
 }

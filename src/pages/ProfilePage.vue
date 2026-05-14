@@ -1,7 +1,12 @@
 <template>
   <q-page class="profile-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <!-- Header -->
-    <div class="profile-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
+    <!-- Header. Back · centred title · gear (manage). The gear opens
+         the IdentityManageSheet, which still owns the lower-frequency
+         actions (seed phrase, restore, regenerate, public-profile-
+         details). It used to be the only way into those — now the
+         profile header below owns the everyday actions and the gear
+         is a deliberate, one-tap step away. -->
+    <div class="page-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
       <q-btn
         flat
         round
@@ -16,103 +21,168 @@
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Profile') }}
       </div>
-      <div class="header-spacer"></div>
-    </div>
-
-    <div class="profile-content">
-      <!-- Identity strip. Tappable: opens the manage sheet with every
-           identity-related action (View, Restore, Generate new). Means
-           the page stays at two visible sections (identity + sites)
-           and the lower-frequency, scarier actions stay one tap away
-           but out of sight. -->
-      <button
-        type="button"
-        class="identity-strip"
-        :class="$q.dark.isActive ? 'identity-strip-dark' : 'identity-strip-light'"
+      <q-btn
+        flat
+        round
+        dense
+        class="manage-btn"
+        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
         :aria-label="$t('Manage your BuhoGO identity')"
         @click="showManageSheet = true"
       >
-        <div
-          class="identity-strip-avatar"
-          :class="[
-            $q.dark.isActive ? 'identity-strip-avatar-dark' : 'identity-strip-avatar-light',
-            { 'identity-strip-avatar--warn': identity.bootstrapped && !identity.backupConfirmed },
-          ]"
-          aria-hidden="true"
-        >
-          <Icon icon="tabler:user" width="22" height="22" />
-        </div>
-        <div class="identity-strip-meta">
-          <div class="identity-strip-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-            {{ $t('Your BuhoGO identity') }}
-          </div>
-          <div class="identity-strip-status">
-            <template v-if="!identity.bootstrapped">
-              <Icon icon="tabler:sparkles" width="13" height="13" class="identity-strip-status-icon" />
-              <span :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                {{ $t('Tap to set up') }}
-              </span>
-            </template>
-            <template v-else>
-              <Icon
-                :icon="identity.backupConfirmed ? 'tabler:shield-check' : 'tabler:shield-exclamation'"
-                width="13"
-                height="13"
-                :class="['identity-strip-status-icon', identity.backupConfirmed ? 'is-ok' : 'is-warn']"
-              />
-              <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                <template v-if="identity.backupConfirmed">
-                  {{ $t('Backed up') }}
-                </template>
-                <template v-else>
-                  {{ $t('Backup needed') }}
-                </template>
-                <template v-if="connectedSites.length > 0">
-                  <span class="identity-strip-status-sep" aria-hidden="true"></span>
-                  {{ siteCountLine }}
-                </template>
-              </span>
-            </template>
-          </div>
-        </div>
-        <Icon
-          icon="tabler:chevron-right"
-          width="18"
-          height="18"
-          class="identity-strip-chevron"
-          :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"
-        />
-      </button>
+        <!-- Kebab/more affordance. Deliberately NOT a gear: the
+             global Settings page already owns that glyph; using
+             it here too would muddy the meaning. The dots match
+             the modern "more options for this surface" convention. -->
+        <Icon icon="tabler:dots-vertical" width="18" height="18" />
+      </q-btn>
+    </div>
 
-      <!-- Attention banner. Only renders when there's something to act
-           on — keeps the page calm when everything's healthy. Pulls the
-           Back-up action out of the Identity card so the user only sees
-           the call to action once, where it matters most. -->
-      <transition name="attention-fade">
+    <div class="profile-content">
+      <!-- Profile header. Three state variations driven entirely by
+           identity.bootstrapped + profile.isEmpty:
+             1. !bootstrapped       → "Set up your profile" + Get started
+             2. bootstrapped, empty → "Add your name and a picture"
+             3. fully set up        → avatar / name / pills / Edit + Share
+           See the UX contract in Plan 09 build guide §7a. -->
+      <section
+        class="profile-hero"
+        :class="$q.dark.isActive ? 'hero-dark' : 'hero-light'"
+      >
+        <!-- Avatar block. Tap opens edit (or "get started" for fresh
+             installs). Backup-warn ring lights up amber whenever the
+             user has an identity but hasn't written down their seed. -->
         <button
-          v-if="identity.bootstrapped && !identity.backupConfirmed"
-          class="attention-card"
-          :class="$q.dark.isActive ? 'attention-card-dark' : 'attention-card-light'"
           type="button"
-          @click="openIdentitySeedDialog('backup')"
+          class="hero-avatar-btn"
+          :aria-label="$t('Edit profile picture')"
+          @click="openProfileEditor"
         >
-          <div class="attention-icon" aria-hidden="true">
-            <Icon icon="tabler:shield-exclamation" width="20" height="20" />
-          </div>
-          <div class="attention-body">
-            <div class="attention-title">
-              {{ $t('Back up your identity') }}
+          <!-- Avatar slot. The circle clips its own image fill;
+               the camera badge anchors to the wrap so it never
+               gets cropped at the circle border. -->
+          <div class="hero-avatar-wrap">
+            <div
+              class="hero-avatar"
+              :class="$q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light'"
+            >
+              <img
+                v-if="resolvedAvatarUrl"
+                :src="resolvedAvatarUrl"
+                :alt="$t('Profile picture')"
+                class="hero-avatar-img"
+                @error="onAvatarLoadError"
+              />
+              <Icon
+                v-else
+                icon="tabler:user"
+                width="40"
+                height="40"
+                class="hero-avatar-glyph"
+                aria-hidden="true"
+              />
             </div>
-            <div class="attention-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Write down your 12 recovery words so you can sign back in on any device.') }}
-            </div>
-          </div>
-          <div class="attention-cta">
-            <span class="attention-cta-label">{{ $t('Back up') }}</span>
-            <Icon icon="tabler:chevron-right" width="16" height="16" />
+            <span class="hero-avatar-edit-badge" aria-hidden="true">
+              <Icon icon="tabler:camera" width="14" height="14" />
+            </span>
           </div>
         </button>
-      </transition>
+
+        <!-- Name + subline. Tappable as one block so any reasonable
+             miss-tap on the headline area still lands in the editor. -->
+        <button
+          type="button"
+          class="hero-meta-btn"
+          :aria-label="$t('Edit profile')"
+          @click="openProfileEditor"
+        >
+          <div
+            class="hero-name"
+            :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+          >
+            {{ heroHeadline }}
+          </div>
+          <div
+            v-if="heroSubline"
+            class="hero-subline"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          >
+            {{ heroSubline }}
+          </div>
+        </button>
+
+        <!-- Status pills. Single neutral style across every state —
+             the icon carries the meaning, not a tinted background.
+             Keeps the page monochrome so the primary CTA below is
+             the only saturated element above the fold. -->
+        <div v-if="identity.bootstrapped" class="hero-pills">
+          <button
+            type="button"
+            class="hero-pill"
+            :class="$q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light'"
+            role="status"
+            aria-live="polite"
+            :aria-label="
+              identity.backupConfirmed
+                ? $t('Recovery phrase backed up')
+                : $t('Recovery phrase not backed up yet')
+            "
+            @click="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
+          >
+            <Icon
+              :icon="identity.backupConfirmed ? 'tabler:shield-check' : 'tabler:shield-exclamation'"
+              width="13"
+              height="13"
+            />
+            <span>
+              {{ identity.backupConfirmed ? $t('Backed up') : $t('Backup needed') }}
+            </span>
+          </button>
+
+          <span
+            v-if="!profile.isEmpty"
+            class="hero-pill"
+            :class="$q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light'"
+            role="status"
+            aria-live="polite"
+          >
+            <Icon
+              :icon="publishPillIcon"
+              width="13"
+              height="13"
+            />
+            <span>{{ publishPillLabel }}</span>
+          </span>
+        </div>
+
+        <!-- Two equal-width neutral pills side by side — Instagram /
+             Threads style. Both gated on `identity.bootstrapped` so
+             the row stays empty during the sub-100ms passive-
+             bootstrap window; `min-height` on `.hero-actions`
+             reserves the vertical slot so the page never jumps. -->
+        <div class="hero-actions" v-if="identity.bootstrapped">
+          <button
+            type="button"
+            class="hero-cta"
+            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+            @click="openProfileEditor"
+          >
+            <Icon icon="tabler:pencil" width="15" height="15" />
+            <span>{{ $t('Edit profile') }}</span>
+          </button>
+
+          <button
+            v-if="!profile.isEmpty"
+            type="button"
+            class="hero-cta"
+            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+            @click="showProfileShareSheet = true"
+          >
+            <Icon icon="tabler:share-2" width="15" height="15" />
+            <span>{{ $t('Share profile') }}</span>
+          </button>
+        </div>
+      </section>
 
       <!-- Sites the user has signed in to. Has three states:
            – Bootstrapped + sites: list each one, "+" in the header.
@@ -185,7 +255,7 @@
             {{ $t('Sign in to your first site') }}
           </div>
           <p class="sites-empty-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('Any site that supports "Login with Bitcoin" works. No passwords, no email.') }}
+            {{ $t('Any site with Lightning login works. No passwords, no email.') }}
           </p>
           <button
             type="button"
@@ -202,9 +272,8 @@
     </div>
 
     <!-- Identity manage bottom sheet (View / Restore / Generate new).
-         Opened by tapping the identity strip. Keeps these three actions
-         off the page itself so a non-technical user sees a calm two-
-         section layout by default. -->
+         Opened by tapping the gear icon in the page header. Keeps these
+         lower-frequency actions one tap away from the everyday flows. -->
     <IdentityManageSheet
       v-model="showManageSheet"
       @view-seed="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
@@ -212,6 +281,29 @@
       @regenerate="openRegenerateDialog"
       @view-nostr="openNostrIdentityDialog"
     />
+
+    <!-- Profile edit sheet — owns its own local form state and
+         commits to profileStore on Save & Publish. The avatar
+         picker (Step 7c) lives below and is chained in via the
+         @open-picker emit. -->
+    <ProfileEditSheet
+      v-model="showProfileEditSheet"
+      @open-picker="openAvatarPicker"
+    />
+
+    <!-- Avatar picker. Chains *back* into the edit sheet when the
+         upload succeeds (or when the user removes the avatar), so
+         the user always returns to the surface they opened it from. -->
+    <ProfileAvatarPickerSheet
+      v-model="showProfileAvatarPicker"
+      @uploaded="returnToProfileEditor"
+      @removed="returnToProfileEditor"
+    />
+
+    <!-- Share profile — QR + npub + native share. Self-contained;
+         the only signal it needs from the page is `v-model` for
+         visibility, and identityStore for the cached npub. -->
+    <ProfileShareSheet v-model="showProfileShareSheet" />
 
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
          challenge, hands it to the IdentityAuthDialog below for the
@@ -321,10 +413,14 @@ import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
 import IdentityManageSheet from '../components/IdentityManageSheet.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
+import ProfileEditSheet from '../components/ProfileEditSheet.vue';
+import ProfileAvatarPickerSheet from '../components/ProfileAvatarPickerSheet.vue';
+import ProfileShareSheet from '../components/ProfileShareSheet.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
 import { useIdentityStore } from '../stores/identity';
+import { useProfileStore } from '../stores/profile';
 
 // The typed confirmation phrase. Matched verbatim to the wallet-removal
 // flow ("I understand") so users build the same muscle memory across
@@ -341,6 +437,9 @@ export default {
     IdentityManageSheet,
     IdentityAuthDialog,
     NostrIdentityDialog,
+    ProfileEditSheet,
+    ProfileAvatarPickerSheet,
+    ProfileShareSheet,
     AddSiteSheet,
     SiteFavicon,
     ConnectedSiteSheet,
@@ -348,7 +447,8 @@ export default {
 
   setup() {
     const identity = useIdentityStore();
-    return { identity };
+    const profile = useProfileStore();
+    return { identity, profile };
   },
 
   data() {
@@ -360,6 +460,16 @@ export default {
 
       // Identity manage bottom sheet (View / Restore / Generate new).
       showManageSheet: false,
+
+      // Profile bottom sheets.
+      showProfileEditSheet: false,
+      showProfileShareSheet: false,
+      showProfileAvatarPicker: false,
+
+      // Avatar load error sticky: once an avatar URL has failed to load
+      // in this session, we silently fall back to the silhouette so we
+      // don't keep retrying a broken URL on every re-render.
+      avatarBroken: false,
 
       // Add-site flow. `pendingChallenge` is the parsed LUD-04 challenge
       // produced by the AddSiteSheet paste/parse step; the auth dialog
@@ -392,16 +502,108 @@ export default {
     },
 
     /**
-     * Single-line site count for the identity-strip subtitle. Skips the
-     * line entirely when the user hasn't linked any sites yet so we
-     * don't read "0 sites linked" on a fresh install — silence beats
-     * vanity metrics.
+     * Resolved avatar URL. Honours the runtime `avatarBroken` flag so
+     * a failed load falls back to the silhouette without us retrying
+     * the broken URL on every render. Cleared via `onAvatarReset()`
+     * whenever the underlying `profile.picture` actually changes.
      */
-    siteCountLine() {
-      const n = this.connectedSites.length;
-      if (n === 0) return this.$t('No sites yet');
-      if (n === 1) return this.$t('1 site linked');
-      return this.$t('{n} sites linked', { n });
+    resolvedAvatarUrl() {
+      if (!this.profile.picture) return '';
+      if (this.avatarBroken) return '';
+      return this.profile.picture;
+    },
+
+    /**
+     * Headline shown in the hero block. Identity is bootstrapped
+     * passively in `created()`, so by the time the user has anything
+     * to look at there are only two meaningful states: empty profile
+     * (prompt to fill it in) or populated profile (show the name).
+     *
+     * The brief !bootstrapped window between created() firing and
+     * ensureIdentity() resolving renders as an empty string — the
+     * avatar block alone holds the visual layout for that single
+     * frame so the page never flashes a stale label.
+     */
+    heroHeadline() {
+      if (!this.identity.bootstrapped) return '';
+      if (this.profile.isEmpty) return this.$t('Add your name and a picture');
+      // Prefer display_name; fall back to name (handle) before the
+      // shortened pubkey, because in NIP-01 some clients only set
+      // `name`. Last resort is the placeholder.
+      return this.profile.displayName
+        || this.profile.name
+        || this.shortNpub
+        || this.$t('Your profile');
+    },
+
+    /**
+     * Subline under the headline. Stays empty whenever there's
+     * nothing trustworthy to show — better than rendering a stale
+     * label that the user can't trust.
+     */
+    heroSubline() {
+      if (!this.identity.bootstrapped) return '';
+      if (this.profile.isEmpty) {
+        return this.$t('Tap to make your profile yours');
+      }
+      // Prefer the Lightning Address (NIP-05/LUD-16 form) over the
+      // shortened pubkey — it's the version a friend can actually
+      // type into another app.
+      if (this.profile.lud16) return this.profile.lud16;
+      return this.shortNpub;
+    },
+
+    /**
+     * Compact `npub1abc…wxyz` form for places that don't want to
+     * blow up the layout. Falls back to '' before the cache lands.
+     */
+    shortNpub() {
+      const npub = this.identity.nostrNpub;
+      if (typeof npub !== 'string' || npub.length < 16) return '';
+      return `${npub.slice(0, 10)}…${npub.slice(-6)}`;
+    },
+
+    /**
+     * Publish-status pill. Five states cover the publish lifecycle:
+     *   idle              → grey "Not published yet"
+     *   publishing        → blue "Publishing…"
+     *   published         → green "Public"
+     *   retrying          → amber "Retrying"
+     *   failed            → red    "Publish failed"
+     * The retrying / failed split is only meaningful once Step 8 wires
+     * background retry; until then a total failure shows as "Publish
+     * failed" so the user knows there's something to do.
+     */
+    publishPillState() {
+      if (this.profile.isPublishing) return 'publishing';
+      if (this.profile.lastPublishedAt) {
+        if (this.profile.isDirty) return 'retrying';
+        return 'published';
+      }
+      if (Array.isArray(this.profile.lastPublishResult)
+          && this.profile.lastPublishResult.length > 0
+          && this.profile.lastPublishResult.every((r) => !r.ok)) {
+        return 'failed';
+      }
+      return 'idle';
+    },
+    publishPillIcon() {
+      switch (this.publishPillState) {
+        case 'publishing': return 'tabler:loader-2';
+        case 'published':  return 'tabler:circle-check';
+        case 'retrying':   return 'tabler:refresh';
+        case 'failed':     return 'tabler:alert-circle';
+        default:           return 'tabler:cloud-off';
+      }
+    },
+    publishPillLabel() {
+      switch (this.publishPillState) {
+        case 'publishing': return this.$t('Publishing…');
+        case 'published':  return this.$t('Public');
+        case 'retrying':   return this.$t('Retrying');
+        case 'failed':     return this.$t('Publish failed');
+        default:           return this.$t('Not published yet');
+      }
     },
 
     /**
@@ -418,11 +620,80 @@ export default {
     },
   },
 
-  created() {
-    this.identity.hydrate();
+  async created() {
+    await this.identity.hydrate();
+    await this.profile.hydrate();
+    // Passive identity bootstrap. The user never sees an "onboarding"
+    // step for the BuhoGO seed or the derived Nostr key — opening the
+    // Profile page is itself the signal that they're ready to use it.
+    // Backup of the recovery phrase is a separate, non-blocking nag
+    // surfaced by the attention card lower on the page; it does not
+    // gate any flow here.
+    if (!this.identity.bootstrapped) {
+      await this.identity.ensureIdentity();
+    }
+  },
+
+  watch: {
+    'profile.picture'() {
+      // Avatar URL changed → reset the load-failure flag so a fresh
+      // upload gets a fresh fetch attempt. Cheap; no debounce needed
+      // because the URL only changes via uploadAvatar.
+      this.avatarBroken = false;
+    },
   },
 
   methods: {
+    /**
+     * Single entry point into the editor sheet. Identity is
+     * bootstrapped passively in `created()`, but we still re-await
+     * here as belt-and-braces: a user who somehow opens the editor
+     * via a deep link (or before `created()` resolves on a very
+     * slow device) still gets a working seed by the time the sheet
+     * appears.
+     */
+    async openProfileEditor() {
+      if (!this.identity.bootstrapped) {
+        await this.identity.ensureIdentity();
+      }
+      this.showProfileEditSheet = true;
+    },
+
+    /**
+     * The hero <img> failed to load. Stop trying — fall back to the
+     * silhouette glyph until the user picks a new avatar.
+     */
+    onAvatarLoadError() {
+      this.avatarBroken = true;
+    },
+
+    /**
+     * Chain from the edit sheet into the avatar picker. Same
+     * 180ms gap pattern the manage sheet uses to make sheet
+     * transitions feel like one fluid flow rather than overlapping
+     * cards.
+     */
+    openAvatarPicker() {
+      this.showProfileEditSheet = false;
+      setTimeout(() => {
+        this.showProfileAvatarPicker = true;
+      }, 180);
+    },
+
+    /**
+     * Picker → edit-sheet return chain. Fired by both `@uploaded`
+     * (avatar successfully written) and `@removed` (avatar wiped)
+     * so the user always lands back where they started.
+     */
+    returnToProfileEditor() {
+      // The picker emits before closing itself, so by the time this
+      // runs the picker is already in its leave animation. Re-open
+      // the edit sheet after the same 180ms gap.
+      setTimeout(() => {
+        this.showProfileEditSheet = true;
+      }, 180);
+    },
+
     async openIdentitySeedDialog(mode) {
       await this.identity.ensureIdentity();
       this.identitySeedDialogMode = mode;
@@ -540,7 +811,7 @@ export default {
   max-width: 100vw;
 }
 
-.profile-header {
+.page-header {
   display: flex;
   align-items: center;
   padding: 1rem;
@@ -563,7 +834,7 @@ export default {
   font-weight: 600;
 }
 
-.header-spacer {
+.manage-btn {
   width: 40px;
 }
 
@@ -578,244 +849,294 @@ export default {
   margin: 0 auto;
 }
 
-/* ---------- Identity strip ----------
-   Compact horizontal header replacing the old hero card. Pattern from
-   Cash App / Strike / 1Password mobile: the user's identity is a thin
-   anchor at the top, not a vanity panel. */
+/* ---------- Profile hero ----------
+   The trust-anchor surface of the page: one 96px avatar, name,
+   subline, status pills, primary + secondary CTA. Replaces the old
+   identity strip outright. State variations (fresh install / empty /
+   fully set up) are driven by `identity.bootstrapped` + `profile.isEmpty`;
+   the markup below is single-template-conditional-light because the
+   three states share most of their structure. */
 
-.identity-strip {
+.profile-hero {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 14px;
-  width: 100%;
-  margin: 16px 0 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  /* `<button>` reset — every appearance, every margin, every focus
-     outline comes from us so the strip reads as a row, not a system
-     button. */
-  border: 1px solid transparent;
-  font-family: 'Manrope', sans-serif;
-  text-align: left;
-  cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  padding: 28px 16px 24px;
+  margin: 8px 0 16px;
+  border-radius: 18px;
+  text-align: center;
 }
 
-.identity-strip:focus-visible {
-  outline: 2px solid #0f172a;
+.hero-light {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.hero-dark {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- Hero avatar ----------
+   96px circle. Tap-target wraps the avatar so a generous miss-tap
+   region opens the editor. The camera badge in the bottom-right says
+   "this is tappable" without needing a caption. */
+.hero-avatar-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hero-avatar-btn:focus-visible {
+  outline: 2px solid #15DE72;
+  outline-offset: 4px;
+  border-radius: 50%;
+}
+
+/* Positioning anchor for the camera badge — the badge sits OUTSIDE
+   the avatar's overflow-hidden clip so the icon is never cropped
+   at the circle's border. The wrap is the relative parent; the
+   avatar inside still owns the clip for the image fill. */
+.hero-avatar-wrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+}
+
+.hero-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
+}
+
+.hero-avatar-btn:active .hero-avatar {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+}
+
+.hero-avatar-light {
+  background: rgba(15, 23, 42, 0.04);
+  color: #0f172a;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.hero-avatar-dark {
+  background: rgba(255, 255, 255, 0.04);
+  color: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.hero-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Suppress the iOS image-tap callout */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.hero-avatar-glyph {
+  opacity: 0.7;
+}
+
+/* Camera badge — neutral monochrome on both themes. The avatar
+   itself is the affordance; the badge is just a glanceable hint
+   that the area is tappable. No brand colour here. */
+.hero-avatar-edit-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  border: 2px solid var(--surface-card, #ffffff);
+}
+
+body.body--dark .hero-avatar-edit-badge {
+  background: rgba(255, 255, 255, 0.10);
+  color: #f8fafc;
+  border-color: rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- Name + subline ----------
+   Whole block is one tap target so a near-miss still opens the
+   editor. Padding mirrors the avatar gap so the row reads as the
+   same surface visually. */
+.hero-meta-btn {
+  background: transparent;
+  border: 0;
+  padding: 4px 12px;
+  margin: -4px 0 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hero-meta-btn:focus-visible {
+  outline: 2px solid #15DE72;
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.hero-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  max-width: 320px;
+  /* Wrap on small screens rather than truncating to ellipsis — long
+     names are part of the user's identity, not noise. */
+  word-break: break-word;
+}
+
+.hero-subline {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  max-width: 320px;
+  word-break: break-word;
+}
+
+/* ---------- Hero status pills ----------
+   Tappable rounded chips. Tone classes are semantic only (is-ok /
+   is-warn / is-busy / is-muted / is-danger); the base pill carries
+   the layout + light/dark surface. */
+.hero-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: default;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.18s ease, transform 0.12s ease;
+}
+
+button.hero-pill {
+  cursor: pointer;
+}
+
+button.hero-pill:active {
+  transform: scale(0.97);
+  transition-duration: 0.06s;
+}
+
+button.hero-pill:focus-visible {
+  outline: 2px solid #15DE72;
   outline-offset: 2px;
 }
 
-.identity-strip:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-}
-
-.identity-strip:active {
-  transform: translateY(0);
-  transition-duration: 0.06s;
-}
-
-.identity-strip-chevron {
-  flex: 0 0 auto;
-  opacity: 0.6;
-}
-
-.identity-strip-light {
-  background: #ffffff;
+/* Single neutral surface across every pill state. The icon to the
+   left carries the meaning (shield-check vs shield-exclamation,
+   cloud-off vs circle-check, etc); the chip background stays
+   monochrome so the row never reads as alarm-coloured noise. */
+.hero-pill-light {
+  background: rgba(15, 23, 42, 0.04);
+  color: #475569;
   border-color: rgba(15, 23, 42, 0.06);
 }
 
-.identity-strip-dark {
+.hero-pill-dark {
   background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* Avatar: 44px circle, same dark-neutral palette as the primary CTA
-   buttons. Status communicated via an optional 2px ring rather than a
-   coloured background — keeps the surface monochrome and on-brand. */
-.identity-strip-avatar {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+/* ---------- Hero CTAs ----------
+   Two equal-width neutral pills sharing one row. Same surface on
+   both buttons — no primary/secondary hierarchy — so the hero row
+   reads as a calm pair of options rather than a green CTA fighting
+   a grey one. Modern social-app convention (Instagram, Threads). */
+.hero-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  transition: box-shadow 0.18s ease;
-}
-
-.identity-strip-avatar-light {
-  background: var(--btn-neutral-bg, #0f172a);
-  color: var(--btn-neutral-fg, #ffffff);
-}
-
-.identity-strip-avatar-dark {
-  background: rgba(21, 222, 114, 0.14);
-  color: #15DE72;
-  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
-}
-
-/* Amber ring around the avatar when the seed has not been written
-   down yet. Visual nag the user sees every time they land on this
-   page until they back up. Disappears the moment backup is done. */
-.identity-strip-avatar--warn {
-  box-shadow: 0 0 0 2px #f59e0b;
-}
-
-.identity-strip-meta {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.identity-strip-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  line-height: 1.2;
-}
-
-.identity-strip-status {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  line-height: 1.3;
-}
-
-.identity-strip-status-icon {
-  flex: 0 0 auto;
-  opacity: 0.85;
-}
-
-.identity-strip-status-icon.is-ok {
-  color: #0f9c54;
-  opacity: 1;
-}
-
-.identity-strip-status-icon.is-warn {
-  color: #b06d00;
-  opacity: 1;
-}
-
-.identity-strip-status-sep {
-  opacity: 0.55;
-  margin: 0 6px;
-  font-weight: 600;
-  /* Bullet rather than middle dot — slightly larger glyph, reads better
-     at this small size against the warm cream background. */
-}
-
-.identity-strip-status-sep::before {
-  content: '\2022';
-}
-
-/* ---------- Attention banner ----------
-   Renders only when the user has something concrete to do (right now:
-   back up the seed). Pulls the call-to-action out of the regular list
-   so it can't be missed, and frees the Identity card from carrying a
-   row that flips meaning between states. */
-
-.attention-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 10px;
   width: 100%;
-  padding: 12px 14px;
-  margin: 0 0 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  font-family: 'Manrope', sans-serif;
-  text-align: left;
-  cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  max-width: 360px;
+  margin-top: 6px;
+  /* Reserve vertical space so the layout never jumps during the
+     sub-100ms passive-bootstrap window when the buttons aren't
+     rendered yet. */
+  min-height: 44px;
 }
 
-.attention-card-light {
-  background: #fffaf0;
-  color: #0f172a;
-}
-
-.attention-card-dark {
-  background: rgba(245, 158, 11, 0.08);
-  color: #f8fafc;
-}
-
-.attention-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(245, 158, 11, 0.18);
-}
-
-.attention-card:active {
-  transform: translateY(0);
-  transition-duration: 0.06s;
-}
-
-.attention-icon {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(245, 158, 11, 0.14);
-  color: #b06d00;
-  display: flex;
+.hero-cta {
+  flex: 1 1 0;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-.attention-body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.attention-title {
+  gap: 6px;
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background-color 0.18s ease, transform 0.12s ease;
 }
 
-.attention-text {
-  font-size: 12px;
-  line-height: 1.4;
-  margin-top: 2px;
+.hero-cta:active {
+  transform: scale(0.98);
 }
 
-.attention-cta {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  color: #b06d00;
-  font-size: 12.5px;
-  font-weight: 600;
+.hero-cta-light {
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.attention-cta-label {
-  white-space: nowrap;
+.hero-cta-light:hover {
+  background: rgba(15, 23, 42, 0.10);
 }
 
-/* Hide the inline label below ~360px so the card never wraps the CTA
-   onto a second line on small phones; the chevron still communicates
-   tap-able. */
-@media (max-width: 360px) {
-  .attention-cta-label {
-    display: none;
-  }
+.hero-cta-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.attention-fade-enter-active,
-.attention-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.attention-fade-enter-from,
-.attention-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
+.hero-cta-dark:hover {
+  background: rgba(255, 255, 255, 0.10);
 }
 
 /* ---------- Section labels (cloned from Settings.vue) ---------- */

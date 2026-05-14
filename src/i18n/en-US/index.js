@@ -1299,10 +1299,10 @@ export default {
 
   // Empty state + Add-site sheet
   "Sign in to your first site": "Sign in to your first site",
-  "Any site that supports \"Login with Bitcoin\" works. No passwords, no email.": "Any site that supports \"Login with Bitcoin\" works. No passwords, no email.",
+  "Any site with Lightning login works. No passwords, no email.": "Any site with Lightning login works. No passwords, no email.",
   "Sign in to a site": "Sign in to a site",
   "Sign in to a new site": "Sign in to a new site",
-  "Open a site that supports Lightning login, tap \"Login with Bitcoin\", then copy the link and paste it here.": "Open a site that supports Lightning login, tap \"Login with Bitcoin\", then copy the link and paste it here.",
+  "Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.": "Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.",
   "Paste login link": "Paste login link",
   "Clear": "Clear",
   "Paste": "Paste",
@@ -1310,7 +1310,7 @@ export default {
   "That link uses an insecure connection. Sign-in only works over HTTPS.": "That link uses an insecure connection. Sign-in only works over HTTPS.",
 
   // Add-site scanner
-  "Point your camera at the \"Login with Bitcoin\" QR code.": "Point your camera at the \"Login with Bitcoin\" QR code.",
+  "Point your camera at the Lightning login QR code.": "Point your camera at the Lightning login QR code.",
   "Or paste a link instead": "Or paste a link instead",
   "Or scan with camera": "Or scan with camera",
   "No camera found on this device.": "No camera found on this device.",
@@ -1386,5 +1386,59 @@ export default {
   "Couldn't copy": "Couldn't copy",
   "Copied": "Copied",
   "Copied. Clears in 30s.": "Copied. Clears in 30s.",
-  "Clipboard clears in": "Clipboard clears in"
+  "Clipboard clears in": "Clipboard clears in",
+
+  // ----- Profile hero (Plan 09 §7a) -----
+  "Add your name and a picture": "Add your name and a picture",
+  "Tap to make your profile yours": "Tap to make your profile yours",
+  "Your profile": "Your profile",
+  "Edit profile": "Edit profile",
+
+  // ----- Profile editor sheet (Plan 09 §7b) -----
+  "Close": "Close",
+  "Choose profile picture": "Choose profile picture",
+  "Display name": "Display name",
+  "Your name": "Your name",
+  "About": "About",
+  "A short bio (optional)": "A short bio (optional)",
+  "Lightning address": "Lightning address",
+  "Save & Publish": "Save & Publish",
+  "Profile saved": "Profile saved",
+  "Couldn't save your profile": "Couldn't save your profile",
+  "Check your connection and try again.": "Check your connection and try again.",
+  "Couldn't reach the network in time": "Couldn't reach the network in time",
+  "Your connection is slow or offline. Check it and try again.": "Your connection is slow or offline. Check it and try again.",
+  "The servers refused this profile": "The servers refused this profile",
+  "This is usually temporary. Wait a moment and try again.": "This is usually temporary. Wait a moment and try again.",
+  "Something went wrong on this device. Please try again.": "Something went wrong on this device. Please try again.",
+  "Try again": "Try again",
+  "Dismiss": "Dismiss",
+  "Looks like an unfamiliar format. Try name@example.com.": "Looks like an unfamiliar format. Try name{'@'}example.com.",
+
+  // ----- Profile share sheet (Plan 09 §7d) -----
+  "Scan to open in a compatible app": "Scan to open in a compatible app",
+  "Couldn't share": "Couldn't share",
+  "Share your public profile": "Share your public profile",
+  "Tap to copy. Scan to add this profile.": "Tap to copy. Scan to add this profile.",
+  "Friends can scan this to add you to their address book and pay you.": "Friends can scan this to add you to their address book and pay you.",
+
+  // ----- Seed-phrase reveal dialog -----
+  "Keep it offline": "Keep it offline",
+  "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.": "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.",
+  "I'm ready": "I'm ready",
+  "Tap Show words to reveal.": "Tap Show words to reveal.",
+  "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.": "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.",
+  "Show words": "Show words",
+  "Hide words": "Hide words",
+  "I have it written down": "I have it written down",
+  "Share profile": "Share profile",
+  "Edit profile picture": "Edit profile picture",
+  "Profile picture": "Profile picture",
+  "Recovery phrase backed up": "Recovery phrase backed up",
+  "Recovery phrase not backed up yet": "Recovery phrase not backed up yet",
+  "Publishing…": "Publishing…",
+  "Public": "Public",
+  "Retrying": "Retrying",
+  "Publish failed": "Publish failed",
+  "Not published yet": "Not published yet"
 }

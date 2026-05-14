@@ -1225,10 +1225,10 @@ export default {
 
   // Estado vacío + hoja para añadir sitios
   "Sign in to your first site": "Inicia sesión en tu primer sitio",
-  "Any site that supports \"Login with Bitcoin\" works. No passwords, no email.": "Funciona con cualquier sitio que admita \"Login with Bitcoin\". Sin contraseñas ni correo.",
+  "Any site with Lightning login works. No passwords, no email.": "Funciona con cualquier sitio que admita inicio de sesión por Lightning. Sin contraseñas ni correo.",
   "Sign in to a site": "Iniciar sesión en un sitio",
   "Sign in to a new site": "Iniciar sesión en un nuevo sitio",
-  "Open a site that supports Lightning login, tap \"Login with Bitcoin\", then copy the link and paste it here.": "Abre un sitio que admita inicio de sesión por Lightning, toca \"Login with Bitcoin\", copia el enlace y pégalo aquí.",
+  "Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.": "Abre un sitio con inicio de sesión por Lightning, toca la opción de iniciar sesión, copia el enlace y pégalo aquí.",
   "Paste login link": "Pega el enlace de inicio de sesión",
   "Clear": "Borrar",
   "Paste": "Pegar",
@@ -1236,7 +1236,7 @@ export default {
   "That link is not a Lightning login. Check the site and copy the link again.": "Ese enlace no es un inicio de sesión Lightning. Revisa el sitio y copia el enlace otra vez.",
 
   // Escáner para añadir sitios
-  "Point your camera at the \"Login with Bitcoin\" QR code.": "Apunta tu cámara al código QR \"Login with Bitcoin\".",
+  "Point your camera at the Lightning login QR code.": "Apunta tu cámara al código QR del inicio de sesión por Lightning.",
   "Or paste a link instead": "O pega un enlace",
   "Or scan with camera": "O escanea con la cámara",
   "No camera found on this device.": "No se encontró ninguna cámara en este dispositivo.",
@@ -1310,5 +1310,59 @@ export default {
   "Couldn't copy": "No se pudo copiar",
   "Copied": "Copiado",
   "Copied. Clears in 30s.": "Copiado. El portapapeles se borra en 30s.",
-  "Clipboard clears in": "El portapapeles se borra en"
+  "Clipboard clears in": "El portapapeles se borra en",
+
+  // ----- Profile hero (Plan 09 §7a) -----
+  "Add your name and a picture": "Añade tu nombre y una foto",
+  "Tap to make your profile yours": "Toca para hacer tu perfil tuyo",
+  "Your profile": "Tu perfil",
+  "Edit profile": "Editar perfil",
+
+  // ----- Profile editor sheet (Plan 09 §7b) -----
+  "Close": "Cerrar",
+  "Choose profile picture": "Elegir foto de perfil",
+  "Display name": "Nombre para mostrar",
+  "Your name": "Tu nombre",
+  "About": "Sobre ti",
+  "A short bio (optional)": "Una breve biografía (opcional)",
+  "Lightning address": "Dirección Lightning",
+  "Save & Publish": "Guardar y publicar",
+  "Profile saved": "Perfil guardado",
+  "Couldn't save your profile": "No se pudo guardar tu perfil",
+  "Check your connection and try again.": "Comprueba tu conexión e inténtalo de nuevo.",
+  "Couldn't reach the network in time": "No se pudo contactar con la red a tiempo",
+  "Your connection is slow or offline. Check it and try again.": "Tu conexión es lenta o está sin servicio. Compruébala e inténtalo de nuevo.",
+  "The servers refused this profile": "Los servidores rechazaron este perfil",
+  "This is usually temporary. Wait a moment and try again.": "Suele ser temporal. Espera un momento e inténtalo de nuevo.",
+  "Something went wrong on this device. Please try again.": "Algo salió mal en este dispositivo. Vuelve a intentarlo.",
+  "Try again": "Reintentar",
+  "Dismiss": "Descartar",
+  "Looks like an unfamiliar format. Try name@example.com.": "Parece un formato poco común. Prueba con nombre{'@'}ejemplo.com.",
+
+  // ----- Profile share sheet (Plan 09 §7d) -----
+  "Scan to open in a compatible app": "Escanea para abrir en una app compatible",
+  "Couldn't share": "No se pudo compartir",
+  "Share your public profile": "Comparte tu perfil público",
+  "Tap to copy. Scan to add this profile.": "Toca para copiar. Escanea para añadir este perfil.",
+  "Friends can scan this to add you to their address book and pay you.": "Tus amigos pueden escanearlo para añadirte a su agenda y enviarte pagos.",
+
+  // ----- Seed-phrase reveal dialog -----
+  "Keep it offline": "Guárdala sin conexión",
+  "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.": "Escríbela en papel. No le hagas foto. No la guardes en notas en la nube ni en un gestor de contraseñas que no controles tú.",
+  "I'm ready": "Estoy listo",
+  "Tap Show words to reveal.": "Toca Mostrar palabras para verlas.",
+  "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.": "Nunca escribas esta frase en un sitio web. Nunca la compartas en chats, fotos ni notas en la nube.",
+  "Show words": "Mostrar palabras",
+  "Hide words": "Ocultar palabras",
+  "I have it written down": "Ya la tengo anotada",
+  "Share profile": "Compartir perfil",
+  "Edit profile picture": "Editar foto de perfil",
+  "Profile picture": "Foto de perfil",
+  "Recovery phrase backed up": "Frase de recuperación guardada",
+  "Recovery phrase not backed up yet": "Frase de recuperación aún no guardada",
+  "Publishing…": "Publicando…",
+  "Public": "Público",
+  "Retrying": "Reintentando",
+  "Publish failed": "Publicación fallida",
+  "Not published yet": "Aún no publicado"
 }

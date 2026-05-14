@@ -488,6 +488,39 @@ export const useIdentityStore = defineStore('identity', {
     },
 
     /**
+     * Internal: return the raw 32-byte schnorr secret key bytes for the
+     * current Nostr account. Used by `profileStore.publish()` to sign
+     * kind:0 / kind:10002 events; not surfaced to user-facing UI and
+     * deliberately not gated by an extra biometric prompt — the app-
+     * level lock already covered entry to the app, and the byte buffer
+     * is meant to be consumed and wiped within a single call.
+     *
+     * The returned array is freshly allocated on every call; callers
+     * SHOULD `secretKey.fill(0)` once they no longer need it. We never
+     * cache these bytes on the store and never persist them.
+     *
+     * @returns {Promise<Uint8Array>}  32 bytes
+     */
+    async getNostrSecretKeyBytes() {
+      if (!this.bootstrapped) {
+        const err = new Error('No identity seed');
+        err.code = 'IDENTITY_NOT_BOOTSTRAPPED';
+        throw err;
+      }
+      const mnemonic = await this.getMnemonic();
+      try {
+        const { privateKey } = deriveNostrIdentity(
+          mnemonic,
+          this.nostrAccountIndex,
+        );
+        return privateKey;
+      } finally {
+        // eslint-disable-next-line no-unused-vars
+        const _drop = mnemonic;
+      }
+    },
+
+    /**
      * Rotate to a fresh Nostr key while keeping the BuhoGO identity (the
      * BIP-39 seed) unchanged. Bumps the NIP-06 account index by one and
      * recomputes the cached pubkey/npub.
