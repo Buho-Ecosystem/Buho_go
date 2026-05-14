@@ -62,6 +62,12 @@
 <script>
 import { useAddressBookStore } from '../stores/addressBook'
 import { mapActions } from 'pinia'
+
+// Nostr contacts get a quiet re-sync the moment the user reaches for
+// them. Locked decision #2: only on tap, never periodic, so a stale
+// avatar / lud16 corrects itself the next time the user opens the
+// payment flow without ever blocking the tap on a network call.
+const RESYNC_COOLDOWN_MS = 60 * 1000
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import PaymentModal from '../components/PaymentModal.vue'
@@ -114,6 +120,12 @@ export default {
     },
 
     showPaymentModal(contact) {
+      // Kick off a silent profile re-sync before we even decide the
+      // routing — fire-and-forget so it never blocks the tap. The
+      // refresh updates the avatar / lud16 in place; if it errors,
+      // the user still pays with the last-known data.
+      this.maybeRefreshContact(contact)
+
       // Bitcoin contacts need the L1 withdrawal flow - navigate directly to Wallet
       if (contact.addressType === 'bitcoin') {
         this.navigateToBitcoinWithdrawal(contact)
@@ -123,6 +135,27 @@ export default {
       // Lightning and Spark contacts use PaymentModal
       this.selectedContact = contact
       this.showPayment = true
+    },
+
+    /**
+     * Silent re-sync hook for Nostr-sourced contacts. Skips:
+     *   - manual contacts (nothing to sync against)
+     *   - contacts we've re-synced within the cooldown window
+     *     (defends a rage-tap from hammering the relays)
+     *
+     * Errors are swallowed by `refreshContact` itself (it returns a
+     * typed result, never throws) so this stays fire-and-forget.
+     */
+    maybeRefreshContact(contact) {
+      if (!contact || contact.source !== 'nostr' || !contact.nostr_pubkey) return
+      const last = Number(contact.last_synced_at) || 0
+      if (Date.now() - last < RESYNC_COOLDOWN_MS) return
+      const store = useAddressBookStore()
+      store.refreshContact(contact.id).catch((err) => {
+        // refreshContact never throws — this is purely defensive in
+        // case a future change drops that invariant.
+        console.warn('[addressBook] silent refresh threw:', err)
+      })
     },
 
     navigateToBitcoinWithdrawal(contact) {

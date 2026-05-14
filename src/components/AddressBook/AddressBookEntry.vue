@@ -4,13 +4,24 @@
     :class="$q.dark.isActive ? 'contact-card-dark' : 'contact-card-light'"
     @click="$emit('pay', entry)"
   >
-    <!-- Avatar -->
+    <!-- Avatar — real picture for nostr-sourced contacts, colored
+         initial otherwise. The change-color emit still fires on the
+         circle either way; for nostr contacts it's a no-op-friendly
+         click target (color picker just won't show a visible ring
+         under the photo). -->
     <div
       class="contact-avatar"
       :style="{ backgroundColor: entry.color }"
       @click.stop="$emit('change-color', entry)"
     >
-      <span class="avatar-initial">{{ getInitial(entry.name) }}</span>
+      <img
+        v-if="visibleAvatarUrl"
+        class="contact-avatar-img"
+        :src="visibleAvatarUrl"
+        :alt="''"
+        @error="onAvatarError"
+      />
+      <span v-else class="avatar-initial">{{ getInitial(entry.name) }}</span>
     </div>
 
     <!-- Entry Details -->
@@ -121,7 +132,41 @@ export default {
     }
   },
   emits: ['edit', 'delete', 'change-color', 'pay', 'toggle-favorite', 'copy-address'],
+  data() {
+    return {
+      avatarBroken: false,
+    }
+  },
+  watch: {
+    'entry.nostr_profile.picture'() {
+      // A re-sync that points the contact at a different image
+      // deserves its own loading attempt — don't carry the previous
+      // broken-state forward.
+      this.avatarBroken = false
+    },
+  },
   computed: {
+    /**
+     * Visible avatar URL for nostr-sourced contacts. Returns '' for
+     * manual contacts (which keep the colored-initial circle) and
+     * for nostr contacts that haven't successfully loaded an image —
+     * the @error handler flips `avatarBroken` so the next paint
+     * falls back to the initial.
+     *
+     * Gated to https:/http:/data:image — defends against javascript:
+     * URLs and other surprises in a hostile kind:0 profile.
+     */
+    visibleAvatarUrl() {
+      if (this.avatarBroken) return ''
+      if (this.entry?.source !== 'nostr') return ''
+      const raw = this.entry?.nostr_profile?.picture
+      if (typeof raw !== 'string') return ''
+      const trimmed = raw.trim()
+      if (!trimmed) return ''
+      if (!/^(https?:|data:image\/)/i.test(trimmed)) return ''
+      return trimmed
+    },
+
     addressType() {
       return this.entry.addressType || 'lightning'
     },
@@ -173,7 +218,10 @@ export default {
   methods: {
     getInitial(name) {
       return name ? name.charAt(0).toUpperCase() : '?'
-    }
+    },
+    onAvatarError() {
+      this.avatarBroken = true
+    },
   }
 }
 </script>
@@ -209,6 +257,7 @@ export default {
 
 /* Avatar */
 .contact-avatar {
+  position: relative;
   width: 48px;
   height: 48px;
   min-width: 48px;
@@ -222,10 +271,18 @@ export default {
   flex-shrink: 0;
   cursor: pointer;
   transition: transform 0.15s ease;
+  overflow: hidden;
 }
 
 .contact-avatar:hover {
   transform: scale(1.05);
+}
+
+.contact-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .avatar-initial {
