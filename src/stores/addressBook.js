@@ -5,6 +5,12 @@ import {
   isLightningAddress,
 } from '../utils/addressUtils.js'
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js'
+import {
+  buildAddressBookEvent,
+  fetchAddressBook,
+  publishAddressBook,
+  serializeContactPayload,
+} from '../utils/nostrAddressBook.js'
 
 // Address type constants
 export const ADDRESS_TYPES = {
@@ -62,11 +68,24 @@ function cloneEvent(event) {
   return event ? JSON.parse(JSON.stringify(event)) : null
 }
 
+// Persistence key for the small metadata blob the sync layer keeps
+// alongside the entry list. We don't co-mingle it with the entries
+// key to keep the migration story for older builds zero-touch — they
+// still read `buhoGO_address_book` and ignore this sibling.
+const SYNC_META_STORAGE_KEY = 'buhoGO_address_book_sync_v1'
+
 export const useAddressBookStore = defineStore('addressBook', {
   state: () => ({
     entries: [],
     _initialized: false,
     searchQuery: '',
+    // Nostr sync state — populated lazily by initialize()
+    isSyncing: false,
+    isRecovering: false,
+    lastSyncedAt: null,
+    lastSyncError: null,
+    lastRecoveryAt: null,
+    syncDirty: false,
     colorPalette: [
       '#3B82F6', // Blue
       '#10B981', // Emerald
@@ -159,7 +178,42 @@ export const useAddressBookStore = defineStore('addressBook', {
         console.error('Error loading address book:', error)
         this.entries = []
       }
+      try {
+        const savedMeta = localStorage.getItem(SYNC_META_STORAGE_KEY)
+        if (savedMeta) {
+          const parsed = JSON.parse(savedMeta)
+          if (parsed && typeof parsed === 'object') {
+            this.lastSyncedAt = Number.isFinite(parsed.lastSyncedAt) ? parsed.lastSyncedAt : null
+            this.lastRecoveryAt = Number.isFinite(parsed.lastRecoveryAt) ? parsed.lastRecoveryAt : null
+            this.syncDirty = !!parsed.syncDirty
+          }
+        }
+      } catch (error) {
+        console.warn('Error loading address-book sync metadata:', error)
+      }
       this._initialized = true
+    },
+
+    // Mark there are local nostr-contact changes not yet pushed to
+    // the user's private NIP-51 list. Cheap to call from every
+    // mutation path; the sync layer reads this when deciding whether
+    // a publish is actually necessary.
+    async _markSyncDirty() {
+      if (this.syncDirty) return
+      this.syncDirty = true
+      await this._persistSyncMeta()
+    },
+
+    async _persistSyncMeta() {
+      try {
+        localStorage.setItem(SYNC_META_STORAGE_KEY, JSON.stringify({
+          lastSyncedAt: this.lastSyncedAt,
+          lastRecoveryAt: this.lastRecoveryAt,
+          syncDirty: this.syncDirty,
+        }))
+      } catch (error) {
+        console.warn('Error saving address-book sync metadata:', error)
+      }
     },
 
     // Add new entry
@@ -278,6 +332,17 @@ export const useAddressBookStore = defineStore('addressBook', {
         this.entries.splice(entryIndex, 1, updatedEntry)
         await this.persistEntries()
 
+        // The petname is the only syncable field updateEntry can
+        // touch on a Nostr contact (the address always comes from
+        // lud16). Mark dirty only when that flipped — avoids a
+        // publish round-trip for a notes-only edit.
+        if (
+          currentEntry.source === CONTACT_SOURCES.NOSTR
+          && updatedEntry.name_locally_edited !== currentEntry.name_locally_edited
+        ) {
+          await this._markSyncDirty()
+        }
+
         return updatedEntry
       } catch (error) {
         throw error
@@ -296,6 +361,10 @@ export const useAddressBookStore = defineStore('addressBook', {
         const deletedEntry = this.entries[entryIndex]
         this.entries.splice(entryIndex, 1)
         await this.persistEntries()
+
+        if (deletedEntry.source === CONTACT_SOURCES.NOSTR) {
+          await this._markSyncDirty()
+        }
 
         return deletedEntry
       } catch (error) {
@@ -402,6 +471,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
       this.entries.push(newEntry)
       await this.persistEntries()
+      await this._markSyncDirty()
       return newEntry
     },
 
@@ -511,6 +581,262 @@ export const useAddressBookStore = defineStore('addressBook', {
       this.entries.splice(entryIndex, 1, updated)
       await this.persistEntries()
       return { updated: true, reason: 'synced', entry: updated }
+    },
+
+    /**
+     * Push the current Nostr-sourced contact list to the user's
+     * private NIP-51 kind:30000 event. Wraps the eager fan-out from
+     * `publishAddressBook` in the same UX-facing shape `profileStore.publish`
+     * returns so the UI can surface success / failure identically.
+     *
+     * Skip cases (return shape includes `skipped: true`):
+     *   - identity not bootstrapped (caller will prompt unlock)
+     *   - no nostr-sourced contacts to publish
+     *
+     * The secret-key buffer is wiped immediately after signing — same
+     * pattern as `profileStore.publish` — so the unlocked-mnemonic
+     * exposure window stays narrow.
+     *
+     * @param {{
+     *   identityStore: any,        // useIdentityStore() instance
+     *   pool?:    any,
+     *   relays?:  readonly string[],
+     *   timeoutMs?: number,
+     * }} args
+     * @returns {Promise<
+     *   | { ok: true,  acceptedRelay: string, contactsPublished: number, settled: Promise<any[]> }
+     *   | { ok: false, contactsPublished: number, results: any[], settled: Promise<any[]> }
+     *   | { skipped: true, reason: 'identity-not-bootstrapped' | 'no-nostr-contacts' }
+     *   | null  // re-entrant call ignored
+     * >}
+     */
+    async syncToNostr({ identityStore, pool, relays, timeoutMs } = {}) {
+      await this.initialize()
+      if (this.isSyncing) return null
+      if (!identityStore || !identityStore.bootstrapped) {
+        return { skipped: true, reason: 'identity-not-bootstrapped' }
+      }
+
+      const payload = serializeContactPayload(this.entries)
+      if (payload.length === 0) {
+        // Nothing to publish — but treat this as a successful "synced"
+        // moment so the dirty flag clears (e.g. user deleted their
+        // only nostr contact: we want the next open to not retry).
+        this.syncDirty = false
+        this.lastSyncedAt = Date.now()
+        this.lastSyncError = null
+        await this._persistSyncMeta()
+        return { skipped: true, reason: 'no-nostr-contacts' }
+      }
+
+      this.isSyncing = true
+      this.lastSyncError = null
+      try {
+        const pubkey = identityStore.nostrPubkeyHex
+        if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
+          this.lastSyncError = 'NO_PUBKEY'
+          return { ok: false, contactsPublished: 0, results: [], settled: Promise.resolve([]) }
+        }
+
+        let secretKey
+        let event
+        try {
+          secretKey = await identityStore.getNostrSecretKeyBytes()
+          event = buildAddressBookEvent({ secretKey, pubkey, payload })
+        } finally {
+          if (secretKey) secretKey.fill(0)
+        }
+
+        const fanout = publishAddressBook({ pool, relays, event, timeoutMs })
+        const settled = fanout.allSettled
+        const firstAccept = await fanout.firstAccept
+
+        if (firstAccept) {
+          this.lastSyncedAt = Date.now()
+          this.syncDirty = false
+          await this._persistSyncMeta()
+          return {
+            ok: true,
+            acceptedRelay: firstAccept.relay,
+            contactsPublished: payload.length,
+            settled,
+          }
+        }
+
+        const results = await settled
+        this.lastSyncError = 'ALL_RELAYS_REJECTED'
+        console.warn('[addressBook] sync landed on zero relays:', results)
+        return { ok: false, contactsPublished: payload.length, results, settled: Promise.resolve(results) }
+      } catch (err) {
+        this.lastSyncError = err?.code || err?.message || 'UNKNOWN'
+        console.warn('[addressBook] sync failed:', err)
+        return { ok: false, contactsPublished: 0, results: [], settled: Promise.resolve([]) }
+      } finally {
+        this.isSyncing = false
+      }
+    },
+
+    /**
+     * Pull the user's private NIP-51 address book from relays and
+     * merge into the local store. Designed to be called after
+     * identity restore — but safe to call any time as a "refresh
+     * from cloud" affordance.
+     *
+     * Conflict policy (from the recovery-plan doc):
+     *   - Local entry with the same pubkey wins, BUT we still pick
+     *     up a synced petname if the user hasn't locally edited the
+     *     name on this device.
+     *   - Remote-only entries are added by fetching their current
+     *     kind:0 to rebuild the snapshot. Contacts whose current
+     *     kind:0 lacks a lud16 are recorded under `unpayable` so the
+     *     UI can show "couldn't restore N (no Lightning address)".
+     *
+     * Network and decryption failures collapse to a typed result so
+     * the recovery wizard never has to wrap this in try/catch.
+     */
+    async recoverFromNostr({ identityStore, pool, relays, timeoutMs, profileFetcher } = {}) {
+      await this.initialize()
+      if (this.isRecovering) return null
+      if (!identityStore || !identityStore.bootstrapped) {
+        return { ok: false, reason: 'identity-not-bootstrapped' }
+      }
+      const pubkey = identityStore.nostrPubkeyHex
+      if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
+        return { ok: false, reason: 'no-pubkey' }
+      }
+
+      this.isRecovering = true
+      try {
+        let remote
+        let secretKey
+        try {
+          secretKey = await identityStore.getNostrSecretKeyBytes()
+          remote = await fetchAddressBook({ pool, relays, pubkey, secretKey, timeoutMs })
+        } catch (err) {
+          if (err?.code === 'ADDRESS_BOOK_DECRYPT_FAILED') {
+            return { ok: false, reason: 'decrypt-failed', error: err }
+          }
+          return { ok: false, reason: 'fetch-failed', error: err }
+        } finally {
+          if (secretKey) secretKey.fill(0)
+        }
+
+        if (!remote) {
+          this.lastRecoveryAt = Date.now()
+          await this._persistSyncMeta()
+          return { ok: true, hadRemote: false, restored: 0, skipped: 0, unpayable: 0 }
+        }
+
+        const fetcher = typeof profileFetcher === 'function' ? profileFetcher : fetchProfile
+        let restored = 0
+        let skipped = 0
+        let unpayable = 0
+
+        for (const remoteContact of remote.contacts) {
+          const localExisting = this.entries.find(
+            (e) => e.nostr_pubkey === remoteContact.pubkey,
+          )
+          if (localExisting) {
+            // Light-touch merge: adopt the synced petname when this
+            // device hasn't locally edited the name and the remote
+            // has a petname. Otherwise leave the local entry alone —
+            // local always wins on this device.
+            if (remoteContact.petname && !localExisting.name_locally_edited) {
+              const updated = {
+                ...localExisting,
+                name: remoteContact.petname.slice(0, 80),
+                name_locally_edited: true,
+                updatedAt: Date.now(),
+              }
+              const idx = this.entries.findIndex((e) => e.id === localExisting.id)
+              if (idx !== -1) {
+                this.entries.splice(idx, 1, updated)
+              }
+            }
+            skipped += 1
+            continue
+          }
+
+          // Rebuild from the contact's latest kind:0.
+          let event = null
+          try {
+            const fetchOpts = {}
+            if (Array.isArray(remoteContact.relays) && remoteContact.relays.length > 0) {
+              fetchOpts.relays = remoteContact.relays
+            } else if (Array.isArray(relays) && relays.length > 0) {
+              fetchOpts.relays = relays
+            }
+            if (pool) fetchOpts.pool = pool
+            event = await fetcher(remoteContact.pubkey, fetchOpts)
+          } catch (err) {
+            console.warn('[addressBook] recovery: fetchProfile failed for', remoteContact.pubkey, err)
+          }
+
+          if (!event) {
+            unpayable += 1
+            continue
+          }
+
+          const profile = parseProfileContent(event)
+          const lud16Raw = typeof profile.lud16 === 'string' ? profile.lud16.trim() : ''
+          if (!lud16Raw || !isLightningAddress(lud16Raw)) {
+            unpayable += 1
+            continue
+          }
+
+          // Compute npub from pubkey hex. We could lift this into a
+          // util but for the recovery hot-path it stays inline so
+          // each contact restored is a self-contained transaction.
+          let npub = ''
+          try {
+            const { nip19 } = await import('nostr-core')
+            npub = nip19.npubEncode(remoteContact.pubkey)
+          } catch {
+            unpayable += 1
+            continue
+          }
+
+          try {
+            const newEntry = await this.addNostrContact({
+              pubkey: remoteContact.pubkey,
+              npub,
+              event,
+              relayHints: remoteContact.relays || [],
+            })
+            // Apply the synced petname after the add so the regular
+            // `addNostrContact` validation runs unaltered.
+            if (remoteContact.petname) {
+              await this.updateEntry(newEntry.id, { name: remoteContact.petname })
+            }
+            if (Number.isFinite(remoteContact.addedAt)) {
+              // Best-effort: preserve original-add timestamp so the
+              // restored list keeps the user's mental ordering.
+              const idx = this.entries.findIndex((e) => e.id === newEntry.id)
+              if (idx !== -1) {
+                const restored = { ...this.entries[idx], createdAt: remoteContact.addedAt }
+                this.entries.splice(idx, 1, restored)
+                await this.persistEntries()
+              }
+            }
+            restored += 1
+          } catch (err) {
+            // `addNostrContact` throws on dedupe or schema issues —
+            // not fatal for the rest of the restore.
+            console.warn('[addressBook] recovery: addNostrContact failed for', remoteContact.pubkey, err)
+            unpayable += 1
+          }
+        }
+
+        // Recovery DOESN'T clear `syncDirty` automatically — if a
+        // petname-merge happened, those changes should be pushed back
+        // on next sync so the snapshot stays consistent across
+        // devices. We DO record the timestamp.
+        this.lastRecoveryAt = Date.now()
+        await this._persistSyncMeta()
+        return { ok: true, hadRemote: true, restored, skipped, unpayable }
+      } finally {
+        this.isRecovering = false
+      }
     },
 
     // Toggle favorite status
