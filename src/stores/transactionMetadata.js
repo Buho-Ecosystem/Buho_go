@@ -146,24 +146,36 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         sentAt: now,
       })
       await this.persistPendingLinks()
+      console.log(
+        '[txMetadata] queued contact link',
+        { contactId, recipientAddress: normalisedAddress, amountSats: amount },
+        'queue size:',
+        this.pendingContactLinks.length,
+      )
     },
 
     /**
      * Drain the pending queue against a list of transactions, tagging
-     * any outgoing tx that lines up with a queued link by amount +
-     * timestamp window. Idempotent — once a link is consumed it
-     * disappears, and txs that already have a contactId are skipped.
+     * outgoing txs that fall inside the time window of a queued link.
      *
-     * Safe to call on every list refresh; the work is O(linkCount *
-     * txCount) but both are tiny in practice.
+     * Matching strategy: for each pending link, pick the newest
+     * unassigned outgoing tx whose timestamp is within the window.
+     * Amount is used only as a *tie-breaker* when multiple txs match
+     * the window — never as a hard filter — because providers report
+     * the send amount inconsistently (fees included vs not, sign
+     * flipped on some rails, rounding on Spark, etc.). The looser
+     * match is fine in practice: a user almost never has two sends
+     * in flight within five minutes that they want linked to
+     * different contacts.
+     *
+     * Idempotent — once a link is consumed it disappears, and txs
+     * that already have a contactId are skipped.
      */
     async consumePendingContactLinks(transactions) {
       if (!Array.isArray(transactions) || transactions.length === 0) return 0
       if (!this.pendingContactLinks || this.pendingContactLinks.length === 0) return 0
 
       const now = Date.now()
-      // Start from a fresh, TTL-filtered list so stale entries never
-      // get to claim anything even if the refresh wakes them up.
       let remaining = this.pendingContactLinks.filter(
         (link) => now - (link.sentAt || 0) < PENDING_LINK_TTL_MS,
       )
@@ -171,37 +183,49 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       let matched = 0
       let mutated = remaining.length !== this.pendingContactLinks.length
 
-      // Iterate outgoing txs from newest to oldest — most recent send
-      // is most likely the one waiting for a tag.
-      const outgoing = transactions
+      // Unassigned outgoing txs, newest first.
+      const candidates = transactions
         .filter((tx) => {
-          const t = (tx?.type || '').toLowerCase()
+          if (!tx?.id || this.metadata[tx.id]?.contactId) return false
+          const t = (tx.type || '').toLowerCase()
           if (t === 'send' || t === 'sent' || t === 'outgoing') return true
           if (t === 'receive' || t === 'received' || t === 'incoming') return false
-          // Sign-fallback for providers that don't normalise direction
-          return Number(tx?.amount || 0) < 0
+          return Number(tx.amount || 0) < 0
         })
-        .filter((tx) => tx?.id && !this.metadata[tx.id]?.contactId)
+        .map((tx) => ({ tx, timeMs: this._resolveTxTimeMs(tx) }))
+        .sort((a, b) => b.timeMs - a.timeMs)
 
-      for (const tx of outgoing) {
-        const txAmount = Math.abs(Number(tx.amount) || 0)
-        const txTimeMs = this._resolveTxTimeMs(tx)
-        // Find the best link match — same amount, sentAt within the
-        // window. We don't require exact ms parity; Spark settlement
-        // can lag a few seconds behind the send call.
-        const linkIdx = remaining.findIndex((link) => {
-          if (link.amountSats && txAmount && link.amountSats !== txAmount) return false
-          if (!txTimeMs) return true // no timestamp — fall back to amount
-          return Math.abs(txTimeMs - link.sentAt) <= PENDING_LINK_TIME_WINDOW_MS
+      // Track which candidate ids we've already claimed in this pass.
+      const claimed = new Set()
+
+      // Walk links newest-first too, so an older link doesn't snatch
+      // the freshest tx away from a more-recent send.
+      const linksByRecency = [...remaining].sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0))
+
+      for (const link of linksByRecency) {
+        const linkSentAt = link.sentAt || 0
+        // In-window candidates that nobody else has claimed yet.
+        const eligible = candidates.filter(({ tx, timeMs }) => {
+          if (claimed.has(tx.id)) return false
+          if (!timeMs) return true
+          return Math.abs(timeMs - linkSentAt) <= PENDING_LINK_TIME_WINDOW_MS
         })
-        if (linkIdx === -1) continue
+        if (eligible.length === 0) continue
 
-        const link = remaining[linkIdx]
+        // Prefer the closest amount match when we have one; otherwise
+        // just take the newest in-window candidate.
+        let pick = eligible[0]
+        if (link.amountSats) {
+          const exact = eligible.find(({ tx }) => Math.abs(Number(tx.amount) || 0) === link.amountSats)
+          if (exact) pick = exact
+        }
+
         try {
-          await this.setContactForTransaction(tx.id, link.contactId)
-          matched += 1
-          remaining.splice(linkIdx, 1)
+          await this.setContactForTransaction(pick.tx.id, link.contactId)
+          claimed.add(pick.tx.id)
+          remaining = remaining.filter((l) => l !== link)
           mutated = true
+          matched += 1
         } catch (err) {
           console.warn('[txMetadata] failed to stamp tx from pending link:', err)
         }
@@ -210,6 +234,12 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       if (mutated) {
         this.pendingContactLinks = remaining
         await this.persistPendingLinks()
+      }
+      if (matched > 0 || linksByRecency.length > 0) {
+        console.log(
+          '[txMetadata] consumePendingContactLinks:',
+          { matched, remaining: remaining.length, candidates: candidates.length, txCount: transactions.length },
+        )
       }
       return matched
     },
