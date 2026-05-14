@@ -1001,19 +1001,26 @@ export default {
           address: ''
         };
       } else if (p.lightningAddress) {
-        recipient = {
-          name: p.lightningAddress,
-          color: '#F59E0B',
+        // If the destination matches a saved contact, surface their
+        // local name + color (and Nostr avatar when present) instead
+        // of the raw address. Works for every entry path — picker,
+        // typed address, or pasted link — because the lookup is on
+        // the resolved address, not on how it arrived.
+        const contact = this.addressBookStore.findContactByAddress(p.lightningAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: p.lightningAddress,
+          fallbackColor: '#F59E0B',
           addressType: 'lightning',
-          address: p.lightningAddress
-        };
+          address: p.lightningAddress,
+        });
       } else if (p.sparkAddress) {
-        recipient = {
-          name: this.$t('Spark address'),
-          color: '#6B7280',
+        const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: this.$t('Spark address'),
+          fallbackColor: '#6B7280',
           addressType: 'spark',
-          address: p.sparkAddress
-        };
+          address: p.sparkAddress,
+        });
       } else if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
         recipient = {
           name: this.$t('LNURL payment'),
@@ -1426,6 +1433,36 @@ export default {
     }
   },
   methods: {
+    /**
+     * Build a PaymentConfirmSheet recipient payload from a saved
+     * address-book contact, falling back to the supplied defaults
+     * when no contact is found. Threads the Nostr `picture` field
+     * through the sheet's existing `logoUrl` slot so the real
+     * avatar appears on the Send-to screen — same plumbing the
+     * merchant QR flow uses.
+     */
+    recipientFromContact(contact, fallback) {
+      if (!contact) {
+        return {
+          name: fallback.fallbackName,
+          color: fallback.fallbackColor,
+          addressType: fallback.addressType,
+          address: fallback.address,
+        };
+      }
+      const nostrPicture = typeof contact.nostr_profile?.picture === 'string'
+        ? contact.nostr_profile.picture.trim()
+        : '';
+      const safeLogoUrl = /^(https?:|data:image\/)/i.test(nostrPicture) ? nostrPicture : '';
+      return {
+        name: contact.name || fallback.fallbackName,
+        color: contact.color || fallback.fallbackColor,
+        logoUrl: safeLogoUrl,
+        addressType: fallback.addressType,
+        address: fallback.address,
+      };
+    },
+
     goToBackup() {
       this.$router.push('/settings?section=backup');
     },
