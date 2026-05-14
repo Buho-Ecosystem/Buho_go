@@ -5,6 +5,7 @@ node_modules
 # LLM Stuff
 /.claude
 /Plans WIP
+/Articels
 /cloud_backup.md
 /audit
 /playwright.config.mjs

@@ -33,6 +33,12 @@
         </q-btn>
       </div>
 
+      <!-- Scrollable content region — handle + header above and the
+           error banner + action bar below stay pinned; everything
+           between scrolls, so the last field is always reachable on
+           short viewports. -->
+      <div class="sheet-scroll">
+
       <!-- Avatar block. 96px circle, tappable → emits open-picker so
            the parent can chain in the Avatar Picker sub-sheet (Plan 09
            §7c). Shows an uploading state directly on the avatar while
@@ -174,6 +180,7 @@
           </span>
         </label>
       </div>
+      </div><!-- /sheet-scroll -->
 
       <!-- Persistent publish-error banner. Lives next to the action
            bar so the user can read what went wrong and tap Save &
@@ -488,6 +495,10 @@ export default {
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
+  /* Bound the column so the middle region can scroll instead of the
+     last field being clipped behind the action bar. */
+  max-height: 90vh;
+  max-height: 90dvh;
 }
 
 /* Drag handle bar */
@@ -495,6 +506,7 @@ export default {
   display: flex;
   justify-content: center;
   padding: 8px 0 4px;
+  flex-shrink: 0;
 }
 
 .sheet-handle-bar-light,
@@ -514,6 +526,7 @@ export default {
   align-items: center;
   padding: 4px 16px 8px;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .sheet-title {
@@ -526,6 +539,18 @@ export default {
 
 .sheet-close-btn {
   flex: 0 0 auto;
+}
+
+/* Scrollable content region — the only part of the sheet that
+   scrolls. The handle/header above and the error banner + action
+   bar below stay pinned. `min-height: 0` is required so this flex
+   child can shrink below its content height and actually scroll. */
+.sheet-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 /* Avatar */
@@ -738,10 +763,10 @@ body.body--dark .avatar-edit-badge {
   gap: 4px;
 }
 
-/* Sticky action bar at the bottom of the sheet */
+/* Pinned action bar — sits below the scroll region as a fixed flex
+   child (not sticky; the scroll now lives in `.sheet-scroll`). */
 .sheet-actions {
-  position: sticky;
-  bottom: 0;
+  flex-shrink: 0;
   padding: 12px 16px 8px;
   display: flex;
   flex-direction: column;
@@ -799,6 +824,7 @@ body.body--dark .avatar-edit-badge {
   padding: 12px 14px;
   margin: 0 16px 8px;
   border-radius: 12px;
+  flex-shrink: 0;
 }
 
 .publish-error-block-light {

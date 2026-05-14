@@ -16,14 +16,15 @@
       </div>
       <div class="header-actions">
         <q-btn
-          no-caps
-          unelevated
-          class="add-contact-btn"
-          :class="$q.dark.isActive ? 'add-contact-btn-dark' : 'add-contact-btn-light'"
+          flat
+          round
+          dense
+          class="ab-icon-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          :aria-label="$t('Add Contact')"
           @click="showAddModal"
         >
-          <Icon icon="tabler:plus" width="16" height="16" class="q-mr-xs" />
-          {{ $t('Add Contact') }}
+          <Icon icon="tabler:plus" width="20" height="20" />
         </q-btn>
         <!-- Power-user overflow. The only thing here is "restore from
              Nostr" — every other sync action is automatic (publish on
@@ -33,7 +34,7 @@
           flat
           round
           dense
-          class="ab-kebab-btn"
+          class="ab-icon-btn"
           :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
           :aria-label="$t('More options')"
         >
@@ -71,7 +72,6 @@
 
     <!-- Content -->
     <div class="page-content full">
-      <AddressBookSyncStatus class="ab-sync-row" @sync="runSync" />
       <AddressBookList
         @add-contact="showAddModal"
         @edit-contact="showEditModal"
@@ -122,7 +122,6 @@ const AUTO_SYNC_DEBOUNCE_MS = 1500
 
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
-import AddressBookSyncStatus from '../components/AddressBook/AddressBookSyncStatus.vue'
 import PaymentModal from '../components/PaymentModal.vue'
 import BatchSendModal from '../components/BatchSendModal.vue'
 
@@ -131,7 +130,6 @@ export default {
   components: {
     AddressBookList,
     AddressBookModal,
-    AddressBookSyncStatus,
     PaymentModal,
     BatchSendModal
   },
@@ -498,14 +496,14 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
-/* Right-side header cluster: Add Contact + overflow kebab. */
+/* Right-side header cluster: add + overflow, both icon buttons. */
 .header-actions {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.ab-kebab-btn {
+.ab-icon-btn {
   width: 36px;
   height: 36px;
   border-radius: 10px;
@@ -514,49 +512,12 @@ export default {
   justify-content: center;
 }
 
-/* Sync status row sits between the header and the list — one calm
-   line, never a panel. */
-.ab-sync-row {
-  margin-left: 1rem;
-}
-
 .ab-spin {
   animation: ab-spin 0.9s linear infinite;
 }
 
 @keyframes ab-spin {
   to { transform: rotate(360deg); }
-}
-
-/* Add Contact button — unified neutral translucent style, same
-   treatment as the empty-state CTA and the Copy/Share buttons in
-   the receive flow. No greens; the icon carries the intent. */
-.add-contact-btn {
-  border-radius: 10px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: 'Manrope', sans-serif;
-  letter-spacing: -0.005em;
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.add-contact-btn-dark {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.add-contact-btn-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.add-contact-btn-light {
-  background: rgba(0, 0, 0, 0.05);
-  color: rgba(0, 0, 0, 0.75);
-}
-
-.add-contact-btn-light:hover {
-  background: rgba(0, 0, 0, 0.08);
 }
 
 /* Content */
@@ -578,11 +539,6 @@ export default {
 
   .page-content {
     height: calc(100vh - 70px);
-  }
-
-  .add-contact-btn {
-    padding: 5px 12px;
-    font-size: 12px;
   }
 }
 </style>

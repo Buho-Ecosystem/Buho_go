@@ -229,10 +229,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, getCurrentInstance } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
-import { useI18n } from 'vue-i18n';
 import { useAddressBookStore } from '../stores/addressBook';
 import AddressBookModal from './AddressBook/AddressBookModal.vue';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
@@ -248,7 +247,14 @@ const emit = defineEmits(['update:modelValue', 'pay-contact', 'open-batch-send']
 // ─────────────────────────────────────────────────────────────
 const $q = useQuasar();
 const router = useRouter();
-const { t: $t } = useI18n();
+// vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws
+// "Not available in legacy mode". Reach $t through the component proxy —
+// same pattern as InternalTransferModal / BatchSendModal. The local must
+// NOT be named `$t`: a $-prefixed script-setup binding collides with
+// vue-i18n's own legacy `$t` injection ("set on proxy trap returned
+// falsish"). Templates still use the global `$t` directly.
+const { proxy } = getCurrentInstance();
+const t = (key, params) => proxy.$t(key, params);
 const addressBookStore = useAddressBookStore();
 
 // ─────────────────────────────────────────────────────────────
@@ -357,8 +363,8 @@ function selectContact(contact) {
   if (contact.source === 'nostr' && !addressBookStore.isEntryPayable(contact)) {
     $q.notify({
       type: 'info',
-      message: $t('No Lightning address yet'),
-      caption: $t(
+      message: t('No Lightning address yet'),
+      caption: t(
         "{name} hasn't published a Lightning address. Open Address Book to check again later.",
         { name: contact.name },
       ),
