@@ -232,7 +232,19 @@
           @click="openTransactionHistory"
           :aria-label="$t('Open transaction history')"
         >
-          <span class="last-tx-icon" :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'">
+          <!-- Contact-linked preview: render the contact's avatar
+               (real Nostr picture when present) so the home-screen
+               row looks like a person, not a generic direction icon. -->
+          <ContactAvatar
+            v-if="lastTxContact"
+            class="last-tx-avatar"
+            :entry="lastTxContact"
+          />
+          <span
+            v-else
+            class="last-tx-icon"
+            :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'"
+          >
             <Icon :icon="lastTxIcon" width="18" height="18" />
           </span>
           <span class="last-tx-info">
@@ -665,13 +677,19 @@ import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {useIdentityStore} from '../stores/identity';
 import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
-import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
+import {
+  fingerprintToGradient as identityFingerprintToGradient,
+  bytesToHex,
+  hexToBytes,
+} from '../utils/identityCrypto.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import {
   useBitcoinPreferencesStore,
   BITCOIN_DEPOSIT_POLL_MS,
@@ -695,6 +713,7 @@ export default {
     NumberFlow,
     BackupBanner,
     IdentityAuthDialog,
+    ContactAvatar,
   },
   setup() {
     const walletStore = useWalletStore();
@@ -855,7 +874,31 @@ export default {
       return this.lastTxIsIncoming ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right';
     },
 
+    /**
+     * Address-book contact linked to the most recent transaction, if
+     * any. Drives the preview widget's avatar + title so the user
+     * sees "DrShift  ←  picture" instead of the generic
+     * "Payment Sent ← up-arrow" once a contact is associated. The
+     * association is written at send time by confirmPayment.
+     */
+    lastTxContact() {
+      const tx = this.lastTransaction;
+      if (!tx || !tx.id || !this.transactionMetadataStore || !this.addressBookStore) {
+        return null;
+      }
+      try {
+        const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id);
+        if (!meta?.contactId) return null;
+        return this.addressBookStore.getEntryById(meta.contactId) || null;
+      } catch {
+        return null;
+      }
+    },
+
     lastTxTitle() {
+      // Prefer the linked contact's name so the home-screen preview
+      // reads as "DrShift" instead of the generic direction label.
+      if (this.lastTxContact?.name) return this.lastTxContact.name;
       return this.lastTxIsIncoming
         ? this.$t('Payment Received')
         : this.$t('Payment Sent');
@@ -1439,6 +1482,42 @@ export default {
     }
   },
   methods: {
+    /**
+     * Best-effort tx-id derivation from a send-result.
+     *
+     *   - Spark           → result.id is the transfer UUID the list uses
+     *   - LNBits          → result.paymentHash is set by the provider
+     *   - NWC (NIP-47)    → only `preimage` comes back; sha256(preimage)
+     *                       equals the payment_hash the list keys on
+     *
+     * Returns null when no recognisable field is present; the caller
+     * just skips the metadata write in that case (the autoAssignContacts
+     * fallback in TransactionHistory still has a shot at matching by
+     * description). Kept synchronous — @noble/hashes/sha256 doesn't
+     * touch the network.
+     */
+    deriveTxIdFromSendResult(result) {
+      if (!result) return null;
+      const direct =
+        result.payment_hash ||
+        result.paymentHash ||
+        result.rHash ||
+        result.r_hash ||
+        result.id ||
+        null;
+      if (direct) return direct;
+
+      const preimage = result.preimage;
+      if (typeof preimage === 'string' && /^[0-9a-f]{64}$/i.test(preimage)) {
+        try {
+          return bytesToHex(sha256(hexToBytes(preimage.toLowerCase())));
+        } catch (err) {
+          console.warn('[wallet] could not derive payment_hash from preimage:', err);
+        }
+      }
+      return null;
+    },
+
     /**
      * Build a PaymentConfirmSheet recipient payload from a saved
      * address-book contact, falling back to the supplied defaults
@@ -3363,14 +3442,13 @@ export default {
         // "saved contact → tag the tx" path below and the post-send
         // save-as-contact dialog so a freshly created contact also gets
         // its first transaction linked.
-        const sentTxId = result
-          ? (result.payment_hash ||
-             result.paymentHash ||
-             result.rHash ||
-             result.r_hash ||
-             result.id ||
-             null)
-          : null;
+        //
+        // NWC's pay_invoice response (NIP-47) returns only `preimage` —
+        // no payment_hash — so for that path we derive it locally via
+        // sha256(preimage). That's the spec definition (payment_hash IS
+        // sha256 of preimage) and matches the id the NWC provider's
+        // getTransactions mapping assigns to the row (tx.payment_hash).
+        const sentTxId = this.deriveTxIdFromSendResult(result);
 
         // Stamp the transaction with the contact it was sent to so the
         // tx list / details render with the saved name + avatar without
@@ -4605,6 +4683,16 @@ export default {
 .last-tx-icon-dark {
   background: rgba(255, 255, 255, 0.06);
   color: #cbd5e1;
+}
+
+/* Inherit-class slot for the ContactAvatar substitution — matches the
+   icon's footprint so the row's rhythm stays identical whether the
+   preview shows a contact picture or the generic arrow. */
+.last-tx-avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
 }
 
 .last-tx-info {
