@@ -1128,7 +1128,11 @@ export default {
   max-width: 100vw;
 }
 
-/* ===== Header ===== */
+/* ===== Header =====
+   Plain flow header (no sticky positioning) so the global
+   `.q-page { padding-top: var(--safe-top) }` rule in app.css cleanly
+   keeps the title bar below the system status bar. Matches the working
+   pattern used by Settings.vue and ProfilePage.vue. */
 .page-header {
   display: flex;
   align-items: center;
@@ -1136,9 +1140,6 @@ export default {
   padding: 1rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
-  z-index: 100;
 }
 
 .back-btn {

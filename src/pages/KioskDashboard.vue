@@ -593,10 +593,12 @@ export default defineComponent({
 .pos-key-action:active { color: inherit; transform: scale(0.94); }
 
 /* Actions */
-/* 48px floor clears a 3-button Android nav bar even when the WebView
-   reports zero bottom inset (edge-to-edge mode). var(--safe-bottom)
-   wins on devices that report a larger inset (notch landscape, etc.). */
-.pos-actions { display: flex; gap: 10px; padding-bottom: max(48px, var(--safe-bottom, 16px)); }
+/* 56px floor clears a 3-button Android nav bar (~48dp) with a few px of
+   breathing room even when the WebView reports zero bottom inset
+   (edge-to-edge mode). var(--safe-bottom) wins on devices that report a
+   larger inset (notch landscape, etc.). The previous 48px left the
+   + / Charge row touching the system nav on test devices. */
+.pos-actions { display: flex; gap: 10px; padding-bottom: max(56px, var(--safe-bottom, 16px)); }
 .pos-add-btn { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0; background: rgba(5,149,115,0.08); color: #059573; border: 1.5px solid rgba(5,149,115,0.25); border-radius: 14px; cursor: pointer; transition: transform 0.08s ease, background 0.08s ease; -webkit-tap-highlight-color: transparent; }
 .pos-add-btn:active:not(:disabled) { transform: scale(0.94); background: rgba(5,149,115,0.15); }
 .kiosk-light .pos-add-btn { background: rgba(5,149,115,0.05); }

@@ -2045,7 +2045,11 @@ export default {
   max-width: 100vw;
 }
 
-/* Header Styles */
+/* Header Styles
+   Plain flow header (no sticky positioning) so the global
+   `.q-page { padding-top: var(--safe-top) }` rule in app.css cleanly
+   keeps the title bar below the system status bar. Matches the working
+   pattern used by Settings.vue and ProfilePage.vue. */
 .page_header_dark {
   display: flex;
   align-items: center;
@@ -2053,9 +2057,6 @@ export default {
   padding: 1rem;
   background: #0C0C0C;
   border-bottom: 1px solid #2A342A;
-  position: sticky;
-  top: var(--safe-top, 0px);
-  z-index: 100;
 }
 
 .page_header_light {
@@ -2065,9 +2066,6 @@ export default {
   padding: 1rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
-  z-index: 100;
 }
 
 .back_btn_dark,
@@ -3501,7 +3499,10 @@ export default {
    language down the page. Each card carries its own fiat line so
    the Net / Received / Sent triple is self-describing. */
 .stats-section {
-  padding: 12px 16px 4px;
+  /* Top padding gives the NET/RECEIVED/SENT cards visible breathing
+     room from the title bar's bottom border. 12px read as touching the
+     header on small phones. */
+  padding: 20px 16px 4px;
 }
 
 .stats-grid {

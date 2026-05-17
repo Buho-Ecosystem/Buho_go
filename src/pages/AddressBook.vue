@@ -426,7 +426,12 @@ export default {
   max-width: 100vw;
 }
 
-/* Header Styles */
+/* Header Styles
+   Plain flow header (no sticky positioning) so the page inherits the
+   safe-area inset from the global `.q-page { padding-top: var(--safe-top) }`
+   rule in app.css without any per-element stickiness causing the header
+   to crowd the system status bar. Matches the working pattern used by
+   Settings.vue (.settings-header) and ProfilePage.vue (.page-header). */
 .page_header_dark {
   display: flex;
   align-items: center;
@@ -434,9 +439,6 @@ export default {
   padding: 1rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
-  z-index: 100;
 }
 
 .page_header_light {
@@ -446,9 +448,6 @@ export default {
   padding: 1rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
-  z-index: 100;
 }
 
 .back_btn_dark,

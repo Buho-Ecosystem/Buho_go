@@ -475,10 +475,16 @@ body.body--light .dot {
   background: linear-gradient(90deg, #059573, #15DE72);
 }
 
-/* ── Navigation buttons ── */
+/* ── Navigation buttons ──
+   Bottom floor matches the canonical kiosk pattern (.pos-actions). The
+   previous 24px floor was below the Android 3-button nav-bar height
+   (~48dp) so the Next button visually sat under the system nav on
+   edge-to-edge devices. 56px clears the 3-button bar with a few px of
+   breathing room; var(--safe-bottom) still wins on devices that report
+   a larger inset (landscape notch, etc.). */
 .wizard-nav {
   padding: 0 20px 24px;
-  padding-bottom: max(24px, var(--safe-bottom, 16px));
+  padding-bottom: max(56px, var(--safe-bottom, 16px));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -516,7 +522,7 @@ body.body--light .dot {
   .slide-title { font-size: 20px; margin-top: 20px; }
   .slide-text { font-size: 13px; }
   .wizard-dots { padding: 8px 20px; }
-  .wizard-nav { padding-bottom: max(16px, var(--safe-bottom, 16px)); }
+  .wizard-nav { padding-bottom: max(56px, var(--safe-bottom, 16px)); }
 }
 
 @media (max-width: 380px) {
