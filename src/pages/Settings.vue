@@ -230,27 +230,85 @@
               </q-item-label>
             </q-item-section>
           </q-item>
-          <!-- Lightning Address (only shown if one is configured on this wallet) -->
-          <q-separator v-if="activeWalletLightningAddress" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <q-item v-if="activeWalletLightningAddress">
+          <!--
+            Lightning Address — always rendered for LNBits wallets.
+
+            Three visual states, driven by `lnAddressRowState`:
+              • 'set'         — address attached; row opens the dialog in
+                                pick-mode for swap / replace.
+              • 'unsetReady'  — no address, but the server's lnurlp extension
+                                is available; row opens the dialog in create
+                                (or pick) mode.
+              • 'unsetBlocked' — lnurlp extension missing on this server;
+                                 row is informational, not interactive.
+              • 'probing'     — lnurlp availability not yet known; brief
+                                transient state shown on mount and wallet
+                                switch.
+          -->
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+          <q-item
+            :clickable="lnAddressRowClickable"
+            :v-ripple="lnAddressRowClickable"
+            :class="{ 'ln-address-row-disabled': !lnAddressRowClickable && lnAddressRowState === 'unsetBlocked' }"
+            @click="lnAddressRowClickable ? openLightningAddressDialog() : null"
+          >
             <q-item-section side>
-              <Icon icon="tabler:bolt" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+              <Icon icon="tabler:at" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
             </q-item-section>
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
                 {{ $t('Lightning Address') }}
               </q-item-label>
-              <q-item-label caption class="mono-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ activeWalletLightningAddress }}
+              <q-item-label
+                caption
+                :class="[
+                  lnAddressRowState === 'set' ? 'mono-caption' : '',
+                  $q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'
+                ]"
+              >
+                <template v-if="lnAddressRowState === 'set'">{{ activeWalletLightningAddress }}</template>
+                <template v-else-if="lnAddressRowState === 'unsetReady'">{{ $t('Get one to receive payments by name') }}</template>
+                <template v-else-if="lnAddressRowState === 'unsetBlocked'">{{ $t('Not supported by this LNBits server') }}</template>
+                <template v-else>
+                  <q-spinner size="12px" class="q-mr-xs" />{{ $t('Checking server…') }}
+                </template>
               </q-item-label>
             </q-item-section>
             <q-item-section side class="spark-address-actions">
-              <q-btn flat round dense @click="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm">
+              <q-btn
+                v-if="lnAddressRowState === 'set'"
+                flat round dense
+                size="sm"
+                :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'"
+                @click.stop="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
+              >
                 <Icon icon="tabler:copy" width="16" height="16" />
               </q-btn>
+              <Icon
+                v-if="lnAddressRowClickable"
+                icon="tabler:chevron-right"
+                :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"
+              />
             </q-item-section>
           </q-item>
         </div>
+
+        <!--
+          Reusable lightning-address dialog. Same component used by
+          LNBitsSetupPage during onboarding — the prop contract decouples
+          UI from data, so the caller (this page) owns the throwaway
+          provider, the existing-addresses list, and the persist step.
+        -->
+        <LNBitsLightningAddressDialog
+          v-if="lnAddressPrompt.visible"
+          v-model="lnAddressPrompt.visible"
+          :domain="lnAddressPrompt.domain"
+          :existing-addresses="lnAddressPrompt.existingAddresses"
+          :default-username="lnAddressPrompt.defaultUsername"
+          :create-address="lnAddressPrompt.createAddress"
+          @confirm="onLightningAddressConfirm"
+          @skip="onLightningAddressSkip"
+        />
       </template>
 
       <!-- PROFILE link — the full identity surface (avatar, backup, view,
@@ -2156,6 +2214,8 @@ import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
+import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // Alternative lightweight verification (type 3 random words). Kept out
 // of the flow intentionally — the order-tap check is stronger. Retained
 // here for future reuse.
@@ -2179,6 +2239,7 @@ export default {
     SparkSeedPhraseDialog,
     BiometricEnableDialog,
     KioskPinPad,
+    LNBitsLightningAddressDialog,
     // MnemonicDisplay and MnemonicOrderVerify are used inside
     // SparkSeedPhraseDialog; they are not needed at this level.
     // The 3-random-words variant (MnemonicVerify) is retained as a
@@ -2288,6 +2349,33 @@ export default {
 
       // Wallet removal
       walletToRemove: null,
+
+      // ─── LNBits lightning address management ───────────────────────────
+      //
+      // Cache of `lnurlp` extension availability, keyed by wallet id.
+      //   undefined → not yet probed
+      //   true      → probe succeeded; address row is interactive
+      //   false     → probe failed; row renders informational-only
+      //
+      // Keyed by wallet id (not by serverUrl) because two LNBits wallets
+      // can share a server but have separately disabled extensions in
+      // theory; cheap to over-probe.
+      lnurlpAvailability: {},
+
+      // Pre-populated by `openLightningAddressDialog()` and consumed by
+      // <LNBitsLightningAddressDialog>. Mirrors the structure used by
+      // LNBitsSetupPage so the dialog component sees an identical shape
+      // whether it's invoked from onboarding or from Settings.
+      lnAddressPrompt: {
+        visible: false,
+        walletId: null,
+        domain: '',
+        existingAddresses: [],
+        defaultUsername: '',
+        // Closure bound to a throwaway provider; receives a username and
+        // returns the freshly-created `{ address, id, username }`.
+        createAddress: null,
+      },
 
       // Kiosk Mode
       showKioskPinSetupDialog: false,
@@ -2461,6 +2549,35 @@ export default {
       } catch {
         return url;
       }
+    },
+
+    /**
+     * Drives the Lightning Address row template. Single source of truth so
+     * the template never repeats branching logic.
+     *
+     *   'set'           — address attached; row opens dialog to swap.
+     *   'unsetReady'    — no address; lnurlp probe succeeded.
+     *   'unsetBlocked'  — no address; lnurlp probe explicitly failed.
+     *   'probing'       — first paint, awaiting probe result.
+     */
+    lnAddressRowState() {
+      if (this.activeWalletLightningAddress) return 'set';
+      const walletId = this.activeWallet?.id;
+      if (!walletId) return 'probing';
+      const available = this.lnurlpAvailability[walletId];
+      if (available === true) return 'unsetReady';
+      if (available === false) return 'unsetBlocked';
+      return 'probing';
+    },
+
+    /**
+     * Row is interactive in every state except `unsetBlocked` (server
+     * doesn't support lnurlp) and the brief `probing` window. `set` is
+     * clickable so users can swap to a different address.
+     */
+    lnAddressRowClickable() {
+      return this.lnAddressRowState === 'set'
+        || this.lnAddressRowState === 'unsetReady';
     },
 
     activeSparkWalletName() {
@@ -2698,6 +2815,19 @@ export default {
         this.mempoolHeroMounted = true;
       });
     },
+
+    /**
+     * Trigger an lnurlp availability probe whenever the active wallet
+     * becomes (or is replaced by) an LNBits wallet. Result is cached
+     * per wallet id, so re-visits during the same session are free.
+     * Fires `immediate: true` so the first paint reflects the probe.
+     */
+    'activeWallet.id': {
+      immediate: true,
+      handler() {
+        this.maybeProbeLnurlpForActiveWallet();
+      },
+    },
   },
 
   created() {
@@ -2753,6 +2883,7 @@ export default {
       'updateBip177Preference',
       'confirmBackup',
       'updateBiometricsEnabled',
+      'setWalletLightningAddress',
     ]),
 
     async initializeStore() {
@@ -2881,6 +3012,174 @@ export default {
       } finally {
         this.kioskActivating = false;
       }
+    },
+
+    // ─── LNBits Lightning Address ─────────────────────────────────────
+
+    /**
+     * Construct a one-shot LNBitsWalletProvider for the active LNBits
+     * wallet. We deliberately mirror the throwaway pattern used by
+     * LNBitsSetupPage (it doesn't go through the connected provider
+     * registry in `walletStore.providers`, so the call path is identical
+     * whether the wallet was just added or has been around for months).
+     *
+     * @returns {LNBitsWalletProvider|null} a fresh provider, or null
+     *   if the active wallet isn't an LNBits wallet (defensive guard;
+     *   callers gate on `isActiveWalletLNBits` already).
+     */
+    _buildActiveLNBitsProvider() {
+      const wallet = this.activeWallet;
+      if (!wallet || wallet.type !== 'lnbits') return null;
+      const conn = wallet.connectionData || {};
+      return new LNBitsWalletProvider(wallet.id, {
+        name: wallet.name,
+        serverUrl: conn.serverUrl,
+        walletId: conn.walletId,
+        adminKey: conn.adminKey,
+      });
+    },
+
+    /**
+     * Probe the active LNBits wallet for `lnurlp` extension availability
+     * and cache the result. Idempotent: cached results short-circuit so
+     * navigation back-and-forth doesn't re-hit the server.
+     *
+     * Called from the watcher above. Safe to call when the active wallet
+     * is not LNBits — it's a no-op in that case.
+     */
+    async maybeProbeLnurlpForActiveWallet() {
+      const wallet = this.activeWallet;
+      if (!wallet || wallet.type !== 'lnbits') return;
+      // Already probed this wallet this session — keep the cached value.
+      if (Object.prototype.hasOwnProperty.call(this.lnurlpAvailability, wallet.id)) return;
+
+      const provider = this._buildActiveLNBitsProvider();
+      if (!provider) return;
+
+      let available = false;
+      try {
+        available = await provider.checkLnurlpAvailable();
+      } catch (err) {
+        // `checkLnurlpAvailable` swallows its own errors and returns
+        // false, but be belt-and-braces here in case the contract drifts.
+        console.warn('[settings] lnurlp probe failed:', err);
+        available = false;
+      }
+      // Reassign the whole map so Vue picks up the change.
+      this.lnurlpAvailability = { ...this.lnurlpAvailability, [wallet.id]: available };
+    },
+
+    /**
+     * Open the lightning-address dialog. Handles both states uniformly:
+     *   • If the wallet already has an address, opens in pick-mode with
+     *     the server's existing addresses listed so the user can swap.
+     *   • If not, opens in create-mode (the dialog auto-detects based
+     *     on the existingAddresses array we pass in).
+     *
+     * Listing failures are non-fatal: the dialog still opens in create
+     * mode with an empty existing list so the user can still create.
+     */
+    async openLightningAddressDialog() {
+      const wallet = this.activeWallet;
+      if (!wallet || wallet.type !== 'lnbits') return;
+
+      const provider = this._buildActiveLNBitsProvider();
+      if (!provider) return;
+
+      // Re-probe lazily if we somehow didn't on mount (defensive — the
+      // watcher should have run by now, but it's free to be safe).
+      if (!Object.prototype.hasOwnProperty.call(this.lnurlpAvailability, wallet.id)) {
+        await this.maybeProbeLnurlpForActiveWallet();
+      }
+      if (this.lnurlpAvailability[wallet.id] === false) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Lightning Address not supported'),
+          caption: this.$t('Not supported by this LNBits server'),
+          timeout: 4000,
+        });
+        return;
+      }
+
+      let existing = [];
+      try {
+        existing = await provider.listLightningAddresses();
+      } catch (err) {
+        // Extension present but listing failed (transient server issue,
+        // auth quirk, etc.) — let the user proceed in create mode rather
+        // than block them at the row.
+        console.warn('[settings] listLightningAddresses failed:', err);
+      }
+
+      const domain = this.lnbitsServerDomain
+        || (wallet.connectionData?.serverUrl
+          ? this._safeHostname(wallet.connectionData.serverUrl)
+          : '');
+
+      this.lnAddressPrompt = {
+        visible: true,
+        walletId: wallet.id,
+        domain,
+        existingAddresses: existing,
+        defaultUsername: wallet.name || '',
+        // Closure keeps the provider instance alive for the dialog's
+        // lifecycle — see LNBitsSetupPage.maybePromptLightningAddress
+        // for the same pattern.
+        createAddress: (username) => provider.createLightningAddress({ username }),
+      };
+    },
+
+    /**
+     * Parse just the hostname portion of a URL. Used as a fallback when
+     * `lnbitsServerDomain` isn't yet computed (rare race).
+     */
+    _safeHostname(rawUrl) {
+      try { return new URL(rawUrl).hostname; }
+      catch { return rawUrl; }
+    },
+
+    async onLightningAddressConfirm({ address, isNew }) {
+      const walletId = this.lnAddressPrompt.walletId;
+      this._resetLnAddressPrompt();
+      if (!walletId || !address) return;
+
+      try {
+        await this.setWalletLightningAddress(walletId, address);
+        this.$q.notify({
+          type: 'positive',
+          message: isNew
+            ? this.$t('Lightning address created')
+            : this.$t('Lightning address updated'),
+          caption: address,
+          timeout: 2500,
+        });
+      } catch (err) {
+        // Persisting to local state is a synchronous-ish store update; a
+        // failure here is extremely unlikely but worth surfacing so the
+        // user doesn't think the change took effect when it didn't.
+        console.error('[settings] setWalletLightningAddress failed:', err);
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Address created but not saved locally'),
+          caption: this.$t('You can try again from this page.'),
+          timeout: 5000,
+        });
+      }
+    },
+
+    onLightningAddressSkip() {
+      this._resetLnAddressPrompt();
+    },
+
+    _resetLnAddressPrompt() {
+      this.lnAddressPrompt = {
+        visible: false,
+        walletId: null,
+        domain: '',
+        existingAddresses: [],
+        defaultUsername: '',
+        createAddress: null,
+      };
     },
 
     async openCurrencyDialog() {
@@ -4525,6 +4824,15 @@ export default {
 
 .action-icon-light:hover {
   color: rgba(0, 0, 0, 0.8);
+}
+
+/* Lightning Address row — informational/disabled state.
+   Used when the LNBits server lacks the lnurlp extension. Dimmed so the
+   user can tell at a glance that this row is not actionable, without
+   removing it entirely (their wallet still works for everything else). */
+.ln-address-row-disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 /* App Version */
