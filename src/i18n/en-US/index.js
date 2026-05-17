@@ -257,6 +257,13 @@ export default {
   "Create a new one": "Create a new one",
   "Back to my addresses": "Back to my addresses",
   "We found addresses on your wallet. Pick one to use, or add another.": "We found addresses on your wallet. Pick one to use, or add another.",
+  "Get one to receive payments by name": "Get one to receive payments by name",
+  "Not supported by this LNBits server": "Not supported by this LNBits server",
+  "Lightning Address not supported": "Lightning Address not supported",
+  "Checking server…": "Checking server…",
+  "Lightning address created": "Lightning address created",
+  "Lightning address updated": "Lightning address updated",
+  "You can try again from this page.": "You can try again from this page.",
   // Payment errors
   "OK": "OK",
   "Copy details": "Copy details",
