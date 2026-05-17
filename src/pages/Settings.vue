@@ -2152,6 +2152,7 @@ import {shareContent} from '../utils/share.js'
 import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
 import {truncateAddress} from '../utils/addressUtils.js'
+import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
@@ -3003,15 +3004,13 @@ export default {
     },
 
     validateNwcString(nwcString) {
-      if (!nwcString || !nwcString.trim()) {
-        return this.$t('NWC string is required')
-      }
-
-      if (!nwcString.startsWith('nostr+walletconnect://')) {
-        return this.$t('Invalid NWC format. Must start with nostr+walletconnect://')
-      }
-
-      return true
+      // Single source of truth for what counts as a valid NWC string —
+      // see src/utils/nwcConnection.js. Accepts every known prefix variant
+      // and validates the required params (relay, secret, pubkey) structurally.
+      const result = parseNwcConnection(nwcString)
+      if (result.ok) return true
+      const key = NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format'
+      return this.$t(key)
     },
 
     async addNewWallet() {
@@ -3019,9 +3018,13 @@ export default {
 
       this.isAddingWallet = true
       try {
+        // Persist the canonical NWC form so the store and provider only
+        // ever see one shape (handles the no-slash / no-plus / lightning:
+        // wrapper variants transparently).
+        const parsed = parseNwcConnection(this.newWalletNwc)
         await this.addWallet({
           name: this.newWalletName.trim(),
-          nwcUrl: this.newWalletNwc.trim()
+          nwcUrl: parsed.ok ? parsed.normalized : this.newWalletNwc.trim()
         })
 
         this.showAddWalletDialog = false
