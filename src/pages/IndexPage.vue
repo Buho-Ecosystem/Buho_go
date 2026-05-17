@@ -258,6 +258,7 @@ import QrScanner from 'qr-scanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import {useWalletStore} from '../stores/wallet'
 import {mapActions} from 'pinia'
+import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 
 // Error handling wrapper for async operations
 const safeAsync = (fn) => {
@@ -457,20 +458,20 @@ export default {
     async handleNWCScan(qrData) {
       this.isScanning = true;
       this.scanError = null;
-      console.log('QR Code detected:', qrData);
-      
+
       try {
-        if (!qrData || typeof qrData !== 'string') {
-          throw new Error(this.$t ? this.$t('No QR code detected') : 'No QR code detected');
+        // Single source of truth for NWC parsing (see src/utils/nwcConnection.js).
+        // Accepts every known prefix variant and rejects bunker:// (NIP-46)
+        // with a tailored message so the user understands the mismatch.
+        const result = parseNwcConnection(qrData);
+        if (!result.ok) {
+          const reasonKey = NWC_REASON_I18N_KEYS[result.reason] || 'Invalid NWC QR code format';
+          throw new Error(this.$t ? this.$t(reasonKey) : reasonKey);
         }
 
-        // Check if it's an NWC URL
-        if (!qrData.startsWith('nostr+walletconnect://')) {
-          throw new Error(this.$t ? this.$t('Invalid NWC QR code format') : 'Invalid NWC QR code format');
-        }
-
-        const nwcUrl = qrData.trim();
-        this.nwcString = nwcUrl;
+        // Persist the canonical form, not the raw scan, so the rest of
+        // the app only ever sees one shape.
+        this.nwcString = result.normalized;
         this.closeScanner();
         await this.connectWallet();
 
@@ -481,8 +482,7 @@ export default {
           this.$q.notify({
             type: 'negative',
             message: this.$t ? this.$t('Invalid QR code') : 'Invalid QR code',
-            caption: this.$t ? this.$t('Please try a different code') : 'Please try a different code',
-            
+            caption: error.message,
           });
         }
       } finally {
@@ -757,14 +757,21 @@ export default {
   border: 2px solid;
 }
 
+/*
+  Overlay the camera-error / camera-loading states on top of the
+  <video> element rather than rendering them as sibling flex items.
+  Without `position: absolute` the <video> (100% × 100%) and the
+  overlay share row-flex space, squeezing the overlay text into a
+  narrow column at the right edge of the scanner box.
+*/
 .camera-error,
 .camera-loading {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  width: 100%;
   text-align: center;
   padding: 2rem;
 }

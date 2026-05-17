@@ -235,6 +235,7 @@ import LoadingScreen from '../components/LoadingScreen.vue'
 import { useWalletStore } from '../stores/wallet'
 import { mapActions } from 'pinia'
 import { getUserFriendlyErrorMessage } from '../utils/userErrors'
+import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 
 export default {
   name: 'NWCSetupPage',
@@ -271,32 +272,14 @@ export default {
     },
 
     validateNwcString(nwcString) {
-      if (!nwcString || !nwcString.trim()) {
-        return this.$t('NWC string is required');
-      }
-
-      const trimmed = nwcString.trim();
-
-      if (!trimmed.startsWith('nostr+walletconnect://')) {
-        return this.$t('Must start with nostr+walletconnect://');
-      }
-
-      try {
-        const url = new URL(trimmed.replace('nostr+walletconnect://', 'https://'));
-        const relay = url.searchParams.get('relay');
-        const secret = url.searchParams.get('secret');
-
-        if (!relay) {
-          return this.$t('Missing relay parameter');
-        }
-        if (!secret) {
-          return this.$t('Missing secret parameter');
-        }
-      } catch {
-        return this.$t('Invalid connection string format');
-      }
-
-      return true;
+      // Single source of truth for what counts as a valid NWC string —
+      // see src/utils/nwcConnection.js. Accepts every known prefix variant
+      // (no-slash, no-plus, web+, lightning: wrapper, case-insensitive)
+      // and validates required params structurally.
+      const result = parseNwcConnection(nwcString);
+      if (result.ok) return true;
+      const key = NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format';
+      return this.$t(key);
     },
 
     async validateAndConnect() {
@@ -397,26 +380,29 @@ export default {
     handleQrScan(qrData) {
       if (!qrData) return;
 
-      const data = qrData.trim();
-
-      // Check if it's a valid NWC string
-      if (data.startsWith('nostr+walletconnect://')) {
-        this.nwcString = data;
+      // Use the same parser as the manual-input path so the two flows
+      // never diverge on what counts as valid. The parser accepts every
+      // known prefix variant and rejects bunker:// (NIP-46) with a
+      // tailored message — users routinely confuse the two.
+      const result = parseNwcConnection(qrData);
+      if (result.ok) {
+        // Persist the canonical form, not the raw scan, so downstream
+        // code (store, provider) only ever sees one shape.
+        this.nwcString = result.normalized;
         this.closeScanner();
         this.$q.notify({
           type: 'positive',
           message: this.$t('NWC connection string scanned'),
-          
           timeout: 1500,
         });
         return;
       }
 
+      const reasonKey = NWC_REASON_I18N_KEYS[result.reason] || 'Expected a NWC connection string';
       this.$q.notify({
         type: 'warning',
         message: this.$t('Invalid QR code'),
-        caption: this.$t('Expected a NWC connection string'),
-        
+        caption: this.$t(reasonKey),
       });
     },
 
@@ -680,14 +666,21 @@ export default {
   border-color: var(--border-card);
 }
 
+/*
+  Overlay the camera-error / camera-loading states on top of the
+  <video> element rather than rendering them as sibling flex items.
+  Without `position: absolute` the <video> (100% × 100%) and the
+  overlay share row-flex space, squeezing the overlay text into a
+  narrow column at the right edge of the scanner box.
+*/
 .camera-error,
 .camera-loading {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  width: 100%;
   text-align: center;
   padding: 2rem;
 }

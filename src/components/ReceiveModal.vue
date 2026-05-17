@@ -1226,24 +1226,43 @@ export default {
         return;
       }
 
-      // Wrap the provider with robust payment status detection
-      // Many NWC wallets don't support lookupInvoice, so we use listTransactions as fallback
+      // Per-session capability flag for `lookup_invoice`.
+      //
+      // Some NWC wallets either don't implement lookup_invoice or only
+      // index invoices once they've been paid — both surface as
+      // "invoice not found" rejections when we poll. The Alby SDK logs
+      // each failure to console.error *before* rejecting the promise,
+      // so a multi-minute receive window can produce 30+ noisy log
+      // lines for a flow that's actually working (via the
+      // listTransactions fallback below).
+      //
+      // After the first failure we mark lookup_invoice unavailable for
+      // the rest of this monitor session and skip straight to the
+      // fallback. The flag is intentionally per-session (closure-scoped)
+      // rather than memoised across sessions — wallet capabilities can
+      // change between connections, so the next receive should re-probe.
+      let lookupInvoiceAvailable = true;
+
       wrappedProvider = {
         lookupInvoice: async (hash) => {
-          // Try lookupInvoice first (may not be supported by all wallets)
-          try {
-            const invoice = await rawProvider.lookupInvoice({ payment_hash: hash });
-            if (invoice) {
-              const isPaid = checkNWCPaymentStatus(invoice);
-              if (isPaid) {
+          if (lookupInvoiceAvailable) {
+            try {
+              const invoice = await rawProvider.lookupInvoice({ payment_hash: hash });
+              if (invoice && checkNWCPaymentStatus(invoice)) {
                 return { paid: true, preimage: invoice?.preimage, amount: invoice?.amount };
               }
+            } catch {
+              // Sticky-flag the wallet's lookup_invoice as unreliable
+              // for the rest of this monitor session — see comment
+              // above. The fallback below takes over from here.
+              lookupInvoiceAvailable = false;
             }
-          } catch (e) {
-            // lookupInvoice not supported or timed out - use fallback
           }
 
-          // Fallback: Search in recent transactions
+          // Fallback: scan recent incoming transactions for our
+          // payment_hash. Used when lookup_invoice isn't available, or
+          // when it returned an unpaid result and the transaction list
+          // might already reflect a payment the invoice index hasn't.
           try {
             const txResponse = await rawProvider.listTransactions({
               limit: 50,
@@ -1264,8 +1283,10 @@ export default {
                 };
               }
             }
-          } catch (listError) {
-            // listTransactions also failed - return not paid
+          } catch {
+            // listTransactions also failed — return not paid; the
+            // monitor accumulates consecutive errors and stops after
+            // the configured threshold.
           }
 
           return { paid: false };
@@ -1586,11 +1607,17 @@ export default {
       } catch (error) {
         console.error('Error creating invoice:', error);
 
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t create invoice'),
-          caption: this.$t('Please try again'),
-          
+        // Funnel into the global payment-error dialog so the upstream
+        // prose (NWC Nip47WalletError message, LNbits detail, Spark SDK
+        // error) reaches the user verbatim instead of being swallowed by
+        // a generic "Please try again" toast. See utils/userErrors.js
+        // and stores/wallet.js → showPaymentError for the contract.
+        this.walletStore.showPaymentError(error, {
+          context: 'receive',
+          walletType: this.walletStore.activeWalletType,
+          route: 'Invoice creation',
+          amountSats: this.amountInSats,
+          t: this.$t.bind(this),
         });
 
         this.generatedInvoice = null;

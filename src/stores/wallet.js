@@ -1311,17 +1311,19 @@ export const useWalletStore = defineStore('wallet', {
         if (!walletData.serverUrl) {
           throw new Error('LNBits server URL is required');
         }
-        if (!walletData.walletId) {
-          throw new Error('Wallet ID is required');
-        }
         if (!walletData.adminKey) {
           throw new Error('Admin key is required');
         }
-
-        // Validate credentials and normalize URL
+        // walletId is optional here — LNBits server-side scopes each
+        // admin key to one wallet, so `GET /api/v1/wallet` (called by
+        // validateCredentials below) discovers the walletId for us.
+        // If a caller does pass walletId, validateCredentials uses it
+        // as a sanity check and throws if the key resolves to a
+        // different wallet. Either way, the persisted value comes from
+        // `validation.walletInfo.id`, never from `walletData.walletId`.
         const validation = await LNBitsWalletProvider.validateCredentials(
           walletData.serverUrl,
-          walletData.walletId,
+          walletData.walletId, // may be undefined — provider handles that
           walletData.adminKey
         );
 
