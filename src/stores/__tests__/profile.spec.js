@@ -834,5 +834,189 @@ await test('uploadAvatar: same URL → no redundant persist or dirty flip', asyn
   assert.equal(profile.isDirty, false);
 });
 
+// ---------------------------------------------------------------------------
+// recoverFromNostr()
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a fake kind:0 event the store's recovery path can consume.
+ * The fetcher is the injection boundary, so we don't need a real
+ * signature here — `parseProfileContent` only looks at `content`,
+ * and the store only reads `created_at` on top.
+ */
+function fakeKind0Event(content, createdAtSec = 1_700_000_000) {
+  return {
+    kind: 0,
+    created_at: createdAtSec,
+    content: JSON.stringify(content),
+    tags: [],
+    pubkey: 'a'.repeat(64),
+    id: 'b'.repeat(64),
+    sig: 'c'.repeat(128),
+  };
+}
+
+await test('recoverFromNostr: missing identity returns identity-not-bootstrapped', async () => {
+  const s = freshEnv();
+  const fetcher = async () => fakeKind0Event({ name: 'Satoshi' });
+  const r = await s.recoverFromNostr({ identityStore: null, fetcher });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'identity-not-bootstrapped');
+  assert.equal(r.hadRemote, false);
+  assert.equal(r.applied, 0);
+});
+
+await test('recoverFromNostr: identity present but no remote event → hadRemote=false', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => null;
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.ok, true);
+  assert.equal(r.hadRemote, false);
+  assert.equal(r.applied, 0);
+  assert.deepEqual(r.fields, []);
+  // No remote → don't stamp a published timestamp.
+  assert.equal(profile.lastPublishedAt, null);
+});
+
+await test('recoverFromNostr: applies every recognized field from the remote event', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({
+    display_name: 'Satoshi',
+    name: 'satoshi',
+    about: 'Building things.',
+    website: 'https://x.test',
+    picture: 'https://blossom.test/sn.png',
+    banner: 'https://blossom.test/banner.png',
+    lud16: 'satoshi@x.test',
+  });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.ok, true);
+  assert.equal(r.hadRemote, true);
+  assert.equal(r.applied, 7);
+  assert.equal(profile.displayName, 'Satoshi');
+  assert.equal(profile.name, 'satoshi');
+  assert.equal(profile.about, 'Building things.');
+  assert.equal(profile.website, 'https://x.test');
+  assert.equal(profile.picture, 'https://blossom.test/sn.png');
+  assert.equal(profile.banner, 'https://blossom.test/banner.png');
+  assert.equal(profile.lud16, 'satoshi@x.test');
+});
+
+await test('recoverFromNostr: passes the identity pubkey to the fetcher', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  let seenPubkey = null;
+  const fetcher = async (pk) => {
+    seenPubkey = pk;
+    return null;
+  };
+  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(seenPubkey, identity.nostrPubkeyHex);
+  assert.match(seenPubkey, /^[0-9a-f]{64}$/);
+});
+
+await test('recoverFromNostr: leaves the store clean (isDirty=false) — local matches relays', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({ name: 'Satoshi' });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(profile.isDirty, false);
+});
+
+await test('recoverFromNostr: stamps lastPublishedAt from event.created_at (in ms)', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({ name: 'Satoshi' }, 1_700_000_000);
+  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(profile.lastPublishedAt, 1_700_000_000_000);
+});
+
+await test('recoverFromNostr: full overwrite clears stale local fields not present in remote', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  // Seed stale local data (e.g. left over from a previous identity).
+  profile.applyEdits({
+    displayName: 'Old Name',
+    about: 'Old bio',
+    lud16: 'old@example.com',
+  });
+  profile.isDirty = false;
+  // Remote only carries `name`; everything else should be cleared.
+  const fetcher = async () => fakeKind0Event({ name: 'new' });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.applied, 1);
+  assert.deepEqual(r.fields, ['name']);
+  assert.equal(profile.name, 'new');
+  assert.equal(profile.displayName, '');
+  assert.equal(profile.about, '');
+  assert.equal(profile.lud16, '');
+});
+
+await test('recoverFromNostr: unknown wire keys in content are ignored', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({
+    name: 'Satoshi',
+    nip05: 'should-be-ignored@x.test',
+    pronouns: 'they/them',
+    custom_field: 'whatever',
+  });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.applied, 1);
+  assert.equal(profile.name, 'Satoshi');
+  assert.equal('nip05' in profile, false);
+  assert.equal('pronouns' in profile, false);
+});
+
+await test('recoverFromNostr: persists the recovered profile to localStorage', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({
+    name: 'Satoshi',
+    lud16: 'satoshi@x.test',
+  }, 1_700_000_000);
+  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const persisted = readPersisted();
+  assert.equal(persisted.name, 'Satoshi');
+  assert.equal(persisted.lud16, 'satoshi@x.test');
+  assert.equal(persisted.lastPublishedAt, 1_700_000_000_000);
+});
+
+await test('recoverFromNostr: fetcher throwing collapses to ok=false, reason=fetch-failed', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => { throw new Error('boom'); };
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'fetch-failed');
+  assert.equal(r.hadRemote, false);
+  assert.equal(r.applied, 0);
+});
+
+await test('recoverFromNostr: remote event with empty content leaves the store empty', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({});
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.ok, true);
+  assert.equal(r.hadRemote, true);
+  assert.equal(r.applied, 0);
+  assert.deepEqual(r.fields, []);
+  assert.equal(profile.isEmpty, true);
+  // Still stamps lastPublishedAt — the remote event did exist.
+  assert.equal(profile.lastPublishedAt, 1_700_000_000_000);
+});
+
+await test('recoverFromNostr: non-string content values are coerced to empty', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  // A malicious or buggy peer might publish numeric or array values
+  // for what should be string fields. `parseProfileContent` doesn't
+  // shape-check past "is it an object"; the store must defend itself.
+  const fetcher = async () => fakeKind0Event({
+    name: 'Satoshi',
+    about: 42,
+    website: ['https://x.test'],
+    picture: null,
+  });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.applied, 1);
+  assert.equal(profile.name, 'Satoshi');
+  assert.equal(profile.about, '');
+  assert.equal(profile.website, '');
+  assert.equal(profile.picture, '');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

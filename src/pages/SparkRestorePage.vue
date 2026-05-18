@@ -90,16 +90,16 @@
                   aria-autocomplete="list"
                   aria-controls="bip39-suggestion-strip"
                   :aria-expanded="showSuggestions && activeIndex === index"
-                  @input="onWordInput(index)"
+                  @input="onMnemonicInput(index)"
                   @focus="onWordFocus(index)"
                   @blur="onWordBlur"
-                  @paste="handlePaste($event, index)"
-                  @keydown.enter.prevent="onEnter(index)"
-                  @keydown.tab="onTab($event, index)"
-                  @keydown.right="onArrowRight"
-                  @keydown.left="onArrowLeft"
+                  @paste="onWordPaste($event, index)"
+                  @keydown.enter.prevent="onWordEnter(index)"
+                  @keydown.tab="onWordTab($event, index)"
+                  @keydown.right="onWordArrowRight"
+                  @keydown.left="onWordArrowLeft"
                   @keydown.esc="closeSuggestions"
-                  :ref="el => wordInputRefs[index] = el"
+                  :ref="el => setWordInputRef(index, el)"
                 />
               </div>
             </div>
@@ -143,57 +143,32 @@
 </template>
 
 <script>
-import { wordlist as BIP39_WORDLIST } from '@scure/bip39/wordlists/english';
 import { useWalletStore } from '../stores/wallet';
-
-// Fast membership lookups for per-word typo checks.
-const BIP39_WORDSET = new Set(BIP39_WORDLIST);
+import { useBip39Mnemonic } from '../composables/useBip39Mnemonic';
 
 const SEED_WORD_COUNT = 12;
-const MAX_SUGGESTIONS = 8;
-// Short delay on blur so tapping a suggestion chip registers before the
-// strip disappears (mousedown.prevent alone isn't enough on touch devices).
-const BLUR_DISMISS_DELAY_MS = 120;
-// Hard cap on raw clipboard length accepted by the paste handler.
-// A valid 24-word BIP-39 phrase is <250 chars; 4 KB leaves ample headroom
-// while preventing pathological clipboard payloads from being processed.
-const PASTE_MAX_CHARS = 4096;
 
 export default {
   name: 'SparkRestorePage',
   setup() {
     const walletStore = useWalletStore();
-    return { walletStore };
+    const seed = useBip39Mnemonic({ wordCount: SEED_WORD_COUNT });
+    return { walletStore, ...seed };
   },
   data() {
     return {
       currentStep: 1,
       isValidating: false,
-      inputWords: Array(SEED_WORD_COUNT).fill(''),
-      wordInputRefs: [],
       mnemonicError: '',
       restoringStatus: 'Initializing...',
-
-      // BIP-39 suggestion strip state
-      activeIndex: -1,
-      highlightedIndex: 0,
-      blurTimer: null,
     }
-  },
-  beforeUnmount() {
-    if (this.blurTimer) clearTimeout(this.blurTimer);
-    // Defense-in-depth: overwrite the in-memory seed words so they don't
-    // linger in the component instance until GC. Not a hard guarantee
-    // (engines may keep copies), but shrinks the obvious surface.
-    this.inputWords = Array(SEED_WORD_COUNT).fill('');
-    this.wordInputRefs = [];
   },
   computed: {
     canContinue() {
-      return this.inputWords.every(word => word.trim().length > 0);
+      return this.mnemonicIsComplete;
     },
     mnemonic() {
-      return this.inputWords.map(w => w.trim().toLowerCase()).join(' ');
+      return this.normalisedMnemonic;
     },
     totalSteps() {
       return 2; // Seed → Restoring
@@ -201,126 +176,16 @@ export default {
     displayStep() {
       return this.currentStep;
     },
-    activeSuggestions() {
-      if (this.activeIndex < 0) return [];
-      return this.suggestionsFor(this.activeIndex);
-    },
-    showSuggestions() {
-      if (this.activeIndex < 0) return false;
-      const current = (this.inputWords[this.activeIndex] || '').trim().toLowerCase();
-      if (!current) return false;
-      const matches = this.activeSuggestions;
-      if (matches.length === 0) return false;
-      // Typed value is already the sole exact match — user is done with this slot.
-      if (matches.length === 1 && matches[0] === current) return false;
-      return true;
-    },
   },
   methods: {
-    suggestionsFor(index) {
-      const prefix = (this.inputWords[index] || '').trim().toLowerCase();
-      if (!prefix) return [];
-      return BIP39_WORDLIST
-        .filter(word => word.startsWith(prefix))
-        .slice(0, MAX_SUGGESTIONS);
-    },
-
-    onWordInput(index) {
-      this.inputWords[index] = (this.inputWords[index] || '').toLowerCase();
-      this.highlightedIndex = 0;
-      this.mnemonicError = '';
-    },
-
-    onWordFocus(index) {
-      if (this.blurTimer) {
-        clearTimeout(this.blurTimer);
-        this.blurTimer = null;
-      }
-      this.activeIndex = index;
-      this.highlightedIndex = 0;
-    },
-
-    onWordBlur() {
-      this.blurTimer = setTimeout(() => {
-        this.activeIndex = -1;
-        this.blurTimer = null;
-      }, BLUR_DISMISS_DELAY_MS);
-    },
-
-    closeSuggestions() {
-      this.activeIndex = -1;
-    },
-
-    pickSuggestion(word) {
-      const idx = this.activeIndex;
-      if (idx < 0) return;
-      this.inputWords[idx] = word;
-      this.highlightedIndex = 0;
-      this.focusNext(idx);
-    },
-
-    onEnter(index) {
-      if (this.showSuggestions) {
-        const pick = this.activeSuggestions[this.highlightedIndex];
-        if (pick) {
-          this.pickSuggestion(pick);
-          return;
-        }
-      }
-      this.focusNext(index);
-    },
-
-    onTab(event, index) {
-      // Shift+Tab preserves native reverse-focus behavior.
-      if (this.showSuggestions && !event.shiftKey) {
-        const pick = this.activeSuggestions[this.highlightedIndex];
-        if (pick) {
-          event.preventDefault();
-          this.pickSuggestion(pick);
-        }
-      }
-    },
-
-    onArrowRight(event) {
-      if (!this.showSuggestions) return;
-      event.preventDefault();
-      const len = this.activeSuggestions.length;
-      this.highlightedIndex = (this.highlightedIndex + 1) % len;
-    },
-
-    onArrowLeft(event) {
-      if (!this.showSuggestions) return;
-      event.preventDefault();
-      const len = this.activeSuggestions.length;
-      this.highlightedIndex = (this.highlightedIndex - 1 + len) % len;
-    },
-
-    focusNext(index) {
-      const next = index + 1;
-      if (next < SEED_WORD_COUNT && this.wordInputRefs[next]) {
-        this.wordInputRefs[next].focus();
-      } else if (this.wordInputRefs[index]) {
-        this.wordInputRefs[index].blur();
-      }
-    },
-
-    handlePaste(event, startIndex) {
-      const text = event.clipboardData?.getData('text') || '';
-      // Cap the raw paste length so pathological clipboard payloads can't
-      // blow out memory before we reduce to at most SEED_WORD_COUNT tokens.
-      const bounded = text.slice(0, PASTE_MAX_CHARS).trim().toLowerCase();
-      const tokens = bounded.split(/\s+/).filter(Boolean).slice(0, SEED_WORD_COUNT);
-      if (tokens.length <= 1) return; // allow native single-word paste
-
-      event.preventDefault();
-      // A full 12-word phrase pasted anywhere fills the grid from slot 0.
-      const base = tokens.length >= SEED_WORD_COUNT ? 0 : startIndex;
-      const limit = Math.min(tokens.length, SEED_WORD_COUNT - base);
-      for (let i = 0; i < limit; i++) {
-        this.inputWords[base + i] = tokens[i];
-      }
-      this.mnemonicError = '';
-      this.activeIndex = -1;
+    /**
+     * Per-input handler that wraps the composable's normaliser with the
+     * page-local concern of clearing the validation error banner the
+     * moment the user starts editing again.
+     */
+    onMnemonicInput(index) {
+      this.normalizeWordInput(index);
+      if (this.mnemonicError) this.mnemonicError = '';
     },
 
     handleBack() {
@@ -337,8 +202,7 @@ export default {
       // checksum check and will reject genuinely invalid phrases.
       const badPositions = [];
       this.inputWords.forEach((raw, idx) => {
-        const word = (raw || '').trim().toLowerCase();
-        if (!word || !BIP39_WORDSET.has(word)) {
+        if (!this.isValidBip39Word(raw)) {
           badPositions.push(idx + 1);
         }
       });

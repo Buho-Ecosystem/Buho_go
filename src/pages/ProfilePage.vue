@@ -708,16 +708,58 @@ export default {
     async onIdentityRestored() {
       // The restore dialog already fired its own "Identity restored"
       // notify. Recovery rides on top of that: pull the user's
-      // private NIP-51 address book so "your people came back too"
-      // — the whole point of syncing contacts to Nostr.
+      // public profile (kind:0) AND the private NIP-51 address book
+      // so "your name, avatar, and people came back too" — the
+      // whole point of having those things on relays in the first
+      // place.
       //
-      // Fire-and-forget with its own follow-up notify. We don't block
-      // the restore dialog's close on a relay round-trip, and a
-      // failure here never undoes the successful identity restore.
+      // Both fetches run in parallel and are fire-and-forget. We
+      // don't block the restore dialog's close on a relay round-
+      // trip, and a failure on either side never undoes the
+      // successful identity restore.
       const addressBook = useAddressBookStore();
       const identity = useIdentityStore();
-      try {
-        const result = await addressBook.recoverFromNostr({ identityStore: identity });
+      const profile = this.profile;
+
+      // Wipe the profile store before recovery. Profile metadata is
+      // identity-scoped, so any local fields are stale under the new
+      // pubkey. If the restored identity has a published kind:0, the
+      // recovery step below repopulates from it; if not, the user
+      // correctly lands on an empty profile rather than seeing the
+      // previous identity's name and avatar.
+      profile.reset();
+
+      const [profileResult, addressBookResult] = await Promise.allSettled([
+        profile.recoverFromNostr({ identityStore: identity }),
+        addressBook.recoverFromNostr({ identityStore: identity }),
+      ]);
+
+      if (profileResult.status === 'rejected') {
+        // Non-fatal. The user can retry by editing & re-publishing
+        // the profile, or via a manual "Restore profile from Nostr"
+        // action if we add one later.
+        console.warn('[profile] profile recovery after restore failed:', profileResult.reason);
+      } else {
+        const r = profileResult.value;
+        if (r && r.ok && r.hadRemote && r.applied > 0) {
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Profile restored'),
+            caption: this.$t('We pulled your latest profile from Nostr.'),
+            timeout: 4500,
+          });
+        }
+        // hadRemote=false / applied=0 stays silent — a fresh
+        // identity with no published profile is the expected case
+        // and shouldn't earn a toast.
+      }
+
+      if (addressBookResult.status === 'rejected') {
+        // Non-fatal. The user can retry from Address Book → kebab →
+        // "Restore contacts from Nostr".
+        console.warn('[profile] address-book recovery after restore failed:', addressBookResult.reason);
+      } else {
+        const result = addressBookResult.value;
         if (result && result.ok && result.hadRemote && result.restored > 0) {
           const caption = result.unpayable > 0
             ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
@@ -729,13 +771,6 @@ export default {
             timeout: 4500,
           });
         }
-        // hadRemote=false / restored=0 stays silent — a fresh
-        // identity with no synced contacts is the expected case and
-        // shouldn't earn a toast.
-      } catch (err) {
-        // Non-fatal. The user can retry from Address Book → kebab →
-        // "Restore contacts from Nostr".
-        console.warn('[profile] address-book recovery after restore failed:', err);
       }
     },
 
@@ -803,6 +838,11 @@ export default {
       this.isRegenerating = true;
       try {
         await this.identity.regenerate();
+        // Profile metadata is identity-scoped: the new pubkey has no
+        // published kind:0 yet, so the old display name / avatar /
+        // lud16 are nonsense under the new identity. Wipe the store
+        // so the UI lands on the empty "set up your profile" state.
+        this.profile.reset();
         this.$q.notify({
           type: 'positive',
           message: this.$t('New identity generated'),

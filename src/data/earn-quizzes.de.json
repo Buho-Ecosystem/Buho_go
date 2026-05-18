@@ -1,0 +1,2255 @@
+{
+  "groups": [
+    {
+      "id": "bitcoin-basics",
+      "title": "Bitcoin-Grundlagen",
+      "illustration": "/Learn and Earn/book-lover.svg",
+      "chapters": [
+        {
+          "id": "BitcoinWhatIsIt",
+          "title": "Bitcoin: Was ist das?",
+          "questions": [
+            {
+              "id": "BitcoinWhatIsIt.whatIsBitcoin",
+              "title": "Was genau ist Bitcoin?",
+              "text": "Bitcoin ist digitales Geld. Es lässt sich sofort und sicher zwischen zwei beliebigen Personen weltweit übertragen, ganz ohne Bank oder Finanzdienstleister dazwischen.",
+              "question": "Was genau ist Bitcoin?",
+              "answers": [
+                "Digitales Geld",
+                "Ein Videospiel",
+                "Eine neue Zeichentrickfigur"
+              ],
+              "feedback": [
+                "Genau richtig!",
+                "Leider falsch, versuch es noch einmal.",
+                "Nope. Zumindest keine, die wir kennen!"
+              ]
+            },
+            {
+              "id": "BitcoinWhatIsIt.sat",
+              "title": "Ich habe gerade einen „Sat“ verdient. Was ist das?",
+              "text": "Ein „Sat“ ist die kleinste Einheit eines Bitcoins. Wie ein Dollar in 100 Cent zerlegt werden kann, lässt sich ein Bitcoin in 100.000.000 Sats teilen. Du musst also keinen ganzen Bitcoin besitzen, um ihn zu nutzen. Du kannst Bitcoin verwenden, egal ob du 20, 3.000 oder 100.000.000 Sats hast (was, wie du jetzt weißt, einem ganzen Bitcoin entspricht).\n",
+              "question": "Ich habe gerade einen „Sat“ verdient. Was ist das?",
+              "answers": [
+                "Die kleinste Einheit von Bitcoin",
+                "Ein kleiner Satellit",
+                "Eine Weltraumkatze"
+              ],
+              "feedback": [
+                "Du hast gerade zwei weitere Sats verdient!",
+                "Vielleicht, aber das ist hier nicht die richtige Antwort.",
+                "Ähm... eher nicht!"
+              ]
+            },
+            {
+              "id": "BitcoinWhatIsIt.whereBitcoinExist",
+              "title": "Wo existiert Bitcoin?",
+              "text": "Bitcoin ist eine neue Form von Geld. Es kann von jedem, jederzeit und überall auf der Welt genutzt werden. Es ist nicht an eine bestimmte Regierung oder Region gebunden (wie etwa der US-Dollar). Es gibt keine Papierscheine, keine Münzen aus Metall, keine Plastikkarten, Bitcoin ist zu 100 % digital. Es ist ein Netzwerk aus Computern im Internet. Deine Bitcoin verwaltest du bequem per Smartphone oder Computer.\n",
+              "question": "Wo existiert Bitcoin?",
+              "answers": [
+                "Im Internet",
+                "Auf dem Mond",
+                "Auf einem Konto der Zentralbank"
+              ],
+              "feedback": [
+                "Du hast 5 weitere Sats verdient.",
+                "Falsch. Naja… zumindest noch nicht ;)",
+                "Leider falsch. Versuch es nochmal."
+              ]
+            },
+            {
+              "id": "BitcoinWhatIsIt.whoControlsBitcoin",
+              "title": "Wer kontrolliert Bitcoin?",
+              "text": "Bitcoin wird von keiner Person, Firma oder Regierung kontrolliert. Es wird von der Gemeinschaft seiner Nutzer betrieben, Menschen und Unternehmen auf der ganzen Welt, die freiwillig die Bitcoin-Software auf ihren Computern und Smartphones laufen lassen.\n",
+              "question": "Wer kontrolliert Bitcoin?",
+              "answers": [
+                "Eine freiwillige Gemeinschaft von Nutzern weltweit",
+                "Mr. Burns aus den Simpsons",
+                "Die französische Regierung"
+              ],
+              "feedback": [
+                "Richtig. Bitcoin lebt davon, dass Menschen rund um den Globus die Bitcoin-Software auf ihren Geräten betreiben.",
+                "Lustige Vorstellung, aber leider falsch!",
+                "Falsch. Keine Firma und keine Regierung kontrolliert Bitcoin."
+              ]
+            },
+            {
+              "id": "BitcoinWhatIsIt.copyBitcoin",
+              "title": "Wenn Bitcoin digitales Geld ist, kann man es dann nicht einfach kopieren?",
+              "text": "Der Wert eines Bitcoins kann nie kopiert werden. Genau das macht Bitcoin so revolutionär. Die meisten digitalen Dateien, ein iPhone-Foto, ein MP3-Song, ein Word-Dokument, lassen sich problemlos vervielfältigen. Die Bitcoin-Software verhindert genau das: die doppelte Ausgabe digitalen Geldes. Wie genau das funktioniert, schauen wir uns später an.\n",
+              "question": "Wenn Bitcoin digitales Geld ist, kann man es dann nicht einfach kopieren und so kostenloses Geld erzeugen?",
+              "answers": [
+                "Nein, es ist unmöglich, den Wert eines Bitcoins zu kopieren",
+                "Ja, Bitcoin lässt sich so leicht kopieren wie ein digitales Foto",
+                "Ja, aber dafür braucht man hochspezialisierte Computer"
+              ],
+              "feedback": [
+                "Den Wert eines Bitcoins zu kopieren ist unmöglich.",
+                "Du weißt, dass das nicht stimmt. Versuch es nochmal.",
+                "Falsch. Es gibt keine Möglichkeit, Bitcoin zu duplizieren."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/bitcoin.svg"
+        },
+        {
+          "id": "WhatIsMoney",
+          "title": "Was ist Geld?",
+          "questions": [
+            {
+              "id": "WhatIsMoney.moneySocialAgreement",
+              "title": "Geld ist eine soziale Vereinbarung.",
+              "text": "Geld braucht Vertrauen. Menschen vertrauen den Geldscheinen in ihrer Tasche. Sie vertrauen den Zahlen auf ihrem Online-Bankkonto. Sie vertrauen, dass das Guthaben auf einer Geschenkkarte eingelöst werden kann. Geld ermöglicht es, sofort Waren oder Dienstleistungen zu tauschen.\n",
+              "question": "Warum hat Geld einen Wert?",
+              "answers": [
+                "Weil Menschen darauf vertrauen, dass auch andere ihm einen Wert zumessen",
+                "Weil deine Mutter es gesagt hat",
+                "Weil ein Dollarschein sein Gewicht in Gold wert ist"
+              ],
+              "feedback": [
+                "Genau das macht Geld erst funktionsfähig!",
+                "Mag sein. Aber das ist hier nicht die richtige Antwort!",
+                "Nope. Früher konnte man Dollar gegen Gold tauschen, heute nicht mehr."
+              ]
+            },
+            {
+              "id": "WhatIsMoney.coincidenceOfWants",
+              "title": "Geld löst das „doppelte Bedürfniskonzept“… was soll das sein?",
+              "text": "Vor Jahrhunderten, als es noch kein Geld gab, tauschten Menschen Waren direkt, sie feilschten darüber, wie ein einzigartiges Gut gegen ein anderes oder gegen eine Dienstleistung getauscht werden konnte. Stell dir vor, du willst im Restaurant um die Ecke essen und bietest dem Wirt einen Besen an. Er antwortet vielleicht: „Nein, aber ich nehme drei Hüte, falls du welche hast.“ Du kannst dir vorstellen, wie umständlich eine Tauschwirtschaft wäre. Mit Geld zeigst du einfach einen 20-Euro-Schein, und du weißt, dass der Wirt ihn annimmt.\n",
+              "question": "Welches „Zusammentreffen“ löst Geld?",
+              "answers": [
+                "Das doppelte Zusammentreffen von Bedürfnissen",
+                "Das Zusammentreffen von Tag und Nacht",
+                "Das Zusammentreffen von Mond und Sonne"
+              ],
+              "feedback": [
+                "Richtig. Mit Geld kannst du einfach kaufen, ohne über das Tauschmittel zu verhandeln.",
+                "Nein, das weißt du besser.",
+                "Nicht ganz. Das nennt man Sonnenfinsternis."
+              ]
+            },
+            {
+              "id": "WhatIsMoney.moneyEvolution",
+              "title": "Geld hat sich fast seit Anbeginn der Zeit weiterentwickelt.",
+              "text": "Vor Tausenden von Jahren nutzte eine Gesellschaft in Mikronesien große, seltene Steine als allgemein akzeptierte Währung. Ab dem 16. Jahrhundert wurden seltene Kaurimuscheln aus dem Meer in vielen Ländern als Geld verwendet. Und über Jahrtausende hinweg diente Gold weltweit als Geld, auch in den USA (bis 1971).\n",
+              "question": "Welche Gegenstände wurden in der Vergangenheit als Geld verwendet?",
+              "answers": [
+                "Steine, Muscheln und Gold",
+                "Kleine Plastikhäuser aus dem Monopoly-Spiel",
+                "Münzen aus Schokolade"
+              ],
+              "feedback": [
+                "Was selten und schwer zu kopieren ist, hat sich oft als Geld bewährt.",
+                "Falsch. Beim Spielen mag das funktionieren, im echten Leben nicht!",
+                "Nope. Schmackhaft ja, aber als Geld ungeeignet."
+              ]
+            },
+            {
+              "id": "WhatIsMoney.whyStonesShellGold",
+              "title": "Warum wurden Steine, Muscheln und Gold früher als Geld genutzt?",
+              "text": "Diese Dinge hatten einige, aber nicht alle, Eigenschaften, die gutes Geld ausmachen.\n\n\n\nWelche Eigenschaften machen also „gutes“ Geld aus?\nKnappheit: nicht im Überfluss vorhanden und nicht leicht zu reproduzieren\nAnerkennung: relativ einfach auf Echtheit zu prüfen\nHaltbarkeit: leicht zu erhalten, verdirbt nicht\nEinheitlichkeit: problemlos austauschbar gegen ein gleiches Stück\nTransportierbar: einfach zu bewegen\nTeilbar: lässt sich in kleinere Stücke zerlegen\n",
+              "question": "Warum wurden Steine, Muscheln und Gold als Geld eingesetzt?",
+              "answers": [
+                "Weil sie wichtige Eigenschaften haben, haltbar, einheitlich und teilbar.",
+                "Weil sie hübsch und glänzend sind.",
+                "Weil sie in die Tasche passen."
+              ],
+              "feedback": [
+                "Weitere Schlüsseleigenschaften: Knappheit und Transportfähigkeit.",
+                "Falsch. Das mag stimmen, reicht aber als Geldqualität nicht aus.",
+                "Nicht ganz. Tragbarkeit ist nett, aber allein war das nicht der Grund."
+              ]
+            },
+            {
+              "id": "WhatIsMoney.moneyIsImportant",
+              "title": "Geld ist für jeden Einzelnen wichtig",
+              "text": "Jeder weiß: Geld spielt eine Rolle.\n\n\nDie meisten Menschen tauschen ihre Zeit und Energie, in Form von Arbeit, gegen Geld. Damit kaufen sie Waren und Dienstleistungen, heute und in Zukunft.\n",
+              "question": "Was ist der wichtigste Grund, weshalb Geld wichtig ist?",
+              "answers": [
+                "Geld erlaubt es, heute und morgen Waren und Dienstleistungen zu kaufen.",
+                "Mit Geld kann man zum Mond fliegen.",
+                "Geld löst alle Probleme."
+              ],
+              "feedback": [
+                "Richtig!",
+                "Falsch. Wer weiß, vielleicht ändert sich das ja noch ;)",
+                "Nicht ganz. Auch wenn manche das glauben, trifft es nicht den Kern der Sache."
+              ]
+            },
+            {
+              "id": "WhatIsMoney.moneyImportantGovernement",
+              "title": "Geld ist auch für Regierungen wichtig",
+              "text": "Moderne Volkswirtschaften sind in Nationalstaaten organisiert: USA, Japan, Schweiz, Brasilien, Norwegen, China und so weiter.\n  \n  In fast jedem Staat hat die Regierung die Macht, Geld auszugeben und zu kontrollieren.\n\n\n  In den USA kann die Zentralbank (die Federal Reserve, kurz „Fed“) jederzeit neue Dollar drucken oder erzeugen.\n\n\n  Die Fed braucht dafür keine Zustimmung, weder vom Präsidenten, noch vom Kongress, und schon gar nicht von den Bürgern.\n\n\n  Stell dir vor, du könntest jederzeit selbst Geld drucken, was würdest du tun?\n",
+              "question": "Wer darf in den USA jederzeit legal Dollar drucken?",
+              "answers": [
+                "Die US-Zentralbank (die Federal Reserve)",
+                "Mr. Burns aus den Simpsons",
+                "Ein Typ mit einer Druckmaschine im Keller"
+              ],
+              "feedback": [
+                "Die US-Regierung kann jederzeit so viel Geld drucken, wie sie möchte.",
+                "Falsch. Auch wenn er immer reichlich davon zu haben schien.",
+                "Nein. Manche Leute drucken zwar Falschgeld, legal ist das ganz sicher nicht!"
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/currency.svg"
+        },
+        {
+          "id": "HowDoesMoneyWork",
+          "title": "Wie funktioniert Geld?",
+          "questions": [
+            {
+              "id": "HowDoesMoneyWork.WhatIsFiat",
+              "title": "Fiat-Währung: Was ist das?",
+              "text": "Alle heute zirkulierenden Landeswährungen sind sogenanntes „Fiat-Geld“. Dazu zählen US-Dollar, Euro, japanische Yen, Schweizer Franken und so weiter.\n\n\nDas Wort „fiat“ kommt aus dem Lateinischen und bedeutet „es werde“, also „auf Anordnung“.\n\n\nFiat-Geld, auch der US-Dollar, wird also schlicht durch staatliche Anordnung geschaffen.\n",
+              "question": "Wer erschafft Fiat-Währungen wie Dollar, Euro oder Franken?",
+              "answers": [
+                "Sie werden auf Anordnung der Regierung des jeweiligen Landes erschaffen.",
+                "Der Filialleiter der örtlichen Bank.",
+                "Der Monopoly-Money-Mann."
+              ],
+              "feedback": [
+                "Die Zentralbank eines Staates erschafft Fiat-Währungen.",
+                "Nicht ganz. Geschäftsbanken können zwar durch Kreditvergabe Geld schaffen, aber keine Fiat-Währung erzeugen. Versuch es nochmal.",
+                "Nope. Nochmal probieren!"
+              ]
+            },
+            {
+              "id": "HowDoesMoneyWork.whyCareAboutFiatMoney",
+              "title": "Ich vertraue meiner Regierung. Warum sollte mich Fiat-Geld kümmern?",
+              "text": "Wie schon im letzten Kapitel erwähnt: Die US-Zentralbank ist die Federal Reserve („Fed“).\n\n\nDie Fed kann jederzeit zusätzliche Dollar drucken, ohne Zustimmung des Präsidenten, des Kongresses oder der Bürger.\n\n\nDie Kontrolle über Geld lädt zu Missbrauch ein, und führt oft zu massiver Inflation, willkürlicher Enteignung und Korruption.\n\n\nDer ehemalige Fed-Vorsitzende Alan Greenspan sagte einst, die USA könnten „jede Schuld bezahlen, weil wir immer mehr drucken können, um das zu tun“.\n",
+              "question": "Warum sollte mich kümmern, dass die Regierung Fiat-Geld kontrolliert?",
+              "answers": [
+                "Jede Fiat-Währung wird irgendwann von der Regierung missbraucht.",
+                "Lokale Banken könnten nicht genug Tresorraum für all die Scheine haben.",
+                "Es könnten nicht genug Bäume da sein, um Papier für all die neuen Scheine zu liefern."
+              ],
+              "feedback": [
+                "Im Laufe der Geschichte konnte keine Regierung der Versuchung widerstehen, Geld zu drucken, schließlich muss sie es ja nicht zurückzahlen.",
+                "Nope, das ist sicher nicht der Punkt.",
+                "Falsch. Versuch es nochmal."
+              ]
+            },
+            {
+              "id": "HowDoesMoneyWork.GovernementCanPrintMoney",
+              "title": "Wen sollte es kümmern, dass Regierungen unbegrenzt Geld drucken können?",
+              "text": "Eigentlich jeden!\n\n\nWenn der Staat Geld druckt, also die Dollarmenge ausweitet, führt das zu Inflation.\n\n\nInflation heißt: Die Preise von Waren und Dienstleistungen steigen. In der Zukunft kostet alles mehr als heute.\n\n\nWas bedeutet das für Bürger?\n\n\nDas britische Pfund hat seit seiner Einführung vor über 300 Jahren 99,5 % seines Wertes verloren.\n\n\nDer US-Dollar hat seit Ende des Ersten Weltkriegs, also in rund 100 Jahren, 97 % seines Wertes eingebüßt.\n\n\nEin Steak, das 1920 noch 30 Cent kostete, war 1990 etwa 3 Dollar wert… und heute, im Jahr 2020, rund 15 Dollar!\n",
+              "question": "Was passiert, wenn der Staat Geld druckt?",
+              "answers": [
+                "Das Drucken von Geld führt zu Inflation.",
+                "Bürger müssen jedes Jahr ihre alten Scheine bei der Bank tauschen.",
+                "Das Aussehen des Geldscheins ändert sich."
+              ],
+              "feedback": [
+                "Heißt: Waren und Dienstleistungen werden in Zukunft teurer.",
+                "Nope. Alte Scheine bleiben genauso gültig wie neue.",
+                "Falsch. Auch wenn neue Designs kommen, hat das nichts mit der Geldmenge zu tun."
+              ]
+            },
+            {
+              "id": "HowDoesMoneyWork.FiatLosesValueOverTime",
+              "title": "Heißt das, jedes Fiat-Geld verliert mit der Zeit an Wert?",
+              "text": "Genau.\n\n\nIn der Geschichte gab es 775 Fiat-Währungen. Die meisten existieren nicht mehr. Die durchschnittliche Lebensdauer einer Fiat-Währung beträgt nur 27 Jahre.\n\n\nDas britische Pfund ist die älteste Fiat-Währung. Seit 1694 hat es über 99 % seines Wertes verloren.\n\n\nKeine Fiat-Währung hat ihren Wert über die Zeit hinweg gehalten. Das ist Inflation, im Grunde ein Diebstahl an deinem hart verdienten Geld!\n",
+              "question": "Was passiert mit dem Wert von Fiat-Geld über die Zeit?",
+              "answers": [
+                "Jede Fiat-Währung hat einen massiven Wertverlust erlitten.",
+                "Der Wert bleibt für immer derselbe.",
+                "Das Design der Geldscheine wird alle 10 Jahre erneuert."
+              ],
+              "feedback": [
+                "Auch der US-Dollar hat in 100 Jahren 97 % seines Wertes verloren.",
+                "Falsch. Versuch es nochmal.",
+                "Nicht ganz. Das Design ändert sich vielleicht, der Wert hat damit aber nichts zu tun."
+              ]
+            },
+            {
+              "id": "HowDoesMoneyWork.OtherIssues",
+              "title": "Okay, Fiat verliert Wert. Gibt es noch weitere Probleme?",
+              "text": "Ja, moderne Fiat-Währungen haben viele weitere Schwächen.\n\n\nErstens: Geld international zu bewegen ist oft extrem schwierig. Regierungen schränken den Geldverkehr ein, beschlagnahmen Vermögen, manchmal ohne nachvollziehbaren Grund. Selbst legale Überweisungen sind durch hohe Gebühren teuer.\n\n\nZweitens: Selbst in den USA gibt es kaum noch finanzielle Privatsphäre. Der Großteil des Handels läuft per Karte oder online über Dienste wie PayPal oder Apple Pay.\n\n\nIst dir schon einmal aufgefallen, dass kurz nach einer Produktsuche genau dazu passende Werbung in deinem Feed oder Postfach auftaucht? Das nennt sich „Surveillance Capitalism“, Unternehmen verdienen Geld, indem sie deine Finanzdaten verkaufen.\n",
+              "question": "Welche weiteren Probleme gibt es bei Fiat-Geld?",
+              "answers": [
+                "Geld ist schwer international zu bewegen und wird überwacht.",
+                "Geld wird im 21. Jahrhundert nicht mehr gebraucht.",
+                "Geld ist die Wurzel allen Übels."
+              ],
+              "feedback": [
+                "Mehr dazu in den nächsten Kapiteln. Bleib dran!",
+                "Falsche Antwort. Das weißt du besser.",
+                "Manche mögen das glauben, aber wir suchen hier eine andere Antwort."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/money-income.svg"
+        },
+        {
+          "id": "BitcoinWhyIsItSpecial",
+          "title": "Bitcoin: Was macht es besonders?",
+          "questions": [
+            {
+              "id": "BitcoinWhyIsItSpecial.LimitedSupply",
+              "title": "Besondere Eigenschaft",
+              "text": "Regierungen können Fiat-Geld in unbegrenzter Menge drucken.\n\n\nBei Bitcoin ist das Angebot fest und kann niemals 21 Millionen Coins übersteigen.\n\n\nEine ständig wachsende Geldmenge erzeugt Inflation: Dein heutiges Geld wird in Zukunft weniger wert sein.\n\nEin Beispiel:\nEin Brot kostete 1920 etwa 8 Cent. 1990 waren es rund 1 Dollar, heute eher 2,50 Dollar!\n\n\nDas begrenzte Angebot von Bitcoin hat den umgekehrten Effekt, Deflation.\n\n\nDas heißt: Dein heutiger Bitcoin ist darauf ausgelegt, in Zukunft mehr wert zu sein, weil er knapp ist.\n",
+              "question": "Ist das Bitcoin-Angebot dauerhaft begrenzt?",
+              "answers": [
+                "Ja. Es wird niemals mehr als 21 Millionen Bitcoin geben.",
+                "Nein. Die Regierung kann jederzeit mehr Bitcoin erzeugen.",
+                "Nein, die Software kann geändert werden, um mehr Bitcoin zu schaffen."
+              ],
+              "feedback": [
+                "Durch die Mengenbegrenzung ist Bitcoin darauf ausgelegt, mit der Zeit an Wert zu gewinnen.",
+                "Falsch. Die Regierung hat keine Kontrolle über Bitcoin.",
+                "Nope. Eine der Kernregeln von Bitcoin ist das ewig begrenzte Angebot."
+              ]
+            },
+            {
+              "id": "BitcoinWhyIsItSpecial.Decentralized",
+              "title": "Besondere Eigenschaft",
+              "text": "Fiat-Geld wird von Banken und Regierungen kontrolliert, deshalb nennt man es „zentralisierte“ Währung.\n\nBitcoin wird von niemandem kontrolliert: weder von Person, Staat noch Firma. Es ist „dezentral“.\n\nDa keine Bank involviert ist, kann dir niemand den Zugang zu Bitcoin verweigern, egal aus welchem Grund: Herkunft, Geschlecht, Einkommen, Bonität, Standort oder sonst etwas.\n\nJeder, überall auf der Welt, kann Bitcoin nutzen, wann immer er will. Alles, was du brauchst, ist ein Smartphone oder Computer und eine Internetverbindung. Mit Diensten wie Machankura lässt sich Bitcoin sogar über ein einfaches Handy ohne Internet nutzen!\n",
+              "question": "Ist Bitcoin zentralisiert?",
+              "answers": [
+                "Nein. Bitcoin ist vollständig dezentral.",
+                "Ja. Die Vereinten Nationen kontrollieren es zentral.",
+                "Ja. Die größten Banken der Welt kontrollieren es zentral."
+              ],
+              "feedback": [
+                "Richtig. Keine Firma, Regierung oder Institution kontrolliert Bitcoin. Jeder kann es nutzen, alles was du brauchst ist ein Smartphone und Internet.",
+                "Falsche Antwort. Versuch es nochmal.",
+                "Falsch. Du weißt, dass das nicht stimmt!"
+              ]
+            },
+            {
+              "id": "BitcoinWhyIsItSpecial.NoCounterfeitMoney",
+              "title": "Besondere Eigenschaft",
+              "text": "Bargeld, Schecks und Kartenzahlungen können gefälscht werden.\n\nDie Software, die das Bitcoin-Netzwerk betreibt, schließt das Duplizieren von Geld zu Fälschungszwecken aus.\n\nNeue Bitcoin können nur ausgegeben werden, wenn die Teilnehmer im Netzwerk, Menschen, die freiwillig Bitcoin-Software auf ihren Geräten laufen lassen, sich darauf einigen.\n\nDadurch ist es unmöglich, Bitcoin zu fälschen.\n",
+              "question": "Kann man Bitcoin fälschen?",
+              "answers": [
+                "Nein. Es ist unmöglich, Bitcoin zu fälschen.",
+                "Ja. Allerdings braucht man dafür hochspezialisierte Computer.",
+                "Ja. Die Regierung kann beliebig viel Bitcoin drucken."
+              ],
+              "feedback": [
+                "Bitcoin lässt sich nicht fälschen.",
+                "Falsch. Niemand kann den Wert eines Bitcoins kopieren oder duplizieren.",
+                "Falsch. Die Regierung kann zwar unbegrenzt Dollar drucken, aber keine Bitcoin."
+              ]
+            },
+            {
+              "id": "BitcoinWhyIsItSpecial.HighlyDivisible",
+              "title": "Besondere Eigenschaft",
+              "text": "Klassisches Fiat-Geld lässt sich nur bis auf einen Cent genau zerlegen, also zwei Nachkommastellen bei einem US-Dollar (0,01 $).\n\nBitcoin hingegen lässt sich 100.000.000-fach unterteilen. Du kannst also schon ₿0,00000001 ausgeben. Das „₿“-Symbol ist das Bitcoin-Pendant zum „$“. Manchmal sieht man auch BTC statt ₿.\n\nDamit eignet sich Bitcoin auch für sehr kleine Zahlungen, sogar unter einem US-Cent!\n",
+              "question": "Was ist die kleinste Menge an Bitcoin, die man besitzen oder nutzen kann?",
+              "answers": [
+                "0,00000001 BTC",
+                "Ein ganzer Bitcoin. Weniger geht nicht.",
+                "0,01 BTC"
+              ],
+              "feedback": [
+                "Ja. Ein Bitcoin lässt sich in 100.000.000 Teile zerlegen. Die kleinste Einheit nennt man, wie du weißt, einen „Sat“.",
+                "Falsch. Bitcoin ist sehr fein teilbar, du kannst problemlos winzige Bruchteile nutzen.",
+                "Falsch. Die kleinste US-Einheit ist ein Cent, Bitcoin ist deutlich feiner teilbar."
+              ]
+            },
+            {
+              "id": "BitcoinWhyIsItSpecial.securePartOne",
+              "title": "Besondere Eigenschaft",
+              "text": "Das Bitcoin-Netzwerk ist heute weit über 100 Milliarden Dollar wert. Entsprechend sicher muss es sein, damit nie Geld gestohlen wird.\n\n\nBitcoin gilt als die erste Kryptowährung der Welt.\n\n\nDer Wortteil „Krypto“ kommt von Kryptografie. Vereinfacht gesagt schützt sie Informationen durch sehr komplexe mathematische Funktionen.\n\n\nDen wenigsten ist bewusst: Bitcoin ist tatsächlich das sicherste Computernetzwerk der Welt!\n\n\n(Du hast vielleicht von Bitcoin-„Hacks“ gehört, diesen Mythos räumen wir im nächsten Kapitel aus dem Weg.)\n",
+              "question": "Ist das Bitcoin-Netzwerk sicher?",
+              "answers": [
+                "Ja. Das Bitcoin-Netzwerk ist sehr sicher.",
+                "Vielleicht. Kommt auf den Wochentag an.",
+                "Bitcoin ist nicht sicher, weil sein Code öffentlich einsehbar ist."
+              ],
+              "feedback": [
+                "Tatsächlich wurde das Bitcoin-Netzwerk noch nie gehackt. Beantworte die nächste Frage und erfahre mehr!",
+                "Schöner Versuch, aber falsch. Bitcoin ist rund um die Uhr sicher, 365 Tage im Jahr.",
+                "Falsch. Auch wenn der Code offen einsehbar ist, ist Bitcoin extrem sicher."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/bitcoin-p2p.svg"
+        }
+      ]
+    },
+    {
+      "id": "money-history",
+      "title": "Geschichte des Geldes",
+      "illustration": "/Learn and Earn/learning.svg",
+      "chapters": [
+        {
+          "id": "TheOriginsOfMoney",
+          "title": "Die Ursprünge des Geldes",
+          "questions": [
+            {
+              "id": "TheOriginsOfMoney.originsOfMoney",
+              "title": "Die Ursprünge des Geldes",
+              "text": "Die frühesten menschlichen Gesellschaften betrieben Tauschhandel, mit klaren Grenzen. Ein Problem war die „doppelte Übereinstimmung der Bedürfnisse“: Damit ein Tausch funktioniert, müssen zwei Menschen gleichzeitig genau das Gut wollen, das der andere anbietet.\n\nUm das zu überwinden, begannen Menschen, bestimmte Dinge zu sammeln und ihnen Wert beizumessen, Muscheln, Tierzähne, Feuersteine , weil sie selten und symbolisch bedeutsam waren.\n\nDiese Sammlerstücke wurden zum Mittel, um Wohlstand zu speichern und zu übertragen. Sie verschafften unseren Vorfahren einen evolutionären Vorteil gegenüber anderen Arten wie dem Neandertaler.\n",
+              "question": "Was war die wichtigste und ursprüngliche evolutionäre Funktion von Sammlerstücken?",
+              "answers": [
+                "Wohlstand zu speichern und zu übertragen",
+                "Als Form der Unterhaltung zu dienen",
+                "Als Statussymbol zu fungieren"
+              ],
+              "feedback": [
+                "Glückwunsch! Du hast den Nagel auf den Kopf getroffen. Sammlerstücke dienen seit Langem als Medium, um Wohlstand zu speichern und zu übertragen, ganz ähnlich wie heute Bitcoin als dezentrale digitale Währung.",
+                "Tut mir leid, aber Sammlerstücke sind mehr als bloße Dekoration, sie hatten einen tieferen Zweck.",
+                "Sammlerstücke mögen für manche als Statussymbol gedient haben, aber das war nicht ihr eigentlicher Zweck."
+              ]
+            },
+            {
+              "id": "TheOriginsOfMoney.primitiveMoney",
+              "title": "Primitive Formen von Geld",
+              "text": "Sammlerstücke waren ein Vorläufer des Geldes: Sie ermöglichten Tausch zwischen Gruppen und den Transfer von Wohlstand über Generationen hinweg. In paläolithischen Gesellschaften wurden sie nicht so häufig genutzt wie modernes Geld, aber sie dienten zuverlässig als Wertspeicher und ermöglichten manchmal sogar Handel.\n\nPrimitive Geldformen wie Sammlerstücke hatten eine geringe Umlaufgeschwindigkeit, sie wurden im Leben eines Menschen oft nur wenige Male weitergegeben. Doch haltbare Stücke, die über Generationen vererbt wurden, hatten bei jeder Übergabe erheblichen Wert und ermöglichten den Handel.\n",
+              "question": "Welche Hauptrolle spielten Sammlerstücke in paläolithischen Gesellschaften?",
+              "answers": [
+                "Wert zu speichern",
+                "Als Unterhaltung zu dienen",
+                "Als Tauschmittel zu fungieren"
+              ],
+              "feedback": [
+                "Glückwunsch! Genau richtig. Sammlerstücke dienten in der Steinzeit als Wertspeicher, ganz ähnlich, wie heute Bitcoin als digitaler Wertspeicher verwendet wird.",
+                "Sammlerstücke mögen Spaß gemacht haben, aber sie hatten in alten Gesellschaften einen handfesten Zweck.",
+                "Sammlerstücke wurden nicht so oft gehandelt wie modernes Geld, als reines Tauschmittel taugten sie also nicht."
+              ]
+            },
+            {
+              "id": "TheOriginsOfMoney.anticipatingDemand",
+              "title": "Nachfrage antizipieren",
+              "text": "Was sollte man sammeln oder herstellen? Diese Frage war für frühe Menschen entscheidend, denn sie mussten erahnen, was andere begehren würden. Wer richtig vorhersah, welche Stücke als Sammlerwerte gefragt sein würden, hatte beim Tausch und beim Vermögensaufbau klar die Nase vorn.\n\nManche indigenen Stämme Nordamerikas, etwa die Narragansett, produzierten gezielt Stücke, die kaum praktischen Nutzen hatten, aber im Tausch wertvoll waren.\n\nJe früher du erkennst, dass etwas in Zukunft begehrt sein wird, desto größer dein Vorteil: Du kannst es günstig erwerben, bevor es jeder will, sein Tauschwert steigt mit der wachsenden Nachfrage.\n",
+              "question": "Was war der Hauptvorteil, künftige Nachfrage nach Sammlerstücken früh zu erkennen?",
+              "answers": [
+                "Sammlerstücke günstig kaufen zu können, bevor sie weithin begehrt waren",
+                "Sammlerstücke gegen andere nützliche Dinge eintauschen zu können",
+                "Andere mit seltenen Stücken beeindrucken zu können"
+              ],
+              "feedback": [
+                "Richtig! Das Prinzip „günstig kaufen, teuer verkaufen“ ist keine Erfindung der Moderne, schon frühe Menschen versuchten, Sammlerstücke früh und günstig zu erwerben. Fun Fact: Dasselbe gilt für Bitcoin, frühe Adopter konnten zu Preisen kaufen, die wir heute kaum noch glauben.",
+                "Eintauschen war ein netter Nebeneffekt, aber nicht der Hauptvorteil.",
+                "Eine stolze Sammlung mag Bewunderung gebracht haben, das war aber nicht der entscheidende Vorteil."
+              ]
+            },
+            {
+              "id": "TheOriginsOfMoney.nashEquilibrium",
+              "title": "Der Schlüssel zum Handel",
+              "text": "Etwas zu erwerben in der Erwartung, dass es künftig als Wertspeicher gefragt sein wird, beschleunigt genau diese Entwicklung. So entsteht eine Rückkopplungsschleife, die Gesellschaften zu einem gemeinsamen Wertspeicher zusammenführt.\n\nIn der Spieltheorie nennt man das ein „Nash-Gleichgewicht“. Ein Nash-Gleichgewicht beim Wertspeicher bringt enormen Nutzen: Handel und Arbeitsteilung werden einfacher, Zivilisation kann entstehen.\n",
+              "question": "Was ist ein Nash-Gleichgewicht und wie nützt es der Gesellschaft?",
+              "answers": [
+                "Ein Konzept, das Gesellschaften hilft, sich auf einen gemeinsamen Wertspeicher zu einigen",
+                "Ein Tanz, der Handel und Arbeitsteilung fördert",
+                "Ein Musikinstrument, das Handel und Spezialisierung erleichtert"
+              ],
+              "feedback": [
+                "Glückwunsch, richtig! Ein Nash-Gleichgewicht beschreibt eine Situation, in der niemand durch das Ändern seiner Strategie etwas gewinnen kann. Beim Wertspeicher bedeutet das: Eine Gesellschaft einigt sich auf eine gemeinsame Form, und erleichtert damit Handel und Arbeitsteilung. Bitcoin gilt oft als Beispiel für ein Nash-Gleichgewicht.",
+                "Mit Tanz hat das nichts zu tun, es ist ein Konzept aus der Spieltheorie.",
+                "Musik bringt Menschen zusammen, aber ein Nash-Gleichgewicht ist ein spieltheoretischer Begriff."
+              ]
+            },
+            {
+              "id": "TheOriginsOfMoney.singleStoreOfValue",
+              "title": "Der Vorteil eines gemeinsamen Wertspeichers",
+              "text": "Mit dem Wachstum von Gesellschaften und Handelsrouten konkurrierten verschiedene Wertspeicher miteinander. Händler mussten entscheiden, in welcher Form sie ihre Gewinne sparten: im Wertspeicher ihrer eigenen Gesellschaft, in dem der Handelspartner, oder in beidem.\n\nWer in einem fremden Wertspeicher sparte, konnte dort leichter handeln, und hatte ein Eigeninteresse daran, dass dieser Wertspeicher auch zu Hause Verbreitung fand, denn das steigerte die Kaufkraft seiner Ersparnisse.\n\nWenn zwei Gesellschaften denselben Wertspeicher nutzen, sinken die Kosten ihres Handels deutlich, und der Wohlstand wächst. Im 19. Jahrhundert konvergierte fast die ganze Welt auf Gold, es folgte die größte Handelsausweitung der Geschichte.\n",
+              "question": "Warum hatten Händler ein Interesse daran, einen fremden Wertspeicher auch in ihrer eigenen Gesellschaft zu verbreiten?",
+              "answers": [
+                "Um die Kaufkraft ihrer Ersparnisse zu erhöhen",
+                "Um etwas über andere Kulturen zu lernen",
+                "Um Wohlstand und Status zu zeigen"
+              ],
+              "feedback": [
+                "Genau. Händler profitierten davon, wenn der fremde Wertspeicher zu Hause akzeptiert wurde, und auch ihre Gesellschaft profitierte, weil der Handel günstiger wurde. Bitcoin wird heute von vielen Gesellschaften aufgegriffen, jede Akzeptanz steigert seine Kaufkraft und erleichtert den Handel.",
+                "Kultureller Austausch war ein netter Nebeneffekt, aber nicht der Hauptgrund.",
+                "Statusdenken mag eine Rolle gespielt haben, aber es ist nicht die Hauptantwort."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/international-trade.svg"
+        },
+        {
+          "id": "AttributesOfAGoodStoreOfValue",
+          "title": "Eigenschaften eines guten Wertspeichers",
+          "questions": [
+            {
+              "id": "AttributesOfAGoodStoreOfValue.whatIsGoodSOV",
+              "title": "Manche Wertspeicher sind besser als andere",
+              "text": "Wenn Wertspeicher in Konkurrenz zueinander stehen, setzen sich diejenigen mit den besten Eigenschaften durch und gewinnen über die Zeit an Nachfrage.\n\nViele Güter wurden schon als Wertspeicher genutzt, aber einige Eigenschaften machen sie besonders erfolgreich.\n\nEin idealer Wertspeicher ist haltbar, transportierbar, austauschbar, prüfbar, teilbar, knapp, hat eine lange Geschichte und ist zensurresistent.\n",
+              "question": "Welche Eigenschaften machen einen guten Wertspeicher aus?",
+              "answers": [
+                "Haltbarkeit, Transportierbarkeit, Austauschbarkeit, Prüfbarkeit, Teilbarkeit, Knappheit, lange Geschichte und Zensurresistenz",
+                "Geschmack, Niedlichkeit, Weichheit und Instagram-Tauglichkeit",
+                "Seltenheit, Schönheit und sentimentaler Wert"
+              ],
+              "feedback": [
+                "Genau! Diese Eigenschaften machen einen guten Wertspeicher aus, sie erleichtern den Einsatz als Tauschmittel und steigern die Nachfrage über die Zeit.",
+                "Geschmack und Niedlichkeit sind in anderen Kontexten nett, als Eigenschaften eines Wertspeichers taugen sie nicht.",
+                "Seltenheit und Schönheit machen ein Stück persönlich wertvoll, aber kaum zum allgemein akzeptierten Wertspeicher."
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.durability",
+              "title": "Haltbarkeit ist eine wichtige Eigenschaft eines guten Wertspeichers",
+              "text": "Das verwendete Gut sollte weder verderblich noch leicht zerstörbar sein. Gold gilt hier als „König“.\n\nEin Großteil des jemals geförderten oder geprägten Goldes, einschließlich des Goldes der Pharaonen, existiert noch heute. Goldmünzen aus der Antike haben bis heute beträchtlichen Wert.\n\nFiat-Währungen und Bitcoin sind digitale Aufzeichnungen, die manchmal in physischer Form (etwa als Geldscheine) auftreten. Für ihre Haltbarkeit zählt aber nicht die physische Erscheinung, sondern die Belastbarkeit der ausgebenden Institution.\n\nViele Regierungen und ihre Währungen sind über die Jahrhunderte verschwunden, andere, wie der Dollar oder das britische Pfund, haben überlebt. Bitcoin hat keine ausgebende Stelle: Seine Haltbarkeit hängt vom Netzwerk ab, das es absichert. Auch wenn es noch zu früh für endgültige Urteile ist, zeigt das Bitcoin-Netzwerk eine hohe „Anti-Fragilität“, trotz Regulierungsversuchen und Hackerangriffen.\n",
+              "question": "Welcher Faktor ist entscheidend für die Haltbarkeit eines guten Wertspeichers?",
+              "answers": [
+                "Das Netzwerk, das die Währung absichert",
+                "Die physische Erscheinung der Währung",
+                "Die Institution, die die Währung ausgibt"
+              ],
+              "feedback": [
+                "Richtig. Vor allem bei digitalen Währungen wie Bitcoin ist das absichernde Netzwerk entscheidend. Wusstest du, dass Bitcoin trotz Regulierungs- und Hackerangriffen eine bemerkenswerte Anti-Fragilität zeigt?",
+                "Nein. Die physische Form ist weniger entscheidend als die Institution oder das Netzwerk. Schon die alten Griechen prägten Münzen aus vergänglichen Metallen wie Bronze und Kupfer.",
+                "Knapp daneben. Bei Fiat ist die Institution wichtig, im Lauf der Geschichte sind aber viele Staaten und Währungen verschwunden."
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.portability",
+              "title": "Das Gut muss leicht zu transportieren und zu lagern sein",
+              "text": "\n„Transportierbarkeit“ beschreibt, wie leicht sich ein Gut von einem Ort zum anderen bewegen lässt.\n\nBitcoin ist extrem mobil, passt auf einen winzigen USB-Stick und überquert in Sekunden Kontinente. Fiat ist heute ebenfalls digital und damit transportabel, aber staatliche Vorgaben und Kapitalverkehrskontrollen können große Beträge erschweren oder ganz blockieren.\n\nGold dagegen ist physisch und sehr dicht, der am wenigsten transportable Wertspeicher. Der meiste Goldbestand wird nie bewegt; physische Transporte sind teuer, riskant und langsam.\n",
+              "question": "Welcher der folgenden Punkte macht einen Wertspeicher NICHT transportabel?",
+              "answers": [
+                "Seine physische Form",
+                "Seine leichte Transportierbarkeit und Lagerung",
+                "Seine Eignung für Fernhandel"
+              ],
+              "feedback": [
+                "Richtig. Die physische Form macht ein Gut nicht transportabel, im Gegenteil. Digitale Wertspeicher wie Bitcoin sind am leichtesten zu bewegen. Private Keys im Wert von hunderten Millionen passen auf einen winzigen USB-Stick.",
+                "Falsch. Leichte Transportierbarkeit gehört zu den wichtigsten Eigenschaften eines guten Wertspeichers, versuch es nochmal.",
+                "Nope. Fernhandel zu ermöglichen ist eines der zentralen Merkmale eines transportablen Wertspeichers."
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.fungibility",
+              "title": "Ein Stück sollte gegen ein anderes gleicher Menge austauschbar sein",
+              "text": "\n„Fungibilität“ heißt: Eine Einheit einer Währung ist gegen eine andere derselben Währung beliebig austauschbar. Eine entscheidende Eigenschaft eines guten Wertspeichers.\n\nGold ist hochgradig fungibel, einmal eingeschmolzen, ist eine Unze nicht mehr von einer anderen zu unterscheiden. Fiat-Währungen sind nicht immer vollständig fungibel: Ausgebende Stellen können einzelne Stückelungen unterschiedlich behandeln.\n\nWie Gold sind Bitcoin-Einheiten grundsätzlich fungibel, aber mit einigen Feinheiten. Mehr dazu in einem späteren Kapitel.\n",
+              "question": "Was ist der Hauptgrund, weshalb Gold als fungibler gilt als Diamanten?",
+              "answers": [
+                "Form und Qualität von Diamanten sind sehr unregelmäßig",
+                "Gold ist wertvoller als Diamanten",
+                "Gold ist häufiger als Diamanten"
+              ],
+              "feedback": [
+                "Genau! Die unregelmäßige Form und Qualität macht Diamanten weniger austauschbar als Gold. Übrigens: Bitcoin gilt auf Netzwerkebene als fungibel, aber die Nachvollziehbarkeit auf der Blockchain kann dazu führen, dass einzelne Coins von Händlern unterschiedlich behandelt werden.",
+                "Falsch. Gold mag wertvoller sein, aber das ist nicht der Grund für seine höhere Fungibilität.",
+                "Nope. Gold ist zwar häufiger als Diamanten, das macht es aber nicht fungibler."
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.verifiability",
+              "title": "Das Gut muss leicht und schnell auf Echtheit prüfbar sein",
+              "text": "Ein guter Wertspeicher sollte sich leicht als echt erkennen lassen. Das stärkt das Vertrauen im Handel und erhöht die Abschlussquote.\n\nFiat-Geld und Gold lassen sich grundsätzlich gut prüfen, aber nicht narrensicher. Falschgeld und mit Gold überzogenes Wolfram wurden in der Vergangenheit zur Täuschung eingesetzt.\n\nBei Bitcoin macht Kryptografie die Überprüfung trivial und das Fälschen unmöglich.\n",
+              "question": "Wie lassen sich Bitcoin verifizieren?",
+              "answers": [
+                "Durch kryptografische Signaturen",
+                "Durch das Prüfen auf gold-beschichtetes Wolfram",
+                "Durch Sicherheitsmerkmale auf Banknoten"
+              ],
+              "feedback": [
+                "Glückwunsch, richtig! Bitcoin lassen sich mit mathematischer Gewissheit über kryptografische Signaturen verifizieren.",
+                "Schade, das passt nicht. Beim nächsten Mal!",
+                "Falsch! Bitcoin ist rein digital, Banknoten sind nicht im Spiel."
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.divisibility",
+              "title": "Das Gut muss sich leicht zerteilen lassen",
+              "text": "Teilbarkeit ist eine wichtige Eigenschaft eines Wertspeichers.\n\nStell dir vor, du hast einen 100-Dollar-Schein und willst einen Kaugummi für 10 Cent kaufen. Ob der Tausch klappt, hängt davon ab, ob der Verkäufer 99,90 $ Wechselgeld parat hat.\n\nIn handelsintensiven Gesellschaften ermöglicht Teilbarkeit präzisen Tausch und macht das Geld im Alltag einsetzbar.\n\nBitcoin glänzt hier: bis auf ein Hundertmillionstel teilbar, sehr kleine, exakte Beträge möglich.\n\nFiat ist im Alltag „teilbar genug“, bis zum Cent.\n\nGold ist physisch zwar teilbar, im Alltagshandel aber unpraktisch.\n",
+              "question": "Welches Gut taugt aufgrund schwieriger Teilbarkeit NICHT gut für den Alltagshandel?",
+              "answers": [
+                "Gold",
+                "Bitcoin",
+                "Fiat-Währung"
+              ],
+              "feedback": [
+                "Richtig. Gold lässt sich im Alltag kaum in winzige Teile zerlegen. Wusstest du, dass Gold dank Seltenheit und Haltbarkeit seit Jahrtausenden als Wertspeicher dient?",
+                "Falsch. Bitcoin ist sehr fein teilbar, bis hinunter zum Satoshi und im Lightning-Netzwerk sogar in Milli-Sats.",
+                "Nope. Fiat lässt sich problemlos in kleinere Stückelungen zerlegen, auch wenn es weniger teilbar ist als Bitcoin."
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.scarce",
+              "title": "Ein Geld muss knapp sein",
+              "text": "Ein guter Wertspeicher hat ein begrenztes Angebot, er ist knapp.\n\nKnappheit erzeugt Wert: Menschen begehren, was selten ist. Bitcoin ist auf maximal 21 Millionen Einheiten begrenzt, jeder Besitzer hält damit einen bekannten Prozentsatz der Gesamtmenge.\n\nGold dagegen kann durch neue Fördermethoden mehr werden, und Fiat ist anfällig für Inflation, sein Wert sinkt mit der Zeit.\n",
+              "question": "Was ist die wichtigste Eigenschaft eines Wertspeichers?",
+              "answers": [
+                "Knappheit",
+                "Überfluss",
+                "Einfache Produktion"
+              ],
+              "feedback": [
+                "Glückwunsch, richtig! Wusstest du, dass es maximal 21 Millionen Bitcoin geben wird? Genau diese Knappheit macht Bitcoin wertvoll.",
+                "Überfluss ist keine Stärke eines Wertspeichers, im Gegenteil.",
+                "Leichte Herstellbarkeit ist gerade nicht das, was einen Wertspeicher auszeichnet."
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.establishedHistory",
+              "title": "Eine etablierte Geschichte als wertvolles Gut",
+              "text": "Ein etablierter Wertspeicher wird nicht so leicht von einem Neuling verdrängt, es sei denn, der Neuling hat einen klaren Vorteil.\n\nMenschen sind Gewohnheitstiere und greifen zu dem, was sie kennen.\n\nGold hat eine lange Geschichte als Wertspeicher und seinen Wert über Jahrhunderte gehalten. Fiat-Währungen sind eine relativ junge Erfindung, und verlieren typischerweise durch Inflation an Wert.\n\nBitcoin existiert noch nicht lange, zeigt aber Widerstandsfähigkeit am Markt und dürfte weiter geschätzt werden.\n",
+              "question": "Was ist der Hauptgrund, weshalb ein etablierter Wertspeicher dennoch verdrängt werden kann?",
+              "answers": [
+                "Der Neuling hat einen klaren Vorteil gegenüber dem etablierten Gut",
+                "Das etablierte Gut hat eine längere Wertgeschichte",
+                "Der Neuling ist günstiger herstellbar"
+              ],
+              "feedback": [
+                "Richtig. Ein lange etabliertes Gut wird nur verdrängt, wenn der Neuling deutlich besser ist.",
+                "Falsch, im Gegenteil: Eine lange Geschichte schützt eher vor Verdrängung.",
+                "Nope. Hast du das Kapitel zur Knappheit übersprungen?"
+              ]
+            },
+            {
+              "id": "AttributesOfAGoodStoreOfValue.censorshipResistance",
+              "title": "Keine Erlaubnis nötig",
+              "text": "Zensurresistenz wird im digitalen Zeitalter immer wichtiger: Sie beschreibt, wie schwer es Dritten, etwa Unternehmen oder Staaten, fällt, jemanden an der Nutzung eines Gutes zu hindern.\n\nFür Menschen in Regimen mit Kapitalverkehrskontrollen oder Handelsverboten ist diese Eigenschaft besonders wertvoll. Bitcoin gilt als zensurresistent, das dezentrale Peer-to-Peer-Netzwerk ermöglicht Transaktionen ohne menschliche Genehmigung.\n\nFiat-Banken hingegen unterliegen staatlicher Regulierung und müssen aktiv eingreifen, melden und unterbinden.\n\nGold wird zwar nicht von Staaten ausgegeben, ist aber über Distanz schwer zu bewegen, und damit anfällig für staatliche Eingriffe.\n",
+              "question": "Welcher der folgenden Punkte macht Bitcoin NICHT zensurresistent?",
+              "answers": [
+                "Sein dezentrales Peer-to-Peer-Netzwerk",
+                "Seine physische Natur",
+                "Seine Regulierung durch Staaten"
+              ],
+              "feedback": [
+                "Richtig. Das dezentrale Peer-to-Peer-Netzwerk macht Bitcoin zensurresistent, Transaktionen ohne Erlaubnis sind möglich.",
+                "Falsch. Physische Güter brauchen oft Erlaubnis, um Grenzen zu überqueren, und lassen sich leicht beschlagnahmen.",
+                "Nein, das Gegenteil ist der Fall: Das von Staaten regulierte Fiat-Bankensystem ist zensuranfällig, nicht Bitcoin."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/vault.svg"
+        },
+        {
+          "id": "TheEvolutionOfMoneyI",
+          "title": "Die Entwicklung des Geldes I",
+          "questions": [
+            {
+              "id": "TheEvolutionOfMoneyI.evolutionMoney",
+              "title": "Die Entwicklung des Geldes",
+              "text": "In der modernen Geldtheorie wird Geld vor allem als Tauschmittel gesehen.\n\nIm letzten Jahrhundert hatten Regierungen das Monopol der Geldschöpfung, und es Geld oft schwer gemacht, seinen Wert zu halten. Das verleitete viele zu der Annahme, der Hauptzweck von Geld sei der Tausch.\n\nManche argumentieren, Bitcoin sei kein gutes Geld, weil sein Wert zu stark schwankt.\n\nDoch diese Sicht ist verkehrt herum. Geschichtlich entwickelte sich Geld stufenweise, seine Funktion als Wertspeicher kam vor seiner Rolle als Tauschmittel.\n",
+              "question": "Was steht im Mittelpunkt der modernen Geldtheorie?",
+              "answers": [
+                "Geld als Tauschmittel für Waren und Dienstleistungen",
+                "Die Geschichte der Geldentwicklung",
+                "Das Monopol der Regierungen bei der Geldschöpfung"
+              ],
+              "feedback": [
+                "Glückwunsch, richtig! Mit dem Aufstieg digitaler Zahlungen ist die Rolle von Geld als Tauschmittel noch wichtiger geworden.",
+                "Falsch! Aber schön, dass dich die Geschichte des Geldes interessiert. Versuch es nochmal.",
+                "Falsch. Regierungen kontrollieren zwar Geldschöpfung, das ist aber nicht der Schwerpunkt der modernen Theorie."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyI.collectible",
+              "title": "Vier Stufen des Geldes: Sammlerstück",
+              "text": "Geld durchlief geschichtlich vier Stufen. Ganz am Anfang wurden Dinge wegen ihrer besonderen Eigenschaften begehrt, oft als Schmuck oder Sammlerstück.\n\nBeispiele: Muscheln, Perlen, Gold, allesamt Sammlerstücke, bevor sie zu Geld wurden.\n",
+              "question": "Welche frühen Geldformen wurden für ihr Aussehen oder besondere Eigenschaften geschätzt?",
+              "answers": [
+                "Münzen aus Kupfer und Silber",
+                "Muscheln, Perlen und Gold",
+                "Papierscheine mit Porträts berühmter Anführer"
+              ],
+              "feedback": [
+                "Falsch. Kupfer- und Silbermünzen kamen erst später in der Entwicklung des Geldes.",
+                "Glückwunsch, richtig! Muscheln, Perlen und Gold wurden zuerst für ihre besonderen Eigenschaften geschätzt, lange bevor sie als Geld dienten.",
+                "Falsch! Papierscheine mit Porträts kamen erst sehr viel später."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyI.storeOfValue",
+              "title": "Vier Stufen des Geldes: Wertspeicher",
+              "text": "Der Wertspeicher ist die zweite Stufe in der Entwicklung von Geld. Wenn genug Menschen ein Gut wegen seiner besonderen Eigenschaften begehren, wird es zur Möglichkeit, Wert über die Zeit zu transportieren.\n\nJe mehr Menschen ein Gut als Wertspeicher erkennen, desto stärker steigt sein Wert.\n\nIrgendwann hört dieser Anstieg auf, wenn das Gut weit verbreitet ist und nur noch wenige Neue es als Wertspeicher wollen.\n",
+              "question": "Was bestimmt die Kaufkraft eines Wertspeichers?",
+              "answers": [
+                "Die Zahl der Menschen, die ihn als Wertspeicher wollen",
+                "Das Wetter",
+                "Die Farbe des Wertspeichers"
+              ],
+              "feedback": [
+                "Gut gemacht! Mit der Zahl der Nachfrager steigt die Kaufkraft.",
+                "Das Wetter beeinflusst vieles, aber nicht den Wert eines Wertspeichers.",
+                "Die Farbe spielt sicher keine Rolle. Denk eher an die Eigenschaften, die ein gutes Geld auszeichnen."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyI.mediumOfExchange",
+              "title": "Vier Stufen des Geldes: Tauschmittel",
+              "text": "Wird Geld zum Wertspeicher, stabilisiert sich sein Wert. Stabilität wiederum macht es zum idealen Tauschmittel, ohne den Koordinationsaufwand des Tauschhandels.\n\nIn der Frühzeit Bitcoins (2010) erkannten viele die Opportunitätskosten nicht: Bitcoin als Tauschmittel einzusetzen, anstatt es als jungen Wertspeicher zu halten.\n\nLaszlo Hanyecz tauschte einst 10.000 Bitcoin (zum Zeitpunkt dieses Texts rund 165 Mio. Dollar wert) gegen zwei Pizzas. Dieser Moment war das erste Mal, dass Bitcoin einen Marktwert hatte.\n\nLaszlos Pizza wird heute jedes Jahr am 22. Mai als „Bitcoin Pizza Day“ gefeiert.\n",
+              "question": "Wofür steht der „Bitcoin Pizza Day“?",
+              "answers": [
+                "Das erste Mal, dass Bitcoin einen Marktwert hatte",
+                "Die Erfindung von Ananas als Pizzabelag",
+                "Die Wiedergeburt klassischer italienischer Rezepte"
+              ],
+              "feedback": [
+                "Richtig! Am Pizza Day wird gefeiert, dass Laszlo Hanyecz 10.000 Bitcoin für zwei Pizzas eintauschte, ein Meilenstein in der Geschichte des Geldes.",
+                "Ananas mag eine schöne Frucht sein, hat auf einer echten Pizza aber nichts verloren! Davon abgesehen: falsche Antwort.",
+                "Pizza ist immer gut, aber darum geht es am Pizza Day nicht. Denk an die Bedeutung für Bitcoin."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyI.unitOfAccount",
+              "title": "Vier Stufen des Geldes: Recheneinheit",
+              "text": "Wird Geld breit zum Handel genutzt, werden Preise darin angegeben.\n\nHeute ist es nicht ganz korrekt zu sagen, „viele Waren lassen sich mit Bitcoin kaufen“. Klar, du kannst einen Kaffee mit Bitcoin bezahlen, aber der angezeigte Preis ist nicht der „wahre“ Bitcoin-Preis, sondern der Dollar-Preis, umgerechnet zum aktuellen Wechselkurs.\n\nFällt der Bitcoin-Kurs, verlangt der Händler mehr Bitcoin für denselben Dollar-Betrag.\n\nBitcoin gilt erst dann als Recheneinheit, wenn Händler ihn unabhängig vom Wechselkurs zu anderen Währungen akzeptieren.\n",
+              "question": "Wann kann man Bitcoin als Recheneinheit ansehen?",
+              "answers": [
+                "Wenn Händler ihn akzeptieren, ohne auf den Wechselkurs zu schauen",
+                "Wenn man damit Eis kauft",
+                "Wenn man damit Spiele mit Freunden spielt"
+              ],
+              "feedback": [
+                "Glückwunsch! Bitcoin wird zur Recheneinheit, wenn Händler ihn ohne Blick auf den Wechselkurs annehmen.",
+                "Eis ist lecker, aber nicht die richtige Antwort. Denk an die Bedingungen für eine echte Recheneinheit.",
+                "Spiele mit Freunden machen Spaß, aber das ist hier nicht die Antwort."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyI.partlyMonetized",
+              "title": "Teilweise Monetarisierung",
+              "text": "Güter, die nicht breit als Recheneinheit akzeptiert sind, gelten als „teilweise monetarisiert“: Sie übernehmen einige, aber nicht alle, Geldfunktionen.\n\nGold ist ein Beispiel: weit als Wertspeicher genutzt, aber kaum als Tauschmittel oder Recheneinheit. In manchen Ländern übernehmen verschiedene Güter unterschiedliche Geldfunktionen.\n\nDer Dollar erfüllt in den USA alle drei Funktionen. Der argentinische Peso wurde als Tauschmittel genutzt, als Wertspeicher taugte er wegen seiner Volatilität nicht.\n",
+              "question": "Was bedeutet „teilweise monetarisiert“?",
+              "answers": [
+                "Ein Gut, das noch nicht breit als Recheneinheit dient",
+                "Eine Währung, die nur in bestimmten Ländern akzeptiert wird",
+                "Ein Gut, das als Tauschmittel dient, aber nicht als Wertspeicher oder Recheneinheit"
+              ],
+              "feedback": [
+                "Glückwunsch! Ein teilweise monetarisiertes Gut ist eines, das noch nicht als Recheneinheit etabliert ist, etwa Gold, das als Wertspeicher dient, aber kaum für Alltagstransaktionen genutzt wird.",
+                "Kreativ, aber leider nicht ganz richtig.",
+                "Nicht ganz, aber knapp daneben, denk weiter nach."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyI.monetizationStage",
+              "title": "Bitcoin ist in der Monetarisierungsphase",
+              "text": "Bitcoin bewegt sich gerade von der ersten Stufe (Sammlerstück) in die zweite (Wertspeicher). Es wird vermutlich einige Jahre dauern, bis Bitcoin auch als Tauschmittel breit genutzt wird.\n\nDer Prozess ist offen, bei Gold hat er sehr lange gedauert, und niemand, der heute lebt, hat Geldwerdung in dieser Form je erlebt. Erfahrungen mit dem Prozess gibt es kaum, aber die Entwicklungen weltweit sind vielversprechend und laufen im digitalen Zeitalter deutlich schneller.\n",
+              "question": "In welcher Phase befindet sich Bitcoin derzeit?",
+              "answers": [
+                "Er wird zunehmend als Geld akzeptiert",
+                "Er wird bereits flächendeckend wie andere Währungen für den Handel genutzt",
+                "Er hat den Prozess der Geldwerdung bereits abgeschlossen und ist eine etablierte Währung"
+              ],
+              "feedback": [
+                "Bingo! Bitcoin gewinnt zunehmend Akzeptanz, ähnlich wie einst Gold.",
+                "Du hast wohl überlesen, dass das noch Jahre dauern wird. Lies nochmal.",
+                "Sorry, Bitcoin ist noch mitten im Geldwerdungsprozess."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/coins.svg"
+        },
+        {
+          "id": "TheEvolutionOfMoneyII",
+          "title": "Die Entwicklung des Geldes II",
+          "questions": [
+            {
+              "id": "TheEvolutionOfMoneyII.notFromGovernment",
+              "title": "Geld ist keine Erfindung des Staates",
+              "text": "Ein verbreiteter Irrtum lautet: Geld sei eine staatliche Erfindung und ohne Regierung undenkbar. Das stimmt nicht.\n\nDie Geschichte des Geldes reicht Jahrtausende zurück, in Zeiten, in denen es keine Staaten gab, sehr wohl aber Geld.\n\nGeld ist also kein staatliches Konstrukt, sondern entsteht spontan, als das am leichtesten handelbare Gut eines Marktes. Es braucht keine Regierung, um zu funktionieren.\n",
+              "question": "Was ist Geld?",
+              "answers": [
+                "Geld ist das am leichtesten handelbare Gut in einem Markt.",
+                "Geld ist eine staatliche Erfindung.",
+                "Geld ist eine magische Substanz, die Feen erschaffen."
+              ],
+              "feedback": [
+                "Spannend, wie verschiedene Gesellschaften unterschiedliche Dinge als Geld nutzten, von Muscheln über Rinder bis Gold. Am Ende entscheidet die Akzeptanz der Menschen über den Geldwert.",
+                "Nope! So mächtig ist die Regierung dann doch nicht.",
+                "Tut mir leid, aber bei der Zahnfee endet die magische Geldschöpfung."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyII.primaryFunction",
+              "title": "Die ursprüngliche Funktion von Geld",
+              "text": "Primitives Geld existierte lange vor großen Handelsnetzen. Archäologen fanden, dass frühe Menschen wertvolle Werkzeuge wie Pfeilspitzen, Sammlerstücke wie Kaurimuscheln und Rohstoffe wie Gerste als primitives Geld nutzten.\n\nIhre Hauptfunktion: kleine Tauschnetzwerke effizienter zu machen. Sie eliminierten den Zwang, Bedürfnisse, Vorräte oder Fähigkeiten passgenau zu matchen. Außerdem reduzierten sie den Bedarf an Krediten, was in vorgeschichtlichen Zeiten ohne Schrift kaum nachvollziehbar war.\n",
+              "question": "Was war die ursprüngliche Funktion von Geld?",
+              "answers": [
+                "Kleine Tauschnetzwerke effizienter zu machen.",
+                "Großen Fernhandel zu ermöglichen.",
+                "Den Bedarf an Krediten zu reduzieren."
+              ],
+              "feedback": [
+                "Glückwunsch! Spannend, wie Geld sich vom Schmiermittel kleiner Gemeinschaften zum modernen Tauschmittel entwickelt hat.",
+                "Genau andersherum, versuch es nochmal!",
+                "Falsch. Kredite gibt es fast so lange wie Geld und werden bleiben."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyII.monetaryMetals",
+              "title": "Geldmetalle",
+              "text": "Metalle waren schwer herzustellen, also selten. Sie hielten länger als Muscheln, Körner oder Perlen. Das machte sie wertvoll und gut transportierbar.\n\nMit fortschreitender Technik, besonders der Metallverarbeitung, konnten Menschen immer ausgefeiltere Geldformen schaffen.\n",
+              "question": "Was machte Metalle als Geld wertvoll?",
+              "answers": [
+                "Ihre Beständigkeit gegen Zeit und Verschleiß.",
+                "Ihre Seltenheit und schwierige Herstellung.",
+                "Ihr farbenfrohes, dekoratives Aussehen."
+              ],
+              "feedback": [
+                "Beeindruckend, wie manche Materialien wie Metall über Jahrhunderte ihren Wert halten. Gut gemacht!",
+                "Schöner Versuch, aber nicht ganz richtig.",
+                "Sorry, konzentrier dich eher auf die funktionalen Eigenschaften, weniger auf die Ästhetik."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyII.stockToFlow",
+              "title": "Das Stock-to-Flow-Verhältnis verstehen",
+              "text": "Stock-to-Flow misst, wie schnell dem bestehenden Bestand neue Einheiten hinzugefügt werden.\n\nDie Formel: Bestand geteilt durch jährliche Produktion.\n\nDamit etwas ein guter Wertspeicher ist, sollte es im Wert steigen, wenn Menschen es sparen wollen, aber die Produzenten dürfen das Angebot nicht beliebig erweitern, sonst sinkt der Wert.\n",
+              "question": "Was ist das Stock-to-Flow-Verhältnis?",
+              "answers": [
+                "Ein Maß dafür, wie schnell dem Bestand eines Geldgutes neue Einheiten hinzugefügt werden.",
+                "Ein Maß für die finanzielle Stabilität eines Unternehmens.",
+                "Eine Kennzahl zum Vergleich verschiedener Währungen."
+              ],
+              "feedback": [
+                "Genau! Stock-to-Flow ist ein hilfreiches Werkzeug, um Stabilität und Knappheit eines Gutes zu beurteilen. Gut gemacht!",
+                "Schade, du wirfst Begriffe durcheinander.",
+                "Falsch. Aber schön, dass du global denkst."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyII.hardMoney",
+              "title": "Hartes und weiches Geld",
+              "text": "Wie schwer es ist, neues Geld herzustellen, nennt man seine „Härte“. Diese kann sich mit dem technischen Fortschritt ändern, was einst schwer herzustellen war, wird vielleicht leicht.\n\nIm vorkolonialen Ghana waren „Aggry-Perlen“ (aus Glas) das Geld. Glasherstellung war dort teuer, die Perlen hatten ein hohes Stock-to-Flow und galten als knapp.\n\nIm 16. Jahrhundert kamen europäische Entdecker, erkannten den Wert der Perlen und begannen, sie massenhaft zu importieren, die europäische Glastechnik machte sie spottbillig.\n\nMit diesen billig produzierten Perlen erwarben die Europäer wertvolle Rohstoffe Afrikas. Das Ergebnis: ein massiver Vermögenstransfer und die Verwandlung der Aggry-Perlen von hartem zu weichem Geld.\n\nMit der Zeit wandten sich Gesellschaften von Artefakt-Geld wie Steinen und Glasperlen ab, hin zu Geldmetallen.\n",
+              "question": "Was ist die „Härte“ von Geld?",
+              "answers": [
+                "Wie schwer es ist, neue Einheiten eines Geldgutes herzustellen.",
+                "Der Wert des Geldes im Vergleich zu anderen Währungen.",
+                "Die im Umlauf befindliche Geldmenge."
+              ],
+              "feedback": [
+                "Genau! Spannend, wie sich Härte mit technischem Fortschritt verschieben kann.",
+                "Sorry, du hast es verdreht, versuch es nochmal.",
+                "Falsch. Härte hat mehr mit Produktion als mit Menge zu tun."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/banknote.svg"
+        },
+        {
+          "id": "TheEvolutionOfMoneyIII",
+          "title": "Die Entwicklung des Geldes III",
+          "questions": [
+            {
+              "id": "TheEvolutionOfMoneyIII.convergingOnGold",
+              "title": "Konvergenz auf Gold",
+              "text": "Von allen Geldmetallen entschied sich der freie Markt letztlich für Gold, wegen zweier Eigenschaften, die seinen Wert über lange Zeiträume und Regionen hinweg stabil halten:\n\n1) Gold kann nicht zerstört werden, und\n\n2) Gold kann nicht aus anderen Stoffen hergestellt werden.\n",
+              "question": "Warum wählte der freie Markt Gold als Geld?",
+              "answers": [
+                "Weil es nicht zerstört oder synthetisiert werden kann.",
+                "Weil es reichlich vorhanden und leicht zu finden ist.",
+                "Weil es das schönste und ansprechendste Metall ist."
+              ],
+              "feedback": [
+                "Genau! Eigenschaften wie Haltbarkeit und Seltenheit machen Materialien wertvoll als Geld.",
+                "Verdreht, versuch es nochmal.",
+                "Falsch! Gold mag schön aussehen, entscheidend sind aber seine funktionalen Eigenschaften."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIII.originsOfPaperMoney",
+              "title": "Die Ursprünge des goldgedeckten Papiergelds",
+              "text": "Gold lässt sich in Münzen oder Barren mit definiertem Gewicht und Reinheitsgrad gießen. Mit der Ausweitung der Handelsrouten wurde der Transport großer Goldmengen riskant.\n\nDie Lösung: Papierscheine vertrauenswürdiger Banken, die gegen Gold einlösbar waren. Um 900 n. Chr. nutzten chinesische Händler Papiergeld, um Tausende von Münzen über weite Distanzen zu vermeiden. Sie tauschten Papierquittungen von Verwahrstellen.\n\nUrsprünglich auf Namen ausgestellt, wurden diese Scheine bald zu Inhaberpapieren, jeder, der den Schein hielt, konnte ihn einlösen. Ein Vorläufer der heutigen Banknoten.\n",
+              "question": "Wozu dienten Papierscheine im Zuge der Handelsausweitung?",
+              "answers": [
+                "Um Gold bequem zu tauschen, ohne es physisch transportieren zu müssen",
+                "Um ein Schuldenversprechen darzustellen",
+                "Um große Goldmengen zu transportieren"
+              ],
+              "feedback": [
+                "Glückwunsch! Du bist ein Gold-Tausch-Genie. Wusstest du, dass diese Scheine als Inhaberpapiere galten, einlösbar von jedem, der sie besaß?",
+                "Oh nein, hier ist die Verwechslung mit Schuldscheinen leider falsch.",
+                "Gold in Papier transportieren? Mutiger Versuch."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIII.fractionalReserve",
+              "title": "Die Erfindung des Mindestreserve-Bankwesens",
+              "text": "Beim Mindestreserve-Bankwesen halten Banken nur einen Bruchteil der Einlagen als Reserve, den Rest verleihen sie weiter.\n\nEntstanden ist das System, weil Menschen mit ihrem Gold Geld verdienen wollten, statt für die Lagerung zu zahlen.\n\nSie überließen ihr Gold einer Bank oder einem Tresor, die es verliehen, im Gegenzug gab es Zinsen.\n\nWenn weniger Gold abgehoben als eingelegt wurde, konnten Banken dasselbe Gold als Sicherheit für mehrere Kredite nutzen, und so mit nur einem Bruchteil als Reserve mehr Profit machen.\n",
+              "question": "Warum entstand das Mindestreserve-Bankwesen?",
+              "answers": [
+                "Damit Menschen mit ihrem Gold Geld verdienen können",
+                "Damit Banken leichter große Goldmengen verwahren können",
+                "Damit Banken leichter Kredite vergeben können"
+              ],
+              "feedback": [
+                "Glückwunsch, Bankgeschichts-Experte! Beim Mindestreserve-Bankwesen halten Banken nur einen Bruchteil der Einlagen vor und verleihen den Rest.",
+                "Hmm, knapp daneben.",
+                "Sorry, du wirfst Bankensysteme durcheinander."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIII.bankRun",
+              "title": "Die Probleme des Mindestreserve-Bankwesens",
+              "text": "Banken gaben manchmal mehr Scheine aus, als sie an Einlagen hatten, das konnte gefährlich werden. Wenn Menschen an der Solvenz einer Bank zweifelten, stürmten sie die Bank, um ihr Geld abzuheben, ein „Bank Run“.\n\nDer plötzliche Abzug zeigte oft: Die Bank hatte zu viel Hebel über Mindestreserven aufgebaut. Liquidität trocknete aus, das gesamte Finanzsystem konnte stehen bleiben.\n",
+              "question": "Was kann passieren, wenn Banken mehr Scheine ausgeben, als sie an Einlagen halten?",
+              "answers": [
+                "Massenhafter Abzug von Einlagen, systemische Panik, austrocknende Liquidität",
+                "Ein schöner Urlaub für alle",
+                "Ein plötzlicher Anstieg der Benzinpreise"
+              ],
+              "feedback": [
+                "Genau, das ist die Gefahr eines klassischen Bank Runs.",
+                "Sorry, Urlaub ist hier nicht die Antwort.",
+                "Benzinpreise schwanken aus vielen Gründen, aber kaum aus diesem!"
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIII.modernCentralBanking",
+              "title": "Modernes Zentralbankwesen",
+              "text": "Um Bank Runs entgegenzuwirken, schufen Staaten eigene Banken, die „Zentralbanken“.\n\nSie haben das Privileg, Geld zu schaffen. Sie sind die Notbremse, wenn Geschäftsbanken keine Reserven mehr haben.\n\nDeshalb spricht man von „Lender of Last Resort“, die Zentralbank kann Geld schaffen und es Geschäftsbanken bereitstellen, damit diese Auszahlungen leisten können.\n",
+              "question": "Welche Aufgabe hat eine Zentralbank?",
+              "answers": [
+                "Eine einheitliche nationale Währung schaffen und als Notbremse für andere Banken dienen",
+                "Eis verkaufen und einen Spielplatz betreiben",
+                "Als Stylist und Modeberater des Königshauses fungieren"
+              ],
+              "feedback": [
+                "Glückwunsch, richtig! Zentralbanken sind auch der „Lender of Last Resort“, sie schaffen Geld, wenn Geschäftsbanken Liquidität brauchen.",
+                "Eis und Spielplatz sind nicht ihr Job.",
+                "Auch nicht: Sie sind keine königlichen Stylisten."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIII.goldBacked",
+              "title": "Von Gold zu goldgedeckt",
+              "text": "Früher banden manche Staaten den Wert ihrer Währung an eine bestimmte Goldmenge, das war der Goldstandard. Die Regierung musste eine bestimmte Goldreserve halten, um eine bestimmte Geldmenge auszugeben.\n\nDieses System begrenzte die Verschuldungsmöglichkeiten des Staates: Er konnte nicht einfach mehr Geld drucken, um Kredite zu finanzieren. Staaten verschuldeten sich häufig für Kriege oder Großprojekte, der Goldstandard erschwerte das, weil sie erst genug Gold aufbauen mussten.\n\nFür Bürger war das System problematisch: Es gab keine Garantie, dass ihre Einlagen sicher waren, ihr Geld hing davon ab, ob der Staat seine Goldreserven halten konnte.\n",
+              "question": "Was war das Hauptproblem des Goldstandards für Staaten und Bürger?",
+              "answers": [
+                "Er erschwerte es Staaten, sich zu verschulden",
+                "Er machte es Menschen schwer, in der Bank zu sparen",
+                "Er verlangte vom Staat, einen Streichelzoo im Tresor zu halten"
+              ],
+              "feedback": [
+                "Genau! Der Goldstandard erschwerte staatliche Verschuldung, weil eine entsprechende Goldreserve nötig war.",
+                "Falsch. Das Problem für Bürger war die fehlende Einlagensicherheit, Sparen an sich war nicht erschwert.",
+                "Lustige Vorstellung, aber Unsinn!"
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIII.brettonWoods",
+              "title": "Das Bretton-Woods-System",
+              "text": "Nach dem Ersten und Zweiten Weltkrieg waren viele Länder finanziell ausgezehrt. Die USA hatten viel Gold, sie hatten Waffen und militärische Ausrüstung in großem Stil verkauft. Etwa zwei Drittel des Weltgolds lagen in den USA.\n\nUm die Weltwirtschaft zu stabilisieren, entstand ein neues System: Länder banden ihre Währungen an den US-Dollar.\n\nDer Dollar wiederum war an Gold gebunden. So hing der Wert anderer Währungen indirekt am US-Goldbestand.\n",
+              "question": "Was war der Hauptzweck des Bretton-Woods-Systems?",
+              "answers": [
+                "Den Wert anderer Währungen über den US-Dollar an Gold zu binden",
+                "Eine neue Weltwährung aus Schokoladenmünzen einzuführen",
+                "Ein Netz aus Trampolinparks in allen Großstädten zu errichten"
+              ],
+              "feedback": [
+                "Richtig! Bretton Woods entstand nach dem Zweiten Weltkrieg, um globale Instabilität und hohe Schulden zu adressieren. Es band Währungen an den Dollar, der seinerseits zu einem festen Kurs an Gold gekoppelt war.",
+                "Süße Idee, aber wenig praktisch, willst du, dass dein Geld noch schneller dahinschmilzt?",
+                "Trampolinparks wären sicher eine Ablenkung gewesen, aber das ist nicht die Antwort."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIII.globalReserve",
+              "title": "Die globale Reservewährung",
+              "text": "Eine globale Reservewährung wird weltweit für Handel und Finanzgeschäfte genutzt. Sie ist die bevorzugte oder am meisten nachgefragte Währung zur Abwicklung von Transaktionen, stabil und breit akzeptiert.\n\nWechsel der Reservewährung haben enorme geopolitische Folgen, weil sie das Machtgleichgewicht zwischen Ländern verschieben.\n\nDie dominante Reservewährung hält typischerweise mehrere Jahrzehnte. Im 20. Jahrhundert war es der US-Dollar.\n",
+              "question": "Was ist eine globale Reservewährung?",
+              "answers": [
+                "Eine Währung, die weltweit für Handel und Finanzgeschäfte genutzt wird",
+                "Eine Währung aus regenbogenfarbenem Papier mit Glitzer",
+                "Die Währung des Landes, das den größten Anteil am WTO-Budget zahlt"
+              ],
+              "feedback": [
+                "Genau, eine Währung, die international stabil, akzeptiert und nachgefragt ist.",
+                "Banknoten haben oft Sicherheitsmerkmale wie Glitzer, aber das definiert keine Reservewährung.",
+                "Würde sicher der WTO helfen, ist aber nicht das Kriterium."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/finance.svg"
+        },
+        {
+          "id": "TheEvolutionOfMoneyIV",
+          "title": "Die Entwicklung des Geldes IV",
+          "questions": [
+            {
+              "id": "TheEvolutionOfMoneyIV.nixonShock",
+              "title": "Der Nixon-Schock",
+              "text": "Das Bretton-Woods-System entstand nach dem Zweiten Weltkrieg, um globale Instabilität und hohe Schulden zu bekämpfen.\n\nLänder banden ihre Währungen an den US-Dollar, der seinerseits zu einem festen Kurs an Gold gebunden war. Damit hing der Wert vieler Währungen indirekt am Gold.\n\n1971 wies US-Präsident Richard Nixon das Schatzamt an, ausländischen Regierungen nicht mehr zu erlauben, ihre Dollar in Gold umzutauschen, die „Konvertibilität“ endete.\n\nDieses plötzliche Ende der Gold-Konvertibilität schockierte die Welt, der „Nixon Shock“, und beendete Bretton Woods mit seinen festen Wechselkursen. Eine neue Ära begann: das System floatender Wechselkurse.\n",
+              "question": "Was geschah 1971 mit dem Bretton-Woods-System?",
+              "answers": [
+                "Es endete und wurde durch ein System floatender Wechselkurse ersetzt",
+                "Es wurde zu einer beliebten TV-Spielshow",
+                "Es wurde in eine riesige Achterbahn umgebaut"
+              ],
+              "feedback": [
+                "Richtig: 1971 wies Nixon das Schatzamt an, den Gold-Tausch für ausländische Regierungen einzustellen.",
+                "Nicht ganz, eine Spielshow-Version wäre aber sicher unterhaltsam gewesen.",
+                "Schöner Versuch, aber das ist nicht die richtige Antwort!"
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIV.fiatEra",
+              "title": "Die Fiat-Ära",
+              "text": "„Fiat“ kommt aus dem Lateinischen und heißt „es werde“. Bei Geld bedeutet es: Eine Regierung schafft eine Währung allein per Anordnung.\n\nSeit dem Nixon-Schock ist Fiat-Geld nicht mehr durch Gold oder Silber gedeckt, und auch nicht mehr direkt gegen eine feste Menge Gold tauschbar.\n\nSein Wert kommt also davon, dass der Staat es als wertvoll erklärt und Menschen darauf vertrauen, damit Dinge kaufen zu können.\n\nZudem schreiben Staaten oft per Gesetz vor (gesetzliches Zahlungsmittel), dass Händler Fiat akzeptieren müssen, und Steuern nur damit zahlbar sind.\n",
+              "question": "Was bedeutet „Fiat“ im Zusammenhang mit Geld?",
+              "answers": [
+                "Eine per staatlicher Anordnung ausgegebene Währung",
+                "Eine Währung, die nur Pizzaliebhaber akzeptieren",
+                "Eine Währung aus Edelsteinen und Metallen"
+              ],
+              "feedback": [
+                "Gut gemacht. Fiat-Geld, etwa Dollar-Noten, ist eine Währung, die nicht direkt gegen etwas Festes wie Gold oder Silber tauschbar ist. Sein Wert speist sich aus staatlicher Anordnung und dem Vertrauen der Menschen.",
+                "Eine pizzaliebende Währung wäre köstlich, aber falsch.",
+                "Eine Währung aus Edelsteinen wäre glänzend, aber leider falsch."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIV.digitalFiat",
+              "title": "Digitales Fiat",
+              "text": "Digitales Fiat existiert nur in digitaler Form, auf Computern und Telefonen. Es ist eine digitale Repräsentation physischen Bargelds.\n\nDigitales Fiat wurde mit dem Siegeszug digitaler Netze (Internet) und dem Wachstum vernetzter Endgeräte möglich. Standardisierte Zahlungsprotokolle spielten ebenfalls eine Rolle.\n\nEs verdrängt zunehmend physisches Fiat, günstiger, schneller und besser überwachbar. Mit anderen Worten: einfacher zu nutzen und einfacher zu kontrollieren.\n",
+              "question": "Was ist digitales Fiat?",
+              "answers": [
+                "Staatlich ausgegebenes Geld, das nur digital existiert, auf Computern oder Telefonen",
+                "Eine Währung, mit der man nur online einkaufen kann",
+                "Eine Währung, die nur per E-Mail verschickt werden kann"
+              ],
+              "feedback": [
+                "Genau. Digitales Fiat ist eine digitale Form von Bargeld, mit niedrigen Kosten, hoher Geschwindigkeit und besserer Überwachbarkeit.",
+                "Nicht ganz, digitales Fiat wird auch im stationären Handel akzeptiert.",
+                "Falsch. Eine reine E-Mail-Währung gibt es nicht."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIV.plasticCredit",
+              "title": "Plastikkredit",
+              "text": "Eine Kreditkarte ist eine Karte, mit der man Geld leihen kann, um Dinge zu bezahlen. Statt zu sparen, leihen sich Menschen Geld vom Kartenanbieter, um sofort zu kaufen.\n\nDas hat das Schuldenmachen für Konsum normalisiert, mit Folgen für die Zeitpräferenz. Statt zu sparen, kaufen viele sofort auf Pump.\n\nHeute sind weltweit rund drei Milliarden Kreditkarten im Umlauf.\n",
+              "question": "Was ist eine Kreditkarte?",
+              "answers": [
+                "Eine Karte, mit der man Geld leihen kann, um Dinge zu bezahlen",
+                "Eine Karte, die ihrem Besitzer Superkräfte verleiht",
+                "Eine Karte, mit der man durch Handauflegen auf einem Sensor zahlt"
+              ],
+              "feedback": [
+                "Genau! Eine Kreditkarte ermöglicht es, Geld zu leihen, um sofort zu kaufen, statt zu sparen. Rund drei Milliarden sind weltweit im Umlauf.",
+                "Eine Karte mit Flugfähigkeit wäre fantastisch, ist aber leider Fiktion.",
+                "Sensor-Handauflegen klingt nach Science-Fiction, ist aber nicht die Realität."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIV.doubleSpendProblem",
+              "title": "Das Double-Spend-Problem",
+              "text": "In der digitalen Welt lässt sich alles leicht kopieren, umso wichtiger, dass dieselbe digitale Geldeinheit nicht mehrfach ausgegeben wird.\n\nIn einem zentralen System (z. B. mit Regierung) wird das trivial gelöst: durch ein zentral geführtes Hauptbuch. Das ist allerdings ein „Single Point of Failure“ in Sachen Verfügbarkeit und Vertrauen.\n\nIn einem dezentralen System ist das viel schwerer. Viele Versuche, dezentrales Digitalgeld zu schaffen, scheiterten an genau diesem Problem.\n\nSatoshi Nakamoto löste es zum ersten Mal mit Bitcoin, durch ein dezentrales System, das Ehrlichkeit belohnt und Unehrlichkeit teuer macht.\n",
+              "question": "Welcher Faktor war zentral für die Erfindung von Bitcoin?",
+              "answers": [
+                "Sicherstellen, dass dieselbe digitale Geldeinheit nicht doppelt ausgegeben werden kann",
+                "Eine digitale Währung schaffen, die nur auf dem Mars ausgegeben werden kann",
+                "Die Idee, Ehrlichkeit zu belohnen und Unehrlichkeit teuer zu machen"
+              ],
+              "feedback": [
+                "Genau. Das Double-Spend-Problem zu lösen war zentral für die Entwicklung von Bitcoin, besonders für ein System ohne zentrale Stelle.",
+                "Mars-Währung klingt nach SpaceX-Marketing, aber nicht das Thema hier.",
+                "Anreize sind wichtig, aber nicht der spezifische Kern, der Bitcoin definierte."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIV.satoshisBreakthrough",
+              "title": "Satoshis Durchbruch",
+              "text": "Satoshis Lösung des Double-Spend-Problems war ein Durchbruch in Informatik und verteilten Systemen. Bis Bitcoin galt es vielen als unlösbar.\n\nDie Lösung erlaubte es, ein elektronisches Bargeldsystem zu bauen, in dem Menschen sich erstmals direkt digitales Geld senden, ohne Bank oder Vermittler.\n",
+              "question": "Welches Problem musste Satoshi lösen, um Bitcoin zu erschaffen?",
+              "answers": [
+                "Das Double-Spend-Problem",
+                "Das Problem der doppelten Bedürfnisübereinstimmung",
+                "Das Halving-Problem"
+              ],
+              "feedback": [
+                "Richtig. Bitcoin nutzt Proof-of-Work und Blöcke, die zu einer Blockchain verkettet werden, so weiß jeder, dass jede Coin nur einmal ausgegeben wird.",
+                "Falsch. Die doppelte Bedürfnisübereinstimmung ist ein Problem des Tauschhandels, nicht das, was Satoshi gelöst hat.",
+                "Nein, das Halving ist kein Problem, sondern Teil der Lösung. Mehr dazu in Kapitel 302."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIV.nativelyDigital",
+              "title": "Speziell für das digitale Zeitalter gebaut",
+              "text": "Digitales Fiat ist eine digitale Version eines Produkts aus dem Industriezeitalter, mit allen Problemen und Grenzen des Originals. Es ist ein geschlossenes, stark kontrolliertes System, das auf Wertverlust angelegt ist.\n\nBitcoin wurde gezielt für das digitale Zeitalter entworfen. Es lässt sich verbessern und aktualisieren, jeder kann den Code einsehen und Verbesserungen vorschlagen. Es profitiert von der Kreativität aller, die mitwirken.\n",
+              "question": "Was ist der Hauptunterschied zwischen digitalem Fiat und Bitcoin?",
+              "answers": [
+                "Digitales Fiat basiert auf einem Produkt des Industriezeitalters, Bitcoin ist speziell für das digitale Zeitalter gebaut",
+                "Digitales Fiat ist Open Source, Bitcoin ist ein geschlossenes System",
+                "Digitales Fiat ist auf Wertgewinn angelegt, Bitcoin auf Wertverlust"
+              ],
+              "feedback": [
+                "Genau, Bitcoin wurde für das digitale Zeitalter konzipiert.",
+                "Du hast die beiden vertauscht.",
+                "Sorry, andersrum: Bitcoin gewinnt an Wert durch fixes Angebot, Fiat verliert durch Inflation."
+              ]
+            },
+            {
+              "id": "TheEvolutionOfMoneyIV.CBDCs",
+              "title": "Digitale Zentralbankwährungen",
+              "text": "CBDCs (Central Bank Digital Currencies) sind digitale Versionen traditioneller Währung, ausgegeben und gedeckt von der Zentralbank.\n\nIm Gegensatz zu Bitcoin sind sie nicht dezentral oder erlaubnisfrei, sondern Konkurrenz zu anderen digitalen Zahlungsmitteln.\n\nEin Hauptmotiv für CBDCs: die Überwachungs- und Zensurmöglichkeiten, die sie der ausgebenden Stelle verschaffen.\n\nIn einer Zeit negativer Realzinsen (Inflation > Zins) geht der CBDC-Rollout oft Hand in Hand mit dem Auslaufen von Bargeld, das beschleunigt die reale Entwertung der Währung.\n",
+              "question": "Was ist der Hauptzweck von CBDCs?",
+              "answers": [
+                "Überwachung und Zensur durch die ausgebende Stelle zu ermöglichen",
+                "Mit Bitcoin als Wertspeicher zu konkurrieren",
+                "Eine dezentrale, erlaubnisfreie digitale Währung zu schaffen"
+              ],
+              "feedback": [
+                "Richtig! CBDCs sind der „Big Brother“ digitaler Währungen, sie verschaffen dem Aussteller Überwachungs- und Zensurmöglichkeiten. Unheimlich, aber korrekt.",
+                "Falsch. Bitcoin und CBDCs sind beide digital, aber sehr unterschiedlich.",
+                "Falsch. CBDCs sind weder dezentral noch erlaubnisfrei."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/bitcoin.svg"
+        }
+      ]
+    },
+    {
+      "id": "bitcoin-deep-dive",
+      "title": "Bitcoin im Detail",
+      "illustration": "/Learn and Earn/online-learning.svg",
+      "chapters": [
+        {
+          "id": "BitcoinWhyWasItCreated",
+          "title": "Bitcoin: Warum wurde es geschaffen?",
+          "questions": [
+            {
+              "id": "BitcoinWhyWasItCreated.rootProblem",
+              "title": "Das Grundproblem",
+              "text": "Was war die Motivation, Bitcoin zu erschaffen? In seiner Ankündigung erklärte Satoshi Nakamoto:\n\n„Das Grundproblem klassischer Währungen ist all das Vertrauen, das nötig ist, damit sie funktionieren. Man muss der Zentralbank vertrauen, die Währung nicht zu entwerten, die Geschichte der Fiat-Währungen ist voll von Vertrauensbrüchen. Man muss Banken vertrauen, dass sie unser Geld halten und elektronisch transferieren, aber sie verleihen es in Kreditblasen, mit nur einem Bruchteil als Reserve.“\n",
+              "question": "Was ist laut Satoshi Nakamoto das Grundproblem klassischer Währungen?",
+              "answers": [
+                "Das Vertrauen, das nötig ist, damit sie funktionieren",
+                "Die Farbe der Geldscheine",
+                "Die Tatsache, dass sie physisch gelagert werden müssen"
+              ],
+              "feedback": [
+                "Richtig! Das Grundproblem ist das nötige Vertrauen, ein fundamentaler Aspekt jedes Währungssystems.",
+                "Spannend, aber leider falsch.",
+                "Eine Brieftasche voller Geld kann unbequem sein, aber das ist nicht das Grundproblem."
+              ]
+            },
+            {
+              "id": "BitcoinWhyWasItCreated.bitcoinCreator",
+              "title": "Bitcoins Schöpfer Satoshi Nakamoto",
+              "text": "Wer der Bitcoin-Schöpfer „Satoshi Nakamoto“ wirklich ist, ist unbekannt, keine Behauptung wurde je bestätigt. Satoshi war nur kurz aktiv, dann verschwand er.\n\nDas Bitcoin-Protokoll basiert auf Open-Source-Code, jeder kann ihn prüfen. Diese Transparenz macht es zu einem der meistgeprüften Codes der Welt. Trotz des Mysteriums um seinen Schöpfer ist Bitcoin ein offenes, transparentes Geldnetzwerk, einsehbar und nutzbar für alle.\n",
+              "question": "Wer ist der Schöpfer von Bitcoin?",
+              "answers": [
+                "Ein unbekannter Programmierer unter dem Pseudonym „Satoshi Nakamoto“",
+                "Craig Wright",
+                "Elon Musk"
+              ],
+              "feedback": [
+                "Ein Mysterium, ja, aber das Protokoll selbst ist Open Source und damit für alle einsehbar.",
+                "Die Behauptungen von Craig Wright wurden gründlich widerlegt.",
+                "Elon Musks Talente liegen eher bei Raketen und Autos, nicht bei revolutionären Währungen."
+              ]
+            },
+            {
+              "id": "BitcoinWhyWasItCreated.fiatRequiresTrust",
+              "title": "Fiat braucht Vertrauen",
+              "text": "Das Fiat-System nach 1971 ist schuldenbasiert und ohne harten Anker, Vertrauen ist auf allen Ebenen nötig: in die Fähigkeit, Schulden zu bedienen; in Banken, die Währung nicht zu entwerten; in den Zugang zu den eigenen Geldern.\n\nDieses Vertrauen wurde wiederholt enttäuscht, etwa in der Finanzkrise 2008/09. Satoshi Nakamoto wollte deshalb eine digitale Geldform schaffen, die ohne Vertrauen in Dritte funktioniert und nicht durch zentrale Geldschöpfung entwertet werden kann.\n",
+              "question": "Welches Hauptproblem wollte Satoshi mit Bitcoin lösen?",
+              "answers": [
+                "Die Notwendigkeit, Dritten zu vertrauen, damit Geld funktioniert",
+                "Das Fehlen einer physischen Geldform",
+                "Inflation durch zentrale Geldschöpfung"
+              ],
+              "feedback": [
+                "Genau. Bitcoin braucht keinen vertrauenswürdigen Dritten, Transaktionen laufen Peer-to-Peer.",
+                "Nope, das ist es nicht.",
+                "Inflation durch willkürliche Geldmengenausweitung ist ein Problem, das Bitcoin elegant löst, aber Satoshis zentrales Anliegen war fundamentaler."
+              ]
+            },
+            {
+              "id": "BitcoinWhyWasItCreated.moneyPrinting",
+              "title": "Gelddrucken und Kreditausweitung",
+              "text": "Übermäßiges Gelddrucken und Kreditausweitung erzeugen viele soziale und wirtschaftliche Probleme, etwa Vermögensblasen an Aktien- und Immobilienmärkten, die alle paar Jahre korrigiert werden.\n\nWer am nächsten an der Geldquelle sitzt, profitiert massiv. Menschen mit geringem Einkommen und ohne Sachwerte tragen die Hauptlast, über Inflation und Boom-Bust-Zyklen.\n\nEin prominentes Beispiel: die Finanzkrise von 2008/09, sie folgte auf eine massive Anhäufung von Risiken und Schulden im Geschäftsbankensektor.\n",
+              "question": "Was ist eine zentrale Folge übermäßigen Gelddruckens?",
+              "answers": [
+                "Vermögensblasen an Aktien- und Immobilienmärkten mit Korrekturen etwa jedes Jahrzehnt",
+                "Ein plötzlicher Boom der Polka-Musik",
+                "Ein Rückgang der Zahl der Anhänger außerirdischen Lebens"
+              ],
+              "feedback": [
+                "Bingo! Vermögensblasen sind eine Hauptfolge übermäßiger Geldschöpfung, und sie kommen vor allem den Menschen nahe der Geldquelle zugute.",
+                "Falsche Tonart hier!",
+                "Außerirdische haben mit dem Thema nichts zu tun."
+              ]
+            },
+            {
+              "id": "BitcoinWhyWasItCreated.genesisBlock",
+              "title": "Der Genesis-Block",
+              "text": "Warum Satoshi Bitcoin schuf, zeigt der erste Block der Blockchain, der Genesis-Block.\n\nIhn erstellte Satoshi 2009 beim Start des Netzwerks. Er enthält einen Verweis auf die Bankenrettungen nach der Finanzkrise 2008/09:\n\n„The Times 03/Jan/2009 Chancellor on the brink of second bailout for banks“\n\nDiese Krise, ein massiver Vertrauensverlust ins traditionelle Finanzsystem, inspirierte Satoshi, eine digitale Geldform zu schaffen, die ohne Vertrauen in Dritte auskommt und nicht durch zentrale Geldschöpfung entwertet werden kann.\n",
+              "question": "Warum schuf Satoshi Nakamoto Bitcoin?",
+              "answers": [
+                "Um die finanzielle Macht aus den Händen der Eliten zu nehmen und gewöhnlichen Menschen Teilhabe an einem dezentralen Finanzsystem zu ermöglichen",
+                "Um digitales Geld zu schaffen, das zentral entwertet werden kann",
+                "Um es Dritten zu erleichtern, Transaktionen abzuwickeln"
+              ],
+              "feedback": [
+                "Genau. Rate mal, was die Finanzeliten von Bitcoin halten.",
+                "Nein, das haben wir mit Fiat bereits. Denk an die Botschaft im Genesis-Block.",
+                "Falsch, das Vertrauen in Mittler war eines der Probleme, die Satoshi mit Bitcoin lösen wollte."
+              ]
+            },
+            {
+              "id": "BitcoinWhyWasItCreated.cypherpunks",
+              "title": "Bitcoin ist das Ergebnis jahrzehntelanger Forschung",
+              "text": "Bitcoin ist das Ergebnis jahrzehntelanger Arbeit einer Gruppe, die sich „Cypherpunks“ nennt. Sie nutzen Kryptografie, um in einer zunehmend überwachten digitalen Welt Privatsphäre und Sicherheit zu schützen.\n\nFrühere digitale Bargeldsysteme mit Peer-to-Peer-Netzwerken hatten eines oder beide Probleme:\n\n  * Sie brauchten eine zentrale Instanz, die das Hauptbuch führt.\n  * Die Währungseinheiten ließen sich kopieren, das Double-Spend-Problem.\n\n  Satoshi löste beides, indem er bestehende Technologien neu kombinierte. Erstens: Das dezentrale Bitcoin-Netzwerk braucht keine vertrauenswürdige zentrale Instanz. Zweitens: Die kryptografischen Verfahren machen das Duplizieren der Einheiten unmöglich.\n",
+              "question": "Wer sind die Cypherpunks und was ist ihr Ziel?",
+              "answers": [
+                "Eine Gruppe, die Kryptografie nutzt, um Privatsphäre und Sicherheit im digitalen Zeitalter zu fördern",
+                "Eine Gruppe Hacker, die Kryptografie nutzt, um persönliche Daten zu stehlen",
+                "Eine Gruppe Kryptografen, die komplexe mathematische Gleichungen zum Selbstzweck entwirft"
+              ],
+              "feedback": [
+                "Gut gemacht! Das Ziel der Cypherpunks ist im digitalen Zeitalter wichtiger denn je, wo zunehmende Überwachung Freiheiten gefährdet.",
+                "Nicht ganz, Cypherpunks nutzen Kryptografie genau für das Gegenteil.",
+                "Falsch. Kryptografie braucht zwar Mathe, aber die Cypherpunks geht es um den gesellschaftlichen Zweck."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/problem-solving.svg"
+        },
+        {
+          "id": "BitcoinHowDoesItWork",
+          "title": "Bitcoin: Wie funktioniert es?",
+          "questions": [
+            {
+              "id": "BitcoinHowDoesItWork.peer2Peer",
+              "title": "Peer-to-Peer-Netzwerk",
+              "text": "Um die genannten Probleme der Zentralisierung und des Double Spend zu lösen, entwickelte Satoshi ein Konzept auf Basis eines dezentralen Knotennetzwerks.\n\nNodes sind Computer, die ständig miteinander kommunizieren. Das ist an sich nicht neu, das Internet selbst hat eine ähnliche Struktur.\n\nAllerdings speichert jeder Bitcoin-Node eine Kopie des Hauptbuchs aller jemals getätigten Transaktionen.\n\nDiese neue, dezentrale Form der Buchführung, die Blockchain, wurde mit Bitcoin erstmals erfolgreich umgesetzt und ist extrem manipulationsresistent.\n",
+              "question": "Welche Technologie nutzte Satoshi, um Zentralisierung und Double Spends zu adressieren?",
+              "answers": [
+                "Die Blockchain",
+                "Das Internet",
+                "Ein dezentrales Netzwerk von Nodes"
+              ],
+              "feedback": [
+                "Satoshi war der Erste, der die Blockchain erfolgreich umsetzte, ein Konzept, das Stuart Haber und W. Scott Stornetta 1991 beschrieben hatten. Eine dezentrale Buchführung ohne zentrale Stelle.",
+                "Nein. Das Internet ist ein globales Netz, aber es löst weder Zentralisierung noch Double Spends.",
+                "Ein dezentrales Knotennetzwerk ist Teil von Bitcoin, allein löst es das Problem aber nicht."
+              ]
+            },
+            {
+              "id": "BitcoinHowDoesItWork.blockchain",
+              "title": "Was ist eine Blockchain genau?",
+              "text": "Die Bitcoin-Blockchain ist eine verteilte Datenbank mit einer ständig wachsenden Liste von Bitcoin-Transaktionen, gebündelt in Blöcken.\n\nDie Blöcke sind kryptografisch miteinander verkettet. Jeder Block enthält den Hash des vorherigen Blocks, einen Zeitstempel und die Transaktionsdaten. So entsteht eine Kette aus Blöcken, jeder baut auf dem vorigen auf.\n\nDie kryptografische Hashfunktion sorgt dafür, dass ein einmal hinzugefügter Block nicht mehr verändert werden kann, ohne alle nachfolgenden Blöcke zu verändern.\n\nDas Ergebnis: ein manipulationsresistenter Datensatz, jeder kann die Integrität jederzeit prüfen.\n",
+              "question": "Wozu dient die kryptografische Hashfunktion in der Bitcoin-Blockchain?",
+              "answers": [
+                "Einen manipulationsresistenten Datensatz aller Transaktionen zu erzeugen",
+                "Dafür zu sorgen, dass Blöcke leicht geändert werden können",
+                "Dafür zu sorgen, dass die KI hinter Bitcoin genug Rechenpower für die Weltherrschaft bekommt"
+              ],
+              "feedback": [
+                "Die Hashfunktion schafft einen manipulationssicheren Datensatz. Zudem ist sie ein zentraler Baustein des Proof-of-Work-Mechanismus, der das Netzwerk absichert.",
+                "Witzige Idee, aber falsch. Die Hashfunktion bewirkt das Gegenteil.",
+                "Ha! Wer auch immer dir erzählt hat, Bitcoin sei von einer KI gebaut, er hat dich auf den Arm genommen."
+              ]
+            },
+            {
+              "id": "BitcoinHowDoesItWork.privateKey",
+              "title": "Public-Key-Kryptografie",
+              "text": "Ein weiterer Eckpfeiler ist die Public-Key-Kryptografie: ein Schlüsselpaar, öffentlicher und privater Schlüssel, signiert Transaktionen und verifiziert den Besitz von Bitcoin-Adressen.\n\nDer Private Key ist eine lange Zeichenkette, die Bitcoin-Transaktionen autorisiert. Oft wird er als Kombination von 12 (manchmal 24) Wörtern dargestellt. Nur in der richtigen Reihenfolge ergeben die Wörter den passenden Private Key.\n\nWer den Private Key einer Adresse kennt, kontrolliert die Bitcoin darauf. Deshalb: niemals teilen. Idealerweise offline aufbewahren, damit kein Schadprogramm Zugriff bekommt.\n",
+              "question": "Wozu dient der Private Key bei einer Bitcoin-Transaktion?",
+              "answers": [
+                "Transaktionen zu signieren und Bitcoin-Besitz nachzuweisen",
+                "Den Besitz einer Bitcoin-Adresse zu verifizieren",
+                "Eine fremde Person durch Posten in Social Media zu verzaubern"
+              ],
+              "feedback": [
+                "Genau. Der Private Key signiert Transaktionen und beweist den Besitz, gut geschützt zu halten ist entscheidend.",
+                "Beinahe. Der Private Key kann zwar zur Verifikation dienen, das ist aber nicht sein Hauptzweck.",
+                "Ihn auf Social Media zu posten wäre, als würdest du deine Bankzugangsdaten online stellen. Lieber lassen!"
+              ]
+            },
+            {
+              "id": "BitcoinHowDoesItWork.publicKey",
+              "title": "Bitcoin-Adressen und Master Public Key",
+              "text": "Der Master Public Key wird kryptografisch aus einem Private Key abgeleitet. Aus ihm lassen sich Bitcoin-Adressen erzeugen, an die Zahler senden können.\n\nAus einem einzigen Master Public Key kann man beliebig viele Adressen ableiten.\n\nDer Private Key autorisiert Transaktionen und muss geheim bleiben. Die abgeleiteten Adressen können hingegen weitergegeben werden, um Zahlungen zu empfangen.\n\nMaster Public Keys sind lange Buchstaben-Zahlen-Folgen, die mit xpub, ypub oder zpub beginnen.\n\nEine empfangsfähige Bitcoin-Adresse beginnt mit 1, 3 oder bc1.\n",
+              "question": "Wozu dient der Master Public Key bei Bitcoin?",
+              "answers": [
+                "Beliebig viele Bitcoin-Adressen aus einem einzigen Schlüssel zu erzeugen",
+                "Bitcoin-Transaktionen zu autorisieren",
+                "Zu prüfen, dass die Gesamtmenge aller Bitcoin 21 Millionen nicht übersteigt"
+              ],
+              "feedback": [
+                "Aus Datenschutzgründen sollte der Master Public Key nicht öffentlich geteilt werden, gib stattdessen einzelne Adressen an Zahler weiter.",
+                "Nein, das ist Aufgabe des Private Keys.",
+                "Nein, jeder Nutzer kann die Geldmenge mit einem Bitcoin-Node unabhängig prüfen, aber dafür braucht es den Master Public Key nicht."
+              ]
+            },
+            {
+              "id": "BitcoinHowDoesItWork.mining",
+              "title": "Mining",
+              "text": "Wer im Bitcoin-Netzwerk eine Transaktion sendet, signiert sie mit seinem Private Key, um den Besitz zu beweisen. Danach wird die Transaktion ins Peer-to-Peer-Netzwerk gesendet.\n\nMining ist der Prozess, neue Transaktionen in die Blockchain aufzunehmen. Miner prüfen die Gültigkeit (ausreichend Guthaben, gültige Signatur).\n\nGeprüfte Transaktionen werden zusammen mit einem mathematischen Rätsel zu einem Block zusammengefasst. Miner konkurrieren darum, das Rätsel zu lösen, der erste, der es schafft, fügt den Block der Blockchain hinzu und erhält die Belohnung. Aktuell: 6,25 Bitcoin plus die Transaktionsgebühren des Blocks.\n\nMining sichert zudem das Netzwerk ab: Das Rätsel braucht enorme Rechenleistung, und neue Blöcke müssen von anderen Minern verifiziert werden. Das macht Manipulation extrem schwer.\n",
+              "question": "Was ist der Hauptzweck des Minings im Bitcoin-Netzwerk?",
+              "answers": [
+                "Transaktionen zur Blockchain hinzuzufügen und das Netzwerk abzusichern",
+                "Viel Geld zu verdienen",
+                "Riesige Rechenleistung für eine KI-Weltherrschaft aufzubauen"
+              ],
+              "feedback": [
+                "Miner leisten Rechenarbeit und konkurrieren darum, wer den nächsten Block hinzufügt und die Belohnung erhält.",
+                "Nicht der Hauptzweck. Miner verdienen zwar, aber sie zahlen auch viel Strom.",
+                "Spannendes Ziel! Aber nicht der Sinn der Sache."
+              ]
+            },
+            {
+              "id": "BitcoinHowDoesItWork.proofOfWork",
+              "title": "Proof of Work",
+              "text": "Dezentrale Systeme haben per Definition keine einzelne Quelle der Wahrheit.\n\nSatoshis Durchbruch: ein System, in dem alle Teilnehmer unabhängig auf dieselbe Wahrheit kommen. Proof of Work macht das möglich. Es erzeugt eine unwiderlegbare Historie: Konkurrieren zwei Versionen, gewinnt die mit der meisten investierten Arbeit.\n\nDie Kette mit der meisten Arbeit ist per Definition die Wahrheit, „Nakamoto-Konsens“. Arbeit verlangt Energie. In Bitcoin ist Arbeit Rechenarbeit, aber nicht irgendeine, sondern eine ohne Abkürzung: Raten.\n\n  Ohne zentrale Stelle braucht es Proof of Work, damit es keine Abkürzung gibt, Transaktionen zur Kette hinzuzufügen.\n\n  Miner müssen das Rätsel per Brute Force lösen, probabilistisch , und der Beweis der geleisteten Arbeit ist im Ergebnis selbst eingebettet. Damit ist es extrem schwer, die Historie zu manipulieren.\n",
+              "question": "Wie schafft das Bitcoin-Netzwerk eine Quelle der Wahrheit ohne zentrale Stelle?",
+              "answers": [
+                "Über Proof of Work, Miner konkurrieren darum, ein mathematisches Rätsel zu lösen",
+                "Per Lotterie unter allen Wallet-Besitzern",
+                "Über Mehrheitsabstimmungen"
+              ],
+              "feedback": [
+                "Glückwunsch! Du verstehst, wie Bitcoin eine fälschungssichere Wahrheit erzeugt, nicht manipulierbar durch wohlhabende Eliten oder Insider.",
+                "Nein, das wäre Proof of Stake, ein anderer Konsensmechanismus, bei dem nicht durch Rechenarbeit, sondern durch Stake-Anteil entschieden wird.",
+                "Falsch, aber interessant. Bitcoin nutzt keine Mehrheitsabstimmung."
+              ]
+            },
+            {
+              "id": "BitcoinHowDoesItWork.difficultyAdjustment",
+              "title": "Schwierigkeitsanpassung",
+              "text": "Ein zentraler Baustein des Bitcoin-Protokolls ist die Difficulty Adjustment. Sie sorgt dafür, dass neue Blöcke im Schnitt alle 10 Minuten gefunden werden.\n\nMehr Miner = schneller Blöcke. Weniger Miner = langsamer. Die Schwierigkeit wird automatisch nachjustiert, so bleibt der vorgegebene Ausgabeplan stabil.\n\nEin starker Kontrast zu Edelmetallen: Bei Gold führt mehr Förderung zu mehr Angebot und niedrigerem Preis. Bei Bitcoin erhöht mehr Hashrate nur die Sicherheit.\n",
+              "question": "Was passiert mit der Block-Belohnung im Bitcoin-Netzwerk alle vier Jahre?",
+              "answers": [
+                "Sie wird halbiert",
+                "Sie wird verdoppelt",
+                "Sie wird mit einer zufälligen Zahl multipliziert, die die Bitcoin-Software wählt"
+              ],
+              "feedback": [
+                "Genau! Satoshi legte die Halbierung in der ersten Bitcoin-Version 2009 fest, praktisch unveränderbar.",
+                "Falsch, die Belohnung wird nicht verdoppelt. Du verwechselst Bitcoin mit Fiat-Währungen, deren Geldmenge immer schneller wächst.",
+                "Sehr kreativ, aber falsch. Bitcoins Ausgabeplan ist alles andere als zufällig."
+              ]
+            },
+            {
+              "id": "BitcoinHowDoesItWork.halving",
+              "title": "Das Halving",
+              "text": "Ein letztes wichtiges Element: Die Block-Belohnung halbiert sich alle vier Jahre, genauer gesagt alle 210.000 Blöcke.\n\nDieses Ereignis, das „Halving“, ist in der Bitcoin-Software jedes Nutzers programmiert. Anfangs gab es 50 neue Bitcoin pro Block. Aktuell sind es 6,25, beim nächsten Halving 2024 werden es 3,125.\n\nDie Halvings setzen sich bis 2140 fort. Dann sind alle 21 Millionen Bitcoin gemined. Stand 2023 sind bereits rund 92 % (~19,3 Millionen) ausgegeben.\n\nIm Gegensatz zu Fiat ist Bitcoin disinflationär, knapper als Fiat und Edelmetalle wie Gold oder Silber.\n",
+              "question": "Was passiert mit der Block-Belohnung im Bitcoin-Netzwerk alle vier Jahre?",
+              "answers": [
+                "Sie wird halbiert",
+                "Sie wird verdoppelt",
+                "Sie wird mit einer zufälligen Zahl multipliziert, die die Bitcoin-Software wählt"
+              ],
+              "feedback": [
+                "Genau! Satoshi legte die Halbierung in der ersten Bitcoin-Version 2009 fest, praktisch unveränderbar.",
+                "Falsch, die Belohnung wird nicht verdoppelt. Du verwechselst Bitcoin mit Fiat-Währungen, deren Geldmenge immer schneller wächst.",
+                "Sehr kreativ, aber falsch. Bitcoins Ausgabeplan ist alles andere als zufällig."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/connected-world.svg"
+        }
+      ]
+    },
+    {
+      "id": "lightning",
+      "title": "Lightning Network",
+      "illustration": "/Learn and Earn/mathematics.svg",
+      "chapters": [
+        {
+          "id": "LightningWhatDoesItSolve",
+          "title": "Lightning: Welches Problem löst es?",
+          "questions": [
+            {
+              "id": "LightningWhatDoesItSolve.bitcoinDrawbacks",
+              "title": "Schwächen von Bitcoin",
+              "text": "Bitcoin ist die weltweit am weitesten verbreitete und wertvollste digitale Währung. Sie erlaubt es, Werte ohne vertrauenswürdigen Mittler zu übertragen.\n\nIm Design gibt es aber Schwächen: Sicherheit und Dezentralität gehen auf Kosten der Skalierbarkeit.\n\nTransaktionen auf der Bitcoin-Blockchain brauchen bis zu einer Stunde, bis sie unumkehrbar sind.\n\nMikrotransaktionen, also Zahlungen unter ein paar Cent, sind inkonsistent und durch Gebühren oft unwirtschaftlich.\n\nDie Bitcoin-Blockchain schafft heute etwa 3 Transaktionen pro Sekunde. Das gilt vielen als Hürde, wenn Bitcoin Alltagszahlungen für Millionen Menschen abwickeln soll.\n",
+              "question": "Was ist eine Schwäche im Bitcoin-Design?",
+              "answers": [
+                "Transaktionen brauchen zu lange für die Bestätigung",
+                "Es ist schwer zu bedienen",
+                "Es ist kein vertrauenswürdiger Mittler"
+              ],
+              "feedback": [
+                "Gut gemacht! Erfreulich: Mittlerweile gibt es Lösungen, die Bitcoin-Zahlungen in Sekunden abwickeln.",
+                "Falsch! Aber verziehen, denn Bitcoin ist eigentlich sehr einfach zu nutzen.",
+                "Falsch! Bitcoin erlaubt Werteübertragungen ohne vertrauenswürdigen Mittler."
+              ]
+            },
+            {
+              "id": "LightningWhatDoesItSolve.blocksizeWars",
+              "title": "Die Blocksize Wars",
+              "text": "Aus diesen Schwächen entstand in der Bitcoin-Community eine Debatte: Wie skaliert man Bitcoin am besten? Die sogenannten „Blocksize Wars“.\n\nUnternehmen im Ökosystem argumentierten für größere Blöcke, also mehr Transaktionen pro Block, damit das Netzwerk mehr durchsetzen kann.\n\nNutzer entgegneten: Größere Blöcke würden das Netzwerk zentralisieren, weil dann nur noch teure Rechner mithalten können, und Bitcoin anfällig für Zensur machen.\n\nDie Nutzer setzten sich durch und bewahrten Dezentralität und Zensurresistenz. Damit war klar: Bitcoin gehört den Nutzern, nicht den Firmen. Und Skalierung braucht eine andere technische Lösung als größere Blöcke.\n",
+              "question": "Worum ging es in den Blocksize Wars?",
+              "answers": [
+                "Ob die Blockgröße erhöht werden soll",
+                "Ob bestimmte Transaktionen zensiert werden sollen",
+                "Ob der Konsens auf Proof of Stake umgestellt werden soll"
+              ],
+              "feedback": [
+                "Die Nutzer bewahrten die Dezentralität und zeigten: Bitcoin gehört den Nutzern, nicht den Konzernen.",
+                "Nicht ganz. Beide Seiten waren öffentlich für Zensurresistenz, aber Firmen waren bereit, dafür ein wenig Zentralisierung zu akzeptieren.",
+                "Haha, nein. Auch wenn manche Stimmen Proof of Stake fordern: Bei Bitcoin war das nie Debatte und wird es nie sein."
+              ]
+            },
+            {
+              "id": "LightningWhatDoesItSolve.lightningNetwork",
+              "title": "Das Lightning Network",
+              "text": "Während die Nutzer die Dezentralität verteidigten, gewann ein Vorschlag der Forscher Tadge Dryja und Joseph Poon an Fahrt: das Lightning Network. Es startete 2017.\n\nLightning, oder kurz LN, ist eine Skalierungslösung, die auf dem Bitcoin-Protokoll aufsetzt. Sie ermöglicht kleine, fast sofortige Zahlungen zu sehr niedrigen Kosten und macht es überflüssig, jede Transaktion einzeln auf die Blockchain zu schreiben. Trotzdem gelten die Regeln des Bitcoin-Netzwerks.\n",
+              "question": "Was leistet das Lightning Network?",
+              "answers": [
+                "Es ermöglicht kleine, fast sofortige Zahlungen zu niedrigen Kosten",
+                "Es hilft Nutzern, die Dezentralität von Bitcoin zu wahren",
+                "Es sorgt dafür, dass jede Transaktion auf die Blockchain geschrieben wird"
+              ],
+              "feedback": [
+                "Lightning ermöglicht kleine, sofortige Zahlungen zu niedrigen Kosten, ohne dass jede einzelne Transaktion in die Blockchain muss. Glückwunsch! Fun Fact: Lightning hat die Akzeptanz von Bitcoin spürbar erhöht, weil mehr Transaktionen pro Sekunde möglich wurden.",
+                "Falsch! Lightning ist eine Skalierungsschicht, die auf dem Bitcoin-Protokoll aufsetzt.",
+                "Falsch! Lightning vermeidet gerade, dass jede einzelne Zahlung in die Blockchain muss."
+              ]
+            },
+            {
+              "id": "LightningWhatDoesItSolve.instantPayments",
+              "title": "Sofortige Zahlungen",
+              "text": "Im Bitcoin-Netzwerk werden Transaktionen in Blöcken gebündelt, etwa alle 10 Minuten kommt ein neuer Block dazu. Eine Bitcoin-Zahlung gilt nach sechs bestätigten Blöcken (ca. einer Stunde) als sicher.\n\nIm Lightning Network warten Zahlungen nicht auf Block-Bestätigungen. Sie sind sofort und in Sekunden abgeschlossen.\n\nDamit eignet sich Lightning hervorragend für Einzelhandel, Peer-to-Peer-Zahlungen und alle Fälle, in denen es schnell gehen muss.\n",
+              "question": "Wie lange dauert es im Lightning Network, bis eine Zahlung als sicher gilt?",
+              "answers": [
+                "Wenige Sekunden",
+                "10 Minuten",
+                "1 Stunde"
+              ],
+              "feedback": [
+                "Damit ist Lightning ideal für Situationen, in denen Zahlungen sofort sein müssen, etwa im Einzelhandel oder zwischen Personen.",
+                "Falsch! Auf der Bitcoin-Blockchain dauert es etwa 10 Minuten pro Block. Lightning aber wartet darauf nicht.",
+                "Falsch! Auf der Blockchain gelten Zahlungen nach sechs Blöcken als sicher, also ca. einer Stunde. Lightning wartet darauf nicht."
+              ]
+            },
+            {
+              "id": "LightningWhatDoesItSolve.micropayments",
+              "title": "Mikrotransaktionen",
+              "text": "Mikrotransaktionen sind sehr kleine Zahlungen, oft unter einem Dollar. Klassische Finanzsysteme tun sich damit schwer, denn dort gibt es Mindestbeträge und feste Gebühren.\n\nMit Lightning lassen sich Mikrotransaktionen in Bitcoin abwickeln. Es erlaubt Beträge bis hinab zu 1 Sat, ohne dass Gelder Dritten anvertraut werden müssen (kein „Custodial Risk“).\n\nDie Bitcoin-Blockchain selbst kennt Mindestbeträge und Gebühren, die Mikrotransaktionen unwirtschaftlich machen. Lightning öffnet hier neue Möglichkeiten, etwa neue Märkte für kleinste Zahlungen.\n",
+              "question": "Was ist eine Mikrotransaktion?",
+              "answers": [
+                "Eine Zahlung über einen kleinen Betrag, oft unter einem Dollar",
+                "Eine Zahlung mit Mindestbetrag und Festgebühr",
+                "Eine Zahlung im Lightning Network"
+              ],
+              "feedback": [
+                "Genau! Solche Zahlungen sind in klassischen Finanzsystemen oder auf der Bitcoin-Blockchain schwer abzubilden, weil Mindestbeträge und Festgebühren sie unwirtschaftlich machen.",
+                "Nope. Im Lightning Network gibt es genau diese Mindestbeträge nicht.",
+                "Nicht ganz! Lightning ermöglicht Mikrotransaktionen, ist aber nicht ihre Definition."
+              ]
+            },
+            {
+              "id": "LightningWhatDoesItSolve.scalability",
+              "title": "Skalierbarkeit",
+              "text": "Skalierbarkeit ist die Fähigkeit eines Systems, viele Nutzer und Transaktionen ohne Verzögerungen zu bewältigen.\n\nFür Bitcoin ist das wichtig: Damit das Netzwerk Einzelhandel und automatisierte Zahlungen tragen kann, muss es deutlich mehr Volumen bewältigen.\n\nMit Lightning lassen sich nahezu unbegrenzt Transaktionen außerhalb der Bitcoin-Blockchain durchführen, also off-chain.\n\nDas heißt: Transaktionen müssen nicht einzeln in die Blockchain, was die Last reduziert und mehr Durchsatz ermöglicht.\n",
+              "question": "Warum ist Skalierbarkeit für Bitcoin wichtig?",
+              "answers": [
+                "Um Bedarf für Einzelhandel und automatisierte Zahlungen zu decken",
+                "Um Bitcoin attraktiver für Investoren zu machen",
+                "Um Lizenzen für die Interoperabilität mit Finanzinstituten zu erhalten"
+              ],
+              "feedback": [
+                "Genau. Lightning hilft Bitcoin bei der Skalierung, indem es Transaktionen auf einer zweiten Schicht off-chain abwickelt.",
+                "Falsch! Investorenattraktivität ist nett, aber nicht der Hauptgrund für Skalierbarkeit.",
+                "Versuch es nochmal! Lizenzen mögen für manche Firmen ein Ziel sein, mit Skalierbarkeit hat das aber nichts zu tun."
+              ]
+            },
+            {
+              "id": "LightningWhatDoesItSolve.paymentChannels",
+              "title": "Wie funktioniert Lightning?",
+              "text": "Das Lightning Network besteht aus Tausenden bilateraler Zahlungskanäle.\n\nStell dir einen Lightning-Channel wie eine Tabrechnung in deiner Stammkneipe vor. Statt jedes Bier einzeln zu zahlen, sammelst du am Ende des Abends alles auf einer Rechnung und zahlst nur einmal.\n\nLightning funktioniert ähnlich. Bei jeder Zahlung zwischen zwei Personen werden Bitcoin von einer Seite des Channels auf die andere geschoben. Zwei Personen können einander beliebig oft Geld senden, fast sofort und mit minimalen Gebühren.\n",
+              "question": "Wie ermöglichen Zahlungskanäle im Lightning Network, dass Nutzer einander bezahlen?",
+              "answers": [
+                "Indem bei jeder Zahlung Bitcoin von einer Seite des Channels auf die andere geschoben werden",
+                "Indem jede Transaktion sofort auf die Bitcoin-Blockchain übertragen wird",
+                "Indem eine Gebühr an einen Drittanbieter gezahlt wird"
+              ],
+              "feedback": [
+                "Genau! Stell dir Bitcoin in einem Channel wie Perlen auf einem Abakus vor. Jede Seite zählt mit, bis am Ende auf der Bitcoin-Blockchain abgerechnet wird.",
+                "Genau das Gegenteil! Lightning-Channels bündeln Transaktionen und übertragen sie nicht alle einzeln auf die Blockchain.",
+                "Nein. Lightning spart Gebühren, weil eben nicht jede Transaktion einzeln auf der Blockchain abgerechnet wird."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/speed-test.svg"
+        }
+      ]
+    },
+    {
+      "id": "criticisms",
+      "title": "Kritik und Mythen",
+      "illustration": "/Learn and Earn/exams.svg",
+      "chapters": [
+        {
+          "id": "BitcoinCriticismsFallaciesI",
+          "title": "Bitcoin-Kritik und Irrtümer I",
+          "questions": [
+            {
+              "id": "BitcoinCriticismsFallaciesI.itsaBubble",
+              "title": "Ist Bitcoin eine Blase?",
+              "text": "Über die Jahre wurde Bitcoin immer wieder als Blase bezeichnet. Auch wenn der Kurs mehrere starke Einbrüche hatte, zeigt der Gesamttrend stetig nach oben.\n\nKritiker, die nach jedem Marktzyklus den Tod von Bitcoin verkündeten, lagen daneben. Das junge digitale Geld hat sich trotz aller Prognosen behauptet. Den Kritikern gehen die Analogien aus, und ihre Anschuldigungen entpuppen sich als haltlos.\n",
+              "question": "Wie hat sich der Wechselkurs von Bitcoin im Zeitverlauf entwickelt?",
+              "answers": [
+                "Er ist konstant gestiegen",
+                "Er ist konstant gefallen",
+                "Er hat sich zufällig nach oben und unten bewegt"
+              ],
+              "feedback": [
+                "Gut gemacht! Trotz aller Schwankungen geht der Trend stetig nach oben. Weiter so!",
+                "Sorry, das stimmt nicht. Es gab Schwankungen, aber der Trend zeigte nie dauerhaft nach unten.",
+                "Falsch. Trotz Schwankungen war der Verlauf nie rein zufällig. Versuch es nochmal!"
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesI.itstooVolatile",
+              "title": "Es ist zu volatil!",
+              "text": "Von Bitcoin ein bestimmtes Kursband zu erwarten ist Wunschdenken. Bitcoin wird rund um die Uhr gehandelt, an 365 Tagen im Jahr, weltweit. Keine Registrierung, keine Banktage, keine Notfallschalter, keine Bailouts. Ein wahrhaft freier Markt.\n\nJede Volatilität entsteht aus Käufern und Verkäufern, die sich in Echtzeit einigen, ohne staatliche Eingriffe. Bitcoin ist auf dem Weg zum primären globalen Wertspeicher des Informationszeitalters. Dieser Weg verläuft nicht linear.\n\nMit wachsender Adoption sinkt das Risiko und auch das verbleibende Aufwärtspotenzial. Die Folge: weniger Volatilität.\n",
+              "question": "Was beeinflusst die Volatilität des Bitcoin-Kurses am stärksten?",
+              "answers": [
+                "Käufer und Verkäufer, die sich in Echtzeit einigen",
+                "Staatliche Eingriffe",
+                "Die Mondphase"
+              ],
+              "feedback": [
+                "Richtig! Die Volatilität entsteht durch Echtzeit-Einigungen zwischen Käufern und Verkäufern.",
+                "Sorry, nicht ganz. Staaten können den Kurs beeinflussen, sind aber nicht der Haupttreiber.",
+                "Falsch. Die Mondphase mag manches beeinflussen, den Bitcoin-Kurs aber kaum."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesI.itsnotBacked",
+              "title": "Muss Geld durch etwas gedeckt sein?",
+              "text": "Die Idee von gedecktem Geld ist widersprüchlich: Das Deckungsmittel selbst wäre dann das eigentliche Geld. Ein Teil des Wertes von Geld kommt aus seiner Seltenheit. Bitcoin muss durch nichts anderes gedeckt sein, denn es ist von sich aus knapp.\n\nVerifizierbar und prüfbar mit unabhängigen Mitteln, frei von Gegenpartei-Risiko. Niemand muss als Verwahrer einer Sache vertraut werden. Im Gegenteil: Womöglich wird die Zukunft durch Bitcoin gedeckt.\n\nParker Lewis bringt es auf den Punkt: „Letztlich ist Bitcoin durch das gedeckt, was jedes Geld deckt: die Glaubwürdigkeit seiner monetären Eigenschaften.“\n",
+              "question": "Was ist laut Parker Lewis das Einzige, was jedes Geld deckt?",
+              "answers": [
+                "Die Glaubwürdigkeit seiner monetären Eigenschaften",
+                "Seltenheit",
+                "Die Farbe Lila"
+              ],
+              "feedback": [
+                "Genau! Laut Parker Lewis ist es die Glaubwürdigkeit der monetären Eigenschaften.",
+                "Nicht ganz. Seltenheit kann zum Wert beitragen, ist aber nicht das Einzige.",
+                "Falsch. Lila mag schön königlich wirken, deckt aber kein Geld."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesI.willbecomeObsolete",
+              "title": "Wird Bitcoin eines Tages überflüssig?",
+              "text": "Bitcoin steht für die Entdeckung absoluter Knappheit, vergleichbar mit Feuer, Elektrizität oder der Mathematik selbst.\n\nGegen Bitcoin in Sachen Knappheit zu konkurrieren ist logisch unmöglich, denn es gibt keine Knappheit jenseits der absoluten. Kritik an Bitcoins angeblichen Grenzen unterstellt, es gäbe keine Trade-offs bei Sicherheit und Anreizen, oder es liefere heute keinen Nutzen für Millionen Menschen.\n\nAls schnell wachsendes, ungebremstes Netzwerk mit 99,98 % Uptime über mehr als ein Jahrzehnt, mit Wert in Billionenhöhe verarbeitet und durch Hardware in Milliardenhöhe gesichert, ist Bitcoin kaum noch vom Thron zu stoßen.\n\nMichael Saylor sagt es so: „Es gibt kein Beispiel für ein 100-Milliarden-Dollar-Monster-Digitalnetzwerk, das in dieser dominanten Position verdrängt wurde.“\n",
+              "question": "Kann Bitcoin eines Tages überflüssig werden?",
+              "answers": [
+                "Nein. Bitcoin steht für absolute Knappheit und hat eine dominante Marktposition.",
+                "Ja, wenn ein sichereres oder breiter genutztes digitales Geldnetzwerk entsteht.",
+                "Eine sichere Vorhersage wagt hier niemand."
+              ],
+              "feedback": [
+                "Genau. Bitcoin steht für absolute Knappheit und hält eine dominante Marktposition.",
+                "Nicht ganz falsch, aber: Wer erfindet eine Knappheit, die knapper ist als absolut? So wie ein runderer Kreis als rund.",
+                "Vorsicht ist verständlich, aber Bitcoin hat das digitale Geldnetzwerk klar im Griff. Versuch es nochmal."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesI.toomuchEnergy",
+              "title": "Verbraucht Bitcoin zu viel Energie?",
+              "text": "Bitcoin ist eine dezentrale digitale Währung, weltweit zugänglich und durch Proof of Work zensurresistent.\n\nEtwa vier Milliarden Menschen leben unter autoritären Regimen. Bitcoin gibt ihnen eine Möglichkeit, Wohlstand zu senden, zu empfangen, zu sparen und zu transportieren. Wie viel Energie ein solches Geldnetzwerk verbrauchen sollte, ist eine wichtige Frage. Wer entscheidet das am besten?\n\nEine Veranschaulichung: Stell dir eine topografische Weltkarte vor, in der Strompreise die Berge und Täler bilden. Bitcoin wirkt wie ein Glas Wasser über dieser Karte. Es sammelt sich in den Tälern, glättet sie. Bitcoin ist ein globaler Käufer von Energie zu einem festen Preis, was die Verteilung von Energieverbrauch weltweit ausgleicht.\n",
+              "question": "Wie wirkt sich Bitcoin auf den globalen Energieverbrauch aus?",
+              "answers": [
+                "Es gleicht die weltweite Verteilung von Energieverbrauch aus.",
+                "Es erhöht die Ungleichverteilung von Energieverbrauch.",
+                "Es verringert den weltweiten Energieverbrauch insgesamt."
+              ],
+              "feedback": [
+                "Richtig. Der feste Energiepreis macht erneuerbare Energien in Regionen wirtschaftlich, wo sie es vorher nicht waren.",
+                "Du magst Chaos und globale Energieungleichheit, aber das ist falsch.",
+                "Du willst die Welt retten, je eine Ungleichheit nach der anderen, aber die Antwort ist falsch."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesI.strandedEnergy",
+              "title": "Bitcoin nutzt sogar gestrandete Energie?",
+              "text": "Genau. Bitcoin-Mining bringt eine portable Lösung für Energiequellen in Regionen ohne lokale Nachfrage oder Transportmöglichkeiten. Vor Ort wird Hash-Leistung erzeugt, daraus entstehen Bitcoin. Die kann man halten und auf den Wertanstieg setzen oder am hochliquiden, weltweit zugänglichen Bitcoin-Markt verkaufen.\n",
+              "question": "Wie lässt sich überschüssige Energie über Bitcoin-Mining nutzen?",
+              "answers": [
+                "Vor Ort Geräte betreiben, die Hashes erzeugen und Bitcoin produzieren",
+                "Sie auf dem Bitcoin-Markt verkaufen",
+                "Eine neue Form erneuerbarer Energie erschaffen"
+              ],
+              "feedback": [
+                "Glückwunsch! Genau das ist der Punkt. Das funktioniert sogar in Regionen ganz ohne lokale Energie-Nachfrage.",
+                "Schön, dass du an unkonventionelle Wege denkst. Das ist hier aber nicht das Thema.",
+                "Eine neue Energieform zu erfinden klingt nobel, ist aber nicht die Antwort."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/critical-thinking.svg"
+        },
+        {
+          "id": "BitcoinCriticismsFallaciesII",
+          "title": "Bitcoin-Kritik und Irrtümer II",
+          "questions": [
+            {
+              "id": "BitcoinCriticismsFallaciesII.internetDependent",
+              "title": "Bitcoin hängt zu sehr vom Internet ab",
+              "text": "Klar: Internetzugang kann ausfallen, ob durch Infrastrukturprobleme, Naturkatastrophen oder bewusste Abschaltungen. Bitcoin lässt sich aber auch offline und über andere Netze übertragen.\n\nEine signierte Bitcoin-Transaktion kann an einen einzelnen Node geschickt und von dort ans Netzwerk weitergegeben werden, damit Miner sie in einen Block aufnehmen. Möglich macht das vieles: Transaktionen per SMS, manipulationssichere Einmal-Wallets mit Private Key, Empfang von Blöcken über Satellit. So bleibt Bitcoin auch bei Internet-Ausfällen nutzbar.\n",
+              "question": "Wie lassen sich Bitcoin-Transaktionen bei einem Internet-Ausfall senden?",
+              "answers": [
+                "Per SMS",
+                "Indem man eine Nachricht in sozialen Medien postet",
+                "Per E-Mail"
+              ],
+              "feedback": [
+                "Genau! Eine clevere Möglichkeit, Bitcoin auch ohne Internet zu nutzen.",
+                "Im digitalen Zeitalter verbunden bleiben ist nett, aber falsch.",
+                "Klassisch verbunden zu bleiben ist nett, aber für Bitcoin bei Internet-Ausfall eher unzuverlässig."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesII.forcrimeOnly",
+              "title": "Bitcoin ist nur was für Kriminelle",
+              "text": "Bitcoin ist ein neutrales Werkzeug zum Werttransfer. Es hat keine Überzeugungen, Meinungen oder Werte. Was es bedeutet, hängt davon ab, wie es genutzt wird. Die Behauptung, Bitcoin habe Kriminalität insgesamt erhöht, stimmt nicht.\n\nKriminalität entsteht nicht aus Zugang zu Werkzeugen, sondern aus persönlichen Umständen. Wenn Bitcoin nützlich ist, nutzen es alle, auch Kriminelle. Wenn es nicht nützlich ist, nutzt es niemand.\n\nParker Lewis: „Werkzeuge, mit denen Verbrechen erleichtert werden, sind nicht selbst kriminell. Trotz krimineller Nutzung fordert niemand das Verbot von Straßen, Internet oder Post.“\n",
+              "question": "Stimmt es, dass Bitcoins Eigenschaften insgesamt zu mehr Kriminalität geführt haben?",
+              "answers": [
+                "Nein",
+                "Ja",
+                "Kommt auf die persönlichen Umstände an"
+              ],
+              "feedback": [
+                "Gut gemacht! Die Behauptung lässt sich nicht belegen.",
+                "Reißerische Schlagzeilen sind verlockend, aber realitätsfern.",
+                "Du versuchst ausgewogen zu sein, aber die Behauptung lässt sich unabhängig von Einzelfällen nicht belegen."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesII.ponziScheme",
+              "title": "Bitcoin ist ein Schneeballsystem",
+              "text": "Bitcoin als Schneeballsystem zu bezeichnen zeigt, dass weder Bitcoin noch die Definition eines Schneeballsystems verstanden wurden. Ein Schneeballsystem verspricht überdurchschnittliche Renditen. Bitcoin als erlaubnisfreies Netzwerk hat keine zentrale Stelle, die so etwas versprechen könnte.\n\nAußerdem ist Bitcoin kein Investmentprodukt, sondern eine Geldform. Anders als bei undurchsichtigen Anlagen, die ahnungslosen Menschen verkauft werden, ist Bitcoins Code Open Source und die Geldmenge jederzeit unabhängig prüfbar.\n",
+              "question": "Welche der folgenden Aussagen über Bitcoin ist richtig?",
+              "answers": [
+                "Es ist eine Geldform",
+                "Es ist ein Schneeballsystem",
+                "Es ist eine Open-Source-Anlagestrategie"
+              ],
+              "feedback": [
+                "Glückwunsch! Du hast Sats verdient. Bitcoin war übrigens die erste dezentrale digitale Währung. Es kommt ohne Zentralbank oder Einzeladministrator aus.",
+                "Aha, du bist auf den alten Schneeball-Trick reingefallen! Spaß beiseite, das ist nicht, was Bitcoin ist.",
+                "Sorry, nein. Bitcoin ist keine Open-Source-Anlagestrategie. Aber schön, dass du dich damit beschäftigst."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesII.bitcoinisTooSlow",
+              "title": "Bitcoin ist zu langsam",
+              "text": "Mit Bitcoin zu zahlen ist nicht dasselbe wie mit Kreditkarte. Bei der Karte läuft deine Zahlung über mehrere Stationen, bis sie nach Tagen oder Wochen beim Händlerkonto ankommt.\n\nIm Gegensatz dazu sendest du bei Bitcoin auf der Haupt-Blockchain direkt echtes Geld an den Empfänger, ohne Zwischenstellen. Damit ist Zensur ausgeschlossen, und nach sechs bestätigten Blöcken ist die Zahlung endgültig.\n\nDer richtige Vergleich ist nicht Karte gegen Bitcoin, sondern Bitcoin-Basisschicht gegen die Fed als Geldausgabe- und Verrechnungsstelle.\n\nMit dem Aufkommen von Lightning ist die Kritik „Bitcoin ist zu langsam“ weitgehend verstummt.\n",
+              "question": "Was ist der zentrale Unterschied zwischen Kreditkartenzahlung und Bitcoin-Zahlung on-chain?",
+              "answers": [
+                "Kreditkartenzahlungen gehen über mehrere Mittler, Bitcoin-Zahlungen direkt zum Empfänger",
+                "Kreditkartenzahlungen sind nach Bestätigung endgültig, Bitcoin-Zahlungen lassen sich rückgängig machen",
+                "Eine richtige Antwort gibt es nicht, aber immerhin lernst du etwas über Bitcoin"
+              ],
+              "feedback": [
+                "Glückwunsch! Du hast das Bitcoin-Zahlungs-Meisterstück erreicht. Bitcoin kommt ohne Zentralbank oder Einzeladministrator aus.",
+                "Hoppla, falsche Antwort. Immerhin lernst du etwas über Bitcoin.",
+                "Sorry, falsch. Kreditkartenzahlungen werden ständig zensiert. Aber lern fleißig weiter!"
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesII.supplyLimit",
+              "title": "Die 21-Millionen-Grenze könnte gehackt werden",
+              "text": "Dank seiner dezentralen Natur kann die Bitcoin-Geldmenge von jedem Node unabhängig validiert werden. Manipulation ist damit ausgeschlossen. Jede bestätigte Transaktion wird unabhängig geprüft.\n\nNatürlich kann jeder den Code forken und die Regeln ändern. Aber eine solche Version vom Netzwerk insgesamt akzeptieren zu lassen ist sehr unwahrscheinlich. Der dezentrale Konsens und das unveränderliche Angebot sind zentrale Stärken von Bitcoin.\n\nDas Maximum von 21 Millionen ist fest. Eine Anhebung würde Konsens eines erheblichen Teils des Netzwerks erfordern, was extrem unwahrscheinlich ist.\n",
+              "question": "Wie ist die Bitcoin-Geldmenge vor Manipulation geschützt?",
+              "answers": [
+                "Durch dezentralen Konsens, bei dem jeder Node jede Transaktion unabhängig validiert",
+                "Durch zentralen Konsens, bei dem eine einzige Stelle die Ausgabe neuer Coins steuert",
+                "Durch ein willkürlich gesetztes Maximum wie 100 Millionen"
+              ],
+              "feedback": [
+                "Glückwunsch! Du hast die ultimative Bitcoin-Geldmengen-Meisterschaft erreicht. Die dezentrale Validierung sorgt für Transparenz.",
+                "Sorry, falsch. Bitcoins Geldmenge wird nicht zentral gesteuert. Versuch es nochmal.",
+                "Hoppla, falsche Antwort. Das Maximum liegt bei 21 Millionen, nicht 100. Aber immerhin lernst du etwas über Bitcoin!"
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesII.governmentBan",
+              "title": "Regierungen werden Bitcoin verbieten",
+              "text": "Technisch können Regierungen Bitcoin verbieten. Ein Verbot durchzusetzen wäre wegen der Dezentralität aber extrem schwierig.\n\nBitcoin basiert auf privaten Schlüsseln. Im Kern sind das einfach Zufallszahlen, mit denen sich der Zugriff auf Transaktionen auf der Blockchain steuern lässt. Diese Schlüssel lassen sich überall erzeugen und speichern, sind also kaum aufzuspüren.\n\nZudem ist die nötige Infrastruktur, um aufs Bitcoin-Netzwerk zuzugreifen, weit verbreitet und einfach. Jeder kann Transaktionen ohne Vertrauen in Dritte prüfen.\n\nSaifedean Ammous sagt: „Bitcoin zu verbieten ist nicht weit weg vom Versuch, Mathematik zu verbieten. Es würde nur seinen Nutzen beweisen und ihm mehr Menschen zuführen.“\n",
+              "question": "Können Regierungen Bitcoin effektiv verbieten?",
+              "answers": [
+                "Nein, denn die Dezentralität macht ein Verbot schwer durchsetzbar",
+                "Ja, indem sie die Erzeugung von Zufallszahlen verbieten",
+                "Ja, indem sie das Internet abschalten"
+              ],
+              "feedback": [
+                "Genau. Die Dezentralität macht ein Verbot kaum durchsetzbar.",
+                "Nope. Ein Verbot wäre technisch möglich, durchsetzbar aber kaum.",
+                "Hoppla, das Internet abzuschalten würde die Nutzung von Bitcoin nicht zwangsläufig verhindern."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/questions.svg"
+        },
+        {
+          "id": "BitcoinCriticismsFallaciesIII",
+          "title": "Bitcoin-Kritik und Irrtümer III",
+          "questions": [
+            {
+              "id": "BitcoinCriticismsFallaciesIII.concentratedOwnership",
+              "title": "Bitcoin-Besitz ist auf wenige konzentriert",
+              "text": "Oft heißt es, eine kleine Zahl an Wallets halte den Großteil aller Bitcoin. Technisch stimmt das. Aber diese Wallets gehören typischerweise Börsen mit Millionen Kunden.\n\nViele Menschen lassen ihre Bitcoin auf Börsen liegen. Sicherheit und Privatsphäre sprechen aber dafür, sie selbst zu verwahren.\n\nAußerdem kann eine einzelne Bitcoin-Adresse Coins mehrerer Nutzer enthalten, und eine Person kann viele Wallets besitzen. Aus Datenschutzgründen empfiehlt es sich, für jeden Empfang eine neue Adresse zu erzeugen.\n",
+              "question": "Stimmt es, dass eine kleine Zahl an Wallets den Großteil aller Bitcoin hält?",
+              "answers": [
+                "Ja, aber diese Wallets gehören Börsen mit Millionen Kunden",
+                "Ja, und diese Wallets gehören Personen, die große Mengen Bitcoin gehortet haben",
+                "Nein, der Großteil ist gleichmäßig auf viele Nutzer verteilt"
+              ],
+              "feedback": [
+                "Glückwunsch! Aus Sicherheits- und Datenschutzgründen ist Selbstverwahrung die bessere Wahl.",
+                "Sorry, falsch. Diese Wallets gehören meistens nicht Einzelpersonen, sondern Börsen.",
+                "Hoppla, die Verteilung ist nicht gleichmäßig. Aber immerhin lernst du etwas über Bitcoin!"
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesIII.centralizedMining",
+              "title": "Bitcoin-Mining ist zentralisiert",
+              "text": "Manche befürchten, Mining Pools könnten das Netzwerk stören oder Transaktionen zensieren. Diese Sorge übersieht die Anreize der Miner und ihre Rolle im Netzwerk.\n\nMiner haben starke Anreize, sich an die Regeln zu halten und die Integrität der Blockchain zu wahren, denn ihr eigener Gewinn hängt davon ab.\n\nJimmy Song bringt es auf den Punkt: „Eine Mehrheit der Hashrate kann dir nicht deine Coins wegnehmen, die Regeln nicht ändern und dich nicht schädigen, ohne sich selbst zu schädigen.“\n",
+              "question": "Können Mining Pools das Bitcoin-Netzwerk stören oder Transaktionen zensieren?",
+              "answers": [
+                "Nein, denn sie haben starke Anreize, die Regeln einzuhalten und die Integrität zu wahren",
+                "Ja, denn sie halten die Mehrheit der Hashrate",
+                "Ja, aber nur, wenn sie im Eigeninteresse handeln"
+              ],
+              "feedback": [
+                "Genau. Die Dezentralität sorgt dafür, dass keine Stelle, auch kein Mining Pool, das Netzwerk stören kann.",
+                "Sorry, nein. Einzelne Miner sind hochmobil und können ihre Hashrate jederzeit zu einem ehrlichen Pool lenken.",
+                "Falsch. Miner haben zwar Eigeninteressen, daraus folgt aber nicht, dass sie das Netzwerk stören könnten."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesIII.tooExpensive",
+              "title": "Bitcoin ist zu teuer",
+              "text": "Ein verbreiteter Irrtum: Bitcoin sei zu teuer im Kauf.\n\nDas ist „Unit Bias“. Sinnvoll ist der Vergleich der gesamten Marktkapitalisierung von Bitcoin mit anderen Anlageklassen, nicht der Stückpreis eines einzelnen Coins.\n\nAußerdem lässt sich ein Bitcoin in 100 Millionen kleinere Einheiten (Satoshis) zerlegen. „Du kannst einen Bruchteil eines Bitcoins kaufen!“\n",
+              "question": "Wie vergleicht man den Wert von Bitcoin korrekt mit anderen Anlagen?",
+              "answers": [
+                "Über die gesamte Marktkapitalisierung im Vergleich zu anderen Anlageklassen",
+                "Über den Stückpreis eines Bitcoins im Vergleich zu z. B. einer Unze Gold",
+                "Mit einer Kristallkugel und Bauchgefühl"
+              ],
+              "feedback": [
+                "Glückwunsch, du bist auf dem richtigen Weg! Die Marktkapitalisierung von Bitcoin überschritt 2021 eine Billion US-Dollar.",
+                "Hoppla, du bist auf den Unit Bias reingefallen.",
+                "Sorry, Kristallkugeln eignen sich vielleicht fürs Wetter, aber nicht für die Bewertung von Bitcoin."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesIII.prohibitivelyHigh",
+              "title": "Bitcoin-Transaktionsgebühren sind prohibitiv hoch",
+              "text": "Auch das ist ein Irrtum.\n\nBestätigte Transaktionen auf der Bitcoin-Hauptschicht bieten eine Endgültigkeit, die im klassischen Finanzsystem ihresgleichen sucht. Klar, Gebühren können bei begrenzter Blockkapazität gelegentlich anziehen. Das Bitcoin-Netzwerk bleibt aber eine effiziente, verlässliche Abwicklungsschicht für werthaltige Transaktionen.\n\nLaut Saifedean Ammous lagen „zwischen Oktober 2010 und Juli 2021 die durchschnittlichen täglichen Transaktionsgebühren bei rund 0,02 % des transferierten Wertes“.\n\nKleinere Zahlungen und Mikrotransaktionen wandern auf Zweitschichten wie Lightning, Liquid oder föderierte Sidechains, wo Gebühren deutlich unter denen klassischer Banken liegen.\n",
+              "question": "Was ist der Hauptgrund, dass Transaktionsgebühren auf der Bitcoin-Hauptschicht im Vergleich zum klassischen Finanzsystem relativ niedrig bleiben?",
+              "answers": [
+                "Die Effizienz und Verlässlichkeit des Bitcoin-Netzwerks als Abwicklungsschicht",
+                "Der Einsatz von Zweitschichten wie Lightning, Liquid oder föderierten Sidechains für kleinere Zahlungen",
+                "Die Tatsache, dass Bitcoin noch eine junge Technologie ist"
+              ],
+              "feedback": [
+                "Glückwunsch, du hast es auf den Punkt gebracht! Bitcoin verarbeitet bis zu 7 Transaktionen pro Sekunde, schneller als manche klassische Zahlungssysteme.",
+                "Schöner Versuch, aber es fehlt ein wichtiger Aspekt.",
+                "Sorry, neuere Technologie heißt nicht automatisch niedrigere Gebühren."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesIII.willBeHoarded",
+              "title": "Der Mythos vom Bitcoin-Hortgut",
+              "text": "Verbreitet ist die Ansicht, das feste Bitcoin-Angebot lade zum Horten ein, statt zum Ausgeben.\n\nDie Logik hat aber Lücken. Erstens werden Sparen und Horten oft verwechselt. Sparen ist die nötige Voraussetzung für sinnvolle Investitionen und gilt als verantwortungsvolle Praxis.\n\nZweitens: Geld zu halten, ob Bitcoin oder anderes, ist eine Absicherung gegen Unsicherheit und heißt nicht, dass es nicht genutzt wird.\n\nPierre Rochard bringt es auf den Punkt: „Jeder Bitcoin wird immer von jemandem gehalten. Zahlungen ändern nur, wer ihn hält.“ Bitcoin zu halten ist also bereits eine Nutzung von Bitcoin.\n",
+              "question": "Ist Bitcoin zu halten dasselbe wie Bitcoin zu horten?",
+              "answers": [
+                "Nein, Halten ist Absicherung gegen Unsicherheit und heißt nicht, dass Bitcoin nicht genutzt wird",
+                "Ja, Halten und Horten sind dasselbe",
+                "Das hängt von Absichten und Zielen ab"
+              ],
+              "feedback": [
+                "Glückwunsch, du liegst richtig! Wie Pierre Rochard sagt: „Jeder Bitcoin wird immer von jemandem gehalten.“",
+                "Hoppla, du bist dem Hortungs-Mythos aufgesessen. Halten ist eine Absicherung, keine Nicht-Nutzung.",
+                "Sorry, der Unterschied zwischen Halten und Horten hängt nicht von Absichten oder Zielen ab."
+              ]
+            },
+            {
+              "id": "BitcoinCriticismsFallaciesIII.canBeDuplicated",
+              "title": "Bitcoin ist nicht knapp, weil es Tausende Kryptos gibt",
+              "text": "Ein häufiges Argument gegen Bitcoin: Es sei nicht knapp, weil es Tausende anderer Kryptowährungen gibt und jeder den Code kopieren kann.\n\nDas übersieht: Bitcoin ist mehr als nur Code. Es ist ein Open-Source-Protokoll für Werttransfer, das durch Transparenz und einen strengen Entwicklungsprozess Menschen und Ressourcen anzieht.\n\n@BTCSchellingPt sagt es so: „Open Source ist eine Meritokratie. Du hast den Schwarm, der Lösungen baut. Die Prüfung kommt zurück als Sicherheit. Bitcoin Core ist eine der am meisten geprüften Codebases der Welt.“\n\nDer Wert von Bitcoin liegt also nicht nur im Code, sondern in der Community und Infrastruktur drumherum.\n",
+              "question": "Warum gilt Bitcoin als wertvoll, obwohl jeder den Code kopieren kann?",
+              "answers": [
+                "Der Code wird intensiv geprüft und sorgfältig entwickelt, das garantiert Sicherheit und Transparenz",
+                "Der Open-Source-Charakter ermöglicht eine Meritokratie und Schwarmlösungen",
+                "Eine große, einflussreiche Investorengruppe steht dahinter"
+              ],
+              "feedback": [
+                "Genau! Bitcoin-Code wird stark geprüft. Bitcoin Core gehört zu den am meisten geprüften Codebases der Welt.",
+                "Schöner Versuch, aber Bitcoins Wert kommt nicht nur aus dem Code, sondern auch aus Community und Infrastruktur.",
+                "Sorry, der Wert von Bitcoin hängt nicht nur an einer Investorengruppe."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/critical-thinking.svg"
+        }
+      ]
+    },
+    {
+      "id": "economics",
+      "title": "Bitcoin und Wirtschaft",
+      "illustration": "/Learn and Earn/webinar.svg",
+      "chapters": [
+        {
+          "id": "BitcoinAndEconomicsI",
+          "title": "Bitcoin und Wirtschaft I",
+          "questions": [
+            {
+              "id": "BitcoinAndEconomicsI.scarcity",
+              "title": "Wie knappe Ressourcen verteilt werden",
+              "text": "Wenn nicht genug von etwas da ist, konkurrieren Menschen und Organisationen darum.\n\nDiese Konkurrenz spiegelt sich oft im Preis wider. Steigt die Nachfrage schneller als das Angebot, wird ein Gut knapp und wertvoller.\n\nGeld nutzen wir oft, weil es leicht handelbar und durch seine Knappheit wertvoll ist. Bitcoin ist digitales Geld mit festem Angebot, also selten und wertvoll.\n\nDass es nie genug von allem gibt, ist ein Grundprinzip der Wirtschaft, das in politischen Entscheidungen oft ignoriert wird.\n",
+              "question": "Was ist eine knappe Ressource?",
+              "answers": [
+                "Eine in Menge oder Verfügbarkeit begrenzte Ressource, um die konkurriert werden kann",
+                "Eine reichlich vorhandene, leicht zu beschaffende Ressource",
+                "Eine Ressource, an die man nur per Zeitreise kommt"
+              ],
+              "feedback": [
+                "Hinweis: Richtig! Knappheit erzeugt Konkurrenz und beeinflusst Werte am freien Markt.",
+                "Falsch! Was leicht zu beschaffen ist, ist nicht knapp.",
+                "Falsch! Zeitreisen sind toll für Sci-Fi, aber kein Wirtschaftsthema."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsI.monetaryPremium",
+              "title": "Monetäre Prämie",
+              "text": "Wenn der Wert von Geld nicht auf seiner Knappheit basiert, taugt es schlechter als Wertspeicher. Dann werden andere knappe Dinge, Vermögenswerte oder Rohstoffe, zur Alternative.\n\nDieser Aufschlag heißt „monetäre Prämie“. Wenn das übliche Geld schwächelt, weichen Menschen auf seltene oder schwer zu beschaffende Dinge aus.\n\nManche historischen Geldformen hatten keinen anderen Nutzen als den Geldfunktionen zu dienen. Die Differenz zwischen dem Wert als Geld und dem Nutzwert ist die monetäre Prämie.\n",
+              "question": "Was ist eine monetäre Prämie?",
+              "answers": [
+                "Die Differenz zwischen dem Wert eines Gutes als Geld und seinem Wert für andere Zwecke",
+                "Ein Aufpreis auf den Preis von Waren und Dienstleistungen",
+                "Eine monetäre Prämie hat nichts mit Aufpreisen zu tun"
+              ],
+              "feedback": [
+                "Glückwunsch! Eine monetäre Prämie ist der zusätzliche Wert, den ein Gut als Geldsubstitut bekommt. Gut gemacht!",
+                "Sorry, falsche Antwort. Eine monetäre Prämie hat nichts mit Aufpreisen zu tun.",
+                "Nope! Eine monetäre Prämie ist kein Rabatt, sondern das Gegenteil."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsI.greshamsLaw",
+              "title": "Das Greshamsche Gesetz",
+              "text": "Das Greshamsche Gesetz erklärt, wie Menschen verschiedene Geldarten unterschiedlich nutzen, wenn diese gleichzeitig im Umlauf sind.\n\nWenn zwei Geldarten staatlich gleichgesetzt werden, eine aber aus wertvollerem Material besteht, sparen Menschen die wertvollere und geben die weniger wertvolle aus.\n\nDas passiert, wenn der Staat Geld entwertet, etwa indem er den Anteil wertvollen Materials senkt. Das Vertrauen ins entwertete Geld sinkt, die wertvollere Variante wird gehalten.\n\nAuch bei Fiat-Geld funktioniert das Prinzip, wenn die Geldmenge so ausgeweitet wird, dass das Geld an Wert verliert.\n\nIn jüngerer Zeit zeigt sich: Menschen sparen in Bitcoin und geben Fiat zügig aus, weil sie Bitcoin als langfristig wertbeständiger und stabiler einschätzen.\n",
+              "question": "Was ist das Greshamsche Gesetz?",
+              "answers": [
+                "Ein Gesetz, das beschreibt, wie verschiedene Geldarten unterschiedlich genutzt werden, wenn sie zugleich im Umlauf sind",
+                "Ein Gesetz, das besagt, Menschen würden immer die wertvollere Geldart ausgeben",
+                "Das Greshamsche Gesetz beschreibt das Gegenteil"
+              ],
+              "feedback": [
+                "Gut gemacht! Menschen sparen das wertvollere Geld und geben das weniger wertvolle aus. Funktioniert auch bei Fiat, das nicht durch ein physisches Gut wie Gold gedeckt ist.",
+                "Sorry, falsche Antwort. Das Greshamsche Gesetz beschreibt das Gegenteil.",
+                "Witzige Antwort, aber leider nicht richtig."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsI.thiersLaw",
+              "title": "Thiers Gesetz",
+              "text": "Thiers Gesetz beschreibt, was passiert, wenn Menschen und Unternehmen sich weigern, eine minderwertige Geldform zu akzeptieren oder zu nutzen.\n\nStatt aus dem Umlauf zu verschwinden, wird die hochwertigere Geldform mit einem Aufschlag gegenüber dem Nennwert gehandelt.\n\nThiers Gesetz besagt: Versucht ein Staat, eine minderwertige Geldform per gesetzlichem Zwang durchzusetzen, wird sie schlicht ignoriert.\n\nMenschen und Unternehmen weigern sich, sie zu akzeptieren, und nutzen stattdessen die hochwertigere Variante oder andere Zahlungsmittel.\n",
+              "question": "Was ist Thiers Gesetz?",
+              "answers": [
+                "Ein Gesetz, das beschreibt, was passiert, wenn Menschen und Unternehmen sich weigern, eine minderwertige Geldform zu nutzen",
+                "Ein Gesetz, das besagt, Menschen würden immer die wertvollere Geldart wählen",
+                "Ein Gesetz, das besagt, Menschen würden immer die weniger wertvolle Geldart wählen"
+              ],
+              "feedback": [
+                "Gut gemacht! Wenn Menschen sich weigern, eine minderwertige Geldform anzunehmen, wird sie ignoriert, selbst wenn sie gesetzlich vorgeschrieben ist.",
+                "Falsch! Das Greshamsche Gesetz beschreibt dieses Verhalten, nicht Thiers Gesetz.",
+                "Sorry, versuch es nochmal! Thiers Gesetz behauptet nicht, dass immer die weniger wertvolle Geldart gewählt wird."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsI.cantillonEffect",
+              "title": "Der Cantillon-Effekt",
+              "text": "Der Cantillon-Effekt tritt auf, wenn neues Geld in eine Wirtschaft eingespeist wird.\n\nNeues Geld erreicht zuerst bestimmte Personen oder Unternehmen. Diese frühen Empfänger sind im Vorteil: Sie können das Geld nutzen, bevor die Preise steigen.\n\nManche Preise steigen schneller als andere. Wer das Geld zuerst bekommt, profitiert. Wer es später erhält, hat das Nachsehen.\n\nRichard Cantillon beschrieb diesen Effekt zuerst beim Rohstoffgeld wie Gold und Silber. Im Fiat-Zeitalter ist er noch relevanter.\n\nWenn Staaten oder Zentralbanken viel neues Fiat-Geld schaffen, steigen Preise und die Vermögensverteilung wird schiefer, denn manche kommen leichter an Kredit und profitieren von steigenden Vermögenswerten.\n",
+              "question": "Was ist der Cantillon-Effekt?",
+              "answers": [
+                "Ein Effekt, bei dem neu geschaffenes Geld einige Preise stärker steigen lässt als andere und die Vermögensverteilung ungleicher macht.",
+                "Eine geheimnisvolle Kraft, die Menschen in Honigmelonen verwandelt, wenn sie zu viel Obst essen.",
+                "Ein Tanz, bei dem man sich mit Honigmelonen im Kreis dreht."
+              ],
+              "feedback": [
+                "Glückwunsch, richtig! Der Cantillon-Effekt beeinflusst die Vermögensverteilung in einer Wirtschaft.",
+                "Sorry, Cantillon hat mit Fruchtverwandlungen nichts zu tun.",
+                "Sorry, kein Tanz, auch wenn du Honigmelonen liebst."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsI.schellingPoint",
+              "title": "Schelling-Punkt",
+              "text": "Ein Schelling-Punkt ist eine Lösung, die Menschen ganz ohne Absprache wählen.\n\nDas zeigt sich in kooperativen Mehrspielerspielen, in denen man die Wahl der anderen erahnen muss. Wer falsch tippt, riskiert Konsequenzen oder verpasst Vorteile.\n\nKommunikation funktioniert genauso. Wir nutzen standardisierte Protokolle (E-Mail, Sprache, Geld), um effizient und reibungslos mit möglichst vielen kommunizieren zu können. Das fördert Handel, Wissensaustausch und Innovation.\n\nIn der digitalen Welt wählen Menschen oft dieselbe Option (den Schelling-Punkt) beim Werttausch. Sie erwarten, dass auch andere sie wählen.\n\nDer Schelling-Punkt ist die Option, die Preissignale am genauesten kommuniziert, sodass Marktteilnehmer sich koordinieren können.\n\nBitcoin ist ein Werttransfer-Protokoll mit klaren Vorteilen gegenüber Fiat. Festes Angebot, Wertanstieg über die Zeit, während Fiat regelmäßig an Wert verliert. Zudem ist das Bitcoin-Netzwerk erlaubnisfrei, global und unzerstörbar. Faktoren, die Bitcoin zum natürlichen Schelling-Punkt für Geld machen.\n",
+              "question": "Was ist ein Schelling-Punkt?",
+              "answers": [
+                "Eine Lösung, die Menschen ohne Absprache wählen",
+                "Ein Punktesystem in Online-Mehrspielerspielen",
+                "Ein Punkt auf der Erde, an dem alle magnetischen Kräfte ausgeglichen sind"
+              ],
+              "feedback": [
+                "Genau! Ein Schelling-Punkt kann in kooperativen Spielen und Kommunikationsnetzen entstehen, oft gestützt durch standardisierte Protokolle wie Geld.",
+                "Falsch! Aber schön, dass du an Punkte denkst. Konzentrier dich auf Kommunikation.",
+                "Ha! Du liegst einen ganzen Planeten daneben. Denk an Standardlösungen ohne Absprache."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/growth-analytics.svg"
+        },
+        {
+          "id": "BitcoinAndEconomicsII",
+          "title": "Bitcoin und Wirtschaft II",
+          "questions": [
+            {
+              "id": "BitcoinAndEconomicsII.opportunityCost",
+              "title": "Opportunitätskosten",
+              "text": "Opportunitätskosten heißt: Wenn du dich für etwas entscheidest, kannst du etwas anderes nicht tun. Jede finanzielle Entscheidung ist ein Trade-off.\n\nBitcoin kann dir langfristig zu besseren Entscheidungen verhelfen, denn es ist ein guter Wertspeicher. Wenn du in Bitcoin investierst, verzichtest du womöglich auf andere Verwendungen. Hältst du Bitcoin, kann er an Wert gewinnen.\n\nDas ist heute besonders wichtig, weil Fiat als Sparmittel unzuverlässig ist und so konstruiert, dass es an Wert verliert. Umso wichtiger ist es, finanziell sorgfältig zu entscheiden.\n",
+              "question": "Was sind Opportunitätskosten?",
+              "answers": [
+                "Die Kosten dafür, dass man etwas anderes nicht tun kann, wenn man sich für eines entscheidet",
+                "Eine Kostenart, die nur Unternehmer betrifft",
+                "Die Kosten eines neuen Autos"
+              ],
+              "feedback": [
+                "Glückwunsch! Opportunitätskosten helfen, Entscheidungen mit allen Trade-offs zu treffen.",
+                "Falsch! Opportunitätskosten betreffen jeden, der eine Wahl trifft, nicht nur Unternehmer.",
+                "Ha! Nicht ganz. Autokauf ist ein konkreter Aufwand, aber nicht das Gleiche wie Opportunitätskosten."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsII.timePreference",
+              "title": "Zeitpräferenz",
+              "text": "Zeitpräferenz beschreibt, wie sehr deine Wartezeit auf etwas deine Entscheidungen beeinflusst.\n\nWenn du die Gegenwart höher gewichtest, wählst du eher sofortige Belohnungen.\n\nWenn du die Zukunft höher gewichtest, wartest du eher auf größere Belohnungen.\n\nViele Faktoren beeinflussen Zeitpräferenz: persönliche Sicherheit, Steuersätze, Eigentumsrechte, die Fähigkeit, zuverlässig Wert zu speichern.\n\nDie „Härte“ von Geld, wie gut es seinen Wert über Zeit hält, ermutigt zum Sparen, Planen und Investieren. Zeitpräferenz ist nicht starr, sondern reagiert auf Anreize.\n",
+              "question": "Was ist Zeitpräferenz?",
+              "answers": [
+                "Wie sehr du Gegenwart gegenüber Zukunft gewichtest",
+                "Eine Vorliebe für bestimmte Tageszeiten",
+                "Eine Vorliebe für Zeitreisen"
+              ],
+              "feedback": [
+                "Glückwunsch! Viele Faktoren beeinflussen Zeitpräferenz, etwa Sicherheit, Steuern, Eigentumsrechte und Wertspeicher.",
+                "Falsch! Zeitpräferenz hat mit Entscheidungen zu tun, nicht mit Tageszeiten.",
+                "Ha! Zeitreisen bleiben Science-Fiction. Denk an Zeit als Entscheidungsdimension."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsII.impossibleTrinity",
+              "title": "Das unmögliche Dreieck",
+              "text": "Das unmögliche Dreieck (Mundell-Fleming-Trilemma) beschreibt Trade-offs bei der internationalen Geldpolitik eines Staates.\n\nEs besagt: Ein Land kann nur zwei der drei folgenden Optionen verfolgen. Feste Wechselkurse, freier Kapitalverkehr, eigenständige Geldpolitik.\n\n  Alle drei zusammen geht nicht. Kapitalflüsse hängen vom Währungswert und der Geldpolitik ab, die die Geldmenge steuert.\n\n  Wenn Kapital mobiler wird und Grenzen leicht überquert, lassen sich Kapitalflüsse schwerer kontrollieren. Bitcoin, eine grenzenlose digitale Währung mit hoher Wertbeständigkeit, kann die Fähigkeit eines Staates zur Geldpolitik weiter untergraben.\n",
+              "question": "Wie wirkt sich Bitcoin auf das Mundell-Fleming-Trilemma aus?",
+              "answers": [
+                "Als perfekt mobiles Kapital macht Bitcoin Kapitalverkehrskontrollen für Staaten praktisch unmöglich.",
+                "Wegen seines festen Angebots macht Bitcoin es Staaten leichter, feste Wechselkurse zu setzen.",
+                "Staaten werden die Diskussion über das Trilemma einschränken, denn Sprache lässt sich leichter zensieren als grenzüberschreitende Zahlungen."
+              ],
+              "feedback": [
+                "Genau! Bitcoin macht Kapitalverkehrskontrollen praktisch unmöglich.",
+                "Die 21-Millionen-Grenze ist spannend, aber Bitcoin erschwert feste Wechselkurse, statt sie zu erleichtern.",
+                "Möglich, aber nicht das wahrscheinlichste Ergebnis. Versuch es nochmal!"
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsII.jevonsParadox",
+              "title": "Das Jevons-Paradox",
+              "text": "Das Jevons-Paradox tritt auf, wenn wir mehr von einer Ressource verbrauchen, gerade weil wir sie effizienter nutzen. Effizienzgewinne senken Kosten und steigern damit die Nachfrage.\n\nEin Beispiel ist Kohle. Im späten 18. Jahrhundert glaubte man, die Kohlevorräte gingen zur Neige. James Watts Dampfmaschine machte den Einsatz effizienter, was aber die Nachfrage steigerte. Auch die Beziehung zwischen Energie und Geld ist relevant.\n\nManche schlagen vor, Energie als Wertmaßstab zu nutzen. In der Praxis hat das nie funktioniert. Bitcoin nutzt Proof of Work, das Anreize schafft, Energie effizient einzusetzen, um Belohnungen zu verdienen.\n\nManche kritisieren Energieverbrauch, doch Menschen finden ständig neue Wege, Energie zu erzeugen. Energie ist keine starr begrenzte Ressource.\n",
+              "question": "Was ist das Jevons-Paradox?",
+              "answers": [
+                "Der Effekt, dass effizientere Nutzung den Verbrauch einer Ressource erhöht",
+                "Eine Frucht, benannt nach einem Ökonomen",
+                "Ein Paradox, das besagt: Je mehr wir haben, desto weniger wollen wir"
+              ],
+              "feedback": [
+                "Gut gemacht, du hast das Jevons-Paradox verstanden. Fun Fact: Es ist nach William Stanley Jevons benannt, einem englischen Ökonomen aus dem 19. Jahrhundert.",
+                "Falsch! Es gibt keine Jevons-Frucht. Da musst du dich anderswo umsehen.",
+                "Sorry, nicht ganz. Das Jevons-Paradox besagt: Effizienz erhöht den Verbrauch, nicht das Desinteresse."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsII.powerLaws",
+              "title": "Potenzgesetze",
+              "text": "Potenzgesetze beschreiben, wie zwei Dinge zusammenhängen. Wenn sich eines verändert, verändert sich das andere in einer bestimmten Weise. Potenzgesetze tauchen in Sprache, Biologie, im Weltraum auf. Kleine Veränderungen führen oft zu großen Auswirkungen.\n\nIn der Wirtschaft werden Potenzgesetze oft als Diagramme dargestellt. Ein Beispiel: das Pareto-Prinzip, nach dem rund 80 % der Ergebnisse von 20 % der Ursachen kommen. In einem Markt: 20 % der Produzenten machen 80 % des Marktes aus.\n\nAuch bei Bitcoin findet man Potenzgesetze: Marktmacht von Mining Pools, Hardware-Wallet-Hersteller, Verteilung von Bitcoin auf Adressen.\n",
+              "question": "Wofür ist das Pareto-Prinzip (auch 80/20-Regel) ein Beispiel?",
+              "answers": [
+                "Ein Potenzgesetz in der Wirtschaft",
+                "Ein Nudelgericht",
+                "Eine Methode, Wäsche zu falten"
+              ],
+              "feedback": [
+                "Gut gemacht! Das Pareto-Prinzip ist ein Potenzgesetz: Ein kleiner Anteil von etwas (z. B. 20 % der Produzenten) hat einen großen Effekt (etwa 80 % Marktanteil).",
+                "Sorry, deine Wirtschaftskenntnisse brauchen einen Frischekick, deine Kochkenntnisse nicht. Pareto ist kein Pasta-Gericht.",
+                "Tut mir leid, leg die Wäsche weg und schau lieber in die Wirtschaft. Pareto ist kein Falt-Tipp, aber ein nützliches Werkzeug, um Wirkungsgeflechte zu verstehen."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsII.winnerTakeAll",
+              "title": "Winner-Take-All-Effekte",
+              "text": "Beim Winner-Take-All-Effekt setzt sich ein einzelnes Produkt oder ein einzelner Dienst durch, weil alle ihn nutzen wollen. Das passiert in Märkten, in denen ein kleiner Vorteil zum gesamten Markt führt.\n\nGeld ist so ein Netzwerk. In einer bestimmten Region setzt sich meist eine einzige Geldart durch, weil sie am nützlichsten und am besten handelbar ist. Menschen wollen die Geldart, die die meisten Optionen offenhält.\n\nGeld ist auch ein Wertspeicher über lange Zeit. Bei Geld einigen sich Menschen üblicherweise auf eine Geldart, weil sie am liquidesten ist und am besten Wert speichert.\n",
+              "question": "Warum einigen sich Menschen meist auf eine Geldart in einer Region?",
+              "answers": [
+                "Weil sie am liquidesten ist und Wert am besten speichert",
+                "Weil sie am besten schmeckt",
+                "Weil sie die schönste Farbe hat"
+              ],
+              "feedback": [
+                "Genau. Die liquideste Geldart mit dem besten Wertspeicher setzt sich durch.",
+                "Du verwechselst Geld mit deiner Lieblings-Eissorte. Versuch es nochmal.",
+                "Sorry, die Farbe spielt bei der Wahl der Geldart keine Hauptrolle."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/investment-data.svg"
+        },
+        {
+          "id": "BitcoinAndEconomicsIII",
+          "title": "Bitcoin und Wirtschaft III",
+          "questions": [
+            {
+              "id": "BitcoinAndEconomicsIII.unitBias",
+              "title": "Unit Bias",
+              "text": "Unit Bias ist die Annahme, eine Einheit eines Dings sei der richtige Maßstab beim Vergleich mit anderen Dingen.\n\nDas stimmt nicht immer, gerade bei Bitcoin. Um Bitcoin mit anderen Wertspeichern zu vergleichen, schau auf die Gesamtmenge und den Gesamtwert, nicht auf den Stückpreis. Bitcoin ist sehr klein teilbar, bis auf 8 Dezimalstellen. Du kannst also einen winzigen Bruchteil kaufen.\n\nManche denken, andere Kryptos seien günstiger als Bitcoin, nur weil der Stückpreis niedriger ist. Das stimmt nicht. Bitcoin ist besonders, weil das Angebot fest und nicht ausweitbar ist.\n\nDas macht es zum guten Wertspeicher: kein Wertverfall über Zeit. Auf das Gesamtbild geblickt ist Bitcoin nur ein kleiner Teil des weltweiten, nicht-staatlichen Vermögens.\n",
+              "question": "Was ist Unit Bias?",
+              "answers": [
+                "Die Annahme, eine Einheit von etwas sei stets der richtige Vergleichsmaßstab",
+                "Die Annahme, eine bestimmte Währung sei allen anderen überlegen",
+                "Die Annahme, alle Einheiten von etwas müssten gleich groß sein"
+              ],
+              "feedback": [
+                "Genau! Unit Bias führt zu fehlerhaften Schlüssen, gerade beim Wertvergleich.",
+                "Sorry, falsch. Unit Bias bedeutet nicht, dass eine Währung allen anderen überlegen sei.",
+                "Sorry, Unit Bias hat nichts mit Einheitsgrößen zu tun. Spiel ruhig weiter mit verschiedenen Bausteinen, aber denk hier neu."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsIII.veblenGood",
+              "title": "Veblen-Gut",
+              "text": "Veblen-Güter sind Dinge, von denen Menschen mehr wollen, wenn der Preis steigt. Normale Güter werden mehr nachgefragt, wenn Menschen mehr Geld haben.\n\nVeblen-Güter sind anders: Höhere Preise erhöhen die Nachfrage. Oft sind das Luxusprodukte, schwer zu bekommen oder in limitierten Mengen produziert. Das verleiht ihnen den Anschein des Besonderen oder Seltenen.\n\nManche kaufen Bitcoin als Statussymbol. Der eigentliche Grund für die Nachfrage ist aber die begrenzte Menge.\n\nWenn mehr Menschen Bitcoin kaufen wollen, steigt der Preis und die Nutzung wird einfacher. Mit der besseren Nutzbarkeit steigt wieder die Nachfrage. Eine Rückkopplungsschleife: mehr Nachfrage, höherer Preis, bessere Nutzbarkeit.\n",
+              "question": "Was ist ein Veblen-Gut?",
+              "answers": [
+                "Ein Gut, von dem Menschen mehr wollen, wenn der Preis steigt",
+                "Ein Lebensmittel, das besser schmeckt, wenn es teuer ist",
+                "Ein Gut, von dem Menschen mehr wollen, wenn sie mehr Geld haben"
+              ],
+              "feedback": [
+                "Genau! Bei einem Veblen-Gut steigt die Nachfrage mit dem Preis. Ungewöhnlich, denn üblicherweise wollen Menschen mehr von etwas, wenn sie mehr Geld haben.",
+                "Sorry, ein Veblen-Gut ist kein Lebensmittel. Iss weiter, was dir schmeckt, aber denk hier neu.",
+                "Sorry, falsch. Ein Veblen-Gut ist nicht das, von dem man mehr will, wenn man mehr Geld hat."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsIII.malinvestment",
+              "title": "Fehlinvestition",
+              "text": "Fehlinvestition tritt auf, wenn Preise nicht stimmen. Dann fließt Geld in wenig produktive Dinge. Das passiert, weil es schwer ist, die Zukunft vorherzusagen und gute Entscheidungen zu treffen.\n\nWenn der Markt schlecht funktioniert, ist es wie mit einem Kompass ohne klare Position zu navigieren. Beispiel: Firmen, die ihre Kredite nicht zurückzahlen können und nur durch neue Kredite überleben. „Zombie-Firmen“.\n\nWenn der Staat solche Entscheidungen trifft, irrt er sich oft, denn er hat keinen verlässlichen Maßstab dafür, was eine gute Investition ist. Folge: U-Bahnen ohne genug Züge, Staudämme ohne ausreichende Stromleitungen.\n",
+              "question": "Was ist die Hauptursache von Fehlinvestitionen?",
+              "answers": [
+                "Verzerrte Preissignale",
+                "Außerirdische",
+                "Ein Mangel an Einhörnern in der Wirtschaft"
+              ],
+              "feedback": [
+                "Richtig! Wenn Preise verzerrt sind, fließt Geld in unproduktive Verwendungen.",
+                "Falsch! Aber kreativ. Steuern die Aliens vielleicht die Preise vom Raumschiff aus? Wahrscheinlich nicht.",
+                "Sorry, Einhörner haben in der Wirtschaft keine Macht. Wäre cool, wenn doch."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsIII.asymmetricPayoff",
+              "title": "Asymmetrische Auszahlung",
+              "text": "Bei Investitionsentscheidungen schätzen wir mögliche Ergebnisse und Gewinn-Verlust-Spannen ab. Manchmal sind diese Spannen nicht gleich.\n\nWenn etwas eine große Chance auf viel Gewinn und nur eine kleine Chance auf kleinen Verlust hat, nennen wir das „asymmetrische Auszahlung“. Das Aufwärtspotenzial ist deutlich größer als das Verlustpotenzial.\n\nBitcoin ist ein Beispiel. Seine möglichen Ergebnisse ähneln einer Option: Es gelingt, oder es scheitert. Im schlimmsten Fall ist das Verlustrisiko begrenzt.\n\nDas Aufwärtspotenzial ist hingegen groß: Bitcoin könnte zum primären globalen Wertspeicher werden.\n\nAsymmetrien entstehen, wenn Informationen ungleich verteilt sind. Würden alle Bitcoin vollständig verstehen, wäre es längst weltweit Geld.\n\nDerzeit kennt nicht jeder das monetäre Potenzial. Wertanstieg hängt davon ab, dass die Nachfrage steigt, während das Angebot konstant bleibt.\n",
+              "question": "Was ist eine asymmetrische Auszahlung bei Investitionsentscheidungen?",
+              "answers": [
+                "Wenn das Aufwärtspotenzial deutlich größer ist als das Verlustrisiko",
+                "Wenn Aufwärts- und Abwärtspotenzial gleich groß sind",
+                "Wenn das Aufwärtspotenzial ein sprechendes Lama und das Verlustrisiko eine stumme Giraffe ist"
+              ],
+              "feedback": [
+                "Richtig! Asymmetrische Auszahlung heißt: mehr mögliches Plus als mögliches Minus.",
+                "Falsch! Asymmetrisch heißt eben gerade nicht gleich.",
+                "Falsch! Lamas und Giraffen wären eine spannende Anlage, definieren aber keine asymmetrische Auszahlung."
+              ]
+            },
+            {
+              "id": "BitcoinAndEconomicsIII.ansoffMatrix",
+              "title": "Ansoff-Matrix",
+              "text": "Die Ansoff-Matrix hilft Unternehmen, Wachstumsstrategien zu denken. Was tun mit einem bestehenden Produkt, wie an verschiedene Zielgruppen verkaufen.\n\nBei Bitcoin: ein Produkt, das wie digitales Geld funktioniert. Es kann von vielen Menschen auf viele Arten genutzt werden. Wer am Bitcoin-Code arbeitet oder den Umgang mit Bitcoin erklärt, will mehr Nutzer und einfachere Nutzung.\n\nBitcoin kann zum Sparen und zum Schutz vor Enteignung dienen, oder zum schnellen Senden und Empfangen kleiner Beträge ohne große Hürden. Mit wachsender Nutzerzahl gewinnt Bitcoin an Bedeutung.\n\nMenschen und Unternehmen können Bitcoin in ihre Finanzplanung aufnehmen, um Wert zu erhalten. Aktuell dient Bitcoin vor allem dem Schutz von Vermögen. Mit Lightning ist die Nutzung als Zahlungsmittel stark gewachsen, weitere Anwendungsfälle dürften folgen.\n",
+              "question": "Wie ist die Ansoff-Matrix für Bitcoin relevant?",
+              "answers": [
+                "Sie hilft, Wachstumsstrategien für das Bitcoin-Protokoll zu identifizieren",
+                "Sie bestimmt die optimale Lagertemperatur für Bitcoin",
+                "Sie berechnet die potenzielle Rendite von Bitcoin-Mining-Operationen"
+              ],
+              "feedback": [
+                "Genau! Mit der Ansoff-Matrix lassen sich Wachstumsstrategien für das Bitcoin-Protokoll skizzieren, etwa Entwicklung und Verkauf in unterschiedliche Märkte.",
+                "Nope! Eine optimale Lagertemperatur für Bitcoin-Private-Keys ist kein echtes Thema und hat mit der Ansoff-Matrix nichts zu tun.",
+                "Falsch! Rendite-Berechnungen sind beim Mining wichtig, mit der Ansoff-Matrix aber nicht direkt verknüpft."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/growth-analytics.svg"
+        }
+      ]
+    },
+    {
+      "id": "buhogo-practical",
+      "title": "BuhoGO und Praxis",
+      "illustration": "/Learn and Earn/webinar.svg",
+      "chapters": [
+        {
+          "id": "SelfCustody",
+          "title": "Selbstverwahrung",
+          "questions": [
+            {
+              "id": "SelfCustody.whatIsSelfCustody",
+              "title": "Was ist Selbstverwahrung?",
+              "text": "Selbstverwahrung heißt: Du hältst deine Bitcoin selbst. Keine Bank, keine Firma, kein Dritter kontrolliert dein Geld. Du hast die Schlüssel, du hast die Coins.",
+              "question": "Was bedeutet Selbstverwahrung?",
+              "answers": [
+                "Du kontrollierst deine Bitcoin-Schlüssel selbst",
+                "Eine Bank lagert deine Bitcoin sicher",
+                "Deine Coins liegen auf einer Börse"
+              ],
+              "feedback": [
+                "Deine Schlüssel, deine Coins.",
+                "Banken halten bei Selbstverwahrung keine Bitcoin für dich.",
+                "Das ist das Gegenteil von Selbstverwahrung."
+              ]
+            },
+            {
+              "id": "SelfCustody.whyItMatters",
+              "title": "Warum Selbstverwahrung wichtig ist",
+              "text": "Börsen wurden gehackt, Banken haben Konten eingefroren, Unternehmen sind pleitegegangen. Mit Selbstverwahrung berührt dich nichts davon. Deine Bitcoin sind deine, Punkt.",
+              "question": "Warum ist Selbstverwahrung wichtig?",
+              "answers": [
+                "Niemand kann deine Bitcoin einfrieren oder wegnehmen",
+                "Sie macht Bitcoin schneller",
+                "Sie bringt dir mehr Zinsen"
+              ],
+              "feedback": [
+                "Genau darum geht es.",
+                "Geschwindigkeit kommt von Lightning, nicht von Verwahrung.",
+                "Selbstverwahrung heißt Kontrolle, nicht Zinsen."
+              ]
+            },
+            {
+              "id": "SelfCustody.recoveryWords",
+              "title": "Deine Wiederherstellungswörter",
+              "text": "Wenn du ein Wallet zur Selbstverwahrung erstellst, bekommst du 12 oder 24 Wiederherstellungswörter. Diese Wörter sind der Hauptschlüssel zu deinen Bitcoin. Telefon verloren? Stell dein Wallet mit den Wörtern wieder her. Aber wer sie sonst bekommt, kann deine Coins entwenden.",
+              "question": "Wozu dienen Wiederherstellungswörter?",
+              "answers": [
+                "Dein Wallet wiederherzustellen, wenn du dein Telefon verlierst",
+                "Sich in deine E-Mail einzuloggen",
+                "Zahlungen schneller zu machen"
+              ],
+              "feedback": [
+                "Sie sind dein Backup, um an dein Wallet zu kommen.",
+                "Wiederherstellungswörter haben mit E-Mail nichts zu tun.",
+                "Es geht um Backup, nicht um Geschwindigkeit."
+              ]
+            },
+            {
+              "id": "SelfCustody.neverShare",
+              "title": "Bewahre deine Wörter sicher auf",
+              "text": "Teile deine Wiederherstellungswörter niemals. Keine seriöse Wallet-App wird je danach fragen. Schreib sie auf Papier und bewahre sie an einem sicheren Ort auf.",
+              "question": "Wo solltest du deine Wiederherstellungswörter aufbewahren?",
+              "answers": [
+                "Auf Papier an einem sicheren Ort",
+                "In einer SMS an dich selbst",
+                "In einer Notiz auf deinem Computer"
+              ],
+              "feedback": [
+                "Das ist der sicherste Weg.",
+                "SMS können gehackt oder verloren gehen.",
+                "Computer können kompromittiert werden. Papier ist sicherer."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/safe.svg"
+        },
+        {
+          "id": "LightningAddresses",
+          "title": "Lightning-Adressen",
+          "questions": [
+            {
+              "id": "LightningAddresses.whatIsLnAddress",
+              "title": "Was ist eine Lightning-Adresse?",
+              "text": "Eine Lightning-Adresse sieht aus wie eine E-Mail-Adresse (du@wallet.com), dient aber zum Empfang von Bitcoin. Einmal geteilt, kann dir jeder sofort Sats senden.",
+              "question": "Wie sieht eine Lightning-Adresse aus?",
+              "answers": [
+                "Wie eine E-Mail-Adresse, z. B. du@wallet.com",
+                "Wie eine lange Folge zufälliger Zahlen",
+                "Wie ein QR-Code"
+              ],
+              "feedback": [
+                "Einfach und leicht zu merken.",
+                "Das klingt eher nach einer Bitcoin-Adresse oder einer Rechnung.",
+                "QR-Codes können eine Lightning-Adresse enthalten, die Adresse selbst sieht aber aus wie eine E-Mail."
+              ]
+            },
+            {
+              "id": "LightningAddresses.sparkAddress",
+              "title": "Spark-Adressen",
+              "text": "Spark-Wallets haben ein eigenes Adressformat, das mit 'spark1' beginnt. Wenn du an eine Spark-Adresse sendest, läuft die Zahlung direkt zwischen den Wallets, mit null Gebühren.",
+              "question": "Was ist besonders an Spark-Adressen?",
+              "answers": [
+                "Null Gebühren bei direkten Übertragungen",
+                "Sie funktionieren nur offline",
+                "Sie brauchen ein Bankkonto"
+              ],
+              "feedback": [
+                "Spark-zu-Spark-Übertragungen sind sofort und kostenlos.",
+                "Sie funktionieren online, über das Internet.",
+                "Kein Bankkonto nötig. Das ist die Schönheit von Bitcoin."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/speed-test.svg"
+        },
+        {
+          "id": "HardwareWallets",
+          "title": "Hardware-Wallets",
+          "questions": [
+            {
+              "id": "HardwareWallets.whatIsHw",
+              "title": "Was ist ein Hardware-Wallet?",
+              "text": "Ein Hardware-Wallet ist ein kleines physisches Gerät, das deine Bitcoin-Schlüssel offline speichert. Selbst wenn dein Computer gehackt wird, bleiben deine Bitcoin sicher, denn die Schlüssel berühren nie das Internet.",
+              "question": "Was macht ein Hardware-Wallet?",
+              "answers": [
+                "Es hält deine Schlüssel offline und sicher",
+                "Es schürft neue Bitcoin",
+                "Es verbindet sich mit deinem Bankkonto"
+              ],
+              "feedback": [
+                "Offline-Schlüssel bedeuten maximale Sicherheit.",
+                "Mining wird von spezialisierten Computern erledigt, nicht von Hardware-Wallets.",
+                "Hardware-Wallets haben mit Banken nichts zu tun."
+              ]
+            },
+            {
+              "id": "HardwareWallets.whenToUse",
+              "title": "Wann du eines nutzen solltest",
+              "text": "Für tägliche Ausgaben brauchst du kein Hardware-Wallet. Für längeres Sparen größerer Beträge ist es aber die clevere Wahl. Ausgabengeld in BuhoGO, Spareinlagen im Hardware-Wallet.",
+              "question": "Wann solltest du ein Hardware-Wallet nutzen?",
+              "answers": [
+                "Zum längerfristigen Sparen größerer Beträge",
+                "Für den Kaffee zwischendurch",
+                "Für jede einzelne Transaktion"
+              ],
+              "feedback": [
+                "Großes Sparen, kleines Ausgeben vom Telefon-Wallet.",
+                "Für kleine Alltagszahlungen ist ein Telefon-Wallet bequemer.",
+                "Das wäre unpraktisch. Nutze es zum Sparen."
+              ]
+            },
+            {
+              "id": "HardwareWallets.sendFromBuho",
+              "title": "An Cold Storage senden",
+              "text": "In BuhoGO kannst du Bitcoin direkt an dein Hardware-Wallet senden. Adresse einfügen oder QR-Code scannen. Deine Sats verlassen BuhoGO und landen sicher im Cold Storage.",
+              "question": "Wie sendest du Bitcoin an ein Hardware-Wallet?",
+              "answers": [
+                "Adresse einfügen oder QR-Code scannen",
+                "Eine E-Mail senden",
+                "Nur per Bluetooth verbinden"
+              ],
+              "feedback": [
+                "So einfach wie scannen oder einfügen.",
+                "Hardware-Wallets nutzen keine E-Mail.",
+                "Die meisten arbeiten über USB oder QR-Code, nicht Bluetooth."
+              ]
+            }
+          ],
+          "illustration": "/Learn and Earn/Question_pictures/security-on.svg"
+        }
+      ]
+    }
+  ]
+}

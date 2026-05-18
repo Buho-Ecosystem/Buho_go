@@ -55,6 +55,10 @@ import {
   buildKind0Event,
   buildKind10002Event,
 } from '../utils/nostrProfile.js';
+import {
+  fetchProfile as fetchProfileFromRelays,
+  parseProfileContent,
+} from '../utils/nostrFetch.js';
 import { uploadAvatar as uploadAvatarToBlossom } from '../utils/blossomProfileMedia.js';
 
 // ----------------------------------------------------------------------------
@@ -581,6 +585,142 @@ export const useProfileStore = defineStore('profile', {
       } finally {
         this.isPublishing = false;
       }
+    },
+
+    // -------------------------------------------------------------------
+    // Recovery (pull from Nostr after an identity restore)
+    // -------------------------------------------------------------------
+
+    /**
+     * Pull the user's most recent kind:0 profile metadata from the
+     * default relay set and apply it locally. The mirror of
+     * `addressBookStore.recoverFromNostr`: where that one rebuilds
+     * the private NIP-51 contact list after a seed restore, this
+     * one rebuilds the public profile so the avatar, display name,
+     * bio, lud16, etc. come back too.
+     *
+     * Semantics:
+     *   - Full overwrite. Every field in `PROFILE_FIELDS` is written
+     *     from the remote event, defaulting to '' when the remote
+     *     event omits it. This clears any stale value left over from
+     *     a previously bootstrapped identity on the same device.
+     *   - The remote IS the published source of truth, so the local
+     *     copy is considered clean after this runs (`isDirty=false`).
+     *     `lastPublishedAt` is stamped from the event's `created_at`
+     *     so the editor's "last published" hint reflects reality
+     *     rather than the moment of restore.
+     *   - Failure modes never throw. Network errors, missing
+     *     identity, no remote event all return a structured result
+     *     so the caller's restore-toast logic can branch cleanly.
+     *
+     * Test injection: `fetcher` swaps in a fake `fetchProfile` for
+     * unit tests; `pool`, `relays`, `timeoutMs` are forwarded to the
+     * default fetcher. Production callers pass `{ identityStore }`
+     * and nothing else.
+     *
+     * @param {{
+     *   identityStore: ReturnType<typeof useIdentityStore>,
+     *   pool?:         import('nostr-core').RelayPool,
+     *   relays?:       readonly string[],
+     *   timeoutMs?:    number,
+     *   fetcher?:      typeof fetchProfileFromRelays,
+     * }} opts
+     * @returns {Promise<{
+     *   ok: boolean,
+     *   reason?: 'identity-not-bootstrapped' | 'fetch-failed',
+     *   hadRemote: boolean,
+     *   applied: number,
+     *   fields: string[],
+     * }>}
+     */
+    async recoverFromNostr({ identityStore, pool, relays, timeoutMs, fetcher } = {}) {
+      await this.hydrate();
+
+      if (!identityStore || !identityStore.bootstrapped) {
+        return {
+          ok: false,
+          reason: 'identity-not-bootstrapped',
+          hadRemote: false,
+          applied: 0,
+          fields: [],
+        };
+      }
+
+      // Make sure the pubkey cache is populated. `loadNostrIdentity`
+      // is idempotent and a no-op when the cache is already warm.
+      const identityKeys = await identityStore.loadNostrIdentity();
+      if (!identityKeys?.pubkeyHex) {
+        return {
+          ok: false,
+          reason: 'identity-not-bootstrapped',
+          hadRemote: false,
+          applied: 0,
+          fields: [],
+        };
+      }
+
+      const fetchOne = typeof fetcher === 'function' ? fetcher : fetchProfileFromRelays;
+      const fetchOpts = {};
+      if (pool) fetchOpts.pool = pool;
+      if (Array.isArray(relays) && relays.length > 0) fetchOpts.relays = relays;
+      if (Number.isFinite(timeoutMs)) fetchOpts.timeoutMs = timeoutMs;
+
+      let event;
+      try {
+        event = await fetchOne(identityKeys.pubkeyHex, fetchOpts);
+      } catch (err) {
+        // Pool failures already collapse to `null` inside
+        // `fetchProfile`. Reaching this branch means something
+        // upstream of the network call broke (e.g. a programming
+        // bug). Log it and surface a typed failure so the caller
+        // can show a "couldn't reach relays" hint without crashing
+        // the restore flow.
+        console.warn('[profile] recoverFromNostr fetch failed:', err);
+        return {
+          ok: false,
+          reason: 'fetch-failed',
+          hadRemote: false,
+          applied: 0,
+          fields: [],
+        };
+      }
+
+      if (!event) {
+        return { ok: true, hadRemote: false, applied: 0, fields: [] };
+      }
+
+      // Build a full patch covering every editable field so any
+      // stale local-only value from a previous identity is cleared
+      // out in the same pass.
+      const content = parseProfileContent(event);
+      const patch = {};
+      const applied = [];
+      for (const field of PROFILE_FIELDS) {
+        const wireKey = FIELD_TO_CONTENT_KEY[field];
+        const raw = content[wireKey];
+        const value = typeof raw === 'string' ? raw : '';
+        patch[field] = value;
+        if (value) applied.push(field);
+      }
+
+      this.applyEdits(patch);
+
+      // The fields we just wrote came straight off a published
+      // event, so the local copy is in sync with the relays — clear
+      // the dirty flag that `applyEdits` set, and stamp the event's
+      // signing time as the last-published moment.
+      this.isDirty = false;
+      this.lastPublishedAt = Number.isFinite(event.created_at)
+        ? event.created_at * 1000
+        : Date.now();
+      this._persistMetadata();
+
+      return {
+        ok: true,
+        hadRemote: true,
+        applied: applied.length,
+        fields: applied,
+      };
     },
 
     /**
