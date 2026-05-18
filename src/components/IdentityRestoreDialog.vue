@@ -97,6 +97,34 @@
             {{ $t('Type, or paste your 12-word identity seed phrase. Order matters.') }}
           </p>
 
+          <!-- BIP-39 suggestion strip. Pinned above the grid so the
+               mobile keyboard never covers it; one shared strip
+               reflects whichever input has focus. -->
+          <div
+            v-if="showSuggestions"
+            id="identity-bip39-suggestion-strip"
+            class="suggestion-strip"
+            :class="$q.dark.isActive ? 'suggestion-strip-dark' : 'suggestion-strip-light'"
+            role="listbox"
+          >
+            <button
+              v-for="(suggestion, sIdx) in activeSuggestions"
+              :key="suggestion"
+              type="button"
+              class="suggestion-chip"
+              :class="[
+                $q.dark.isActive ? 'suggestion-chip-dark' : 'suggestion-chip-light',
+                { 'suggestion-chip--highlighted': sIdx === highlightedIndex }
+              ]"
+              role="option"
+              :aria-selected="sIdx === highlightedIndex"
+              @mousedown.prevent
+              @click="pickSuggestion(suggestion)"
+            >
+              {{ suggestion }}
+            </button>
+          </div>
+
           <div class="words-grid">
             <div
               v-for="(_, index) in inputWords"
@@ -114,10 +142,20 @@
                 spellcheck="false"
                 class="word-input"
                 :class="$q.dark.isActive ? 'word-input-dark' : 'word-input-light'"
-                @paste="handlePaste($event, index)"
-                @input="onInputChange"
-                @keydown.enter.prevent="focusNext(index)"
-                :ref="el => (wordRefs[index] = el)"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="identity-bip39-suggestion-strip"
+                :aria-expanded="showSuggestions && activeIndex === index"
+                @paste="onWordPaste($event, index)"
+                @input="onMnemonicInput(index)"
+                @focus="onWordFocus(index)"
+                @blur="onWordBlur"
+                @keydown.enter.prevent="onWordEnter(index)"
+                @keydown.tab="onWordTab($event, index)"
+                @keydown.right="onWordArrowRight"
+                @keydown.left="onWordArrowLeft"
+                @keydown.esc="closeSuggestions"
+                :ref="el => setWordInputRef(index, el)"
               />
             </div>
           </div>
@@ -172,13 +210,11 @@ import { Icon } from '@iconify/vue';
 import { useIdentityStore } from '../stores/identity';
 import {
   isValidIdentityMnemonic,
-  normaliseMnemonic,
   computeIdentityFingerprint,
 } from '../utils/identityCrypto';
+import { useBip39Mnemonic } from '../composables/useBip39Mnemonic';
 
 const SEED_WORD_COUNT = 12;
-/** Hard ceiling on pasted clipboard length to avoid pathological payloads. */
-const PASTE_MAX_CHARS = 4096;
 
 export default {
   name: 'IdentityRestoreDialog',
@@ -196,14 +232,13 @@ export default {
 
   setup() {
     const identity = useIdentityStore();
-    return { identity };
+    const seed = useBip39Mnemonic({ wordCount: SEED_WORD_COUNT });
+    return { identity, ...seed };
   },
 
   data() {
     return {
       step: 'warn', // 'warn' (if existing identity) | 'enter'
-      inputWords: Array(SEED_WORD_COUNT).fill(''),
-      wordRefs: [],
       isApplying: false,
       errorText: '',
     };
@@ -220,16 +255,8 @@ export default {
       return this.$t('Enter your seed phrase');
     },
 
-    normalisedMnemonic() {
-      return normaliseMnemonic(this.inputWords.join(' '));
-    },
-
-    isComplete() {
-      return this.inputWords.every(w => w.trim().length > 0);
-    },
-
     isValid() {
-      return this.isComplete && isValidIdentityMnemonic(this.normalisedMnemonic);
+      return this.mnemonicIsComplete && isValidIdentityMnemonic(this.normalisedMnemonic);
     },
 
     canSubmit() {
@@ -269,62 +296,20 @@ export default {
 
   methods: {
     resetState() {
-      this.inputWords = Array(SEED_WORD_COUNT).fill('');
+      this.resetMnemonic();
       this.errorText = '';
       this.isApplying = false;
     },
 
-    onInputChange() {
-      // Clear any previous validation error the moment the user starts
-      // editing again. The fingerprint preview replaces inline feedback.
-      if (this.errorText) this.errorText = '';
-    },
-
     /**
-     * Paste handler. If the user pastes a string that contains 12 (or
-     * more — services sometimes copy bookkeeping bytes) whitespace-
-     * separated words, fill the whole grid from this cell onward. The
-     * default browser behavior (paste into one input) is preserved for
-     * single-word pastes.
+     * Per-input handler wrapping the composable's normaliser with the
+     * dialog-local concern of clearing the inline error banner the
+     * moment the user starts editing again. The fingerprint preview
+     * replaces any further inline feedback.
      */
-    handlePaste(event, startIndex) {
-      const raw = event.clipboardData?.getData('text') ?? '';
-      if (!raw) return;
-      if (raw.length > PASTE_MAX_CHARS) return;
-
-      const tokens = raw
-        .trim()
-        .toLowerCase()
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, SEED_WORD_COUNT - startIndex);
-
-      if (tokens.length <= 1) return; // single word — let the native paste handle it
-
-      event.preventDefault();
-      tokens.forEach((word, offset) => {
-        const targetIdx = startIndex + offset;
-        if (targetIdx < SEED_WORD_COUNT) {
-          this.inputWords[targetIdx] = word;
-        }
-      });
-      this.onInputChange();
-      // Move focus to the next empty cell after the last pasted word.
-      const lastFilled = Math.min(startIndex + tokens.length - 1, SEED_WORD_COUNT - 1);
-      this.$nextTick(() => {
-        const nextIdx = lastFilled + 1;
-        if (nextIdx < SEED_WORD_COUNT) {
-          this.wordRefs[nextIdx]?.focus();
-        } else {
-          this.wordRefs[lastFilled]?.blur();
-        }
-      });
-    },
-
-    focusNext(index) {
-      if (index < SEED_WORD_COUNT - 1) {
-        this.wordRefs[index + 1]?.focus();
-      }
+    onMnemonicInput(index) {
+      this.normalizeWordInput(index);
+      if (this.errorText) this.errorText = '';
     },
 
     async apply() {
@@ -352,8 +337,9 @@ export default {
         this.errorText = err?.message || this.$t('Could not restore identity.');
       } finally {
         this.isApplying = false;
-        // Best-effort wipe — clear the visible inputs immediately.
-        this.inputWords = Array(SEED_WORD_COUNT).fill('');
+        // Best-effort wipe so the visible inputs (and the in-memory
+        // ref the composable holds) don't outlive the apply call.
+        this.resetMnemonic();
       }
     },
 
@@ -461,6 +447,87 @@ export default {
   color: #f59e0b;
   margin-top: 2px;
   flex: 0 0 auto;
+}
+
+/* BIP-39 suggestion strip.
+   Mirrors the look in SparkRestorePage so users get the same UI in
+   every spot we ask them to type a recovery phrase. Pinned above the
+   word grid so the mobile keyboard never covers it. */
+.suggestion-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  width: 100%;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid;
+  box-shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.18);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.suggestion-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.suggestion-strip-light {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.suggestion-strip-dark {
+  background: var(--bg-input);
+  border-color: var(--border-card);
+}
+
+.suggestion-chip {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  scroll-snap-align: start;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.suggestion-chip-light {
+  color: #1e293b;
+  background: #f1f5f9;
+}
+
+.suggestion-chip-light:hover {
+  background: rgba(21, 222, 114, 0.12);
+  color: #059573;
+}
+
+.suggestion-chip-dark {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.suggestion-chip-dark:hover {
+  background: rgba(21, 222, 114, 0.18);
+  color: #15DE72;
+}
+
+.suggestion-chip--highlighted,
+.suggestion-chip--highlighted:hover {
+  background: linear-gradient(135deg, #059573, #15DE72);
+  color: #ffffff;
+  border-color: #15DE72;
+}
+
+.suggestion-chip:active {
+  transform: scale(0.97);
 }
 
 /* 12-word grid */

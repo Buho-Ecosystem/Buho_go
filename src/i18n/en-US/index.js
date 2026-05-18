@@ -23,6 +23,8 @@ export default {
   "Couldn't restore contacts": "Couldn't restore contacts",
   "Couldn't sync contacts": "Couldn't sync contacts",
   "Restored {n} contacts": "Restored {n} contacts",
+  "Profile restored": "Profile restored",
+  "We pulled your latest profile from Nostr.": "We pulled your latest profile from Nostr.",
   "{name} hasn't published a Lightning address. We'll use it automatically once they do.": "{name} hasn't published a Lightning address. We'll use it automatically once they do.",
   "{n} couldn't be restored. They have no Lightning address right now.": "{n} couldn't be restored. They have no Lightning address right now.",
   // Address book sync status
