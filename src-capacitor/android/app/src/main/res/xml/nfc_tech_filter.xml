@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- NTAG 424 DNA / Bolt Card (T4T / ISO-DEP) -->
+    <tech-list>
+        <tech>android.nfc.tech.IsoDep</tech>
+    </tech-list>
+    <!-- Standard NDEF tags (NTAG 21x, etc.) -->
+    <tech-list>
+        <tech>android.nfc.tech.Ndef</tech>
+    </tech-list>
+    <!-- NfcA fallback (covers MiFare Ultralight / NTAG 21x without NDEF layer) -->
+    <tech-list>
+        <tech>android.nfc.tech.NfcA</tech>
+    </tech-list>
+</resources>

@@ -53,6 +53,15 @@ export default boot(async ({ router }) => {
     // Parse the raw tag content using the same logic as QR scanner & deep links
     const parsed = parsePaymentDestination(raw)
 
+    // Bolt Cards often encode a plain https:// URL that resolves to a
+    // LNURL-withdraw response. parsePaymentDestination() can't know this
+    // without a network round-trip, so we forward https:// NFC tags as
+    // type 'lnurl' — Wallet.vue's fetchLNURLInfo() will fetch and verify.
+    if ((!parsed || !parsed.valid || parsed.type === 'unknown')
+        && /^https?:\/\//i.test(raw)) {
+      parsed = { type: 'lnurl', lnurl: raw, valid: true }
+    }
+
     if (!parsed || !parsed.valid || parsed.type === 'unknown') {
       Notify.create({
         type: 'warning',

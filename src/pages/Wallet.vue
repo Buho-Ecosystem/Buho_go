@@ -3997,6 +3997,9 @@ export default {
     decodeLNURL(lnurl) {
       const clean = lnurl.trim().replace(/^lightning:/i, '');
 
+      // Plain https:// or http:// URL (e.g. Bolt Card NFC URL — already decoded)
+      if (/^https?:\/\//i.test(clean)) return clean;
+
       // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
       const lud17Url = resolveLUD17URL(clean);
       if (lud17Url) return lud17Url;
