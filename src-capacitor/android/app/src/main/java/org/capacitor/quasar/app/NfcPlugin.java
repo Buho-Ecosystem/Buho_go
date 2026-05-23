@@ -1,9 +1,12 @@
 package org.capacitor.quasar.app;
 
+import android.nfc.FormatException;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
+import android.nfc.tech.IsoDep;
+import android.nfc.tech.Ndef;
 import android.os.Parcelable;
 
 import com.getcapacitor.JSObject;
@@ -46,9 +49,20 @@ public class NfcPlugin extends Plugin {
             Parcelable[] rawMessages = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
 
             if (rawMessages == null || rawMessages.length == 0) {
-                JSObject err = new JSObject();
-                err.put("message", "NFC tag found but contains no NDEF data");
-                notifyListeners("nfcError", err);
+                // NTAG 424 DNA (Bolt Card) is an ISO-DEP / T4T tag. Android does not always
+                // deliver EXTRA_NDEF_MESSAGES for these tags — fall back to reading the NDEF
+                // file directly via the Ndef or IsoDep technology classes.
+                Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
+                String fallback = tryReadNdefFromTag(tag);
+                if (fallback != null && !fallback.isEmpty()) {
+                    JSObject result = new JSObject();
+                    result.put("raw", fallback);
+                    notifyListeners("nfcTag", result);
+                } else {
+                    JSObject err = new JSObject();
+                    err.put("message", "NFC tag found but contains no NDEF data");
+                    notifyListeners("nfcError", err);
+                }
                 return;
             }
 
@@ -153,6 +167,129 @@ public class NfcPlugin extends Plugin {
         if (textStart >= payload.length) return null;
         Charset charset = isUtf16 ? StandardCharsets.UTF_16 : StandardCharsets.UTF_8;
         return new String(payload, textStart, payload.length - textStart, charset).trim();
+    }
+
+    // ─── Bolt Card / NTAG 424 DNA fallback reading ───────────────────────────
+
+    /**
+     * Called when Android did not deliver EXTRA_NDEF_MESSAGES (e.g. NTAG 424 DNA /
+     * Bolt Cards dispatched via TAG_DISCOVERED or TECH_DISCOVERED).
+     *
+     * Tries two approaches in order:
+     *  1. Android Ndef technology class  — works when the tag supports T4T NDEF
+     *     and the NFC stack can negotiate it at runtime.
+     *  2. Raw IsoDep APDU sequence       — T4T NDEF read per ISO 7816-4 / NFC
+     *     Forum T4T spec; required when Ndef.get() returns null (some Android
+     *     versions / OEM NFC stacks fail to surface NTAG 424 DNA as Ndef).
+     */
+    private String tryReadNdefFromTag(Tag tag) {
+        if (tag == null) return null;
+
+        // Approach 1: standard Ndef technology
+        Ndef ndef = Ndef.get(tag);
+        if (ndef != null) {
+            try {
+                ndef.connect();
+                NdefMessage message = ndef.getNdefMessage();
+                if (message != null) {
+                    NdefRecord[] records = message.getRecords();
+                    if (records != null && records.length > 0) {
+                        return parseNdefRecord(records[0]);
+                    }
+                }
+            } catch (Exception ignored) {
+                // fall through to IsoDep
+            } finally {
+                try { ndef.close(); } catch (Exception ignored) {}
+            }
+        }
+
+        // Approach 2: raw T4T NDEF over IsoDep (NTAG 424 DNA / Bolt Card path)
+        return tryReadNdefViaIsoDep(tag);
+    }
+
+    /**
+     * Reads the NDEF file from a T4T tag using raw ISO 7816-4 APDU commands.
+     *
+     * Sequence:
+     *   SELECT NDEF Application → SELECT CC File → READ CC →
+     *   SELECT NDEF File (ID from CC) → READ NDEF length → READ NDEF data
+     */
+    private String tryReadNdefViaIsoDep(Tag tag) {
+        IsoDep isoDep = IsoDep.get(tag);
+        if (isoDep == null) return null;
+
+        try {
+            isoDep.connect();
+            isoDep.setTimeout(3000);
+
+            // SELECT NDEF Application (D2 76 00 00 85 01 01)
+            byte[] r = isoDep.transceive(new byte[]{
+                0x00, (byte)0xA4, 0x04, 0x00, 0x07,
+                (byte)0xD2, 0x76, 0x00, 0x00, (byte)0x85, 0x01, 0x01, 0x00
+            });
+            if (!swOk(r)) return null;
+
+            // SELECT Capability Container (E1 03)
+            r = isoDep.transceive(new byte[]{
+                0x00, (byte)0xA4, 0x00, 0x0C, 0x02, (byte)0xE1, 0x03
+            });
+            if (!swOk(r)) return null;
+
+            // READ BINARY — first 15 bytes of CC
+            r = isoDep.transceive(new byte[]{0x00, (byte)0xB0, 0x00, 0x00, 0x0F});
+            if (!swOk(r) || r.length < 17) return null;
+
+            // CC[9..10] = NDEF file ID (typically E1 04)
+            byte fileId0 = r[9];
+            byte fileId1 = r[10];
+
+            // SELECT NDEF File
+            r = isoDep.transceive(new byte[]{
+                0x00, (byte)0xA4, 0x00, 0x0C, 0x02, fileId0, fileId1
+            });
+            if (!swOk(r)) return null;
+
+            // READ BINARY — 2-byte NDEF length field at offset 0
+            r = isoDep.transceive(new byte[]{0x00, (byte)0xB0, 0x00, 0x00, 0x02});
+            if (!swOk(r) || r.length < 4) return null;
+            int ndefLen = ((r[0] & 0xFF) << 8) | (r[1] & 0xFF);
+            if (ndefLen <= 0 || ndefLen > 2000) return null;
+
+            // READ NDEF data in chunks of up to 250 bytes (offset starts at 2)
+            byte[] ndefBytes = new byte[ndefLen];
+            int pos = 0;
+            while (pos < ndefLen) {
+                int chunk = Math.min(ndefLen - pos, 250);
+                int fileOff = pos + 2;
+                r = isoDep.transceive(new byte[]{
+                    0x00, (byte)0xB0,
+                    (byte)((fileOff >> 8) & 0xFF),
+                    (byte)(fileOff & 0xFF),
+                    (byte)chunk
+                });
+                if (!swOk(r) || r.length < chunk + 2) return null;
+                System.arraycopy(r, 0, ndefBytes, pos, chunk);
+                pos += chunk;
+            }
+
+            // Parse using Android's NdefMessage (handles all TNF/type variants)
+            NdefMessage message = new NdefMessage(ndefBytes);
+            NdefRecord[] records = message.getRecords();
+            if (records == null || records.length == 0) return null;
+            return parseNdefRecord(records[0]);
+
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            try { isoDep.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private boolean swOk(byte[] r) {
+        return r != null && r.length >= 2
+            && r[r.length - 2] == (byte)0x90
+            && r[r.length - 1] == (byte)0x00;
     }
 
     // NDEF URI prefix codes per NFC Forum URI Record Type Definition spec

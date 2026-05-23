@@ -80,6 +80,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="lightning" />
             </intent-filter>
+            <!-- NFC: IsoDep tech dispatch — catches NTAG 424 DNA / Bolt Cards when
+                 Android does not fire NDEF_DISCOVERED for T4T tags -->
+            <intent-filter>
+                <action android:name="android.nfc.action.TECH_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.action.TECH_DISCOVERED"
+                android:resource="@xml/nfc_tech_filter" />
+
             <!-- NFC: Fallback for any NFC tag (Tech dispatch) -->
             <intent-filter>
                 <action android:name="android.nfc.action.TAG_DISCOVERED" />
