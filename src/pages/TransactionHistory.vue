@@ -74,10 +74,10 @@
             </span>
           </div>
           <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            {{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}
+            <HiddenAmount>{{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}</HiddenAmount>
           </div>
           <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ getFiatAmountForStats(netAmount) }}
+            <HiddenAmount>{{ getFiatAmountForStats(netAmount) }}</HiddenAmount>
           </div>
         </div>
 
@@ -93,10 +93,10 @@
             </span>
           </div>
           <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            {{ formatAmountWithSign(totalReceived, true) }}
+            <HiddenAmount>{{ formatAmountWithSign(totalReceived, true) }}</HiddenAmount>
           </div>
           <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ getFiatAmountForStats(totalReceived) }}
+            <HiddenAmount>{{ getFiatAmountForStats(totalReceived) }}</HiddenAmount>
           </div>
         </div>
 
@@ -113,10 +113,10 @@
             </span>
           </div>
           <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            {{ formatAmountWithSign(totalSent, false) }}
+            <HiddenAmount>{{ formatAmountWithSign(totalSent, false) }}</HiddenAmount>
           </div>
           <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ getFiatAmountForStats(totalSent) }}
+            <HiddenAmount>{{ getFiatAmountForStats(totalSent) }}</HiddenAmount>
           </div>
         </div>
       </div>
@@ -183,7 +183,7 @@
 
         <span class="tx-row-amount-col">
           <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            +{{ formatAmount(deposit.amount) }}
+            <HiddenAmount>+{{ formatAmount(deposit.amount) }}</HiddenAmount>
           </span>
           <span v-if="deposit.confirmed" class="tx-deposit-action">
             <q-btn
@@ -522,10 +522,10 @@
                   -->
                   <span class="tx-row-amount-col">
                     <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                      {{ getFormattedAmount(tx) }}
+                      <HiddenAmount>{{ getFormattedAmount(tx) }}</HiddenAmount>
                     </span>
                     <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-                      {{ getFiatAmount(tx) }}<template v-if="getFeeBadge(tx)"> · {{ getFeeBadge(tx) }}</template>
+                      <HiddenAmount>{{ getFiatAmount(tx) }}</HiddenAmount><template v-if="getFeeBadge(tx)"> · {{ getFeeBadge(tx) }}</template>
                     </span>
                   </span>
                 </button>
@@ -563,7 +563,7 @@
                     </span>
                     <span class="tx-row-amount-col">
                       <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                        {{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}
+                        <HiddenAmount>{{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}</HiddenAmount>
                       </span>
                       <Icon
                         :icon="expandedMicropaymentGroups.has(tx.id) ? 'tabler:chevron-up' : 'tabler:chevron-down'"
@@ -587,7 +587,7 @@
                           {{ formatShortTime(innerTx.settled_at) }}
                         </span>
                         <span class="tx-micro-item-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                          {{ formatAmountWithSign(innerTx.amount, innerTx.type === 'incoming') }}
+                          <HiddenAmount>{{ formatAmountWithSign(innerTx.amount, innerTx.type === 'incoming') }}</HiddenAmount>
                         </span>
                       </button>
                     </div>
@@ -660,6 +660,7 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import HiddenAmount from '../components/HiddenAmount.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
@@ -672,7 +673,8 @@ export default {
   name: 'TransactionHistoryPage',
   components: {
     PaymentConfirmation,
-    ContactAvatar
+    ContactAvatar,
+    HiddenAmount,
   },
   data() {
     return {
