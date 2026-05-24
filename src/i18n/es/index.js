@@ -318,6 +318,12 @@ export default {
   "Reported by the withdrawal service": "Informado por el servicio de retiro",
   "Reported by the destination wallet": "Informado por la cartera de destino",
   "Reported by the recipient": "Informado por el destinatario",
+  "Reported by the server": "Informado por el servidor",
+  "Couldn't open this link": "No se pudo abrir este enlace",
+  "This link is no longer active. It may have been used or removed.": "Este enlace ya no está activo. Puede que haya sido usado o eliminado.",
+  "This link doesn't accept this request.": "Este enlace no acepta esta petición.",
+  "This link looks malformed and the server rejected it.": "El enlace parece mal formado y el servidor lo rechazó.",
+  "The server is having trouble. Try again in a moment.": "El servidor está teniendo problemas. Inténtalo de nuevo en un momento.",
   "fee": "comisión",
   "We don't recognize this format": "No reconocemos este formato",
   // PIN / app lock

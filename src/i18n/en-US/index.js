@@ -290,6 +290,12 @@ export default {
   "Reported by the withdrawal service": "Reported by the withdrawal service",
   "Reported by the destination wallet": "Reported by the destination wallet",
   "Reported by the recipient": "Reported by the recipient",
+  "Reported by the server": "Reported by the server",
+  "Couldn't open this link": "Couldn't open this link",
+  "This link is no longer active. It may have been used or removed.": "This link is no longer active. It may have been used or removed.",
+  "This link doesn't accept this request.": "This link doesn't accept this request.",
+  "This link looks malformed and the server rejected it.": "This link looks malformed and the server rejected it.",
+  "The server is having trouble. Try again in a moment.": "The server is having trouble. Try again in a moment.",
   "fee": "fee",
   "We don't recognize this format": "We don't recognize this format",
   // PIN / app lock

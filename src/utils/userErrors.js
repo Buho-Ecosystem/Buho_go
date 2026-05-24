@@ -141,6 +141,10 @@ function titleForContext(context, t) {
     case 'claim':    return t("Couldn't complete");
     // LUD-04 login flow — user is signing in to a site, not configuring a wallet.
     case 'identity': return t("Couldn't sign you in");
+    // Pre-payment link resolution (LUD-06, LUD-17, lightning address)
+    // failed before we even had an intent to pay. Distinct from 'payment'
+    // so the user isn't told a payment failed when none was attempted.
+    case 'link':     return t("Couldn't open this link");
     default:         return t('Something went wrong');
   }
 }
@@ -157,6 +161,7 @@ function attributionForContext(context, t) {
     case 'withdraw': return t('Reported by the withdrawal service');
     case 'transfer': return t('Reported by the destination wallet');
     case 'kiosk':    return t('Reported by the payment service');
+    case 'link':     return t('Reported by the server');
     default:         return t('Reported by the service');
   }
 }
@@ -232,6 +237,28 @@ function translateTechJargon(msg, t) {
       || lower === 'network request failed'
       || lower === 'load failed') {
     return t("Couldn't reach the network. Please check your internet and try again.");
+  }
+
+  // Bare HTTP status from `fetchLNURLInfo` ("Server returned 404") and
+  // similar generic upstream failures. Translate to a friendlier line
+  // grouped by status family. The raw status is still visible in the
+  // dialog's technical details, so power users don't lose information.
+  const httpStatus = msg.match(/^Server returned (\d{3})$/i);
+  if (httpStatus) {
+    const status = Number(httpStatus[1]);
+    if (status === 404 || status === 410) {
+      return t('This link is no longer active. It may have been used or removed.');
+    }
+    if (status === 401 || status === 403) {
+      return t("This link doesn't accept this request.");
+    }
+    if (status >= 500 && status <= 599) {
+      return t('The server is having trouble. Try again in a moment.');
+    }
+    // 4xx other than the above: probably a malformed link.
+    if (status >= 400 && status <= 499) {
+      return t("This link looks malformed and the server rejected it.");
+    }
   }
 
   return null;

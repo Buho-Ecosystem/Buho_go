@@ -3179,11 +3179,18 @@ export default {
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
 
           if (lnurlInfo.error || !lnurlInfo.lnurlType) {
-            this.$q.notify({
-              type: 'negative',
-              message: this.$t('Could not process this link'),
-              caption: lnurlInfo.reason || this.$t('The server did not respond or the link is no longer valid'),
-              timeout: 6000,
+            // Funnel through the global error dialog (PaymentErrorDialog)
+            // so the user sees a centered, friendlier explanation with the
+            // raw upstream reason collapsed into "Technical details" —
+            // matches the pattern used everywhere else that touches the
+            // network. `context: 'link'` keeps the title from saying
+            // "Payment failed" when no payment was attempted yet.
+            const reason = lnurlInfo.reason
+              || this.$t('The server did not respond or the link is no longer valid');
+            this.walletStore.showPaymentError(new Error(reason), {
+              context: 'link',
+              route: 'LUD-17 scan',
+              t: this.$t.bind(this),
             });
             return;
           }
@@ -3921,7 +3928,13 @@ export default {
         };
       } catch (error) {
         console.warn('Failed to fetch LNURL info:', error.message);
-        return {};
+        // Surface the underlying error so the caller's error dialog can
+        // translate it via `translateTechJargon` (network/DNS issues
+        // become "Couldn't reach the network..."; anything else falls
+        // through to the standard generic). Returning {} would have
+        // dropped the diagnostic and forced the caller into a misleading
+        // upstream-attributed message.
+        return { error: true, reason: error?.message || 'Network error' };
       }
     },
 
