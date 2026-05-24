@@ -24,7 +24,7 @@
         active?: bool — green active treatment when true,
       }
   -->
-  <div class="feature-cards" :data-count="features.length">
+  <div class="feature-cards">
     <button
       v-for="f in features"
       :key="f.id"

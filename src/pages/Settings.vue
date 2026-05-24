@@ -1558,6 +1558,16 @@
           </q-btn>
         </q-card-section>
 
+        <!--
+          One-line explainer right under the title so a first-time
+          user understands what the dialog is for before they see
+          the wallet list. Without this the feature reads as
+          generic "pick a wallet" with no clue what happens after.
+        -->
+        <div class="dialog-explainer" :class="$q.dark.isActive ? 'dialog-explainer-dark' : 'dialog-explainer-light'">
+          {{ $t('Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.') }}
+        </div>
+
         <q-card-section class="wallets-dialog-content">
           <!-- Empty state -->
           <div v-if="wallets.length === 0" class="aw-empty-state" :class="$q.dark.isActive ? 'aw-empty-dark' : 'aw-empty-light'">
@@ -2427,28 +2437,6 @@ export default {
           disabled: !this.biometricsAvailable,
         },
       ];
-    },
-
-    biometryIcon() {
-      switch (this.biometryType) {
-        case 'face': return 'tabler:face-id'
-        case 'fingerprint': return 'tabler:fingerprint'
-        case 'device-pin': return 'tabler:lock'
-        default: return 'tabler:fingerprint'
-      }
-    },
-
-    biometryDescription() {
-      if (!this.biometricsAvailable) {
-        return this.$t('No screen lock set on this device')
-      }
-      switch (this.biometryType) {
-        case 'face': return this.$t('Use Face ID to unlock')
-        case 'fingerprint': return this.$t('Use fingerprint to unlock')
-        case 'device-pin': return this.$t('Use device PIN to unlock')
-        case 'multiple': return this.$t('Use biometrics or PIN to unlock')
-        default: return this.$t('Use device lock to unlock')
-      }
     },
 
     hasNwcWallets() {
@@ -6869,6 +6857,21 @@ export default {
   background: rgba(128, 128, 128, 0.1);
   color: rgba(128, 128, 128, 0.6);
 }
+
+/* One-line explainer under a dialog title. Calmer than the body
+   text so it reads as guidance, not content. Used by Auto-Transfer
+   for now; reusable for any dialog that needs a quick "what this
+   is for" line above the main content. */
+.dialog-explainer {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding: 0 24px 14px;
+  margin-top: -6px;
+  letter-spacing: -0.005em;
+}
+.dialog-explainer-dark  { color: var(--text-muted); }
+.dialog-explainer-light { color: var(--text-muted); }
 
 /* Auto-Transfer dialog list */
 .aw-dialog-list {

@@ -12,13 +12,14 @@
 
     The label stays fixed so a returning user always knows what
     the pill *does*; the value updates so they know its current
-    state. Active pills (only App Lock has true on/off semantics)
-    get a soft green tint. Theme / Display / Format swap their
-    value text on tap but keep neutral styling — they're not
-    "on" or "off", they're "either-or" choices.
+    state. Pills with `on: true|false` are true on/off toggles
+    (e.g. App Lock, Hide Balance) and tint green when on. Pills
+    that omit `on` are either-or choices (e.g. Theme: Dark/Light,
+    Display: Bitcoin/Fiat) — they swap value text on tap but keep
+    neutral styling because neither side is "active".
 
     Disabled pills (e.g. App Lock when no biometrics available)
-    dim to ~60% — clearly inactive without looking broken.
+    dim to ~55% — clearly inactive without looking broken.
   -->
   <div class="quick-toggles" role="toolbar" aria-label="Quick settings">
     <button

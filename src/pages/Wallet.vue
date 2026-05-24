@@ -280,14 +280,14 @@
           </span>
           <span class="last-tx-amount-wrap">
             <span class="last-tx-amount" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              {{ lastTxAmountDisplay }}
+              <HiddenAmount>{{ lastTxAmountDisplay }}</HiddenAmount>
             </span>
             <span
               v-if="lastTxFiatDisplay"
               class="last-tx-fiat"
               :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'"
             >
-              {{ lastTxFiatDisplay }}
+              <HiddenAmount>{{ lastTxFiatDisplay }}</HiddenAmount>
             </span>
           </span>
         </button>

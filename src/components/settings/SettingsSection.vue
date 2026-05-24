@@ -49,16 +49,16 @@ export default {
 }
 
 /*
-  Auto-divider between settings rows. Scoped to `.settings-row`
-  specifically (rather than every direct child) so non-row helpers
-  inside a section — kiosk tip-input rows, the kiosk activate
-  button, the donation row — don't pick up a spurious border that
-  makes them look like clickable rows when they aren't.
+  Auto-divider between settings rows. Targets `.settings-row`
+  specifically so non-row helpers inside a section (kiosk
+  tip-input grid, kiosk activate button, donation row) don't
+  pick up a spurious border that would make them look like
+  another clickable row.
 
-  Note: the last-of-type selector inside :deep() picks the final
-  .settings-row in the card. If a non-row helper sits after a row,
-  the row still draws its border-bottom (correct — there is more
-  content below it).
+  A row that is the literal last child of the card draws no
+  border (clean bottom edge). A row followed by a non-row
+  helper still draws its border — that's the right read,
+  because there is more content directly below it.
 */
 .settings-section-card > :deep(.settings-row):not(:last-child) {
   border-bottom: 1px solid var(--border-card);

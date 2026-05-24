@@ -448,6 +448,8 @@ export default {
   "Display": "Anzeige",
   "Format": "Format",
   "N/A": "n. v.",
+  // Auto-Transfer dialog explainer.
+  "Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.": "Lege pro Wallet eine Sats-Schwelle fest. Wenn das Wallet sie erreicht, wird der Überschuss an ein Ziel deiner Wahl gesendet.",
   // Quick toggle — Hide Balance privacy mode.
   "Hidden": "Verborgen",
   "Visible": "Sichtbar",

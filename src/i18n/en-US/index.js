@@ -393,6 +393,8 @@ export default {
   "Display": "Display",
   "Format": "Format",
   "N/A": "N/A",
+  // Auto-Transfer dialog explainer.
+  "Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.": "Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.",
   // Quick toggle — Hide Balance privacy mode.
   "Hidden": "Hidden",
   "Visible": "Visible",
