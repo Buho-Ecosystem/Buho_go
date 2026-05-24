@@ -14,7 +14,7 @@
     - Validates the entered amount against the supplied constraints before
       emitting `confirm`.
 
-  It does NOT route to Spark / LNBits / NWC, fetch LNURL data, or talk to
+  It does NOT route to Spark / LNbits / NWC, fetch LNURL data, or talk to
   fiat-rate services beyond the small util import — the parent owns the
   send pipeline and the source of truth for the payment payload.
 -->
@@ -187,7 +187,7 @@
           </div>
 
           <!-- Fee row: surfaced when the parent supplies an estimate or a
-               static label (e.g. "Free (Spark transfer)"). NWC/LNBits
+               static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
                object on those paths and we show nothing. -->
           <div v-if="feeRowVisible" class="fee-row">

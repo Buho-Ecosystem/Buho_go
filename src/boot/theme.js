@@ -44,19 +44,6 @@ function readStoredTheme() {
 }
 
 /**
- * Check the OS-level colour-scheme preference.
- * Defaults to dark if the media query isn't available (very old browsers).
- * @returns {boolean} true if the system prefers dark
- */
-function systemPrefersDark() {
-  try {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-  } catch {
-    return true
-  }
-}
-
-/**
  * Persist the user's theme choice so it survives reload / app restart.
  * Called by the runtime toggle (see themeTransition.js) after the toggle
  * has updated `Dark.isActive`.
@@ -82,6 +69,6 @@ export default boot(() => {
   if (window.__AUDIT__) return
 
   const stored = readStoredTheme()
-  const resolved = stored !== null ? stored : systemPrefersDark()
+  const resolved = stored !== null ? stored : false
   Dark.set(resolved)
 })

@@ -296,7 +296,7 @@ const WalletAvatar = {
           fill: '#897FFF'
         })
       ]),
-      // LNBits - pink fill
+      // LNbits - pink fill
       props.type === 'lnbits' && h('svg', { width: '18', height: '18', viewBox: '0 0 502 902', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
         h('path', {
           d: 'M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z',

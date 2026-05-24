@@ -874,7 +874,7 @@ export default {
     async fetchLNBitsTransaction(txId) {
       const activeWallet = this.walletStore.activeWallet;
       if (!activeWallet) {
-        throw new Error('No active LNBits wallet found');
+        throw new Error('No active LNbits wallet found');
       }
 
       let provider = this.walletStore.providers[activeWallet.id];
@@ -884,14 +884,14 @@ export default {
       }
 
       if (!provider) {
-        throw new Error('Could not connect to LNBits wallet');
+        throw new Error('Could not connect to LNbits wallet');
       }
 
       const transactions = await provider.getTransactions({ limit: 100, offset: 0 });
       const found = transactions.find(tx => tx.id === txId);
 
       if (found) {
-        // Normalize LNBits transaction to expected format
+        // Normalize LNbits transaction to expected format
         this.transaction = {
           id: found.id,
           type: found.type === 'receive' ? 'incoming' : 'outgoing',

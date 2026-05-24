@@ -50,7 +50,7 @@
         <q-card-section class="q-pt-none">
           <div class="lnbits-logo-container">
             <div class="lnbits-logo-bg">
-              <!-- LNBits Lightning Bolt (official) -->
+              <!-- LNbits Lightning Bolt (official) -->
               <svg xmlns="http://www.w3.org/2000/svg" width="50" height="60" viewBox="0 0 502 902" fill="none">
                 <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
               </svg>
@@ -58,11 +58,11 @@
           </div>
 
           <div class="welcome-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Connect LNBits') }}
+            {{ $t('Connect LNbits') }}
           </div>
 
           <div class="welcome-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Enter your LNBits server details') }}
+            {{ $t('Enter your LNbits server details') }}
           </div>
 
           <!-- Server URL Input -->
@@ -82,14 +82,14 @@
           <!--
             Wallet ID is intentionally *not* in this form.
 
-            LNBits server-side scopes each admin key to exactly one wallet,
+            LNbits server-side scopes each admin key to exactly one wallet,
             so `GET /api/v1/wallet` with just the admin key reveals the
             walletId. `LNBitsWalletProvider.validateCredentials` already
             does this discovery, and `addLNBitsWallet` persists the
             server-returned id into `connectionData.walletId`.
 
             Asking the user for it would be redundant data entry — and
-            LNBits doesn't even issue a QR for it (only a copy button),
+            LNbits doesn't even issue a QR for it (only a copy button),
             so it's the most friction-heavy field by far. We just skip it.
           -->
 
@@ -175,7 +175,7 @@
           </div>
 
           <div class="help-text q-mt-md" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Find your admin key in LNBits under API Info') }}
+            {{ $t('Find your admin key in LNbits under API Info') }}
           </div>
         </q-card-section>
 
@@ -208,7 +208,7 @@
               </div>
               <!--
                 Progress strip — shows which of the two scannable values
-                are already captured. Both have QRs in LNBits, so the
+                are already captured. Both have QRs in LNbits, so the
                 user can scan both in one continuous session without
                 reopening the camera.
               -->
@@ -317,7 +317,7 @@
 
             <q-input
               v-model="walletName"
-              :placeholder="validatedWalletName || $t('My LNBits Wallet')"
+              :placeholder="validatedWalletName || $t('My LNbits Wallet')"
               :rules="[val => !!val || $t('Wallet name is required')]"
               autofocus
               :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
@@ -396,7 +396,7 @@ export default {
       // scannable values (serverUrl, adminKey) are populated or the
       // user cancels. `scanMode` is the value we're currently prompting
       // for; it auto-advances after each successful scan. Wallet ID
-      // isn't here — LNBits server-side scopes the adminKey to one
+      // isn't here — LNbits server-side scopes the adminKey to one
       // wallet, so the store action discovers it via GET /api/v1/wallet.
       scanMode: 'url', // 'url' | 'key'
       cameraError: false,
@@ -438,7 +438,7 @@ export default {
 
     /**
      * Has the current scanner session captured each scannable value?
-     * Wallet ID isn't here because LNBits doesn't issue a QR for it.
+     * Wallet ID isn't here because LNbits doesn't issue a QR for it.
      */
     scanProgress() {
       return {
@@ -461,7 +461,7 @@ export default {
      */
     scannerSubtitle() {
       if (this.scanMode === 'url' && !this.serverUrl) {
-        return this.$t('Scan your LNBits server URL');
+        return this.$t('Scan your LNbits server URL');
       }
       return this.$t('Scan your admin key');
     },
@@ -510,7 +510,7 @@ export default {
         this.showNameDialog = true;
 
       } catch (error) {
-        console.error('LNBits validation failed:', error);
+        console.error('LNbits validation failed:', error);
         this.errorMessage = getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this));
       } finally {
         this.isConnecting = false;
@@ -536,11 +536,11 @@ export default {
         this.loadingText = this.$t('Loading wallet...');
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
-        console.error('Failed to add LNBits wallet:', error);
+        console.error('Failed to add LNbits wallet:', error);
         this.showLoadingScreen = false;
         this.showPaymentError(error, {
           context: 'connect',
-          route: 'Add LNBits wallet',
+          route: 'Add LNbits wallet',
           t: this.$t.bind(this),
         });
         return;
@@ -573,7 +573,7 @@ export default {
     },
 
     /**
-     * Check whether the connected LNBits server has the lnurlp extension and,
+     * Check whether the connected LNbits server has the lnurlp extension and,
      * if so, open the lightning-address dialog pre-populated with any
      * existing addresses on the wallet.
      *
@@ -756,7 +756,7 @@ export default {
 
       if (data.startsWith('http://') || data.startsWith('https://')) {
         // Strip path + query to keep just the origin. Handles users
-        // scanning their LNBits wallet page URL (`/wallet?usr=…&wal=…`)
+        // scanning their LNbits wallet page URL (`/wallet?usr=…&wal=…`)
         // instead of the bare Node URL QR — we want the server origin
         // regardless of which one they aimed at.
         let serverUrl = data;
@@ -918,7 +918,7 @@ export default {
   50% { background-position: 100% 50%; }
 }
 
-/* LNBits Logo */
+/* LNbits Logo */
 .lnbits-logo-container {
   display: flex;
   justify-content: center;

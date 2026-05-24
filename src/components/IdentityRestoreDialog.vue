@@ -54,7 +54,7 @@
           >
             <div class="restore-bullet">
               <Icon icon="tabler:check" width="14" height="14" class="bullet-ok" />
-              <span>{{ $t('Your Spark, NWC and LNBits wallets stay untouched.') }}</span>
+              <span>{{ $t('Your Spark, NWC and LNbits wallets stay untouched.') }}</span>
             </div>
             <div class="restore-bullet">
               <Icon icon="tabler:check" width="14" height="14" class="bullet-ok" />

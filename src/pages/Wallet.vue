@@ -154,7 +154,7 @@
           <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
           <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
         </svg>
-        <!-- LNBits Logo -->
+        <!-- LNbits Logo -->
         <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
         </svg>
@@ -438,7 +438,7 @@
                       </linearGradient>
                     </defs>
                   </svg>
-                  <!-- LNBits Logo -->
+                  <!-- LNbits Logo -->
                   <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
@@ -467,7 +467,7 @@
                       <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
                       <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
                     </svg>
-                    <!-- LNBits mini logo -->
+                    <!-- LNbits mini logo -->
                     <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                     </svg>
@@ -1207,7 +1207,7 @@ export default {
       }
 
       // ── Fee estimate ──────────────────────────────────────────
-      // Only Spark wallets expose pre-call fee data. NWC/LNBits omit the
+      // Only Spark wallets expose pre-call fee data. NWC/LNbits omit the
       // object entirely so the sheet renders nothing — better than
       // showing an empty "—" row that implies missing information.
       let feeEstimate = null;
@@ -1314,7 +1314,7 @@ export default {
     },
     // Show fee estimate row only when we have actual fee data to display
     // - Spark wallet: Show when we have an estimate OR it's a free Spark transfer
-    // - NWC/LNBits: Never show (no fee estimation available)
+    // - NWC/LNbits: Never show (no fee estimation available)
     showFeeEstimate() {
       if (!this.pendingPayment) return false;
       if (!this.walletStore.isActiveWalletSpark) return false;
@@ -2337,7 +2337,7 @@ export default {
     getWalletTypeLabel(type) {
       switch (type) {
         case 'spark': return 'Spark';
-        case 'lnbits': return 'LNBits';
+        case 'lnbits': return 'LNbits';
         default: return 'NWC';
       }
     },
@@ -2440,7 +2440,7 @@ export default {
      *
      * Called from the 30s periodic tick, after every send/receive, on wallet
      * switch, and on app start. The balance-fetch logic branches per wallet
-     * type (Spark / LNBits / NWC) and each branch returns early after its
+     * type (Spark / LNbits / NWC) and each branch returns early after its
      * own fetch — so the last-transaction refresh lives in `finally` to
      * guarantee it runs for every wallet type, even when a branch throws.
      */
@@ -2476,7 +2476,7 @@ export default {
           return;
         }
 
-        // Check if active wallet is LNBits
+        // Check if active wallet is LNbits
         if (this.walletStore.isActiveWalletLNBits) {
           try {
             const provider = await this.walletStore.ensureLNBitsConnected();
@@ -2502,7 +2502,7 @@ export default {
             // stays visible and the next tick will retry. We log so issues
             // are debuggable but don't surface a UI error for a transient
             // blip.
-            console.warn('LNBits balance refresh failed:', err.message);
+            console.warn('LNbits balance refresh failed:', err.message);
           }
           return;
         }
@@ -2548,7 +2548,7 @@ export default {
      *
      * Called from updateWalletBalance's `finally` block — so it fires on
      * the 30s periodic tick, after every send/receive, and on wallet
-     * switch, for every wallet type (Spark / LNBits / NWC). Also called
+     * switch, for every wallet type (Spark / LNbits / NWC). Also called
      * directly from created() after initial connect.
      */
     async loadLastTransaction() {
@@ -3388,7 +3388,7 @@ export default {
           const walletType = this.walletStore.activeWalletType;
 
           if (walletType === 'spark' || walletType === 'lnbits') {
-            // For Spark and LNBits wallets, include LNURL info for amount handling
+            // For Spark and LNbits wallets, include LNURL info for amount handling
             this.pendingPayment = {
               ...paymentData,
               lightningAddress: paymentData.data,
@@ -3577,7 +3577,7 @@ export default {
         // Queue the contact link by recipient address + amount + send
         // time. The next tx-list refresh drains the queue and stamps
         // the newly observed outgoing tx — wallet-agnostic, so it
-        // works the same for Spark (transfer id ≠ payment id), LNBits
+        // works the same for Spark (transfer id ≠ payment id), LNbits
         // (payment_hash directly), and NWC (only `preimage` comes
         // back) without us having to know which provider is active.
         if (existingContact && recipientAddress) {
@@ -3620,7 +3620,7 @@ export default {
         // Fire the success modal. The Spark provider's polling already
         // resolved to a terminal status by the time we got here — if
         // it timed out at 60s without settling, we land on PENDING and
-        // the modal uses softer "still routing" copy. NWC and LNBits
+        // the modal uses softer "still routing" copy. NWC and LNbits
         // payInvoice paths resolve completed-or-throw, so they always
         // land on COMPLETED here.
         const status = (result && typeof result === 'object' && result.status) || 'completed';
@@ -3805,7 +3805,7 @@ export default {
         return await provider.payInvoice({ invoice });
       }
 
-      throw new Error('Unsupported payment type for LNBits wallet');
+      throw new Error('Unsupported payment type for LNbits wallet');
     },
 
     isLightningInvoice(input) { return isLightningInvoiceShared(input); },
@@ -4143,7 +4143,7 @@ export default {
 
     /**
      * Fetch LNURL endpoint info (min/max amounts, fixed amount detection)
-     * Used by Spark and LNBits wallets to get paycode parameters before confirmation.
+     * Used by Spark and LNbits wallets to get paycode parameters before confirmation.
      * @param {string} lnurl - The LNURL string (bech32 encoded)
      * @returns {Promise<Object>} LNURL info with minSendable, maxSendable, isFixedAmount, etc.
      */
@@ -4358,7 +4358,7 @@ export default {
       }
 
       // === LNBITS WALLET: No fee estimation available ===
-      // LNBits API does not provide routing fee estimation
+      // LNbits API does not provide routing fee estimation
       if (this.walletStore.isActiveWalletLNBits) {
         this.estimatedFee = null;
         return;

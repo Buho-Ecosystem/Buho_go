@@ -9,7 +9,7 @@
     2. Delegates the entire UI (recipient hero, amount stage with quick
        chips, optional comment, slide-to-send for ≥ 20k sats, etc.) to
        the shared sheet.
-    3. Owns the send pipeline — Spark / LNBits / NWC routing, LNURL
+    3. Owns the send pipeline — Spark / LNbits / NWC routing, LNURL
        resolution, error mapping — and runs it on the sheet's `confirm`
        event.
 
@@ -336,7 +336,7 @@ export default {
      * LNURL bech32 / LUD-17 → URL. Kept inline rather than hoisted to
      * addressUtils because the rest of the app routes LNURL resolution
      * through provider methods; this is the one place that still needs
-     * a manual decode (the NWC + LNBits paths).
+     * a manual decode (the NWC + LNbits paths).
      */
     decodeLNURL(lnurl) {
       const clean = lnurl.trim().replace(/^lightning:/i, '')
@@ -381,7 +381,7 @@ export default {
       const prose = {
         NO_ACTIVE_WALLET:        this.$t('No wallet connected. Please connect a wallet first.'),
         SPARK_NOT_CONNECTED:     this.$t('Spark wallet not unlocked. Please try again.'),
-        LNBITS_NOT_CONNECTED:    this.$t('LNBits wallet is not connected.'),
+        LNBITS_NOT_CONNECTED:    this.$t('LNbits wallet is not connected.'),
         INSUFFICIENT_BALANCE:    this.$t("You don't have enough funds for this payment."),
         PAYMENT_FAILED:          this.$t('Payment failed.'),
         UNSUPPORTED_PAYMENT_TYPE: this.$t('Unsupported payment format. Use a Lightning invoice, address, or LNURL.'),

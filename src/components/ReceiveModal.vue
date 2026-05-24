@@ -1062,7 +1062,7 @@ export default {
 
     /**
      * Start monitoring for payment confirmation
-     * Uses event-based for Spark (instant), polling for LNBits/NWC
+     * Uses event-based for Spark (instant), polling for LNbits/NWC
      */
     async startPaymentMonitor() {
       if (!this.generatedInvoice?.payment_hash) {
@@ -1312,8 +1312,8 @@ export default {
     },
 
     /**
-     * Start LNBits payment monitoring using polling
-     * Uses the LNBits API to check payment status
+     * Start LNbits payment monitoring using polling
+     * Uses the LNbits API to check payment status
      */
     async startLNBitsPollingMonitor() {
       let rawProvider = null;
@@ -1321,24 +1321,24 @@ export default {
       try {
         rawProvider = this.walletStore.getActiveProvider();
       } catch (error) {
-        console.warn('Could not get LNBits provider for payment monitoring:', error.message);
+        console.warn('Could not get LNbits provider for payment monitoring:', error.message);
         return;
       }
 
       if (!rawProvider) {
-        console.warn('No LNBits provider available for payment monitoring');
+        console.warn('No LNbits provider available for payment monitoring');
         return;
       }
 
-      // Wrap the LNBits provider with the expected interface
+      // Wrap the LNbits provider with the expected interface
       const wrappedProvider = {
         lookupInvoice: async (hash) => {
           try {
-            // LNBits lookupInvoice expects a string payment hash
+            // LNbits lookupInvoice expects a string payment hash
             const result = await rawProvider.lookupInvoice(hash);
             return result;
           } catch (error) {
-            console.warn('LNBits lookupInvoice error:', error.message);
+            console.warn('LNbits lookupInvoice error:', error.message);
             return { paid: false };
           }
         }
@@ -1537,10 +1537,10 @@ export default {
             expires_at: result.expiresAt
           };
         } else if (walletType === 'lnbits') {
-          // Use LNBits wallet provider
+          // Use LNbits wallet provider
           const provider = this.walletStore.getActiveProvider();
           if (!provider) {
-            throw new Error('LNBits wallet not connected');
+            throw new Error('LNbits wallet not connected');
           }
 
           const result = await provider.createInvoice(invoiceParams);

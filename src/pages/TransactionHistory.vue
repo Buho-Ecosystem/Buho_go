@@ -1382,10 +1382,10 @@ export default {
     },
 
     async loadLNBitsTransactionsBatch() {
-      // Ensure LNBits wallet is connected
+      // Ensure LNbits wallet is connected
       const activeWallet = this.walletStore.activeWallet;
       if (!activeWallet) {
-        throw new Error('No active LNBits wallet found');
+        throw new Error('No active LNbits wallet found');
       }
 
       let provider = this.walletStore.providers[activeWallet.id];
@@ -1396,7 +1396,7 @@ export default {
       }
 
       if (!provider) {
-        throw new Error('Could not connect to LNBits wallet');
+        throw new Error('Could not connect to LNbits wallet');
       }
 
       // Fetch batch with current offset
@@ -1422,7 +1422,7 @@ export default {
         status: tx.status || 'completed'
       }));
 
-      console.log(`LNBits batch loaded: ${normalizedTransactions.length} transactions`);
+      console.log(`LNbits batch loaded: ${normalizedTransactions.length} transactions`);
 
       this.transactions.push(...normalizedTransactions);
       this.currentOffset += this.batchSize;

@@ -2,7 +2,7 @@
   LNBitsLightningAddressDialog
   ----------------------------
   Post-connect prompt that invites the user to attach a lightning address to
-  their freshly-added LNBits wallet.
+  their freshly-added LNbits wallet.
 
   Two modes, chosen automatically based on what the server already has:
     • "pick"   — server already has addresses with usernames → user picks one
@@ -81,7 +81,7 @@
       <!-- Body: create new -->
       <div v-else class="ln-addr-body">
         <div class="ln-addr-hint">
-          {{ $t('Pick a short name. You can change it later in your LNBits wallet.') }}
+          {{ $t('Pick a short name. You can change it later in your LNbits wallet.') }}
         </div>
 
         <q-input
@@ -149,8 +149,8 @@
 <script>
 // `Icon` is registered globally via src/boot/iconify.js, so no local import needed.
 
-// Allowed characters in an LNBits lnurlp username.
-// Mirrors the typical LNBits server-side regex; we validate client-side to give
+// Allowed characters in an LNbits lnurlp username.
+// Mirrors the typical LNbits server-side regex; we validate client-side to give
 // friendly feedback before round-tripping to the server.
 const USERNAME_PATTERN = /^[a-z0-9_.-]{1,32}$/;
 

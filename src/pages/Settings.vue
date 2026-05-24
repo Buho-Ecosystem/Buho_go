@@ -171,12 +171,12 @@
           -->
           <SettingsRow
             icon="tabler:wallet"
-            :label="activeWallet?.name || 'LNBits Wallet'"
+            :label="activeWallet?.name || 'LNbits Wallet'"
             :caption="lnbitsServerDomain ? `${$t('on')} ${lnbitsServerDomain}` : 'LNbits'"
             :interactive="false"
           />
           <!--
-            Lightning Address row — always rendered for LNBits.
+            Lightning Address row — always rendered for LNbits.
 
             Four visual states, driven by `lnAddressRowState`:
               • 'set'         — address attached; row opens the dialog
@@ -198,7 +198,7 @@
             <template #caption>
               <template v-if="lnAddressRowState === 'set'">{{ activeWalletLightningAddress }}</template>
               <template v-else-if="lnAddressRowState === 'unsetReady'">{{ $t('Get one to receive payments by name') }}</template>
-              <template v-else-if="lnAddressRowState === 'unsetBlocked'">{{ $t('Not supported by this LNBits server') }}</template>
+              <template v-else-if="lnAddressRowState === 'unsetBlocked'">{{ $t('Not supported by this LNbits server') }}</template>
               <template v-else><q-spinner size="12px" class="q-mr-xs" />{{ $t('Checking server…') }}</template>
             </template>
             <template v-if="lnAddressRowState === 'set'" #right>
@@ -595,7 +595,7 @@
                     <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
                     <defs><linearGradient id="nwc_kiosk_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse"><stop stop-color="#FFCA4A"/><stop offset="1" stop-color="#F7931A"/></linearGradient></defs>
                   </svg>
-                  <!-- LNBits -->
+                  <!-- LNbits -->
                   <svg v-else-if="w.type === 'lnbits'" width="14" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
@@ -740,7 +740,7 @@
         <SettingsRow
           v-if="hasLnbitsWallets"
           destructive
-          :label="$t('Remove LNBits Connections')"
+          :label="$t('Remove LNbits Connections')"
           @click="confirmDisconnectLNBits"
         />
       </SettingsSection>
@@ -1116,7 +1116,7 @@
                         </linearGradient>
                       </defs>
                     </svg>
-                    <!-- LNBits Logo -->
+                    <!-- LNbits Logo -->
                     <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                     </svg>
@@ -1152,7 +1152,7 @@
                         <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
                         <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
                       </svg>
-                      <!-- LNBits mini logo -->
+                      <!-- LNbits mini logo -->
                       <svg v-else-if="wallet.type === 'lnbits'" width="9" height="10" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                       </svg>
@@ -1293,10 +1293,10 @@
             <q-separator class="q-my-md" :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'"/>
           </div>
 
-          <!-- LNBits Wallet Section -->
+          <!-- LNbits Wallet Section -->
           <div class="wallet-type-section q-mb-md">
             <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('LNBits Wallet') }}
+              {{ $t('LNbits Wallet') }}
             </div>
 
             <div
@@ -1311,7 +1311,7 @@
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-                  {{ $t('Connect LNBits') }}
+                  {{ $t('Connect LNbits') }}
                 </div>
                 <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
                   {{ $t('Link via server URL and API key') }}
@@ -1599,7 +1599,7 @@
                   <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646-2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="white"/>
                   <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="white"/>
                 </svg>
-                <!-- LNBits -->
+                <!-- LNbits -->
                 <svg v-else-if="entry.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
                 </svg>
@@ -1907,7 +1907,7 @@ export default {
 
       // Danger zone is collapsed by default — adds a deliberate extra
       // tap before destructive actions (delete Spark wallets, remove
-      // NWC/LNBits connections) are reachable. Reduces accidental
+      // NWC/LNbits connections) are reachable. Reduces accidental
       // taps in a screen the user already scrolled to the bottom of.
       dangerZoneExpanded: false,
 
@@ -1999,14 +1999,14 @@ export default {
       // Wallet removal
       walletToRemove: null,
 
-      // ─── LNBits lightning address management ───────────────────────────
+      // ─── LNbits lightning address management ───────────────────────────
       //
       // Cache of `lnurlp` extension availability, keyed by wallet id.
       //   undefined → not yet probed
       //   true      → probe succeeded; address row is interactive
       //   false     → probe failed; row renders informational-only
       //
-      // Keyed by wallet id (not by serverUrl) because two LNBits wallets
+      // Keyed by wallet id (not by serverUrl) because two LNbits wallets
       // can share a server but have separately disabled extensions in
       // theory; cheap to over-probe.
       lnurlpAvailability: {},
@@ -2283,7 +2283,7 @@ export default {
     attentionWarnings() {
       const warnings = [];
 
-      // 1. Wallet seed backup outstanding (Spark only — NWC/LNBits
+      // 1. Wallet seed backup outstanding (Spark only — NWC/LNbits
       //    don't have a local seed to back up).
       if (this.hasSparkWallet && !this.activeSparkBackedUp) {
         warnings.push({
@@ -2647,7 +2647,7 @@ export default {
 
     /**
      * Trigger an lnurlp availability probe whenever the active wallet
-     * becomes (or is replaced by) an LNBits wallet. Result is cached
+     * becomes (or is replaced by) an LNbits wallet. Result is cached
      * per wallet id, so re-visits during the same session are free.
      * Fires `immediate: true` so the first paint reflects the probe.
      */
@@ -2843,17 +2843,17 @@ export default {
       }
     },
 
-    // ─── LNBits Lightning Address ─────────────────────────────────────
+    // ─── LNbits Lightning Address ─────────────────────────────────────
 
     /**
-     * Construct a one-shot LNBitsWalletProvider for the active LNBits
+     * Construct a one-shot LNBitsWalletProvider for the active LNbits
      * wallet. We deliberately mirror the throwaway pattern used by
      * LNBitsSetupPage (it doesn't go through the connected provider
      * registry in `walletStore.providers`, so the call path is identical
      * whether the wallet was just added or has been around for months).
      *
      * @returns {LNBitsWalletProvider|null} a fresh provider, or null
-     *   if the active wallet isn't an LNBits wallet (defensive guard;
+     *   if the active wallet isn't an LNbits wallet (defensive guard;
      *   callers gate on `isActiveWalletLNBits` already).
      */
     _buildActiveLNBitsProvider() {
@@ -2869,12 +2869,12 @@ export default {
     },
 
     /**
-     * Probe the active LNBits wallet for `lnurlp` extension availability
+     * Probe the active LNbits wallet for `lnurlp` extension availability
      * and cache the result. Idempotent: cached results short-circuit so
      * navigation back-and-forth doesn't re-hit the server.
      *
      * Called from the watcher above. Safe to call when the active wallet
-     * is not LNBits — it's a no-op in that case.
+     * is not LNbits — it's a no-op in that case.
      */
     async maybeProbeLnurlpForActiveWallet() {
       const wallet = this.activeWallet;
@@ -2924,7 +2924,7 @@ export default {
         this.$q.notify({
           type: 'warning',
           message: this.$t('Lightning Address not supported'),
-          caption: this.$t('Not supported by this LNBits server'),
+          caption: this.$t('Not supported by this LNbits server'),
           timeout: 4000,
         });
         return;
@@ -3301,10 +3301,10 @@ export default {
     },
 
     confirmDisconnectLNBits() {
-      this.dangerConfirmTitle = this.$t('Remove LNBits Connections');
-      this.dangerConfirmMessage = this.$t('This will remove all LNBits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNBits wallets later using your credentials.');
+      this.dangerConfirmTitle = this.$t('Remove LNbits Connections');
+      this.dangerConfirmMessage = this.$t('This will remove all LNbits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNbits wallets later using your credentials.');
       this.dangerConfirmPhrase = 'I understand';
-      this.dangerConfirmButtonText = this.$t('Remove LNBits');
+      this.dangerConfirmButtonText = this.$t('Remove LNbits');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'disconnectLNBits';
       this.showDangerConfirmDialog = true;
@@ -3328,7 +3328,7 @@ export default {
           await this.disconnectLNBitsWallets();
           this.$q.notify({
             type: 'positive',
-            message: this.$t('LNBits connections removed'),
+            message: this.$t('LNbits connections removed'),
 
           });
           this.showDangerConfirmDialog = false;
@@ -3778,7 +3778,7 @@ export default {
     getWalletTypeLabel(wallet) {
       switch (wallet.type) {
         case 'spark': return 'Spark';
-        case 'lnbits': return 'LNBits';
+        case 'lnbits': return 'LNbits';
         case 'nwc':
         default: return 'NWC';
       }
@@ -4768,7 +4768,7 @@ export default {
 }
 
 /* Lightning Address row — informational/disabled state.
-   Used when the LNBits server lacks the lnurlp extension. Dimmed so the
+   Used when the LNbits server lacks the lnurlp extension. Dimmed so the
    user can tell at a glance that this row is not actionable, without
    removing it entirely (their wallet still works for everything else). */
 .ln-address-row-disabled {
