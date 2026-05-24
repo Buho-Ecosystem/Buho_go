@@ -551,6 +551,8 @@ export default {
   "Payment Hash": "Payment Hash",
   "Preimage": "Preimage",
   "Fee": "Fee",
+  "Network Fee": "Network Fee",
+  "Total deducted": "Total deducted",
   "Raw Invoice": "Raw Invoice",
   "Raw JSON": "Raw JSON",
   "Transaction Not Found": "Transaction Not Found",

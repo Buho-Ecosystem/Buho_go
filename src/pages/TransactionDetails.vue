@@ -148,7 +148,33 @@
             <div class="detail-field-container">{{ getExtraComment() }}</div>
           </div>
 
-          <div v-if="transaction.fee && transaction.fee > 0" class="detail-field-group">
+          <!--
+            Fee + total breakdown for outgoing payments with a fee.
+
+            The hero shows what the recipient actually received (the
+            amount the user typed). These two rows explain what was
+            added on top: the SSP/network fee, and the resulting
+            total deducted from the wallet. Together they make the
+            balance change reconcile without any mental math.
+
+            Spark-to-Spark transfers carry no fee → both rows hide.
+            Incoming flows fall through to the single Fee row below
+            for now (informational only) — separate change.
+          -->
+          <template v-if="showFeeBreakdown">
+            <div class="detail-field-group">
+              <div class="detail-field-label">{{ $t('Network Fee') }}</div>
+              <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
+            </div>
+            <div class="detail-field-group">
+              <div class="detail-field-label">{{ $t('Total deducted') }}</div>
+              <div class="detail-field-container">{{ formatAmount(totalDeductedSats, walletStore.useBip177Format) }}</div>
+            </div>
+          </template>
+          <div
+            v-else-if="transaction.fee && transaction.fee > 0"
+            class="detail-field-group"
+          >
             <div class="detail-field-label">{{ $t('Fee') }}</div>
             <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
           </div>
@@ -578,6 +604,44 @@ export default {
         c.name.toLowerCase().includes(query) ||
         c.address.toLowerCase().includes(query)
       );
+    },
+
+    /**
+     * The "user-meaningful" amount in sats for this view's hero:
+     *
+     *   - Outgoing with a fee → recipient amount (gross − fee).
+     *     Matches what the user typed when they hit Send, which is
+     *     the mental model most Lightning wallets present on a
+     *     transaction detail page.
+     *   - Otherwise → gross transfer amount unchanged.
+     *
+     * `transaction.amount` itself stays as the gross movement so
+     * downstream list views (TransactionHistory, balance-delta
+     * math) keep matching real wallet movement. Only the detail
+     * page's hero + fiat conversion read from this derived value.
+     *
+     * @returns {number} non-negative sats
+     */
+    displayAmountSats() {
+      const gross = Math.abs(Number(this.transaction?.amount) || 0);
+      const fee = Number(this.transaction?.fee) || 0;
+      if (this.transaction?.type === 'outgoing' && fee > 0) {
+        // Defensive: clamp to 0 if a malformed record reports a fee
+        // larger than the gross — never render a negative hero.
+        return Math.max(0, gross - fee);
+      }
+      return gross;
+    },
+
+    /** True when the fee + total breakdown rows should render. */
+    showFeeBreakdown() {
+      const fee = Number(this.transaction?.fee) || 0;
+      return this.transaction?.type === 'outgoing' && fee > 0;
+    },
+
+    /** Gross deducted total for the "Total" row in the breakdown. */
+    totalDeductedSats() {
+      return Math.abs(Number(this.transaction?.amount) || 0);
     }
   },
 
@@ -984,9 +1048,25 @@ export default {
       return null;
     },
 
+    /**
+     * Template-facing wrapper around the imported `formatAmount`
+     * helper from `utils/amountFormatting.js`. Module-level imports
+     * aren't auto-exposed on an Options API component instance, so
+     * the template can't reach the helper directly. Wrapping it as
+     * a method (same name, same signature) lets every existing
+     * call site in the template — `formatAmount(transaction.fee,
+     * walletStore.useBip177Format)` etc. — resolve correctly.
+     *
+     * @param {number} sats
+     * @param {boolean} useBip177
+     */
+    formatAmount(sats, useBip177) {
+      return formatAmount(sats, useBip177);
+    },
+
     getFormattedAmount() {
       const prefix = this.transaction.type === 'incoming' ? '+' : '-';
-      return formatAmountWithPrefix(Math.abs(this.transaction.amount), this.walletStore.useBip177Format, prefix);
+      return formatAmountWithPrefix(this.displayAmountSats, this.walletStore.useBip177Format, prefix);
     },
 
     async loadFiatRates() {
@@ -1008,7 +1088,10 @@ export default {
 
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(this.transaction.amount), currency);
+        // Fiat tracks the hero amount so the two never disagree.
+        // For an outgoing payment with a fee, both reflect what the
+        // recipient received (not the gross deducted).
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(this.displayAmountSats, currency);
 
         // Handle unavailable rates
         if (fiatValue === null) {
