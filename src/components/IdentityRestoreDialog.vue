@@ -40,13 +40,13 @@
             class="restore-headline"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Replace your current identity?') }}
+            {{ $t('Replace your current profile?') }}
           </h2>
           <p
             class="restore-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Your current sign-in keys and profile are replaced by the ones derived from the seed phrase you enter. Your wallets are not affected.') }}
+            {{ $t('Your wallets are safe and stay untouched. This replaces your current profile and sign-in keys with the ones in the recovery phrase you enter next.') }}
           </p>
           <div
             class="restore-bullets"
@@ -58,11 +58,11 @@
             </div>
             <div class="restore-bullet">
               <Icon icon="tabler:check" width="14" height="14" class="bullet-ok" />
-              <span>{{ $t('You can return to the previous identity by restoring its seed phrase again later.') }}</span>
+              <span>{{ $t('You can return to the previous profile by entering its recovery phrase again later.') }}</span>
             </div>
             <div class="restore-bullet">
               <Icon icon="tabler:x" width="14" height="14" class="bullet-warn" />
-              <span>{{ $t('Sites you logged into with the old identity, and your old profile, are forgotten on this device.') }}</span>
+              <span>{{ $t('Sites you signed in to with the old profile, and your old name and picture, are forgotten on this device.') }}</span>
             </div>
           </div>
         </q-card-section>
@@ -94,7 +94,7 @@
             class="restore-lede restore-lede--top"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Type, or paste your 12-word identity seed phrase. Order matters.') }}
+            {{ $t('Type or paste your 12-word recovery phrase. Order matters.') }}
           </p>
 
           <!-- BIP-39 suggestion strip. Pinned above the grid so the
@@ -185,7 +185,7 @@
             no-caps
             class="restore-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :label="$t('Restore identity')"
+            :label="$t('Restore profile')"
             :loading="isApplying"
             :disable="!canSubmit"
             @click="apply"
@@ -251,8 +251,8 @@ export default {
     },
 
     headerTitle() {
-      if (this.step === 'warn') return this.$t('Restore identity');
-      return this.$t('Enter your seed phrase');
+      if (this.step === 'warn') return this.$t('Restore profile');
+      return this.$t('Enter recovery phrase');
     },
 
     isValid() {
@@ -326,7 +326,7 @@ export default {
         await this.identity.importMnemonic(phrase, true);
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Identity restored'),
+          message: this.$t('Profile restored'),
           caption: this.$t('Your sign-in keys and profile are back.'),
           timeout: 4000,
         });

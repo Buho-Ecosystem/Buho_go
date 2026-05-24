@@ -175,8 +175,21 @@
               :class="$q.dark.isActive ? 'field-input-dark' : 'field-input-light'"
             />
           </div>
+          <!--
+            Helper line under the input. Explains in one sentence what
+            the address is used for, so a first-time user knows whether
+            to fill it in. Errors take priority and replace the helper
+            line, mirroring the standard form-field pattern.
+          -->
           <span v-if="errors.lud16" class="field-error" role="alert">
             {{ errors.lud16 }}
+          </span>
+          <span
+            v-else
+            class="field-help"
+            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+          >
+            {{ $t('Your address for receiving Bitcoin payments. Leave blank if you don\'t have one.') }}
           </span>
         </label>
       </div>
@@ -228,7 +241,7 @@
           @click="onSave"
         >
           <q-spinner v-if="profile.isPublishing" size="18px" />
-          <span>{{ publishError ? $t('Try again') : $t('Save & Publish') }}</span>
+          <span>{{ publishError ? $t('Try again') : $t('Save') }}</span>
         </button>
       </div>
     </q-card>
@@ -761,6 +774,19 @@ body.body--dark .avatar-edit-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/*
+  Inline helper text sitting where the error normally sits. Same
+  type metrics as `.field-counter` so the row height stays stable
+  when toggling between "no input yet" and "validation error".
+*/
+.field-help {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  display: block;
 }
 
 /* Pinned action bar — sits below the scroll region as a fixed flex

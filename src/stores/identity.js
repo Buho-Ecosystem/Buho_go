@@ -101,6 +101,13 @@ export const useIdentityStore = defineStore('identity', {
     nostrPubkeyHex: null,
     /** Cached NIP-19 `npub1...` for the current account, or null. */
     nostrNpub: null,
+    /**
+     * Epoch-ms the Profile intro carousel was first dismissed, or null
+     * if the user has never opened ProfilePage. Used to show the intro
+     * exactly once. Reset to null by `reset()` so a fresh identity sees
+     * the intro again.
+     */
+    profileIntroSeenAt: null,
   }),
 
   getters: {
@@ -165,6 +172,7 @@ export const useIdentityStore = defineStore('identity', {
                 : 0;
             this.nostrPubkeyHex = parsed.nostrPubkeyHex ?? null;
             this.nostrNpub = parsed.nostrNpub ?? null;
+            this.profileIntroSeenAt = parsed.profileIntroSeenAt ?? null;
           }
         }
 
@@ -191,6 +199,7 @@ export const useIdentityStore = defineStore('identity', {
         nostrAccountIndex: this.nostrAccountIndex,
         nostrPubkeyHex: this.nostrPubkeyHex,
         nostrNpub: this.nostrNpub,
+        profileIntroSeenAt: this.profileIntroSeenAt,
       };
       localStorage.setItem(STORAGE_KEYS.METADATA, JSON.stringify(payload));
     },
@@ -351,6 +360,17 @@ export const useIdentityStore = defineStore('identity', {
       this.nostrAccountIndex = 0;
       this.nostrPubkeyHex = null;
       this.nostrNpub = null;
+      this.profileIntroSeenAt = null;
+    },
+
+    /**
+     * Mark the Profile intro carousel as seen so it does not re-appear
+     * on subsequent visits. Idempotent: re-calling is a no-op once set.
+     */
+    markProfileIntroSeen() {
+      if (this.profileIntroSeenAt) return;
+      this.profileIntroSeenAt = Date.now();
+      this._persistMetadata();
     },
 
     /**

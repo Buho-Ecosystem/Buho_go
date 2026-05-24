@@ -46,7 +46,7 @@
         </div>
         <div class="sheet-meta">
           <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-            {{ $t('Your BuhoGO identity') }}
+            {{ $t('Your profile') }}
           </div>
           <div class="sheet-status">
             <template v-if="!identity.bootstrapped">
@@ -63,7 +63,7 @@
                 :class="['sheet-status-icon', identity.backupConfirmed ? 'is-ok' : 'is-warn']"
               />
               <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ identity.backupConfirmed ? $t('Backed up') : $t('Backup needed') }}
+                {{ identity.backupConfirmed ? $t('Recovery phrase backed up') : $t('Recovery phrase not backed up yet') }}
               </span>
             </template>
           </div>
@@ -73,23 +73,28 @@
       <!-- Primary actions list. Identity-card rows from the old page
            are gathered here so the main Profile screen can stay calm. -->
       <q-list class="sheet-list">
-        <!-- View / set up the seed phrase. Reachable for fresh installs:
-             ProfilePage.openIdentitySeedDialog() calls ensureIdentity()
-             before opening, so the first tap also creates the seed. -->
+        <!--
+          Recovery phrase row.
+          For fresh installs the same row creates the phrase on first
+          tap (ProfilePage.openIdentitySeedDialog → ensureIdentity).
+          Once an identity exists, the row reveals + verifies it.
+        -->
         <q-item
           clickable
           v-ripple
           @click="emitView"
         >
           <q-item-section side>
-            <Icon icon="tabler:eye" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            <Icon icon="tabler:key" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
           </q-item-section>
           <q-item-section>
             <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ identity.bootstrapped ? $t('View seed phrase') : $t('Set up identity') }}
+              {{ identity.bootstrapped ? $t('Recovery phrase') : $t('Set up your profile') }}
             </q-item-label>
             <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ identity.bootstrapped ? $t('Show your 12 recovery words') : $t('Create your 12 recovery words and back them up') }}
+              {{ identity.bootstrapped
+                  ? $t('Your 12-word backup. Anyone with these words can sign in as you.')
+                  : $t('Create your 12-word backup so you never lose your profile.') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -98,47 +103,19 @@
         </q-item>
         <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
 
-        <!-- Nostr identity row. Hidden until a BuhoGO identity exists,
-             because Nostr is derived from the BIP-39 seed via NIP-06 —
-             there's nothing to show until the seed exists. Once the
-             user creates their identity from the row above, this row
-             appears with the derived npub. -->
-        <template v-if="identity.bootstrapped">
-          <q-item clickable v-ripple @click="emitViewNostr">
-            <q-item-section side>
-              <img
-                src="/nostr/nostr.png"
-                alt=""
-                class="nostr-row-icon"
-              />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Public profile') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('View your address and reveal your private key') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-          </q-item>
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        </template>
-
+        <!-- Restore an existing profile from its 12-word backup. -->
         <q-item clickable v-ripple @click="emitRestore">
           <q-item-section side>
             <Icon icon="tabler:reload" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
           </q-item-section>
           <q-item-section>
             <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Restore from seed phrase') }}
+              {{ $t('Restore from recovery phrase') }}
             </q-item-label>
             <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
               {{ identity.bootstrapped
-                  ? $t('Use an identity from another device')
-                  : $t('Already have an identity? Bring it back') }}
+                  ? $t('Use a profile from another device')
+                  : $t('Already have a profile? Bring it back') }}
             </q-item-label>
           </q-item-section>
           <q-item-section side>
@@ -146,10 +123,39 @@
           </q-item-section>
         </q-item>
 
-        <!-- Destructive action sits at the bottom of the sheet,
-             visually separated by a wider gap and red typography. Same
-             role as the page-level Danger Zone before — same protection
-             (typed-phrase confirmation behind it) — just less in-your-face. -->
+        <!--
+          Advanced row: reveal the underlying private key.
+          Hidden until an identity exists. Caption flags this as a
+          power-user thing so casual users skip past it. Same dialog
+          backs the row but the surfaced action is now unambiguous.
+        -->
+        <template v-if="identity.bootstrapped">
+          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
+          <q-item clickable v-ripple @click="emitViewNostr">
+            <q-item-section side>
+              <Icon icon="tabler:lock" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ $t('Reveal private key') }}
+              </q-item-label>
+              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+                {{ $t('Advanced. Lets you sign in to your profile on other apps.') }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+            </q-item-section>
+          </q-item>
+        </template>
+
+        <!--
+          Destructive action — wipe profile + start fresh. Sits at the
+          bottom of the sheet, red typography, typed-phrase
+          confirmation behind it. The first sentence in the confirm
+          dialog leads with "your wallets are safe", which is the
+          user's #1 fear.
+        -->
         <template v-if="identity.bootstrapped">
           <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
           <q-item clickable v-ripple class="sheet-danger-row" @click="emitRegenerate">
@@ -158,10 +164,10 @@
             </q-item-section>
             <q-item-section>
               <q-item-label class="sheet-danger-label">
-                {{ $t('Generate new identity') }}
+                {{ $t('Start a new profile') }}
               </q-item-label>
               <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('Start over. Every linked site forgets you.') }}
+                {{ $t('Wipe this profile and begin fresh. Your wallets are not affected.') }}
               </q-item-label>
             </q-item-section>
             <q-item-section side>

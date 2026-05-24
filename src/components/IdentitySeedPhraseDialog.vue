@@ -39,13 +39,13 @@
             class="context-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Your identity seed phrase') }}
+            {{ $t('Your recovery phrase') }}
           </h2>
           <p
             class="context-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('These 12 words are the only way to keep your BuhoGO logins across devices, or recover them if you lose this phone. Anyone who sees them can impersonate you online.') }}
+            {{ $t('These 12 words back up your profile and every site you sign in to. Without them you cannot move to a new phone. Anyone who sees them can take over your profile.') }}
           </p>
 
           <div
@@ -130,30 +130,20 @@
         </q-card-actions>
       </template>
 
-      <!-- Phrase reveal step -->
+      <!--
+        Phrase reveal step.
+
+        Streamlined layout: the previous standalone countdown bar +
+        toggle row + double warning (one inside MnemonicDisplay, one
+        outside) collapsed into:
+          - one header row above the words grid (auto-hide chip on
+            the left when running, Show/Hide toggle on the right)
+          - the 12-word grid
+          - one short safety line below
+        Same information, three blocks instead of five.
+      -->
       <template v-else-if="step === 'phrase'">
         <q-card-section class="seed-step-body phrase-body">
-          <div
-            class="phrase-countdown"
-            :class="[
-              $q.dark.isActive ? 'phrase-countdown-dark' : 'phrase-countdown-light',
-              { 'phrase-countdown-expiring': countdownRunning && countdownSeconds <= 10 },
-            ]"
-            role="status"
-            aria-live="polite"
-          >
-            <Icon :icon="countdownRunning ? 'tabler:clock' : 'tabler:eye-off'" width="14" height="14" />
-            <span v-if="countdownRunning">
-              {{ $t('Auto-hides in') }} {{ countdownText }}
-            </span>
-            <span v-else-if="timerExpired">
-              {{ $t('Hidden again. Tap Show words to reveal.') }}
-            </span>
-            <span v-else>
-              {{ $t('Tap Show words to reveal.') }}
-            </span>
-          </div>
-
           <MnemonicDisplay
             :initial-blurred="phraseBlurred"
             :words="mnemonicWords"
@@ -161,20 +151,38 @@
             :show-warning="false"
             :show-copy="false"
             @update:blurred="phraseBlurred = $event"
-          />
+          >
+            <template #header>
+              <!--
+                Countdown chip. Only renders while the words are
+                visible AND the timer is running, so the header
+                stays empty in idle / blurred states (no nag,
+                no redundant "tap to reveal" line — the blurred
+                grid + the Show button already convey that).
+              -->
+              <span
+                v-if="countdownRunning"
+                class="seed-countdown-chip"
+                :class="[
+                  $q.dark.isActive ? 'seed-countdown-chip-dark' : 'seed-countdown-chip-light',
+                  { 'seed-countdown-chip--expiring': countdownSeconds <= 10 },
+                ]"
+                role="status"
+                aria-live="polite"
+              >
+                <Icon icon="tabler:clock" width="11" height="11" />
+                <span>{{ countdownText }}</span>
+              </span>
+            </template>
+          </MnemonicDisplay>
 
           <div
-            class="seed-callout"
-            :class="$q.dark.isActive ? 'seed-callout-dark' : 'seed-callout-light'"
+            class="seed-warn"
+            :class="$q.dark.isActive ? 'seed-warn-dark' : 'seed-warn-light'"
+            role="note"
           >
-            <div class="seed-callout-icon">
-              <Icon icon="tabler:shield" width="18" height="18" />
-            </div>
-            <div class="seed-callout-body">
-              <div class="seed-callout-text">
-                {{ $t('Never type this phrase into a website. Never share it in chat, photos, or cloud notes.') }}
-              </div>
-            </div>
+            <Icon icon="tabler:shield" width="14" height="14" />
+            <span>{{ $t('Never type these words into a website or save them in cloud notes.') }}</span>
           </div>
         </q-card-section>
 
@@ -269,11 +277,11 @@ export default {
 
     headerTitle() {
       if (this.step === 'verify') return this.$t('Verify your backup');
-      if (this.step === 'phrase') return this.$t('Your identity seed phrase');
+      if (this.step === 'phrase') return this.$t('Your recovery phrase');
       if (this.step === 'authExplain') return this.$t('Verify it is you');
       return this.mode === 'backup'
-        ? this.$t('Back up your identity')
-        : this.$t('View identity seed phrase');
+        ? this.$t('Back up your profile')
+        : this.$t('View recovery phrase');
     },
 
     authMethodCopy() {
@@ -386,9 +394,9 @@ export default {
       this.isAuthenticating = true;
       try {
         const ok = await authenticate({
-          reason: this.$t('Verify it is you to reveal your identity seed phrase'),
+          reason: this.$t('Verify it is you to reveal your recovery phrase'),
           title: 'BuhoGO',
-          subtitle: this.$t('Identity seed phrase'),
+          subtitle: this.$t('Recovery phrase'),
           useFallback: true,
         });
         if (!this.modelValue) return;
@@ -442,7 +450,7 @@ export default {
         console.error('Failed to load identity seed phrase', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("We couldn't show your identity seed phrase"),
+          message: this.$t("We couldn't show your recovery phrase"),
           caption: this.$t('Please try again.'),
         });
         this.close();
@@ -496,8 +504,8 @@ export default {
         await this.identity.confirmBackup();
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Identity backup confirmed'),
-          caption: this.$t('Your seed phrase is safe if you stored it somewhere secure.'),
+          message: this.$t('Backup confirmed'),
+          caption: this.$t('Your recovery phrase is safe as long as you stored it somewhere secure.'),
         });
         this.$emit('verified');
       } catch (error) {
@@ -591,33 +599,66 @@ export default {
   max-width: 380px;
 }
 
-.phrase-countdown {
+/*
+  Auto-hide countdown chip, injected into MnemonicDisplay's
+  header slot. Compact, inline-aligned with the toggle on the
+  right. Replaces the previous standalone `.phrase-countdown`
+  bar which sat above the words and competed for attention.
+*/
+.seed-countdown-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  align-self: center;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 3px 8px;
   border-radius: 999px;
   font-family: 'Manrope', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.phrase-countdown-light {
-  background: #f1f5f9;
+.seed-countdown-chip-light {
+  background: rgba(15, 23, 42, 0.06);
   color: #475569;
 }
 
-.phrase-countdown-dark {
-  background: rgba(255, 255, 255, 0.06);
+.seed-countdown-chip-dark {
+  background: rgba(255, 255, 255, 0.08);
   color: #cbd5e1;
 }
 
-.phrase-countdown-expiring {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+.seed-countdown-chip--expiring {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ef4444 !important;
+}
+
+/*
+  Compact one-line warning under the words grid. Replaces the
+  previous full `.seed-callout` box on this step — the words
+  themselves are the focal point now, not a paragraph of safety
+  guidance. The fuller "what is this" guidance still lives on
+  the context step the user landed on before reaching here.
+*/
+.seed-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.seed-warn-light {
+  background: rgba(239, 68, 68, 0.06);
+  color: #b91c1c;
+}
+
+.seed-warn-dark {
+  background: rgba(239, 68, 68, 0.10);
+  color: #fca5a5;
 }
 
 .seed-callout {
