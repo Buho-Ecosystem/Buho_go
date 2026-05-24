@@ -307,7 +307,7 @@ export default {
     this.stopQrScanner();
   },
   methods: {
-    ...mapActions(useWalletStore, ['addWallet']),
+    ...mapActions(useWalletStore, ['addWallet', 'showPaymentError']),
 
     goBack() {
       // Navigate back to welcome page
@@ -397,14 +397,11 @@ export default {
         this.$router.push('/wallet')
       } catch (error) {
         console.error('Error connecting wallet:', error);
-        if (this.$q && this.$q.notify) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t ? this.$t('Connection failed') : 'Connection failed',
-            caption: this.$t ? this.$t('Please check your connection and try again') : 'Please check your connection and try again',
-            
-          });
-        }
+        this.showPaymentError(error, {
+          context: 'connect',
+          route: 'NWC initial setup',
+          t: this.$t.bind(this),
+        });
       } finally {
         this.isConnecting = false;
         this.showLoadingScreen = false;

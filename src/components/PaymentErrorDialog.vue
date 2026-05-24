@@ -115,6 +115,28 @@
 <script>
 import { useWalletStore } from '../stores/wallet';
 
+/**
+ * Cross-platform clipboard write. Prefers the Capacitor native plugin
+ * when the app is running inside iOS/Android (more reliable than the
+ * WebView's Clipboard API, which is gated by permission and focus on
+ * Android). Falls back to the web API in browsers and tests.
+ * Mirrors the pattern in src/utils/sensitiveClipboard.js — kept inline
+ * here because we don't need the sensitive helper's auto-wipe timer.
+ */
+async function writeClipboardCrossPlatform(text) {
+  try {
+    const cap = await import('@capacitor/core');
+    if (cap?.Capacitor?.isNativePlatform?.()) {
+      const { Clipboard } = await import('@capacitor/clipboard');
+      await Clipboard.write({ string: text });
+      return;
+    }
+  } catch {
+    // Capacitor unavailable or plugin missing — fall through to web API.
+  }
+  await navigator.clipboard.writeText(text);
+}
+
 export default {
   name: 'PaymentErrorDialog',
 
@@ -198,7 +220,12 @@ export default {
 
     async copyDetails() {
       try {
-        await navigator.clipboard.writeText(this.technicalText);
+        // Route through the Capacitor clipboard plugin when running
+        // natively. The web Clipboard API is hit-or-miss on Android
+        // WebView (depends on permission grant and focus state); the
+        // native plugin is reliable. Falls back to the web API in
+        // browsers and dev builds where Capacitor isn't loaded.
+        await writeClipboardCrossPlatform(this.technicalText);
         this.copied = true;
         // Flip the label back after a moment so the affordance is
         // available again without forcing the user to re-open the

@@ -164,11 +164,9 @@
 <script>
 import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
-import { useQuasar } from 'quasar'
 import { useWalletStore } from 'stores/wallet'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
-import { buildPaymentError } from 'src/utils/userErrors'
 
 export default defineComponent({
   name: 'KioskDashboard',
@@ -176,7 +174,6 @@ export default defineComponent({
 
   setup() {
     const router = useRouter()
-    const $q = useQuasar()
     const store = useWalletStore()
     const { proxy } = getCurrentInstance()
     const t = (key) => proxy.$t(key)
@@ -296,10 +293,11 @@ export default defineComponent({
         state.value = 'payment'; startPolling()
       } catch (err) {
         console.error('[kiosk] charge error:', err)
-        // Surface the upstream reason (Spark SDK / LNbits detail) as a
-        // caption so failures are diagnosable without adb logcat.
-        const friendly = buildPaymentError(err, { context: 'kiosk' }, t)
-        $q.notify({ type: 'negative', message: friendly.title, caption: friendly.description, timeout: 6000 })
+        // Unified dialog. Same modal users see across every other
+        // payment failure in the app, so the kiosk operator gets a
+        // familiar surface (and a "Copy details" button for support)
+        // instead of a thin caption-only toast.
+        store.showPaymentError(err, { context: 'kiosk', t })
         state.value = 'input'
       }
     }

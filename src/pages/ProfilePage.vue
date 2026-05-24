@@ -422,6 +422,7 @@ import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
 import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
 import { useAddressBookStore } from '../stores/addressBook';
+import { useWalletStore } from '../stores/wallet';
 
 // The typed confirmation phrase. Matched verbatim to the wallet-removal
 // flow ("I understand") so users build the same muscle memory across
@@ -449,7 +450,8 @@ export default {
   setup() {
     const identity = useIdentityStore();
     const profile = useProfileStore();
-    return { identity, profile };
+    const walletStore = useWalletStore();
+    return { identity, profile, walletStore };
   },
 
   data() {
@@ -852,10 +854,13 @@ export default {
         this.showRegenerateConfirm = false;
       } catch (err) {
         console.error('[Profile] regenerate failed', err);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t generate a new identity'),
-          caption: this.$t('Please try again.'),
+        // Reuse the 'identity' context so the same modal users see for
+        // every other sign-in/identity issue handles this too.
+        this.walletStore.showPaymentError(err, {
+          context: 'identity',
+          route: 'Regenerate identity',
+          reason: this.$t('Please try again.'),
+          t: this.$t.bind(this),
         });
       } finally {
         this.isRegenerating = false;

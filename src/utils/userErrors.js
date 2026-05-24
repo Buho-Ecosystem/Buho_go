@@ -40,11 +40,29 @@ const REASON_MAX_LENGTH = 280;
  * @param {object} ctx
  * @param {string} [ctx.context]    'payment' | 'withdraw' | 'transfer' |
  *                                  'receive' | 'connect' | 'kiosk' |
- *                                  'claim' | 'general'
+ *                                  'claim' | 'identity' | 'link' |
+ *                                  'earn' | 'l1' | 'general'
  * @param {string} [ctx.walletType] 'spark' | 'lnbits' | 'nwc' | etc.
  * @param {string} [ctx.route]      Free-form route label,
  *                                  e.g. 'LNURL-pay → invoice fetch'
  * @param {number} [ctx.amountSats]
+ * @param {string} [ctx.title]      Pre-translated headline override. Use
+ *                                  sparingly: the title is the dialog's
+ *                                  identity, and overriding it weakens the
+ *                                  "same modal everywhere" recognition the
+ *                                  contexts are designed to produce. Only
+ *                                  pass this when the context family can't
+ *                                  produce a sensible title (e.g. wallet
+ *                                  restore where "Couldn't connect" would
+ *                                  be misleading).
+ * @param {string} [ctx.reason]     Pre-translated user-facing reason from a
+ *                                  call site that has domain knowledge the
+ *                                  central translators don't (e.g. Spark
+ *                                  UTXO state). When set, it replaces the
+ *                                  inferred reason and is treated as
+ *                                  'curated' (no upstream attribution),
+ *                                  since BuhoGO authored the text. The
+ *                                  raw error still populates `technical`.
  * @param {Function} [$t]           Translation function ($t bound).
  * @returns {{
  *   title: string,
@@ -62,24 +80,36 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
   const raw = extractRaw(error);
   const context = ctx.context || 'general';
 
-  const title = titleForContext(context, t);
+  const title = (typeof ctx.title === 'string' && ctx.title.trim())
+    ? ctx.title.trim()
+    : titleForContext(context, t);
 
   let reason;
   let reasonSource;
-  const breakdown = expandInsufficientFunds(raw, ctx.amountSats, t);
-  const translated = translateTechJargon(raw, t);
-  if (breakdown) {
-    reason = breakdown;
+  // Caller-supplied override wins. Lets domain-specific translators
+  // (e.g. L1BitcoinReceive's UTXO-state interpreter) deliver friendly
+  // prose that the central helpers don't know how to produce, while the
+  // title still comes from the unified context map so users see the
+  // same headline for the same kind of failure across the app.
+  if (typeof ctx.reason === 'string' && ctx.reason.trim()) {
+    reason = ctx.reason.trim();
     reasonSource = 'curated';
-  } else if (translated) {
-    reason = translated;
-    reasonSource = 'curated';
-  } else if (isUserSafeMessage(raw)) {
-    reason = truncate(raw.trim(), REASON_MAX_LENGTH);
-    reasonSource = 'upstream';
   } else {
-    reason = t('Please try again.');
-    reasonSource = 'fallback';
+    const breakdown = expandInsufficientFunds(raw, ctx.amountSats, t);
+    const translated = translateTechJargon(raw, t);
+    if (breakdown) {
+      reason = breakdown;
+      reasonSource = 'curated';
+    } else if (translated) {
+      reason = translated;
+      reasonSource = 'curated';
+    } else if (isUserSafeMessage(raw)) {
+      reason = truncate(raw.trim(), REASON_MAX_LENGTH);
+      reasonSource = 'upstream';
+    } else {
+      reason = t('Please try again.');
+      reasonSource = 'fallback';
+    }
   }
 
   // Attribution is only meaningful when BuhoGO is forwarding third-party
@@ -145,6 +175,13 @@ function titleForContext(context, t) {
     // failed before we even had an intent to pay. Distinct from 'payment'
     // so the user isn't told a payment failed when none was attempted.
     case 'link':     return t("Couldn't open this link");
+    // Earn flow payout (claiming accumulated sats from completing lessons).
+    // Distinct from 'claim' (Bitcoin L1 deposit claim) and from 'payment'
+    // (user-initiated send) so the title matches the user's mental model.
+    case 'earn':     return t("Couldn't claim your sats");
+    // Bitcoin main-chain operation: fee quote, return-to-mempool send,
+    // or any other L1 read/write that isn't a deposit claim or withdraw.
+    case 'l1':       return t('Bitcoin transaction failed');
     default:         return t('Something went wrong');
   }
 }
@@ -162,6 +199,8 @@ function attributionForContext(context, t) {
     case 'transfer': return t('Reported by the destination wallet');
     case 'kiosk':    return t('Reported by the payment service');
     case 'link':     return t('Reported by the server');
+    case 'earn':     return t('Reported by the payout service');
+    case 'l1':       return t('Reported by the Bitcoin network');
     default:         return t('Reported by the service');
   }
 }

@@ -307,7 +307,8 @@ export default {
     ...mapActions(useWalletStore, [
       'switchActiveWallet',
       'connectWallet',
-      'refreshWalletData'
+      'refreshWalletData',
+      'showPaymentError'
     ]),
 
     async handleWalletSwitch(walletId) {
@@ -325,10 +326,10 @@ export default {
           message: this.$t('Switched to {name}', { name: wallet?.name }),
         })
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t switch wallet'),
-          caption: this.$t('Please try again'),
+        this.showPaymentError(error, {
+          context: 'connect',
+          route: 'Switch wallet',
+          t: this.$t.bind(this),
         })
       }
     },
@@ -346,11 +347,10 @@ export default {
           
         })
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Reconnection failed'),
-          caption: this.$t('Please try again'),
-          
+        this.showPaymentError(error, {
+          context: 'connect',
+          route: 'Reconnect wallet',
+          t: this.$t.bind(this),
         })
       } finally {
         this.isReconnecting[walletId] = false

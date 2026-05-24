@@ -61,10 +61,10 @@ export default {
         wallet.cleanupConnections();
       } catch (error) {
         console.error('Failed to generate wallet:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to generate wallet'),
-          caption: this.$t('Please try again'),
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Spark wallet generation',
+          t: this.$t.bind(this),
         });
         this.$router.push('/');
         return;
@@ -94,10 +94,10 @@ export default {
         this.$router.replace('/spark-success');
       } catch (error) {
         console.error('Failed to create wallet:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to create wallet'),
-          caption: this.$t('Please try again'),
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Spark wallet creation',
+          t: this.$t.bind(this),
         });
         this.$router.push('/');
       }

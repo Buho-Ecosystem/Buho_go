@@ -358,8 +358,18 @@ export default {
         this.feeQuote = await provider.getWithdrawalFeeQuote(this.amountSats, this.cleanedAddress);
       } catch (error) {
         console.error('Failed to fetch fee quote:', error);
+        // Local translator's titles ("Amount too small", "Connection
+        // problem", "Wallet locked") are more accurate than the generic
+        // "Bitcoin transaction failed" for these precondition errors,
+        // so pass them through. Same modal shell as everywhere else.
         const msg = this.getUserFriendlyError(error);
-        this.$q.notify({ type: 'negative', message: msg.title, caption: msg.description });
+        this.walletStore.showPaymentError(error, {
+          context: 'l1',
+          route: 'L1 withdrawal fee quote',
+          title: msg.title,
+          reason: msg.description,
+          t: this.$t.bind(this),
+        });
         this.feeQuote = null;
       } finally {
         this.isLoadingFeeQuote = false;
@@ -403,7 +413,14 @@ export default {
       } catch (error) {
         console.error('Withdrawal failed:', error);
         const msg = this.getUserFriendlyError(error);
-        this.$q.notify({ type: 'negative', message: msg.title, caption: msg.description });
+        this.walletStore.showPaymentError(error, {
+          context: 'withdraw',
+          route: 'L1 withdrawal',
+          amountSats: this.amountSats,
+          title: msg.title,
+          reason: msg.description,
+          t: this.$t.bind(this),
+        });
         this.$emit('withdrawal-error', error);
         this.$refs.slideRef?.reset();
       } finally {

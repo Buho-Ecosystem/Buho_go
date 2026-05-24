@@ -456,18 +456,19 @@ export const useWalletStore = defineStore('wallet', {
 
   actions: {
     /**
-     * Surface a payment failure to the user via the global error dialog.
-     * Funnels every user-initiated payment, withdraw, transfer, and
-     * kiosk failure into one consistent surface so the upstream prose
-     * from LUD-06 / NWC / LNbits reaches the user verbatim.
+     * Surface any user-facing failure via the global error dialog.
+     * Funnels payment, withdraw, transfer, kiosk, link-resolution,
+     * wallet-setup, identity, earn-payout and L1 errors into one
+     * consistent surface so the upstream prose from LUD-06 / NWC /
+     * LNbits / Spark SDK reaches the user verbatim. Name kept as
+     * `showPaymentError` only for backwards-compatibility with the
+     * existing call sites that predate the broader use.
      *
      * @param {Error|string} error
-     * @param {object} ctx
-     * @param {string} [ctx.context]    See buildPaymentError docs.
-     * @param {string} [ctx.walletType]
-     * @param {string} [ctx.route]
-     * @param {number} [ctx.amountSats]
-     * @param {Function} [ctx.t]        Translation function ($t bound).
+     * @param {object} ctx              See buildPaymentError docs for the
+     *                                  full option list (context, title,
+     *                                  reason, route, walletType,
+     *                                  amountSats, t).
      */
     showPaymentError(error, ctx = {}) {
       const built = buildPaymentError(error, ctx, ctx.t || null);

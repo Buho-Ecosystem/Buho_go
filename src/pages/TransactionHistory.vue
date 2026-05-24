@@ -1818,10 +1818,10 @@ export default {
         this.claimFeeQuote = quote;
         this.showClaimDialog = true;
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t get fee quote'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'l1',
+          route: 'L1 claim fee quote',
+          t: this.$t.bind(this),
         });
       } finally {
         this.claimingTxId = null;
@@ -2008,16 +2008,16 @@ export default {
         return result;
       } catch (error) {
         console.error('Refund failed:', error);
-        // Surface the provider's friendly error message when present
+        // The provider sometimes throws a user-actionable message
         // (e.g. "Could not determine refund destination..." after both
-        // mempool sources fail), so the user knows to use Advanced.
-        const friendly = error?.message && !error.message.includes('Network')
-          ? error.message
-          : this.$t('Please try again');
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Could not return Bitcoin'),
-          caption: friendly
+        // mempool sources fail) and sometimes a raw network error.
+        // The unified pipeline (buildPaymentError → translateTechJargon)
+        // handles both cases: prose passes through with attribution,
+        // bare network errors become "Couldn't reach the network...".
+        this.walletStore.showPaymentError(error, {
+          context: 'l1',
+          route: 'L1 refund to mempool',
+          t: this.$t.bind(this),
         });
       } finally {
         this.isRefundingDeposit = false;
