@@ -43,10 +43,10 @@
           <div class="wallet-balance" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
             <template v-if="activeWallet && isSparkWalletLocked(activeWallet.id)">
               <Icon icon="tabler:lock" width="11" height="11" class="q-mr-xs" />
-              {{ formatBalanceWithLock(activeWallet.id) }}
+              <HiddenAmount>{{ formatBalanceWithLock(activeWallet.id) }}</HiddenAmount>
             </template>
             <template v-else>
-              {{ formatBalance(activeWalletBalance) }}
+              <HiddenAmount>{{ formatBalance(activeWalletBalance) }}</HiddenAmount>
             </template>
           </div>
         </div>
@@ -157,10 +157,10 @@
                 <div class="option-balance" :class="$q.dark.isActive ? 'option-balance-dark' : 'option-balance-light'">
                   <template v-if="isSparkWalletLocked(wallet.id)">
                     <Icon icon="tabler:lock" width="10" height="10" class="q-mr-xs locked-icon" />
-                    {{ formatBalanceWithLock(wallet.id) }}
+                    <HiddenAmount>{{ formatBalanceWithLock(wallet.id) }}</HiddenAmount>
                   </template>
                   <template v-else>
-                    {{ formatBalance(balances[wallet.id] || 0) }}
+                    <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
                   </template>
                 </div>
                 <div v-if="connectionStates[wallet.id]?.error" class="option-error">
@@ -249,9 +249,11 @@
 import {useWalletStore} from '../stores/wallet'
 import {mapState, mapActions} from 'pinia'
 import {formatAmount} from '../utils/amountFormatting.js'
+import HiddenAmount from './HiddenAmount.vue'
 
 export default {
   name: 'WalletSwitcher',
+  components: { HiddenAmount },
   emits: ['add-wallet', 'manage-wallets'],
   data() {
     return {

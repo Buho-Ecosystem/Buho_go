@@ -21,727 +21,370 @@
     <!-- Settings Content -->
     <div class="settings-content">
 
-      <!-- ACTIVE WALLET Section — adapts to active wallet type -->
+      <!--
+        Top-of-page surface: profile card → attention strip → quick
+        toggles. These three pieces are the "always-on" affordances
+        that turn Settings from a flat scrollable list into something
+        a mainstream user can scan, act on, and live in. They sit
+        above every section so even a user who never scrolls past
+        the first fold still gets the high-value entry points
+        (identity, warnings, frequent toggles).
+      -->
+      <SettingsProfileCard />
 
-      <!-- Spark Wallet -->
-      <template v-if="isActiveWalletSpark && hasSparkWallet">
-        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ $t('Wallet') }} - Spark
-        </div>
-        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-          <!-- Wallet Switcher -->
-          <q-item
-            clickable
-            v-ripple
+      <SettingsAttentionStrip
+        :warnings="attentionWarnings"
+        @action="onAttentionAction"
+      />
+
+      <SettingsQuickToggles
+        :toggles="quickToggles"
+        @toggle="onQuickToggle"
+      />
+
+      <!-- ─────────────── WALLET ─────────────── -->
+      <SettingsSection :title="$t('Wallet')">
+        <!-- Active wallet info — adapts to wallet type. -->
+
+        <!-- Spark Wallet -->
+        <template v-if="isActiveWalletSpark && hasSparkWallet">
+          <SettingsRow
+            icon="tabler:building-store"
+            :label="sparkBusinessWallet?.name || 'Business'"
+            :disabled="walletSwitching"
+            :show-chevron="false"
             @click="handleSwitchSparkWallet(sparkBusinessWallet?.id)"
-            :disable="walletSwitching"
           >
-            <q-item-section side>
-              <Icon icon="tabler:building-store" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ sparkBusinessWallet?.name || 'Business' }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ formatBalance(balances[sparkBusinessWallet?.id] || 0) }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side v-if="sparkBusinessWallet && activeWalletId === sparkBusinessWallet.id">
+            <template #caption>
+              <HiddenAmount>{{ formatBalance(balances[sparkBusinessWallet?.id] || 0) }}</HiddenAmount>
+            </template>
+            <template v-if="sparkBusinessWallet && activeWalletId === sparkBusinessWallet.id" #right>
               <Icon icon="tabler:circle-check-filled" width="18" height="18" style="color: #15DE72;" />
-            </q-item-section>
-          </q-item>
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <q-item
-            clickable
-            v-ripple
+            </template>
+          </SettingsRow>
+
+          <SettingsRow
+            icon="tabler:user"
+            :label="sparkPersonalWallet?.name || 'Personal'"
+            :disabled="walletSwitching"
+            :show-chevron="false"
             @click="handleSwitchSparkWallet(sparkPersonalWallet?.id)"
-            :disable="walletSwitching"
           >
-            <q-item-section side>
-              <Icon icon="tabler:user" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ sparkPersonalWallet?.name || 'Personal' }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ formatBalance(balances[sparkPersonalWallet?.id] || 0) }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side v-if="sparkPersonalWallet && activeWalletId === sparkPersonalWallet.id">
+            <template #caption>
+              <HiddenAmount>{{ formatBalance(balances[sparkPersonalWallet?.id] || 0) }}</HiddenAmount>
+            </template>
+            <template v-if="sparkPersonalWallet && activeWalletId === sparkPersonalWallet.id" #right>
               <Icon icon="tabler:circle-check-filled" width="18" height="18" style="color: #15DE72;" />
-            </q-item-section>
-          </q-item>
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:qrcode" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Spark Address') }}
-              </q-item-label>
-              <q-item-label caption class="mono-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ truncateAddress(activeSparkAddress) || $t('Not available') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side class="spark-address-actions">
-              <q-btn flat round dense @click="copySparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm">
+            </template>
+          </SettingsRow>
+
+          <SettingsRow
+            icon="tabler:qrcode"
+            :label="$t('Spark Address')"
+            :caption="truncateAddress(activeSparkAddress) || $t('Not available')"
+            caption-mono
+            :interactive="false"
+          >
+            <template #right>
+              <q-btn flat round dense size="sm" @click="copySparkAddress">
                 <Icon icon="tabler:copy" width="16" height="16" />
               </q-btn>
-              <q-btn flat round dense @click="shareSparkAddress" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm">
+              <q-btn flat round dense size="sm" @click="shareSparkAddress">
                 <Icon icon="tabler:share" width="16" height="16" />
               </q-btn>
-            </q-item-section>
-          </q-item>
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <!-- Before backup: show Backup action -->
-          <q-item v-if="!activeSparkBackedUp" clickable v-ripple @click="openSeedPhraseDialog('backup')">
-            <q-item-section side>
-              <Icon icon="tabler:shield-check" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Backup Seed Phrase') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('Verify your recovery phrase') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side class="backup-status-side">
-              <span class="backup-status-badge badge-unverified">
-                {{ $t('Not verified') }}
-              </span>
-            </q-item-section>
-          </q-item>
-          <!-- After backup: show View Seed Phrase -->
-          <q-item v-else clickable v-ripple @click="openSeedPhraseDialog('view')">
-            <q-item-section side>
-              <Icon icon="tabler:eye" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('View Seed Phrase') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('Show your recovery phrase') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <span class="backup-status-badge badge-verified">
-                {{ $t('Verified') }}
-              </span>
-            </q-item-section>
-          </q-item>
-        </div>
-      </template>
+            </template>
+          </SettingsRow>
 
-      <!-- NWC Wallet -->
-      <template v-else-if="isActiveWalletNWC">
-        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ $t('Wallet') }} - NWC · {{ activeWallet?.name }}
-        </div>
-        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-          <!-- Wallet Alias -->
-          <q-item v-if="nwcWalletAlias">
-            <q-item-section side>
-              <Icon icon="tabler:plug-connected" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Connected to') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ nwcWalletAlias }}
-              </q-item-label>
-            </q-item-section>
-          </q-item>
-          <q-separator v-if="nwcWalletAlias" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <!-- Lightning Address -->
-          <q-item v-if="activeWalletLightningAddress">
-            <q-item-section side>
-              <Icon icon="tabler:bolt" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Lightning Address') }}
-              </q-item-label>
-              <q-item-label caption class="mono-caption" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ activeWalletLightningAddress }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side class="spark-address-actions">
-              <q-btn flat round dense @click="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))" :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'" size="sm">
+          <!--
+            Backup row: presents the same affordance in two states — the
+            CTA-flavoured "Backup Seed Phrase" before verification and
+            the calmer "View Seed Phrase" after. Both share the same
+            dialog target so the user mental model stays one thing.
+          -->
+          <SettingsRow
+            v-if="!activeSparkBackedUp"
+            icon="tabler:shield-check"
+            :label="$t('Backup Seed Phrase')"
+            :caption="$t('Verify your recovery phrase')"
+            :badge="$t('Not verified')"
+            badge-variant="warning"
+            @click="openSeedPhraseDialog('backup')"
+          />
+          <SettingsRow
+            v-else
+            icon="tabler:eye"
+            :label="$t('View Seed Phrase')"
+            :caption="$t('Show your recovery phrase')"
+            :badge="$t('Verified')"
+            badge-variant="success"
+            @click="openSeedPhraseDialog('view')"
+          />
+        </template>
+
+        <template v-else-if="isActiveWalletNWC">
+          <!--
+            Hero row for the active NWC connection: the user-given
+            wallet name takes the label slot (this is the name they
+            actually recognise — "My Phoenix", "Mutiny BTC" etc.)
+            with the upstream provider alias as caption. The plug
+            icon signals "this is a connection" at a glance.
+            The previous "Features" row (Send · Receive · Multi-pay
+            … etc) was demoted because the NWC method list is
+            technical jargon that doesn't help a mainstream user
+            understand which wallet they are paying from — anyone
+            who actually cares about NWC capability strings can find
+            them in the Manage Wallets dialog.
+          -->
+          <SettingsRow
+            icon="tabler:plug-connected"
+            :label="activeWallet?.name || $t('NWC Wallet')"
+            :caption="nwcWalletAlias ? `${$t('via')} ${nwcWalletAlias}` : $t('Nostr Wallet Connect')"
+            :interactive="false"
+          />
+          <SettingsRow
+            v-if="activeWalletLightningAddress"
+            icon="tabler:bolt"
+            :label="$t('Lightning Address')"
+            :caption="activeWalletLightningAddress"
+            caption-mono
+            :interactive="false"
+          >
+            <template #right>
+              <q-btn
+                flat round dense size="sm"
+                @click="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
+              >
                 <Icon icon="tabler:copy" width="16" height="16" />
               </q-btn>
-            </q-item-section>
-          </q-item>
-          <q-separator v-if="activeWalletLightningAddress" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <!-- Supported Features -->
-          <q-item v-if="nwcSupportedMethods.length > 0">
-            <q-item-section side>
-              <Icon icon="tabler:list-check" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Features') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ nwcSupportedMethods.join(' · ') }}
-              </q-item-label>
-            </q-item-section>
-          </q-item>
-        </div>
-      </template>
+            </template>
+          </SettingsRow>
+        </template>
 
-      <!-- LNBits Wallet -->
-      <template v-else-if="isActiveWalletLNBits">
-        <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-          {{ $t('Wallet') }} - LNBits · {{ activeWallet?.name }}
-        </div>
-        <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-          <!-- Server -->
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:server" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Server') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ lnbitsServerDomain }}
-              </q-item-label>
-            </q-item-section>
-          </q-item>
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <!-- Wallet Name -->
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:wallet" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Wallet Name') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ activeWallet?.name || 'LNBits Wallet' }}
-              </q-item-label>
-            </q-item-section>
-          </q-item>
+        <template v-else-if="isActiveWalletLNBits">
           <!--
-            Lightning Address — always rendered for LNBits wallets.
-
-            Three visual states, driven by `lnAddressRowState`:
-              • 'set'         — address attached; row opens the dialog in
-                                pick-mode for swap / replace.
-              • 'unsetReady'  — no address, but the server's lnurlp extension
-                                is available; row opens the dialog in create
-                                (or pick) mode.
-              • 'unsetBlocked' — lnurlp extension missing on this server;
-                                 row is informational, not interactive.
-              • 'probing'     — lnurlp availability not yet known; brief
-                                transient state shown on mount and wallet
-                                switch.
+            Hero row first: user-given wallet name as label, server
+            domain as caption. Mirrors the NWC pattern so the active
+            wallet identity is immediately scannable regardless of
+            connection type. The server row was demoted because the
+            domain string (e.g. "demo.lnbits.com") is technical
+            context that's helpful but not identity.
           -->
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-          <q-item
-            :clickable="lnAddressRowClickable"
-            :v-ripple="lnAddressRowClickable"
-            :class="{ 'ln-address-row-disabled': !lnAddressRowClickable && lnAddressRowState === 'unsetBlocked' }"
+          <SettingsRow
+            icon="tabler:wallet"
+            :label="activeWallet?.name || 'LNBits Wallet'"
+            :caption="lnbitsServerDomain ? `${$t('on')} ${lnbitsServerDomain}` : 'LNbits'"
+            :interactive="false"
+          />
+          <!--
+            Lightning Address row — always rendered for LNBits.
+
+            Four visual states, driven by `lnAddressRowState`:
+              • 'set'         — address attached; row opens the dialog
+                                in pick-mode for swap / replace.
+              • 'unsetReady'  — no address yet, server supports lnurlp;
+                                row opens dialog in create-or-pick mode.
+              • 'unsetBlocked' — lnurlp extension missing on this
+                                 server; informational, not interactive.
+              • 'probing'     — lnurlp availability not yet known.
+          -->
+          <SettingsRow
+            icon="tabler:at"
+            :label="$t('Lightning Address')"
+            :caption-mono="lnAddressRowState === 'set'"
+            :interactive="lnAddressRowClickable"
+            :show-chevron="lnAddressRowClickable"
             @click="lnAddressRowClickable ? openLightningAddressDialog() : null"
           >
-            <q-item-section side>
-              <Icon icon="tabler:at" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Lightning Address') }}
-              </q-item-label>
-              <q-item-label
-                caption
-                :class="[
-                  lnAddressRowState === 'set' ? 'mono-caption' : '',
-                  $q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'
-                ]"
-              >
-                <template v-if="lnAddressRowState === 'set'">{{ activeWalletLightningAddress }}</template>
-                <template v-else-if="lnAddressRowState === 'unsetReady'">{{ $t('Get one to receive payments by name') }}</template>
-                <template v-else-if="lnAddressRowState === 'unsetBlocked'">{{ $t('Not supported by this LNBits server') }}</template>
-                <template v-else>
-                  <q-spinner size="12px" class="q-mr-xs" />{{ $t('Checking server…') }}
-                </template>
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side class="spark-address-actions">
+            <template #caption>
+              <template v-if="lnAddressRowState === 'set'">{{ activeWalletLightningAddress }}</template>
+              <template v-else-if="lnAddressRowState === 'unsetReady'">{{ $t('Get one to receive payments by name') }}</template>
+              <template v-else-if="lnAddressRowState === 'unsetBlocked'">{{ $t('Not supported by this LNBits server') }}</template>
+              <template v-else><q-spinner size="12px" class="q-mr-xs" />{{ $t('Checking server…') }}</template>
+            </template>
+            <template v-if="lnAddressRowState === 'set'" #right>
               <q-btn
-                v-if="lnAddressRowState === 'set'"
-                flat round dense
-                size="sm"
-                :class="$q.dark.isActive ? 'action-icon-dark' : 'action-icon-light'"
+                flat round dense size="sm"
                 @click.stop="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
               >
                 <Icon icon="tabler:copy" width="16" height="16" />
               </q-btn>
-              <Icon
-                v-if="lnAddressRowClickable"
-                icon="tabler:chevron-right"
-                :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"
-              />
-            </q-item-section>
-          </q-item>
-        </div>
+            </template>
+          </SettingsRow>
+        </template>
 
         <!--
-          Reusable lightning-address dialog. Same component used by
-          LNBitsSetupPage during onboarding — the prop contract decouples
-          UI from data, so the caller (this page) owns the throwaway
-          provider, the existing-addresses list, and the persist step.
+          Wallet-level admin: managing the connected wallets list.
+          Auto-Transfer and Address Book were here previously — they
+          have moved up into the Feature Cards row at the top of the
+          page so they read as features rather than wallet config.
         -->
-        <LNBitsLightningAddressDialog
-          v-if="lnAddressPrompt.visible"
-          v-model="lnAddressPrompt.visible"
-          :domain="lnAddressPrompt.domain"
-          :existing-addresses="lnAddressPrompt.existingAddresses"
-          :default-username="lnAddressPrompt.defaultUsername"
-          :create-address="lnAddressPrompt.createAddress"
-          @confirm="onLightningAddressConfirm"
-          @skip="onLightningAddressSkip"
+        <SettingsRow
+          icon="tabler:wallet"
+          :label="$t('Manage Wallets')"
+          :caption="`${wallets.length} ${wallets.length === 1 ? $t('wallet') : $t('wallets')}`"
+          @click="showWalletsDialog = true"
         />
-      </template>
+      </SettingsSection>
 
-      <!-- PROFILE link — the full identity surface (avatar, backup, view,
-           restore, connected sites, regenerate) lives at /profile so it
-           has room to grow (Nostr, NIP-05, contacts, badges). We keep a
-           single discoverable row here so users browsing Settings can
-           still find it. -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Profile') }}
-      </div>
-      <div class="settings-card settings-card--experimental" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <span
-          class="experimental-tag"
-          :class="$q.dark.isActive ? 'experimental-tag-dark' : 'experimental-tag-light'"
+      <!--
+        Feature cards — three value features that were previously
+        plain rows: Auto-Transfer, Address Book, Kiosk. Positioned
+        after the Wallet section (rather than at the very top)
+        because the Quick Toggles already occupy the prime above-
+        the-fold slot; stacking two card rows at the top read as
+        too dense, and putting features here gives them their own
+        breathing room while staying high on the page.
+      -->
+      <SettingsFeatureCards
+        :features="featureCards"
+        @select="onFeatureSelect"
+      />
+
+      <!--
+        Reusable lightning-address dialog. Always mounted (gated by its
+        own v-if) so the trigger row stays simple. Same component used
+        by LNBitsSetupPage during onboarding — the prop contract
+        decouples UI from data, so the caller owns the throwaway
+        provider, existing-addresses list, and persist step.
+      -->
+      <LNBitsLightningAddressDialog
+        v-if="lnAddressPrompt.visible"
+        v-model="lnAddressPrompt.visible"
+        :domain="lnAddressPrompt.domain"
+        :existing-addresses="lnAddressPrompt.existingAddresses"
+        :default-username="lnAddressPrompt.defaultUsername"
+        :create-address="lnAddressPrompt.createAddress"
+        @confirm="onLightningAddressConfirm"
+        @skip="onLightningAddressSkip"
+      />
+
+      <!-- ─────────────── PREFERENCES ───────────────
+           Pickers only. Theme / Display Currency / Amount Format /
+           App Lock all live in Quick Toggles at the top of the page
+           — they are binary controls and don't need a full row.
+           What stays here are the pickers that need a dialog
+           (Currency, Language) because they're 1-of-many choices,
+           not on/off flips. -->
+      <SettingsSection :title="$t('Preferences')">
+        <SettingsRow
+          icon="tabler:currency-dollar"
+          :label="$t('Currency')"
+          :inline-value="preferredFiatCurrency"
+          @click="openCurrencyDialog"
+        />
+        <SettingsRow
+          icon="tabler:language"
+          :label="$t('Language')"
+          :inline-value="getCurrentLanguageLabel()"
+          @click="showLanguageDialog = true"
+        />
+        <!--
+          Amount format — moved down from Quick Toggles. Almost no
+          mainstream user has a reason to flip this (it controls
+          ₿ vs sats writing convention), so its old home as a
+          top-of-page quick pill was prime real estate wasted. Now
+          a regular row with a plain-language caption so a curious
+          user can still find and understand it.
+        -->
+        <SettingsRow
+          icon="tabler:hash"
+          :label="$t('Amount Display Format')"
+          :caption="useBip177Format ? $t('Show amounts as ₿ 1,234') : $t('Show amounts as 1,234 sats')"
+          :interactive="false"
         >
-          {{ $t('Experimental') }}
-        </span>
-        <q-item clickable v-ripple @click="$router.push('/profile')">
-          <q-item-section side>
-            <Icon icon="tabler:user" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Profile') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('Identity, connected sites, recovery') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side v-if="identityStore.bootstrapped && !identityStore.backupConfirmed">
-            <span class="backup-status-badge badge-unverified">
-              {{ $t('Backup needed') }}
-            </span>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-      </div>
-
-      <!-- LEARN & EARN — promoted near the top so the value features
-           (Onboarding guide, Bitcoin Lessons that pay real sats) are
-           actually findable. Same card/item markup as everywhere
-           else; dark and light styling identical to the rest of the
-           settings list. -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Learn & Earn') }}
-      </div>
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <q-item clickable v-ripple @click="$router.push('/spark-success?full=true')">
-          <q-item-section side>
-            <Icon icon="tabler:school" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Onboarding Guide') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('Learn about all BuhoGO features') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item clickable v-ripple @click="$router.push('/learn')">
-          <q-item-section side>
-            <Icon icon="tabler:trophy" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Bitcoin Lessons') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('Learn about Bitcoin, earn real sats') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-      </div>
-
-      <!-- GENERAL Section -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('General') }}
-      </div>
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <q-item clickable v-ripple @click="showWalletsDialog = true">
-          <q-item-section side>
-            <Icon icon="tabler:wallet" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Manage Wallets') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ wallets.length }} {{ wallets.length === 1 ? $t('wallet') : $t('wallets') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item clickable v-ripple @click="showAutoTransferDialog = true">
-          <q-item-section side>
-            <Icon icon="tabler:send" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Auto-Transfer') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ awActiveCount > 0 ? awActiveCount + ' ' + $t('active') : $t('No rules configured') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item clickable v-ripple @click="$router.push('/address-book')">
-          <q-item-section side>
-            <Icon icon="tabler:address-book" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Address Book') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-      </div>
-
-      <!-- APPEARANCE Section (renamed from "Preferences" — clearer
-           label since this group is purely visual: currency,
-           language, BIP-177 number format, dark mode). -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Appearance') }}
-      </div>
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <q-item clickable v-ripple @click="openCurrencyDialog">
-          <q-item-section side>
-            <Icon icon="tabler:currency-dollar" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Currency') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <div class="side-value" :class="$q.dark.isActive ? 'side-value-dark' : 'side-value-light'">
-              {{ preferredFiatCurrency }}
-            </div>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item>
-          <q-item-section side>
-            <Icon icon="tabler:eye" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Display Currency') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $t('Your balance will always start in this currency') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <q-btn-toggle
-              :model-value="defaultDisplayCurrency"
-              dense no-caps unelevated size="sm"
-              class="settings-mini-toggle"
-              :class="$q.dark.isActive ? 'settings-mini-toggle-dark' : 'settings-mini-toggle-light'"
-              :options="[{ label: 'Bitcoin', value: 'bitcoin' }, { label: preferredFiatCurrency, value: 'fiat' }]"
-              @update:model-value="setDisplayCurrency"
-            />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item clickable v-ripple @click="showLanguageDialog = true">
-          <q-item-section side>
-            <Icon icon="tabler:language" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Language') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <div class="side-value" :class="$q.dark.isActive ? 'side-value-dark' : 'side-value-light'">
-              {{ getCurrentLanguageLabel() }}
-            </div>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item>
-          <q-item-section side>
-            <Icon icon="tabler:hash" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Amount Display Format') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ useBip177Format ? 'BIP-177 (e.g. ₿ 1,234)' : $t('Legacy (e.g. 1,234 sats)') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
+          <template #right>
             <q-toggle
               :model-value="useBip177Format"
               @update:model-value="updateAmountFormat"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item>
-          <q-item-section side>
-            <Icon icon="tabler:moon" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Dark Mode') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ $q.dark.isActive ? $t('On') : $t('Off') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <q-toggle
-              :model-value="$q.dark.isActive"
-              @update:model-value="handleToggleDark"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </q-item-section>
-        </q-item>
-      </div>
+          </template>
+        </SettingsRow>
+      </SettingsSection>
 
+      <!-- ─────────────── KIOSK MODE (config) ───────────────
+           Only renders when Kiosk is enabled. The enable/disable
+           switch lives in the Feature Cards row at the top — the
+           card pulses green when active and tapping it toggles
+           kiosk on or off through the same `handleKioskToggle`
+           pipeline. Once enabled, this section appears below to
+           host the configuration: destination wallet → PIN → tips
+           → round-up → display → activate CTA. -->
+      <SettingsSection
+        v-if="walletStore.kioskEnabled"
+        :title="$t('kiosk.kioskMode')"
+      >
+          <SettingsRow
+            icon="tabler:wallet"
+            :label="$t('kiosk.destinationWallet')"
+            :caption="kioskSelectedWalletName || $t('kiosk.noWalletSelected')"
+            @click="kioskWalletSelection = walletStore.kioskWalletId || ''; showKioskWalletPicker = true"
+          />
 
-      <!-- SECURITY Section -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Security') }}
-      </div>
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <q-item :class="{ 'opacity-50': !biometricsAvailable }">
-          <q-item-section side>
-            <Icon :icon="biometryIcon" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('App Lock') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ biometryDescription }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <!--
-              One-way :model-value binding (not v-model) so the toggle's
-              visual state only flips when we explicitly set
-              `biometricsEnabled`. Prevents a brief ON→OFF flash while the
-              explain dialog is opening or an availability probe is in flight.
-            -->
-            <q-toggle
-              :model-value="biometricsEnabled"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              :disable="!biometricsAvailable"
-              @update:model-value="toggleBiometrics"
-            />
-          </q-item-section>
-        </q-item>
-      </div>
-
-      <!-- KIOSK MODE Section -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('kiosk.kioskMode') }}
-      </div>
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <!-- Enable toggle -->
-        <q-item>
-          <q-item-section side>
-            <Icon icon="tabler:cash-register" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ walletStore.kioskEnabled ? $t('kiosk.enabled') : $t('kiosk.disabled') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <q-toggle
-              :model-value="walletStore.kioskEnabled"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              @update:model-value="handleKioskToggle"
-            />
-          </q-item-section>
-        </q-item>
-        <div class="kiosk-mode-desc" :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-          {{ $t('kiosk.kioskModeWhat') }}
-        </div>
-
-        <template v-if="walletStore.kioskEnabled">
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-
-          <!-- Destination Wallet -->
-          <q-item clickable v-ripple @click="kioskWalletSelection = walletStore.kioskWalletId || ''; showKioskWalletPicker = true">
-            <q-item-section side>
-              <Icon icon="tabler:wallet" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('kiosk.destinationWallet') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ kioskSelectedWalletName || $t('kiosk.noWalletSelected') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-          </q-item>
-
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-
-          <!-- Current PIN + Change -->
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:lock" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('kiosk.currentPin') }}: {{ walletStore.kioskPin }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
+          <SettingsRow
+            icon="tabler:lock"
+            :label="$t('kiosk.currentPin') + ': ' + walletStore.kioskPin"
+            :interactive="false"
+          >
+            <template #right>
               <q-btn flat dense no-caps size="sm" class="inline-link-btn" @click="showKioskChangePinDialog = true">
                 {{ $t('kiosk.changePin') }}
               </q-btn>
-            </q-item-section>
-          </q-item>
+            </template>
+          </SettingsRow>
 
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-
-          <!-- Enable Tips -->
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:heart-handshake" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('kiosk.enableTips') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
+          <SettingsRow
+            icon="tabler:heart-handshake"
+            :label="$t('kiosk.enableTips')"
+            :interactive="false"
+          >
+            <template #right>
               <q-toggle
                 :model-value="walletStore.kioskTipEnabled"
                 :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
                 @update:model-value="(v) => walletStore.setKioskTipEnabled(v)"
               />
-            </q-item-section>
-          </q-item>
+            </template>
+          </SettingsRow>
 
-          <!-- Tip Values (when tips enabled) -->
-          <template v-if="walletStore.kioskTipEnabled">
-            <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-            <q-item dense>
-              <q-item-section>
-                <div style="display: flex; gap: 8px;">
-                  <q-input
-                    v-for="(val, idx) in walletStore.kioskTipValues" :key="'tip-'+idx"
-                    :model-value="walletStore.kioskTipValues[idx]"
-                    type="number"
-                    suffix="%"
-                    dense filled
-                    :label="$t('kiosk.tipValue') + ' ' + (idx + 1)"
-                    :dark="$q.dark.isActive"
-                    class="kiosk-tip-input"
-                    style="flex: 1; min-width: 0;"
-                    @update:model-value="(v) => updateKioskTipValue(idx, v)"
-                  />
-                </div>
-              </q-item-section>
-            </q-item>
-          </template>
+          <!-- Tip percentage inputs — appear only when tips are on,
+               keeping the closed state minimal. Three inputs let the
+               operator preset the common one-tap tip choices. -->
+          <div v-if="walletStore.kioskTipEnabled" class="kiosk-tip-input-row">
+            <q-input
+              v-for="(val, idx) in walletStore.kioskTipValues" :key="'tip-'+idx"
+              :model-value="walletStore.kioskTipValues[idx]"
+              type="number"
+              suffix="%"
+              dense filled
+              :label="$t('kiosk.tipValue') + ' ' + (idx + 1)"
+              :dark="$q.dark.isActive"
+              class="kiosk-tip-input"
+              @update:model-value="(v) => updateKioskTipValue(idx, v)"
+            />
+          </div>
 
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-
-          <!-- Round Up -->
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:arrow-bar-to-up" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('kiosk.roundUp') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('kiosk.roundUpDesc') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
+          <SettingsRow
+            icon="tabler:arrow-bar-to-up"
+            :label="$t('kiosk.roundUp')"
+            :caption="$t('kiosk.roundUpDesc')"
+            :interactive="false"
+          >
+            <template #right>
               <q-toggle
                 :model-value="walletStore.kioskRoundUpEnabled"
                 :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
                 @update:model-value="(v) => walletStore.setKioskRoundUpEnabled(v)"
               />
-            </q-item-section>
-          </q-item>
+            </template>
+          </SettingsRow>
 
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-
-          <!-- Display Currency -->
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:currency-bitcoin" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('kiosk.displayCurrency') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
+          <SettingsRow
+            icon="tabler:currency-bitcoin"
+            :label="$t('kiosk.displayCurrency')"
+            :interactive="false"
+          >
+            <template #right>
               <q-btn-toggle
                 :model-value="walletStore.kioskDisplayCurrency"
                 dense no-caps unelevated size="sm"
@@ -750,26 +393,20 @@
                 :options="[{ label: 'Sats', value: 'sats' }, { label: walletStore.preferredFiatCurrency, value: 'fiat' }]"
                 @update:model-value="(v) => walletStore.setKioskDisplayCurrency(v)"
               />
-            </q-item-section>
-          </q-item>
+            </template>
+          </SettingsRow>
 
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-
-          <!-- Start Kiosk Mode -->
-          <q-item>
-            <q-item-section>
-              <q-btn unelevated no-caps
-                class="full-width kiosk-start-btn"
-                :class="$q.dark.isActive ? 'kiosk-start-btn-dark' : 'kiosk-start-btn-light'"
-                :disable="!walletStore.kioskWalletId || kioskActivating"
-                :loading="kioskActivating"
-                @click="handleStartKiosk">
-                {{ $t('kiosk.activateKiosk') }}
-              </q-btn>
-            </q-item-section>
-          </q-item>
-        </template>
-      </div>
+          <div class="kiosk-activate-row">
+            <q-btn unelevated no-caps
+              class="full-width kiosk-start-btn"
+              :class="$q.dark.isActive ? 'kiosk-start-btn-dark' : 'kiosk-start-btn-light'"
+              :disable="!walletStore.kioskWalletId || kioskActivating"
+              :loading="kioskActivating"
+              @click="handleStartKiosk">
+              {{ $t('kiosk.activateKiosk') }}
+            </q-btn>
+          </div>
+      </SettingsSection>
 
       <!-- Kiosk PIN Setup Dialog -->
       <q-dialog v-model="showKioskPinSetupDialog" persistent @hide="resetKioskPinSetup">
@@ -978,73 +615,68 @@
         </q-card>
       </q-dialog>
 
-      <!-- ADVANCED Section -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Advanced') }}
-      </div>
-      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <q-item clickable v-ripple @click="showMempoolDialog = true">
-          <q-item-section side>
-            <Icon icon="tabler:chart-line" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Exchange Rate Source') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ mempoolSourceLabel }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
+      <!-- ─────────────── ADVANCED ───────────────
+           The deliberately-named "for power users" bucket. Anything
+           that affects how BuhoGO talks to external services or
+           handles edge-case behaviour belongs here so the rest of
+           the screen stays calm for mainstream users. -->
+      <SettingsSection :title="$t('Advanced')">
+        <SettingsRow
+          icon="tabler:chart-line"
+          :label="$t('Exchange Rate Source')"
+          :caption="mempoolSourceLabel"
+          @click="showMempoolDialog = true"
+        />
 
-        <!-- Auto-add Bitcoin deposits — folded into Advanced. The
-             default (on) covers the typical user; only people who
+        <!-- Auto-add Bitcoin deposits — only relevant for Spark
+             wallets (the only type with a static deposit address).
+             Default-on covers the typical user; only people who
              want manual control over each on-chain claim need to
-             find this toggle, and Advanced is the right home for
-             that audience. Spark-only since only Spark wallets have
-             a static deposit address. -->
-        <template v-if="isSparkActiveWallet">
-          <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'" />
-          <q-item>
-            <q-item-section side>
-              <Icon icon="tabler:download" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Auto-add Bitcoin deposits') }}
-              </q-item-label>
-              <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('Add deposits to your balance without an extra step.') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-toggle
-                :model-value="bitcoinPrefsStore.autoAddIncomingBitcoin"
-                @update:model-value="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
-                :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              />
-            </q-item-section>
-          </q-item>
-        </template>
-      </div>
+             find this toggle, and Advanced is the right home. -->
+        <SettingsRow
+          v-if="isSparkActiveWallet"
+          icon="tabler:download"
+          :label="$t('Auto-add Bitcoin deposits')"
+          :caption="$t('Add deposits to your balance without an extra step.')"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="bitcoinPrefsStore.autoAddIncomingBitcoin"
+              @update:model-value="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+      </SettingsSection>
 
-      <!-- SUPPORT Section -->
-      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-        {{ $t('Support') }}
-      </div>
-      <div class="settings-card support-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <div class="support-content">
-          <div class="support-message" :class="$q.dark.isActive ? 'support-message-dark' : 'support-message-light'">
-            {{ $t('Fuel BuhoGO to Fly Higher') }}
-          </div>
+      <!-- ─────────────── HELP & SUPPORT ───────────────
+           Just the onboarding tour now. Bitcoin Lessons was
+           previously here but has been promoted to a Feature Card
+           at the top (earning sats is the strongest noob hook in
+           the app — burying it in Help & Support was a UX miss).
+           The donation row split out into its own "Support BuhoGO"
+           section below so the ask reads cleanly. -->
+      <SettingsSection :title="$t('Help & Support')">
+        <SettingsRow
+          icon="tabler:school"
+          :label="$t('Onboarding Guide')"
+          :caption="$t('Learn about all BuhoGO features')"
+          @click="$router.push('/spark-success?full=true')"
+        />
+      </SettingsSection>
+
+      <!-- ─────────────── SUPPORT BUHOGO ───────────────
+           Dedicated section for donations so the ask isn't buried
+           under tutorial entries. The three-button compact layout
+           (5k / 21k / custom) is preserved verbatim — it works
+           well and the preset amounts are well-loved. -->
+      <SettingsSection :title="$t('Support BuhoGO')">
+        <div class="support-row">
+          <div class="support-message">{{ $t('Fuel BuhoGO to Fly Higher') }}</div>
           <div class="donation-row">
             <q-btn
-              flat
-              dense
-              no-caps
+              flat dense no-caps
               class="donate-btn"
               :class="$q.dark.isActive ? 'donate-btn-dark' : 'donate-btn-light'"
               :loading="donationLoading === 5000"
@@ -1053,9 +685,7 @@
               {{ formatSats(5000) }}
             </q-btn>
             <q-btn
-              unelevated
-              dense
-              no-caps
+              unelevated dense no-caps
               class="donate-btn donate-btn-primary"
               :loading="donationLoading === 21000"
               @click="handleDonation(21000)"
@@ -1063,9 +693,7 @@
               {{ formatSats(21000) }}
             </q-btn>
             <q-btn
-              flat
-              dense
-              no-caps
+              flat dense no-caps
               class="donate-btn"
               :class="$q.dark.isActive ? 'donate-btn-dark' : 'donate-btn-light'"
               @click="showDonationDialog = true"
@@ -1074,19 +702,17 @@
             </q-btn>
           </div>
         </div>
-      </div>
+      </SettingsSection>
 
-      <!-- DANGER ZONE — collapsed by default. Lives at the very
-           bottom of the screen so reaching it is already deliberate
-           (scroll past everything else), and the chevron toggle adds
-           one more tap before destructive actions show up. -->
+      <!-- ─────────────── DANGER ZONE ───────────────
+           Collapsed by default. Lives at the very bottom of the
+           page so reaching it is already deliberate (scroll past
+           everything else), and the chevron toggle adds one more
+           tap before destructive actions become visible. -->
       <button
         type="button"
         class="danger-toggle"
-        :class="[
-          $q.dark.isActive ? 'section-label-dark' : 'section-label-light',
-          { 'danger-toggle-open': dangerZoneExpanded }
-        ]"
+        :class="{ 'danger-toggle-open': dangerZoneExpanded }"
         :aria-expanded="dangerZoneExpanded"
         @click="dangerZoneExpanded = !dangerZoneExpanded"
       >
@@ -1098,39 +724,35 @@
           class="danger-toggle-chevron"
         />
       </button>
-      <div v-if="dangerZoneExpanded" class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
-        <q-item v-if="hasSparkWallet" clickable v-ripple @click="confirmDeleteSparkWallet">
-          <q-item-section>
-            <q-item-label class="danger-text text-center">
-              {{ $t('Delete Spark Wallets') }}
-            </q-item-label>
-          </q-item-section>
-        </q-item>
-        <q-separator v-if="hasSparkWallet && hasNwcWallets" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item v-if="hasNwcWallets" clickable v-ripple @click="confirmDisconnectNwc">
-          <q-item-section>
-            <q-item-label class="danger-text text-center">
-              {{ $t('Remove NWC Connections') }}
-            </q-item-label>
-          </q-item-section>
-        </q-item>
-        <q-separator v-if="hasLnbitsWallets && (hasSparkWallet || hasNwcWallets)" :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-        <q-item v-if="hasLnbitsWallets" clickable v-ripple @click="confirmDisconnectLNBits">
-          <q-item-section>
-            <q-item-label class="danger-text text-center">
-              {{ $t('Remove LNBits Connections') }}
-            </q-item-label>
-          </q-item-section>
-        </q-item>
-      </div>
+      <SettingsSection v-if="dangerZoneExpanded">
+        <SettingsRow
+          v-if="hasSparkWallet"
+          destructive
+          :label="$t('Delete Spark Wallets')"
+          @click="confirmDeleteSparkWallet"
+        />
+        <SettingsRow
+          v-if="hasNwcWallets"
+          destructive
+          :label="$t('Remove NWC Connections')"
+          @click="confirmDisconnectNwc"
+        />
+        <SettingsRow
+          v-if="hasLnbitsWallets"
+          destructive
+          :label="$t('Remove LNBits Connections')"
+          @click="confirmDisconnectLNBits"
+        />
+      </SettingsSection>
 
-      <!-- App Version -->
+      <!-- App Version — opens the source repo in a new tab. Kept
+           as the final element so users always know which build
+           they're on without having to dig. -->
       <a
         href="https://github.com/Buho-Ecosystem/Buho_go"
         target="_blank"
         rel="noopener noreferrer"
         class="app-version"
-        :class="$q.dark.isActive ? 'version-dark' : 'version-light'"
       >
         BuhoGO v{{ appVersion }}
       </a>
@@ -1419,7 +1041,7 @@
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
             <div class="stat-item">
               <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-                {{ formatBalance(totalBalance) }}
+                <HiddenAmount>{{ formatBalance(totalBalance) }}</HiddenAmount>
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
                 {{ $t('Total') }}
@@ -1540,7 +1162,7 @@
                     <div v-if="wallet.id === activeWalletId" class="wallet-tag tag-active">{{ $t('Active') }}</div>
                   </div>
                   <div class="wallet-balance-row" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
-                    {{ formatBalance(balances[wallet.id] || 0) }}
+                    <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
                   </div>
                   <div v-if="connectionStates[wallet.id]?.error" class="wallet-error-msg">
                     {{ connectionStates[wallet.id].error }}
@@ -2203,6 +1825,8 @@ import {useWalletStore} from '../stores/wallet'
 import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
+import {useAddressBookStore} from '../stores/addressBook'
+import {useEarnStore} from '../stores/earn'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
@@ -2216,6 +1840,13 @@ import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import SettingsSection from '../components/settings/SettingsSection.vue'
+import SettingsRow from '../components/settings/SettingsRow.vue'
+import SettingsProfileCard from '../components/settings/SettingsProfileCard.vue'
+import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
+import SettingsQuickToggles from '../components/settings/SettingsQuickToggles.vue'
+import SettingsFeatureCards from '../components/settings/SettingsFeatureCards.vue'
+import HiddenAmount from '../components/HiddenAmount.vue'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // Alternative lightweight verification (type 3 random words). Kept out
 // of the flow intentionally — the order-tap check is stronger. Retained
@@ -2241,6 +1872,13 @@ export default {
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
+    SettingsSection,
+    SettingsRow,
+    SettingsProfileCard,
+    SettingsAttentionStrip,
+    SettingsQuickToggles,
+    SettingsFeatureCards,
+    HiddenAmount,
     // MnemonicDisplay and MnemonicOrderVerify are used inside
     // SparkSeedPhraseDialog; they are not needed at this level.
     // The 3-random-words variant (MnemonicVerify) is retained as a
@@ -2478,6 +2116,38 @@ export default {
       return useIdentityStore();
     },
 
+    /**
+     * Address-book contact count for the Tools section row. Reads
+     * from the store directly so it stays live if the user adds /
+     * removes a contact via another surface while Settings is open.
+     */
+    addressBookCount() {
+      return useAddressBookStore().entries.length;
+    },
+
+    /**
+     * Smart meta string for the Bitcoin Lessons feature card. Three
+     * states pulled from the earn store, ordered most-magnetic first:
+     *
+     *   1. Claimable sats waiting       → "Claim {n} sats!" (call-to-action)
+     *   2. Earned but below threshold   → "{n} sats earned" (progress)
+     *   3. Brand new user               → "Earn real sats" (cold lead-in)
+     *
+     * The Bitcoin Lessons card is one of the strongest noob hooks
+     * in the app, so its meta line is doing real work — it should
+     * always nudge the user toward the next action.
+     */
+    bitcoinLessonsMeta() {
+      const earn = useEarnStore();
+      if (earn.claimableAmount > 0) {
+        return this.$t('Claim {n} sats!', { n: earn.claimableAmount });
+      }
+      if (earn.totalEarned > 0) {
+        return this.$t('{n} sats earned', { n: earn.totalEarned });
+      }
+      return this.$t('Earn real sats');
+    },
+
 
     /**
      * The auto-add-incoming-Bitcoin setting only applies to Spark
@@ -2587,6 +2257,176 @@ export default {
 
     activeSparkBackedUp() {
       return this.sparkWallet?.metadata?.hasBackedUp ?? this.hasBackedUp;
+    },
+
+    /**
+     * Computed warning list driving the SettingsAttentionStrip at the
+     * top of Settings. Only items that actually need the user's
+     * attention right now appear here — when the array is empty the
+     * strip renders nothing. Order matters: most-critical first so a
+     * single-warning screen always shows the most important card.
+     *
+     * Each warning's `id` is the contract between this list and
+     * `onAttentionAction(id)`, which routes the CTA tap to the
+     * appropriate dialog / route / toggle.
+     */
+    attentionWarnings() {
+      const warnings = [];
+
+      // 1. Wallet seed backup outstanding (Spark only — NWC/LNBits
+      //    don't have a local seed to back up).
+      if (this.hasSparkWallet && !this.activeSparkBackedUp) {
+        warnings.push({
+          id: 'wallet-seed-backup',
+          variant: 'warning',
+          icon: 'tabler:shield-exclamation',
+          title: this.$t('Back up your wallet seed'),
+          description: this.$t('Your 12 words are the only way to recover funds.'),
+          ctaLabel: this.$t('Back up'),
+        });
+      }
+
+      // 2. Identity backup outstanding. Separate from the wallet seed —
+      //    same words for a different recovery, surfaced as its own
+      //    card so the user doesn't conflate them.
+      if (this.identityStore.bootstrapped && !this.identityStore.backupConfirmed) {
+        warnings.push({
+          id: 'identity-backup',
+          variant: 'warning',
+          icon: 'tabler:user-shield',
+          title: this.$t('Back up your identity'),
+          description: this.$t('Without a backup your profile and sites can\'t be restored.'),
+          ctaLabel: this.$t('Back up'),
+        });
+      }
+
+      // 3. App lock disabled while biometrics are available. We don't
+      //    nag users on devices that can't do it (biometricsAvailable
+      //    is false) — surfacing an unfulfillable warning is worse
+      //    than no warning.
+      if (this.biometricsAvailable && !this.biometricsEnabled) {
+        warnings.push({
+          id: 'app-lock-off',
+          variant: 'info',
+          icon: 'tabler:lock-open',
+          title: this.$t('App lock is off'),
+          description: this.$t('Turn it on so only you can open BuhoGO.'),
+          ctaLabel: this.$t('Enable'),
+        });
+      }
+
+      return warnings;
+    },
+
+    /**
+     * Feature cards row — the three value features that were
+     * previously buried as plain rows inside other sections:
+     * Auto-Transfer, Address Book, Kiosk Mode. Promoted to a
+     * compact card row above the sections so they read as
+     * features rather than config. Meta strings carry live
+     * context (active rule count, contact count, kiosk status)
+     * so the card is informative before a tap.
+     */
+    featureCards() {
+      const kioskOn = !!this.walletStore.kioskEnabled;
+      const earn = useEarnStore();
+      const hasClaimable = earn.claimableAmount > 0;
+      return [
+        /*
+          Order is meaningful: top-left is the most magnetic for a
+          first-time visitor (earn sats), top-right is the most-used
+          (contacts), then merchant + power-user features below.
+        */
+        {
+          id: 'bitcoin-lessons',
+          icon: 'tabler:trophy',
+          label: this.$t('Earn Sats'),
+          meta: this.bitcoinLessonsMeta,
+          // Pulses green when there are sats waiting to be claimed —
+          // turns the card into a soft CTA without being naggy.
+          active: hasClaimable,
+        },
+        {
+          id: 'address-book',
+          icon: 'tabler:address-book',
+          label: this.$t('Address Book'),
+          meta: this.addressBookCount > 0
+            ? `${this.addressBookCount} ${this.addressBookCount === 1 ? this.$t('contact') : this.$t('contacts')}`
+            : this.$t('No contacts yet'),
+          active: false,
+        },
+        {
+          id: 'auto-transfer',
+          icon: 'tabler:send',
+          label: this.$t('Auto-Transfer'),
+          meta: this.awActiveCount > 0
+            ? `${this.awActiveCount} ${this.$t('active')}`
+            : this.$t('No rules yet'),
+          active: this.awActiveCount > 0,
+        },
+        {
+          id: 'kiosk',
+          icon: 'tabler:cash-register',
+          label: this.$t('kiosk.kioskMode'),
+          meta: kioskOn ? this.$t('Active') : this.$t('Off'),
+          active: kioskOn,
+        },
+      ];
+    },
+
+    /**
+     * The 4 most-frequently-flipped controls, surfaced as compact pill
+     * toggles above the sections. Same underlying state as the full
+     * rows further down — deliberate duplication, mirroring iOS
+     * Control Center vs Settings → Display.
+     *
+     * Each toggle's `id` is consumed by `onQuickToggle(id)` which
+     * fans out to the matching setter so the underlying logic
+     * (dialogs, confirmations, etc.) stays in one place.
+     */
+    quickToggles() {
+      const darkActive = this.$q.dark.isActive;
+      const bitcoinDisplay = this.defaultDisplayCurrency === 'bitcoin';
+      const balanceHidden = this.walletStore.balanceHidden;
+      return [
+        {
+          id: 'theme',
+          icon: 'tabler:contrast',
+          label: this.$t('Theme'),
+          value: darkActive ? this.$t('Dark') : this.$t('Light'),
+          // No `on` — Theme is either-or, neither side is "active".
+        },
+        {
+          id: 'display',
+          icon: 'tabler:eye',
+          label: this.$t('Display'),
+          value: bitcoinDisplay ? this.$t('Bitcoin') : this.preferredFiatCurrency,
+        },
+        {
+          // Privacy mode for balances. Replaced the previous "Format"
+          // pill (BIP-177 vs Legacy), which was technical jargon a
+          // noob would never tap on purpose. Hide-balance is a
+          // mainstream-loved fintech feature (Cash App, Revolut,
+          // Monzo all have it) and a quick toggle is the perfect
+          // home for it: one tap covers the wallet hero, every
+          // switcher row, and the manage-wallets totals.
+          id: 'hide-balance',
+          icon: balanceHidden ? 'tabler:eye-off' : 'tabler:eye',
+          label: this.$t('Balance'),
+          value: balanceHidden ? this.$t('Hidden') : this.$t('Visible'),
+          on: balanceHidden,
+        },
+        {
+          id: 'app-lock',
+          icon: 'tabler:lock',
+          label: this.$t('Lock'),
+          value: this.biometricsAvailable
+            ? (this.biometricsEnabled ? this.$t('On') : this.$t('Off'))
+            : this.$t('N/A'),
+          on: this.biometricsEnabled, // true binary on/off — show green tint when on.
+          disabled: !this.biometricsAvailable,
+        },
+      ];
     },
 
     biometryIcon() {
@@ -3197,6 +3037,78 @@ export default {
      */
     handleToggleDark() {
       toggleThemeWithSweep(this.$q)
+    },
+
+    /**
+     * Fan-out router for quick-toggle pills. Keeps the underlying
+     * setters / dialogs as the single source of truth — quick toggles
+     * are a shortcut surface, not a second implementation path.
+     */
+    onQuickToggle(id) {
+      switch (id) {
+        case 'theme':
+          this.handleToggleDark();
+          return;
+        case 'display':
+          this.setDisplayCurrency(
+            this.defaultDisplayCurrency === 'bitcoin' ? 'fiat' : 'bitcoin',
+          );
+          return;
+        case 'hide-balance':
+          this.walletStore.setBalanceHidden();
+          return;
+        case 'app-lock':
+          this.toggleBiometrics(!this.biometricsEnabled);
+          return;
+      }
+    },
+
+    /**
+     * Routes a feature-card tap to the right surface. Same fan-out
+     * pattern as the quick-toggle and attention-strip handlers —
+     * keeps the underlying dialogs / routes / toggles as the single
+     * source of truth, with the card surface staying purely visual.
+     *
+     * For Kiosk: tapping the card always flips the toggle. The
+     * setup dialog opens automatically on the off→on transition via
+     * `handleKioskToggle`, so the user sees the same first-run flow
+     * whether they tap the card or the section toggle.
+     */
+    onFeatureSelect(id) {
+      switch (id) {
+        case 'bitcoin-lessons':
+          this.$router.push('/learn');
+          return;
+        case 'auto-transfer':
+          this.showAutoTransferDialog = true;
+          return;
+        case 'address-book':
+          this.$router.push('/address-book');
+          return;
+        case 'kiosk':
+          this.handleKioskToggle(!this.walletStore.kioskEnabled);
+          return;
+      }
+    },
+
+    /**
+     * Routes an attention-strip CTA tap to the right surface. The
+     * strip stays thin — it just reports which warning was acted on;
+     * the work happens here so the actual dialogs / routes / toggles
+     * remain in one place.
+     */
+    onAttentionAction(id) {
+      switch (id) {
+        case 'wallet-seed-backup':
+          this.openSeedPhraseDialog('backup');
+          return;
+        case 'identity-backup':
+          this.$router.push('/profile');
+          return;
+        case 'app-lock-off':
+          this.toggleBiometrics(true);
+          return;
+      }
     },
 
     setPreferredCurrency(currency) {
@@ -4261,16 +4173,54 @@ export default {
   width: 100%;
   background: transparent;
   border: none;
-  padding: 0;
-  margin: 1.5rem 0 0.5rem 0.25rem;
+  padding: 0 18px;
+  margin: 18px 0 8px;
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: inherit;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Compact layout helpers introduced by the refactor */
+.kiosk-tip-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.kiosk-tip-input-row .kiosk-tip-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.kiosk-activate-row {
+  padding: 12px 16px 14px;
+}
+
+.support-row {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.support-row .support-message {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: -0.005em;
+}
+.support-row .donation-row {
+  display: flex;
+  gap: 8px;
+}
+.support-row .donate-btn {
+  flex: 1;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 600;
 }
 
 .danger-toggle:focus-visible {
@@ -4849,16 +4799,12 @@ export default {
   transition: color 0.2s ease;
 }
 
-.app-version:hover {
-  color: #15DE72 !important;
-}
-
-.version-dark {
-  color: #555;
-}
-
-.version-light {
+.app-version {
   color: var(--text-muted);
+}
+
+.app-version:hover {
+  color: var(--color-green, #15DE72) !important;
 }
 
 .card-icon {

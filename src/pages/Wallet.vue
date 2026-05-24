@@ -166,10 +166,30 @@
 
       <!-- Balance Display -->
       <div class="balance-section">
-        <div class="balance-container" @click="toggleCurrency" :class="{ 'switching': isSwitchingCurrency }">
+        <!--
+          Tap-to-cycle: Bitcoin → Fiat → Hidden → Bitcoin. One-thumb
+          UX that lets the user roll between the two unit views
+          they actually toggle AND a privacy peek without ever
+          opening Settings. The Hide Balance Quick Toggle and this
+          tap path share the same `walletStore.balanceHidden`
+          field, so flipping it from either surface keeps them in
+          sync.
+        -->
+        <div
+          class="balance-container"
+          :class="{ 'switching': isSwitchingCurrency }"
+          @click="cycleBalanceDisplay"
+        >
           <div class="balance-amount">
             <div class="amount-display">
+              <span
+                v-if="walletStore.balanceHidden"
+                class="amount-number amount-number-hidden"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :aria-label="$t('Balance hidden')"
+              >••••</span>
               <NumberFlow
+                v-else
                 :value="balanceNumericValue"
                 :format="balanceNumberFormat"
                 :prefix="balancePrefix"
@@ -184,7 +204,10 @@
           <transition name="secondary-fade" mode="out-in">
             <div :key="currentDisplayMode" class="balance-secondary"
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
-              <span v-if="secondaryValue" class="secondary-amount-display">
+              <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
+                <span class="secondary-value">••••</span>
+              </span>
+              <span v-else-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
               <span v-else class="loading-secondary">&nbsp;</span>
@@ -455,7 +478,7 @@
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
-                  <template v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</template>
+                  <HiddenAmount v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</HiddenAmount>
                 </div>
               </div>
 
@@ -695,6 +718,7 @@ import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
 import NumberFlow from '@number-flow/vue';
+import HiddenAmount from '../components/HiddenAmount.vue';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import {useWalletStore} from '../stores/wallet';
@@ -736,6 +760,7 @@ export default {
     BatchSendModal,
     PaymentConfirmation,
     NumberFlow,
+    HiddenAmount,
     BackupBanner,
     IdentityAuthDialog,
     ContactAvatar,
@@ -2691,6 +2716,47 @@ export default {
       setTimeout(() => {
         this.isSwitchingCurrency = false;
       }, 200);
+    },
+
+    /**
+     * 3-state tap cycle on the hero balance:
+     *
+     *   Bitcoin visible  →  Fiat visible  →  Hidden  →  Bitcoin visible …
+     *
+     * Gives the user a one-handed thumb-roll between the two
+     * unit views they actually toggle between AND a privacy peek
+     * (which they can also reach via the Hide Balance Quick Toggle
+     * in Settings — both paths share the same persisted store
+     * field, so they stay in sync).
+     *
+     * Re-uses `toggleCurrency()` for the bitcoin↔fiat hop so the
+     * existing 200ms swap animation + persistence path is shared.
+     */
+    async cycleBalanceDisplay() {
+      if (this.isSwitchingCurrency) return;
+
+      // 3 → 1: leaving hidden mode lands on Bitcoin view so the
+      // cycle has a predictable start each time the user re-engages.
+      if (this.walletStore.balanceHidden) {
+        this.walletStore.setBalanceHidden(false);
+        if (this.currentDisplayMode !== 'bitcoin') {
+          this.walletState.displayMode = 'bitcoin';
+          this.currentDisplayMode = 'bitcoin';
+          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        }
+        return;
+      }
+
+      // 1 → 2: bitcoin → fiat is the existing currency hop.
+      if (this.currentDisplayMode === 'bitcoin') {
+        await this.toggleCurrency();
+        return;
+      }
+
+      // 2 → 3: fiat → hidden. The currency mode stays on `fiat` so
+      // the next "unhide" tap can return to bitcoin (state 1) per
+      // the spec above; we don't need to clear it.
+      this.walletStore.setBalanceHidden(true);
     },
 
     formatMainBalance(balance) {

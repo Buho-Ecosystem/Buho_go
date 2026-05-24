@@ -59,6 +59,16 @@ export const useWalletStore = defineStore('wallet', {
     defaultDisplayCurrency: 'bitcoin', // 'bitcoin' or 'fiat' — what the balance shows on app open
     denominationCurrency: 'sats',
     useBip177Format: true, // BIP-177 (₿) vs Legacy (sats) format
+    /**
+     * Privacy mode for amounts. When true, every balance / running
+     * total displayed in the UI substitutes a fixed-length bullet
+     * placeholder (`••••`) instead of the actual number. Per-payment
+     * amounts shown inside action flows (send, withdraw, payment
+     * confirm) are *not* affected — those are tied to a specific
+     * action the user is taking right now, not "your funds at rest".
+     * Persisted so the preference survives reloads / restarts.
+     */
+    balanceHidden: false,
 
     // Exchange rates (BTC price in each currency)
     exchangeRates: {},
@@ -687,6 +697,7 @@ export const useWalletStore = defineStore('wallet', {
               defaultDisplayCurrency: parsed.defaultDisplayCurrency || 'bitcoin',
               denominationCurrency: parsed.denominationCurrency || 'sats',
               useBip177Format: parsed.useBip177Format !== undefined ? parsed.useBip177Format : true,
+              balanceHidden: parsed.balanceHidden === true,
               exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
               exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
               exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
@@ -2282,6 +2293,21 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Privacy mode for amounts (balances and aggregates). When on,
+     * every balance / total in the UI renders as `••••`. Per-payment
+     * amounts inside action flows (send, withdraw, payment confirm)
+     * are *not* affected — those are tied to a specific action the
+     * user is taking right now, not their funds at rest.
+     *
+     * @param {boolean|undefined} value - explicit new state. If omitted,
+     *   the current value is flipped (used by the quick-toggle pill).
+     */
+    setBalanceHidden(value) {
+      this.balanceHidden = value === undefined ? !this.balanceHidden : !!value;
+      this.persistState();
+    },
+
+    /**
      * Update biometric lock preference
      * @param {boolean} enabled - Enable or disable biometric lock
      */
@@ -2327,6 +2353,7 @@ export const useWalletStore = defineStore('wallet', {
           defaultDisplayCurrency: this.defaultDisplayCurrency,
           denominationCurrency: this.denominationCurrency,
           useBip177Format: this.useBip177Format,
+          balanceHidden: this.balanceHidden,
           exchangeRates: this.exchangeRates,
           exchangeRatesAvailable: this.exchangeRatesAvailable,
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
