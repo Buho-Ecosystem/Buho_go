@@ -507,13 +507,25 @@
                     </span>
                   </span>
 
-                  <!-- Amount column -->
+                  <!--
+                    Amount column.
+
+                    Headline shows the *recipient amount* (what the
+                    user typed when sending), not the gross deducted.
+                    The fee, when present, surfaces as a small inline
+                    note on the existing fiat sub-line so the user
+                    can reconcile "I sent X, the network took Y" at
+                    a glance — without adding a new row of vertical
+                    chrome. Spark-to-Spark and incoming transactions
+                    omit the fee badge entirely (getFeeBadge returns
+                    '').
+                  -->
                   <span class="tx-row-amount-col">
                     <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
                       {{ getFormattedAmount(tx) }}
                     </span>
                     <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-                      {{ getFiatAmount(tx) }}
+                      {{ getFiatAmount(tx) }}<template v-if="getFeeBadge(tx)"> · {{ getFeeBadge(tx) }}</template>
                     </span>
                   </span>
                 </button>
@@ -1677,9 +1689,56 @@ export default {
       return tx.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
 
+    /**
+     * The "user-meaningful" amount in sats for a list row:
+     *
+     *   - Outgoing with a fee → recipient amount (gross − fee).
+     *     Matches what the user typed when they hit Send, and stays
+     *     consistent with TransactionDetails' hero.
+     *   - Otherwise → gross amount unchanged.
+     *
+     * Pure derivation — does NOT mutate tx. Stats-card aggregates
+     * (Total Sent / Net) keep summing `tx.amount` directly so the
+     * card totals continue to match the real balance delta.
+     *
+     * @param {object} tx
+     * @returns {number} non-negative sats
+     */
+    getDisplayAmountSats(tx) {
+      const gross = Math.abs(Number(tx?.amount) || 0);
+      const fee = Number(tx?.fee) || 0;
+      if (tx?.type === 'outgoing' && fee > 0) {
+        return Math.max(0, gross - fee);
+      }
+      return gross;
+    },
+
     getFormattedAmount(tx) {
       const prefix = tx.type === 'incoming' ? '+' : '-';
-      return formatAmountWithPrefix(Math.abs(tx.amount), this.walletStore.useBip177Format, prefix);
+      return formatAmountWithPrefix(this.getDisplayAmountSats(tx), this.walletStore.useBip177Format, prefix);
+    },
+
+    /**
+     * Inline fee note appended to the row's fiat sub-line so the
+     * user can see at a glance "I sent 5, the network took 4 on
+     * top" without opening the detail page.
+     *
+     * Wrapped in parentheses on purpose: a bare "+4 sats" next to a
+     * fiat figure can be misread as positive income. Parens read as
+     * a side note instead of a math operator.
+     *
+     * Returns an empty string when there's no fee to surface
+     * (incoming, Spark-to-Spark, unsettled state); the template
+     * uses that to suppress both the separator and the badge.
+     *
+     * @param {object} tx
+     * @returns {string}  e.g. "(₿ 4 fee)" / "(4 sats fee)", or "".
+     */
+    getFeeBadge(tx) {
+      const fee = Number(tx?.fee) || 0;
+      if (tx?.type !== 'outgoing' || fee <= 0) return '';
+      const feeAmount = formatAmountUtil(fee, this.walletStore.useBip177Format);
+      return `(${feeAmount} ${this.$t('fee')})`;
     },
 
     formatAmount(amount) {
@@ -1710,7 +1769,10 @@ export default {
 
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(tx.amount), currency);
+        // Fiat tracks the row's headline amount so they can't disagree.
+        // For an outgoing payment with a fee, both reflect what the
+        // recipient received (gross − fee), not the gross deducted.
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(this.getDisplayAmountSats(tx), currency);
 
         // Handle unavailable rates
         if (fiatValue === null) {
