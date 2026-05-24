@@ -194,48 +194,19 @@ export class NWCWalletProvider extends WalletProvider {
 
       return {
         preimage: payment.preimage,
-        // NIP-47 reports `fees_paid` in millisatoshis. Normalise to
-        // sats so callers can treat fee as an integer-sat number
-        // regardless of provider (Spark / LNBits / NWC).
-        fee: NWCWalletProvider._msatsToSats(payment.fees_paid ?? payment.feesPaid),
+        // Note: @getalby/sdk's NostrWebLNProvider.sendPayment strips
+        // `fees_paid` from the response (only `preimage` is returned).
+        // Kept here as a defensive fallback in case the SDK adds it
+        // back in a later version. Values come in sats — the WebLN
+        // wrapper does its own msats→sats conversion internally on
+        // every method that returns amounts (see `mapNip47TransactionToTransaction`).
+        fee: payment.fees_paid || payment.feesPaid || 0,
         status: 'completed'
       };
     } catch (error) {
       this.setError(error);
       throw error;
     }
-  }
-
-  /**
-   * Convert a NIP-47 millisat value to integer sats.
-   *
-   * Per NIP-47 spec (https://github.com/nostr-protocol/nips/blob/master/47.md),
-   * `Nip47Transaction.amount` and `Nip47Transaction.fees_paid`, as
-   * well as the `fees_paid` field on the `pay_invoice` response,
-   * are denominated in **millisatoshis**, not sats. The Alby SDK
-   * passes these values through unchanged, so this provider is the
-   * boundary at which units must be normalised — every consumer of
-   * a NWCWalletProvider method should receive sats, matching the
-   * shape returned by SparkWalletProvider and LNBitsWalletProvider.
-   *
-   * Defensive behaviour:
-   *   - null / undefined / NaN / non-finite → 0 (so downstream
-   *     predicates like `fee > 0` stay correct).
-   *   - Negative inputs are coerced to absolute value before
-   *     conversion. Direction is communicated through `type`, not
-   *     through the sign of `amount`, in this codebase.
-   *   - Rounded to the nearest integer sat; UI never shows
-   *     fractional sats. Matches the pattern used in
-   *     `SparkWalletProvider._extractTransferFeeSats`.
-   *
-   * @param {number|null|undefined} msats
-   * @returns {number}  Integer sats, >= 0
-   * @private
-   */
-  static _msatsToSats(msats) {
-    const n = Number(msats);
-    if (!Number.isFinite(n) || n === 0) return 0;
-    return Math.max(0, Math.round(Math.abs(n) / 1000));
   }
 
   /**
@@ -288,8 +259,7 @@ export class NWCWalletProvider extends WalletProvider {
         return {
           paid: this._checkIfPaid(invoice),
           preimage: invoice.preimage || null,
-          // NIP-47 `Nip47Transaction.amount` is in millisats.
-          amount: NWCWalletProvider._msatsToSats(invoice.amount)
+          amount: invoice.amount || 0
         };
       }
     } catch (lookupError) {
@@ -316,8 +286,7 @@ export class NWCWalletProvider extends WalletProvider {
             return {
               paid: this._checkIfPaid(found),
               preimage: found.preimage || null,
-              // NIP-47 `Nip47Transaction.amount` is in millisats.
-              amount: NWCWalletProvider._msatsToSats(found.amount)
+              amount: Math.abs(found.amount || 0)
             };
           }
         }
@@ -352,18 +321,19 @@ export class NWCWalletProvider extends WalletProvider {
         return [];
       }
 
-      // NIP-47 `Nip47Transaction` carries `amount` and `fees_paid`
-      // in millisatoshis. Normalise both via `_msatsToSats` so the
-      // rest of the app (display, aggregates, fiat conversion)
-      // reads sats — same shape every other provider returns.
+      // `this.nwc` is `NostrWebLNProvider`, whose `listTransactions`
+      // already converts msats→sats internally via the SDK's
+      // `mapNip47TransactionToTransaction` helper before handing
+      // results to us. Values arrive in sats — no further unit
+      // conversion needed here.
       return transactions.transactions.map(tx => ({
         id: tx.payment_hash || tx.paymentHash || tx.id,
         type: tx.type === 'incoming' || tx.amount > 0 ? 'receive' : 'send',
-        amount: NWCWalletProvider._msatsToSats(tx.amount),
+        amount: Math.abs(tx.amount || 0),
         timestamp: tx.settled_at || tx.settledAt || tx.created_at || tx.createdAt || null,
         description: tx.description || tx.memo || '',
         status: tx.settled ? 'completed' : 'pending',
-        fee: NWCWalletProvider._msatsToSats(tx.fees_paid ?? tx.feesPaid)
+        fee: tx.fees_paid || tx.feesPaid || 0
       }));
     } catch (error) {
       // Many NWC wallets don't support listTransactions

@@ -658,7 +658,6 @@
 
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
-import { NWCWalletProvider } from '../providers/NWCWalletProvider';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
@@ -1353,24 +1352,19 @@ export default {
 
       // Normalize and append to transactions array.
       //
-      // Important: NIP-47 reports `amount` and `fees_paid` in
-      // **millisatoshis**. The `...tx` spread preserves the raw NWC
-      // fields (payment_hash, preimage, invoice, etc.) that the
-      // detail view + dedup logic depend on, but the two msat-
-      // denominated fields MUST be overwritten with sats so the rest
-      // of the app (display, aggregates, fiat conversion, the fee
-      // breakdown we just added) reads the same shape every other
-      // provider returns. `NWCWalletProvider._msatsToSats` is the
-      // single source of truth for the conversion — same helper the
-      // provider itself uses, so both paths can't drift apart.
+      // Note on units: NIP-47 reports `amount` and `fees_paid` in
+      // millisatoshis, BUT the @getalby/sdk NostrWebLNProvider that
+      // backs LightningPaymentService converts msats→sats
+      // internally (see `mapNip47TransactionToTransaction` in the
+      // SDK source). Values arrive in sats — no further unit
+      // conversion needed here.
       const normalizedTransactions = transactionsResponse.transactions.map(tx => ({
         ...tx,
         id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
         type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
         description: tx.description || tx.memo || '',
         settled_at: tx.settled_at || tx.created_at || null,
-        amount: NWCWalletProvider._msatsToSats(tx.amount),
-        fee: NWCWalletProvider._msatsToSats(tx.fee ?? tx.fees_paid),
+        fee: tx.fee || tx.fees_paid || 0,
         payment_request: tx.payment_request || tx.invoice || null
       }));
 
