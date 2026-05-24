@@ -102,6 +102,7 @@
 <script>
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
+import { createQrScanner } from '../../utils/qrScanner';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { mapActions } from 'pinia';
 import { classifyIdentifier, lookupIdentifier } from '../../utils/nostrLookup.js';
@@ -195,7 +196,7 @@ export default {
         const videoEl = this.$refs.videoEl;
         if (!videoEl) throw new Error('Video element not found');
 
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           videoEl,
           (result) => {
             const text = typeof result === 'string' ? result : (result?.data || result?.text || '');

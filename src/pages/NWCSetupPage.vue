@@ -231,6 +231,7 @@
 
 <script>
 import QrScanner from 'qr-scanner'
+import { createQrScanner } from '../utils/qrScanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import { useWalletStore } from '../stores/wallet'
 import { mapActions } from 'pinia'
@@ -348,7 +349,7 @@ export default {
           throw new Error('No camera found on this device.');
         }
 
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           this.$refs.videoElement,
           (result) => this.handleQrScan(result.data),
           {

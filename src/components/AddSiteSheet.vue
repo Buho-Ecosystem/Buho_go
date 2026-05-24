@@ -183,6 +183,7 @@
 <script>
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
+import { createQrScanner } from '../utils/qrScanner';
 import { LUD04_ERROR, looksLikeLud04, parseLud04Input } from '../utils/lud4';
 
 export default {
@@ -376,7 +377,7 @@ export default {
           throw new Error('Video element not found');
         }
 
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           videoEl,
           (result) => {
             const text = typeof result === 'string' ? result : (result?.data || result?.text || '');
