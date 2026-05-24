@@ -48,7 +48,7 @@
     "@playwright/test": "^1.59.1",
     "@quasar/app-vite": "^2.0.0",
     "autoprefixer": "^10.4.2",
-    "postcss": "^8.4.14",
+    "postcss": "^8.5.15",
     "workbox-build": "^7.3.0",
     "workbox-cacheable-response": "^7.3.0",
     "workbox-core": "^7.3.0",
