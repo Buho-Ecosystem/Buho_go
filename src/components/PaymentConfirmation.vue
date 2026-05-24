@@ -9,19 +9,13 @@
   >
     <div class="confirmation-backdrop" :class="$q.dark.isActive ? 'backdrop-dark' : 'backdrop-light'">
       <div class="confirmation-content">
-        <!-- Success Animation -->
-        <div class="success-animation" :class="{ 'animate': showAnimation }">
-          <div class="success-circle" :class="accentColor === 'orange' ? 'bitcoin-theme' : ''">
-            <svg class="checkmark" viewBox="0 0 52 52">
-              <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-            </svg>
-          </div>
-          <div
-            v-if="showAnimation"
-            class="pulse-ring-once"
-            :class="accentColor === 'orange' ? 'bitcoin-pulse' : ''"
-          ></div>
-        </div>
+        <!--
+          Success animation. The shared SuccessCheckmark primitive
+          owns the visual; we just gate it on the local
+          `showAnimation` flag so the entrance is synced with the
+          rest of this surface's fade-in sequence.
+        -->
+        <SuccessCheckmark :animate="showAnimation" :accent="accentColor" />
 
         <!-- Amount Display. The amount + fiat lines are hidden when we
              can't determine the paid amount (zero-amount invoice paid via
@@ -38,13 +32,59 @@
           <div v-if="amount > 0 && fiatAmount" class="fiat-value" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             {{ fiatAmount }}
           </div>
+          <!--
+            Recipient line. Renders just below the amount because it's
+            context for the *amount*, not a footer afterthought. Used by
+            the send-success flow; receive/withdraw don't pass it.
+          -->
+          <div
+            v-if="recipient"
+            class="recipient-line"
+            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+          >
+            {{ recipientPrefix }}{{ recipient }}
+          </div>
+        </div>
+
+        <!--
+          Save-to-Contacts opt-in. Fades in with the countdown block so
+          the celebration peak (checkmark + amount) isn't competing for
+          attention. Tapping it dismisses the modal and emits up to the
+          parent, which opens the save-contact dialog.
+        -->
+        <div
+          v-if="showSaveContact"
+          class="save-contact-area"
+          :class="{ 'fade-in': showCountdown }"
+        >
+          <q-btn
+            outline
+            no-caps
+            rounded
+            class="save-contact-btn"
+            :class="$q.dark.isActive ? 'save-contact-btn-dark' : 'save-contact-btn-light'"
+            @click="onSaveContactClicked"
+          >
+            <Icon icon="tabler:user-plus" width="16" height="16" class="q-mr-xs" />
+            {{ saveContactLabel || $t('Save to Contacts') }}
+          </q-btn>
         </div>
       </div>
 
       <!-- Bottom area: countdown + description -->
       <div class="bottom-area">
         <div class="countdown-section" :class="{ 'fade-in': showCountdown }">
-          <div class="countdown-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+          <!--
+            Countdown text is suppressed when the modal is in
+            "decision-pending" mode (save-contact button visible).
+            There's no countdown to surface — the modal stays open until
+            the user picks one of the two actions.
+          -->
+          <div
+            v-if="!showSaveContact"
+            class="countdown-text"
+            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+          >
             {{ $t('Closing in {seconds}s...', { seconds: countdown }) }}
           </div>
           <q-btn
@@ -54,7 +94,7 @@
             :class="$q.dark.isActive ? 'close-btn-dark' : 'close-btn-light'"
             @click="closeNow"
           >
-            {{ $t('Close Now') }}
+            {{ closeLabelText }}
           </q-btn>
         </div>
 
@@ -78,11 +118,14 @@
 </template>
 
 <script>
+import { Icon } from '@iconify/vue';
 import { formatAmount as formatAmountUtil } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
+import SuccessCheckmark from './SuccessCheckmark.vue';
 
 export default {
   name: 'PaymentConfirmation',
+  components: { Icon, SuccessCheckmark },
   props: {
     modelValue: {
       type: Boolean,
@@ -111,9 +154,57 @@ export default {
     accentColor: {
       type: String,
       default: 'green'
+    },
+    /**
+     * Counterparty for this transaction (display string, e.g. a
+     * Lightning address, contact name, or truncated address). Renders
+     * as "To {recipient}" by default. The send flow passes this; the
+     * receive and withdraw flows leave it empty.
+     */
+    recipient: {
+      type: String,
+      default: ''
+    },
+    /**
+     * Prefix shown before `recipient`. Defaults to "To " (with trailing
+     * space) but callers can override (e.g. "From " for an inbound
+     * variant later, or '' to render the recipient bare).
+     */
+    recipientPrefix: {
+      type: String,
+      default: 'To '
+    },
+    /**
+     * Promote the modal to a "decision-pending" surface: shows a "Save
+     * to Contacts" button below the amount, disables auto-close, hides
+     * the countdown text, and relabels the close action to a neutral
+     * "Done" (since there's no "now" to act on without a timer).
+     *
+     * The button click is forwarded via `save-contact-clicked` so the
+     * parent can run the actual save flow. If the user dismisses the
+     * modal without tapping the button, they've opted out — no dialog
+     * should pop afterwards.
+     */
+    showSaveContact: {
+      type: Boolean,
+      default: false
+    },
+    /** Override the save-button label if a host wants different copy. */
+    saveContactLabel: {
+      type: String,
+      default: ''
+    },
+    /**
+     * Override the close-button label. Defaults to "Close Now" when
+     * auto-close is running and "Done" when the modal is persistent
+     * (showSaveContact = true). Callers rarely need to set this.
+     */
+    closeLabel: {
+      type: String,
+      default: ''
     }
   },
-  emits: ['update:modelValue', 'closed'],
+  emits: ['update:modelValue', 'closed', 'save-contact-clicked'],
   setup() {
     const walletStore = useWalletStore();
     return {
@@ -139,6 +230,19 @@ export default {
       set(value) {
         this.$emit('update:modelValue', value)
       }
+    },
+    /**
+     * Close-button copy. "Close Now" reads right with a visible
+     * countdown ("close it sooner than the timer"); when the timer is
+     * suppressed (decision-pending mode) there is no "now" to refer
+     * to, so we use "Done" instead. Callers can override with
+     * `closeLabel`.
+     */
+    closeLabelText() {
+      if (this.closeLabel) return this.closeLabel
+      return this.showSaveContact
+        ? this.$t('Done')
+        : this.$t('Close Now')
     }
   },
   watch: {
@@ -172,7 +276,12 @@ export default {
 
       setTimeout(() => {
         this.showCountdown = true
-        this.startCountdown()
+        // Auto-close is suppressed when the modal is in decision-pending
+        // mode — the user needs to actively pick Save or Done, and an
+        // expiring timer would pressure that choice.
+        if (!this.showSaveContact) {
+          this.startCountdown()
+        }
       }, 700)
     },
 
@@ -189,6 +298,21 @@ export default {
       this.cleanup()
       this.show = false
       this.$emit('closed')
+    },
+
+    /**
+     * User opted in to saving the recipient. Dismiss the modal first so
+     * the parent's save-contact dialog opens onto a clean stack — no
+     * stacked modals, no lingering checkmark. Parent listens on
+     * `save-contact-clicked` to drive the dialog.
+     */
+    onSaveContactClicked() {
+      this.cleanup()
+      this.show = false
+      this.$emit('save-contact-clicked')
+      // We deliberately do NOT emit 'closed' here. The parent treats
+      // 'closed' as "user dismissed without saving"; the save click is
+      // a separate, explicit signal.
     },
 
     cleanup() {
@@ -262,96 +386,12 @@ export default {
   z-index: 10;
 }
 
-/* Success Animation */
-.success-animation {
-  position: relative;
-  width: 110px;
-  height: 110px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-}
-
-.success-animation.animate {
-  animation: zoom-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-}
-
-@keyframes zoom-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.3);
-  }
-  60% {
-    opacity: 1;
-    transform: scale(1.06);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.success-circle {
-  width: 110px;
-  height: 110px;
-  background: #15DE72;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.success-circle.bitcoin-theme {
-  background: #F7931A;
-}
-
-.checkmark {
-  width: 52px;
-  height: 52px;
-}
-
-.checkmark-check {
-  stroke: white;
-  stroke-width: 3.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 48;
-  stroke-dashoffset: 48;
-  animation: stroke 0.32s cubic-bezier(0.65, 0, 0.45, 1) 0.18s forwards;
-}
-
-@keyframes stroke {
-  100% {
-    stroke-dashoffset: 0;
-  }
-}
-
-/* One-shot pulse ring (fires once on mount, then gone) */
-.pulse-ring-once {
-  position: absolute;
-  width: 110px;
-  height: 110px;
-  border: 2px solid rgba(21, 222, 114, 0.45);
-  border-radius: 50%;
-  animation: pulse-once 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
-  pointer-events: none;
-}
-
-.pulse-ring-once.bitcoin-pulse {
-  border-color: rgba(247, 147, 26, 0.45);
-}
-
-@keyframes pulse-once {
-  0% {
-    transform: scale(1);
-    opacity: 0.7;
-  }
-  100% {
-    transform: scale(1.7);
-    opacity: 0;
-  }
-}
+/*
+  Checkmark animation, success circle, and pulse ring now live in
+  `SuccessCheckmark.vue` so batch and internal-transfer surfaces can
+  reuse the exact same visual moment without depending on this
+  modal.
+*/
 
 /* Amount Section */
 .amount-section {
@@ -390,6 +430,70 @@ export default {
   font-weight: 500;
   margin-top: 0.5rem;
   opacity: 0.7;
+}
+
+/*
+  Recipient line. Sits just under the fiat value with restrained
+  styling so the amount stays the visual anchor. Truncates with
+  ellipsis on narrow viewports rather than wrapping into the layout.
+*/
+.recipient-line {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: 0.75rem;
+  max-width: 280px;
+  margin-left: auto;
+  margin-right: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+  Save-to-Contacts area. Sits between the amount block and the bottom
+  countdown/close area so it reads as context for the just-sent
+  amount, not as a footer afterthought.
+*/
+.save-contact-area {
+  display: flex;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.save-contact-area.fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.save-contact-btn {
+  padding: 10px 22px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.save-contact-btn-dark {
+  color: #FFF;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.save-contact-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.save-contact-btn-light {
+  color: var(--text-primary);
+  border-color: var(--border-card);
+}
+
+.save-contact-btn-light:hover {
+  background: rgba(0, 0, 0, 0.03);
 }
 
 /* Bottom area: countdown + description, anchored toward bottom */

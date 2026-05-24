@@ -816,6 +816,10 @@ export default {
   "Donations Portal": "Donations Portal",
   "Closing in {seconds}s...": "Closing in {seconds}s...",
   "Close Now": "Close Now",
+  // "Payment Sent" is already declared above (paired with
+  // "Payment Received") — don't redeclare here.
+  "Still sending…": "Still sending…",
+  "Save to Contacts": "Save to Contacts",
   "Unlock Wallet": "Unlock Wallet",
   "Enter your PIN to unlock your Spark wallet": "Enter your PIN to unlock your Spark wallet",
   "To": "To",
@@ -1182,6 +1186,7 @@ export default {
   "sent": "sent",
   "failed": "failed",
   "Total sent": "Total sent",
+  "sats sent": "sats sent",
   "Failed payments": "Failed payments",
   "Retry Failed": "Retry Failed",
   "Cancel Batch?": "Cancel Batch?",

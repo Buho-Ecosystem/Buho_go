@@ -494,7 +494,17 @@
             @click="goToSettings"
           >
             <Icon icon="tabler:settings" width="20" height="20" class="q-mr-sm" />
-            {{ $t('Manage Wallets') }}
+            <!--
+              Short verb on purpose. The WalletSwitcher already shows
+              your wallets directly above this button, so the noun is
+              implicit. Pairs visually with the equally-short
+              "Transfer Funds" → "Umbuchen" in German, preventing the
+              right-button label from wrapping to 2 lines on phones
+              where the modal is ~340px wide. The longer
+              "Manage Wallets" form is still used in Settings where
+              the noun is needed to disambiguate.
+            -->
+            {{ $t('Manage') }}
           </q-btn>
         </q-card-section>
       </q-card>
@@ -574,6 +584,26 @@
       label="Sats Received"
       :auto-close-delay="5"
       @closed="onWithdrawSuccessClosed"
+    />
+
+    <!--
+      Send Success Screen.
+      Separate v-model from the withdraw success so the two surfaces
+      stay independent — a send completing and a withdraw landing
+      should never share lifecycle. The Save Contact button only
+      shows for new recipients (savable address not already in the
+      address book); when present it suppresses auto-close.
+    -->
+    <PaymentConfirmation
+      v-model="showSendSuccess"
+      :amount="sendSuccessAmount"
+      :fiat-amount="sendSuccessFiat"
+      :recipient="sendSuccessRecipient"
+      :label="sendSuccessLabel"
+      :show-save-contact="sendSuccessShowSaveContact"
+      :auto-close-delay="5"
+      @closed="onSendSuccessClosed"
+      @save-contact-clicked="onSendSaveContactClicked"
     />
 
     <!-- LUD-04 (LNURL-auth) identity dialog. Mounted at the wallet page
@@ -821,6 +851,17 @@ export default {
       showWithdrawSuccess: false,
       withdrawConfirmedAmount: 0,
       withdrawConfirmedFiat: '',
+      // Send-success state. Mirrors the withdraw-success shape so the
+      // two surfaces feel like the same pattern. `showSaveContact` is
+      // computed once at send time (savable address && not already a
+      // contact); flipping it later would be a UX gotcha, so we lock
+      // it before opening the modal.
+      showSendSuccess: false,
+      sendSuccessAmount: 0,
+      sendSuccessFiat: '',
+      sendSuccessRecipient: '',
+      sendSuccessLabel: '',
+      sendSuccessShowSaveContact: false,
       // LUD-04 (LNURL-auth) — the dialog re-renders the same parsed
       // challenge across steps, so we hold it here rather than passing
       // through emit chains.
@@ -1558,19 +1599,34 @@ export default {
     },
 
     /**
-     * Handle successful contact payment
+     * Handle successful contact payment.
+     *
+     * Funnels into the same success modal the free-amount send path
+     * uses, so the two routes feel like one. `showSaveContact` is
+     * always false here — by definition the recipient is already a
+     * saved contact (the user picked them from the address book).
      */
-    handleContactPaymentSent() {
+    handleContactPaymentSent(payload) {
+      const contact = this.selectedPayContact;
+      const recipient = contact?.name || '';
+      const amount = Number(payload?.amount) || 0;
       this.selectedPayContact = null;
-      this.$q.notify({
-        type: 'positive',
-        message: this.$t('Payment sent'),
-        timeout: 2000
-      });
+
       // Refresh balance for active wallet
       if (this.walletStore.activeWalletId) {
         this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
       }
+
+      // PaymentModal already resolved completed-or-throw before
+      // emitting `payment-sent`, so we can assume COMPLETED here. If a
+      // future PaymentModal change introduces pending semantics, the
+      // openSendSuccess helper accepts the status and adapts.
+      this.openSendSuccess({
+        amount,
+        recipient,
+        status: 'completed',
+        showSaveContact: false,
+      });
     },
 
     /**
@@ -1590,17 +1646,13 @@ export default {
     /**
      * Handle batch send completion
      */
-    handleBatchCompleted(results) {
-      const succeeded = results.filter(r => r.status === 'success').length;
-      const failed = results.filter(r => r.status === 'failed' || r.status === 'skipped').length;
-
-      this.$q.notify({
-        type: failed === 0 ? 'positive' : 'warning',
-        message: failed === 0
-          ? this.$t('{count} payments sent', { count: succeeded })
-          : this.$t('{sent} sent, {failed} failed', { sent: succeeded, failed }),
-        timeout: 3000
-      });
+    handleBatchCompleted(_results) {
+      // BatchSendModal step 5 already presents the full success
+      // surface (checkmark + total + per-recipient failure list).
+      // A trailing parent toast on top of that would be redundant
+      // chrome — the user has already seen the canonical result.
+      // Kept as a hook in case future flows need to react after a
+      // batch completes (e.g. refresh background data).
     },
 
     // ==========================================
@@ -3412,13 +3464,16 @@ export default {
 
         console.log('Payment sent:', result);
 
-        // Check if we should offer to save this recipient as a contact
+        // Address-book context: do we know this recipient, and is the
+        // recipient saveable at all? Computed up-front because both the
+        // pending-link queue and the success modal depend on it.
         const recipientAddress = this.getRecipientAddress();
         const recipientAddressType = this.getRecipientAddressType();
         const existingContact = recipientAddress
           ? this.addressBookStore.findContactByAddress(recipientAddress)
           : null;
-        const shouldOfferSave = recipientAddress && !existingContact;
+        const shouldOfferSave = !!(recipientAddress && !existingContact);
+        const recipientLabel = this.getRecipientDisplayLabel(existingContact);
 
         // Queue the contact link by recipient address + amount + send
         // time. The next tx-list refresh drains the queue and stamps
@@ -3438,22 +3493,10 @@ export default {
           }
         }
 
-        const pendingPaymentBackup = this.pendingPayment; // Keep reference for save dialog
-        this.pendingPayment = null;
-        this.paymentAmount = '';
-        this.paymentComment = '';
-        this.estimatedFee = null;
-        this.isEstimatingFee = false;
-
-        await this.updateWalletBalance();
-
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Sent'),
-
-        });
-
-        // Offer to save contact if this is a new recipient
+        // Stash the save-contact payload BEFORE clearing pendingPayment,
+        // so the modal's "Save to Contacts" button has everything it
+        // needs even after the input state is reset. `saveContactData`
+        // is what the existing save dialog already reads.
         if (shouldOfferSave) {
           this.saveContactData = {
             address: recipientAddress,
@@ -3465,11 +3508,29 @@ export default {
             // existing-contact path uses.
             amountSats: amount,
           };
-          // Small delay so the success notification is seen first
-          setTimeout(() => {
-            this.showSaveContactDialog = true;
-          }, 500);
         }
+
+        this.pendingPayment = null;
+        this.paymentAmount = '';
+        this.paymentComment = '';
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
+
+        await this.updateWalletBalance();
+
+        // Fire the success modal. The Spark provider's polling already
+        // resolved to a terminal status by the time we got here — if
+        // it timed out at 60s without settling, we land on PENDING and
+        // the modal uses softer "still routing" copy. NWC and LNBits
+        // payInvoice paths resolve completed-or-throw, so they always
+        // land on COMPLETED here.
+        const status = (result && typeof result === 'object' && result.status) || 'completed';
+        this.openSendSuccess({
+          amount,
+          recipient: recipientLabel,
+          status,
+          showSaveContact: shouldOfferSave,
+        });
 
       } catch (error) {
         console.error('Payment failed:', error);
@@ -3677,6 +3738,117 @@ export default {
       if (!this.pendingPayment) return 'lightning';
       if (this.pendingPayment.sparkAddress) return 'spark';
       return 'lightning';
+    },
+
+    /**
+     * Build the human-readable recipient string for the success
+     * modal's "To {recipient}" line. Order of preference:
+     *   1. Existing contact name (most personal)
+     *   2. Lightning address (already human-readable)
+     *   3. Spark address (truncated, machine-y but identifies a peer)
+     *   4. '' → modal omits the line entirely (raw bolt11 / generic
+     *      LNURL have no stable counterparty identity to show)
+     *
+     * @param {object|null} existingContact - May be null for new recipients.
+     * @returns {string}
+     */
+    getRecipientDisplayLabel(existingContact) {
+      if (existingContact?.name) return existingContact.name;
+      if (!this.pendingPayment) return '';
+      if (this.pendingPayment.lightningAddress) {
+        return this.pendingPayment.lightningAddress;
+      }
+      if (this.pendingPayment.sparkAddress) {
+        return this.truncateAddress(this.pendingPayment.sparkAddress);
+      }
+      return '';
+    },
+
+    /**
+     * Open the send-success modal. Centralises the state writes so
+     * both call sites (free-amount pay flow + contact pay flow) drive
+     * the modal through the same door.
+     *
+     * Fiat is computed best-effort — failure is silent and just hides
+     * the fiat line; we never want a fiat-rate hiccup to block the
+     * success confirmation.
+     *
+     * Label adapts to the status: COMPLETED gets a definite "Payment
+     * Sent"; PENDING gets softer "Still sending…" wording since Spark
+     * may still be routing. Save-Contact is only honoured for
+     * COMPLETED — promoting a contact off a payment that may yet
+     * fail would be misleading.
+     */
+    async openSendSuccess({ amount, recipient, status, showSaveContact }) {
+      const isCompleted = status !== 'pending';
+      this.sendSuccessAmount = Number(amount) || 0;
+      this.sendSuccessRecipient = recipient || '';
+      this.sendSuccessLabel = isCompleted
+        ? this.$t('Payment Sent')
+        : this.$t('Still sending…');
+      this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted;
+      this.sendSuccessFiat = '';
+
+      // Best-effort fiat conversion. Mirrors the withdraw-success
+      // pattern (~Wallet.vue:3085) — same try/catch shape so a stale
+      // rate cache can never block the confirmation surface.
+      if (this.sendSuccessAmount > 0) {
+        try {
+          const currency = this.walletState.preferredFiatCurrency || 'USD';
+          const fiat = await fiatRatesService.convertSatsToFiat(
+            this.sendSuccessAmount,
+            currency,
+          );
+          if (fiat !== null) {
+            this.sendSuccessFiat = '≈ ' + fiatRatesService.formatFiatAmount(fiat, currency);
+          }
+        } catch (err) {
+          // Fiat is decorative here; never let it block the modal.
+          console.warn('[wallet] send-success fiat lookup failed:', err);
+        }
+      }
+
+      this.showSendSuccess = true;
+    },
+
+    /**
+     * User dismissed the send-success modal via Done / Close Now /
+     * auto-close countdown. Clean up state. If the Save-Contact button
+     * was offered but ignored, that's an explicit opt-out — we drop
+     * the pre-staged save payload so the next send starts clean.
+     */
+    onSendSuccessClosed() {
+      this.showSendSuccess = false;
+      this.sendSuccessAmount = 0;
+      this.sendSuccessFiat = '';
+      this.sendSuccessRecipient = '';
+      this.sendSuccessLabel = '';
+      this.sendSuccessShowSaveContact = false;
+      // Reset any save payload that was pre-staged for the modal's
+      // Save button. Users who wanted to save would have tapped it
+      // already (see onSendSaveContactClicked).
+      this.saveContactData = {
+        address: '',
+        addressType: 'lightning',
+        name: '',
+        notes: '',
+        amountSats: 0,
+      };
+    },
+
+    /**
+     * User tapped "Save to Contacts" in the success modal. The modal
+     * has already dismissed itself; we just open the existing save
+     * dialog onto the freshly-cleared stack. `saveContactData` was
+     * pre-populated during the pay() success block so the form has
+     * the address + amount it needs.
+     */
+    onSendSaveContactClicked() {
+      this.showSendSuccess = false;
+      this.sendSuccessShowSaveContact = false;
+      // Reuse the existing save-contact dialog — same form, same
+      // validation, same save handler.
+      this.showSaveContactDialog = true;
     },
 
     // Save recipient as contact
