@@ -606,6 +606,8 @@ export default {
   "Payment Hash": "Hash de Pago",
   "Preimage": "Preimagen",
   "Fee": "Comisión",
+  "Network Fee": "Comisión de red",
+  "Total deducted": "Total descontado",
   "Raw Invoice": "Factura en Bruto",
   "Raw JSON": "JSON en Bruto",
   "Transaction Not Found": "Transacción No Encontrada",

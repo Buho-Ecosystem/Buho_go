@@ -954,11 +954,19 @@ export class SparkWalletProvider extends WalletProvider {
       return transferList.map(transfer => ({
         id: transfer.id,
         type: this._mapTransferType(transfer),
+        // `totalValue` is the gross amount moved between the user's
+        // leaves and the SSP — for a Lightning send this is
+        // (recipient amount + SSP fee). We preserve that semantic
+        // here so list-view sums (TransactionHistory.vue groups,
+        // balance-delta math) keep matching the real wallet
+        // movement. The fee is exposed separately on `.fee` so the
+        // detail view can split it out without changing what
+        // `amount` means.
         amount: Number(transfer.totalValue || transfer.amount || 0),
         timestamp: this._parseTimestamp(transfer.createdTime || transfer.updatedTime),
         description: this._decodeBase64Memo(transfer.userRequest?.invoice?.memo) || '',
         status: this._normalizeStatus(transfer.status),
-        fee: Number(transfer.feeSats || transfer.fees || transfer.fee || 0),
+        fee: SparkWalletProvider._extractTransferFeeSats(transfer),
         // Determine if this is a Spark-to-Spark transfer (zero fee) vs Lightning
         sparkTransfer: this._isSparkTransfer(transfer),
         // Keep original transfer data for debugging
@@ -968,6 +976,79 @@ export class SparkWalletProvider extends WalletProvider {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Extract the SSP fee (in **sats**, always) attached to a Spark
+   * SDK `WalletTransfer`.
+   *
+   * Per the SDK type definitions
+   * (`@buildonspark/spark-sdk/dist/types-CPXB2AOW.d.ts`):
+   *
+   *   transfer.userRequest.fee  → CurrencyAmount
+   *                                  ↳ originalValue: number
+   *                                  ↳ originalUnit:  CurrencyUnit
+   *                                       ("SATOSHI" | "MILLISATOSHI" |
+   *                                        "BITCOIN" | fiat | ...)
+   *
+   * The Spark SSP returns Lightning fees in **MILLISATOSHI** (the
+   * native Lightning protocol unit), not SATOSHI. Treating
+   * `originalValue` as sats directly produced numbers 1000× too
+   * large in the UI (a 4-sat fee rendered as "4,000" / "4.000" in
+   * locale-formatted output). We must normalise via `originalUnit`.
+   *
+   * `WalletTransfer` itself carries no fee field at the root — the
+   * SDK packages all request-specific economics (preimage, invoice,
+   * fee) onto the discriminated `userRequest` union.
+   *
+   * Spark-to-Spark transfers have no `userRequest` (the move is
+   * atomic between leaves and free), so this naturally returns 0.
+   * Incoming Lightning receives also expose a fee through the same
+   * shape (the SSP's routing fee), which is captured here too.
+   *
+   * Defensive against shape drift:
+   *   - Missing path → 0 (not NaN), so `fee > 0` predicates stay correct.
+   *   - Unknown unit → 0 + warn, rather than silently rendering a
+   *     mis-scaled value. Better to under-report than mislead.
+   *   - Final result rounded to the nearest integer sat (UI doesn't
+   *     show fractional sats).
+   *
+   * @param {object} transfer  Spark SDK WalletTransfer
+   * @returns {number}         Fee in sats (>= 0, integer)
+   * @private
+   */
+  static _extractTransferFeeSats(transfer) {
+    const feeObj = transfer?.userRequest?.fee;
+    if (!feeObj) return 0;
+    const raw = Number(feeObj.originalValue);
+    if (!Number.isFinite(raw) || raw <= 0) return 0;
+
+    const unit = String(feeObj.originalUnit || '').toUpperCase();
+    let sats;
+    switch (unit) {
+      case 'SATOSHI':
+        sats = raw;
+        break;
+      case 'MILLISATOSHI':
+        sats = raw / 1000;
+        break;
+      case 'BITCOIN':
+        sats = raw * 1e8;
+        break;
+      default:
+        // Don't guess. Fiat (USD/MXN/...) shouldn't surface here for
+        // a Lightning fee, but if it ever does, returning 0 avoids
+        // accidentally rendering a fiat figure as sats. The console
+        // line is enough breadcrumb for a future debugger to find
+        // this branch without polluting normal logs.
+        console.warn(
+          '[SparkWalletProvider] Unrecognised fee currency unit; reporting 0 sats:',
+          unit,
+        );
+        return 0;
+    }
+
+    return Math.max(0, Math.round(sats));
   }
 
   /**

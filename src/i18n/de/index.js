@@ -606,6 +606,8 @@ export default {
   "Payment Hash": "Zahlungs-Hash",
   "Preimage": "Preimage",
   "Fee": "Gebühr",
+  "Network Fee": "Netzwerkgebühr",
+  "Total deducted": "Gesamt abgezogen",
   "Raw Invoice": "Rohe Rechnung",
   "Raw JSON": "Rohes JSON",
   "Transaction Not Found": "Transaktion nicht gefunden",

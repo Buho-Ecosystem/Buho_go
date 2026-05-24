@@ -953,26 +953,59 @@ export default {
       return this.formatRelativeTime(ts);
     },
 
+    /**
+     * The "user-meaningful" amount in sats for the home-page
+     * preview widget. Same derivation as TransactionDetails and
+     * TransactionHistory:
+     *   - Outgoing with a fee → recipient amount (gross − fee)
+     *   - Otherwise → gross
+     *
+     * Keeps the three surfaces telling the same story so a user who
+     * sees "−₿ 5" on the home widget, taps through to the history
+     * row showing "−₿ 5", and opens the detail page showing "−₿ 5"
+     * never has to reconcile three different headline numbers.
+     */
+    lastTxDisplayAmountSats() {
+      if (!this.lastTransaction) return 0;
+      const gross = Math.abs(Number(this.lastTransaction.amount) || 0);
+      const fee = Number(this.lastTransaction.fee) || 0;
+      if (!this.lastTxIsIncoming && fee > 0) {
+        return Math.max(0, gross - fee);
+      }
+      return gross;
+    },
+
     lastTxAmountDisplay() {
       if (!this.lastTransaction) return '';
-      const rawAmount = Math.abs(Number(this.lastTransaction.amount) || 0);
       const sign = this.lastTxIsIncoming ? '+' : '-';
       // Use the same formatter the rest of the app uses so unit
       // (sats / BTC) and BIP-177 formatting match.
-      const formatted = formatAmount(rawAmount, this.walletStore.useBip177Format);
+      const formatted = formatAmount(this.lastTxDisplayAmountSats, this.walletStore.useBip177Format);
       return `${sign}${formatted}`;
     },
 
     lastTxFiatDisplay() {
       if (!this.lastTransaction) return '';
-      const sats = Math.abs(Number(this.lastTransaction.amount) || 0);
+      const sats = this.lastTxDisplayAmountSats;
       if (sats === 0) return '';
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
       if (fiat === null || fiat === undefined) return '';
       // "about $0.02" matches the reference mock's softer tone vs an
       // exact value, which is appropriate for a preview.
-      return `${this.$t('about')} ${fiatRatesService.formatFiatAmount(fiat, currency)}`;
+      const fiatPart = `${this.$t('about')} ${fiatRatesService.formatFiatAmount(fiat, currency)}`;
+      // Append a compact fee note when there's a fee to surface, so
+      // the home widget visibly reconciles "I sent X, the network
+      // took Y" without needing a new row. Parens (not a "+"
+      // prefix) so the fee can't be misread as positive income on
+      // a small surface. Matches TransactionHistory's badge shape
+      // for consistency.
+      const fee = Number(this.lastTransaction.fee) || 0;
+      if (!this.lastTxIsIncoming && fee > 0) {
+        const feeFormatted = formatAmount(fee, this.walletStore.useBip177Format);
+        return `${fiatPart} (${feeFormatted} ${this.$t('fee')})`;
+      }
+      return fiatPart;
     },
     walletDisplayName() {
       if (!this.activeWallet) return '';
