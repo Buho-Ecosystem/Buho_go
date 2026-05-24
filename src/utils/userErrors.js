@@ -240,15 +240,55 @@ function expandInsufficientFunds(rawMsg, amountSats, t) {
   // probably isn't balance/required at all (e.g. some other ratio).
   if (balance >= required) return null;
 
+  return formatInsufficientBalanceBreakdown({ balance, required, amountSats, fee }, t);
+}
+
+/**
+ * Multi-line breakdown for "not enough funds" surfaces. Single source
+ * of truth for the wording so the upstream-parsed path
+ * (`expandInsufficientFunds`) and pre-flight callers that already know
+ * the exact numbers (e.g. BatchSendModal's balance check) produce
+ * identical copy.
+ *
+ * `amountSats` and `fee` are optional. When `amountSats` is provided
+ * and `fee > 0`, the breakdown calls out the fee component
+ * explicitly so the user understands why required > amount typed.
+ *
+ *   { balance: 4, required: 6 }
+ *     → Not enough funds.
+ *       Balance: 4 sats
+ *       Required: 6 sats
+ *
+ *   { balance: 109, required: 50551, amountSats: 50000, fee: 551 }
+ *     → Not enough funds.
+ *       Balance: 109 sats
+ *       Required: 50,551 sats (50,000 + 551 fee)
+ *
+ * @param {{ balance: number, required: number, amountSats?: number, fee?: number }} parts
+ * @param {Function} t
+ * @returns {string}
+ */
+export function formatInsufficientBalanceBreakdown(parts, t) {
+  const translate = typeof t === 'function' ? t : ((s) => s);
+  const balance = Number(parts?.balance);
+  const required = Number(parts?.required);
+  if (!Number.isFinite(balance) || !Number.isFinite(required)) {
+    return translate('Not enough funds.');
+  }
   const fmt = new Intl.NumberFormat('en-US').format;
   const lines = [
-    `${t('Not enough funds.')}`,
-    `${t('Balance')}: ${fmt(balance)} ${t('sats')}`,
+    translate('Not enough funds.'),
+    `${translate('Balance')}: ${fmt(balance)} ${translate('sats')}`,
   ];
-  if (fee > 0) {
-    lines.push(`${t('Required')}: ${fmt(required)} ${t('sats')} (${fmt(amountSats)} + ${fmt(fee)} ${t('fee')})`);
+  const amountSats = Number(parts?.amountSats);
+  const fee = Number(parts?.fee);
+  if (Number.isFinite(amountSats) && amountSats > 0 && Number.isFinite(fee) && fee > 0) {
+    lines.push(
+      `${translate('Required')}: ${fmt(required)} ${translate('sats')} ` +
+      `(${fmt(amountSats)} + ${fmt(fee)} ${translate('fee')})`
+    );
   } else {
-    lines.push(`${t('Required')}: ${fmt(required)} ${t('sats')}`);
+    lines.push(`${translate('Required')}: ${fmt(required)} ${translate('sats')}`);
   }
   return lines.join('\n');
 }
@@ -329,4 +369,9 @@ function truncate(s, max) {
   return s.slice(0, max - 1) + '…';
 }
 
-export default { buildPaymentError, getUserFriendlyError, getUserFriendlyErrorMessage };
+export default {
+  buildPaymentError,
+  getUserFriendlyError,
+  getUserFriendlyErrorMessage,
+  formatInsufficientBalanceBreakdown,
+};

@@ -461,18 +461,37 @@
           </q-btn>
         </section>
 
-        <!-- Step 5: Summary -->
+        <!--
+          Step 5: Summary.
+
+          Uses the same SuccessCheckmark primitive every other success
+          surface uses (single send, receive, withdraw, internal
+          transfer) so a batch result feels like the same family. The
+          accent shifts to Bitcoin orange when any payment failed —
+          the icon itself is the partial-outcome signal, so we don't
+          need a separate warning icon block.
+
+          Typography mirrors PaymentConfirmation: uppercase
+          tracking-wide label above a bold numeric anchor, then the
+          tighter stats / failed list as supporting detail. The
+          failed list stays content-driven (different content from a
+          single-send success), only the visual chrome is unified.
+        -->
         <section v-if="step === 5" class="step-content">
           <div class="summary-section">
-            <!-- Success Icon -->
-            <div class="summary-icon" :class="failedCount > 0 ? 'icon-partial' : 'icon-success'">
-              <Icon :icon="failedCount > 0 ? 'tabler:alert-circle' : 'tabler:circle-check'" />
+            <SuccessCheckmark
+              :animate="step === 5"
+              :accent="failedCount > 0 ? 'orange' : 'green'"
+            />
+
+            <div class="summary-label">
+              {{ failedCount === 0 ? $t('Batch Complete') : $t('Batch Finished') }}
             </div>
 
-            <!-- Stats -->
-            <h3 class="summary-title">
-              {{ failedCount === 0 ? $t('Batch Complete') : $t('Batch Finished') }}
-            </h3>
+            <div class="summary-total">
+              <strong>{{ formatSats(totalSent) }}</strong>
+              <span class="summary-total-unit">{{ $t('sats sent') }}</span>
+            </div>
 
             <div class="summary-stats">
               <div class="stat-item stat-success">
@@ -483,10 +502,6 @@
                 <Icon icon="tabler:x" />
                 <span>{{ failedCount }} {{ $t('failed') }}</span>
               </div>
-            </div>
-
-            <div class="summary-total">
-              {{ $t('Total sent') }}: <strong>{{ formatSats(totalSent) }} sats</strong>
             </div>
 
             <!-- Failed List -->
@@ -601,8 +616,9 @@ import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
 import LightningPaymentService from '../utils/lightning.js'
-import { getUserFriendlyError } from '../utils/userErrors'
+import { getUserFriendlyError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
 import ContactAvatar from './AddressBook/ContactAvatar.vue'
+import SuccessCheckmark from './SuccessCheckmark.vue'
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -1138,6 +1154,42 @@ function getActiveWalletNwcString() {
 // Methods - Execution
 // ─────────────────────────────────────────────────────────────
 async function startBatch() {
+  // Pre-flight balance check.
+  //
+  // The step-2 review already disables the "Review" button when the
+  // typed total exceeds the cached balance, but two cases can still
+  // slip through to here:
+  //   - cached balance was stale when the modal opened (user spent
+  //     funds in another flow between cache and now)
+  //   - user back-and-forthed between steps after balance changed
+  //
+  // Without this guard, the SDK rejects the *first* payment with a
+  // structured "Total target amount exceeds available balance" error,
+  // every subsequent iteration hits the same wall, and the user lands
+  // on step 5 with N identical row-level errors and no clean overall
+  // message. Catching it at the door yields one clear modal instead.
+  const totalRequired = totalAmount.value
+  const currentBalance = Number(walletBalance.value) || 0
+  if (totalRequired > currentBalance) {
+    const breakdown = formatInsufficientBalanceBreakdown(
+      { balance: currentBalance, required: totalRequired },
+      t,
+    )
+    const err = new Error('BATCH_INSUFFICIENT_BALANCE')
+    err.code = 'BATCH_INSUFFICIENT_BALANCE'
+    walletStore.showPaymentError(err, {
+      context: 'payment',
+      walletType: getActiveWalletType(),
+      route: 'Batch send pre-flight',
+      amountSats: totalRequired,
+      reason: breakdown,
+      t,
+    })
+    // Stay on step 3 (review) so the user can adjust amounts or
+    // remove recipients without re-entering the picker.
+    return
+  }
+
   step.value = 4
   isExecuting.value = true
   isCancelled.value = false
@@ -2457,6 +2509,11 @@ function retryFailed() {
 
 /* ════════════════════════════════════════════════════════════
    Step 5: Summary
+
+   Visual chrome mirrors PaymentConfirmation: uppercase tracked
+   label above a bold numeric anchor. The checkmark + pulse come
+   from the shared SuccessCheckmark primitive (orange tint when
+   any payment failed).
    ════════════════════════════════════════════════════════════ */
 .summary-section {
   display: flex;
@@ -2464,43 +2521,48 @@ function retryFailed() {
   align-items: center;
   text-align: center;
   padding: 20px 0;
+  gap: 18px;
 }
 
-.summary-icon {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
+.summary-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text2);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 6px;
+}
+
+.summary-total {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
+  gap: 4px;
+  margin-top: -4px;
 }
 
-.summary-icon i {
-  font-size: 48px;
-}
-
-.icon-success {
-  background: rgba(21, 222, 114, 0.1);
-  color: var(--c-success);
-}
-
-.icon-partial {
-  background: rgba(245, 158, 11, 0.1);
-  color: var(--c-warning);
-}
-
-.summary-title {
-  font-size: 22px;
-  font-weight: 700;
+.summary-total strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
   color: var(--c-text);
-  margin: 0 0 16px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.summary-total-unit {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .summary-stats {
   display: flex;
   gap: 20px;
-  margin-bottom: 16px;
 }
 
 .stat-item {
@@ -2517,16 +2579,6 @@ function retryFailed() {
 
 .stat-failed {
   color: var(--c-error);
-}
-
-.summary-total {
-  font-size: 16px;
-  color: var(--c-text2);
-  margin-bottom: 20px;
-}
-
-.summary-total strong {
-  color: var(--c-text);
 }
 
 .failed-list {

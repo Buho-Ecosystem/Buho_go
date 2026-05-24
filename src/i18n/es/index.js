@@ -864,6 +864,10 @@ export default {
   "Donations Portal": "Portal de Donaciones",
   "Closing in {seconds}s...": "Cerrando en {seconds}s...",
   "Close Now": "Cerrar Ahora",
+  // "Payment Sent" is already declared above (paired with
+  // "Payment Received") — don't redeclare here.
+  "Still sending…": "Aún enviando…",
+  "Save to Contacts": "Guardar en contactos",
   "Unlock Wallet": "Desbloquear Cartera",
   "Enter your PIN to unlock your Spark wallet": "Ingresa tu PIN para desbloquear tu cartera Spark",
   "To": "Para",
@@ -1223,6 +1227,7 @@ export default {
   "sent": "enviados",
   "failed": "fallidos",
   "Total sent": "Total enviado",
+  "sats sent": "sats enviados",
   "Failed payments": "Pagos fallidos",
   "Retry Failed": "Reintentar Fallidos",
   "Cancel Batch?": "¿Cancelar Envío?",
