@@ -470,7 +470,7 @@ export default {
     this.stopQrScanner();
   },
   methods: {
-    ...mapActions(useWalletStore, ['addLNBitsWallet', 'setWalletLightningAddress']),
+    ...mapActions(useWalletStore, ['addLNBitsWallet', 'setWalletLightningAddress', 'showPaymentError']),
 
     goBack() {
       if (window.history.length > 1) {
@@ -538,10 +538,10 @@ export default {
       } catch (error) {
         console.error('Failed to add LNBits wallet:', error);
         this.showLoadingScreen = false;
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to add wallet'),
-          caption: getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this)),
+        this.showPaymentError(error, {
+          context: 'connect',
+          route: 'Add LNBits wallet',
+          t: this.$t.bind(this),
         });
         return;
       }

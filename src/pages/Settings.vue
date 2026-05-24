@@ -3336,11 +3336,10 @@ export default {
 
         })
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Connection failed'),
-          caption: this.$t('Please check your connection and try again'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Add wallet',
+          t: this.$t.bind(this),
         })
       } finally {
         this.isAddingWallet = false
@@ -3364,10 +3363,10 @@ export default {
           message: this.$t('Reconnected'),
         })
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Reconnection failed'),
-          caption: this.$t('Please try again'),
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Reconnect wallet',
+          t: this.$t.bind(this),
         })
       } finally {
         this.isReconnecting[walletId] = false
@@ -3383,11 +3382,10 @@ export default {
           message: this.$t('Switched to {name}', { name: wallet?.name || 'Wallet' }),
         })
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t switch wallet'),
-          caption: this.$t('Please try again'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Switch wallet',
+          t: this.$t.bind(this),
         })
       }
     },
@@ -3462,11 +3460,13 @@ export default {
         }
       } catch (error) {
         console.error('Danger action error:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Action failed'),
-          caption: this.$t('Please try again'),
-
+        // Danger actions (delete wallets, disconnect NWC, etc.) don't
+        // fit any specific failure context — the user just needs to
+        // know the action didn't go through. Generic title + raw
+        // error in the technical pane is enough.
+        this.walletStore.showPaymentError(error, {
+          route: `Settings danger action: ${this.dangerConfirmAction}`,
+          t: this.$t.bind(this),
         });
       } finally {
         this.isDangerActionLoading = false;
@@ -3836,11 +3836,10 @@ export default {
 
       } catch (error) {
         console.error('Error testing Mempool URL:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('API connection failed'),
-          caption: this.$t('Please check the URL and try again'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Mempool API test',
+          t: this.$t.bind(this),
         });
       } finally {
         this.isTestingUrl = false;
@@ -3988,9 +3987,10 @@ export default {
           message: this.$t('Switched to {name}', { name: wallet?.name }),
         });
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to switch wallet'),
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Switch wallet',
+          t: this.$t.bind(this),
         });
       }
     },

@@ -2121,7 +2121,11 @@ export default {
         ]);
       } catch (error) {
         console.error('Error switching Spark tab:', error);
-        this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t switch wallet') });
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Switch Spark tab',
+          t: this.$t.bind(this),
+        });
       } finally {
         this.sparkTabSwitching = false;
       }
@@ -2161,10 +2165,10 @@ export default {
         this.updateWalletBalance();
       } catch (error) {
         console.error('Error switching wallet:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t switch wallet'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Switch wallet',
+          t: this.$t.bind(this),
         });
       }
     },
@@ -3842,17 +3846,19 @@ export default {
       try {
         challenge = parseLud04Input(lnurl);
       } catch (err) {
-        // The URL was recognisably LUD-04 but used `http:` — surface a
-        // toast and consume the input so no downstream handler retries
-        // it. Other parse failures (e.g. `tag=login` missing) fall
-        // through with `return false` so payment LNURLs can be handled
-        // by the payment path.
+        // The URL was recognisably LUD-04 but used `http:` — surface
+        // the global error dialog and consume the input so no downstream
+        // handler retries it. Other parse failures (e.g. `tag=login`
+        // missing) fall through with `return false` so payment LNURLs
+        // can be handled by the payment path.
         if (err?.code === LUD04_ERROR.INSECURE_SCHEME) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t("Couldn't sign you in"),
-            caption: this.$t('That link uses an insecure connection. Sign-in only works over HTTPS.'),
-            timeout: 4500,
+          // 'identity' context produces "Couldn't sign you in" as the
+          // title — same surface as every other sign-in failure.
+          this.walletStore.showPaymentError(err, {
+            context: 'identity',
+            route: 'LUD-04 scheme check',
+            reason: this.$t('That link uses an insecure connection. Sign-in only works over HTTPS.'),
+            t: this.$t.bind(this),
           });
           return true;
         }

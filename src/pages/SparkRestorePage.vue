@@ -260,8 +260,19 @@ export default {
         this.$router.replace('/spark-success');
       } catch (error) {
         console.error('Failed to restore wallet:', error);
+        // Local translator already knows how to interpret SDK errors
+        // (existing wallet, bad phrase, network). Pass its output as
+        // title + reason overrides so the modal shows our friendly
+        // explanation while still going through the unified surface
+        // users see for every other failure in the app.
         const { message, caption } = this._userFacingRestoreError(error);
-        this.$q.notify({ type: 'negative', message, caption });
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Spark wallet restore',
+          title: message,
+          reason: caption,
+          t: this.$t.bind(this),
+        });
         this.currentStep = 1;
       }
     },

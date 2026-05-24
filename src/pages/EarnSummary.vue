@@ -177,6 +177,7 @@
 
 <script>
 import { useEarnStore } from '../stores/earn'
+import { useWalletStore } from '../stores/wallet'
 import EarnBottomNav from '../components/EarnBottomNav.vue'
 
 export default {
@@ -184,7 +185,8 @@ export default {
   components: { EarnBottomNav },
   setup() {
     const earnStore = useEarnStore()
-    return { earnStore }
+    const walletStore = useWalletStore()
+    return { earnStore, walletStore }
   },
   data() {
     return {
@@ -220,10 +222,24 @@ export default {
             message: this.$t('Please take your time reading the lessons before claiming'),
           })
         } else {
-          this.$q.notify({ type: 'negative', message: this.$t('Claim failed. Try again later.') })
+          // No exception was raised; the store returned a structured
+          // failure code. Wrap the code so the technical pane still has
+          // something useful, but pass a curated reason so the dialog
+          // doesn't attribute our own synthesized string to a
+          // third-party payout service.
+          this.walletStore.showPaymentError(new Error(`claim failed: ${result.error || 'unknown'}`), {
+            context: 'earn',
+            route: 'Earn payout claim',
+            reason: this.$t('Claim failed. Try again later.'),
+            t: this.$t.bind(this),
+          })
         }
       } catch (e) {
-        this.$q.notify({ type: 'negative', message: this.$t('Claim failed. Try again later.') })
+        this.walletStore.showPaymentError(e, {
+          context: 'earn',
+          route: 'Earn payout claim',
+          t: this.$t.bind(this),
+        })
       } finally {
         this.isClaiming = false
       }
@@ -244,10 +260,19 @@ export default {
             message: this.$t('Please wait {mins} minutes before claiming again', { mins: result.minutesLeft }),
           })
         } else {
-          this.$q.notify({ type: 'negative', message: this.$t('Claim failed. Try again later.') })
+          this.walletStore.showPaymentError(new Error(`bonus claim failed: ${result.error || 'unknown'}`), {
+            context: 'earn',
+            route: 'Earn completion bonus',
+            reason: this.$t('Claim failed. Try again later.'),
+            t: this.$t.bind(this),
+          })
         }
       } catch (e) {
-        this.$q.notify({ type: 'negative', message: this.$t('Claim failed. Try again later.') })
+        this.walletStore.showPaymentError(e, {
+          context: 'earn',
+          route: 'Earn completion bonus',
+          t: this.$t.bind(this),
+        })
       } finally {
         this.isClaiming = false
       }
