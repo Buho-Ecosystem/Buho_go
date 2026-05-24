@@ -255,6 +255,7 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import QrScanner from 'qr-scanner'
+import { createQrScanner } from '../utils/qrScanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import {useWalletStore} from '../stores/wallet'
 import {mapActions} from 'pinia'
@@ -425,7 +426,7 @@ export default {
         }
 
         // Create QR scanner instance
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           this.videoElement,
           (result) => this.handleNWCScan(result.data),
           {

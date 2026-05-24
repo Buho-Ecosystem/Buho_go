@@ -370,6 +370,7 @@
 
 <script>
 import QrScanner from 'qr-scanner'
+import { createQrScanner } from '../utils/qrScanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import { useWalletStore } from '../stores/wallet'
@@ -702,7 +703,7 @@ export default {
           throw new Error('No camera found on this device.');
         }
 
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           this.$refs.videoElement,
           (result) => this.handleQrScan(result.data),
           {

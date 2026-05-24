@@ -202,6 +202,7 @@
 
 <script>
 import QrScanner from 'qr-scanner';
+import { createQrScanner } from '../utils/qrScanner';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
@@ -356,7 +357,7 @@ export default {
 
         this.videoElement = this.$refs.videoElement;
 
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           this.videoElement,
           (result) => {
             const data = typeof result === 'string' ? result : (result?.data || result?.text || '');
