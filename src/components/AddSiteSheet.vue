@@ -22,17 +22,37 @@
         >
           {{ $t('Sign in to a site') }}
         </div>
-        <q-btn
-          flat
-          round
-          dense
-          @click="close"
-          :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          :aria-label="$t('Close')"
-        >
-          <Icon icon="tabler:x" width="18" height="18" />
-        </q-btn>
+        <div class="add-site-header-actions">
+          <!--
+            Help affordance. Opens a small bottom sheet with concrete
+            example sites so first-time users have a starting point.
+            Sits between the title and the close button so users
+            naturally scan past it but can find it when needed.
+          -->
+          <q-btn
+            flat
+            round
+            dense
+            @click="showExamplesSheet = true"
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+            :aria-label="$t('Where can I sign in?')"
+          >
+            <Icon icon="tabler:help-circle" width="18" height="18" />
+          </q-btn>
+          <q-btn
+            flat
+            round
+            dense
+            @click="close"
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+            :aria-label="$t('Close')"
+          >
+            <Icon icon="tabler:x" width="18" height="18" />
+          </q-btn>
+        </div>
       </q-card-section>
+
+      <SiteExamplesSheet v-model="showExamplesSheet" />
 
       <!-- SCAN mode (default) — camera preview, auto-submit on detect -->
       <template v-if="mode === 'scan'">
@@ -102,7 +122,7 @@
             class="add-site-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Open a site with Lightning login, tap the sign-in option, then copy the link and paste it here.') }}
+            {{ $t('On a site that supports sign-in with Lightning, tap the sign-in option and paste the copied link here.') }}
           </p>
 
           <div
@@ -185,11 +205,12 @@ import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
 import { LUD04_ERROR, looksLikeLud04, parseLud04Input } from '../utils/lud4';
+import SiteExamplesSheet from './SiteExamplesSheet.vue';
 
 export default {
   name: 'AddSiteSheet',
 
-  components: { Icon },
+  components: { Icon, SiteExamplesSheet },
 
   props: {
     modelValue: { type: Boolean, required: true },
@@ -216,6 +237,9 @@ export default {
       // multiple times if the scanner keeps decoding the same QR for
       // a few frames before we stop it.
       detected: false,
+      // Help-sheet visibility. Opened by the (?) icon in the header,
+      // shows curated example sites for first-time users.
+      showExamplesSheet: false,
     };
   },
 
@@ -504,6 +528,18 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 17px;
   font-weight: 600;
+}
+
+/*
+  Sits the help (?) icon and the close (×) button side-by-side on
+  the right of the header. Tiny gap keeps them recognisable as two
+  separate affordances rather than one big tap target.
+*/
+.add-site-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .add-site-body {

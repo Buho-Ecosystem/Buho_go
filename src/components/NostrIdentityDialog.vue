@@ -45,13 +45,13 @@
             class="overview-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Your public profile') }}
+            {{ $t('Profile address') }}
           </h2>
           <p
             class="overview-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your profile too.') }}
+            {{ $t('Your recovery phrase keeps this profile safe. Back it up and the profile is backed up too.') }}
           </p>
 
           <div
@@ -89,7 +89,7 @@
             </div>
             <div class="nostr-callout-body">
               <div class="nostr-callout-text">
-                {{ $t('Share this address. Friends can find you on compatible apps.') }}
+                {{ $t('Friends can use this address to find you and pay you in other apps.') }}
               </div>
             </div>
           </div>
@@ -169,7 +169,7 @@
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
             :label="$t('Cancel')"
             :disable="isAuthenticating || isLoadingSecret"
-            @click="step = 'overview'"
+            @click="close"
           />
         </q-card-actions>
       </template>
@@ -179,72 +179,79 @@
            so mainstream users see "private key" instead of crypto jargon. -->
       <template v-else-if="step === 'reveal'">
         <q-card-section class="nostr-step-body reveal-body">
-          <div
-            class="phrase-countdown"
-            :class="[
-              $q.dark.isActive ? 'phrase-countdown-dark' : 'phrase-countdown-light',
-              { 'phrase-countdown-expiring': countdownRunning && countdownSeconds <= 10 },
-            ]"
-            role="status"
-            aria-live="polite"
-          >
-            <Icon :icon="countdownRunning ? 'tabler:clock' : 'tabler:eye-off'" width="14" height="14" />
-            <span v-if="countdownRunning">
-              {{ $t('Auto-hides in') }} {{ countdownText }}
-            </span>
-            <span v-else-if="timerExpired">
-              {{ $t('Hidden again. Tap to reveal.') }}
-            </span>
-            <span v-else>
-              {{ $t('Tap to reveal.') }}
-            </span>
-          </div>
-
+          <!--
+            Single secret card. Tap-to-toggle reveals or hides the
+            key. When revealed, an inline countdown chip on the card
+            header shows the auto-hide timer; an inline copy icon
+            sits next to it. No separate timer bar, no separate copy
+            row — the user sees one object and acts on it.
+          -->
           <button
             type="button"
             class="secret-card"
             :class="[
               $q.dark.isActive ? 'secret-card-dark' : 'secret-card-light',
               { 'secret-card--blurred': nsecBlurred },
+              { 'secret-card--expiring': countdownRunning && countdownSeconds <= 10 },
             ]"
             :aria-label="nsecBlurred ? $t('Show private key') : $t('Hide private key')"
             @click="toggleNsec"
           >
-            <div class="secret-card-label">
-              {{ $t('Private key') }}
+            <div class="secret-card-header">
+              <div class="secret-card-label">
+                {{ $t('Private key') }}
+              </div>
+              <div class="secret-card-controls">
+                <!--
+                  Countdown chip. Only shown while the key is visible
+                  AND the auto-hide timer is running. After the timer
+                  expires the card re-blurs and the chip disappears
+                  with it.
+                -->
+                <span
+                  v-if="!nsecBlurred && countdownRunning"
+                  class="secret-card-chip"
+                  :class="$q.dark.isActive ? 'secret-card-chip-dark' : 'secret-card-chip-light'"
+                >
+                  <Icon icon="tabler:clock" width="11" height="11" />
+                  <span>{{ countdownText }}</span>
+                </span>
+                <!--
+                  Inline copy icon. `@click.stop` so tapping it
+                  doesn't also re-blur the card via the parent's
+                  toggle handler.
+                -->
+                <button
+                  v-if="!nsecBlurred"
+                  type="button"
+                  class="secret-card-copy"
+                  :class="$q.dark.isActive ? 'secret-card-copy-dark' : 'secret-card-copy-light'"
+                  :aria-label="$t('Copy')"
+                  @click.stop="copyNsec"
+                >
+                  <Icon
+                    :icon="copiedNsec ? 'tabler:check' : 'tabler:copy'"
+                    width="14"
+                    height="14"
+                  />
+                </button>
+              </div>
             </div>
             <div class="secret-card-value">
               <code class="secret-card-code">{{ revealedNsec || '…' }}</code>
             </div>
             <div v-if="nsecBlurred" class="secret-card-overlay">
               <Icon icon="tabler:eye" width="20" height="20" />
-              <span>{{ $t('Tap to reveal') }}</span>
+              <span>{{ timerExpired ? $t('Tap to show again') : $t('Tap to reveal') }}</span>
             </div>
           </button>
 
-          <div class="secret-actions">
-            <q-btn
-              flat
-              no-caps
-              dense
-              :disable="nsecBlurred"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-              @click="copyNsec"
-            >
-              <Icon
-                :icon="copiedNsec ? 'tabler:check' : 'tabler:copy'"
-                width="14"
-                height="14"
-                style="margin-right: 4px;"
-              />
-              {{ copiedNsec ? $t('Copied') : $t('Copy') }}
-            </q-btn>
-          </div>
-
-          <!-- Persistent reassurance while the clipboard auto-clear is
-               pending. Shows the countdown until the wipe fires so the
-               user knows their clipboard isn't holding the secret
-               indefinitely. Disappears the moment the wipe lands. -->
+          <!--
+            Persistent reassurance while the clipboard auto-clear is
+            pending. Small inline note — sits below the card so the
+            countdown timer in the card header (auto-hide of the
+            displayed key) stays distinct from this clipboard timer.
+          -->
           <div
             v-if="clipboardWipeSecondsLeft > 0"
             class="clipboard-clear-hint"
@@ -252,23 +259,40 @@
             role="status"
             aria-live="polite"
           >
-            <Icon icon="tabler:clock" width="13" height="13" />
+            <Icon icon="tabler:clock" width="12" height="12" />
             <span>{{ $t('Clipboard clears in') }} {{ clipboardWipeSecondsLeft }}s</span>
           </div>
 
+          <!--
+            Compact warning. Was a full callout box; trimmed to a
+            single tight row so the page stops feeling crowded.
+            The wording is shortened too — the longer "never paste
+            into a website" guidance still lives inside the
+            client-examples sheet's safety footer.
+          -->
           <div
-            class="nostr-callout nostr-callout--warn"
-            :class="$q.dark.isActive ? 'nostr-callout-dark' : 'nostr-callout-light'"
+            class="secret-warn"
+            :class="$q.dark.isActive ? 'secret-warn-dark' : 'secret-warn-light'"
+            role="note"
           >
-            <div class="nostr-callout-icon">
-              <Icon icon="tabler:shield" width="18" height="18" />
-            </div>
-            <div class="nostr-callout-body">
-              <div class="nostr-callout-text">
-                {{ $t('Anyone with this key can sign and post as you on compatible apps. Treat it like your recovery phrase. Never paste it into a website.') }}
-              </div>
-            </div>
+            <Icon icon="tabler:shield" width="14" height="14" />
+            <span>{{ $t('Anyone with this key controls your profile. Keep it private.') }}</span>
           </div>
+
+          <!--
+            Help link, demoted to a quiet text affordance. Reads as
+            "answer the natural next question" rather than another
+            CTA competing with Done.
+          -->
+          <button
+            type="button"
+            class="where-to-use-link"
+            :class="$q.dark.isActive ? 'where-to-use-link-dark' : 'where-to-use-link-light'"
+            @click="showClientExamplesSheet = true"
+          >
+            <span>{{ $t('Where can I use this key?') }}</span>
+            <Icon icon="tabler:chevron-right" width="13" height="13" />
+          </button>
         </q-card-section>
 
         <q-card-actions class="nostr-dialog-actions">
@@ -347,6 +371,14 @@
 
     </q-card>
   </q-dialog>
+
+  <!--
+    Help sheet showing curated client apps where the revealed key
+    can be used. Mounted as a sibling of q-dialog so it stacks on
+    top correctly and isn't torn down with the parent dialog's
+    transition.
+  -->
+  <ClientExamplesSheet v-model="showClientExamplesSheet" />
 </template>
 
 <script>
@@ -357,6 +389,7 @@ import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { getBiometricMethodCopy } from '../utils/biometricCopy';
 import { secureScreen } from '../utils/secureScreen';
 import { copySensitive } from '../utils/sensitiveClipboard';
+import ClientExamplesSheet from './ClientExamplesSheet.vue';
 
 const CLIPBOARD_WIPE_TICK_MS = 1000;
 
@@ -370,7 +403,7 @@ const COUNTDOWN_TICK_MS = 1000;
 export default {
   name: 'NostrIdentityDialog',
 
-  components: { Icon },
+  components: { Icon, ClientExamplesSheet },
 
   props: {
     modelValue: { type: Boolean, required: true },
@@ -411,6 +444,10 @@ export default {
       clipboardWipeSecondsLeft: 0,
       clipboardWipeInterval: null,
 
+      // Visibility for the "Where can I use this key?" help sheet,
+      // opened by an inline link below the revealed key.
+      showClientExamplesSheet: false,
+
       // WIP_PLAN: nostr-identity-recovery — rotation flow state.
       // Disabled until we publish the rotated account index to relays.
       // rotateConfirmInput: '',
@@ -429,8 +466,8 @@ export default {
       if (this.step === 'authExplain') return this.$t('Verify it is you');
       if (this.step === 'reveal') return this.$t('Your private key');
       // WIP_PLAN: nostr-identity-recovery — rotation step header.
-      // if (this.step === 'rotateConfirm') return this.$t('Reset your profile');
-      return this.$t('Your public profile');
+      // if (this.step === 'rotateConfirm') return this.$t('Start a new profile');
+      return this.$t('Profile address');
     },
 
     authMethodCopy() {
@@ -472,8 +509,25 @@ export default {
   },
 
   watch: {
+    /**
+     * The dialog's only entry point is the "Reveal private key" row
+     * in the kebab sheet, so we skip the address-overview step and
+     * head straight into the reveal flow. Biometric or PIN gates
+     * still fire inside `onRevealRequested` when App Lock is on; if
+     * not, the secret loads immediately. The user can still see
+     * their public address from the Share Profile sheet on the main
+     * page — no information is lost, just one tap saved.
+     */
     modelValue(isOpen) {
-      if (isOpen) this.resetToOverview();
+      if (isOpen) {
+        this.resetToOverview();
+        // Fire on next tick so the dialog mount completes first and
+        // the biometric prompt overlays the dialog (not the previous
+        // sheet underneath it).
+        this.$nextTick(() => {
+          if (this.modelValue) this.onRevealRequested();
+        });
+      }
     },
     nsecBlurred(isBlurred) {
       if (this.step !== 'reveal') return;
@@ -903,6 +957,73 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
+/*
+  Compact one-line warning under the secret card. Replaces the
+  previous boxed callout (icon column + multi-line text + padding)
+  which competed visually with the secret card itself. The wording
+  is shortened too — full guidance lives in the client-examples
+  sheet's footer.
+*/
+.secret-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.secret-warn-light {
+  background: rgba(245, 158, 11, 0.08);
+  color: #92400e;
+}
+
+.secret-warn-dark {
+  background: rgba(245, 158, 11, 0.10);
+  color: #fde68a;
+}
+
+/*
+  "Where can I use this key?" — demoted from a pill button to a
+  text link. Still tappable, still keyboard-focusable, but doesn't
+  compete with the Done CTA. Right-chevron tells the user it opens
+  a follow-up surface.
+*/
+.where-to-use-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px auto 0;
+  padding: 4px 6px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.where-to-use-link-light {
+  color: var(--text-primary, #0f172a);
+}
+
+.where-to-use-link-light:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.where-to-use-link-dark {
+  color: #f8fafc;
+}
+
+.where-to-use-link-dark:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .nostr-callout-text {
   font-size: 13px;
   line-height: 1.45;
@@ -912,37 +1033,24 @@ export default {
 
 .reveal-body {
   align-items: stretch;
+  gap: 12px;
 }
 
-.phrase-countdown {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: center;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  transition: background 0.2s ease, color 0.2s ease;
-}
+/*
+  Note: the previous `.phrase-countdown` standalone pill and the
+  `.secret-actions` copy row were removed in the visual cleanup.
+  Their roles moved onto the secret card itself (chip + inline
+  copy icon) so the page reads as one object instead of three.
+*/
 
-.phrase-countdown-light {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.phrase-countdown-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-}
-
-.phrase-countdown-expiring {
-  background: #fef3c7 !important;
-  color: #92400e !important;
-}
-
+/*
+  Self-contained secret card. Holds:
+    - header row: label + (timer chip + copy icon when revealed)
+    - value row:  the bech32 nsec (blurred when hidden)
+    - overlay:    tap-to-reveal affordance when blurred
+  No external countdown bar, no external action row — one card,
+  one tappable surface, all the controls live on it.
+*/
 .secret-card {
   position: relative;
   width: 100%;
@@ -951,10 +1059,10 @@ export default {
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
-  transition: filter 0.18s ease, transform 0.12s ease;
+  transition: filter 0.18s ease, transform 0.12s ease, border-color 0.18s ease;
 }
 
 .secret-card-light {
@@ -971,12 +1079,90 @@ export default {
   transform: scale(0.99);
 }
 
+/*
+  When the auto-hide is about to fire (≤10s), thicken the border in
+  the warn colour to draw the eye to the soon-to-blur card without
+  introducing a separate animated banner.
+*/
+.secret-card--expiring {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.secret-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .secret-card-label {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #b06d00;
+}
+
+/*
+  Right-side cluster on the header: countdown chip + inline copy
+  icon. Tight gap keeps them grouped; alignment is to baseline so
+  the chip and icon read as one control surface, not two.
+*/
+.secret-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.secret-card-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.secret-card-chip-light {
+  background: rgba(15, 23, 42, 0.06);
+  color: #475569;
+}
+
+.secret-card-chip-dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+
+.secret-card-copy {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.secret-card-copy-light {
+  color: #0f172a;
+}
+
+.secret-card-copy-light:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.secret-card-copy-dark {
+  color: #f8fafc;
+}
+
+.secret-card-copy-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .secret-card-value {
@@ -1011,29 +1197,23 @@ export default {
   pointer-events: none;
 }
 
-.secret-actions {
-  display: flex;
-  justify-content: center;
-  margin-top: -6px;
-}
-
-/* ---------- Persistent clipboard-clear countdown ----------
-   Visible whenever a sensitive copy's auto-wipe is still pending.
-   Same visual idiom as the reveal-countdown pill (rounded, muted,
-   monospace digits) so the two countdowns feel related. */
-
+/*
+  Persistent clipboard-clear countdown. Stays as a small inline
+  pill below the card; separate from the auto-hide timer because
+  the two refer to different things (clipboard contents vs visible
+  display) and conflating them would be confusing.
+*/
 .clipboard-clear-hint {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   align-self: center;
-  padding: 5px 11px;
+  padding: 4px 10px;
   border-radius: 999px;
   font-family: 'Manrope', sans-serif;
   font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  margin-top: 2px;
 }
 
 .clipboard-clear-hint-light {

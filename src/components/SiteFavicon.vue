@@ -1,14 +1,18 @@
 <template>
   <span
     class="site-favicon-wrap"
-    :class="$q.dark.isActive ? 'site-favicon-wrap-dark' : 'site-favicon-wrap-light'"
+    :class="[
+      $q.dark.isActive ? 'site-favicon-wrap-dark' : 'site-favicon-wrap-light',
+      shape === 'rounded-square' ? 'site-favicon-wrap--squircle' : 'site-favicon-wrap--circle',
+    ]"
     :style="fallbackStyle"
     :aria-label="domain"
   >
     <img
-      v-if="!failed"
-      :src="iconUrl"
+      v-if="!failed && currentIconUrl"
+      :src="currentIconUrl"
       class="site-favicon-img"
+      :class="shape === 'rounded-square' ? 'site-favicon-img--fill' : 'site-favicon-img--inset'"
       alt=""
       loading="lazy"
       decoding="async"
@@ -22,26 +26,62 @@
 
 <script>
 /**
- * SiteFavicon — small avatar for a domain row in the Connected Sites
- * list. Pulls the site's own `/favicon.ico` (the site already had a
- * relationship with the user via LUD-04, so no new privacy leak) and
- * falls back to a colored single-letter circle when the favicon is
- * missing or doesn't load.
+ * SiteFavicon — small avatar for a domain row.
  *
- * Deliberately avoids Google/DuckDuckGo favicon proxies — those would
- * tell a third party which sites the user is logged into, which is
- * exactly what LUD-04 is meant to prevent.
+ * Resolves a site's icon at runtime from the site's own origin. The
+ * site already had (or is about to have) a relationship with the
+ * user, so no new privacy leak is introduced — and crucially we
+ * stay off Google/DuckDuckGo favicon proxies, which would tell a
+ * third party which sites the user is interested in.
  *
- * The fallback color is derived deterministically from the domain so
- * the same site always renders with the same accent (good for visual
- * recognition between sessions, and no PII).
+ * Resolution order:
+ *   1. `iconUrl` prop, if the caller already knows a specific URL.
+ *   2. `/apple-touch-icon.png` (modern, high-res, near-universal
+ *      on any site with a mobile presence — the apps in our
+ *      example sheets all expose one).
+ *   3. `/apple-touch-icon-precomposed.png` (older iOS variant).
+ *   4. `/favicon.ico` (legacy, sometimes the only one served).
+ *   5. Colored single-letter circle (deterministic per-domain so
+ *      the same site always renders with the same accent).
+ *
+ * Apple-touch icons sit first in the fallback chain because they
+ * tend to be properly sized for our 28–32px avatar slot, whereas
+ * many `/favicon.ico` files are 16×16 and scale up muddily.
  */
+const ICON_CANDIDATE_PATHS = Object.freeze([
+  '/apple-touch-icon.png',
+  '/apple-touch-icon-precomposed.png',
+  '/favicon.ico',
+]);
+
 export default {
   name: 'SiteFavicon',
 
   props: {
     domain: { type: String, required: true },
     size: { type: Number, default: 28 },
+    /**
+     * Optional explicit URL. Skips the multi-path resolution and
+     * uses this directly. Lets callers that know a specific
+     * brand-asset URL (or a bundled local asset) override the
+     * automatic detection.
+     */
+    iconUrl: { type: String, default: '' },
+    /**
+     * Visual shape of the wrap:
+     *   - `'circle'` (default): perfect circle, image inset to 70%.
+     *     Right for tiny / inconsistent favicons that benefit from a
+     *     colored disc behind them (the connected-sites list).
+     *   - `'rounded-square'`: iOS / Play Store style squircle, image
+     *     fills the wrap edge-to-edge. Right for actual brand-icon
+     *     assets where the image already IS a square app icon and
+     *     shouldn't get extra padding (the example sheets).
+     */
+    shape: {
+      type: String,
+      default: 'circle',
+      validator: (v) => v === 'circle' || v === 'rounded-square',
+    },
   },
 
   data() {
@@ -52,15 +92,22 @@ export default {
       // of broken-image. Tracked here so the fallback letter can render
       // immediately if the request never resolves a bitmap.
       loaded: false,
+      // Index into ICON_CANDIDATE_PATHS for the current attempt.
+      // Advances on each `onerror`; when it exceeds the list we set
+      // `failed = true` to render the letter circle.
+      attemptIndex: 0,
     };
   },
 
   computed: {
-    iconUrl() {
-      // Fetched from the same origin the user just authenticated against.
-      // No third party in the loop. Works for every LUD-04 service we'd
-      // ever land in this list.
-      return `https://${this.domain}/favicon.ico`;
+    currentIconUrl() {
+      // Explicit override wins. Empty domain → render nothing
+      // (parent shows letter fallback via `failed` flag chain).
+      if (this.iconUrl) return this.iconUrl;
+      if (!this.domain) return '';
+      const path = ICON_CANDIDATE_PATHS[this.attemptIndex];
+      if (!path) return '';
+      return `https://${this.domain}${path}`;
     },
 
     initial() {
@@ -101,18 +148,44 @@ export default {
   watch: {
     domain() {
       // Reset on domain change so the same instance can be reused for
-      // a different row without leaking the prior `failed` state.
-      this.failed = false;
-      this.loaded = false;
+      // a different row without leaking the prior attempt state.
+      this.resetAttempts();
+    },
+    iconUrl() {
+      // Explicit override changed — reset so we re-attempt with the
+      // new URL (or, if cleared, fall back into the multi-path
+      // resolution chain).
+      this.resetAttempts();
     },
   },
 
   methods: {
+    /**
+     * Move to the next candidate path; mark as `failed` (letter
+     * fallback) when the chain is exhausted. Skipped entirely when
+     * the caller supplied an explicit `iconUrl` — that URL is final;
+     * we don't fall back to /apple-touch-icon.png on a custom URL
+     * because the caller's intent was specific.
+     */
     onImageError() {
-      this.failed = true;
+      if (this.iconUrl) {
+        this.failed = true;
+        return;
+      }
+      const next = this.attemptIndex + 1;
+      if (next >= ICON_CANDIDATE_PATHS.length) {
+        this.failed = true;
+        return;
+      }
+      this.attemptIndex = next;
     },
     onImageLoad() {
       this.loaded = true;
+    },
+    resetAttempts() {
+      this.failed = false;
+      this.loaded = false;
+      this.attemptIndex = 0;
     },
   },
 };
@@ -120,7 +193,6 @@ export default {
 
 <style scoped>
 .site-favicon-wrap {
-  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -129,6 +201,19 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-weight: 600;
   user-select: none;
+}
+
+/* Circle wrap — default. The image sits inset so small/ragged
+   favicons get a clean colored disc behind them. */
+.site-favicon-wrap--circle {
+  border-radius: 50%;
+}
+
+/* Rounded-square ("squircle") wrap — iOS / Play Store app-icon
+   shape. Image fills the wrap edge-to-edge because the asset is
+   already a square brand icon and needs no extra padding ring. */
+.site-favicon-wrap--squircle {
+  border-radius: 22%;
 }
 
 .site-favicon-wrap-light {
@@ -140,10 +225,22 @@ export default {
 }
 
 .site-favicon-img {
-  width: 70%;
-  height: 70%;
   object-fit: contain;
   display: block;
+}
+
+/* Inset image — paired with the circle wrap. Leaves a colored
+   ring around small favicons so they read as a deliberate avatar. */
+.site-favicon-img--inset {
+  width: 70%;
+  height: 70%;
+}
+
+/* Edge-to-edge image — paired with the squircle wrap. The brand
+   icon IS the visual; no padding ring needed. */
+.site-favicon-img--fill {
+  width: 100%;
+  height: 100%;
 }
 
 .site-favicon-letter {

@@ -115,30 +115,13 @@
         </q-card-actions>
       </template>
 
-      <!-- Step: Phrase reveal -->
+      <!--
+        Phrase reveal step. Same streamlined layout used by the
+        identity dialog: header row with optional countdown chip +
+        Show/Hide toggle, words grid, one short safety line below.
+      -->
       <template v-else-if="step === 'phrase'">
         <q-card-section class="seed-step-body phrase-body">
-          <div
-            class="phrase-countdown"
-            :class="[
-              $q.dark.isActive ? 'phrase-countdown-dark' : 'phrase-countdown-light',
-              { 'phrase-countdown-expiring': countdownRunning && countdownSeconds <= 10 },
-            ]"
-            role="status"
-            aria-live="polite"
-          >
-            <Icon :icon="countdownRunning ? 'tabler:clock' : 'tabler:eye-off'" width="14" height="14" />
-            <span v-if="countdownRunning">
-              {{ $t('Auto-hides in') }} {{ countdownText }}
-            </span>
-            <span v-else-if="timerExpired">
-              {{ $t('Hidden again. Tap Show words to reveal.') }}
-            </span>
-            <span v-else>
-              {{ $t('Tap Show words to reveal.') }}
-            </span>
-          </div>
-
           <MnemonicDisplay
             :initial-blurred="phraseBlurred"
             :words="mnemonicWords"
@@ -146,17 +129,31 @@
             :show-warning="false"
             :show-copy="false"
             @update:blurred="phraseBlurred = $event"
-          />
+          >
+            <template #header>
+              <span
+                v-if="countdownRunning"
+                class="seed-countdown-chip"
+                :class="[
+                  $q.dark.isActive ? 'seed-countdown-chip-dark' : 'seed-countdown-chip-light',
+                  { 'seed-countdown-chip--expiring': countdownSeconds <= 10 },
+                ]"
+                role="status"
+                aria-live="polite"
+              >
+                <Icon icon="tabler:clock" width="11" height="11" />
+                <span>{{ countdownText }}</span>
+              </span>
+            </template>
+          </MnemonicDisplay>
 
-          <div class="seed-callout" :class="$q.dark.isActive ? 'seed-callout-dark' : 'seed-callout-light'">
-            <div class="seed-callout-icon">
-              <Icon icon="tabler:shield" width="18" height="18" />
-            </div>
-            <div class="seed-callout-body">
-              <div class="seed-callout-text">
-                {{ $t('Never type this phrase into a website. Never share it in chat, photos, or cloud notes.') }}
-              </div>
-            </div>
+          <div
+            class="seed-warn"
+            :class="$q.dark.isActive ? 'seed-warn-dark' : 'seed-warn-light'"
+            role="note"
+          >
+            <Icon icon="tabler:shield" width="14" height="14" />
+            <span>{{ $t('Never type these words into a website or save them in cloud notes.') }}</span>
           </div>
         </q-card-section>
 
@@ -663,35 +660,58 @@ export default {
   max-width: 380px;
 }
 
-/* ──────────── Phrase step ──────────── */
+/* ──────────── Phrase step ────────────
+   Auto-hide chip + compact safety warn. Same shape used by the
+   identity dialog so the two phrase surfaces look like one
+   family. */
 
-.phrase-countdown {
+.seed-countdown-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  align-self: center;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 3px 8px;
   border-radius: 999px;
   font-family: 'Manrope', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.phrase-countdown-light {
-  background: #f1f5f9;
+.seed-countdown-chip-light {
+  background: rgba(15, 23, 42, 0.06);
   color: #475569;
 }
 
-.phrase-countdown-dark {
-  background: rgba(255, 255, 255, 0.06);
+.seed-countdown-chip-dark {
+  background: rgba(255, 255, 255, 0.08);
   color: #cbd5e1;
 }
 
-.phrase-countdown-expiring {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+.seed-countdown-chip--expiring {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ef4444 !important;
+}
+
+.seed-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.seed-warn-light {
+  background: rgba(239, 68, 68, 0.06);
+  color: #b91c1c;
+}
+
+.seed-warn-dark {
+  background: rgba(239, 68, 68, 0.10);
+  color: #fca5a5;
 }
 
 /* ──────────── Quiet callout (replaces the yellow alert) ──────────── */

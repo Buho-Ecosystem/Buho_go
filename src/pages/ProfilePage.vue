@@ -111,49 +111,16 @@
           </div>
         </button>
 
-        <!-- Status pills. Single neutral style across every state —
-             the icon carries the meaning, not a tinted background.
-             Keeps the page monochrome so the primary CTA below is
-             the only saturated element above the fold. -->
-        <div v-if="identity.bootstrapped" class="hero-pills">
-          <button
-            type="button"
-            class="hero-pill"
-            :class="$q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light'"
-            role="status"
-            aria-live="polite"
-            :aria-label="
-              identity.backupConfirmed
-                ? $t('Recovery phrase backed up')
-                : $t('Recovery phrase not backed up yet')
-            "
-            @click="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
-          >
-            <Icon
-              :icon="identity.backupConfirmed ? 'tabler:shield-check' : 'tabler:shield-exclamation'"
-              width="13"
-              height="13"
-            />
-            <span>
-              {{ identity.backupConfirmed ? $t('Backed up') : $t('Backup needed') }}
-            </span>
-          </button>
-
-          <span
-            v-if="!profile.isEmpty"
-            class="hero-pill"
-            :class="$q.dark.isActive ? 'hero-pill-dark' : 'hero-pill-light'"
-            role="status"
-            aria-live="polite"
-          >
-            <Icon
-              :icon="publishPillIcon"
-              width="13"
-              height="13"
-            />
-            <span>{{ publishPillLabel }}</span>
-          </span>
-        </div>
+        <!--
+          Status pills (backup-state + publish-state) were removed in
+          favour of a calmer hero. The same information is still
+          reachable but in less-noisy places:
+          - Backup status: shown inside the kebab sheet header.
+          - Publish failures: surface in-context inside the edit
+            sheet's error banner.
+          The hero stays focused on identity (who you are) and the
+          two primary CTAs (Edit, Share).
+        -->
 
         <!-- Two equal-width neutral pills side by side — Instagram /
              Threads style. Both gated on `identity.bootstrapped` so
@@ -190,8 +157,27 @@
            – Not bootstrapped:      no section at all (strip carries it). -->
       <template v-if="identity.bootstrapped">
         <div class="sites-section-header">
-          <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
-            {{ $t('Sites you sign in to') }}
+          <!--
+            Section title + inline help icon. The help icon opens the
+            same SiteExamplesSheet the AddSiteSheet uses, so the user
+            can discover concrete sites without having to start the
+            add-site flow first. Sits inside the title row so the (?)
+            reads as "what is this section about?", not "how do I add
+            one?" — which is what the + button next to it answers.
+          -->
+          <div class="sites-section-title">
+            <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+              {{ $t('Sites you sign in to') }}
+            </div>
+            <button
+              type="button"
+              class="sites-help-btn"
+              :class="$q.dark.isActive ? 'sites-help-btn-dark' : 'sites-help-btn-light'"
+              :aria-label="$t('Where can I sign in?')"
+              @click="showSiteExamplesSheet = true"
+            >
+              <Icon icon="tabler:help-circle" width="15" height="15" />
+            </button>
           </div>
           <button
             v-if="connectedSites.length > 0"
@@ -254,8 +240,24 @@
           <div class="sites-empty-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
             {{ $t('Sign in to your first site') }}
           </div>
+          <!--
+            Body line + inline "See examples" link. The link opens
+            the SiteExamplesSheet directly (mounted at page level)
+            so the user can browse concrete options without having
+            to start the add-site flow first. Wording stays tight:
+            one short sentence + one clear next step.
+          -->
           <p class="sites-empty-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('Any site with Lightning login works. No passwords, no email.') }}
+            {{ $t('Use your profile instead of passwords.') }}
+            <button
+              type="button"
+              class="sites-empty-link"
+              :class="$q.dark.isActive ? 'sites-empty-link-dark' : 'sites-empty-link-light'"
+              @click="showSiteExamplesSheet = true"
+            >
+              {{ $t('See examples') }}
+              <Icon icon="tabler:chevron-right" width="12" height="12" />
+            </button>
           </p>
           <button
             type="button"
@@ -305,6 +307,11 @@
          visibility, and identityStore for the cached npub. -->
     <ProfileShareSheet v-model="showProfileShareSheet" />
 
+    <!-- First-open intro carousel. Triggered from `created()` once
+         per identity; subsequent visits skip it via the persisted
+         `profileIntroSeenAt` flag on the identity store. -->
+    <ProfileIntroDialog v-model="showProfileIntro" />
+
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
          challenge, hands it to the IdentityAuthDialog below for the
          familiar approve/sign/submit flow. -->
@@ -312,6 +319,15 @@
       v-model="showAddSiteSheet"
       @submit="onAddSiteSubmitted"
     />
+
+    <!--
+      Help sheet showing concrete example sites. Reachable from two
+      places: the (?) icon on this page's "Sites you sign in to"
+      section header, and the (?) icon inside AddSiteSheet's own
+      header. Same component, mounted twice — no shared state to
+      sync.
+    -->
+    <SiteExamplesSheet v-model="showSiteExamplesSheet" />
 
     <!-- LUD-04 auth dialog. Mounted here too (in addition to Wallet.vue)
          so the Profile add-site flow can finish on this page without a
@@ -360,9 +376,9 @@
           <div class="danger-icon-wrapper">
             <Icon icon="tabler:alert-triangle" width="32" height="32" class="danger-icon" />
           </div>
-          <div class="danger-title">{{ $t('Generate new identity?') }}</div>
+          <div class="danger-title">{{ $t('Start a new profile?') }}</div>
           <div class="danger-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('This wipes your current BuhoGO identity, including the public profile derived from it, and creates a fresh one. Every site you have linked will see you as a new user, and other apps will see a new profile. Your wallets are not affected.') }}
+            {{ $t('Your wallets are safe and stay untouched. This replaces your current profile with a fresh one. Sites you signed in to will see you as a new user, and your old name, picture, and contacts will be gone from here.') }}
           </div>
         </q-card-section>
 
@@ -394,7 +410,7 @@
           <q-btn
             unelevated
             no-caps
-            :label="$t('Generate new identity')"
+            :label="$t('Start a new profile')"
             :disable="regenerateConfirmInput !== confirmPhrase"
             :loading="isRegenerating"
             class="danger-action-btn"
@@ -416,7 +432,9 @@ import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
 import ProfileEditSheet from '../components/ProfileEditSheet.vue';
 import ProfileAvatarPickerSheet from '../components/ProfileAvatarPickerSheet.vue';
 import ProfileShareSheet from '../components/ProfileShareSheet.vue';
+import ProfileIntroDialog from '../components/ProfileIntroDialog.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
+import SiteExamplesSheet from '../components/SiteExamplesSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
 import { useIdentityStore } from '../stores/identity';
@@ -442,7 +460,9 @@ export default {
     ProfileEditSheet,
     ProfileAvatarPickerSheet,
     ProfileShareSheet,
+    ProfileIntroDialog,
     AddSiteSheet,
+    SiteExamplesSheet,
     SiteFavicon,
     ConnectedSiteSheet,
   },
@@ -469,6 +489,11 @@ export default {
       showProfileShareSheet: false,
       showProfileAvatarPicker: false,
 
+      // First-open intro carousel. Shown exactly once per identity;
+      // gated by `identity.profileIntroSeenAt` and resolved in
+      // `created()` so we don't flash the dialog mid-render.
+      showProfileIntro: false,
+
       // Avatar load error sticky: once an avatar URL has failed to load
       // in this session, we silently fall back to the silhouette so we
       // don't keep retrying a broken URL on every re-render.
@@ -478,6 +503,9 @@ export default {
       // produced by the AddSiteSheet paste/parse step; the auth dialog
       // mirrors the deep-link path from Wallet.vue.
       showAddSiteSheet: false,
+      // Visibility for the example-sites help sheet, opened by the
+      // (?) icon next to the "Sites you sign in to" section header.
+      showSiteExamplesSheet: false,
       showIdentityAuthDialog: false,
       pendingChallenge: null,
 
@@ -529,10 +557,10 @@ export default {
      */
     heroHeadline() {
       if (!this.identity.bootstrapped) return '';
-      if (this.profile.isEmpty) return this.$t('Add your name and a picture');
-      // Prefer display_name; fall back to name (handle) before the
-      // shortened pubkey, because in NIP-01 some clients only set
-      // `name`. Last resort is the placeholder.
+      if (this.profile.isEmpty) return this.$t('Set up your profile');
+      // Prefer the display name; fall back to handle, then to a
+      // shortened profile address. Last-resort placeholder keeps
+      // the layout stable for never-published states.
       return this.profile.displayName
         || this.profile.name
         || this.shortNpub
@@ -540,18 +568,17 @@ export default {
     },
 
     /**
-     * Subline under the headline. Stays empty whenever there's
-     * nothing trustworthy to show — better than rendering a stale
-     * label that the user can't trust.
+     * Subline under the headline. Empty profile gets a one-liner
+     * that explains *what the profile is for* — the most common
+     * thing first-time users don't know. Once set up, we show the
+     * Lightning address (or the shortened profile address) so a
+     * friend has something concrete to copy into another app.
      */
     heroSubline() {
       if (!this.identity.bootstrapped) return '';
       if (this.profile.isEmpty) {
-        return this.$t('Tap to make your profile yours');
+        return this.$t('Add a name and picture so friends can find you and pay you.');
       }
-      // Prefer the Lightning Address (NIP-05/LUD-16 form) over the
-      // shortened pubkey — it's the version a friend can actually
-      // type into another app.
       if (this.profile.lud16) return this.profile.lud16;
       return this.shortNpub;
     },
@@ -564,49 +591,6 @@ export default {
       const npub = this.identity.nostrNpub;
       if (typeof npub !== 'string' || npub.length < 16) return '';
       return `${npub.slice(0, 10)}…${npub.slice(-6)}`;
-    },
-
-    /**
-     * Publish-status pill. Five states cover the publish lifecycle:
-     *   idle              → grey "Not published yet"
-     *   publishing        → blue "Publishing…"
-     *   published         → green "Public"
-     *   retrying          → amber "Retrying"
-     *   failed            → red    "Publish failed"
-     * The retrying / failed split is only meaningful once Step 8 wires
-     * background retry; until then a total failure shows as "Publish
-     * failed" so the user knows there's something to do.
-     */
-    publishPillState() {
-      if (this.profile.isPublishing) return 'publishing';
-      if (this.profile.lastPublishedAt) {
-        if (this.profile.isDirty) return 'retrying';
-        return 'published';
-      }
-      if (Array.isArray(this.profile.lastPublishResult)
-          && this.profile.lastPublishResult.length > 0
-          && this.profile.lastPublishResult.every((r) => !r.ok)) {
-        return 'failed';
-      }
-      return 'idle';
-    },
-    publishPillIcon() {
-      switch (this.publishPillState) {
-        case 'publishing': return 'tabler:loader-2';
-        case 'published':  return 'tabler:circle-check';
-        case 'retrying':   return 'tabler:refresh';
-        case 'failed':     return 'tabler:alert-circle';
-        default:           return 'tabler:cloud-off';
-      }
-    },
-    publishPillLabel() {
-      switch (this.publishPillState) {
-        case 'publishing': return this.$t('Publishing…');
-        case 'published':  return this.$t('Public');
-        case 'retrying':   return this.$t('Retrying');
-        case 'failed':     return this.$t('Publish failed');
-        default:           return this.$t('Not published yet');
-      }
     },
 
     /**
@@ -634,6 +618,13 @@ export default {
     // gate any flow here.
     if (!this.identity.bootstrapped) {
       await this.identity.ensureIdentity();
+    }
+
+    // First-open intro. We only show it after the identity is in place
+    // so the carousel never appears against a half-initialised Profile.
+    // The seen flag persists, so re-visits don't re-trigger.
+    if (!this.identity.profileIntroSeenAt) {
+      this.showProfileIntro = true;
     }
   },
 
@@ -847,8 +838,8 @@ export default {
         this.profile.reset();
         this.$q.notify({
           type: 'positive',
-          message: this.$t('New identity generated'),
-          caption: this.$t('Back up your new 12 recovery words to keep these logins.'),
+          message: this.$t('New profile created'),
+          caption: this.$t('Back up your new recovery phrase so you can move this profile to a new phone.'),
           timeout: 4500,
         });
         this.showRegenerateConfirm = false;
@@ -1260,6 +1251,55 @@ button.hero-pill:focus-visible {
   margin: 0 0 0 0.25rem;
 }
 
+/*
+  Inline title + help-icon group on the left side of the section
+  header. Same vertical rhythm as the standalone label so adding
+  the (?) doesn't shift the row height. The help icon is small and
+  ghost-styled — it should read as "explain this", not as a primary
+  action that competes with the + button on the right.
+*/
+.sites-section-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sites-help-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.18s ease, transform 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sites-help-btn-light {
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.sites-help-btn-light:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.sites-help-btn-dark {
+  color: rgba(248, 250, 252, 0.65);
+}
+
+.sites-help-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sites-help-btn:active {
+  transform: scale(0.94);
+}
+
 .sites-add-btn {
   width: 30px;
   height: 30px;
@@ -1353,6 +1393,36 @@ button.hero-pill:focus-visible {
   line-height: 1.5;
   margin: 0;
   max-width: 280px;
+}
+
+/*
+  Inline "See examples" link inside the empty-state body line.
+  Behaves like a text link — restrained styling, slight accent
+  colour to signal tappability without overriding the primary CTA
+  (the "+ Sign in to a site" button) below.
+*/
+.sites-empty-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  margin-left: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sites-empty-link-light {
+  color: #059573;
+}
+
+.sites-empty-link-dark {
+  color: #15DE72;
 }
 
 .sites-empty-cta {
