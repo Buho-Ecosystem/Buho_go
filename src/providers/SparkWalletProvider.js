@@ -137,6 +137,36 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Truncate a string to fit within maxBytes UTF-8 bytes without splitting
+   * a multi-byte character. Used to enforce Spark's 120-byte memo cap when
+   * the description comes from an external source (e.g. LNURL server) that
+   * the user cannot shorten themselves.
+   */
+  static _truncateMemoToBytes(str, maxBytes = 120) {
+    if (!str) return str;
+    if (typeof TextEncoder !== 'undefined') {
+      const encoder = new TextEncoder();
+      if (encoder.encode(str).length <= maxBytes) return str;
+      // Binary-search for longest prefix that still fits.
+      let lo = 0, hi = str.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (encoder.encode(str.slice(0, mid)).length <= maxBytes) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return str.slice(0, lo);
+    }
+    // Fallback without TextEncoder.
+    while (unescape(encodeURIComponent(str)).length > maxBytes) {
+      str = str.slice(0, -1);
+    }
+    return str;
+  }
+
+  /**
    * Normalize the SDK's `expiresAt` into a Unix-seconds integer.
    *
    * The Spark SDK has surfaced this as either an ISO-8601 string or a
@@ -490,15 +520,10 @@ export class SparkWalletProvider extends WalletProvider {
     if (descriptionHash) {
       invoiceParams.descriptionHash = descriptionHash;
     } else if (description) {
-      // Spark caps memos at 120 UTF-8 bytes — fail fast with a clear error
-      // instead of letting the SDK surface a generic validation failure.
-      const memoBytes = SparkWalletProvider._utf8ByteLength(description);
-      if (memoBytes > 120) {
-        throw new Error(
-          `Invoice memo too long: ${memoBytes} bytes (max 120). Shorten the description.`
-        );
-      }
-      invoiceParams.memo = description;
+      // Spark caps memos at 120 UTF-8 bytes. When the description comes from
+      // an external source (e.g. a LNURL-withdraw server) the user cannot
+      // shorten it manually, so we truncate silently rather than failing.
+      invoiceParams.memo = SparkWalletProvider._truncateMemoToBytes(description, 120);
     }
 
     try {
