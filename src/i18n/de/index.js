@@ -1733,6 +1733,7 @@ export default {
   "Public": "Öffentlich",
   "Retrying": "Erneuter Versuch",
   "Publish failed": "Veröffentlichung fehlgeschlagen",
-  "Not published yet": "Noch nicht veröffentlicht"
-
+  "Not published yet": "Noch nicht veröffentlicht",
+  "Bolt Card PIN": "Bolt Card PIN",
+  "Enter your 4-digit card PIN to authorize this withdrawal": "Gib deine 4-stellige Karten-PIN ein, um diese Auszahlung zu bestätigen"
 }

@@ -1753,5 +1753,7 @@ export default {
   "Public": "Public",
   "Retrying": "Retrying",
   "Publish failed": "Publish failed",
-  "Not published yet": "Not published yet"
+  "Not published yet": "Not published yet",
+  "Bolt Card PIN": "Bolt Card PIN",
+  "Enter your 4-digit card PIN to authorize this withdrawal": "Enter your 4-digit card PIN to authorize this withdrawal"
 }

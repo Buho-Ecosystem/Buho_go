@@ -576,6 +576,20 @@
       @closed="onWithdrawSuccessClosed"
     />
 
+    <!-- Bolt Card PIN dialog — shown when withdrawRequest has pinLimit
+         and amount >= pinLimit. Uses 4-digit numeric entry per LUD-XX spec. -->
+    <PinEntryDialog
+      v-model="showBoltCardPinDialog"
+      :title="$t('Bolt Card PIN')"
+      :subtitle="$t('Enter your 4-digit card PIN to authorize this withdrawal')"
+      :pin-length="4"
+      mode="enter"
+      :show-back-button="true"
+      :error-message="boltCardPinError"
+      @pin-complete="onBoltCardPinComplete"
+      @cancel="onBoltCardPinCancel"
+    />
+
     <!-- LUD-04 (LNURL-auth) identity dialog. Mounted at the wallet page
          level so deep-link, QR scan, and pasted-input flows all funnel
          into the same confirm → sign → submit → record pipeline. -->
@@ -667,6 +681,7 @@ import {haptics} from '../utils/haptics.js';
 import NumberFlow from '@number-flow/vue';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
+import PinEntryDialog from '../components/PinEntryDialog.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
 import {useTransactionMetadataStore} from '../stores/transactionMetadata';
@@ -709,6 +724,7 @@ export default {
     BackupBanner,
     IdentityAuthDialog,
     ContactAvatar,
+    PinEntryDialog,
   },
   setup() {
     const walletStore = useWalletStore();
@@ -816,6 +832,10 @@ export default {
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
+      // Bolt Card PIN dialog (LUD-XX pinLimit)
+      showBoltCardPinDialog: false,
+      boltCardPinError: '',
+      boltCardPinResolve: null,
       withdrawPaymentMonitor: null,
       withdrawSparkUnsubscribe: null,
       showWithdrawSuccess: false,
@@ -2828,11 +2848,23 @@ export default {
         const invoice = await this.createInvoiceForWithdraw(amountSats, description);
         this.lnurlWithdrawInvoice = invoice;
 
-        // Step 2: Submit callback to withdraw service
-        this.lnurlWithdrawStatus = 'submitting';
-        await this.submitWithdrawCallback(this.pendingPayment, invoice.payment_request);
+        // Step 2: PIN check (LUD-XX pinLimit) — required when amount >= threshold
+        let pin = null;
+        const pinLimit = this.pendingPayment.pinLimit;
+        if (pinLimit && amountSats * 1000 >= pinLimit) {
+          pin = await this.requestBoltCardPin();
+          if (!pin) {
+            // User cancelled PIN entry — silently reset to idle
+            this.resetWithdrawState();
+            return;
+          }
+        }
 
-        // Step 3: Monitor for incoming payment
+        // Step 3: Submit callback to withdraw service
+        this.lnurlWithdrawStatus = 'submitting';
+        await this.submitWithdrawCallback(this.pendingPayment, invoice.payment_request, pin);
+
+        // Step 4: Monitor for incoming payment
         this.lnurlWithdrawStatus = 'monitoring';
         await this.startWithdrawPaymentMonitor(invoice, amountSats);
 
@@ -2902,10 +2934,13 @@ export default {
       };
     },
 
-    async submitWithdrawCallback(withdrawData, bolt11) {
+    async submitWithdrawCallback(withdrawData, bolt11, pin = null) {
       const callbackUrl = new URL(withdrawData.callback);
       callbackUrl.searchParams.set('k1', withdrawData.k1);
       callbackUrl.searchParams.set('pr', bolt11);
+      if (pin) {
+        callbackUrl.searchParams.set('pin', pin);
+      }
 
       const response = await fetch(callbackUrl.toString());
       if (!response.ok) {
@@ -3113,6 +3148,34 @@ export default {
       this.lnurlWithdrawInvoice = null;
       this.withdrawConfirmedAmount = 0;
       this.withdrawConfirmedFiat = '';
+    },
+
+    // ========================================================================
+    // Bolt Card PIN helpers (LUD-XX pinLimit)
+    // ========================================================================
+
+    requestBoltCardPin() {
+      return new Promise((resolve) => {
+        this.boltCardPinError = '';
+        this.boltCardPinResolve = resolve;
+        this.showBoltCardPinDialog = true;
+      });
+    },
+
+    onBoltCardPinComplete(pin) {
+      this.showBoltCardPinDialog = false;
+      if (this.boltCardPinResolve) {
+        this.boltCardPinResolve(pin);
+        this.boltCardPinResolve = null;
+      }
+    },
+
+    onBoltCardPinCancel() {
+      this.showBoltCardPinDialog = false;
+      if (this.boltCardPinResolve) {
+        this.boltCardPinResolve(null);
+        this.boltCardPinResolve = null;
+      }
     },
 
     startMerchantCountdown() {
@@ -3895,7 +3958,8 @@ export default {
             maxSats,
             isFixedAmount,
             fixedAmountSats: isFixedAmount ? maxSats : null,
-            defaultDescription: data.defaultDescription || 'Withdrawal'
+            defaultDescription: data.defaultDescription || 'Withdrawal',
+            pinLimit: data.pinLimit || null
           };
         }
 
