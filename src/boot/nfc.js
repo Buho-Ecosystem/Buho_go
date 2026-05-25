@@ -51,7 +51,7 @@ export default boot(async ({ router }) => {
     }
 
     // Parse the raw tag content using the same logic as QR scanner & deep links
-    const parsed = parsePaymentDestination(raw)
+    let parsed = parsePaymentDestination(raw)
 
     // Bolt Cards often encode a plain https:// URL that resolves to a
     // LNURL-withdraw response. parsePaymentDestination() can't know this

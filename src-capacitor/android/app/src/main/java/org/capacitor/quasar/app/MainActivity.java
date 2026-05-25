@@ -63,7 +63,7 @@ public class MainActivity extends BridgeActivity {
      * activity was launched with (cold start via tag scan).
      */
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         if (nfcAdapter != null && nfcAdapter.isEnabled()) {
             nfcAdapter.enableForegroundDispatch(this, nfcPendingIntent, nfcIntentFilters, null);
@@ -76,7 +76,7 @@ public class MainActivity extends BridgeActivity {
      * its normal NFC routing while the activity is not visible.
      */
     @Override
-    protected void onPause() {
+    public void onPause() {
         super.onPause();
         if (nfcAdapter != null) {
             nfcAdapter.disableForegroundDispatch(this);
