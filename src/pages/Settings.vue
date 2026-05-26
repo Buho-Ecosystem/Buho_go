@@ -2516,7 +2516,11 @@ export default {
         },
         {
           id: 'display',
-          icon: 'tabler:eye',
+          // Currency switch (Bitcoin ↔ user's fiat). The two-way
+          // arrow reads as "swap" — same visual convention banking
+          // apps use for currency toggles. The old eye icon
+          // collided with hide-balance one row below.
+          icon: 'tabler:arrows-exchange',
           label: this.$t('Display'),
           value: bitcoinDisplay ? this.$t('Bitcoin') : this.preferredFiatCurrency,
         },
