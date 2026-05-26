@@ -249,15 +249,39 @@ export default {
     loadingText: {
       type: String,
       default: ''
+    },
+    /**
+     * Opt-in idle timeout in seconds. When > 0, the dialog emits
+     * `timeout` after this many seconds without user input, and the
+     * parent is expected to close the dialog (matches fintech
+     * session-timeout patterns — the user shouldn't be able to leave
+     * a sensitive surface open indefinitely).
+     *
+     * Lifecycle:
+     *   - Timer arms when the dialog opens AND we're not in loading
+     *     state (the parent's network round-trip is its own concern).
+     *   - Each digit / backspace resets the countdown ("activity").
+     *   - Timer disarms when the dialog closes or transitions into
+     *     loading state.
+     *
+     * Default `0` keeps existing call sites (wallet unlock, settings
+     * PIN) timeout-free.
+     */
+    timeoutSeconds: {
+      type: Number,
+      default: 0
     }
   },
-  emits: ['update:modelValue', 'pin-complete', 'cancel', 'forgot-pin'],
+  emits: ['update:modelValue', 'pin-complete', 'cancel', 'forgot-pin', 'timeout'],
   data() {
     return {
       pin: '',
       hasError: false,
       pressedKey: null,
-      touchHandled: false
+      touchHandled: false,
+      // Handle for the idle-timeout setTimeout. null when no timer is
+      // armed; non-null while waiting for the user.
+      idleTimerId: null
     }
   },
   computed: {
@@ -287,6 +311,13 @@ export default {
       // calling v-model=false directly, app backgrounding, unmount),
       // since submitPin() already clears on the happy path.
       this.resetPin();
+      this.syncIdleTimer();
+    },
+    loading() {
+      // Pause the idle timer while the parent is mid-network call —
+      // it's no longer the user's turn to act, so timing them out
+      // would be unfair.
+      this.syncIdleTimer();
     },
     errorMessage(newVal) {
       if (newVal) {
@@ -294,6 +325,13 @@ export default {
         this.shakeAndClear();
       }
     }
+  },
+  beforeUnmount() {
+    // Belt-and-braces: stop any pending timer when the component
+    // unmounts so a setTimeout doesn't fire against a destroyed
+    // instance (would only log a Vue warning, but cleanliness is
+    // free).
+    this.stopIdleTimer();
   },
   methods: {
     onTouchStart(key, event) {
@@ -345,6 +383,7 @@ export default {
       if (this.pin.length < this.pinLength) {
         this.hasError = false;
         this.pin += digit;
+        this.bumpIdleTimer();
 
         // Auto-submit when PIN is complete (for 'enter' mode only)
         if (this.pin.length === this.pinLength && this.mode === 'enter') {
@@ -357,6 +396,7 @@ export default {
       if (this.pin.length > 0) {
         this.pin = this.pin.slice(0, -1);
         this.hasError = false;
+        this.bumpIdleTimer();
       }
     },
 
@@ -394,6 +434,51 @@ export default {
     // Public method to clear the PIN from parent
     clear() {
       this.resetPin();
+    },
+
+    // -----------------------------------------------------------------
+    // Idle timeout
+    // -----------------------------------------------------------------
+
+    /**
+     * Reconcile timer state with current props. Called from the
+     * modelValue and `loading` watchers and after each activity bump.
+     * The timer should be armed only when the dialog is open, not
+     * loading, and a non-zero `timeoutSeconds` was passed.
+     */
+    syncIdleTimer() {
+      if (this.modelValue && !this.loading && this.timeoutSeconds > 0) {
+        this.startIdleTimer();
+      } else {
+        this.stopIdleTimer();
+      }
+    },
+
+    startIdleTimer() {
+      this.stopIdleTimer();
+      this.idleTimerId = window.setTimeout(() => {
+        this.idleTimerId = null;
+        this.$emit('timeout');
+      }, this.timeoutSeconds * 1000);
+    },
+
+    stopIdleTimer() {
+      if (this.idleTimerId !== null) {
+        window.clearTimeout(this.idleTimerId);
+        this.idleTimerId = null;
+      }
+    },
+
+    /**
+     * Refresh the countdown on user activity. Only restarts an
+     * already-armed timer — if no timer is supposed to be running
+     * (closed, loading, opt-out), a stray digit press won't create
+     * one.
+     */
+    bumpIdleTimer() {
+      if (this.idleTimerId !== null) {
+        this.startIdleTimer();
+      }
     }
   }
 }

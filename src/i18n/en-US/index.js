@@ -1897,6 +1897,10 @@ export default {
   "Authorize withdrawal": "Authorize withdrawal",
   "Authorizing…": "Authorizing…",
   "Invalid PIN": "Invalid PIN",
+  "Invalid PIN. {n} attempts left.": "Invalid PIN. {n} attempts left.",
+  "Invalid PIN. Last attempt.": "Invalid PIN. Last attempt.",
   "Card blocked: too many incorrect PIN attempts": "Card blocked: too many incorrect PIN attempts",
-  "PIN authorization requires a secure connection": "PIN authorization requires a secure connection"
+  "PIN authorization requires a secure connection": "PIN authorization requires a secure connection",
+  "PIN entry timed out": "PIN entry timed out",
+  "Tap the card again to retry": "Tap the card again to retry"
 }

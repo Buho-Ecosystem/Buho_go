@@ -1878,6 +1878,10 @@ export default {
   "Authorize withdrawal": "Autorizar retiro",
   "Authorizing…": "Autorizando…",
   "Invalid PIN": "PIN incorrecto",
+  "Invalid PIN. {n} attempts left.": "PIN incorrecto. Quedan {n} intentos.",
+  "Invalid PIN. Last attempt.": "PIN incorrecto. Último intento.",
   "Card blocked: too many incorrect PIN attempts": "Tarjeta bloqueada: demasiados intentos de PIN incorrectos",
-  "PIN authorization requires a secure connection": "La autorización con PIN requiere una conexión segura"
+  "PIN authorization requires a secure connection": "La autorización con PIN requiere una conexión segura",
+  "PIN entry timed out": "Tiempo de PIN agotado",
+  "Tap the card again to retry": "Vuelve a acercar la tarjeta para intentarlo de nuevo"
 }
