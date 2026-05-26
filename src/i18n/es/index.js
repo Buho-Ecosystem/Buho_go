@@ -1871,6 +1871,13 @@ export default {
   "Use your profile instead of passwords.": "Usa tu perfil en lugar de contraseñas.",
   "See examples": "Ver ejemplos",
   "Never type these words into a website or save them in cloud notes.": "Nunca escribas estas palabras en un sitio web ni las guardes en notas en la nube.",
+
+  // Bolt Card PIN (LUD-XX pinLimit).
   "Bolt Card PIN": "PIN de Bolt Card",
-  "Enter your 4-digit card PIN to authorize this withdrawal": "Ingresa tu PIN de 4 dígitos para autorizar este retiro"
+  "Enter your 4-digit PIN to confirm this withdrawal": "Ingresa tu PIN de 4 dígitos para confirmar este retiro",
+  "Authorize withdrawal": "Autorizar retiro",
+  "Authorizing…": "Autorizando…",
+  "Invalid PIN": "PIN incorrecto",
+  "Card blocked: too many incorrect PIN attempts": "Tarjeta bloqueada: demasiados intentos de PIN incorrectos",
+  "PIN authorization requires a secure connection": "La autorización con PIN requiere una conexión segura"
 }

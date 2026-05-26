@@ -37,6 +37,33 @@
 
       <!-- Content -->
       <q-card-section class="pin-content">
+        <!--
+          Authorization amount strip — fintech-style transaction context.
+          Renders only when `amountDisplay` is provided (Bolt Card PIN
+          flow), so the dialog stays clean for other uses like wallet
+          unlock. Sits above the lock icon so the user sees what they're
+          authorizing before they touch the keypad.
+        -->
+        <div
+          v-if="amountDisplay"
+          class="auth-amount-strip"
+          :class="$q.dark.isActive ? 'auth-amount-dark' : 'auth-amount-light'"
+        >
+          <div class="auth-amount-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Authorize withdrawal') }}
+          </div>
+          <div class="auth-amount-value" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+            {{ amountDisplay }}
+          </div>
+          <div
+            v-if="fiatAmount"
+            class="auth-amount-fiat"
+            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+          >
+            {{ fiatAmount }}
+          </div>
+        </div>
+
         <!-- Lock Icon -->
         <div class="lock-icon-container">
           <div class="lock-icon-bg" :class="[
@@ -50,7 +77,10 @@
           </div>
         </div>
 
-        <!-- Loading state — shown after PIN submitted while wallet unlocks -->
+        <!-- Loading state — shown after PIN submitted while wallet unlocks
+             (or, for the Bolt Card flow, while the withdraw callback is in
+             flight). `loadingText` lets callers swap the copy; defaults to
+             the wallet-unlock string to keep prior call sites unchanged. -->
         <transition name="fade" mode="out-in">
           <div v-if="loading" key="loading" class="unlock-loading">
             <!-- PIN dots stay filled -->
@@ -65,7 +95,7 @@
 
             <q-spinner-dots size="40px" color="brand-green" />
             <div class="unlock-loading-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Unlocking your wallet...') }}
+              {{ loadingText || $t('Unlocking your wallet...') }}
             </div>
           </div>
 
@@ -189,6 +219,36 @@ export default {
     loading: {
       type: Boolean,
       default: false
+    },
+    /**
+     * Pre-formatted primary amount line (e.g. "1,500 sats"). When set,
+     * an authorization strip is rendered above the lock icon — the spec
+     * for LUD-XX pinLimit requires the invoice amount to be visible on
+     * the PIN screen. Left empty for non-payment uses (wallet unlock,
+     * settings PIN), keeping the existing layout untouched.
+     */
+    amountDisplay: {
+      type: String,
+      default: ''
+    },
+    /**
+     * Pre-formatted secondary fiat line (e.g. "≈ €1.27"). Hidden when
+     * empty so callers without a fiat conversion don't get a stray
+     * empty row. Only renders when `amountDisplay` is also present.
+     */
+    fiatAmount: {
+      type: String,
+      default: ''
+    },
+    /**
+     * Override for the in-flight loading copy. Defaults to the
+     * "Unlocking your wallet..." string used by the lock-screen
+     * caller. The Bolt Card flow passes "Authorizing…" while the
+     * LNURL-withdraw callback round-trips.
+     */
+    loadingText: {
+      type: String,
+      default: ''
     }
   },
   emits: ['update:modelValue', 'pin-complete', 'cancel', 'forgot-pin'],
@@ -387,6 +447,56 @@ export default {
   padding: 2rem 1.5rem;
   padding-bottom: max(2rem, var(--safe-bottom, 0px));
   gap: 1rem;
+}
+
+/*
+  Authorization amount strip — fintech-style transaction context.
+  Sits above the lock icon, only renders when `amountDisplay` is set.
+  Light and dark palettes use the same neutral surface treatment as
+  the rest of the app's card surfaces so it reads as native UI.
+*/
+.auth-amount-strip {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  border: 1px solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 0.5rem;
+}
+
+.auth-amount-light {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.auth-amount-dark {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.auth-amount-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.auth-amount-value {
+  font-family: 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.auth-amount-fiat {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 /* Lock Icon */
