@@ -220,7 +220,6 @@ import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { getBiometricMethodCopy } from '../utils/biometricCopy';
-import { secureScreen } from '../utils/secureScreen';
 
 const REVEAL_DURATION_SECONDS = 120;
 const COUNTDOWN_TICK_MS = 1000;
@@ -264,7 +263,6 @@ export default {
       countdownSeconds: REVEAL_DURATION_SECONDS,
       countdownInterval: null,
       timerExpired: false,
-      secureScreenActive: false,
       authBiometryType: 'none',
     };
   },
@@ -342,10 +340,6 @@ export default {
   beforeUnmount() {
     this.stopCountdown();
     this.wipeMnemonic();
-    if (this.secureScreenActive) {
-      secureScreen.disable();
-      this.secureScreenActive = false;
-    }
   },
 
   methods: {
@@ -440,9 +434,6 @@ export default {
 
         this.mnemonicWords = mnemonic.split(' ');
 
-        await secureScreen.enable();
-        this.secureScreenActive = true;
-
         this.step = 'phrase';
         this.phraseBlurred = true;
         this.timerExpired = false;
@@ -527,10 +518,6 @@ export default {
     async onDialogHidden() {
       this.stopCountdown();
       this.wipeMnemonic();
-      if (this.secureScreenActive) {
-        await secureScreen.disable();
-        this.secureScreenActive = false;
-      }
     },
 
     wipeMnemonic() {

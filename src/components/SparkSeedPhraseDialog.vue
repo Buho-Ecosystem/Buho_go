@@ -192,7 +192,6 @@ import MnemonicOrderVerify from './MnemonicOrderVerify.vue';
 import { useWalletStore } from '../stores/wallet';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { getBiometricMethodCopy } from '../utils/biometricCopy';
-import { secureScreen } from '../utils/secureScreen';
 
 const CONTEXT_ILLUSTRATION = '/Learn and Earn/Question_pictures/safe.svg';
 const REVEAL_DURATION_SECONDS = 120;
@@ -249,7 +248,6 @@ export default {
       countdownSeconds: REVEAL_DURATION_SECONDS,
       countdownInterval: null,
       timerExpired: false,
-      secureScreenActive: false,
 
       // Detected authentication method for the explanation screen.
       // Set by onReady() after isBiometricAvailable() resolves.
@@ -371,10 +369,6 @@ export default {
   beforeUnmount() {
     this.stopCountdown();
     this.wipeMnemonic();
-    if (this.secureScreenActive) {
-      secureScreen.disable();
-      this.secureScreenActive = false;
-    }
   },
 
   methods: {
@@ -484,11 +478,6 @@ export default {
 
         this.mnemonicWords = mnemonic.split(' ');
 
-        // Turn on screenshot protection only once the words are about
-        // to hit the screen, and leave it on for the verify step too.
-        await secureScreen.enable();
-        this.secureScreenActive = true;
-
         this.step = 'phrase';
         this.phraseBlurred = true;
         this.timerExpired = false;
@@ -582,10 +571,6 @@ export default {
       // (shouldn't be, but defensively safe) or programmatically.
       this.stopCountdown();
       this.wipeMnemonic();
-      if (this.secureScreenActive) {
-        await secureScreen.disable();
-        this.secureScreenActive = false;
-      }
     },
 
     wipeMnemonic() {

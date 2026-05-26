@@ -20,10 +20,23 @@ public class MainActivity extends BridgeActivity {
      * Foreground dispatch lets this activity claim exclusive tag
      * priority over any other installed wallet while it is in the
      * foreground, bypassing the Android app chooser entirely.
+     *
+     * Screen-privacy flag is applied BEFORE super.onCreate() so the
+     * window has FLAG_SECURE set before the first frame is rendered.
+     * Reads the persisted preference straight from SharedPreferences
+     * (owned by SecureScreenPlugin) — synchronous and safe to call
+     * here, no JS / WebView dependency. Fail-secure on first launch:
+     * default is ON until the user explicitly opts out.
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NfcPlugin.class);
+        registerPlugin(SecureScreenPlugin.class);
+
+        if (SecureScreenPlugin.readPersistedPreference(this)) {
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        }
+
         super.onCreate(savedInstanceState);
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
@@ -61,10 +74,21 @@ public class MainActivity extends BridgeActivity {
     /**
      * Re-enable foreground dispatch and process any tag intent the
      * activity was launched with (cold start via tag scan).
+     *
+     * Also re-applies FLAG_SECURE from the persisted preference. Some
+     * Android lifecycle paths (multi-window, configuration changes,
+     * certain OEM skins on resume) can clear or reset window flags,
+     * so we re-state our intent on every resume.
      */
     @Override
     public void onResume() {
         super.onResume();
+
+        SecureScreenPlugin.applyFlagToWindow(
+            this,
+            SecureScreenPlugin.readPersistedPreference(this)
+        );
+
         if (nfcAdapter != null && nfcAdapter.isEnabled()) {
             nfcAdapter.enableForegroundDispatch(this, nfcPendingIntent, nfcIntentFilters, null);
         }

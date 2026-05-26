@@ -1,60 +1,96 @@
+import { registerPlugin, Capacitor } from '@capacitor/core'
+
 /**
- * Screen-capture protection wrapper.
+ * Screen-privacy utility — wraps the custom SecureScreenPlugin Capacitor
+ * bridge. Toggles Android's FLAG_SECURE on the activity window to block
+ * screenshots, screen recordings, and the app-switcher thumbnail.
  *
- * Prevents OS-level screenshots and screen recording of the current
- * screen while sensitive UI is visible. Uses Capacitor's runtime
- * plugin-availability check so this module is safe to call whether
- * or not the native plugin is installed — it degrades to a no-op.
+ * Source of truth:
  *
- * To activate on Android/iOS, install the companion plugin:
- *   npm install @capacitor-community/privacy-screen
- *   npx cap sync
+ *   The native plugin owns the persisted preference (its own
+ *   SharedPreferences file, read by MainActivity on cold start before
+ *   the WebView loads). This module is the typed JS facade over that
+ *   plugin — it does not write to localStorage directly. The Pinia
+ *   wallet store mirrors the value for reactive UI, but the canonical
+ *   read/write path is through here.
  *
- * With the plugin installed this applies FLAG_SECURE on Android and
- * adds a privacy overlay on iOS when the app backgrounds. On web and
- * on native builds without the plugin, `enable`/`disable` are no-ops.
- * A one-time warning is logged so the missing dependency is visible
- * in development without spamming the console.
+ * Platform behaviour:
+ *
+ *   - Native (Capacitor Android): full FLAG_SECURE control.
+ *   - Web / PWA: every method is a no-op that echoes the requested
+ *     state back. The toggle is hidden from the Settings UI on web
+ *     anyway, so this is just defence-in-depth against accidental
+ *     calls from shared code paths.
+ *
+ * Failure semantics:
+ *
+ *   Calls reject on a true native exception. Catching at this layer
+ *   would mask bugs from the Pinia store; we let errors propagate.
+ *   Callers in the boot file wrap their calls in try/catch and
+ *   fail-secure on rejection (state stays at last successful value).
  */
-import { Capacitor } from '@capacitor/core';
 
-let missingPluginWarned = false;
+// Plugin name must match @CapacitorPlugin(name = "SecureScreen") in Java.
+const SecureScreenPlugin = registerPlugin('SecureScreen')
 
-function getPlugin() {
-  if (!Capacitor.isNativePlatform()) return null;
-
-  if (!Capacitor.isPluginAvailable('PrivacyScreen')) {
-    if (!missingPluginWarned) {
-      console.warn(
-        '[secureScreen] PrivacyScreen plugin not installed. ' +
-        'Install @capacitor-community/privacy-screen to enable screenshot protection.'
-      );
-      missingPluginWarned = true;
-    }
-    return null;
+/**
+ * Persist the user's preference and apply FLAG_SECURE accordingly.
+ * Use this for the Settings toggle — the value sticks across restarts
+ * and is read by MainActivity on the next cold start.
+ *
+ * @param {boolean} enabled
+ * @returns {Promise<{enabled: boolean}>}
+ */
+export async function setScreenPrivacyEnabled (enabled) {
+  if (!Capacitor.isNativePlatform()) {
+    return { enabled: Boolean(enabled) }
   }
-
-  return Capacitor.Plugins.PrivacyScreen;
+  return SecureScreenPlugin.setEnabled({ enabled: Boolean(enabled) })
 }
 
-export const secureScreen = {
-  async enable() {
-    const plugin = getPlugin();
-    if (!plugin) return;
-    try {
-      await plugin.enable();
-    } catch (err) {
-      console.warn('[secureScreen] enable failed', err);
-    }
-  },
+/**
+ * Apply FLAG_SECURE WITHOUT touching the persisted preference. Reserved
+ * for the router-meta forceSecure override on sensitive routes —
+ * visiting the route temporarily enables secure mode regardless of the
+ * user's toggle, and leaving the route restores the user's actual
+ * preference without ever mutating it.
+ *
+ * Currently unused at call sites; the infrastructure is in place so
+ * sensitive surfaces can opt in later with one line of router meta.
+ *
+ * @param {boolean} enabled
+ * @returns {Promise<{enabled: boolean}>}
+ */
+export async function applyScreenPrivacyTransient (enabled) {
+  if (!Capacitor.isNativePlatform()) {
+    return { enabled: Boolean(enabled) }
+  }
+  return SecureScreenPlugin.applyTransient({ enabled: Boolean(enabled) })
+}
 
-  async disable() {
-    const plugin = getPlugin();
-    if (!plugin) return;
-    try {
-      await plugin.disable();
-    } catch (err) {
-      console.warn('[secureScreen] disable failed', err);
-    }
-  },
-};
+/**
+ * Read the persisted preference. On native this returns whatever
+ * MainActivity already applied on cold start; on web it returns true
+ * (default) so the UI doesn't render a misleading "off" state during
+ * a desktop preview.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function isScreenPrivacyEnabled () {
+  if (!Capacitor.isNativePlatform()) {
+    return true
+  }
+  const result = await SecureScreenPlugin.isEnabled()
+  return Boolean(result?.enabled)
+}
+
+/**
+ * True when the platform can actually enforce screen-capture blocking.
+ * Settings.vue uses this to hide the toggle on web/PWA where the
+ * underlying primitive doesn't exist.
+ *
+ * @returns {boolean}
+ */
+export function isScreenPrivacySupported () {
+  return Capacitor.isNativePlatform()
+}

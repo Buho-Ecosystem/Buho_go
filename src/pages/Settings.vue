@@ -300,6 +300,30 @@
             />
           </template>
         </SettingsRow>
+
+        <!--
+          Screen Privacy — Android FLAG_SECURE. Hidden on web / PWA
+          where the underlying primitive doesn't exist (the util
+          returns false). On native, mirrors the canonical persisted
+          value owned by SecureScreenPlugin; toggling here flows
+          through the store action which writes to SharedPreferences
+          AND applies the flag in a single round-trip.
+        -->
+        <SettingsRow
+          v-if="screenPrivacySupported"
+          icon="tabler:shield-lock"
+          :label="$t('Screen Privacy')"
+          :caption="$t('Block screenshots, screen recordings, and previews in the app switcher.')"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="walletStore.privacyScreenEnabled"
+              @update:model-value="togglePrivacyScreen"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
       </SettingsSection>
 
       <!-- ─────────────── KIOSK MODE (config) ───────────────
@@ -1843,6 +1867,7 @@ import {formatAmount} from '../utils/amountFormatting.js'
 import {shareContent} from '../utils/share.js'
 import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
+import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import {truncateAddress} from '../utils/addressUtils.js'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
@@ -1991,6 +2016,11 @@ export default {
       biometricsEnabled: false,
       biometricsAvailable: false,
       biometryType: 'none', // 'fingerprint', 'face', 'device-pin', 'multiple', 'none'
+
+      // Screen privacy (Android FLAG_SECURE). True only on Capacitor
+      // native — the toggle row is hidden when the underlying
+      // primitive doesn't exist (web / PWA).
+      screenPrivacySupported: false,
 
       // Enable-flow explanation dialog state
       showBiometricEnableDialog: false,
@@ -2666,6 +2696,9 @@ export default {
     this.loadMempoolSettings();
     this.loadLanguagePreference();
     this.checkBiometricAvailability();
+    // Probe whether FLAG_SECURE control is available on this build —
+    // gates the visibility of the Screen Privacy toggle row.
+    this.screenPrivacySupported = isScreenPrivacySupported();
     // Hydrate the Identity store so the section renders with the right
     // bootstrapped/backup state on first paint. Idempotent; cheap.
     this.identityStore.hydrate();
@@ -3177,6 +3210,36 @@ export default {
           color: 'positive',
           timeout: 1500
         })
+      }
+    },
+
+    /**
+     * Flip the Screen Privacy toggle. Pessimistic: only confirm to
+     * the user after the native plugin reports the value has been
+     * persisted to SharedPreferences AND applied to the window. If
+     * the native call rejects, the store stays at its last good
+     * value (its action doesn't mutate state on rejection) and we
+     * surface a warning toast so the toggle visually springs back.
+     *
+     * @param {boolean} value
+     */
+    async togglePrivacyScreen(value) {
+      try {
+        await this.walletStore.updatePrivacyScreenEnabled(value);
+        this.$q.notify({
+          message: value
+            ? this.$t('Screen privacy enabled')
+            : this.$t('Screen privacy disabled'),
+          color: 'positive',
+          timeout: 1500,
+        });
+      } catch (error) {
+        console.error('[settings] Privacy screen toggle failed:', error);
+        this.$q.notify({
+          message: this.$t("Couldn't update screen privacy"),
+          color: 'warning',
+          timeout: 3000,
+        });
       }
     },
 

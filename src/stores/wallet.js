@@ -15,6 +15,10 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 import { getUserFriendlyErrorMessage } from '../utils/userErrors';
 import * as deviceCrypto from '../utils/deviceCrypto';
 import { buildPaymentError, getUserFriendlyError } from '../utils/userErrors';
+import {
+  setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
+  isScreenPrivacyEnabled as nativeIsScreenPrivacyEnabled,
+} from '../utils/secureScreen';
 
 /**
  * Storage keys for persistence
@@ -82,6 +86,16 @@ export const useWalletStore = defineStore('wallet', {
 
     // Biometric lock
     biometricsEnabled: false,
+
+    // Screen-capture protection (Android FLAG_SECURE). Mirrors the
+    // value persisted by SecureScreenPlugin's SharedPreferences,
+    // which MainActivity reads on cold start before the WebView
+    // loads. The Pinia copy exists so the Settings toggle is
+    // reactive; the boot file `secure-screen.js` reconciles this
+    // with the native source of truth on app start and propagates
+    // user toggles back down through the plugin. Default mirrors
+    // the native default — opt-out is explicit.
+    privacyScreenEnabled: true,
 
     // Global payment-error dialog state. A single global instance lives
     // in App.vue; any page or store funnels failures here via
@@ -703,6 +717,12 @@ export const useWalletStore = defineStore('wallet', {
               exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
               hasBackedUp: parsed.hasBackedUp || false,
               biometricsEnabled: parsed.biometricsEnabled || false,
+              // Screen privacy: fail-secure default. A `false` only
+              // takes effect if it was explicitly persisted; missing
+              // or undefined keeps the protection on.
+              privacyScreenEnabled: parsed.privacyScreenEnabled !== undefined
+                ? !!parsed.privacyScreenEnabled
+                : true,
               // Kiosk
               kioskEnabled: parsed.kioskEnabled || false,
               kioskPin: parsed.kioskPin || '',
@@ -2317,6 +2337,46 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Update the screen-capture protection preference. Pessimistic
+     * update: the Pinia state only flips after the native plugin
+     * confirms the new value has been persisted and applied. On
+     * native failure the store stays at its last known good value
+     * and the error propagates so the caller can show a toast.
+     *
+     * @param {boolean} enabled
+     * @returns {Promise<boolean>} the value actually applied
+     */
+    async updatePrivacyScreenEnabled(enabled) {
+      const requested = !!enabled;
+      const result = await nativeSetScreenPrivacyEnabled(requested);
+      const applied = !!(result?.enabled);
+      this.privacyScreenEnabled = applied;
+      this.persistState();
+      return applied;
+    },
+
+    /**
+     * Reconcile the Pinia value with the native source of truth.
+     * Called once at boot — the localStorage hydrate runs first
+     * (synchronous), then this reads SharedPreferences via the
+     * plugin and corrects the store if they disagree (e.g. after a
+     * migration that cleared localStorage but kept SharedPreferences,
+     * or vice versa). Silent on success; logs and keeps the store
+     * value on failure (fail-secure: localStorage default is `true`).
+     */
+    async syncPrivacyScreenFromNative() {
+      try {
+        const nativeValue = await nativeIsScreenPrivacyEnabled();
+        if (nativeValue !== this.privacyScreenEnabled) {
+          this.privacyScreenEnabled = nativeValue;
+          this.persistState();
+        }
+      } catch (error) {
+        console.warn('[wallet] Privacy screen native sync failed:', error);
+      }
+    },
+
+    /**
      * Generate a unique wallet ID
      * @returns {string} Unique wallet ID
      */
@@ -2359,6 +2419,7 @@ export const useWalletStore = defineStore('wallet', {
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
           hasBackedUp: this.hasBackedUp,
           biometricsEnabled: this.biometricsEnabled,
+          privacyScreenEnabled: this.privacyScreenEnabled,
           // Kiosk
           kioskEnabled: this.kioskEnabled,
           kioskPin: this.kioskPin,

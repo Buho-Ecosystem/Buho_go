@@ -387,7 +387,6 @@ import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { getBiometricMethodCopy } from '../utils/biometricCopy';
-import { secureScreen } from '../utils/secureScreen';
 import { copySensitive } from '../utils/sensitiveClipboard';
 import ClientExamplesSheet from './ClientExamplesSheet.vue';
 
@@ -432,7 +431,6 @@ export default {
       countdownSeconds: REVEAL_DURATION_SECONDS,
       countdownInterval: null,
       timerExpired: false,
-      secureScreenActive: false,
 
       // Copy feedback
       copiedNpub: false,
@@ -554,10 +552,6 @@ export default {
     // user opted into the 30s auto-clear by tapping Copy; we honour
     // that promise even if they navigate away before it fires. Only
     // the visible countdown UI is torn down with the component.
-    if (this.secureScreenActive) {
-      secureScreen.disable();
-      this.secureScreenActive = false;
-    }
   },
 
   methods: {
@@ -647,9 +641,6 @@ export default {
         }
 
         this.revealedNsec = nsec;
-
-        await secureScreen.enable();
-        this.secureScreenActive = true;
 
         this.step = 'reveal';
         this.nsecBlurred = true;
@@ -786,10 +777,6 @@ export default {
       this.stopCountdown();
       this.stopClipboardWipeCountdown();
       this.wipeSecret();
-      if (this.secureScreenActive) {
-        await secureScreen.disable();
-        this.secureScreenActive = false;
-      }
     },
 
     wipeSecret() {
