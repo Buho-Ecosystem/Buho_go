@@ -302,15 +302,18 @@
         </SettingsRow>
 
         <!--
-          Screen Privacy — Android FLAG_SECURE. Hidden on web / PWA
-          where the underlying primitive doesn't exist (the util
-          returns false). On native, mirrors the canonical persisted
-          value owned by SecureScreenPlugin; toggling here flows
-          through the store action which writes to SharedPreferences
-          AND applies the flag in a single round-trip.
+          Screen Privacy — Android FLAG_SECURE.
+          On native: toggle mirrors the canonical persisted value
+          owned by SecureScreenPlugin; toggling here flows through
+          the store action which writes to SharedPreferences AND
+          applies the flag in a single round-trip.
+          On web / PWA: the toggle is rendered (so users discover
+          the feature) but always shows OFF and any attempt to
+          enable opens the "Get the Android app" dialog. The OS
+          doesn't expose screen-capture blocking to browsers, so
+          honestly surfacing that is the only correct UX.
         -->
         <SettingsRow
-          v-if="screenPrivacySupported"
           icon="tabler:shield-lock"
           :label="$t('Screen Privacy')"
           :caption="$t('Block screenshots, screen recordings, and previews in the app switcher.')"
@@ -318,7 +321,7 @@
         >
           <template #right>
             <q-toggle
-              :model-value="walletStore.privacyScreenEnabled"
+              :model-value="screenPrivacySupported ? walletStore.privacyScreenEnabled : false"
               @update:model-value="togglePrivacyScreen"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             />
@@ -644,7 +647,34 @@
            that affects how BuhoGO talks to external services or
            handles edge-case behaviour belongs here so the rest of
            the screen stays calm for mainstream users. -->
-      <SettingsSection :title="$t('Advanced')">
+      <!-- ─────────────── HELP & SUPPORT ───────────────
+           Just the onboarding tour now. Bitcoin Lessons was
+           previously here but has been promoted to a Feature Card
+           at the top (earning sats is the strongest noob hook in
+           the app — burying it in Help & Support was a UX miss).
+           The donation row split out into its own "Support BuhoGO"
+           section below so the ask reads cleanly. -->
+      <SettingsSection :title="$t('Help & Support')">
+        <SettingsRow
+          icon="tabler:school"
+          :label="$t('Onboarding Guide')"
+          :caption="$t('Learn about all BuhoGO features')"
+          @click="$router.push('/spark-success?full=true')"
+        />
+      </SettingsSection>
+
+      <!-- ─────────────── ADVANCED ───────────────
+           Collapsed by default. Power-user toggles that the
+           typical user never needs to touch (exchange-rate source,
+           auto-add Bitcoin deposits). Tucking them behind a
+           chevron keeps the main Settings flow scannable while
+           still letting anyone who wants the controls find them
+           one tap away. -->
+      <SettingsSection
+        :title="$t('Advanced')"
+        collapsible
+        :default-expanded="false"
+      >
         <SettingsRow
           icon="tabler:chart-line"
           :label="$t('Exchange Rate Source')"
@@ -672,22 +702,6 @@
             />
           </template>
         </SettingsRow>
-      </SettingsSection>
-
-      <!-- ─────────────── HELP & SUPPORT ───────────────
-           Just the onboarding tour now. Bitcoin Lessons was
-           previously here but has been promoted to a Feature Card
-           at the top (earning sats is the strongest noob hook in
-           the app — burying it in Help & Support was a UX miss).
-           The donation row split out into its own "Support BuhoGO"
-           section below so the ask reads cleanly. -->
-      <SettingsSection :title="$t('Help & Support')">
-        <SettingsRow
-          icon="tabler:school"
-          :label="$t('Onboarding Guide')"
-          :caption="$t('Learn about all BuhoGO features')"
-          @click="$router.push('/spark-success?full=true')"
-        />
       </SettingsSection>
 
       <!-- ─────────────── SUPPORT BUHOGO ───────────────
@@ -920,6 +934,59 @@
             :loading="isDangerActionLoading"
             class="danger-action-btn"
             @click="executeDangerAction"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!--
+      Get-the-App dialog. Shown only on web / PWA when the user
+      tries to enable a feature that only exists in the native
+      Android build. Currently used by the Screen Privacy toggle;
+      can be reused for any future native-only feature gated this
+      way.
+    -->
+    <q-dialog
+      v-model="showGetAppDialog"
+      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    >
+      <q-card
+        class="get-app-card"
+        :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+      >
+        <q-card-section class="get-app-header">
+          <div class="get-app-icon-wrapper">
+            <Icon
+              icon="tabler:device-mobile-down"
+              width="32"
+              height="32"
+              class="get-app-icon"
+            />
+          </div>
+          <div class="get-app-title">{{ $t('Get the BuhoGO Android app') }}</div>
+          <div
+            class="get-app-message"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+          >
+            {{ $t('Screen-capture protection runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to keep your screen private.') }}
+          </div>
+        </q-card-section>
+
+        <q-card-actions class="get-app-actions">
+          <q-btn
+            flat
+            no-caps
+            :label="$t('Cancel')"
+            v-close-popup
+            class="cancel-btn"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            unelevated
+            no-caps
+            :label="$t('Open Google Play')"
+            class="get-app-cta-btn"
+            @click="openPlayStore"
           />
         </q-card-actions>
       </q-card>
@@ -2018,9 +2085,14 @@ export default {
       biometryType: 'none', // 'fingerprint', 'face', 'device-pin', 'multiple', 'none'
 
       // Screen privacy (Android FLAG_SECURE). True only on Capacitor
-      // native — the toggle row is hidden when the underlying
-      // primitive doesn't exist (web / PWA).
+      // native. On web / PWA the toggle row still renders (so users
+      // can discover the feature) but always shows OFF and any
+      // attempt to enable opens the Get-the-App dialog.
       screenPrivacySupported: false,
+
+      // Get-the-App dialog state. Opens when a user tries to enable
+      // a native-only feature from the web build.
+      showGetAppDialog: false,
 
       // Enable-flow explanation dialog state
       showBiometricEnableDialog: false,
@@ -3214,16 +3286,34 @@ export default {
     },
 
     /**
-     * Flip the Screen Privacy toggle. Pessimistic: only confirm to
-     * the user after the native plugin reports the value has been
-     * persisted to SharedPreferences AND applied to the window. If
-     * the native call rejects, the store stays at its last good
-     * value (its action doesn't mutate state on rejection) and we
-     * surface a warning toast so the toggle visually springs back.
+     * Flip the Screen Privacy toggle.
+     *
+     * On web / PWA the underlying OS primitive doesn't exist, so
+     * any tap to enable opens the Get-the-App dialog instead of
+     * updating store state. The toggle's one-way `:model-value`
+     * binding ensures it visually stays OFF — the user sees the
+     * dialog appear in lieu of the toggle flipping, which makes
+     * the constraint self-explanatory.
+     *
+     * On native we update pessimistically: the Pinia state only
+     * flips after the plugin confirms the value has been persisted
+     * to SharedPreferences AND applied to the window. If the native
+     * call rejects, the store stays at its last good value (the
+     * action doesn't mutate on rejection) and we surface a warning
+     * toast so the toggle visually springs back.
      *
      * @param {boolean} value
      */
     async togglePrivacyScreen(value) {
+      if (!this.screenPrivacySupported) {
+        // Only prompt on the enable attempt — there's nothing to
+        // disable on web because the toggle never actually goes ON.
+        if (value) {
+          this.showGetAppDialog = true;
+        }
+        return;
+      }
+
       try {
         await this.walletStore.updatePrivacyScreenEnabled(value);
         this.$q.notify({
@@ -3241,6 +3331,24 @@ export default {
           timeout: 3000,
         });
       }
+    },
+
+    /**
+     * Open the BuhoGO Android Play Store listing in a new tab.
+     * Called from the Get-the-App dialog. Closes the dialog after
+     * triggering navigation so a user returning to the tab sees
+     * the Settings screen, not a stale modal.
+     *
+     * App ID matches `appId` in src-capacitor/capacitor.config.json
+     * and the badge link in README.md — single canonical URL.
+     */
+    openPlayStore() {
+      window.open(
+        'https://play.google.com/store/apps/details?id=mybuho.buhogo',
+        '_blank',
+        'noopener,noreferrer'
+      );
+      this.showGetAppDialog = false;
     },
 
     /**
@@ -4805,6 +4913,70 @@ export default {
 
 .danger-action-btn:disabled {
   opacity: 0.4;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   Get-the-App dialog (web/PWA → native Android prompt).
+   Visually mirrors the danger-confirm-card layout but uses the
+   brand-green palette since this is an informational nudge, not a
+   destructive confirmation.
+   ────────────────────────────────────────────────────────────────────── */
+
+.get-app-card {
+  width: 100%;
+  max-width: 340px;
+  border-radius: 16px;
+}
+
+.get-app-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1.5rem 1rem;
+}
+
+.get-app-icon-wrapper {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(21, 222, 114, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.get-app-icon {
+  color: #15DE72;
+}
+
+.get-app-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.get-app-message {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.get-app-actions {
+  padding: 0.5rem 1.5rem 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.get-app-cta-btn {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 600;
+  border-radius: 10px;
+  background: #15DE72 !important;
+  color: #0E1F17 !important;
 }
 
 /* Spark Address Actions */
