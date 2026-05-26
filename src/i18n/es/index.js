@@ -1870,5 +1870,7 @@ export default {
   "Anyone with this key controls your profile. Keep it private.": "Quien tenga esta clave controla tu perfil. Mantenla privada.",
   "Use your profile instead of passwords.": "Usa tu perfil en lugar de contraseñas.",
   "See examples": "Ver ejemplos",
-  "Never type these words into a website or save them in cloud notes.": "Nunca escribas estas palabras en un sitio web ni las guardes en notas en la nube."
+  "Never type these words into a website or save them in cloud notes.": "Nunca escribas estas palabras en un sitio web ni las guardes en notas en la nube.",
+  "Bolt Card PIN": "PIN de Bolt Card",
+  "Enter your 4-digit card PIN to authorize this withdrawal": "Ingresa tu PIN de 4 dígitos para autorizar este retiro"
 }

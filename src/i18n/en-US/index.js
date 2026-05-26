@@ -1888,5 +1888,7 @@ export default {
   "Anyone with this key controls your profile. Keep it private.": "Anyone with this key controls your profile. Keep it private.",
   "Use your profile instead of passwords.": "Use your profile instead of passwords.",
   "See examples": "See examples",
-  "Never type these words into a website or save them in cloud notes.": "Never type these words into a website or save them in cloud notes."
+  "Never type these words into a website or save them in cloud notes.": "Never type these words into a website or save them in cloud notes.",
+  "Bolt Card PIN": "Bolt Card PIN",
+  "Enter your 4-digit card PIN to authorize this withdrawal": "Enter your 4-digit card PIN to authorize this withdrawal"
 }
