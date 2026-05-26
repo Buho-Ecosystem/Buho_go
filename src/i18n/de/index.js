@@ -543,6 +543,7 @@ export default {
   "Couldn't update screen privacy": "Bildschirm-Schutz konnte nicht geändert werden",
   "Get the BuhoGO Android app": "BuhoGO Android-App holen",
   "Screen-capture protection runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to keep your screen private.": "Bildschirm-Schutz läuft auf dem Gerät und ist nur in der BuhoGO Android-App verfügbar. Installiere sie aus dem Google Play Store, um deinen Bildschirm privat zu halten.",
+  "Biometric app lock runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to unlock the app with your fingerprint or face.": "Biometrische App-Sperre läuft auf dem Gerät und ist nur in der BuhoGO Android-App verfügbar. Installiere sie aus dem Google Play Store, um die App per Fingerabdruck oder Gesicht zu entsperren.",
   "Open Google Play": "Google Play öffnen",
   "Legacy (e.g. 1,234 sats)": "Legacy (z.B. 1.234 sats)",
   "Amount format changed to BIP-177 (₿)": "Anzeigeformat auf BIP-177 (₿) geändert",

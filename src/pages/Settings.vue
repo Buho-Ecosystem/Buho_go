@@ -642,11 +642,6 @@
         </q-card>
       </q-dialog>
 
-      <!-- ─────────────── ADVANCED ───────────────
-           The deliberately-named "for power users" bucket. Anything
-           that affects how BuhoGO talks to external services or
-           handles edge-case behaviour belongs here so the rest of
-           the screen stays calm for mainstream users. -->
       <!-- ─────────────── HELP & SUPPORT ───────────────
            Just the onboarding tour now. Bitcoin Lessons was
            previously here but has been promoted to a Feature Card
@@ -661,47 +656,6 @@
           :caption="$t('Learn about all BuhoGO features')"
           @click="$router.push('/spark-success?full=true')"
         />
-      </SettingsSection>
-
-      <!-- ─────────────── ADVANCED ───────────────
-           Collapsed by default. Power-user toggles that the
-           typical user never needs to touch (exchange-rate source,
-           auto-add Bitcoin deposits). Tucking them behind a
-           chevron keeps the main Settings flow scannable while
-           still letting anyone who wants the controls find them
-           one tap away. -->
-      <SettingsSection
-        :title="$t('Advanced')"
-        collapsible
-        :default-expanded="false"
-      >
-        <SettingsRow
-          icon="tabler:chart-line"
-          :label="$t('Exchange Rate Source')"
-          :caption="mempoolSourceLabel"
-          @click="showMempoolDialog = true"
-        />
-
-        <!-- Auto-add Bitcoin deposits — only relevant for Spark
-             wallets (the only type with a static deposit address).
-             Default-on covers the typical user; only people who
-             want manual control over each on-chain claim need to
-             find this toggle, and Advanced is the right home. -->
-        <SettingsRow
-          v-if="isSparkActiveWallet"
-          icon="tabler:download"
-          :label="$t('Auto-add Bitcoin deposits')"
-          :caption="$t('Add deposits to your balance without an extra step.')"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="bitcoinPrefsStore.autoAddIncomingBitcoin"
-              @update:model-value="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
       </SettingsSection>
 
       <!-- ─────────────── SUPPORT BUHOGO ───────────────
@@ -742,27 +696,58 @@
         </div>
       </SettingsSection>
 
+      <!-- ─────────────── ADVANCED ───────────────
+           Collapsed by default. Power-user toggles that the
+           typical user never needs to touch (exchange-rate source,
+           auto-add Bitcoin deposits). Positioned after Support
+           BuhoGO so the main mainstream surfaces — wallet,
+           preferences, kiosk, help, donate — read first; anyone
+           hunting for advanced controls is happy to scroll the
+           extra row. -->
+      <SettingsSection
+        :title="$t('Advanced')"
+        collapsible
+        :default-expanded="false"
+      >
+        <SettingsRow
+          icon="tabler:chart-line"
+          :label="$t('Exchange Rate Source')"
+          :caption="mempoolSourceLabel"
+          @click="showMempoolDialog = true"
+        />
+
+        <!-- Auto-add Bitcoin deposits — only relevant for Spark
+             wallets (the only type with a static deposit address).
+             Default-on covers the typical user; only people who
+             want manual control over each on-chain claim need to
+             find this toggle, and Advanced is the right home. -->
+        <SettingsRow
+          v-if="isSparkActiveWallet"
+          icon="tabler:download"
+          :label="$t('Auto-add Bitcoin deposits')"
+          :caption="$t('Add deposits to your balance without an extra step.')"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="bitcoinPrefsStore.autoAddIncomingBitcoin"
+              @update:model-value="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+      </SettingsSection>
+
       <!-- ─────────────── DANGER ZONE ───────────────
            Collapsed by default. Lives at the very bottom of the
            page so reaching it is already deliberate (scroll past
            everything else), and the chevron toggle adds one more
            tap before destructive actions become visible. -->
-      <button
-        type="button"
-        class="danger-toggle"
-        :class="{ 'danger-toggle-open': dangerZoneExpanded }"
-        :aria-expanded="dangerZoneExpanded"
-        @click="dangerZoneExpanded = !dangerZoneExpanded"
+      <SettingsSection
+        :title="$t('Danger Zone')"
+        collapsible
+        :default-expanded="false"
       >
-        <span>{{ $t('Danger Zone') }}</span>
-        <Icon
-          icon="tabler:chevron-down"
-          width="16"
-          height="16"
-          class="danger-toggle-chevron"
-        />
-      </button>
-      <SettingsSection v-if="dangerZoneExpanded">
         <SettingsRow
           v-if="hasSparkWallet"
           destructive
@@ -968,7 +953,7 @@
             class="get-app-message"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Screen-capture protection runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to keep your screen private.') }}
+            {{ getAppDialogMessage }}
           </div>
         </q-card-section>
 
@@ -1926,6 +1911,7 @@ import {useWalletStore} from '../stores/wallet'
 import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
+import {useProfileStore} from '../stores/profile'
 import {useAddressBookStore} from '../stores/addressBook'
 import {useEarnStore} from '../stores/earn'
 import {mapState, mapActions} from 'pinia'
@@ -1935,6 +1921,7 @@ import {shareContent} from '../utils/share.js'
 import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
 import { isScreenPrivacySupported } from '../utils/secureScreen.js'
+import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
@@ -1996,12 +1983,6 @@ export default {
       showSecurityDialog: false,
       showMempoolDialog: false,
 
-
-      // Danger zone is collapsed by default — adds a deliberate extra
-      // tap before destructive actions (delete Spark wallets, remove
-      // NWC/LNbits connections) are reachable. Reduces accidental
-      // taps in a screen the user already scrolled to the bottom of.
-      dangerZoneExpanded: false,
 
       // New wallet form
       newWalletName: '',
@@ -2091,8 +2072,13 @@ export default {
       screenPrivacySupported: false,
 
       // Get-the-App dialog state. Opens when a user tries to enable
-      // a native-only feature from the web build.
+      // a native-only feature from the web build. The dialog is
+      // shared by every such feature (screen privacy, biometric app
+      // lock, future Android-only protections); the caller passes a
+      // localized message key via promptForApp() so the body line
+      // describes the specific feature being requested.
       showGetAppDialog: false,
+      getAppDialogMessage: '',
 
       // Enable-flow explanation dialog state
       showBiometricEnableDialog: false,
@@ -2214,6 +2200,17 @@ export default {
       return useWalletStore();
     },
 
+    /**
+     * True only when running inside the Capacitor Android (or iOS)
+     * build. Gates the visual treatment of native-only feature
+     * cards (biometric app lock, screen privacy) — on web they
+     * stay tappable but open the Get-the-App dialog instead of
+     * showing a misleading "N/A" / disabled state.
+     */
+    isNativeApp() {
+      return Capacitor.isNativePlatform();
+    },
+
     bitcoinPrefsStore() {
       return useBitcoinPreferencesStore();
     },
@@ -2226,6 +2223,15 @@ export default {
      */
     identityStore() {
       return useIdentityStore();
+    },
+
+    /**
+     * Profile (kind:0 metadata + Lightning Address) store. Needed
+     * by the profile card and surfaces in Settings that surface
+     * the user's chosen display name / avatar.
+     */
+    profileStore() {
+      return useProfileStore();
     },
 
     /**
@@ -2530,13 +2536,24 @@ export default {
         },
         {
           id: 'app-lock',
-          icon: 'tabler:lock',
+          // Biometric-first hint. Even when the user's enrolled
+          // method is device PIN, fingerprint reads as "biometric
+          // app lock" to mainstream users — same convention as
+          // banking apps (Revolut, N26, Sparkasse).
+          icon: 'tabler:fingerprint',
           label: this.$t('Lock'),
-          value: this.biometricsAvailable
-            ? (this.biometricsEnabled ? this.$t('On') : this.$t('Off'))
-            : this.$t('N/A'),
+          // On web the card stays tappable so the user can discover
+          // the feature; the tap opens the Get-the-App dialog rather
+          // than the native enable flow. On native without enrolled
+          // biometrics we still surface N/A and disable — that's a
+          // device-level limitation, not a platform limitation.
+          value: !this.isNativeApp
+            ? this.$t('Off')
+            : this.biometricsAvailable
+              ? (this.biometricsEnabled ? this.$t('On') : this.$t('Off'))
+              : this.$t('N/A'),
           on: this.biometricsEnabled, // true binary on/off — show green tint when on.
-          disabled: !this.biometricsAvailable,
+          disabled: this.isNativeApp && !this.biometricsAvailable,
         },
       ];
     },
@@ -2774,6 +2791,22 @@ export default {
     // Hydrate the Identity store so the section renders with the right
     // bootstrapped/backup state on first paint. Idempotent; cheap.
     this.identityStore.hydrate();
+    // Hydrate the Profile store from localStorage so the avatar / name
+    // show on first paint after an app restart. Idempotent; cheap.
+    this.profileStore.hydrate();
+    // First-install fallback: if hydrate found nothing AND we have an
+    // identity, kick off the same Nostr fetch the Profile page would
+    // do on its own mount. Non-blocking — Settings renders with an
+    // empty avatar and the picture pops in once relays respond. Without
+    // this, a brand-new install never shows the avatar in Settings
+    // until the user has opened the Profile page at least once.
+    if (this.identityStore.bootstrapped && this.profileStore.isEmpty) {
+      this.profileStore
+        .recoverFromNostr({ identityStore: this.identityStore })
+        .catch((err) =>
+          console.warn('[settings] profile refresh failed:', err)
+        );
+    }
   },
 
   mounted() {
@@ -3151,6 +3184,15 @@ export default {
           this.walletStore.setBalanceHidden();
           return;
         case 'app-lock':
+          if (!this.isNativeApp) {
+            // Web: no native biometric API exists. Surface the
+            // limitation honestly with the same Get-the-App prompt
+            // we use for screen privacy.
+            this.promptForApp(
+              this.$t('Biometric app lock runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to unlock the app with your fingerprint or face.')
+            );
+            return;
+          }
           this.toggleBiometrics(!this.biometricsEnabled);
           return;
       }
@@ -3309,7 +3351,9 @@ export default {
         // Only prompt on the enable attempt — there's nothing to
         // disable on web because the toggle never actually goes ON.
         if (value) {
-          this.showGetAppDialog = true;
+          this.promptForApp(
+            this.$t('Screen-capture protection runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to keep your screen private.')
+          );
         }
         return;
       }
@@ -3331,6 +3375,21 @@ export default {
           timeout: 3000,
         });
       }
+    },
+
+    /**
+     * Open the shared Get-the-App dialog with a feature-specific
+     * message. Used by every native-only feature that wants to
+     * surface honestly on web instead of being silently disabled —
+     * screen privacy, biometric app lock, future Android-only
+     * protections.
+     *
+     * @param {string} message - already-localized body line
+     *   describing the feature being requested.
+     */
+    promptForApp(message) {
+      this.getAppDialogMessage = message;
+      this.showGetAppDialog = true;
     },
 
     /**
@@ -4322,28 +4381,6 @@ export default {
 }
 
 
-/* Danger zone collapse toggle. Shares the section-label typography so
-   it slots in where the static label used to sit, but is a button so
-   the user has to deliberately reveal the destructive actions. */
-.danger-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: transparent;
-  border: none;
-  padding: 0 18px;
-  margin: 18px 0 8px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--text-muted);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
 /* Compact layout helpers introduced by the refactor */
 .kiosk-tip-input-row {
   display: flex;
@@ -4380,22 +4417,6 @@ export default {
   flex: 1;
   font-family: 'Manrope', sans-serif;
   font-weight: 600;
-}
-
-.danger-toggle:focus-visible {
-  outline: 2px solid var(--text-muted);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.danger-toggle-chevron {
-  transition: transform 0.2s ease;
-  margin-right: 0.25rem;
-  opacity: 0.7;
-}
-
-.danger-toggle-open .danger-toggle-chevron {
-  transform: rotate(180deg);
 }
 
 /* Settings Cards */
