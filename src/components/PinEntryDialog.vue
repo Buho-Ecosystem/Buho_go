@@ -279,10 +279,14 @@ export default {
     }
   },
   watch: {
-    modelValue(newVal) {
-      if (newVal) {
-        this.resetPin();
-      }
+    modelValue() {
+      // Reset on every open/close transition. Opening starts fresh so
+      // a previously entered PIN never bleeds into a new session.
+      // Closing wipes any digits still in component memory — a
+      // defence-in-depth pass for programmatic dismiss paths (parent
+      // calling v-model=false directly, app backgrounding, unmount),
+      // since submitPin() already clears on the happy path.
+      this.resetPin();
     },
     errorMessage(newVal) {
       if (newVal) {
@@ -357,9 +361,15 @@ export default {
     },
 
     submitPin() {
-      if (this.pin.length === this.pinLength) {
-        this.$emit('pin-complete', this.pin);
-      }
+      if (this.pin.length !== this.pinLength) return;
+      // Hand the PIN to the parent and clear our local copy in the
+      // same tick. The emitted argument is the only reference the
+      // PIN needs from here on; keeping it in component state past
+      // the emit would leave the digits sitting in memory for the
+      // entire round-trip (and beyond, until the dialog re-opens).
+      const pin = this.pin;
+      this.pin = '';
+      this.$emit('pin-complete', pin);
     },
 
     resetPin() {
