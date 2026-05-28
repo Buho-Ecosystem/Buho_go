@@ -169,8 +169,8 @@ async function submit() {
   cursor: pointer;
   height: 48px;
   border-radius: 12px;
-  background: var(--color-green, #15DE72);
-  color: #0E1F17;
+  background: var(--map-cta-bg);
+  color: var(--map-cta-fg);
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 700;

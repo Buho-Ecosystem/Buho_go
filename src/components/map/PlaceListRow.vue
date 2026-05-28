@@ -84,8 +84,8 @@ const distanceText = computed(() => {
   border-radius: 12px;
   transition: background-color 140ms ease;
 }
-.place-row:active { background: var(--brand-accent-soft, rgba(21, 222, 114, 0.06)); }
-.place-row.selected { background: var(--brand-accent-soft, rgba(21, 222, 114, 0.1)); }
+.place-row:active { background: var(--map-accent-soft); }
+.place-row.selected { background: var(--map-accent-soft); }
 
 .place-row-icon {
   flex-shrink: 0;
@@ -128,7 +128,7 @@ const distanceText = computed(() => {
   font-family: 'Manrope', sans-serif;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--color-green, #15DE72);
+  color: var(--map-accent);
 }
 .place-row-category {
   font-family: 'Manrope', sans-serif;

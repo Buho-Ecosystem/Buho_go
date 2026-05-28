@@ -199,7 +199,7 @@ function bucketLabel(key) {
   transition: background-color 160ms ease;
   flex-shrink: 0;
 }
-.filters-switch.on { background: var(--color-green, #15DE72); }
+.filters-switch.on { background: var(--map-accent); }
 .filters-knob {
   position: absolute;
   top: 2px;
@@ -213,7 +213,7 @@ function bucketLabel(key) {
 .filters-switch.on .filters-knob { transform: translateX(16px); }
 
 .filters-rows { display: flex; flex-direction: column; gap: 8px; }
-.filters-row.active { border-color: var(--color-green, #15DE72); }
+.filters-row.active { border-color: var(--map-accent); }
 .filters-check {
   width: 20px;
   height: 20px;
@@ -225,7 +225,7 @@ function bucketLabel(key) {
   color: #0E1F17;
   flex-shrink: 0;
 }
-.filters-check.on { background: var(--color-green, #15DE72); border-color: var(--color-green, #15DE72); }
+.filters-check.on { background: var(--map-accent); border-color: var(--map-accent); color: var(--map-cta-fg); }
 .filters-row-label { flex: 1; }
 .filters-row-count { color: var(--text-muted); font-size: 12.5px; }
 
@@ -249,7 +249,7 @@ function bucketLabel(key) {
 }
 .filters-chip.active {
   color: var(--text-primary);
-  border-color: var(--color-green, #15DE72);
-  background: var(--brand-accent-soft, rgba(21, 222, 114, 0.1));
+  border-color: var(--map-accent);
+  background: var(--map-accent-soft);
 }
 </style>

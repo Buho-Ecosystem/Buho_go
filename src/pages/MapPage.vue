@@ -133,22 +133,37 @@ function toDetail(p) {
   }
 }
 
-// Tapping a pin or a list row: highlight, center, open the detail card, and
-// lift the sheet to half so map + detail are both visible.
+// Tapping a pin or a list row: open the detail, lift the sheet to at least
+// half, and fly to the place — offsetting the camera so the pin lands in the
+// map area above the sheet rather than behind it.
 function selectPlace(place) {
   selectedId.value = place.id || ''
   selectedPlace.value = toDetail(place)
+
+  // The sheet settles to at least half on select, so offset the fly by the
+  // half height (or the current height if already taller) to keep the pin
+  // visible above it.
+  if (sheetDetent.value === 'peek') sheetRef.value?.setDetent('half')
+  const halfPx = (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.5
+  const inset = Math.min(Math.max(sheetHeight.value, halfPx), (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.55)
+
   const lat = Number(place.lat)
   const lon = Number(place.lon)
   if (Number.isFinite(lat) && Number.isFinite(lon)) {
-    mapRef.value?.flyTo(lat, lon, 15)
+    mapRef.value?.flyTo(lat, lon, 15, { bottomInset: inset })
   }
-  if (sheetDetent.value === 'peek') sheetRef.value?.setDetent('half')
 }
 
 function backToList() {
   selectedPlace.value = null
   selectedId.value = ''
+}
+
+// User grabbed the map: if the sheet is hogging the screen, drop it to half so
+// it's out of the way. Gentle — we don't collapse half→peek, which would feel
+// like the sheet is running from the user.
+function onUserPan() {
+  if (sheetDetent.value === 'full') sheetRef.value?.setDetent('half')
 }
 
 function onSheetHeight(px) {
@@ -237,6 +252,7 @@ onMounted(async () => {
       @move="onMapMove"
       @select="selectPlace"
       @recenter-request="locateUser"
+      @user-pan="onUserPan"
     />
 
     <!-- Top bar: back + search pill + filter. Below the safe-area inset. -->
@@ -432,7 +448,7 @@ onMounted(async () => {
   -webkit-tap-highlight-color: transparent;
 }
 .map-filter-btn:active { transform: scale(0.94); }
-.map-filter-btn.active { border-color: var(--color-green, #15DE72); }
+.map-filter-btn.active { border-color: var(--map-accent); }
 .map-filter-dot {
   position: absolute;
   top: 8px;
@@ -440,7 +456,7 @@ onMounted(async () => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-green, #15DE72);
+  background: var(--map-accent);
   border: 1.5px solid var(--bg-card);
 }
 
@@ -468,7 +484,7 @@ onMounted(async () => {
   all: unset;
   cursor: pointer;
   font-weight: 700;
-  color: var(--color-green, #15DE72);
+  color: var(--map-accent);
   padding: 2px 4px;
 }
 .banner-slide-enter-active,

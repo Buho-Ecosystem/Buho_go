@@ -248,13 +248,15 @@
       -->
       <button type="button" class="map-hero-card" @click="$router.push('/map')">
         <span class="map-hero-icon">
-          <Icon icon="tabler:map-pin-bolt" width="26" height="26" />
+          <Icon icon="tabler:map-2" width="26" height="26" />
         </span>
         <span class="map-hero-text">
           <span class="map-hero-title">{{ $t('Bitcoin Map') }}</span>
           <span class="map-hero-sub">{{ $t('Find shops that accept Bitcoin near you') }}</span>
         </span>
-        <Icon icon="tabler:chevron-right" width="20" height="20" class="map-hero-chev" />
+        <span class="map-hero-go">
+          <Icon icon="tabler:chevron-right" width="18" height="18" />
+        </span>
       </button>
 
       <!--
@@ -7466,63 +7468,73 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
   color: var(--text-muted);
 }
 
-/* Bitcoin Map hero card — full-width, below the feature grid. */
+/* Bitcoin Map hero card — full-width, below the feature grid. A single
+   prominent surface (the map is a spend-side hook), so it gets a stronger
+   icon tile + a clear "open" affordance and roomier spacing than a grid row. */
 .map-hero-card {
   all: unset;
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   width: 100%;
-  margin-top: 10px;
-  padding: 16px;
+  margin-top: 12px;
+  padding: 18px;
   border-radius: var(--radius-md, 16px);
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.18s ease, background-color 0.18s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease;
 }
 .map-hero-card:active {
-  transform: scale(0.995);
-  background: var(--brand-accent-soft, rgba(21, 222, 114, 0.06));
+  transform: scale(0.99);
+  border-color: var(--map-accent);
 }
 .map-hero-icon {
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
-  color: #fff;
-  background: var(--gradient-green, linear-gradient(90deg, #059573 0%, #78D53C 100%));
+  border-radius: 15px;
+  color: var(--map-cta-fg);
+  background: var(--map-accent);
 }
 .map-hero-text {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   text-align: left;
 }
 .map-hero-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 16px;
+  font-size: 16.5px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+  line-height: 1.15;
 }
 .map-hero-sub {
   font-family: 'Manrope', sans-serif;
   font-size: 12.5px;
   font-weight: 400;
   color: var(--text-muted);
+  line-height: 1.3;
 }
-.map-hero-chev {
+.map-hero-go {
   flex-shrink: 0;
-  color: var(--text-muted);
-  opacity: 0.7;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--text-secondary);
 }
 
 </style>

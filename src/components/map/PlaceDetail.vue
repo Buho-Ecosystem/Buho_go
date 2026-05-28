@@ -197,7 +197,7 @@ async function onShare() {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-green, #15DE72);
+  color: var(--map-accent);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -238,7 +238,7 @@ async function onShare() {
   color: var(--text-muted);
 }
 .detail-category { text-transform: capitalize; }
-.detail-distance { color: var(--color-green, #15DE72); font-weight: 600; }
+.detail-distance { color: var(--map-accent); font-weight: 600; }
 
 .detail-chips {
   display: flex;
@@ -271,8 +271,8 @@ async function onShare() {
 }
 .detail-action:active { transform: scale(0.97); }
 .detail-action-primary {
-  color: #0E1F17;
-  background: var(--color-green, #15DE72);
+  color: var(--map-cta-fg);
+  background: var(--map-cta-bg);
   border-color: transparent;
 }
 
