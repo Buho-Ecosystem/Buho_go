@@ -57,6 +57,16 @@ function isRecentlyVerified(verifiedAt) {
   return Date.now() - t <= VERIFIED_RECENT_MS
 }
 
+// Is a place inside the current viewport? MapLibre's getBounds() returns
+// west > east when the viewport straddles the 180° meridian, so the longitude
+// test wraps in that case (east of west OR west of east). Latitude never wraps.
+function inBbox(p, bbox) {
+  if (p.lat < bbox.south || p.lat > bbox.north) return false
+  return bbox.west <= bbox.east
+    ? p.lon >= bbox.west && p.lon <= bbox.east
+    : p.lon >= bbox.west || p.lon <= bbox.east
+}
+
 export const useMapPlacesStore = defineStore('mapPlaces', {
   state: () => ({
     btcmap: [],
@@ -116,13 +126,7 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       // globally (skip the viewport filter) so saved places elsewhere still
       // appear, distance-sorted from the user. Otherwise clip to the viewport.
       if (!state.favoritesOnly && bbox) {
-        list = list.filter(
-          (p) =>
-            p.lat >= bbox.south &&
-            p.lat <= bbox.north &&
-            p.lon >= bbox.west &&
-            p.lon <= bbox.east,
-        )
+        list = list.filter((p) => inBbox(p, bbox))
       }
       if (origin) {
         list = list.map((p) => ({
@@ -148,12 +152,7 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       if (!bbox) return this.merged.length
       let n = 0
       for (const p of this.merged) {
-        if (
-          p.lat >= bbox.south &&
-          p.lat <= bbox.north &&
-          p.lon >= bbox.west &&
-          p.lon <= bbox.east
-        ) n++
+        if (inBbox(p, bbox)) n++
       }
       return n
     },

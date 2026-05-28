@@ -184,6 +184,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize))
 .map-sheet.dragging {
   transition: none;
 }
+@media (prefers-reduced-motion: reduce) {
+  .map-sheet { transition: none; }
+}
 
 .map-sheet-header {
   flex-shrink: 0;
