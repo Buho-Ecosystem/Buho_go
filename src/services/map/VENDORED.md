@@ -23,8 +23,8 @@ upstream improves.
 - `places.js` adds `distanceMeters()`, `CATEGORY_BUCKET_ICONS`.
 - `stores/mapPlaces.js` (renamed from upstream `stores/places.js`): adds
   `userLocation`, the distance-sorted `listPlaces` getter, the viewport-scoped
-  `visibleCount`, and the `verifiedRecentlyOnly` / `favoritesOnly` filters.
-  Imports point at `../services/map/*`.
+  `visibleCount`, and the `favoritesOnly` filter. Imports point at
+  `../services/map/*`.
 
 ## What lives in BuhoGO, NOT here
 

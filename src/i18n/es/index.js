@@ -1924,7 +1924,6 @@ export default {
   "Search failed. Try again.": "La búsqueda falló. Inténtalo de nuevo.",
   "Searching…": "Buscando…",
   "Filters": "Filtros",
-  "Recently verified only": "Solo verificados recientemente",
   "Sources": "Fuentes",
   "Categories": "Categorías",
   "Food & drink": "Comida y bebida",

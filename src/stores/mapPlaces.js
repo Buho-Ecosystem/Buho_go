@@ -12,8 +12,8 @@ import { useMapFavoritesStore } from './mapFavorites.js'
 
 // Vendored from pratik227/bitcoinmap (store + services). See
 // src/services/map/VENDORED.md. BuhoGO additions on top of the original store:
-//   - userLocation + `nearby` distance-sorted getter (drives the list sheet)
-//   - verifiedRecentlyOnly filter (freshness)
+//   - userLocation + distance-sorted `listPlaces` getter (drives the list sheet)
+//   - favoritesOnly filter
 //   - `online` source records flow through unchanged
 //
 // Source caching uses sessionStorage with a short TTL so re-opening the map in
@@ -21,10 +21,6 @@ import { useMapFavoritesStore } from './mapFavorites.js'
 
 const CACHE_TTL_MS = 10 * 60 * 1000
 const CACHE_KEYS = { btcmap: 'btcmap-cache-v1', btcpay: 'btcpay-cache-v1' }
-
-// A listing counts as "recently verified" if its check/update date is within
-// this window. Mirrors BTC Map's own ~1-year freshness convention.
-const VERIFIED_RECENT_MS = 365 * 24 * 60 * 60 * 1000
 
 // Max rows rendered in the list sheet. The map still shows every pin; the
 // list shows the nearest slice so the scroll container stays light.
@@ -50,13 +46,6 @@ function writeCache(key, data) {
   }
 }
 
-function isRecentlyVerified(verifiedAt) {
-  if (!verifiedAt) return false
-  const t = Date.parse(verifiedAt)
-  if (!Number.isFinite(t)) return false
-  return Date.now() - t <= VERIFIED_RECENT_MS
-}
-
 // Is a place inside the current viewport? MapLibre's getBounds() returns
 // west > east when the viewport straddles the 180° meridian, so the longitude
 // test wraps in that case (east of west OR west of east). Latitude never wraps.
@@ -75,7 +64,6 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
 
     enabled: { btcmap: true, osm: true, btcpay: true },
     buckets: { food: true, retail: true, lodging: true, services: true, atm: true, leisure: true, other: true },
-    verifiedRecentlyOnly: false,
     favoritesOnly: false,
 
     loading: { btcmap: false, osm: false, btcpay: false },
@@ -99,9 +87,6 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       if (state.enabled.btcpay) lists.push(state.btcpay)
       let all = mergePlaces(...lists)
       all = all.filter((p) => state.buckets[bucketFor(p.category)])
-      if (state.verifiedRecentlyOnly) {
-        all = all.filter((p) => isRecentlyVerified(p.verifiedAt))
-      }
       if (state.favoritesOnly) {
         // Saved-only narrows the whole map (pins + list + counts) to starred
         // places. The list then shows them globally; see listPlaces.
@@ -253,9 +238,6 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     },
     toggleBucket(bucket) {
       this.buckets[bucket] = !this.buckets[bucket]
-    },
-    toggleVerifiedRecentlyOnly() {
-      this.verifiedRecentlyOnly = !this.verifiedRecentlyOnly
     },
     toggleFavoritesOnly() {
       this.favoritesOnly = !this.favoritesOnly

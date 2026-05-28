@@ -1943,7 +1943,6 @@ export default {
   "Search failed. Try again.": "Search failed. Try again.",
   "Searching…": "Searching…",
   "Filters": "Filters",
-  "Recently verified only": "Recently verified only",
   "Sources": "Sources",
   "Categories": "Categories",
   "Food & drink": "Food & drink",

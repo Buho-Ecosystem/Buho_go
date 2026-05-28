@@ -26,7 +26,7 @@ const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 
 const store = useMapPlacesStore()
-const { enabled, buckets, verifiedRecentlyOnly, favoritesOnly, counts } = storeToRefs(store)
+const { enabled, buckets, favoritesOnly, counts } = storeToRefs(store)
 const favorites = useMapFavoritesStore()
 const basemap = useMapBasemapStore()
 const { style: basemapStyle, pitch3D } = storeToRefs(basemap)
@@ -72,23 +72,6 @@ function bucketLabel(key) {
               <span v-if="favorites.count" class="filters-toggle-count">{{ favorites.count }}</span>
             </span>
             <span class="filters-switch" :class="{ on: favoritesOnly }">
-              <span class="filters-knob" />
-            </span>
-          </button>
-        </section>
-
-        <!-- Freshness -->
-        <section class="filters-section">
-          <button
-            type="button"
-            class="filters-toggle-row"
-            @click="store.toggleVerifiedRecentlyOnly()"
-          >
-            <span class="filters-toggle-text">
-              <Icon icon="tabler:rosette-discount-check" width="18" height="18" />
-              {{ $t('Recently verified only') }}
-            </span>
-            <span class="filters-switch" :class="{ on: verifiedRecentlyOnly }">
               <span class="filters-knob" />
             </span>
           </button>
