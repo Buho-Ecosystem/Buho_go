@@ -1896,5 +1896,15 @@ export default {
   "Location permission denied": "Permiso de ubicación denegado",
   "Enable location access to find shops near you.": "Activa el acceso a la ubicación para encontrar tiendas cerca de ti.",
   "Location not available on this device": "Ubicación no disponible en este dispositivo",
-  "Couldn't get your location": "No se pudo obtener tu ubicación"
+  "Couldn't get your location": "No se pudo obtener tu ubicación",
+  "Contactless": "Sin contacto",
+  "Bitcoin merchant": "Comercio Bitcoin",
+  "Not verified": "Sin verificar",
+  "Not recently verified": "No verificado recientemente",
+  "Verified {when}": "Verificado {when}",
+  "Finding places…": "Buscando lugares…",
+  "No places in this area": "No hay lugares en esta zona",
+  "{n} places here": "{n} lugares aquí",
+  "Showing the nearest {n}. Zoom in for more.": "Mostrando los {n} más cercanos. Acerca para ver más.",
+  "No Bitcoin places in view. Pan or zoom out to explore.": "No hay lugares Bitcoin a la vista. Desplázate o aleja para explorar."
 }

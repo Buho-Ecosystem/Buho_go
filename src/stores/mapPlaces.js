@@ -25,6 +25,10 @@ const CACHE_KEYS = { btcmap: 'btcmap-cache-v1', btcpay: 'btcpay-cache-v1' }
 // this window. Mirrors BTC Map's own ~1-year freshness convention.
 const VERIFIED_RECENT_MS = 365 * 24 * 60 * 60 * 1000
 
+// Max rows rendered in the list sheet. The map still shows every pin; the
+// list shows the nearest slice so the scroll container stays light.
+const LIST_CAP = 60
+
 function readCache(key) {
   try {
     const raw = sessionStorage.getItem(key)
@@ -66,9 +70,14 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     errors: { btcmap: null, osm: null, btcpay: null },
     lastViewportFetchAt: 0,
 
-    // Set once geolocation resolves. Drives the `nearby` getter and the
-    // per-place distance shown in the list + detail sheet.
+    // Set once geolocation resolves. Distance origin preference for the list.
     userLocation: null, // { lat, lon } | null
+
+    // Current map viewport, set on every move. The list reflects "places in
+    // this area" (Google-Maps model) so it stays relevant and bounded rather
+    // than rendering the whole global set.
+    viewportBbox: null, // { south, west, north, east } | null
+    viewportCenter: null, // { lat, lon } | null
   }),
   getters: {
     merged(state) {
@@ -86,24 +95,54 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     featureCollection() {
       return toFeatureCollection(this.merged)
     },
-    // Merged places annotated with distance from the user and sorted nearest
-    // first. Empty until a user location is known. Online (BTCPay) merchants
-    // are pushed to the end since their synthetic centroid distance is
-    // meaningless for "near me".
-    nearby(state) {
-      const loc = state.userLocation
-      if (!loc) return []
-      const out = this.merged.map((p) => ({
-        ...p,
-        distance: distanceMeters(loc.lat, loc.lon, p.lat, p.lon),
-      }))
-      out.sort((a, b) => {
-        if (a.online !== b.online) return a.online ? 1 : -1
+    // The bottom-sheet list: merged places within the current viewport,
+    // annotated with distance from the user (or the viewport centre when
+    // location is unknown), sorted nearest-first, and capped so the scroll
+    // list never renders tens of thousands of rows. Online (BTCPay) merchants
+    // sort last — their synthetic centroid distance isn't a real "near me".
+    listPlaces(state) {
+      const bbox = state.viewportBbox
+      const origin = state.userLocation || state.viewportCenter
+      let list = this.merged
+      if (bbox) {
+        list = list.filter(
+          (p) =>
+            p.lat >= bbox.south &&
+            p.lat <= bbox.north &&
+            p.lon >= bbox.west &&
+            p.lon <= bbox.east,
+        )
+      }
+      if (origin) {
+        list = list.map((p) => ({
+          ...p,
+          distance: distanceMeters(origin.lat, origin.lon, p.lat, p.lon),
+        }))
+      }
+      list.sort((a, b) => {
+        if (!!a.online !== !!b.online) return a.online ? 1 : -1
         const da = a.distance ?? Infinity
         const db = b.distance ?? Infinity
-        return da - db
+        if (da !== db) return da - db
+        return (a.name || '').localeCompare(b.name || '')
       })
-      return out
+      return list.slice(0, LIST_CAP)
+    },
+    // How many places fall in the current viewport, before the list cap —
+    // drives the "X places here" summary and the "showing nearest N" hint.
+    visibleCount(state) {
+      const bbox = state.viewportBbox
+      if (!bbox) return this.merged.length
+      let n = 0
+      for (const p of this.merged) {
+        if (
+          p.lat >= bbox.south &&
+          p.lat <= bbox.north &&
+          p.lon >= bbox.west &&
+          p.lon <= bbox.east
+        ) n++
+      }
+      return n
     },
     counts(state) {
       return {
@@ -196,6 +235,11 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
         this.userLocation = { lat, lon }
       }
+    },
+
+    setViewport(bbox, center) {
+      this.viewportBbox = bbox || null
+      this.viewportCenter = center || null
     },
 
     toggleSource(source) {
