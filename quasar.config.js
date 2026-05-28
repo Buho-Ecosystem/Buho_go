@@ -23,6 +23,12 @@ export default defineConfig((ctx) => {
       'iconify',
       'safe-area',
       'kiosk',
+      // 'secure-screen' reconciles the Pinia screen-privacy field
+      // with the native SharedPreferences value applied by
+      // MainActivity.onCreate, and installs the router-meta
+      // forceSecure override guard. Safe to load everywhere — the
+      // util layer no-ops on web.
+      'secure-screen',
       ctx.mode.capacitor ? 'deep-links' : '',
       ctx.mode.capacitor ? 'nfc' : '',
       ctx.dev ? 'audit' : ''
