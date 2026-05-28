@@ -91,27 +91,6 @@ function bucketLabel(key) {
           </button>
         </section>
 
-        <!-- Sources -->
-        <section class="filters-section">
-          <h3 class="filters-label">{{ $t('Sources') }}</h3>
-          <div class="filters-rows">
-            <button
-              v-for="s in sources"
-              :key="s"
-              type="button"
-              class="filters-row"
-              :class="{ active: enabled[s] }"
-              @click="store.toggleSource(s)"
-            >
-              <span class="filters-check" :class="{ on: enabled[s] }">
-                <Icon v-if="enabled[s]" icon="tabler:check" width="13" height="13" />
-              </span>
-              <span class="filters-row-label">{{ SOURCE_LABEL[s] }}</span>
-              <span class="filters-row-count">{{ counts[s].toLocaleString() }}</span>
-            </button>
-          </div>
-        </section>
-
         <!-- Categories -->
         <section class="filters-section">
           <h3 class="filters-label">{{ $t('Categories') }}</h3>
@@ -143,6 +122,27 @@ function bucketLabel(key) {
               @click="basemap.setStyle(s)"
             >
               {{ BASEMAP_LABELS[s] }}
+            </button>
+          </div>
+        </section>
+
+        <!-- Sources -->
+        <section class="filters-section">
+          <h3 class="filters-label">{{ $t('Sources') }}</h3>
+          <div class="filters-rows">
+            <button
+              v-for="s in sources"
+              :key="s"
+              type="button"
+              class="filters-row"
+              :class="{ active: enabled[s] }"
+              @click="store.toggleSource(s)"
+            >
+              <span class="filters-check" :class="{ on: enabled[s] }">
+                <Icon v-if="enabled[s]" icon="tabler:check" width="13" height="13" />
+              </span>
+              <span class="filters-row-label">{{ SOURCE_LABEL[s] }}</span>
+              <span class="filters-row-count">{{ counts[s].toLocaleString() }}</span>
             </button>
           </div>
         </section>

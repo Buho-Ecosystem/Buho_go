@@ -92,6 +92,12 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       if (state.verifiedRecentlyOnly) {
         all = all.filter((p) => isRecentlyVerified(p.verifiedAt))
       }
+      if (state.favoritesOnly) {
+        // Saved-only narrows the whole map (pins + list + counts) to starred
+        // places. The list then shows them globally; see listPlaces.
+        const favs = useMapFavoritesStore().favoriteSet
+        all = all.filter((p) => favs.has(p.id))
+      }
       return all
     },
     featureCollection() {
@@ -106,12 +112,10 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       const bbox = state.viewportBbox
       const origin = state.userLocation || state.viewportCenter
       let list = this.merged
-      if (state.favoritesOnly) {
-        // Saved view: show favourites globally (ignore the viewport) so saved
-        // places elsewhere still appear, distance-sorted from the user.
-        const favs = useMapFavoritesStore().favoriteSet
-        list = list.filter((p) => favs.has(p.id))
-      } else if (bbox) {
+      // In Saved-only mode `merged` is already limited to favourites; show them
+      // globally (skip the viewport filter) so saved places elsewhere still
+      // appear, distance-sorted from the user. Otherwise clip to the viewport.
+      if (!state.favoritesOnly && bbox) {
         list = list.filter(
           (p) =>
             p.lat >= bbox.south &&
