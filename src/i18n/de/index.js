@@ -1934,5 +1934,12 @@ export default {
   "Bitcoin ATMs": "Bitcoin-Automaten",
   "Leisure": "Freizeit",
   "Couldn't load places. Check your connection.": "Orte konnten nicht geladen werden. Prüfe deine Verbindung.",
-  "Find shops that accept Bitcoin near you": "Finde Geschäfte in deiner Nähe, die Bitcoin akzeptieren"
+  "Find shops that accept Bitcoin near you": "Finde Geschäfte in deiner Nähe, die Bitcoin akzeptieren",
+  "Ways to pay": "Bezahlmöglichkeiten",
+  "Pay": "Bezahlen",
+  "Save place": "Ort speichern",
+  "Remove from saved": "Aus Gespeicherten entfernen",
+  "Saved only": "Nur gespeicherte",
+  "No saved places yet": "Noch keine gespeicherten Orte",
+  "{n} saved places": "{n} gespeicherte Orte"
 }

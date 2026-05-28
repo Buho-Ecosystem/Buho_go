@@ -3,6 +3,7 @@ import { computed, getCurrentInstance } from 'vue'
 import { Icon } from '@iconify/vue'
 import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../../stores/mapPlaces.js'
+import { useMapFavoritesStore } from '../../stores/mapFavorites.js'
 import {
   SOURCE_LABEL,
   CATEGORY_BUCKET_ICONS,
@@ -26,7 +27,8 @@ const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 
 const store = useMapPlacesStore()
-const { enabled, buckets, verifiedRecentlyOnly, counts } = storeToRefs(store)
+const { enabled, buckets, verifiedRecentlyOnly, favoritesOnly, counts } = storeToRefs(store)
+const favorites = useMapFavoritesStore()
 
 const open = computed({
   get: () => props.modelValue,
@@ -54,6 +56,24 @@ function bucketLabel(key) {
       </div>
 
       <div class="filters-scroll">
+        <!-- Saved -->
+        <section class="filters-section">
+          <button
+            type="button"
+            class="filters-toggle-row"
+            @click="store.toggleFavoritesOnly()"
+          >
+            <span class="filters-toggle-text">
+              <Icon icon="tabler:star" width="18" height="18" />
+              {{ $t('Saved only') }}
+              <span v-if="favorites.count" class="filters-toggle-count">{{ favorites.count }}</span>
+            </span>
+            <span class="filters-switch" :class="{ on: favoritesOnly }">
+              <span class="filters-knob" />
+            </span>
+          </button>
+        </section>
+
         <!-- Freshness -->
         <section class="filters-section">
           <button
@@ -195,6 +215,11 @@ function bucketLabel(key) {
   align-items: center;
   gap: 10px;
   font-weight: 600;
+}
+.filters-toggle-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 .filters-switch {
   width: 40px;

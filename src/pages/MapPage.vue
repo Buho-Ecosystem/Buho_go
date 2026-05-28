@@ -5,6 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../stores/mapPlaces.js'
+import { useWalletStore } from '../stores/wallet'
 import {
   getCurrentPosition,
   checkLocationPermission,
@@ -33,6 +34,7 @@ const $q = useQuasar()
 const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 const store = useMapPlacesStore()
+const walletStore = useWalletStore()
 const { featureCollection, userLocation, listPlaces, visibleCount } = storeToRefs(store)
 
 const mapRef = ref(null)
@@ -66,6 +68,7 @@ const filtersActive = computed(() => {
   const b = store.buckets
   return (
     store.verifiedRecentlyOnly ||
+    store.favoritesOnly ||
     !e.btcmap || !e.osm || !e.btcpay ||
     Object.values(b).some((v) => !v)
   )
@@ -88,13 +91,19 @@ const controlsInset = computed(() => {
 })
 
 const summaryText = computed(() => {
+  if (store.favoritesOnly) {
+    const n = listPlaces.value.length
+    return n === 0 ? t('No saved places yet') : t('{n} saved places', { n })
+  }
   const n = visibleCount.value
   if (store.isLoading && n === 0) return t('Finding places…')
   if (n === 0) return t('No places in this area')
   return t('{n} places here', { n })
 })
 
-const listTruncated = computed(() => visibleCount.value > listPlaces.value.length)
+const listTruncated = computed(
+  () => !store.favoritesOnly && visibleCount.value > listPlaces.value.length,
+)
 
 function goBack() {
   if (window.history.length > 1) router.back()
@@ -166,6 +175,15 @@ function selectPlace(place) {
 function backToList() {
   selectedPlace.value = null
   selectedId.value = ''
+}
+
+// "Pay this merchant" — hand the Lightning Address to the wallet's own send
+// flow via the same pendingDeepLink channel deep-links/NFC use, then route to
+// the wallet. 100% in-app: no web, no external app.
+function onPayMerchant(lightningAddress) {
+  if (!lightningAddress) return
+  walletStore.pendingDeepLink = { type: 'lightning_address', data: lightningAddress }
+  router.push('/wallet')
 }
 
 // User grabbed the map: if the sheet is hogging the screen, drop it to half so
@@ -332,6 +350,7 @@ onMounted(async () => {
         v-if="selectedPlace"
         :place="selectedPlace"
         @back="backToList"
+        @pay="onPayMerchant"
       />
 
       <div v-else class="sheet-list">

@@ -1951,5 +1951,12 @@ export default {
   "Bitcoin ATMs": "Bitcoin ATMs",
   "Leisure": "Leisure",
   "Couldn't load places. Check your connection.": "Couldn't load places. Check your connection.",
-  "Find shops that accept Bitcoin near you": "Find shops that accept Bitcoin near you"
+  "Find shops that accept Bitcoin near you": "Find shops that accept Bitcoin near you",
+  "Ways to pay": "Ways to pay",
+  "Pay": "Pay",
+  "Save place": "Save place",
+  "Remove from saved": "Remove from saved",
+  "Saved only": "Saved only",
+  "No saved places yet": "No saved places yet",
+  "{n} saved places": "{n} saved places"
 }
