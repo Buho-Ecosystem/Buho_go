@@ -1933,5 +1933,6 @@ export default {
   "Services": "Dienstleistungen",
   "Bitcoin ATMs": "Bitcoin-Automaten",
   "Leisure": "Freizeit",
-  "Couldn't load places. Check your connection.": "Orte konnten nicht geladen werden. Prüfe deine Verbindung."
+  "Couldn't load places. Check your connection.": "Orte konnten nicht geladen werden. Prüfe deine Verbindung.",
+  "Find shops that accept Bitcoin near you": "Finde Geschäfte in deiner Nähe, die Bitcoin akzeptieren"
 }

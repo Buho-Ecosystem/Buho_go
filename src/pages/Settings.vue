@@ -241,6 +241,23 @@
       />
 
       <!--
+        Bitcoin Map hero card — full-width, spans both feature-grid columns,
+        sits directly below the 2×2 grid. The map is a spend-side hook ("where
+        can I use my Bitcoin"), so it earns a prominent, distinct surface
+        rather than a fourth small grid tile.
+      -->
+      <button type="button" class="map-hero-card" @click="$router.push('/map')">
+        <span class="map-hero-icon">
+          <Icon icon="tabler:map-pin-bolt" width="26" height="26" />
+        </span>
+        <span class="map-hero-text">
+          <span class="map-hero-title">{{ $t('Bitcoin Map') }}</span>
+          <span class="map-hero-sub">{{ $t('Find shops that accept Bitcoin near you') }}</span>
+        </span>
+        <Icon icon="tabler:chevron-right" width="20" height="20" class="map-hero-chev" />
+      </button>
+
+      <!--
         Reusable lightning-address dialog. Always mounted (gated by its
         own v-if) so the trigger row stays simple. Same component used
         by LNBitsSetupPage during onboarding — the prop contract
@@ -7447,6 +7464,65 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
   width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   color: var(--text-muted);
+}
+
+/* Bitcoin Map hero card — full-width, below the feature grid. */
+.map-hero-card {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 16px;
+  border-radius: var(--radius-md, 16px);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.18s ease, background-color 0.18s ease;
+}
+.map-hero-card:active {
+  transform: scale(0.995);
+  background: var(--brand-accent-soft, rgba(21, 222, 114, 0.06));
+}
+.map-hero-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  color: #fff;
+  background: var(--gradient-green, linear-gradient(90deg, #059573 0%, #78D53C 100%));
+}
+.map-hero-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+.map-hero-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.map-hero-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.map-hero-chev {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 </style>

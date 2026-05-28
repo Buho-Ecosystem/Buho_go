@@ -1931,5 +1931,6 @@ export default {
   "Services": "Servicios",
   "Bitcoin ATMs": "Cajeros Bitcoin",
   "Leisure": "Ocio",
-  "Couldn't load places. Check your connection.": "No se pudieron cargar los lugares. Revisa tu conexión."
+  "Couldn't load places. Check your connection.": "No se pudieron cargar los lugares. Revisa tu conexión.",
+  "Find shops that accept Bitcoin near you": "Encuentra tiendas que aceptan Bitcoin cerca de ti"
 }

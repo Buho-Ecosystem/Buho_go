@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, watch, getCurrentInstance } from 'vue'
 import { Icon } from '@iconify/vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../stores/mapPlaces.js'
@@ -27,6 +27,7 @@ import MapFilters from '../components/map/MapFilters.vue'
  */
 
 const router = useRouter()
+const route = useRoute()
 const $q = useQuasar()
 // vue-i18n legacy mode (src/boot/i18n.js): reach $t through the proxy.
 const { proxy } = getCurrentInstance()
@@ -191,9 +192,34 @@ async function locateUser({ silent = false } = {}) {
   }
 }
 
+// Deep-link: /#/map?place=<id>. We can't select until the place exists in the
+// merged set, so watch the data and resolve once. `pendingPlaceId` is consumed
+// on first match so a later data refresh doesn't re-open the sheet.
+const pendingPlaceId = ref('')
+
+function tryResolveDeepLink() {
+  if (!pendingPlaceId.value) return
+  const match = store.merged.find((p) => p.id === pendingPlaceId.value)
+  if (match) {
+    pendingPlaceId.value = ''
+    selectPlace(match)
+  }
+}
+
+watch(() => store.merged, tryResolveDeepLink)
+
 onMounted(async () => {
+  const placeId = route.query.place
+  if (typeof placeId === 'string' && placeId) {
+    pendingPlaceId.value = placeId
+    tryResolveDeepLink() // in case data is already cached this session
+  }
+
   const perm = await checkLocationPermission()
-  if (perm === 'granted') locateUser({ silent: true })
+  // Don't yank the camera away from a deep-linked place with an auto-locate.
+  if (perm === 'granted' && !pendingPlaceId.value && !selectedPlace.value) {
+    locateUser({ silent: true })
+  }
 })
 </script>
 
