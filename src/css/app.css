@@ -241,6 +241,53 @@ body.platform-android {
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
+/* ─── Bitcoin Map local theme scope ────────────────────────────
+   The in-map colour toggle applies one of these classes to the map
+   page root (and to the teleported filter dialog) so the basemap AND
+   the whole chrome — top bar, FABs, sheet, list, detail, search,
+   filters — flip together, independent of the app theme. Values
+   mirror :root (dark) and body.body--light (light); CSS custom
+   properties cascade to descendants regardless of scoped-style
+   boundaries, and applying the class on a teleported dialog re-roots
+   the tokens for that subtree too.
+   ──────────────────────────────────────────────────────────────── */
+.map-theme-dark {
+    --bg-primary: #0C0C0C;
+    --bg-secondary: #171717;
+    --bg-card: #1A1A1A;
+    --bg-input: #1E1E1E;
+    --border-card: #2A342A;
+    --text-primary: #FFFFFF;
+    --text-secondary: #B0B0B0;
+    --text-muted: #6D6D6D;
+    --color-green: #15DE72;
+    --brand-accent-soft: rgba(21, 222, 114, 0.14);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+    --map-accent: #15DE72;
+    --map-accent-soft: rgba(21, 222, 114, 0.14);
+    --map-cta-bg: #15DE72;
+    --map-cta-fg: #0E1F17;
+}
+.map-theme-light {
+    --bg-primary: #FAF7EF;
+    --bg-secondary: #FAF7EF;
+    --bg-card: #FAF7EF;
+    --bg-input: #F3EFE3;
+    --border-card: #E3DCC7;
+    --text-primary: #1A1A1C;
+    --text-secondary: #5F5B52;
+    --text-muted: #928D83;
+    --color-green: #059573;
+    --brand-accent-soft: rgba(5, 149, 115, 0.08);
+    --shadow-md: 0 4px 10px rgba(40, 34, 20, 0.05);
+    --shadow-lg: 0 12px 32px rgba(40, 34, 20, 0.09);
+    --map-accent: #1A1A1C;
+    --map-accent-soft: rgba(0, 0, 0, 0.05);
+    --map-cta-bg: #1A1A1C;
+    --map-cta-fg: #FAF7EF;
+}
+
 body.body--light {
     /* ─── Cream paper palette ──────────────────────────────
        Design intent: ONE paper. No tonal stack, no "cream zones."

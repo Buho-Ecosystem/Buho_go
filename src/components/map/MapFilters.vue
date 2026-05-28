@@ -16,6 +16,9 @@ import {
  */
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
+  // The map's own dark state — this dialog is teleported to <body>, outside the
+  // map page's theme scope, so we re-apply the scope class on its card.
+  dark: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -40,8 +43,8 @@ function bucketLabel(key) {
 </script>
 
 <template>
-  <q-dialog v-model="open" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-    <q-card class="filters-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+  <q-dialog v-model="open" position="bottom">
+    <q-card class="filters-card" :class="dark ? 'map-theme-dark' : 'map-theme-light'">
       <div class="filters-grabber" />
       <div class="filters-head">
         <span class="filters-title">{{ $t('Filters') }}</span>
@@ -120,6 +123,9 @@ function bucketLabel(key) {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
 }
 .filters-grabber {
   width: 40px;

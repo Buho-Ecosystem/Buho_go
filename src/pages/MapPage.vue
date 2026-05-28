@@ -48,7 +48,16 @@ const sheetDragging = ref(false)
 const showSearch = ref(false)
 const showFilters = ref(false)
 
-const isDark = computed(() => $q.dark.isActive)
+// The map view's own light/dark. Initialised from the app theme on mount, then
+// owned by the in-map toggle. Drives the basemap AND the whole chrome (top bar,
+// controls, sheet, list, detail) via a theme-scope class on the page root — so
+// the toggle is all-or-nothing, never half-applied.
+const mapDark = ref($q.dark.isActive)
+const isDark = computed(() => mapDark.value)
+
+function toggleBasemap() {
+  mapDark.value = !mapDark.value
+}
 
 // Whether any filter deviates from the all-on default — drives the dot on the
 // filter button so the user knows results are being narrowed.
@@ -239,11 +248,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <q-page class="map-page">
+  <q-page class="map-page" :class="mapDark ? 'map-theme-dark' : 'map-theme-light'">
     <MapView
       ref="mapRef"
       :data="featureCollection"
-      :dark="isDark"
+      :dark="mapDark"
       :selected-id="selectedId"
       :user-location="userLocation"
       :bottom-inset="controlsInset"
@@ -253,6 +262,7 @@ onMounted(async () => {
       @select="selectPlace"
       @recenter-request="locateUser"
       @user-pan="onUserPan"
+      @toggle-basemap="toggleBasemap"
     />
 
     <!-- Top bar: back + search pill + filter. Below the safe-area inset. -->
@@ -297,7 +307,7 @@ onMounted(async () => {
     </transition>
 
     <MapSearch :open="showSearch" @close="showSearch = false" @locate="onSearchLocate" />
-    <MapFilters v-model="showFilters" />
+    <MapFilters v-model="showFilters" :dark="mapDark" />
 
     <!-- Bottom sheet = the distance-sorted nearby list. -->
     <MapBottomSheet
@@ -361,6 +371,10 @@ onMounted(async () => {
   height: 100vh;
   overflow: hidden;
 }
+
+/* Map-local theme scope tokens live in app.css as global .map-theme-dark /
+   .map-theme-light so they also apply to the teleported filter dialog. The
+   class is bound on the page root above. */
 
 .map-topbar {
   position: absolute;

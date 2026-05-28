@@ -67,7 +67,7 @@ async function submit() {
 <template>
   <transition name="search-fade">
     <div v-if="open" class="search-overlay" @click.self="emit('close')">
-      <div class="search-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <div class="search-card">
         <div class="search-card-head">
           <span class="search-card-title">{{ $t('Find a place') }}</span>
           <button class="search-close" type="button" @click="emit('close')" aria-label="Close search">
@@ -117,6 +117,8 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   box-shadow: var(--shadow-lg);
 }
 .search-card-head {

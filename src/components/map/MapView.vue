@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
@@ -40,16 +40,9 @@ const props = defineProps({
   userLocation: { type: Object, default: null },
 })
 
-const emit = defineEmits(['ready', 'select', 'move', 'recenter-request', 'user-pan'])
+const emit = defineEmits(['ready', 'select', 'move', 'recenter-request', 'user-pan', 'toggle-basemap'])
 
 const mapContainer = ref(null)
-
-// Basemap colour: follows the app theme by default, but the in-map toggle
-// lets the user override it independently (null = follow app theme).
-const userStyleDark = ref(null)
-const effectiveDark = computed(() =>
-  userStyleDark.value === null ? props.dark : userStyleDark.value,
-)
 
 let map = null
 let userMarker = null
@@ -249,17 +242,12 @@ function flyTo(lat, lon, zoom = 15, opts = {}) {
 function zoomIn() { map?.zoomIn() }
 function zoomOut() { map?.zoomOut() }
 
-// In-map basemap colour toggle (independent of the app theme).
-function toggleBasemap() {
-  userStyleDark.value = !effectiveDark.value
-}
-
 defineExpose({ flyTo })
 
 onMounted(() => {
   map = new maplibregl.Map({
     container: mapContainer.value,
-    style: effectiveDark.value ? MAP_STYLES.dark : MAP_STYLES.light,
+    style: props.dark ? MAP_STYLES.dark : MAP_STYLES.light,
     center: [10, 30],
     zoom: 2,
     attributionControl: { compact: true },
@@ -302,9 +290,9 @@ watch(() => props.data, () => {
   if (map && map.isStyleLoaded()) pushData()
 })
 
-// Re-style on either an app-theme change (when not overridden) or an in-map
-// toggle — both flow through effectiveDark.
-watch(effectiveDark, (isDark) => {
+// Re-style whenever the map's dark state changes. `dark` is owned by the page
+// (MapPage's mapDark) so a single toggle drives the basemap AND the chrome.
+watch(() => props.dark, (isDark) => {
   if (map) {
     needsReadd = true
     map.setStyle(isDark ? MAP_STYLES.dark : MAP_STYLES.light)
@@ -328,8 +316,8 @@ watch(() => props.userLocation, renderUserMarker, { deep: true })
     >
       <!-- Basemap colour toggle — flips the map tiles light/dark independently
            of the app theme. Icon shows the mode it will switch TO. -->
-      <button class="map-fab map-fab-solo" type="button" @click="toggleBasemap" aria-label="Toggle map colours">
-        <svg v-if="effectiveDark" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="map-fab map-fab-solo" type="button" @click="emit('toggle-basemap')" aria-label="Toggle map colours">
+        <svg v-if="dark" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
         </svg>
