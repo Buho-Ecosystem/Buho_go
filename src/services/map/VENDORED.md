@@ -22,8 +22,8 @@ upstream improves.
   distinctly instead of implying a storefront at the synthetic centroid.
 - `places.js` adds `distanceMeters()`, `CATEGORY_BUCKET_ICONS`.
 - `stores/mapPlaces.js` (renamed from upstream `stores/places.js`): adds
-  `userLocation`, the `nearby` distance-sorted getter, the
-  `verifiedRecentlyOnly` filter, and `totalVisible`/`hasAnyError` getters.
+  `userLocation`, the distance-sorted `listPlaces` getter, the viewport-scoped
+  `visibleCount`, and the `verifiedRecentlyOnly` / `favoritesOnly` filters.
   Imports point at `../services/map/*`.
 
 ## What lives in BuhoGO, NOT here

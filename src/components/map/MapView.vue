@@ -324,7 +324,7 @@ watch(() => props.userLocation, renderUserMarker, { deep: true })
       :class="{ 'no-anim': !controlsAnimated }"
       :style="{ bottom: bottomInset + 'px' }"
     >
-      <button class="map-fab map-fab-solo" type="button" @click="emit('recenter-request')" aria-label="Find my location">
+      <button class="map-fab map-fab-solo" type="button" @click="emit('recenter-request')" :aria-label="$t('Find my location')">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3" />
           <line x1="12" y1="2" x2="12" y2="5" /><line x1="12" y1="19" x2="12" y2="22" />
@@ -332,13 +332,13 @@ watch(() => props.userLocation, renderUserMarker, { deep: true })
         </svg>
       </button>
       <div class="map-fab-group">
-        <button class="map-fab map-fab-flat" type="button" @click="zoomIn" aria-label="Zoom in">
+        <button class="map-fab map-fab-flat" type="button" @click="zoomIn" :aria-label="$t('Zoom in')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </button>
         <div class="map-fab-divider" />
-        <button class="map-fab map-fab-flat" type="button" @click="zoomOut" aria-label="Zoom out">
+        <button class="map-fab map-fab-flat" type="button" @click="zoomOut" :aria-label="$t('Zoom out')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>

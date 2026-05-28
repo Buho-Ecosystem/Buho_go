@@ -53,7 +53,7 @@ function bucketLabel(key) {
       <div class="filters-grabber" />
       <div class="filters-head">
         <span class="filters-title">{{ $t('Filters') }}</span>
-        <button class="filters-close" type="button" v-close-popup aria-label="Close filters">
+        <button class="filters-close" type="button" v-close-popup :aria-label="$t('Close filters')">
           <Icon icon="tabler:x" width="18" height="18" />
         </button>
       </div>

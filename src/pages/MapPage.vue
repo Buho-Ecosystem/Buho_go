@@ -85,12 +85,13 @@ const controlsInset = computed(() => {
 const summaryText = computed(() => {
   if (store.favoritesOnly) {
     const n = listPlaces.value.length
-    return n === 0 ? t('No saved places yet') : t('{n} saved places', { n })
+    if (n === 0) return t('No saved places yet')
+    return n === 1 ? t('1 saved place') : t('{n} saved places', { n })
   }
   const n = visibleCount.value
   if (store.isLoading && n === 0) return t('Finding places…')
   if (n === 0) return t('No places in this area')
-  return t('{n} places here', { n })
+  return n === 1 ? t('1 place here') : t('{n} places here', { n })
 })
 
 const listTruncated = computed(
@@ -195,6 +196,12 @@ function onSearchLocate({ lat, lon }) {
   }
 }
 
+// A merchant picked from search: open its detail + fly to it, same as a tap.
+function onSearchSelect(place) {
+  showSearch.value = false
+  selectPlace(place)
+}
+
 function retryLoad() {
   store.loadGlobal()
 }
@@ -277,7 +284,7 @@ onMounted(async () => {
 
     <!-- Top bar: back + search pill + filter. Below the safe-area inset. -->
     <header class="map-topbar">
-      <button class="map-back" type="button" @click="goBack" aria-label="Back">
+      <button class="map-back" type="button" @click="goBack" :aria-label="$t('Back')">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6" />
         </svg>
@@ -316,7 +323,12 @@ onMounted(async () => {
       </div>
     </transition>
 
-    <MapSearch :open="showSearch" @close="showSearch = false" @locate="onSearchLocate" />
+    <MapSearch
+      :open="showSearch"
+      @close="showSearch = false"
+      @locate="onSearchLocate"
+      @select="onSearchSelect"
+    />
     <MapFilters v-model="showFilters" />
 
     <!-- Bottom sheet = the distance-sorted nearby list. -->

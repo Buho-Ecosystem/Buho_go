@@ -1,27 +1,73 @@
 <script setup>
-import { ref, nextTick, watch, getCurrentInstance } from 'vue'
+import { ref, computed, nextTick, watch, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { Icon } from '@iconify/vue'
+import { useMapPlacesStore } from '../../stores/mapPlaces.js'
+import { distanceMeters } from '../../services/map/places.js'
+import PlaceListRow from './PlaceListRow.vue'
 
 /**
- * MapSearch — a full-screen search overlay for jumping the map to a city or
- * address. Geocodes via Nominatim (OSM). Per Nominatim's usage policy we send
- * an explicit Accept-Language and keep it to one request per submit (no
- * per-keystroke autocomplete, which would hammer the public endpoint).
+ * MapSearch — a full-screen search overlay.
  *
- * Emits `locate` with { lat, lon } for the parent to fly the map to.
+ * Primary: live, local filtering of the loaded merchants by name as the user
+ * types (debounced, no network) — emits `select` with the chosen place so the
+ * parent flies to it and opens its detail. Fallback: if nothing matches, the
+ * query can be geocoded as a city/address via Nominatim (one request, with an
+ * explicit Accept-Language per their usage policy) — emits `locate`.
  */
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'locate'])
+const emit = defineEmits(['close', 'locate', 'select'])
 
 const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 
+const store = useMapPlacesStore()
+
 const query = ref('')
-const searching = ref(false)
+const debounced = ref('')
+const searching = ref(false) // geocode request in flight
 const error = ref('')
 const inputRef = ref(null)
+
+const MIN_CHARS = 2
+const RESULT_CAP = 25
+
+// Debounce the filter so a 28k-row scan + sort doesn't run on every keystroke.
+let debTimer = null
+watch(query, (v) => {
+  clearTimeout(debTimer)
+  debTimer = setTimeout(() => { debounced.value = v }, 150)
+})
+
+const hasQuery = computed(() => debounced.value.trim().length >= MIN_CHARS)
+
+const results = computed(() => {
+  const q = debounced.value.trim().toLowerCase()
+  if (q.length < MIN_CHARS) return []
+  const origin = store.userLocation || store.viewportCenter
+  const matched = []
+  for (const p of store.merged) {
+    if (p.name && p.name.toLowerCase().includes(q)) {
+      matched.push(
+        origin
+          ? { ...p, distance: distanceMeters(origin.lat, origin.lon, p.lat, p.lon) }
+          : p,
+      )
+    }
+  }
+  // Nearest first; online (centroid) merchants last; name as tiebreak.
+  matched.sort((a, b) => {
+    if (!!a.online !== !!b.online) return a.online ? 1 : -1
+    const da = a.distance ?? Infinity
+    const db = b.distance ?? Infinity
+    if (da !== db) return da - db
+    return (a.name || '').localeCompare(b.name || '')
+  })
+  return matched.slice(0, RESULT_CAP)
+})
+
+const noMatches = computed(() => hasQuery.value && results.value.length === 0)
 
 watch(
   () => props.open,
@@ -31,11 +77,19 @@ watch(
       nextTick(() => inputRef.value?.focus())
     } else {
       query.value = ''
+      debounced.value = ''
+      error.value = ''
     }
   },
 )
 
-async function submit() {
+function onSelectResult(place) {
+  emit('select', place)
+  emit('close')
+}
+
+// Fallback: geocode the query as a city/address and fly there.
+async function geocodeLocation() {
   const q = query.value.trim()
   if (!q || searching.value) return
   searching.value = true
@@ -48,8 +102,8 @@ async function submit() {
       headers: { 'Accept-Language': proxy.$i18n.locale || 'en' },
     })
     if (!res.ok) throw new Error(String(res.status))
-    const results = await res.json()
-    const hit = results[0]
+    const hits = await res.json()
+    const hit = hits[0]
     if (!hit) {
       error.value = t('No results found')
       return
@@ -62,6 +116,14 @@ async function submit() {
     searching.value = false
   }
 }
+
+// Enter: open the top merchant match, else try a location lookup.
+function onEnter() {
+  if (results.value.length) onSelectResult(results.value[0])
+  else if (hasQuery.value) geocodeLocation()
+}
+
+onBeforeUnmount(() => clearTimeout(debTimer))
 </script>
 
 <template>
@@ -70,7 +132,7 @@ async function submit() {
       <div class="search-card">
         <div class="search-card-head">
           <span class="search-card-title">{{ $t('Find a place') }}</span>
-          <button class="search-close" type="button" @click="emit('close')" aria-label="Close search">
+          <button class="search-close" type="button" @click="emit('close')" :aria-label="$t('Close search')">
             <Icon icon="tabler:x" width="18" height="18" />
           </button>
         </div>
@@ -82,17 +144,34 @@ async function submit() {
             v-model="query"
             type="search"
             class="search-input"
-            :placeholder="$t('Search city or address…')"
-            @keydown.enter="submit"
+            :placeholder="$t('Search by name or place…')"
+            @keydown.enter="onEnter"
             @keydown.esc="emit('close')"
           />
         </div>
 
         <div v-if="error" class="search-error">{{ error }}</div>
 
-        <button class="search-submit" type="button" :disabled="searching || !query.trim()" @click="submit">
-          {{ searching ? $t('Searching…') : $t('Search') }}
-        </button>
+        <!-- Live merchant matches -->
+        <div v-if="results.length" class="search-results">
+          <PlaceListRow
+            v-for="p in results"
+            :key="p.id"
+            :place="p"
+            @select="onSelectResult"
+          />
+        </div>
+
+        <!-- No merchant match: offer to look the query up as a place -->
+        <div v-else-if="noMatches" class="search-empty">
+          <p class="search-empty-text">{{ $t('No merchants found') }}</p>
+          <button class="search-submit" type="button" :disabled="searching" @click="geocodeLocation">
+            {{ searching ? $t('Searching…') : $t('Search as a place') }}
+          </button>
+        </div>
+
+        <!-- Initial hint -->
+        <p v-else-if="!hasQuery" class="search-hint">{{ $t('Type to search merchants by name') }}</p>
       </div>
     </div>
   </transition>
@@ -179,6 +258,24 @@ async function submit() {
   -webkit-tap-highlight-color: transparent;
 }
 .search-submit:disabled { opacity: 0.5; cursor: default; }
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  max-height: 52vh;
+  overflow-y: auto;
+  margin: 0 -4px;
+  -webkit-overflow-scrolling: touch;
+}
+.search-empty { display: flex; flex-direction: column; gap: 12px; }
+.search-empty-text,
+.search-hint {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 4px 0 0;
+}
 
 .search-fade-enter-active,
 .search-fade-leave-active { transition: opacity 180ms ease; }

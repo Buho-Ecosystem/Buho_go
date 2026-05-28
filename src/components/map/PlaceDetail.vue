@@ -45,15 +45,18 @@ const loadingDetails = ref(false)
 
 watch(
   () => props.place?.id,
-  async () => {
+  async (id) => {
     osmDetails.value = null
     const osmId = props.place?.osmId
     if (!osmId) return
     loadingDetails.value = true
     try {
-      osmDetails.value = await fetchOsmDetails(osmId)
+      const details = await fetchOsmDetails(osmId)
+      // Tapping quickly between pins can resolve an older fetch last; ignore it
+      // unless this is still the selected place.
+      if (props.place?.id === id) osmDetails.value = details
     } finally {
-      loadingDetails.value = false
+      if (props.place?.id === id) loadingDetails.value = false
     }
   },
   { immediate: true },
@@ -157,6 +160,16 @@ function payMerchant() {
 function openLink(url) {
   openInAppBrowser(url)
 }
+
+function onToggleFavorite() {
+  favorites.toggle(props.place.id)
+  $q.notify({
+    type: isFavorite.value ? 'positive' : 'info',
+    message: isFavorite.value ? t('Saved') : t('Removed from saved'),
+    timeout: 1400,
+    position: 'top',
+  })
+}
 </script>
 
 <template>
@@ -173,7 +186,7 @@ function openLink(url) {
         type="button"
         :aria-pressed="isFavorite"
         :aria-label="isFavorite ? $t('Remove from saved') : $t('Save place')"
-        @click="favorites.toggle(place.id)"
+        @click="onToggleFavorite"
       >
         <Icon :icon="isFavorite ? 'tabler:star-filled' : 'tabler:star'" width="20" height="20" />
       </button>

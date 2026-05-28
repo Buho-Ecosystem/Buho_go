@@ -137,7 +137,9 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
         if (da !== db) return da - db
         return (a.name || '').localeCompare(b.name || '')
       })
-      return list.slice(0, LIST_CAP)
+      // The viewport list is capped so the scroll container stays light; the
+      // Saved-only list is a small, user-curated set so we show all of it.
+      return state.favoritesOnly ? list : list.slice(0, LIST_CAP)
     },
     // How many places fall in the current viewport, before the list cap —
     // drives the "X places here" summary and the "showing nearest N" hint.
@@ -162,14 +164,8 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
         btcpay: state.btcpay.length,
       }
     },
-    totalVisible() {
-      return this.merged.length
-    },
     isLoading(state) {
       return Object.values(state.loading).some(Boolean)
-    },
-    hasAnyError(state) {
-      return Object.values(state.errors).some(Boolean)
     },
   },
   actions: {

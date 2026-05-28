@@ -143,7 +143,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize))
     :class="{ dragging }"
     :style="{ height: sheetHeight + 'px' }"
     role="dialog"
-    aria-label="Nearby Bitcoin places"
+    :aria-label="$t('Nearby Bitcoin places')"
   >
     <header
       class="map-sheet-header"
