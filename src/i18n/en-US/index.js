@@ -1958,5 +1958,6 @@ export default {
   "Remove from saved": "Remove from saved",
   "Saved only": "Saved only",
   "No saved places yet": "No saved places yet",
-  "{n} saved places": "{n} saved places"
+  "{n} saved places": "{n} saved places",
+  "Map style": "Map style"
 }

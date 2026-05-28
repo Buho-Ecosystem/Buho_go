@@ -1941,5 +1941,6 @@ export default {
   "Remove from saved": "Aus Gespeicherten entfernen",
   "Saved only": "Nur gespeicherte",
   "No saved places yet": "Noch keine gespeicherten Orte",
-  "{n} saved places": "{n} gespeicherte Orte"
+  "{n} saved places": "{n} gespeicherte Orte",
+  "Map style": "Kartenstil"
 }

@@ -1939,5 +1939,6 @@ export default {
   "Remove from saved": "Quitar de guardados",
   "Saved only": "Solo guardados",
   "No saved places yet": "Aún no hay lugares guardados",
-  "{n} saved places": "{n} lugares guardados"
+  "{n} saved places": "{n} lugares guardados",
+  "Map style": "Estilo del mapa"
 }

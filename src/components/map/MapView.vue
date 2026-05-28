@@ -6,29 +6,23 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 /**
  * MapView — the MapLibre GL surface for the Bitcoin map.
  *
- * Responsibilities are deliberately narrow: render the basemap (theme-aware),
- * cluster + draw pins from a GeoJSON FeatureCollection, own the user-location
- * marker and the locate/zoom controls, and report viewport changes + pin taps
- * upward. All list/sheet/detail UX lives in the parent page.
+ * Responsibilities are deliberately narrow: render the basemap (style chosen by
+ * the user), cluster + draw pins from a GeoJSON FeatureCollection, own the
+ * user-location marker and the locate/zoom controls, and report viewport
+ * changes + pin taps upward. All list/sheet/detail UX lives in the parent page.
  *
  * The map instance is kept in a plain closure variable (never a ref) so Vue's
  * reactivity proxy never wraps MapLibre's internals.
  */
 
-// Basemap styles. Light = OpenFreeMap positron, dark = OpenFreeMap dark.
-// Both free, no API key. Swap `dark` for Pratik's custom style when ready —
-// this is the single place that changes.
-const MAP_STYLES = {
-  light: 'https://tiles.openfreemap.org/styles/positron',
-  dark: 'https://tiles.openfreemap.org/styles/dark',
-}
 const SOURCE_ID = 'places'
 const PIN_COLOR = '#f7931a' // Bitcoin orange — same in both themes for brand consistency.
 
 const props = defineProps({
   // GeoJSON FeatureCollection from the store.
   data: { type: Object, default: () => ({ type: 'FeatureCollection', features: [] }) },
-  dark: { type: Boolean, default: false },
+  // Resolved basemap tile-style URL (chosen in the map's style picker).
+  styleUrl: { type: String, required: true },
   // Pixels to lift the bottom-right controls so they ride above the sheet.
   bottomInset: { type: Number, default: 24 },
   // When false (during a sheet drag), the controls follow the inset instantly
@@ -40,7 +34,7 @@ const props = defineProps({
   userLocation: { type: Object, default: null },
 })
 
-const emit = defineEmits(['ready', 'select', 'move', 'recenter-request', 'user-pan', 'toggle-basemap'])
+const emit = defineEmits(['ready', 'select', 'move', 'recenter-request', 'user-pan'])
 
 const mapContainer = ref(null)
 
@@ -247,7 +241,7 @@ defineExpose({ flyTo })
 onMounted(() => {
   map = new maplibregl.Map({
     container: mapContainer.value,
-    style: props.dark ? MAP_STYLES.dark : MAP_STYLES.light,
+    style: props.styleUrl,
     center: [10, 30],
     zoom: 2,
     attributionControl: { compact: true },
@@ -290,15 +284,15 @@ watch(() => props.data, () => {
   if (map && map.isStyleLoaded()) pushData()
 })
 
-// Re-style whenever the map's dark state changes. `dark` is owned by the page
-// (MapPage's mapDark) so a single toggle drives the basemap AND the chrome.
-watch(() => props.dark, (isDark) => {
-  if (!map) return
+// Re-style whenever the user picks a different basemap. The chosen tile URL is
+// owned by the basemap store and resolved in the page.
+watch(() => props.styleUrl, (url) => {
+  if (!map || !url) return
   // diff:false forces a clean reload — the default diff keeps our runtime
   // source but drops our custom layers, leaving pins invisible. A full swap
   // wipes everything; `once('idle')` then fires after the new style is fully
   // loaded + rendered, where we re-add source + layers + pin images.
-  map.setStyle(isDark ? MAP_STYLES.dark : MAP_STYLES.light, { diff: false })
+  map.setStyle(url, { diff: false })
   map.once('idle', reAddCustomLayers)
 })
 
@@ -317,17 +311,6 @@ watch(() => props.userLocation, renderUserMarker, { deep: true })
       :class="{ 'no-anim': !controlsAnimated }"
       :style="{ bottom: bottomInset + 'px' }"
     >
-      <!-- Basemap colour toggle — flips the map tiles light/dark independently
-           of the app theme. Icon shows the mode it will switch TO. -->
-      <button class="map-fab map-fab-solo" type="button" @click="emit('toggle-basemap')" aria-label="Toggle map colours">
-        <svg v-if="dark" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-        </svg>
-        <svg v-else width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-        </svg>
-      </button>
       <button class="map-fab map-fab-solo" type="button" @click="emit('recenter-request')" aria-label="Find my location">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3" />

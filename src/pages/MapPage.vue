@@ -5,6 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../stores/mapPlaces.js'
+import { useMapBasemapStore } from '../stores/mapBasemap.js'
 import { useWalletStore } from '../stores/wallet'
 import {
   getCurrentPosition,
@@ -34,8 +35,10 @@ const $q = useQuasar()
 const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 const store = useMapPlacesStore()
+const basemapStore = useMapBasemapStore()
 const walletStore = useWalletStore()
 const { featureCollection, userLocation, listPlaces, visibleCount } = storeToRefs(store)
+const { styleUrl: basemapStyleUrl } = storeToRefs(basemapStore)
 
 const mapRef = ref(null)
 const sheetRef = ref(null)
@@ -49,17 +52,6 @@ const sheetDragging = ref(false)
 
 const showSearch = ref(false)
 const showFilters = ref(false)
-
-// The map view's own light/dark. Initialised from the app theme on mount, then
-// owned by the in-map toggle. Drives the basemap AND the whole chrome (top bar,
-// controls, sheet, list, detail) via a theme-scope class on the page root — so
-// the toggle is all-or-nothing, never half-applied.
-const mapDark = ref($q.dark.isActive)
-const isDark = computed(() => mapDark.value)
-
-function toggleBasemap() {
-  mapDark.value = !mapDark.value
-}
 
 // Whether any filter deviates from the all-on default — drives the dot on the
 // filter button so the user knows results are being narrowed.
@@ -266,11 +258,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <q-page class="map-page" :class="mapDark ? 'map-theme-dark' : 'map-theme-light'">
+  <q-page class="map-page">
     <MapView
       ref="mapRef"
       :data="featureCollection"
-      :dark="mapDark"
+      :style-url="basemapStyleUrl"
       :selected-id="selectedId"
       :user-location="userLocation"
       :bottom-inset="controlsInset"
@@ -280,7 +272,6 @@ onMounted(async () => {
       @select="selectPlace"
       @recenter-request="locateUser"
       @user-pan="onUserPan"
-      @toggle-basemap="toggleBasemap"
     />
 
     <!-- Top bar: back + search pill + filter. Below the safe-area inset. -->
@@ -325,7 +316,7 @@ onMounted(async () => {
     </transition>
 
     <MapSearch :open="showSearch" @close="showSearch = false" @locate="onSearchLocate" />
-    <MapFilters v-model="showFilters" :dark="mapDark" />
+    <MapFilters v-model="showFilters" />
 
     <!-- Bottom sheet = the distance-sorted nearby list. -->
     <MapBottomSheet
@@ -340,7 +331,7 @@ onMounted(async () => {
           <q-spinner-dots
             v-if="store.isLoading"
             size="18px"
-            :color="isDark ? 'brand-green' : 'brand-green-dark'"
+            :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
           />
         </div>
       </template>
@@ -390,10 +381,6 @@ onMounted(async () => {
   height: 100vh;
   overflow: hidden;
 }
-
-/* Map-local theme scope tokens live in app.css as global .map-theme-dark /
-   .map-theme-light so they also apply to the teleported filter dialog. The
-   class is bound on the page root above. */
 
 .map-topbar {
   position: absolute;

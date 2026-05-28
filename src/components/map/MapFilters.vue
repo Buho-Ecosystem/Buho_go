@@ -4,6 +4,7 @@ import { Icon } from '@iconify/vue'
 import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../../stores/mapPlaces.js'
 import { useMapFavoritesStore } from '../../stores/mapFavorites.js'
+import { useMapBasemapStore, BASEMAPS, BASEMAP_LABELS } from '../../stores/mapBasemap.js'
 import {
   SOURCE_LABEL,
   CATEGORY_BUCKET_ICONS,
@@ -12,14 +13,11 @@ import {
 
 /**
  * MapFilters — bottom-sheet dialog to filter the map by data source, category
- * bucket, and verification freshness. Reads/writes the places store directly;
- * the map + list recompute reactively as toggles flip.
+ * bucket, and verification freshness, and to pick the basemap style. Reads/
+ * writes the stores directly; the map + list recompute reactively.
  */
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
-  // The map's own dark state — this dialog is teleported to <body>, outside the
-  // map page's theme scope, so we re-apply the scope class on its card.
-  dark: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -29,6 +27,8 @@ const t = (key, params) => proxy.$t(key, params)
 const store = useMapPlacesStore()
 const { enabled, buckets, verifiedRecentlyOnly, favoritesOnly, counts } = storeToRefs(store)
 const favorites = useMapFavoritesStore()
+const basemap = useMapBasemapStore()
+const { style: basemapStyle } = storeToRefs(basemap)
 
 const open = computed({
   get: () => props.modelValue,
@@ -46,7 +46,7 @@ function bucketLabel(key) {
 
 <template>
   <q-dialog v-model="open" position="bottom">
-    <q-card class="filters-card" :class="dark ? 'map-theme-dark' : 'map-theme-light'">
+    <q-card class="filters-card">
       <div class="filters-grabber" />
       <div class="filters-head">
         <span class="filters-title">{{ $t('Filters') }}</span>
@@ -126,6 +126,23 @@ function bucketLabel(key) {
             >
               <Icon :icon="CATEGORY_BUCKET_ICONS[b]" width="15" height="15" />
               {{ bucketLabel(b) }}
+            </button>
+          </div>
+        </section>
+
+        <!-- Map style -->
+        <section class="filters-section">
+          <h3 class="filters-label">{{ $t('Map style') }}</h3>
+          <div class="filters-chips">
+            <button
+              v-for="s in BASEMAPS"
+              :key="s"
+              type="button"
+              class="filters-chip"
+              :class="{ active: basemapStyle === s }"
+              @click="basemap.setStyle(s)"
+            >
+              {{ BASEMAP_LABELS[s] }}
             </button>
           </div>
         </section>
