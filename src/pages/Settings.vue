@@ -7478,7 +7478,10 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
   align-items: center;
   gap: 16px;
   width: 100%;
-  margin-top: 12px;
+  /* The feature grid above contributes 22px (its margin-bottom); the bottom
+     margin here gives the hero clear breathing room before the next settings
+     section instead of being glued to its label. */
+  margin: 6px 0 28px;
   padding: 18px;
   border-radius: var(--radius-md, 16px);
   background: var(--bg-card);
