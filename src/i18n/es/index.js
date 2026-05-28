@@ -1915,5 +1915,21 @@ export default {
   "Call": "Llamar",
   "Listed on {sources}": "Listado en {sources}",
   "Link copied": "Enlace copiado",
-  "Couldn't share": "No se pudo compartir"
+  "Couldn't share": "No se pudo compartir",
+  "Find a place": "Buscar un lugar",
+  "Search city or address…": "Busca ciudad o dirección…",
+  "No results found": "No se encontraron resultados",
+  "Search failed. Try again.": "La búsqueda falló. Inténtalo de nuevo.",
+  "Searching…": "Buscando…",
+  "Filters": "Filtros",
+  "Recently verified only": "Solo verificados recientemente",
+  "Sources": "Fuentes",
+  "Categories": "Categorías",
+  "Food & drink": "Comida y bebida",
+  "Retail": "Comercio",
+  "Lodging": "Alojamiento",
+  "Services": "Servicios",
+  "Bitcoin ATMs": "Cajeros Bitcoin",
+  "Leisure": "Ocio",
+  "Couldn't load places. Check your connection.": "No se pudieron cargar los lugares. Revisa tu conexión."
 }

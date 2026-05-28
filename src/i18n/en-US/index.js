@@ -1934,5 +1934,21 @@ export default {
   "Call": "Call",
   "Listed on {sources}": "Listed on {sources}",
   "Link copied": "Link copied",
-  "Couldn't share": "Couldn't share"
+  "Couldn't share": "Couldn't share",
+  "Find a place": "Find a place",
+  "Search city or address…": "Search city or address…",
+  "No results found": "No results found",
+  "Search failed. Try again.": "Search failed. Try again.",
+  "Searching…": "Searching…",
+  "Filters": "Filters",
+  "Recently verified only": "Recently verified only",
+  "Sources": "Sources",
+  "Categories": "Categories",
+  "Food & drink": "Food & drink",
+  "Retail": "Retail",
+  "Lodging": "Lodging",
+  "Services": "Services",
+  "Bitcoin ATMs": "Bitcoin ATMs",
+  "Leisure": "Leisure",
+  "Couldn't load places. Check your connection.": "Couldn't load places. Check your connection."
 }

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, getCurrentInstance } from 'vue'
+import { Icon } from '@iconify/vue'
 import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { storeToRefs } from 'pinia'
@@ -13,6 +14,8 @@ import MapView from '../components/map/MapView.vue'
 import MapBottomSheet from '../components/map/MapBottomSheet.vue'
 import PlaceListRow from '../components/map/PlaceListRow.vue'
 import PlaceDetail from '../components/map/PlaceDetail.vue'
+import MapSearch from '../components/map/MapSearch.vue'
+import MapFilters from '../components/map/MapFilters.vue'
 
 /**
  * MapPage — orchestrator for the Bitcoin merchant map.
@@ -41,7 +44,31 @@ const sheetDetent = ref('peek')
 const sheetHeight = ref(124)
 const sheetDragging = ref(false)
 
+const showSearch = ref(false)
+const showFilters = ref(false)
+
 const isDark = computed(() => $q.dark.isActive)
+
+// Whether any filter deviates from the all-on default — drives the dot on the
+// filter button so the user knows results are being narrowed.
+const filtersActive = computed(() => {
+  const e = store.enabled
+  const b = store.buckets
+  return (
+    store.verifiedRecentlyOnly ||
+    !e.btcmap || !e.osm || !e.btcpay ||
+    Object.values(b).some((v) => !v)
+  )
+})
+
+// The primary global source failing is worth surfacing; Overpass (osm) rate-
+// limiting is common and noisy, so we don't banner on that alone.
+const showErrorBanner = computed(
+  () => !!store.errors.btcmap && store.btcmap.length === 0,
+)
+const showSkeleton = computed(
+  () => store.isLoading && store.listPlaces.length === 0,
+)
 
 // Controls ride above the sheet but never higher than ~half the screen
 // (beyond that the sheet covers the map below them anyway).
@@ -127,6 +154,16 @@ function onSheetHeight(px) {
   sheetHeight.value = px
 }
 
+function onSearchLocate({ lat, lon }) {
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    mapRef.value?.flyTo(lat, lon, 13)
+  }
+}
+
+function retryLoad() {
+  store.loadGlobal()
+}
+
 async function locateUser({ silent = false } = {}) {
   if (locating.value) return
   locating.value = true
@@ -176,18 +213,49 @@ onMounted(async () => {
       @recenter-request="locateUser"
     />
 
-    <!-- Top bar: back + title pill. Sits below the safe-area inset. -->
+    <!-- Top bar: back + search pill + filter. Below the safe-area inset. -->
     <header class="map-topbar">
       <button class="map-back" type="button" @click="goBack" aria-label="Back">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
-      <div class="map-title">
-        <span class="map-title-main">{{ $t('Bitcoin Map') }}</span>
-        <span class="map-title-sub">{{ $t('Spend Bitcoin near you') }}</span>
-      </div>
+
+      <button class="map-search-pill" type="button" @click="showSearch = true" :aria-label="$t('Find a place')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <span class="map-search-text">
+          <span class="map-search-title">{{ $t('Bitcoin Map') }}</span>
+          <span class="map-search-sub">{{ $t('Find a place') }}</span>
+        </span>
+      </button>
+
+      <button
+        class="map-filter-btn"
+        type="button"
+        :class="{ active: filtersActive }"
+        @click="showFilters = true"
+        :aria-label="$t('Filters')"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="6" x2="20" y2="6" /><line x1="7" y1="12" x2="17" y2="12" /><line x1="10" y1="18" x2="14" y2="18" />
+        </svg>
+        <span v-if="filtersActive" class="map-filter-dot" />
+      </button>
     </header>
+
+    <!-- Source-failure banner (primary global source only). -->
+    <transition name="banner-slide">
+      <div v-if="showErrorBanner" class="map-banner">
+        <Icon icon="tabler:cloud-off" width="16" height="16" />
+        <span>{{ $t("Couldn't load places. Check your connection.") }}</span>
+        <button type="button" class="map-banner-retry" @click="retryLoad">{{ $t('Retry') }}</button>
+      </div>
+    </transition>
+
+    <MapSearch :open="showSearch" @close="showSearch = false" @locate="onSearchLocate" />
+    <MapFilters v-model="showFilters" />
 
     <!-- Bottom sheet = the distance-sorted nearby list. -->
     <MapBottomSheet
@@ -215,6 +283,17 @@ onMounted(async () => {
       />
 
       <div v-else class="sheet-list">
+        <!-- Loading skeleton: shimmer rows while the first data lands. -->
+        <template v-if="showSkeleton">
+          <div v-for="i in 6" :key="'sk' + i" class="skel-row">
+            <div class="skel-icon" />
+            <div class="skel-lines">
+              <div class="skel-line skel-line-name" />
+              <div class="skel-line skel-line-sub" />
+            </div>
+          </div>
+        </template>
+
         <PlaceListRow
           v-for="p in listPlaces"
           :key="p.id"
@@ -271,28 +350,134 @@ onMounted(async () => {
 }
 .map-back:active { transform: scale(0.94); }
 
-.map-title {
+.map-search-pill {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  color: var(--text-primary);
+  -webkit-tap-highlight-color: transparent;
+}
+.map-search-pill:active { transform: scale(0.99); }
+.map-search-text {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 8px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-md, 16px);
-  box-shadow: var(--shadow-md);
+  min-width: 0;
 }
-.map-title-main {
+.map-search-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.1;
 }
-.map-title-sub {
+.map-search-sub {
   font-family: 'Manrope', sans-serif;
   font-size: 11.5px;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+.map-filter-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
+  border-radius: 50%;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.map-filter-btn:active { transform: scale(0.94); }
+.map-filter-btn.active { border-color: var(--color-green, #15DE72); }
+.map-filter-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-green, #15DE72);
+  border: 1.5px solid var(--bg-card);
+}
+
+/* Error banner */
+.map-banner {
+  position: absolute;
+  top: calc(var(--safe-top, 0px) + 72px);
+  left: 14px;
+  right: 14px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.map-banner span { flex: 1; }
+.map-banner-retry {
+  all: unset;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--color-green, #15DE72);
+  padding: 2px 4px;
+}
+.banner-slide-enter-active,
+.banner-slide-leave-active { transition: opacity 200ms ease, transform 200ms ease; }
+.banner-slide-enter-from,
+.banner-slide-leave-to { opacity: 0; transform: translateY(-8px); }
+
+/* Loading skeleton rows */
+.skel-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.skel-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--bg-input);
+  flex-shrink: 0;
+}
+.skel-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.skel-line { height: 11px; border-radius: 6px; background: var(--bg-input); }
+.skel-line-name { width: 55%; }
+.skel-line-sub { width: 32%; }
+.skel-icon,
+.skel-line {
+  animation: skel-pulse 1.3s ease-in-out infinite;
+}
+@keyframes skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel-icon, .skel-line { animation: none; }
 }
 
 /* Sheet header summary */

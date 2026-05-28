@@ -1917,5 +1917,21 @@ export default {
   "Call": "Anrufen",
   "Listed on {sources}": "Gelistet auf {sources}",
   "Link copied": "Link kopiert",
-  "Couldn't share": "Teilen fehlgeschlagen"
+  "Couldn't share": "Teilen fehlgeschlagen",
+  "Find a place": "Ort finden",
+  "Search city or address…": "Stadt oder Adresse suchen…",
+  "No results found": "Keine Ergebnisse gefunden",
+  "Search failed. Try again.": "Suche fehlgeschlagen. Versuche es erneut.",
+  "Searching…": "Suche läuft…",
+  "Filters": "Filter",
+  "Recently verified only": "Nur kürzlich verifizierte",
+  "Sources": "Quellen",
+  "Categories": "Kategorien",
+  "Food & drink": "Essen & Trinken",
+  "Retail": "Einzelhandel",
+  "Lodging": "Unterkunft",
+  "Services": "Dienstleistungen",
+  "Bitcoin ATMs": "Bitcoin-Automaten",
+  "Leisure": "Freizeit",
+  "Couldn't load places. Check your connection.": "Orte konnten nicht geladen werden. Prüfe deine Verbindung."
 }
