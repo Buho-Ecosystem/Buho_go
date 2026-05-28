@@ -1,0 +1,161 @@
+// Common Place shape used across all sources.
+//
+// {
+//   id: string,                    // `${source}:${native_id}`
+//   source: 'btcmap'|'osm'|'btcpay',
+//   lat, lon,
+//   name, category, icon,
+//   address, website, phone, email, openingHours,
+//   payments: { onchain, lightning, lightningContactless },
+//   verifiedAt: string|null,       // ISO-ish date the listing was last checked
+//   online: boolean,               // true for synthetic BTCPay online merchants
+// }
+//
+// Vendored from pratik227/bitcoinmap. See VENDORED.md. BuhoGO additions:
+// `verifiedAt` and `online` are carried through the merge + feature collection
+// so the UI can show a freshness chip and label online-only merchants.
+
+export const SOURCE_LABEL = {
+  btcmap: 'BTC Map',
+  osm: 'OpenStreetMap',
+  btcpay: 'BTCPay Directory',
+}
+
+// Source priority for dedupe winner selection - earlier wins.
+const SOURCE_PRIORITY = ['btcmap', 'osm', 'btcpay']
+
+const SOURCE_RANK = Object.fromEntries(SOURCE_PRIORITY.map((s, i) => [s, i]))
+
+// Round to 4 decimals (~11m) so coordinates that differ slightly between
+// sources still collide. Combined with a normalized name token, that's
+// enough to fold "Joe's Coffee" from BTC Map and OSM into one pin.
+function dedupeKey(p) {
+  const lat = Math.round(p.lat * 10000) / 10000
+  const lon = Math.round(p.lon * 10000) / 10000
+  const name = (p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12)
+  return `${lat},${lon}|${name}`
+}
+
+export function mergePlaces(...lists) {
+  const map = new Map()
+  for (const list of lists) {
+    if (!list) continue
+    for (const p of list) {
+      if (!Number.isFinite(p.lat) || !Number.isFinite(p.lon)) continue
+      const key = dedupeKey(p)
+      const existing = map.get(key)
+      if (!existing) {
+        map.set(key, { ...p, sources: [p.source] })
+        continue
+      }
+      // Keep the higher-priority record but remember every source that vouches for this place.
+      if (!existing.sources.includes(p.source)) existing.sources.push(p.source)
+      if (SOURCE_RANK[p.source] < SOURCE_RANK[existing.source]) {
+        const sources = existing.sources
+        map.set(key, { ...p, sources })
+      } else {
+        // Fill in fields the winner is missing.
+        for (const f of ['name', 'category', 'icon', 'address', 'website', 'phone', 'email', 'openingHours', 'verifiedAt']) {
+          if (!existing[f] && p[f]) existing[f] = p[f]
+        }
+        const wp = existing.payments || {}
+        const np = p.payments || {}
+        existing.payments = {
+          onchain: wp.onchain ?? np.onchain ?? null,
+          lightning: wp.lightning ?? np.lightning ?? null,
+          lightningContactless: wp.lightningContactless ?? np.lightningContactless ?? null,
+        }
+      }
+    }
+  }
+  return [...map.values()]
+}
+
+// Convert a normalized place list into a MapLibre-ready FeatureCollection.
+export function toFeatureCollection(places) {
+  return {
+    type: 'FeatureCollection',
+    features: places.map((p) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+      properties: {
+        id: p.id,
+        source: p.source,
+        sources: (p.sources || [p.source]).join(','),
+        osmId: p.osmId || '',
+        name: p.name || '',
+        category: p.category || '',
+        icon: p.icon || '',
+        address: p.address || '',
+        website: p.website || '',
+        phone: p.phone || '',
+        email: p.email || '',
+        openingHours: p.openingHours || '',
+        verifiedAt: p.verifiedAt || '',
+        online: p.online === true ? 1 : 0,
+        lat: p.lat,
+        lon: p.lon,
+        payOnchain: p.payments?.onchain === true ? 1 : 0,
+        payLightning: p.payments?.lightning === true ? 1 : 0,
+        payContactless: p.payments?.lightningContactless === true ? 1 : 0,
+      },
+    })),
+  }
+}
+
+// Heuristic category bucket → broad filter group.
+const CATEGORY_BUCKETS = {
+  food: ['restaurant', 'cafe', 'fast_food', 'bar', 'pub', 'bakery', 'food_court', 'ice_cream', 'biergarten'],
+  retail: ['shop', 'supermarket', 'convenience', 'clothes', 'electronics', 'gift', 'jewelry', 'books', 'mall'],
+  lodging: ['hotel', 'hostel', 'guest_house', 'apartment', 'camp_site', 'motel'],
+  services: ['hairdresser', 'beauty', 'laundry', 'car_repair', 'dentist', 'doctors', 'pharmacy', 'bank'],
+  atm: ['atm', 'bitcoin_atm'],
+  leisure: ['cinema', 'theatre', 'fitness_centre', 'sports_centre', 'arts_centre', 'casino'],
+}
+
+export function bucketFor(category) {
+  if (!category) return 'other'
+  const c = category.toLowerCase()
+  for (const [bucket, list] of Object.entries(CATEGORY_BUCKETS)) {
+    if (list.some((k) => c.includes(k))) return bucket
+  }
+  return 'other'
+}
+
+// Bucket → representative icon (Tabler icon name) for list rows and detail.
+export const CATEGORY_BUCKET_ICONS = {
+  food: 'tabler:tools-kitchen-2',
+  retail: 'tabler:shopping-bag',
+  lodging: 'tabler:bed',
+  services: 'tabler:briefcase',
+  atm: 'tabler:cash',
+  leisure: 'tabler:device-gamepad-2',
+  other: 'tabler:map-pin',
+}
+
+// NOTE: bucket label strings are localized at the component layer via i18n
+// keys (`mapBucket.food` etc.) rather than hardcoded here, so this object
+// only holds the canonical English fallback used if a key is missing.
+export const CATEGORY_BUCKET_LABELS = {
+  food: 'Food & drink',
+  retail: 'Retail',
+  lodging: 'Lodging',
+  services: 'Services',
+  atm: 'Bitcoin ATMs',
+  leisure: 'Leisure',
+  other: 'Other',
+}
+
+// Haversine great-circle distance in metres between two [lat, lon] points.
+// Used to sort the nearby list and render per-place distance.
+export function distanceMeters(lat1, lon1, lat2, lon2) {
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return null
+  const R = 6371000
+  const toRad = (d) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
