@@ -42,3 +42,7 @@ yarn-error.log*
 .env.local*
 .env
 /CLAUDE.md
+
+# Local map dev screenshots / Playwright artifacts
+map-phase*.png
+.playwright-mcp/
