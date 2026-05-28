@@ -241,6 +241,25 @@
       />
 
       <!--
+        Bitcoin Map hero card — full-width, spans both feature-grid columns,
+        sits directly below the 2×2 grid. The map is a spend-side hook ("where
+        can I use my Bitcoin"), so it earns a prominent, distinct surface
+        rather than a fourth small grid tile.
+      -->
+      <button type="button" class="map-hero-card" @click="$router.push('/map')">
+        <span class="map-hero-icon">
+          <Icon icon="tabler:map-2" width="26" height="26" />
+        </span>
+        <span class="map-hero-text">
+          <span class="map-hero-title">{{ $t('Bitcoin Map') }}</span>
+          <span class="map-hero-sub">{{ $t('Find shops that accept Bitcoin near you') }}</span>
+        </span>
+        <span class="map-hero-go">
+          <Icon icon="tabler:chevron-right" width="18" height="18" />
+        </span>
+      </button>
+
+      <!--
         Reusable lightning-address dialog. Always mounted (gated by its
         own v-if) so the trigger row stays simple. Same component used
         by LNBitsSetupPage during onboarding — the prop contract
@@ -7644,6 +7663,78 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
   width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   color: var(--text-muted);
+}
+
+/* Bitcoin Map hero card — full-width, below the feature grid. A single
+   prominent surface (the map is a spend-side hook), so it gets a stronger
+   icon tile + a clear "open" affordance and roomier spacing than a grid row. */
+.map-hero-card {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  /* The feature grid above contributes 22px (its margin-bottom); the bottom
+     margin here gives the hero clear breathing room before the next settings
+     section instead of being glued to its label. */
+  margin: 6px 0 28px;
+  padding: 18px;
+  border-radius: var(--radius-md, 16px);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.map-hero-card:active {
+  transform: scale(0.99);
+  border-color: var(--map-accent);
+}
+.map-hero-icon {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 15px;
+  color: var(--map-cta-fg);
+  background: var(--map-accent);
+}
+.map-hero-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+.map-hero-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.map-hero-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+.map-hero-go {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--text-secondary);
 }
 
 </style>
