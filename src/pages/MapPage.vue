@@ -12,6 +12,7 @@ import {
 import MapView from '../components/map/MapView.vue'
 import MapBottomSheet from '../components/map/MapBottomSheet.vue'
 import PlaceListRow from '../components/map/PlaceListRow.vue'
+import PlaceDetail from '../components/map/PlaceDetail.vue'
 
 /**
  * MapPage — orchestrator for the Bitcoin merchant map.
@@ -33,6 +34,7 @@ const { featureCollection, userLocation, listPlaces, visibleCount } = storeToRef
 const mapRef = ref(null)
 const sheetRef = ref(null)
 const selectedId = ref('')
+const selectedPlace = ref(null) // canonical detail object, null = show list
 const locating = ref(false)
 
 const sheetDetent = ref('peek')
@@ -71,16 +73,54 @@ function onMapMove({ bbox, center, zoom }) {
   store.loadViewport(bbox, zoom)
 }
 
-// Tapping a pin or a list row: highlight, center, and lift the sheet to half
-// so map + list are both visible.
+// Normalize either a list place (payments object, sources[]) or a pin's
+// flattened feature properties (payOnchain/payLightning flags) into one shape
+// PlaceDetail can consume.
+function toDetail(p) {
+  const payments = p.payments || {
+    onchain: Number(p.payOnchain) === 1,
+    lightning: Number(p.payLightning) === 1,
+    lightningContactless: Number(p.payContactless) === 1,
+  }
+  const sources = p.sources
+    ? (Array.isArray(p.sources) ? p.sources : String(p.sources).split(','))
+    : (p.source ? [p.source] : [])
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    osmId: p.osmId || '',
+    lat: Number(p.lat),
+    lon: Number(p.lon),
+    address: p.address || '',
+    website: p.website || '',
+    phone: p.phone || '',
+    email: p.email || '',
+    openingHours: p.openingHours || '',
+    verifiedAt: p.verifiedAt || '',
+    online: !!p.online || Number(p.online) === 1,
+    distance: p.distance ?? null,
+    sources,
+    payments,
+  }
+}
+
+// Tapping a pin or a list row: highlight, center, open the detail card, and
+// lift the sheet to half so map + detail are both visible.
 function selectPlace(place) {
   selectedId.value = place.id || ''
+  selectedPlace.value = toDetail(place)
   const lat = Number(place.lat)
   const lon = Number(place.lon)
   if (Number.isFinite(lat) && Number.isFinite(lon)) {
     mapRef.value?.flyTo(lat, lon, 15)
   }
   if (sheetDetent.value === 'peek') sheetRef.value?.setDetent('half')
+}
+
+function backToList() {
+  selectedPlace.value = null
+  selectedId.value = ''
 }
 
 function onSheetHeight(px) {
@@ -157,7 +197,7 @@ onMounted(async () => {
       @dragging="(v) => (sheetDragging = v)"
     >
       <template #header>
-        <div class="sheet-summary">
+        <div v-if="!selectedPlace" class="sheet-summary">
           <span class="sheet-summary-count">{{ summaryText }}</span>
           <q-spinner-dots
             v-if="store.isLoading"
@@ -167,7 +207,14 @@ onMounted(async () => {
         </div>
       </template>
 
-      <div class="sheet-list">
+      <!-- Detail card replaces the list when a place is selected. -->
+      <PlaceDetail
+        v-if="selectedPlace"
+        :place="selectedPlace"
+        @back="backToList"
+      />
+
+      <div v-else class="sheet-list">
         <PlaceListRow
           v-for="p in listPlaces"
           :key="p.id"

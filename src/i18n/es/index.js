@@ -1906,5 +1906,14 @@ export default {
   "No places in this area": "No hay lugares en esta zona",
   "{n} places here": "{n} lugares aquí",
   "Showing the nearest {n}. Zoom in for more.": "Mostrando los {n} más cercanos. Acerca para ver más.",
-  "No Bitcoin places in view. Pan or zoom out to explore.": "No hay lugares Bitcoin a la vista. Desplázate o aleja para explorar."
+  "No Bitcoin places in view. Pan or zoom out to explore.": "No hay lugares Bitcoin a la vista. Desplázate o aleja para explorar.",
+  "Online merchant": "Comercio en línea",
+  "Back to list": "Volver a la lista",
+  "Directions": "Cómo llegar",
+  "Share": "Compartir",
+  "Website": "Sitio web",
+  "Call": "Llamar",
+  "Listed on {sources}": "Listado en {sources}",
+  "Link copied": "Enlace copiado",
+  "Couldn't share": "No se pudo compartir"
 }

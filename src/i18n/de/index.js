@@ -1908,5 +1908,14 @@ export default {
   "No places in this area": "Keine Orte in diesem Bereich",
   "{n} places here": "{n} Orte hier",
   "Showing the nearest {n}. Zoom in for more.": "Die nächsten {n} werden angezeigt. Zoome hinein für mehr.",
-  "No Bitcoin places in view. Pan or zoom out to explore.": "Keine Bitcoin-Orte im Bild. Verschiebe die Karte oder zoome heraus."
+  "No Bitcoin places in view. Pan or zoom out to explore.": "Keine Bitcoin-Orte im Bild. Verschiebe die Karte oder zoome heraus.",
+  "Online merchant": "Online-Händler",
+  "Back to list": "Zurück zur Liste",
+  "Directions": "Route",
+  "Share": "Teilen",
+  "Website": "Webseite",
+  "Call": "Anrufen",
+  "Listed on {sources}": "Gelistet auf {sources}",
+  "Link copied": "Link kopiert",
+  "Couldn't share": "Teilen fehlgeschlagen"
 }
