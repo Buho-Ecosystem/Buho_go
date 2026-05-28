@@ -30,7 +30,12 @@
       v-for="w in warnings"
       :key="w.id"
       class="attention-card"
-      :class="`attention-card--${w.variant || 'warning'}`"
+      :class="[`attention-card--${w.variant || 'warning'}`, { 'attention-card--dragging': dragId === w.id && dragging }]"
+      :style="cardStyle(w)"
+      @touchstart="onTouchStart(w, $event)"
+      @touchmove="onTouchMove($event)"
+      @touchend="onTouchEnd(w)"
+      @touchcancel="onTouchEnd(w)"
     >
       <span class="attention-icon">
         <Icon :icon="w.icon" width="20" height="20" />
@@ -47,12 +52,23 @@
       >
         {{ w.ctaLabel }}
       </button>
+      <button
+        type="button"
+        class="attention-dismiss"
+        :aria-label="$t('Dismiss')"
+        @click="$emit('dismiss', w.id)"
+      >
+        <Icon icon="tabler:x" width="16" height="16" />
+      </button>
     </div>
   </transition-group>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
+
+// Horizontal drag past this many px dismisses the card; below it snaps back.
+const SWIPE_THRESHOLD = 72;
 
 export default {
   name: 'SettingsAttentionStrip',
@@ -66,7 +82,61 @@ export default {
       // field at render time — easy to spot and not a security issue.
     },
   },
-  emits: ['action'],
+  emits: ['action', 'dismiss'],
+  data() {
+    return {
+      // Swipe-to-dismiss state. Only one card can be dragged at a time.
+      dragId: null,
+      dragDx: 0,
+      dragging: false,
+      startX: 0,
+      startY: 0,
+      axis: null, // 'x' once a horizontal swipe is locked in, 'y' for a scroll
+    };
+  },
+  methods: {
+    cardStyle(w) {
+      if (this.dragId !== w.id || this.axis !== 'x') return {};
+      return { transform: `translateX(${this.dragDx}px)`, opacity: String(1 - Math.min(Math.abs(this.dragDx) / 240, 0.6)) };
+    },
+    onTouchStart(w, e) {
+      const t = e.touches[0];
+      this.dragId = w.id;
+      this.dragDx = 0;
+      this.dragging = true;
+      this.startX = t.clientX;
+      this.startY = t.clientY;
+      this.axis = null;
+    },
+    onTouchMove(e) {
+      if (!this.dragId) return;
+      const t = e.touches[0];
+      const dx = t.clientX - this.startX;
+      const dy = t.clientY - this.startY;
+      // Lock the gesture to one axis on the first meaningful move so a
+      // vertical scroll never drags the card and vice-versa.
+      if (!this.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        this.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      }
+      if (this.axis === 'x') {
+        e.preventDefault(); // we own this gesture — stop the page scrolling
+        this.dragDx = dx;
+      }
+    },
+    onTouchEnd(w) {
+      this.dragging = false;
+      if (this.axis === 'x' && Math.abs(this.dragDx) > SWIPE_THRESHOLD) {
+        // Fling it the rest of the way out, then remove from the list.
+        this.dragDx = this.dragDx > 0 ? 480 : -480;
+        const id = w.id;
+        setTimeout(() => this.$emit('dismiss', id), 160);
+      } else {
+        this.dragDx = 0; // snap back
+      }
+      this.axis = this.dragDx === 0 ? null : this.axis;
+      if (this.dragDx === 0) this.dragId = null;
+    },
+  },
 };
 </script>
 
@@ -85,6 +155,34 @@ export default {
   padding: 14px 14px 14px 12px;
   border-radius: var(--radius-md, 16px);
   border: 1px solid var(--border-card);
+  /* Browser owns vertical scroll; we own horizontal (swipe-to-dismiss). */
+  touch-action: pan-y;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+/* No easing while the finger is down so the card tracks 1:1. */
+.attention-card--dragging {
+  transition: none;
+}
+
+.attention-dismiss {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  opacity: 0.55;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease;
+}
+.attention-dismiss:hover,
+.attention-dismiss:active {
+  opacity: 1;
 }
 
 .attention-card--warning {

@@ -35,6 +35,7 @@
       <SettingsAttentionStrip
         :warnings="attentionWarnings"
         @action="onAttentionAction"
+        @dismiss="onAttentionDismiss"
       />
 
       <SettingsQuickToggles
@@ -1631,6 +1632,13 @@
       @verified="onSeedPhraseVerified"
     />
 
+    <!-- Identity seed-phrase backup, opened from the identity attention card -->
+    <IdentitySeedPhraseDialog
+      v-model="showIdentitySeedDialog"
+      :mode="identitySeedDialogMode"
+      @verified="onIdentitySeedVerified"
+    />
+
     <!-- App Lock enable: explain what happens before the native prompt -->
     <BiometricEnableDialog
       v-model="showBiometricEnableDialog"
@@ -1946,6 +1954,7 @@ import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
+import IdentitySeedPhraseDialog from '../components/IdentitySeedPhraseDialog.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
@@ -1972,11 +1981,24 @@ const MEMPOOL_DEFAULT_URL = 'https://mempool.space/api/v1';
 const MEMPOOL_BLOCKTRAINER_URL = 'https://mempool.blocktrainer.de/api/v1';
 const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 
+// Persisted ids of attention cards the user dismissed (swipe / X).
+const DISMISSED_WARNINGS_KEY = 'buhoGO_dismissed_attention_v1';
+function loadDismissedWarnings() {
+  try {
+    const raw = localStorage.getItem(DISMISSED_WARNINGS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export default {
   name: 'SettingsPage',
   components: {
     VueQrcode,
     SparkSeedPhraseDialog,
+    IdentitySeedPhraseDialog,
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
@@ -2102,6 +2124,16 @@ export default {
       // Enable-flow explanation dialog state
       showBiometricEnableDialog: false,
       pendingBiometryType: 'none',
+
+      // Identity seed-phrase dialog (backup / view), opened from the
+      // identity attention card without leaving Settings.
+      showIdentitySeedDialog: false,
+      identitySeedDialogMode: 'backup',
+
+      // Attention cards the user has dismissed (swipe / X). Persisted so a
+      // dismissed reminder doesn't nag again; the quiet "Backup needed" chip
+      // in the profile row remains as the non-aggressive indicator.
+      dismissedWarnings: loadDismissedWarnings(),
 
       // Wallet removal
       walletToRemove: null,
@@ -2452,7 +2484,8 @@ export default {
         });
       }
 
-      return warnings;
+      // Drop anything the user has swiped / X-ed away.
+      return warnings.filter((w) => !this.dismissedWarnings.includes(w.id));
     },
 
     /**
@@ -3261,11 +3294,33 @@ export default {
           this.openSeedPhraseDialog('backup');
           return;
         case 'identity-backup':
-          this.$router.push('/profile');
+          this.openIdentitySeedDialog('backup');
           return;
         case 'app-lock-off':
           this.toggleBiometrics(true);
           return;
+      }
+    },
+
+    // Open the identity seed-phrase backup dialog inline (same flow the
+    // profile page uses) instead of routing the user away to /profile.
+    async openIdentitySeedDialog(mode) {
+      await this.identityStore.ensureIdentity();
+      this.identitySeedDialogMode = mode;
+      this.showIdentitySeedDialog = true;
+    },
+
+    // Store flips backupConfirmed on verify; the attention card drops itself.
+    onIdentitySeedVerified() {},
+
+    // Dismiss an attention card (swipe / X). Persisted so it stays gone.
+    onAttentionDismiss(id) {
+      if (this.dismissedWarnings.includes(id)) return;
+      this.dismissedWarnings = [...this.dismissedWarnings, id];
+      try {
+        localStorage.setItem(DISMISSED_WARNINGS_KEY, JSON.stringify(this.dismissedWarnings));
+      } catch {
+        // Best-effort persistence; the in-memory dismissal still holds.
       }
     },
 
