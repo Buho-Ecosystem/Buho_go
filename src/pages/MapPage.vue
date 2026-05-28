@@ -427,6 +427,9 @@ onMounted(async () => {
 
 .map-search-pill {
   all: unset;
+  /* `all: unset` resets pointer-events to inherit (the topbar is `none`), which
+     would swallow taps and let them fall through to the map canvas. Re-enable. */
+  pointer-events: auto;
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
