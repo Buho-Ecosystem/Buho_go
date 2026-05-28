@@ -47,11 +47,6 @@ const mapContainer = ref(null)
 let map = null
 let userMarker = null
 let viewportTimer = null
-// Set true right before a setStyle() theme swap; the styledata handler reads
-// it to know it must re-add our source/layers/images (setStyle wipes them).
-// Kept as a one-shot flag so the many styledata events fired by addImage /
-// setData during normal operation never re-enter addLayers().
-let needsReadd = false
 const reduceMotion =
   typeof window !== 'undefined' &&
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -101,8 +96,11 @@ function addLayers() {
     pushData()
     return
   }
-  addPinImages()
-
+  // Add the source FIRST, before addPinImages(). addImage() fires a synchronous
+  // `styledata` event; if the source isn't present yet, the styledata re-add
+  // handler would re-enter addLayers() and throw "Source already exists". With
+  // the source added up front, that handler's `!getSource` guard short-circuits
+  // cleanly during image registration.
   map.addSource(SOURCE_ID, {
     type: 'geojson',
     data: props.data || emptyFC(),
@@ -110,6 +108,8 @@ function addLayers() {
     clusterRadius: 50,
     clusterMaxZoom: 14,
   })
+
+  addPinImages()
 
   map.addLayer({
     id: 'clusters',
@@ -267,18 +267,18 @@ onMounted(() => {
   // gets out of the way while the user explores the map.
   map.on('dragstart', () => emit('user-pan'))
 
-  // setStyle() wipes custom sources/layers/images. Re-add them once the new
-  // style finishes loading after a theme swap. Gated on the one-shot
-  // `needsReadd` flag (cleared before addLayers) so the routine styledata
-  // events fired by addImage/setData never re-enter this handler.
-  map.on('styledata', () => {
-    if (needsReadd && map.isStyleLoaded()) {
-      needsReadd = false
-      addLayers()
-      renderUserMarker()
-    }
-  })
 })
+
+// Re-add our source/layers/images after a setStyle() swap wiped them. Called
+// from the dark watch via map.once('idle'): `idle` is the one reliable signal
+// that the new style is fully loaded AND rendered — `styledata` can fire
+// before isStyleLoaded() flips true with no further event after, so gating a
+// styledata handler on isStyleLoaded misses the window and the pins vanish.
+function reAddCustomLayers() {
+  if (!map || map.getSource(SOURCE_ID)) return
+  addLayers()
+  renderUserMarker()
+}
 
 onBeforeUnmount(() => {
   clearTimeout(viewportTimer)
@@ -293,10 +293,13 @@ watch(() => props.data, () => {
 // Re-style whenever the map's dark state changes. `dark` is owned by the page
 // (MapPage's mapDark) so a single toggle drives the basemap AND the chrome.
 watch(() => props.dark, (isDark) => {
-  if (map) {
-    needsReadd = true
-    map.setStyle(isDark ? MAP_STYLES.dark : MAP_STYLES.light)
-  }
+  if (!map) return
+  // diff:false forces a clean reload — the default diff keeps our runtime
+  // source but drops our custom layers, leaving pins invisible. A full swap
+  // wipes everything; `once('idle')` then fires after the new style is fully
+  // loaded + rendered, where we re-add source + layers + pin images.
+  map.setStyle(isDark ? MAP_STYLES.dark : MAP_STYLES.light, { diff: false })
+  map.once('idle', reAddCustomLayers)
 })
 
 watch(() => props.selectedId, applySelectedFilter)

@@ -6,9 +6,27 @@
 // `verifiedAt` threaded from the OSM check_date tags so the detail sheet can
 // show a precise "verified X ago" freshness chip.
 
+import { contactsFromTags } from './places.js'
+
 const API = 'https://api.openstreetmap.org/api/0.6'
 const cache = new Map()
 const inflight = new Map()
+
+// Prefer a human-readable Lightning Address (email-style); fall back to LNURL
+// and node IDs for power users. Mirrors the OSM tags BTC Map merchants use.
+function lightningAddressFromTags(t) {
+  const raw =
+    t['payment:lightning:address'] ||
+    t['lightning:address'] ||
+    t['payment:lightning:lnurl'] ||
+    t['lightning:lnurl'] ||
+    t['payment:lightning:nodeid'] ||
+    t['lightning:nodeid'] ||
+    null
+  if (!raw) return null
+  const v = String(raw).trim()
+  return v || null
+}
 
 function asBool(v) {
   if (v == null) return null
@@ -46,6 +64,8 @@ function detailsFromTags(t) {
       t['survey:date'] ||
       t.check_date ||
       null,
+    lightningAddress: lightningAddressFromTags(t),
+    contacts: contactsFromTags(t),
   }
 }
 

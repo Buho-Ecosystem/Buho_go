@@ -21,6 +21,50 @@ export const SOURCE_LABEL = {
   btcpay: 'BTCPay Directory',
 }
 
+// The social/contact platforms we surface (OSM `contact:<platform>` tags).
+export const CONTACT_PLATFORMS = ['telegram', 'twitter', 'mastodon', 'instagram', 'facebook']
+
+/**
+ * Turn a raw OSM `contact:<platform>` value into an openable https URL.
+ * Accepts a bare handle ("@user" / "user"), a Mastodon "user@instance", and an
+ * already-formed URL. Returns null when empty. Used by osm.js + overpass.js so
+ * the normalized place carries ready-to-open links.
+ */
+export function normalizeContact(platform, value) {
+  if (!value) return null
+  const v = String(value).trim()
+  if (!v) return null
+  if (/^https?:\/\//i.test(v)) return v
+  const handle = v.replace(/^@/, '')
+  switch (platform) {
+    case 'telegram':
+      return `https://t.me/${handle}`
+    case 'twitter':
+      return `https://twitter.com/${handle}`
+    case 'mastodon': {
+      // "user@instance.social" → "https://instance.social/@user"
+      const parts = handle.split('@')
+      if (parts.length === 2 && parts[1]) return `https://${parts[1]}/@${parts[0]}`
+      return `https://${handle}`
+    }
+    case 'instagram':
+      return `https://instagram.com/${handle}`
+    case 'facebook':
+      return `https://facebook.com/${handle}`
+    default:
+      return null
+  }
+}
+
+/** Build the normalized `contacts` object from an OSM tag bag. */
+export function contactsFromTags(t) {
+  const out = {}
+  for (const p of CONTACT_PLATFORMS) {
+    out[p] = normalizeContact(p, t[`contact:${p}`])
+  }
+  return out
+}
+
 // Source priority for dedupe winner selection - earlier wins.
 const SOURCE_PRIORITY = ['btcmap', 'osm', 'btcpay']
 
@@ -55,7 +99,7 @@ export function mergePlaces(...lists) {
         map.set(key, { ...p, sources })
       } else {
         // Fill in fields the winner is missing.
-        for (const f of ['name', 'category', 'icon', 'address', 'website', 'phone', 'email', 'openingHours', 'verifiedAt']) {
+        for (const f of ['name', 'category', 'icon', 'address', 'website', 'phone', 'email', 'openingHours', 'verifiedAt', 'lightningAddress', 'contacts']) {
           if (!existing[f] && p[f]) existing[f] = p[f]
         }
         const wp = existing.payments || {}

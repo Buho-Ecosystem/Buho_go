@@ -8,6 +8,7 @@ import {
   bucketFor,
   distanceMeters,
 } from '../services/map/places.js'
+import { useMapFavoritesStore } from './mapFavorites.js'
 
 // Vendored from pratik227/bitcoinmap (store + services). See
 // src/services/map/VENDORED.md. BuhoGO additions on top of the original store:
@@ -65,6 +66,7 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     enabled: { btcmap: true, osm: true, btcpay: true },
     buckets: { food: true, retail: true, lodging: true, services: true, atm: true, leisure: true, other: true },
     verifiedRecentlyOnly: false,
+    favoritesOnly: false,
 
     loading: { btcmap: false, osm: false, btcpay: false },
     errors: { btcmap: null, osm: null, btcpay: null },
@@ -104,7 +106,12 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       const bbox = state.viewportBbox
       const origin = state.userLocation || state.viewportCenter
       let list = this.merged
-      if (bbox) {
+      if (state.favoritesOnly) {
+        // Saved view: show favourites globally (ignore the viewport) so saved
+        // places elsewhere still appear, distance-sorted from the user.
+        const favs = useMapFavoritesStore().favoriteSet
+        list = list.filter((p) => favs.has(p.id))
+      } else if (bbox) {
         list = list.filter(
           (p) =>
             p.lat >= bbox.south &&
@@ -250,6 +257,9 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     },
     toggleVerifiedRecentlyOnly() {
       this.verifiedRecentlyOnly = !this.verifiedRecentlyOnly
+    },
+    toggleFavoritesOnly() {
+      this.favoritesOnly = !this.favoritesOnly
     },
   },
 })

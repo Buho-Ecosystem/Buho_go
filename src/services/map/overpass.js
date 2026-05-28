@@ -4,6 +4,8 @@
 //
 // Vendored from pratik227/bitcoinmap. See VENDORED.md.
 
+import { contactsFromTags } from './places.js'
+
 const ENDPOINT = 'https://overpass-api.de/api/interpreter'
 
 function asBool(v) {
@@ -66,6 +68,11 @@ function normalize(el) {
       lightningContactless: asBool(t['payment:lightning_contactless']),
     },
     verifiedAt: t['check_date:currency:XBT'] || t['check_date:payment:bitcoin'] || t.check_date || null,
+    lightningAddress:
+      (t['payment:lightning:address'] || t['lightning:address'] ||
+       t['payment:lightning:lnurl'] || t['lightning:lnurl'] ||
+       t['payment:lightning:nodeid'] || t['lightning:nodeid'] || '').trim() || null,
+    contacts: contactsFromTags(t),
   }
 }
 
