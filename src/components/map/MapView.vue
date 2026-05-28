@@ -17,12 +17,15 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 const SOURCE_ID = 'places'
 const PIN_COLOR = '#f7931a' // Bitcoin orange — same in both themes for brand consistency.
+const PITCH_3D = 60 // Camera tilt for the 3D view (MapLibre's default max pitch).
 
 const props = defineProps({
   // GeoJSON FeatureCollection from the store.
   data: { type: Object, default: () => ({ type: 'FeatureCollection', features: [] }) },
   // Resolved basemap tile-style URL (chosen in the map's style picker).
   styleUrl: { type: String, required: true },
+  // 3D view: when true, tilt the camera to a 60° pitch.
+  tilted: { type: Boolean, default: false },
   // Pixels to lift the bottom-right controls so they ride above the sheet.
   bottomInset: { type: Number, default: 24 },
   // When false (during a sheet drag), the controls follow the inset instantly
@@ -244,6 +247,7 @@ onMounted(() => {
     style: props.styleUrl,
     center: [10, 30],
     zoom: 2,
+    pitch: props.tilted ? PITCH_3D : 0,
     attributionControl: { compact: true },
     // Honour the OS reduced-motion preference for all camera eases.
     fadeDuration: reduceMotion ? 0 : 300,
@@ -294,6 +298,15 @@ watch(() => props.styleUrl, (url) => {
   // loaded + rendered, where we re-add source + layers + pin images.
   map.setStyle(url, { diff: false })
   map.once('idle', reAddCustomLayers)
+})
+
+// 3D view: tilt/flatten the camera. Animate unless the user prefers reduced
+// motion, in which case jump straight to the target pitch.
+watch(() => props.tilted, (on) => {
+  if (!map) return
+  const pitch = on ? PITCH_3D : 0
+  if (reduceMotion) map.jumpTo({ pitch })
+  else map.easeTo({ pitch, duration: 400 })
 })
 
 watch(() => props.selectedId, applySelectedFilter)

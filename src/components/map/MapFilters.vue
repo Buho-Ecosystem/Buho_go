@@ -28,7 +28,7 @@ const store = useMapPlacesStore()
 const { enabled, buckets, verifiedRecentlyOnly, favoritesOnly, counts } = storeToRefs(store)
 const favorites = useMapFavoritesStore()
 const basemap = useMapBasemapStore()
-const { style: basemapStyle } = storeToRefs(basemap)
+const { style: basemapStyle, pitch3D } = storeToRefs(basemap)
 
 const open = computed({
   get: () => props.modelValue,
@@ -124,6 +124,15 @@ function bucketLabel(key) {
               {{ BASEMAP_LABELS[s] }}
             </button>
           </div>
+          <button type="button" class="filters-toggle-row" @click="basemap.togglePitch()">
+            <span class="filters-toggle-text">
+              <Icon icon="tabler:box" width="18" height="18" />
+              {{ $t('3D view') }}
+            </span>
+            <span class="filters-switch" :class="{ on: pitch3D }">
+              <span class="filters-knob" />
+            </span>
+          </button>
         </section>
 
         <!-- Sources -->

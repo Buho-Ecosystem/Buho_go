@@ -1940,5 +1940,6 @@ export default {
   "Saved only": "Solo guardados",
   "No saved places yet": "Aún no hay lugares guardados",
   "{n} saved places": "{n} lugares guardados",
-  "Map style": "Estilo del mapa"
+  "Map style": "Estilo del mapa",
+  "3D view": "Vista 3D"
 }

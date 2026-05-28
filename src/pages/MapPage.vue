@@ -38,7 +38,7 @@ const store = useMapPlacesStore()
 const basemapStore = useMapBasemapStore()
 const walletStore = useWalletStore()
 const { featureCollection, userLocation, listPlaces, visibleCount } = storeToRefs(store)
-const { styleUrl: basemapStyleUrl } = storeToRefs(basemapStore)
+const { styleUrl: basemapStyleUrl, pitch3D: mapTilted } = storeToRefs(basemapStore)
 
 const mapRef = ref(null)
 const sheetRef = ref(null)
@@ -263,6 +263,7 @@ onMounted(async () => {
       ref="mapRef"
       :data="featureCollection"
       :style-url="basemapStyleUrl"
+      :tilted="mapTilted"
       :selected-id="selectedId"
       :user-location="userLocation"
       :bottom-inset="controlsInset"

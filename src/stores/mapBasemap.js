@@ -20,6 +20,7 @@ export const BASEMAP_LABELS = {
 }
 
 const STORAGE_KEY = 'buhoGO_map_basemap_v1'
+const PITCH_KEY = 'buhoGO_map_pitch3d_v1'
 const DEFAULT_STYLE = 'liberty'
 
 function readStored() {
@@ -32,9 +33,20 @@ function readStored() {
   return DEFAULT_STYLE
 }
 
+function readPitch() {
+  try {
+    return localStorage.getItem(PITCH_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 export const useMapBasemapStore = defineStore('mapBasemap', {
   state: () => ({
     style: readStored(),
+    // 3D view: tilt the camera so styles with building extrusions (Liberty,
+    // Bright) render in perspective. Off by default.
+    pitch3D: readPitch(),
   }),
   getters: {
     styleUrl: (state) => BASEMAP_URLS[state.style] || BASEMAP_URLS[DEFAULT_STYLE],
@@ -45,6 +57,14 @@ export const useMapBasemapStore = defineStore('mapBasemap', {
       this.style = name
       try {
         localStorage.setItem(STORAGE_KEY, name)
+      } catch {
+        // Best-effort persistence.
+      }
+    },
+    togglePitch() {
+      this.pitch3D = !this.pitch3D
+      try {
+        localStorage.setItem(PITCH_KEY, String(this.pitch3D))
       } catch {
         // Best-effort persistence.
       }
