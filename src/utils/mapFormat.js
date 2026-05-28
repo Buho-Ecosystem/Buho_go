@@ -5,7 +5,11 @@
 // Locales that conventionally use miles. Everything else gets metric.
 const IMPERIAL_LOCALES = /^(en-US|en-GB|my)\b/i
 
-function usesImperial(locale) {
+// Resolve whether to render miles. An explicit user unit ('mi' | 'km') wins;
+// 'auto' (or anything else) defers to the locale convention.
+function usesImperial(locale, unit) {
+  if (unit === 'mi') return true
+  if (unit === 'km') return false
   return IMPERIAL_LOCALES.test(locale || '')
 }
 
@@ -18,13 +22,14 @@ function usesImperial(locale) {
  *
  * @param {number|null} meters
  * @param {string} locale e.g. 'de', 'en-US'
+ * @param {string} [unit] 'auto' (default, locale-based) | 'km' | 'mi'
  * @returns {string} '' when meters is not finite
  */
-export function formatDistance(meters, locale = 'en-US') {
+export function formatDistance(meters, locale = 'en-US', unit = 'auto') {
   if (!Number.isFinite(meters)) return ''
   const nf = (digits) => new Intl.NumberFormat(locale, { maximumFractionDigits: digits, minimumFractionDigits: 0 })
 
-  if (usesImperial(locale)) {
+  if (usesImperial(locale, unit)) {
     const miles = meters / 1609.344
     if (miles < 0.1) {
       const feet = Math.round((meters / 0.3048) / 10) * 10

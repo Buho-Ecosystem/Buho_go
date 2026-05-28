@@ -1,8 +1,10 @@
 <script setup>
 import { computed, getCurrentInstance } from 'vue'
 import { Icon } from '@iconify/vue'
+import { storeToRefs } from 'pinia'
 import { bucketFor, CATEGORY_BUCKET_ICONS } from '../../services/map/places.js'
 import { formatDistance } from '../../utils/mapFormat.js'
+import { useMapUnitsStore } from '../../stores/mapUnits.js'
 import PaymentBadges from './PaymentBadges.vue'
 import FreshnessChip from './FreshnessChip.vue'
 
@@ -22,6 +24,7 @@ defineEmits(['select'])
 const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 const locale = computed(() => proxy.$i18n.locale)
+const { distanceUnit } = storeToRefs(useMapUnitsStore())
 
 const categoryIcon = computed(
   () => CATEGORY_BUCKET_ICONS[bucketFor(props.place.category)] || 'tabler:map-pin',
@@ -36,7 +39,7 @@ const categoryLabel = computed(() => {
 // we label them "Online" instead of a misleading "1,234 km".
 const distanceText = computed(() => {
   if (props.place.online) return t('Online')
-  return formatDistance(props.place.distance, locale.value)
+  return formatDistance(props.place.distance, locale.value, distanceUnit.value)
 })
 </script>
 

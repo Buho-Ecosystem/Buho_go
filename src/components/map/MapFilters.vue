@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../../stores/mapPlaces.js'
 import { useMapFavoritesStore } from '../../stores/mapFavorites.js'
 import { useMapBasemapStore, BASEMAPS, BASEMAP_LABELS } from '../../stores/mapBasemap.js'
+import { useMapUnitsStore, DISTANCE_UNITS } from '../../stores/mapUnits.js'
 import {
   SOURCE_LABEL,
   CATEGORY_BUCKET_ICONS,
@@ -29,6 +30,8 @@ const { enabled, buckets, verifiedRecentlyOnly, favoritesOnly, counts } = storeT
 const favorites = useMapFavoritesStore()
 const basemap = useMapBasemapStore()
 const { style: basemapStyle, pitch3D } = storeToRefs(basemap)
+const unitsStore = useMapUnitsStore()
+const { distanceUnit } = storeToRefs(unitsStore)
 
 const open = computed({
   get: () => props.modelValue,
@@ -133,6 +136,23 @@ function bucketLabel(key) {
               <span class="filters-knob" />
             </span>
           </button>
+        </section>
+
+        <!-- Distance unit -->
+        <section class="filters-section">
+          <h3 class="filters-label">{{ $t('Distance') }}</h3>
+          <div class="filters-chips">
+            <button
+              v-for="u in DISTANCE_UNITS"
+              :key="u"
+              type="button"
+              class="filters-chip"
+              :class="{ active: distanceUnit === u }"
+              @click="unitsStore.setDistanceUnit(u)"
+            >
+              {{ u === 'auto' ? $t('Auto') : u }}
+            </button>
+          </div>
         </section>
 
         <!-- Sources -->

@@ -1943,5 +1943,7 @@ export default {
   "No saved places yet": "Noch keine gespeicherten Orte",
   "{n} saved places": "{n} gespeicherte Orte",
   "Map style": "Kartenstil",
-  "3D view": "3D-Ansicht"
+  "3D view": "3D-Ansicht",
+  "Distance": "Entfernung",
+  "Auto": "Auto"
 }

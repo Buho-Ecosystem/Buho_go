@@ -1960,5 +1960,7 @@ export default {
   "No saved places yet": "No saved places yet",
   "{n} saved places": "{n} saved places",
   "Map style": "Map style",
-  "3D view": "3D view"
+  "3D view": "3D view",
+  "Distance": "Distance",
+  "Auto": "Auto"
 }

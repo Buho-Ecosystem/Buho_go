@@ -8,6 +8,7 @@ import { formatDistance } from '../../utils/mapFormat.js'
 import { openDirections, sharePlace } from '../../utils/mapDirections.js'
 import { openInAppBrowser } from '../../utils/inAppBrowser.js'
 import { useMapFavoritesStore } from '../../stores/mapFavorites.js'
+import { useMapUnitsStore } from '../../stores/mapUnits.js'
 import PaymentBadges from './PaymentBadges.vue'
 import FreshnessChip from './FreshnessChip.vue'
 
@@ -37,6 +38,7 @@ const locale = computed(() => proxy.$i18n.locale)
 
 const favorites = useMapFavoritesStore()
 const isFavorite = computed(() => favorites.isFavorite(props.place.id))
+const units = useMapUnitsStore()
 
 const osmDetails = ref(null)
 const loadingDetails = ref(false)
@@ -106,7 +108,7 @@ const categoryLabel = computed(() =>
 )
 const distanceText = computed(() => {
   if (props.place.online) return t('Online merchant')
-  return formatDistance(props.place.distance, locale.value)
+  return formatDistance(props.place.distance, locale.value, units.distanceUnit)
 })
 const sourceLabels = computed(() =>
   (props.place.sources || []).map((s) => SOURCE_LABEL[s] || s),
