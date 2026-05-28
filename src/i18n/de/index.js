@@ -1890,5 +1890,13 @@ export default {
   "Card blocked: too many incorrect PIN attempts": "Karte gesperrt: zu viele falsche PIN-Eingaben",
   "PIN authorization requires a secure connection": "PIN-Autorisierung erfordert eine sichere Verbindung",
   "PIN entry timed out": "PIN-Eingabe abgelaufen",
-  "Tap the card again to retry": "Karte erneut auflegen, um es nochmal zu versuchen"
+  "Tap the card again to retry": "Karte erneut auflegen, um es nochmal zu versuchen",
+
+  // Bitcoin Map
+  "Bitcoin Map": "Bitcoin-Karte",
+  "Spend Bitcoin near you": "Bitcoin in deiner Nähe ausgeben",
+  "Location permission denied": "Standortzugriff verweigert",
+  "Enable location access to find shops near you.": "Aktiviere den Standortzugriff, um Geschäfte in deiner Nähe zu finden.",
+  "Location not available on this device": "Standort auf diesem Gerät nicht verfügbar",
+  "Couldn't get your location": "Dein Standort konnte nicht ermittelt werden"
 }

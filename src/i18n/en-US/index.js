@@ -1907,5 +1907,13 @@ export default {
   "Card blocked: too many incorrect PIN attempts": "Card blocked: too many incorrect PIN attempts",
   "PIN authorization requires a secure connection": "PIN authorization requires a secure connection",
   "PIN entry timed out": "PIN entry timed out",
-  "Tap the card again to retry": "Tap the card again to retry"
+  "Tap the card again to retry": "Tap the card again to retry",
+
+  // Bitcoin Map
+  "Bitcoin Map": "Bitcoin Map",
+  "Spend Bitcoin near you": "Spend Bitcoin near you",
+  "Location permission denied": "Location permission denied",
+  "Enable location access to find shops near you.": "Enable location access to find shops near you.",
+  "Location not available on this device": "Location not available on this device",
+  "Couldn't get your location": "Couldn't get your location"
 }
