@@ -6,13 +6,15 @@ import { distanceMeters } from '../../services/map/places.js'
 import PlaceListRow from './PlaceListRow.vue'
 
 /**
- * MapSearch — a full-screen search overlay.
+ * MapSearch — a full-screen search overlay with two complementary lookups:
  *
- * Primary: live, local filtering of the loaded merchants by name as the user
- * types (debounced, no network) — emits `select` with the chosen place so the
- * parent flies to it and opens its detail. Fallback: if nothing matches, the
- * query can be geocoded as a city/address via Nominatim (one request, with an
- * explicit Accept-Language per their usage policy) — emits `locate`.
+ *  • Merchants — live, local filtering of the loaded places by name as the
+ *    user types (debounced, no network). Emits `select` so the parent flies
+ *    to the place and opens its detail.
+ *  • Place — a debounced background geocode of the same query via Nominatim
+ *    (the bulk dataset has no per-merchant city, so a city search can't be a
+ *    local filter). The top hit surfaces as a tappable "go here" row that
+ *    emits `locate` to jump the map there.
  */
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -20,24 +22,28 @@ const props = defineProps({
 const emit = defineEmits(['close', 'locate', 'select'])
 
 const { proxy } = getCurrentInstance()
-const t = (key, params) => proxy.$t(key, params)
 
 const store = useMapPlacesStore()
 
 const query = ref('')
 const debounced = ref('')
-const searching = ref(false) // geocode request in flight
-const error = ref('')
 const inputRef = ref(null)
 
 const MIN_CHARS = 2
 const RESULT_CAP = 25
+const GEO_MIN_CHARS = 3
+const GEO_DEBOUNCE_MS = 500
 
-// Debounce the filter so a 28k-row scan + sort doesn't run on every keystroke.
-let debTimer = null
+// The local merchant filter debounces fast (a 28k-row scan is cheap). The
+// place lookup hits the network, so it debounces slower — one request per
+// typing pause — to respect Nominatim's usage policy.
+let filterTimer = null
+let geoTimer = null
 watch(query, (v) => {
-  clearTimeout(debTimer)
-  debTimer = setTimeout(() => { debounced.value = v }, 150)
+  clearTimeout(filterTimer)
+  filterTimer = setTimeout(() => { debounced.value = v }, 150)
+  clearTimeout(geoTimer)
+  geoTimer = setTimeout(() => lookupPlace(v), GEO_DEBOUNCE_MS)
 })
 
 const hasQuery = computed(() => debounced.value.trim().length >= MIN_CHARS)
@@ -67,19 +73,55 @@ const results = computed(() => {
   return matched.slice(0, RESULT_CAP)
 })
 
-const noMatches = computed(() => hasQuery.value && results.value.length === 0)
+// ── Place lookup (geocode the query as a city/address) ──────────────────────
+// `geoResult` is the top Nominatim hit, surfaced as a "go here" row. `geoSeq`
+// discards a response whose query has already changed (stale, out-of-order).
+const geoResult = ref(null) // { lat, lon, label } | null
+const geoLoading = ref(false)
+let geoSeq = 0
+
+async function lookupPlace(raw) {
+  const term = (raw || '').trim()
+  const seq = ++geoSeq
+  geoResult.value = null
+  if (term.length < GEO_MIN_CHARS) {
+    geoLoading.value = false
+    return
+  }
+  geoLoading.value = true
+  try {
+    const url =
+      'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' +
+      encodeURIComponent(term)
+    const res = await fetch(url, {
+      headers: { 'Accept-Language': proxy.$i18n.locale || 'en' },
+    })
+    if (seq !== geoSeq || !res.ok) return
+    const hit = (await res.json())[0]
+    if (seq !== geoSeq) return
+    if (hit) {
+      geoResult.value = { lat: Number(hit.lat), lon: Number(hit.lon), label: hit.display_name }
+    }
+  } catch {
+    // Network / parse error — leave the row hidden; merchant search still works.
+  } finally {
+    if (seq === geoSeq) geoLoading.value = false
+  }
+}
+
+function resetSearch() {
+  query.value = ''
+  debounced.value = ''
+  geoResult.value = null
+  geoLoading.value = false
+  geoSeq++ // invalidate any in-flight lookup
+}
 
 watch(
   () => props.open,
   (isOpen) => {
-    if (isOpen) {
-      error.value = ''
-      nextTick(() => inputRef.value?.focus())
-    } else {
-      query.value = ''
-      debounced.value = ''
-      error.value = ''
-    }
+    if (isOpen) nextTick(() => inputRef.value?.focus())
+    else resetSearch()
   },
 )
 
@@ -88,42 +130,22 @@ function onSelectResult(place) {
   emit('close')
 }
 
-// Fallback: geocode the query as a city/address and fly there.
-async function geocodeLocation() {
-  const q = query.value.trim()
-  if (!q || searching.value) return
-  searching.value = true
-  error.value = ''
-  try {
-    const url =
-      'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' +
-      encodeURIComponent(q)
-    const res = await fetch(url, {
-      headers: { 'Accept-Language': proxy.$i18n.locale || 'en' },
-    })
-    if (!res.ok) throw new Error(String(res.status))
-    const hits = await res.json()
-    const hit = hits[0]
-    if (!hit) {
-      error.value = t('No results found')
-      return
-    }
-    emit('locate', { lat: Number(hit.lat), lon: Number(hit.lon) })
-    emit('close')
-  } catch {
-    error.value = t('Search failed. Try again.')
-  } finally {
-    searching.value = false
-  }
+function goToPlace() {
+  if (!geoResult.value) return
+  emit('locate', { lat: geoResult.value.lat, lon: geoResult.value.lon })
+  emit('close')
 }
 
-// Enter: open the top merchant match, else try a location lookup.
+// Enter: open the top merchant match, else jump to the looked-up place.
 function onEnter() {
   if (results.value.length) onSelectResult(results.value[0])
-  else if (hasQuery.value) geocodeLocation()
+  else if (geoResult.value) goToPlace()
 }
 
-onBeforeUnmount(() => clearTimeout(debTimer))
+onBeforeUnmount(() => {
+  clearTimeout(filterTimer)
+  clearTimeout(geoTimer)
+})
 </script>
 
 <template>
@@ -150,9 +172,20 @@ onBeforeUnmount(() => clearTimeout(debTimer))
           />
         </div>
 
-        <div v-if="error" class="search-error">{{ error }}</div>
+        <!-- City / address jump for the query — kept above the merchant list so
+             a place search is one tap, not a scroll past name collisions. -->
+        <button v-if="geoResult" type="button" class="search-place" @click="goToPlace">
+          <span class="search-place-icon">
+            <Icon icon="tabler:map-pin" width="18" height="18" />
+          </span>
+          <span class="search-place-text">
+            <span class="search-place-title">{{ geoResult.label }}</span>
+            <span class="search-place-sub">{{ $t('Go to place') }}</span>
+          </span>
+          <Icon icon="tabler:arrow-up-right" width="16" height="16" class="search-place-go" />
+        </button>
 
-        <!-- Live merchant matches -->
+        <!-- Merchant matches -->
         <div v-if="results.length" class="search-results">
           <PlaceListRow
             v-for="p in results"
@@ -162,16 +195,11 @@ onBeforeUnmount(() => clearTimeout(debTimer))
           />
         </div>
 
-        <!-- No merchant match: offer to look the query up as a place -->
-        <div v-else-if="noMatches" class="search-empty">
-          <p class="search-empty-text">{{ $t('No merchants found') }}</p>
-          <button class="search-submit" type="button" :disabled="searching" @click="geocodeLocation">
-            {{ searching ? $t('Searching…') : $t('Search as a place') }}
-          </button>
-        </div>
+        <!-- Nothing typed yet -->
+        <p v-else-if="!hasQuery && !geoResult" class="search-hint">{{ $t('Search a merchant or a city') }}</p>
 
-        <!-- Initial hint -->
-        <p v-else-if="!hasQuery" class="search-hint">{{ $t('Type to search merchants by name') }}</p>
+        <!-- Typed, but no merchant and no place matched -->
+        <p v-else-if="hasQuery && !geoResult && !geoLoading" class="search-empty-text">{{ $t('No results found') }}</p>
       </div>
     </div>
   </transition>
@@ -239,26 +267,6 @@ onBeforeUnmount(() => clearTimeout(debTimer))
   font-size: 15px;
   color: var(--text-primary);
 }
-.search-error {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  color: var(--color-red, #FF4444);
-}
-.search-submit {
-  all: unset;
-  text-align: center;
-  cursor: pointer;
-  height: 48px;
-  border-radius: 12px;
-  background: var(--map-cta-bg);
-  color: var(--map-cta-fg);
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  -webkit-tap-highlight-color: transparent;
-}
-.search-submit:disabled { opacity: 0.5; cursor: default; }
-
 .search-results {
   display: flex;
   flex-direction: column;
@@ -267,7 +275,6 @@ onBeforeUnmount(() => clearTimeout(debTimer))
   margin: 0 -4px;
   -webkit-overflow-scrolling: touch;
 }
-.search-empty { display: flex; flex-direction: column; gap: 12px; }
 .search-empty-text,
 .search-hint {
   font-family: 'Manrope', sans-serif;
@@ -276,6 +283,54 @@ onBeforeUnmount(() => clearTimeout(debTimer))
   text-align: center;
   margin: 4px 0 0;
 }
+
+/* "Go to a place" row — the geocoded city/address jump. */
+.search-place {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px;
+  margin: 0 4px;
+  border-radius: 12px;
+  -webkit-tap-highlight-color: transparent;
+}
+.search-place:active { background: var(--bg-input); }
+.search-place-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-input);
+  color: var(--map-accent);
+}
+.search-place-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.search-place-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-place-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.search-place-go { flex-shrink: 0; color: var(--text-muted); }
 
 .search-fade-enter-active,
 .search-fade-leave-active { transition: opacity 180ms ease; }

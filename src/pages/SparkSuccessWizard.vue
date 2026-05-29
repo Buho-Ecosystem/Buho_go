@@ -237,7 +237,20 @@
             </div>
           </q-carousel-slide>
 
-          <!-- 14: You're ready! -->
+          <!-- 14: Bitcoin Map -->
+          <q-carousel-slide name="map" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Onboarding wizard spark/storyset-Papermap-bro.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Find Places to Spend') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Open the Bitcoin map to discover shops, cafés, and businesses that accept Bitcoin near you. Tap a pin for details and directions.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+
+          <!-- 15: You're ready! -->
           <q-carousel-slide name="ready" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-setup-wizard-bro.svg" class="slide-illustration" alt="" />
@@ -329,12 +342,12 @@ const SPARK_INTRO = ['personal', 'business', 'savings']
 // All feature screens (shown after Spark intro or standalone for NWC/LNbits)
 const ALL_FEATURES = [
   'send-receive', 'nfc', 'transfer', 'auto-transfer', 'history',
-  'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'lessons', 'ready'
+  'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'lessons', 'map', 'ready'
 ]
 
 // NWC/LNbits: only features that apply (no internal transfer, auto-transfer, or seed backup)
 const NWC_LNBITS_FEATURES = [
-  'send-receive', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'lessons', 'ready'
+  'send-receive', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'lessons', 'map', 'ready'
 ]
 
 export default {

@@ -174,48 +174,44 @@ function onToggleFavorite() {
 
 <template>
   <div class="place-detail">
-    <!-- Header: back + favorite -->
-    <div class="detail-topbar">
-      <button class="detail-back" type="button" @click="$emit('back')">
-        <Icon icon="tabler:chevron-left" width="18" height="18" />
-        <span>{{ $t('Back to list') }}</span>
-      </button>
-      <button
-        class="detail-fav"
-        :class="{ on: isFavorite }"
-        type="button"
-        :aria-pressed="isFavorite"
-        :aria-label="isFavorite ? $t('Remove from saved') : $t('Save place')"
-        @click="onToggleFavorite"
-      >
-        <Icon :icon="isFavorite ? 'tabler:star-filled' : 'tabler:star'" width="20" height="20" />
-      </button>
-    </div>
-
-    <!-- Identity -->
-    <div class="detail-head">
-      <span class="detail-icon" :class="{ online: place.online }">
-        <Icon :icon="place.online ? 'tabler:world' : categoryIcon" width="24" height="24" />
-      </span>
-      <div class="detail-headtext">
-        <h2 class="detail-name">{{ place.name }}</h2>
-        <div class="detail-subline">
-          <span class="detail-category">{{ categoryLabel }}</span>
-          <span class="detail-dot">·</span>
-          <span class="detail-distance">{{ distanceText }}</span>
-        </div>
-        <FreshnessChip class="detail-fresh" :verified-at="verifiedAt" show-unknown />
+    <!-- Content is capped to a readable column so the card stays well-aligned
+         on wide screens (tablet/desktop) and goes full-width on phones. -->
+    <div class="detail-inner">
+      <!-- Back -->
+      <div class="detail-topbar">
+        <button class="detail-back" type="button" @click="$emit('back')">
+          <Icon icon="tabler:chevron-left" width="18" height="18" />
+          <span>{{ $t('Back to list') }}</span>
+        </button>
       </div>
-    </div>
 
-    <!-- Ways to pay -->
-    <section class="detail-section">
-      <h3 class="detail-section-title">{{ $t('Ways to pay') }}</h3>
+      <!-- Identity + key facts -->
+      <div class="detail-head">
+        <span class="detail-icon" :class="{ online: place.online }">
+          <Icon :icon="place.online ? 'tabler:world' : categoryIcon" width="24" height="24" />
+        </span>
+        <div class="detail-headtext">
+          <h2 class="detail-name">{{ place.name }}</h2>
+          <div class="detail-subline">
+            <span class="detail-category">{{ categoryLabel }}</span>
+            <template v-if="distanceText">
+              <span class="detail-dot">·</span>
+              <span class="detail-distance">{{ distanceText }}</span>
+            </template>
+          </div>
+          <FreshnessChip class="detail-fresh" :verified-at="verifiedAt" show-unknown />
+        </div>
+      </div>
+
+      <!-- Accepted payments (key fact for a Bitcoin map) -->
       <PaymentBadges
+        v-if="payments.onchain || payments.lightning || payments.contactless"
         :onchain="payments.onchain"
         :lightning="payments.lightning"
         :contactless="payments.contactless"
       />
+
+      <!-- Lightning address: copy / pay this place directly -->
       <div v-if="lightningAddress" class="ln-row">
         <span class="ln-icon"><Icon icon="tabler:bolt" width="16" height="16" /></span>
         <span class="ln-value">{{ lightningAddress }}</span>
@@ -231,61 +227,72 @@ function onToggleFavorite() {
           {{ $t('Pay') }}
         </button>
       </div>
-    </section>
 
-    <!-- Primary actions -->
-    <div class="detail-actions">
-      <button class="detail-action detail-action-primary" type="button" @click="onDirections">
-        <Icon icon="tabler:directions" width="18" height="18" />
-        <span>{{ $t('Directions') }}</span>
-      </button>
-      <button class="detail-action" type="button" @click="onShare">
-        <Icon icon="tabler:share-2" width="18" height="18" />
-        <span>{{ $t('Share') }}</span>
-      </button>
-    </div>
+      <!-- Actions: Directions (primary) / Save / Share -->
+      <div class="detail-actions">
+        <button class="detail-action detail-action-primary" type="button" @click="onDirections">
+          <Icon icon="tabler:directions" width="20" height="20" />
+          <span>{{ $t('Directions') }}</span>
+        </button>
+        <button
+          class="detail-action detail-action-fav"
+          :class="{ on: isFavorite }"
+          type="button"
+          :aria-pressed="isFavorite"
+          :aria-label="isFavorite ? $t('Remove from saved') : $t('Save place')"
+          @click="onToggleFavorite"
+        >
+          <Icon :icon="isFavorite ? 'tabler:star-filled' : 'tabler:star'" width="20" height="20" />
+          <span>{{ isFavorite ? $t('Saved') : $t('Save') }}</span>
+        </button>
+        <button class="detail-action" type="button" @click="onShare">
+          <Icon icon="tabler:share-2" width="20" height="20" />
+          <span>{{ $t('Share') }}</span>
+        </button>
+      </div>
 
-    <!-- Info rows -->
-    <dl v-if="address || openingHours" class="detail-rows">
-      <template v-if="address">
-        <dt><Icon icon="tabler:map-pin" width="16" height="16" /></dt>
-        <dd>{{ address }}</dd>
-      </template>
-      <template v-if="openingHours">
-        <dt><Icon icon="tabler:clock-hour-4" width="16" height="16" /></dt>
-        <dd class="detail-hours">{{ openingHours }}</dd>
-      </template>
-    </dl>
+      <!-- Address & hours -->
+      <dl v-if="address || openingHours" class="detail-rows">
+        <template v-if="address">
+          <dt><Icon icon="tabler:map-pin" width="16" height="16" /></dt>
+          <dd>{{ address }}</dd>
+        </template>
+        <template v-if="openingHours">
+          <dt><Icon icon="tabler:clock-hour-4" width="16" height="16" /></dt>
+          <dd class="detail-hours">{{ openingHours }}</dd>
+        </template>
+      </dl>
 
-    <!-- Contact + social (web links open in-app, never external) -->
-    <div v-if="websiteHref || phone || socials.length" class="detail-contact">
-      <button v-if="websiteHref" class="contact-chip" type="button" @click="openLink(websiteHref)">
-        <Icon icon="tabler:world-www" width="16" height="16" />
-        <span>{{ $t('Website') }}</span>
-      </button>
-      <a v-if="phone" class="contact-chip" :href="`tel:${phone}`">
-        <Icon icon="tabler:phone" width="16" height="16" />
-        <span>{{ $t('Call') }}</span>
-      </a>
-      <button
-        v-for="s in socials"
-        :key="s.platform"
-        class="contact-chip contact-chip-icon"
-        type="button"
-        :aria-label="s.platform"
-        @click="openLink(s.url)"
-      >
-        <Icon :icon="s.icon" width="16" height="16" />
-      </button>
-    </div>
+      <!-- Contact + social (web links open in-app, never external) -->
+      <div v-if="websiteHref || phone || socials.length" class="detail-contact">
+        <button v-if="websiteHref" class="contact-chip" type="button" @click="openLink(websiteHref)">
+          <Icon icon="tabler:world-www" width="16" height="16" />
+          <span>{{ $t('Website') }}</span>
+        </button>
+        <a v-if="phone" class="contact-chip" :href="`tel:${phone}`">
+          <Icon icon="tabler:phone" width="16" height="16" />
+          <span>{{ $t('Call') }}</span>
+        </a>
+        <button
+          v-for="s in socials"
+          :key="s.platform"
+          class="contact-chip contact-chip-icon"
+          type="button"
+          :aria-label="s.platform"
+          @click="openLink(s.url)"
+        >
+          <Icon :icon="s.icon" width="16" height="16" />
+        </button>
+      </div>
 
-    <!-- Provenance -->
-    <div v-if="sourceLabels.length" class="detail-sources">
-      {{ $t('Listed on {sources}', { sources: sourceLabels.join(', ') }) }}
-    </div>
+      <!-- Provenance -->
+      <div v-if="sourceLabels.length" class="detail-sources">
+        {{ $t('Listed on {sources}', { sources: sourceLabels.join(', ') }) }}
+      </div>
 
-    <div v-if="loadingDetails" class="detail-loading">
-      <q-spinner-dots size="20px" :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'" />
+      <div v-if="loadingDetails" class="detail-loading">
+        <q-spinner-dots size="20px" :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'" />
+      </div>
     </div>
   </div>
 </template>
@@ -293,15 +300,19 @@ function onToggleFavorite() {
 <style scoped>
 .place-detail {
   padding: 0 16px 8px;
+}
+.detail-inner {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .detail-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
 }
 .detail-back {
   all: unset;
@@ -315,20 +326,6 @@ function onToggleFavorite() {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.detail-fav {
-  all: unset;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  color: var(--text-muted);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.detail-fav:active { transform: scale(0.9); }
-.detail-fav.on { color: #FFB400; }
 
 .detail-head {
   display: flex;
@@ -368,18 +365,6 @@ function onToggleFavorite() {
 .detail-category { text-transform: capitalize; }
 .detail-distance { color: var(--map-accent); font-weight: 600; }
 .detail-fresh { margin-top: 1px; }
-
-/* Sections */
-.detail-section { display: flex; flex-direction: column; gap: 10px; }
-.detail-section-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin: 0;
-}
 
 /* Lightning Address row */
 .ln-row {
@@ -430,32 +415,39 @@ body.body--dark .ln-icon { color: #FFC93C; }
   padding: 0 14px;
 }
 
-/* Primary actions */
+/* Primary actions — equal icon-over-label buttons (maps-app pattern) */
 .detail-actions { display: flex; gap: 8px; }
 .detail-action {
   all: unset;
   box-sizing: border-box;
   flex: 1;
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 11px 14px;
-  border-radius: 12px;
+  gap: 5px;
+  padding: 11px 8px;
+  border-radius: 14px;
   font-family: 'Manrope', sans-serif;
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 600;
+  text-align: center;
   color: var(--text-primary);
   background: var(--bg-input);
   border: 1px solid var(--border-card);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.detail-action:active { transform: scale(0.98); }
+.detail-action:active { transform: scale(0.97); }
 .detail-action-primary {
   color: var(--map-cta-fg);
   background: var(--map-cta-bg);
   border-color: transparent;
+}
+.detail-action-fav.on {
+  color: #FFB400;
+  background: rgba(255, 180, 0, 0.1);
+  border-color: rgba(255, 180, 0, 0.35);
 }
 
 /* Info rows */
