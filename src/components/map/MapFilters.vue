@@ -39,7 +39,7 @@ const open = computed({
 })
 
 const sources = ['btcmap', 'osm', 'btcpay']
-const bucketKeys = ['food', 'retail', 'lodging', 'services', 'atm', 'leisure', 'other']
+const bucketKeys = ['food', 'retail', 'lodging', 'services', 'atm', 'fuel', 'leisure', 'other']
 
 function bucketLabel(key) {
   // i18n keys mirror the canonical English bucket labels.

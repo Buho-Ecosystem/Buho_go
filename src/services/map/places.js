@@ -158,6 +158,7 @@ export function toFeatureCollection(places) {
 // e.g. `sports_bar` resolves to food (via `bar`) before leisure.
 const CATEGORY_BUCKETS = {
   atm: ['atm', 'currency_exchange'],
+  fuel: ['gas_station', 'fuel', 'petrol'],
   food: [
     'restaurant', 'cafe', 'coffee', 'dining', 'pizza', 'bakery', 'bar', 'pub',
     'fast_food', 'fastfood', 'food', 'ramen', 'ice_cream', 'icecream', 'cake',
@@ -168,7 +169,7 @@ const CATEGORY_BUCKETS = {
     'content_cut', 'hairdresser', 'beauty', 'spa', 'salon', 'laundry', 'cleaning',
     'car_repair', 'directions_car', 'repair', 'handyman', 'medical', 'doctor',
     'dentist', 'hospital', 'pharmacy', 'health', 'bank', 'business', 'post_office',
-    'engineering', 'construction', 'build', 'photo_camera', 'plumbing',
+    'engineering', 'construction', 'build', 'photo_camera', 'plumbing', 'electrical',
   ],
   retail: [
     'storefront', 'store', 'shop', 'grocery', 'supermarket', 'convenience', 'mall',
@@ -198,6 +199,7 @@ export const CATEGORY_BUCKET_ICONS = {
   lodging: 'tabler:bed',
   services: 'tabler:briefcase',
   atm: 'tabler:cash',
+  fuel: 'tabler:gas-station',
   leisure: 'tabler:device-gamepad-2',
   other: 'tabler:map-pin',
 }
@@ -211,6 +213,7 @@ export const CATEGORY_BUCKET_LABELS = {
   lodging: 'Lodging',
   services: 'Services',
   atm: 'Bitcoin ATMs',
+  fuel: 'Fuel',
   leisure: 'Leisure',
   other: 'Other',
 }

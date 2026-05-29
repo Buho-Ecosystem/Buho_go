@@ -1937,6 +1937,7 @@ export default {
   "Lodging": "Alojamiento",
   "Services": "Servicios",
   "Bitcoin ATMs": "Cajeros Bitcoin",
+  "Fuel": "Combustible",
   "Leisure": "Ocio",
   "Couldn't load places. Check your connection.": "No se pudieron cargar los lugares. Revisa tu conexión.",
   "Find shops that accept Bitcoin near you": "Encuentra tiendas que aceptan Bitcoin cerca de ti",

@@ -1939,6 +1939,7 @@ export default {
   "Lodging": "Unterkunft",
   "Services": "Dienstleistungen",
   "Bitcoin ATMs": "Bitcoin-Automaten",
+  "Fuel": "Tankstelle",
   "Leisure": "Freizeit",
   "Couldn't load places. Check your connection.": "Orte konnten nicht geladen werden. Prüfe deine Verbindung.",
   "Find shops that accept Bitcoin near you": "Finde Geschäfte in deiner Nähe, die Bitcoin akzeptieren",

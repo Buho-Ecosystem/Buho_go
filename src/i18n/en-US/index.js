@@ -1956,6 +1956,7 @@ export default {
   "Lodging": "Lodging",
   "Services": "Services",
   "Bitcoin ATMs": "Bitcoin ATMs",
+  "Fuel": "Fuel",
   "Leisure": "Leisure",
   "Couldn't load places. Check your connection.": "Couldn't load places. Check your connection.",
   "Find shops that accept Bitcoin near you": "Find shops that accept Bitcoin near you",

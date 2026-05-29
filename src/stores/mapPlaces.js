@@ -63,7 +63,7 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     btcpay: [],
 
     enabled: { btcmap: true, osm: true, btcpay: true },
-    buckets: { food: true, retail: true, lodging: true, services: true, atm: true, leisure: true, other: true },
+    buckets: { food: true, retail: true, lodging: true, services: true, atm: true, fuel: true, leisure: true, other: true },
     favoritesOnly: false,
 
     loading: { btcmap: false, osm: false, btcpay: false },
