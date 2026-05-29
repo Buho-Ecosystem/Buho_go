@@ -52,9 +52,68 @@ function emptyFC() {
   return { type: 'FeatureCollection', features: [] }
 }
 
-// ── Pin images (canvas-rendered so the ₿ glyph is always present, regardless
-// of the basemap font set) ────────────────────────────────────────────────
-function makePinImage(size, ring) {
+// ── Pin images ──────────────────────────────────────────────────────────────
+// Each pin is an orange disc with a white category glyph drawn into it, so a
+// place reads as food / shop / ATM / lodging at a glance instead of a generic
+// ₿. Pins are canvas-rendered (not DOM markers) to keep MapLibre's symbol-layer
+// clustering and performance with hundreds of places.
+//
+// The glyphs are the exact Tabler icons the list rows and detail card use
+// (CATEGORY_BUCKET_ICONS in services/map/places.js); their raw 24×24 path data
+// lives here so canvas can stroke it via Path2D with no runtime icon fetch.
+// Keep this map and CATEGORY_BUCKET_ICONS in sync — same buckets, same icons.
+const ICON_VIEWBOX = 24
+const PIN_SIZE = 64
+const PIN_SIZE_SELECTED = 84
+const PIN_GLYPHS = {
+  food: ['M19 3v12h-5c-.023-3.681.184-7.406 5-12m0 12v6h-1v-3M8 4v17M5 4v3a3 3 0 1 0 6 0V4'],
+  retail: [
+    'M6.331 8H17.67a2 2 0 0 1 1.977 2.304l-1.255 8.152A3 3 0 0 1 15.426 21H8.574a3 3 0 0 1-2.965-2.544l-1.255-8.152A2 2 0 0 1 6.331 8',
+    'M9 11V6a3 3 0 0 1 6 0v5',
+  ],
+  lodging: ['M5 9a2 2 0 1 0 4 0a2 2 0 1 0-4 0m17 8v-3H2m0-6v9m10-3h10v-2a3 3 0 0 0-3-3h-7z'],
+  services: [
+    'M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm5-2V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m-4 5v.01',
+    'M3 13a20 20 0 0 0 18 0',
+  ],
+  atm: [
+    'M7 15H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3',
+    'M7 10a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1z',
+    'M12 14a2 2 0 1 0 4 0a2 2 0 0 0-4 0',
+  ],
+  leisure: [
+    'M12 5h3.5a5 5 0 0 1 0 10H10l-4.015 4.227a2.3 2.3 0 0 1-3.923-2.035l1.634-8.173A5 5 0 0 1 8.6 5z',
+    'm14 15l4.07 4.284a2.3 2.3 0 0 0 3.925-2.023l-1.6-8.232M8 9v2m-1-1h2m5 0h2',
+  ],
+  online: [
+    'M3 12a9 9 0 1 0 18 0a9 9 0 0 0-18 0m.6-3h16.8M3.6 15h16.8',
+    'M11.5 3a17 17 0 0 0 0 18m1-18a17 17 0 0 1 0 18',
+  ],
+  other: [
+    'M9 11a3 3 0 1 0 6 0a3 3 0 0 0-6 0',
+    'M17.657 16.657L13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0',
+  ],
+}
+
+// White Tabler glyph, centred in the disc and scaled to ~55% of the pin. Tabler
+// icons are stroked outlines (round caps/joins), so we stroke rather than fill.
+// A heavier line weight (vs Tabler's stock 2) keeps the glyph readable once the
+// pin renders at the layer's small icon-size.
+function drawGlyph(ctx, size, paths) {
+  const glyph = size * 0.55
+  const scale = glyph / ICON_VIEWBOX
+  ctx.save()
+  ctx.translate((size - glyph) / 2, (size - glyph) / 2)
+  ctx.scale(scale, scale)
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 2.4
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  for (const d of paths) ctx.stroke(new Path2D(d))
+  ctx.restore()
+}
+
+function makePinImage(size, ring, paths) {
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -73,17 +132,37 @@ function makePinImage(size, ring) {
   ctx.lineWidth = ring ? 6 : 5
   ctx.strokeStyle = '#ffffff'
   ctx.stroke()
-  ctx.fillStyle = '#ffffff'
-  ctx.font = `bold ${Math.round(size * 0.5)}px -apple-system, system-ui, "Segoe UI", Roboto, sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('₿', size / 2, size / 2 + 2)
+  drawGlyph(ctx, size, paths)
   return { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer) }
 }
 
+// MapLibre image id for a bucket. Selected pins are a larger, ringed variant.
+function pinId(bucket, selected) {
+  return `pin-${bucket}${selected ? '-sel' : ''}`
+}
+
 function addPinImages() {
-  if (!map.hasImage('btc-pin')) map.addImage('btc-pin', makePinImage(64, false), { pixelRatio: 2 })
-  if (!map.hasImage('btc-pin-selected')) map.addImage('btc-pin-selected', makePinImage(84, true), { pixelRatio: 2 })
+  for (const [bucket, paths] of Object.entries(PIN_GLYPHS)) {
+    const base = pinId(bucket, false)
+    if (!map.hasImage(base)) {
+      map.addImage(base, makePinImage(PIN_SIZE, false, paths), { pixelRatio: 2 })
+    }
+    const sel = pinId(bucket, true)
+    if (!map.hasImage(sel)) {
+      map.addImage(sel, makePinImage(PIN_SIZE_SELECTED, true, paths), { pixelRatio: 2 })
+    }
+  }
+}
+
+// `icon-image` expression: build `pin-<bucket>` from the feature's bucket and
+// fall back to the `other` pin when the bucket is missing or unrecognised.
+function pinImageExpr(selected) {
+  const suffix = selected ? '-sel' : ''
+  return [
+    'coalesce',
+    ['image', ['concat', 'pin-', ['get', 'bucket'], suffix]],
+    ['image', `pin-other${suffix}`],
+  ]
 }
 
 function addLayers() {
@@ -141,8 +220,8 @@ function addLayers() {
     source: SOURCE_ID,
     filter: ['!', ['has', 'point_count']],
     layout: {
-      'icon-image': 'btc-pin',
-      'icon-size': 0.5,
+      'icon-image': pinImageExpr(false),
+      'icon-size': 0.9,
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
     },
@@ -155,8 +234,8 @@ function addLayers() {
     source: SOURCE_ID,
     filter: ['==', ['get', 'id'], props.selectedId || ' '],
     layout: {
-      'icon-image': 'btc-pin-selected',
-      'icon-size': 0.5,
+      'icon-image': pinImageExpr(true),
+      'icon-size': 0.9,
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
     },

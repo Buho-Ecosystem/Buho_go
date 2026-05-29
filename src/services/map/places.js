@@ -130,6 +130,9 @@ export function toFeatureCollection(places) {
         name: p.name || '',
         category: p.category || '',
         icon: p.icon || '',
+        // Broad group that drives the map pin glyph. Online merchants share the
+        // `world` marker the list/detail use, so they read the same everywhere.
+        bucket: p.online === true ? 'online' : bucketFor(p.category),
         address: p.address || '',
         website: p.website || '',
         phone: p.phone || '',
@@ -147,14 +150,36 @@ export function toFeatureCollection(places) {
   }
 }
 
-// Heuristic category bucket → broad filter group.
+// Heuristic category → broad filter group, matched as a substring of the
+// source category. BTC Map tags places with Material Symbols icon names
+// (`storefront`, `lunch_dining`, `content_cut`, `local_grocery_store`, …),
+// while OSM/Overpass uses amenity values (`restaurant`, `hairdresser`, …), so
+// each list carries keywords for both. Order = match priority (first wins),
+// e.g. `sports_bar` resolves to food (via `bar`) before leisure.
 const CATEGORY_BUCKETS = {
-  food: ['restaurant', 'cafe', 'fast_food', 'bar', 'pub', 'bakery', 'food_court', 'ice_cream', 'biergarten'],
-  retail: ['shop', 'supermarket', 'convenience', 'clothes', 'electronics', 'gift', 'jewelry', 'books', 'mall'],
-  lodging: ['hotel', 'hostel', 'guest_house', 'apartment', 'camp_site', 'motel'],
-  services: ['hairdresser', 'beauty', 'laundry', 'car_repair', 'dentist', 'doctors', 'pharmacy', 'bank'],
-  atm: ['atm', 'bitcoin_atm'],
-  leisure: ['cinema', 'theatre', 'fitness_centre', 'sports_centre', 'arts_centre', 'casino'],
+  atm: ['atm', 'currency_exchange'],
+  food: [
+    'restaurant', 'cafe', 'coffee', 'dining', 'pizza', 'bakery', 'bar', 'pub',
+    'fast_food', 'fastfood', 'food', 'ramen', 'ice_cream', 'icecream', 'cake',
+    'brunch', 'lunch', 'dinner', 'liquor', 'wine', 'beer', 'biergarten',
+  ],
+  lodging: ['hotel', 'hostel', 'guest', 'apartment', 'cottage', 'cabin', 'motel', 'bed', 'camp_site'],
+  services: [
+    'content_cut', 'hairdresser', 'beauty', 'spa', 'salon', 'laundry', 'cleaning',
+    'car_repair', 'directions_car', 'repair', 'handyman', 'medical', 'doctor',
+    'dentist', 'hospital', 'pharmacy', 'health', 'bank', 'business', 'post_office',
+    'engineering', 'construction', 'build', 'photo_camera', 'plumbing',
+  ],
+  retail: [
+    'storefront', 'store', 'shop', 'grocery', 'supermarket', 'convenience', 'mall',
+    'florist', 'diamond', 'jewel', 'clothes', 'checkroom', 'electronics', 'computer',
+    'book', 'gift', 'market', 'boutique', 'pets', 'furniture', 'chair',
+  ],
+  leisure: [
+    'fitness', 'gym', 'sports_center', 'sports_centre', 'cinema', 'movie', 'theater',
+    'theatre', 'casino', 'museum', 'golf', 'arts', 'celebration', 'self_improvement',
+    'attractions', 'nightlife',
+  ],
 }
 
 export function bucketFor(category) {
