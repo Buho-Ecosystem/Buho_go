@@ -160,7 +160,7 @@ await test('fresh store has every field empty and isEmpty=true', () => {
 await test('PROFILE_FIELDS exposes the editable field list as a frozen array', () => {
   assert.ok(Object.isFrozen(PROFILE_FIELDS));
   assert.deepEqual([...PROFILE_FIELDS], [
-    'displayName', 'name', 'about', 'website', 'picture', 'banner', 'lud16',
+    'displayName', 'name', 'about', 'website', 'picture', 'banner', 'lud16', 'nip05',
   ]);
 });
 
@@ -948,19 +948,22 @@ await test('recoverFromNostr: full overwrite clears stale local fields not prese
   assert.equal(profile.lud16, '');
 });
 
-await test('recoverFromNostr: unknown wire keys in content are ignored', async () => {
+await test('recoverFromNostr: known keys (incl. nip05) applied, unknown ignored', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => fakeKind0Event({
     name: 'Satoshi',
-    nip05: 'should-be-ignored@x.test',
+    nip05: 'satoshi@x.test',
     pronouns: 'they/them',
     custom_field: 'whatever',
   });
   const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
-  assert.equal(r.applied, 1);
+  assert.equal(r.applied, 2);
   assert.equal(profile.name, 'Satoshi');
-  assert.equal('nip05' in profile, false);
-  assert.equal('pronouns' in profile, false);
+  // nip05 is a recognised profile field now, so it round-trips on recovery.
+  assert.equal(profile.nip05, 'satoshi@x.test');
+  // Truly unknown wire keys still never leak into the store.
+  assert.equal(profile.pronouns, undefined);
+  assert.equal(profile.custom_field, undefined);
 });
 
 await test('recoverFromNostr: persists the recovered profile to localStorage', async () => {

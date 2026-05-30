@@ -39,11 +39,13 @@
     </div>
 
     <div class="profile-content">
-      <!-- Profile header. Three state variations driven entirely by
+      <!-- Profile header. State variations, all driven by
            identity.bootstrapped + profile.isEmpty:
-             1. !bootstrapped       → "Set up your profile" + Get started
-             2. bootstrapped, empty → "Add your name and a picture"
-             3. fully set up        → avatar / name / pills / Edit + Share
+             1. !bootstrapped       → silent (the avatar slot reserves the layout
+                                       for the sub-100ms passive-bootstrap window)
+             2. bootstrapped, empty → "Set up your profile" headline + handle chip
+                                       + single primary "Get started" CTA
+             3. fully set up        → avatar / name / handle chip + Edit + Share
            See the UX contract in Plan 09 build guide §7a. -->
       <section
         class="profile-hero"
@@ -111,6 +113,27 @@
           </div>
         </button>
 
+        <!-- NIP-05 handle — the always-present verified identifier every
+             identity gets. Tap to copy. Sits alongside the profile; advanced
+             users can change it in the editor. -->
+        <button
+          v-if="identity.bootstrapped && displayNip05"
+          type="button"
+          class="hero-nip05"
+          :class="$q.dark.isActive ? 'hero-nip05-dark' : 'hero-nip05-light'"
+          :aria-label="$t('Copy your NIP-05 address')"
+          @click="copyNip05"
+        >
+          <Icon icon="tabler:rosette-discount-check" width="14" height="14" class="hero-nip05-check" />
+          <span class="hero-nip05-text">{{ displayNip05 }}</span>
+          <Icon
+            :icon="nip05Copied ? 'tabler:check' : 'tabler:copy'"
+            width="13"
+            height="13"
+            class="hero-nip05-copy"
+          />
+        </button>
+
         <!--
           Status pills (backup-state + publish-state) were removed in
           favour of a calmer hero. The same information is still
@@ -122,32 +145,48 @@
           two primary CTAs (Edit, Share).
         -->
 
-        <!-- Two equal-width neutral pills side by side — Instagram /
-             Threads style. Both gated on `identity.bootstrapped` so
-             the row stays empty during the sub-100ms passive-
-             bootstrap window; `min-height` on `.hero-actions`
-             reserves the vertical slot so the page never jumps. -->
+        <!-- Action row. Two shapes:
+             - Empty profile  → single full-width primary CTA ("Get started")
+                                so the finishing step after the welcome
+                                carousel is unmistakable.
+             - Populated      → Instagram/Threads-style Edit + Share pair.
+             Both gated on `identity.bootstrapped` so the row stays empty
+             during the sub-100ms passive-bootstrap window; `min-height`
+             on `.hero-actions` reserves the vertical slot so the page
+             never jumps between states. -->
         <div class="hero-actions" v-if="identity.bootstrapped">
           <button
+            v-if="profile.isEmpty"
             type="button"
-            class="hero-cta"
-            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+            class="hero-cta-primary"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             @click="openProfileEditor"
           >
-            <Icon icon="tabler:pencil" width="15" height="15" />
-            <span>{{ $t('Edit profile') }}</span>
+            <Icon icon="tabler:sparkles" width="16" height="16" />
+            <span>{{ $t('Get started') }}</span>
           </button>
 
-          <button
-            v-if="!profile.isEmpty"
-            type="button"
-            class="hero-cta"
-            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
-            @click="showProfileShareSheet = true"
-          >
-            <Icon icon="tabler:share-2" width="15" height="15" />
-            <span>{{ $t('Share profile') }}</span>
-          </button>
+          <template v-else>
+            <button
+              type="button"
+              class="hero-cta"
+              :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+              @click="openProfileEditor"
+            >
+              <Icon icon="tabler:pencil" width="15" height="15" />
+              <span>{{ $t('Edit profile') }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="hero-cta"
+              :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+              @click="showProfileShareSheet = true"
+            >
+              <Icon icon="tabler:share-2" width="15" height="15" />
+              <span>{{ $t('Share profile') }}</span>
+            </button>
+          </template>
         </div>
       </section>
 
@@ -307,10 +346,16 @@
          visibility, and identityStore for the cached npub. -->
     <ProfileShareSheet v-model="showProfileShareSheet" />
 
-    <!-- First-open intro carousel. Triggered from `created()` once
-         per identity; subsequent visits skip it via the persisted
-         `profileIntroSeenAt` flag on the identity store. -->
-    <ProfileIntroDialog v-model="showProfileIntro" />
+    <!-- First-open intro carousel. Triggered from `created()` once per
+         identity; subsequent visits skip it via the persisted
+         `profileIntroSeenAt` flag on the identity store. On `finish`
+         (last slide OR skip) we hand the user straight into the editor
+         so the welcome flow lands somewhere actionable rather than
+         dropping them on a blank hero. -->
+    <ProfileIntroDialog
+      v-model="showProfileIntro"
+      @finish="onIntroFinished"
+    />
 
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
          challenge, hands it to the IdentityAuthDialog below for the
@@ -524,12 +569,25 @@ export default {
 
       // Nostr identity dialog (view npub, reveal nsec, rotate key).
       showNostrIdentityDialog: false,
+
+      // Transient "copied" affordance for the NIP-05 handle chip.
+      nip05Copied: false,
     };
   },
 
   computed: {
     connectedSites() {
       return this.identity.connectedSitesSorted;
+    },
+
+    /**
+     * The NIP-05 handle to show in the hero. Prefers the value the user
+     * actually publishes (`profile.nip05`, which may be a custom override)
+     * and falls back to the BuhoGO-managed `name@mybuho.de` the boot
+     * orchestrator registered.
+     */
+    displayNip05() {
+      return this.profile.nip05 || this.identity.nip05Address || '';
     },
 
     /**
@@ -638,6 +696,35 @@ export default {
   },
 
   methods: {
+    /**
+     * Carousel completed (or skipped). Hand the user straight to the
+     * editor: at this point the identity is bootstrapped, the boot
+     * orchestrator has already registered (or queued) the verified
+     * `name@mybuho.de` handle, so the only fields they have to touch
+     * are name, picture, and an optional Lightning address.
+     *
+     * Kept distinct from a raw `update:modelValue:false` so any future
+     * programmatic close of the dialog does not silently shove the
+     * editor in the user's face.
+     */
+    onIntroFinished() {
+      this.openProfileEditor();
+    },
+
+    /** Copy the NIP-05 handle to the clipboard, with a brief check tick. */
+    async copyNip05() {
+      const value = this.displayNip05;
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        this.nip05Copied = true;
+        setTimeout(() => { this.nip05Copied = false; }, 1400);
+        this.$q.notify({ type: 'positive', message: this.$t('Copied'), timeout: 1400, position: 'top' });
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
+      }
+    },
+
     /**
      * Single entry point into the editor sheet. Identity is
      * bootstrapped passively in `created()`, but we still re-await
@@ -1085,6 +1172,37 @@ body.body--dark .hero-avatar-edit-badge {
   word-break: break-word;
 }
 
+/* ---------- NIP-05 handle chip ----------
+   Calm, tappable pill under the name. The check reads as "verified
+   handle"; the trailing copy glyph hints it's tappable. */
+.hero-nip05 {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease;
+}
+.hero-nip05-light { background: rgba(15, 23, 42, 0.05); color: #334155; }
+.hero-nip05-dark  { background: rgba(255, 255, 255, 0.06); color: #cbd5e1; }
+.hero-nip05:active { transform: scale(0.98); }
+.hero-nip05-check { flex-shrink: 0; color: #15a35b; }
+.hero-nip05-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hero-nip05-copy { flex-shrink: 0; opacity: 0.6; }
+
 /* ---------- Hero status pills ----------
    Tappable rounded chips. Tone classes are semantic only (is-ok /
    is-warn / is-busy / is-muted / is-danger); the base pill carries
@@ -1204,6 +1322,24 @@ button.hero-pill:focus-visible {
 
 .hero-cta-dark:hover {
   background: rgba(255, 255, 255, 0.10);
+}
+
+/* ---------- Hero primary CTA (empty-state finishing step) ----------
+   One bold full-width button, used only when `profile.isEmpty`. Fill,
+   typography and interactions come from the global `dialog_add_btn_*`
+   theme classes so this matches the primary CTA on every other dialog
+   — the user has already seen that affordance pattern elsewhere. We
+   only own layout (size + spacing). */
+.hero-cta-primary {
+  width: 100%;
+  height: 48px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ---------- Section labels (cloned from Settings.vue) ---------- */

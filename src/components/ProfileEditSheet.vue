@@ -192,6 +192,44 @@
             {{ $t('Your address for receiving Bitcoin payments. Leave blank if you don\'t have one.') }}
           </span>
         </label>
+
+        <!-- NIP-05 verified identifier. Auto-managed (name@mybuho.de) by
+             default; only advanced users who host their own NIP-05 need to
+             touch it. -->
+        <label class="field">
+          <span class="field-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('NIP-05 identifier') }}
+          </span>
+          <div
+            class="field-input-wrap"
+            :class="[
+              $q.dark.isActive ? 'field-input-wrap-dark' : 'field-input-wrap-light',
+              { 'field-input-wrap--error': errors.nip05 },
+            ]"
+          >
+            <input
+              v-model="form.nip05"
+              type="text"
+              placeholder="you@mybuho.de"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="none"
+              maxlength="200"
+              class="field-input"
+              :class="$q.dark.isActive ? 'field-input-dark' : 'field-input-light'"
+            />
+          </div>
+          <span v-if="errors.nip05" class="field-error" role="alert">
+            {{ errors.nip05 }}
+          </span>
+          <span
+            v-else
+            class="field-help"
+            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+          >
+            {{ $t('Your verified handle, managed for you. Only change it if you host your own NIP-05.') }}
+          </span>
+        </label>
       </div>
       </div><!-- /sheet-scroll -->
 
@@ -294,11 +332,13 @@ export default {
         displayName: '',
         about: '',
         lud16: '',
+        nip05: '',
       },
 
       /** Shape-validation errors keyed by field. Cleared on each edit. */
       errors: {
         lud16: '',
+        nip05: '',
       },
 
       /** Avatar fallback flag — same pattern the page uses. */
@@ -347,6 +387,7 @@ export default {
         || this.form.about       !== this.profile.about
         || this.form.website     !== this.profile.website
         || this.form.lud16       !== this.profile.lud16
+        || this.form.nip05       !== this.profile.nip05
       );
     },
 
@@ -371,7 +412,9 @@ export default {
       this.form.displayName = this.profile.displayName;
       this.form.about       = this.profile.about;
       this.form.lud16       = this.profile.lud16;
+      this.form.nip05       = this.profile.nip05;
       this.errors.lud16     = '';
+      this.errors.nip05     = '';
       this.avatarBroken     = false;
       this.publishError     = null;
     },
@@ -443,9 +486,16 @@ export default {
      */
     validate() {
       this.errors.lud16 = '';
+      this.errors.nip05 = '';
       const lud16 = (this.form.lud16 || '').trim();
       if (!isLikelyLud16(lud16)) {
         this.errors.lud16 = this.$t('Looks like an unfamiliar format. Try name@example.com.');
+        return false;
+      }
+      // NIP-05 shares the name@domain shape; reuse the same lenient check.
+      const nip05 = (this.form.nip05 || '').trim();
+      if (!isLikelyLud16(nip05)) {
+        this.errors.nip05 = this.$t('Looks like an unfamiliar format. Try name@example.com.');
         return false;
       }
       return true;

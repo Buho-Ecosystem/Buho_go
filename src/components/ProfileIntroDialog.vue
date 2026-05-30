@@ -135,7 +135,13 @@ export default {
     modelValue: { type: Boolean, default: false },
   },
 
-  emits: ['update:modelValue'],
+  // `finish` fires whenever the user reaches the end of the carousel
+  // — by completing the last slide OR by skipping. Both paths share the
+  // same semantics ("user is done with the intro"), so the parent can
+  // chain a single follow-up (currently: open the profile editor).
+  // Distinct from `update:modelValue:false` so a future programmatic
+  // close (e.g. route change) does not falsely trigger that follow-up.
+  emits: ['update:modelValue', 'finish'],
 
   setup() {
     const identity = useIdentityStore();
@@ -185,6 +191,7 @@ export default {
     finish() {
       this.identity.markProfileIntroSeen();
       this.$emit('update:modelValue', false);
+      this.$emit('finish');
     },
   },
 };

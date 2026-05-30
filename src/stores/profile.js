@@ -55,6 +55,7 @@ import {
   buildKind0Event,
   buildKind10002Event,
 } from '../utils/nostrProfile.js';
+import { NIP05_DOMAIN } from '../services/nip05.js';
 import {
   fetchProfile as fetchProfileFromRelays,
   parseProfileContent,
@@ -87,6 +88,7 @@ export const PROFILE_FIELDS = Object.freeze([
   'picture',
   'banner',
   'lud16',
+  'nip05',
 ]);
 
 /**
@@ -102,6 +104,7 @@ const FIELD_TO_CONTENT_KEY = Object.freeze({
   picture: 'picture',
   banner: 'banner',
   lud16: 'lud16',
+  nip05: 'nip05',
 });
 
 /**
@@ -123,6 +126,7 @@ const FIELD_MAX_LENGTH = Object.freeze({
   picture: 500,
   banner: 500,
   lud16: 200,
+  nip05: 200,
 });
 
 // ----------------------------------------------------------------------------
@@ -176,6 +180,7 @@ export const useProfileStore = defineStore('profile', {
     picture: '',
     banner: '',
     lud16: '',
+    nip05: '',
 
     // ---- Editor / publish lifecycle (not all persisted) ----
     /** True after `setField` changes a value, until the next successful publish or reset. */
@@ -205,7 +210,9 @@ export const useProfileStore = defineStore('profile', {
   getters: {
     /** True iff every editable field is empty. Drives the "Set up your profile" empty state. */
     isEmpty(state) {
-      return PROFILE_FIELDS.every((field) => !state[field]);
+      // nip05 is auto-populated by the system (boot/nip05.js), so a user who
+      // has only an auto handle still counts as not-yet-set-up.
+      return PROFILE_FIELDS.every((field) => field === 'nip05' || !state[field]);
     },
 
     /**
@@ -321,6 +328,26 @@ export const useProfileStore = defineStore('profile', {
       if (this[field] === next) return;
       this[field] = next;
       this.isDirty = true;
+      this._persistMetadata();
+    },
+
+    /**
+     * Adopt the BuhoGO-managed NIP-05 address (from the identity store) as
+     * the published handle. Called silently by `boot/nip05.js`, so unlike
+     * `setField` it does NOT mark the profile dirty — it isn't a user edit
+     * and must not light up the "unsaved changes" CTA. Overwrites an empty
+     * value or a previously-auto `…@mybuho.de` value, but never clobbers a
+     * custom NIP-05 the user set on another domain.
+     *
+     * @param {string} address  e.g. `drs.482913@mybuho.de`
+     */
+    adoptNip05(address) {
+      const value = normaliseFieldValue('nip05', address);
+      if (!value) return;
+      const current = this.nip05;
+      const oursOrEmpty = !current || current.endsWith(`@${NIP05_DOMAIN}`);
+      if (!oursOrEmpty || current === value) return;
+      this.nip05 = value;
       this._persistMetadata();
     },
 

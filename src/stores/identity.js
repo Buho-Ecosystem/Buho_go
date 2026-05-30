@@ -46,6 +46,7 @@
 
 import { defineStore } from 'pinia';
 import { encryptString, decryptString } from '../utils/deviceCrypto.js';
+import { nip05AddressFor } from '../services/nip05.js';
 import {
   generateIdentityMnemonic,
   isValidIdentityMnemonic,
@@ -102,6 +103,17 @@ export const useIdentityStore = defineStore('identity', {
     /** Cached NIP-19 `npub1...` for the current account, or null. */
     nostrNpub: null,
     /**
+     * BuhoGO-managed NIP-05 handle for the current Nostr key, registered
+     * silently at first launch under `mybuho.de` (see `boot/nip05.js`).
+     * `nip05Handle` is the local-part (e.g. `drs.482913`); the full address
+     * is `nip05Address`. `nip05RotationSecret` is the keyless management
+     * token the extension returns — kept so we can manage/rotate the handle
+     * later without an LNbits account. Both bind to the current pubkey and
+     * are cleared on `rotateNostrIdentity`.
+     */
+    nip05Handle: null,
+    nip05RotationSecret: null,
+    /**
      * Epoch-ms the Profile intro carousel was first dismissed, or null
      * if the user has never opened ProfilePage. Used to show the intro
      * exactly once. Reset to null by `reset()` so a fresh identity sees
@@ -121,6 +133,11 @@ export const useIdentityStore = defineStore('identity', {
       return [...state.connectedSites].sort(
         (a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0),
       );
+    },
+
+    /** Full `name@mybuho.de` NIP-05 address, or null if not yet registered. */
+    nip05Address(state) {
+      return nip05AddressFor(state.nip05Handle);
     },
 
     /** True iff the backup banner should be shown right now. */
@@ -172,6 +189,8 @@ export const useIdentityStore = defineStore('identity', {
                 : 0;
             this.nostrPubkeyHex = parsed.nostrPubkeyHex ?? null;
             this.nostrNpub = parsed.nostrNpub ?? null;
+            this.nip05Handle = parsed.nip05Handle ?? null;
+            this.nip05RotationSecret = parsed.nip05RotationSecret ?? null;
             this.profileIntroSeenAt = parsed.profileIntroSeenAt ?? null;
           }
         }
@@ -199,6 +218,8 @@ export const useIdentityStore = defineStore('identity', {
         nostrAccountIndex: this.nostrAccountIndex,
         nostrPubkeyHex: this.nostrPubkeyHex,
         nostrNpub: this.nostrNpub,
+        nip05Handle: this.nip05Handle,
+        nip05RotationSecret: this.nip05RotationSecret,
         profileIntroSeenAt: this.profileIntroSeenAt,
       };
       localStorage.setItem(STORAGE_KEYS.METADATA, JSON.stringify(payload));
@@ -360,7 +381,23 @@ export const useIdentityStore = defineStore('identity', {
       this.nostrAccountIndex = 0;
       this.nostrPubkeyHex = null;
       this.nostrNpub = null;
+      this.nip05Handle = null;
+      this.nip05RotationSecret = null;
       this.profileIntroSeenAt = null;
+    },
+
+    /**
+     * Record the NIP-05 handle registered for the current Nostr key. Called
+     * by `boot/nip05.js` after a successful registration. Persists so the
+     * handle (and its keyless rotation secret) survive reloads.
+     *
+     * @param {{ handle: string, rotationSecret?: string|null }} info
+     */
+    setNip05({ handle, rotationSecret = null }) {
+      if (!handle) return;
+      this.nip05Handle = handle;
+      this.nip05RotationSecret = rotationSecret;
+      this._persistMetadata();
     },
 
     /**
@@ -584,16 +621,24 @@ export const useIdentityStore = defineStore('identity', {
           account: this.nostrAccountIndex,
           pubkey: this.nostrPubkeyHex,
           npub: this.nostrNpub,
+          nip05Handle: this.nip05Handle,
+          nip05RotationSecret: this.nip05RotationSecret,
         };
         this.nostrAccountIndex = nextAccount;
         this.nostrPubkeyHex = publicKeyHex;
         this.nostrNpub = npub;
+        // The old handle maps the *previous* pubkey; clear it so the boot
+        // orchestrator registers a fresh one for the new key.
+        this.nip05Handle = null;
+        this.nip05RotationSecret = null;
         try {
           this._persistMetadata();
         } catch (persistErr) {
           this.nostrAccountIndex = prev.account;
           this.nostrPubkeyHex = prev.pubkey;
           this.nostrNpub = prev.npub;
+          this.nip05Handle = prev.nip05Handle;
+          this.nip05RotationSecret = prev.nip05RotationSecret;
           throw persistErr;
         }
 
