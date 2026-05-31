@@ -58,6 +58,7 @@
           @saved="onChildSaved"
           @open-existing="onOpenExisting"
           @switch-to-search="switchTab('search')"
+          @detected-address="onScanDetectedAddress"
         />
 
         <!-- SEARCH -->
@@ -108,10 +109,10 @@
                   <div
                     v-if="detectedType"
                     class="detected-pill"
-                    :class="`detected-pill--${detectedType}`"
+                    :class="`detected-pill--${detectedDisplayType}`"
                   >
                     <img
-                      v-if="detectedType === 'spark'"
+                      v-if="detectedDisplayType === 'spark'"
                       width="11" height="11"
                       :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
                       alt="Spark"
@@ -139,10 +140,10 @@
               <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
                 <template v-if="addressShowsError">
                   <Icon icon="tabler:alert-circle" width="13" height="13" />
-                  <span>{{ $t("We don't recognize this as a Lightning, Spark, or Bitcoin address") }}</span>
+                  <span>{{ $t("We don't recognize this as a Lightning, Spark, Bitcoin, or LNURL address") }}</span>
                 </template>
                 <template v-else>
-                  <span>{{ $t('Works with a Lightning address, Spark address, or Bitcoin address') }}</span>
+                  <span>{{ $t('Works with a Lightning, Spark, or Bitcoin address, or an LNURL link') }}</span>
                 </template>
               </div>
             </div>
@@ -229,6 +230,7 @@ import {
   isSparkAddress,
   isBitcoinAddress,
   isLightningAddress,
+  isLnurl,
 } from '../../utils/addressUtils.js'
 import AddContactSearch from './AddContactSearch.vue'
 import AddContactScan from './AddContactScan.vue'
@@ -241,19 +243,22 @@ function detectType(address) {
   if (!v) return null
   if (isSparkAddress(v)) return 'spark'
   if (isBitcoinAddress(v)) return 'bitcoin'
+  // LNURL static pay links — recognized as their own type for routing, but
+  // surfaced as Lightning in the pill below (see detectedType/Label/Icon).
+  if (isLnurl(v)) return 'lnurl'
   if (isLightningAddress(v)) return 'lightning'
   return null
 }
 
 const TABS = [
-  // Search is the default entry — it never prompts for camera
-  // permission, and the most common add path (pasting an npub
-  // from a friend or a profile link) lives here. Scan is offered
-  // second so in-person sharing is one tap away. Manual is the
-  // legacy "type a Lightning/Spark/Bitcoin address" form.
-  { id: 'search', label: 'Search', icon: 'tabler:search' },
-  { id: 'scan',   label: 'Scan',   icon: 'tabler:qrcode' },
+  // Enter is the default entry: typing a Lightning/Spark/Bitcoin
+  // address works for everyone without assuming Nostr fluency, and it
+  // never prompts for camera permission on open. Scan is one tap away
+  // for in-person sharing; Search covers the Nostr-aware path of
+  // pasting an npub or profile link.
   { id: 'manual', label: 'Enter',  icon: 'tabler:keyboard' },
+  { id: 'scan',   label: 'Scan',   icon: 'tabler:qrcode' },
+  { id: 'search', label: 'Search', icon: 'tabler:search' },
 ]
 
 export default {
@@ -272,7 +277,7 @@ export default {
   emits: ['update:modelValue', 'saved', 'open-existing'],
   data() {
     return {
-      activeTab: 'search',
+      activeTab: 'manual',
       tabs: TABS,
       formData: {
         name: '',
@@ -314,13 +319,23 @@ export default {
       return detectType(this.formData.address)
     },
 
+    /**
+     * Visual type for the pill. LNURL is stored as its own `addressType`
+     * (so the send flow routes it through LNURL resolution) but folds into
+     * the Lightning badge here, since to the user it is just another way to
+     * pay over Lightning.
+     */
+    detectedDisplayType() {
+      return this.detectedType === 'lnurl' ? 'lightning' : this.detectedType
+    },
+
     detectedLabel() {
       const labels = {
         lightning: this.$t('Lightning'),
         spark: this.$t('Spark'),
         bitcoin: this.$t('Bitcoin')
       }
-      return labels[this.detectedType] || ''
+      return labels[this.detectedDisplayType] || ''
     },
 
     detectedIcon() {
@@ -328,7 +343,7 @@ export default {
         lightning: 'tabler:bolt',
         bitcoin: 'tabler:currency-bitcoin'
       }
-      return icons[this.detectedType] || ''
+      return icons[this.detectedDisplayType] || ''
     },
 
     addressShowsError() {
@@ -343,16 +358,13 @@ export default {
     show(newVal) {
       if (newVal) {
         this.initializeForm()
-        // Editing always lands on the manual form. Add mode resets
-        // back to Search so the next open isn't biased by where the
-        // previous open finished.
-        this.activeTab = this.isEditing ? 'manual' : 'search'
+        // Both editing and add mode land on the manual "Enter" form: it
+        // works for everyone (Lightning/Spark/Bitcoin address) without
+        // assuming Nostr fluency, and resetting here keeps the next open
+        // from being biased by where the previous one finished.
+        this.activeTab = 'manual'
         this.$nextTick(() => {
-          if (this.activeTab === 'manual') {
-            this.$refs.nameInput?.focus()
-          } else if (this.activeTab === 'search') {
-            this.$refs.searchRef?.focus?.()
-          }
+          this.$refs.nameInput?.focus()
         })
       } else {
         this.resetForm()
@@ -398,7 +410,7 @@ export default {
       }
       this.isSaving = false
       this.showColorPicker = false
-      this.activeTab = 'search'
+      this.activeTab = 'manual'
     },
 
     getPreviewInitial() {
@@ -429,6 +441,17 @@ export default {
     onOpenExisting(entry) {
       this.$emit('open-existing', entry)
       this.closeModal()
+    },
+
+    /**
+     * The Scan tab found a payment address (Lightning / Spark / Bitcoin /
+     * LNURL) rather than a Nostr profile. Pre-fill the manual form and
+     * switch to it so the detected-type pill lights up and the user just
+     * adds a name + optional note before saving via the normal addEntry path.
+     */
+    onScanDetectedAddress(address) {
+      this.formData.address = address
+      this.switchTab('manual')
     },
 
     async saveEntry() {

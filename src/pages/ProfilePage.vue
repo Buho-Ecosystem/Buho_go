@@ -39,77 +39,173 @@
     </div>
 
     <div class="profile-content">
-      <!-- Profile header. Three state variations driven entirely by
+      <!-- Profile header. State variations, all driven by
            identity.bootstrapped + profile.isEmpty:
-             1. !bootstrapped       → "Set up your profile" + Get started
-             2. bootstrapped, empty → "Add your name and a picture"
-             3. fully set up        → avatar / name / pills / Edit + Share
+             1. !bootstrapped       → silent (the avatar slot reserves the layout
+                                       for the sub-100ms passive-bootstrap window)
+             2. bootstrapped, empty → "Set up your profile" headline + handle chip
+                                       + single primary "Get started" CTA
+             3. fully set up        → avatar / name / handle chip + Edit + Share
            See the UX contract in Plan 09 build guide §7a. -->
       <section
         class="profile-hero"
         :class="$q.dark.isActive ? 'hero-dark' : 'hero-light'"
       >
-        <!-- Avatar block. Tap opens edit (or "get started" for fresh
-             installs). Backup-warn ring lights up amber whenever the
-             user has an identity but hasn't written down their seed. -->
-        <button
-          type="button"
-          class="hero-avatar-btn"
-          :aria-label="$t('Edit profile picture')"
-          @click="openProfileEditor"
-        >
-          <!-- Avatar slot. The circle clips its own image fill;
-               the camera badge anchors to the wrap so it never
-               gets cropped at the circle border. -->
-          <div class="hero-avatar-wrap">
-            <div
-              class="hero-avatar"
-              :class="$q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light'"
-            >
-              <img
-                v-if="resolvedAvatarUrl"
-                :src="resolvedAvatarUrl"
-                :alt="$t('Profile picture')"
-                class="hero-avatar-img"
-                @error="onAvatarLoadError"
-              />
-              <Icon
-                v-else
-                icon="tabler:user"
-                width="40"
-                height="40"
-                class="hero-avatar-glyph"
-                aria-hidden="true"
-              />
-            </div>
-            <span class="hero-avatar-edit-badge" aria-hidden="true">
-              <Icon icon="tabler:camera" width="14" height="14" />
-            </span>
-          </div>
-        </button>
+        <!-- Banner band. Soft brand-green wash that gives the card a
+             visual top edge and turns it into a "header" rather than
+             a flat container. The avatar below overlaps it so the
+             page reads with depth (Twitter/Bluesky pattern). -->
+        <div
+          class="hero-banner"
+          :class="$q.dark.isActive ? 'hero-banner-dark' : 'hero-banner-light'"
+          aria-hidden="true"
+        ></div>
 
-        <!-- Name + subline. Tappable as one block so any reasonable
-             miss-tap on the headline area still lands in the editor. -->
-        <button
-          type="button"
-          class="hero-meta-btn"
-          :aria-label="$t('Edit profile')"
-          @click="openProfileEditor"
+        <!-- Hero body: everything below the banner. The negative top
+             margin on `.hero-identity` is what pulls the avatar up
+             into the banner. -->
+        <div class="hero-body">
+          <!-- Identity row — avatar left, name + @handle right. Each
+               side stays its own tappable region so a miss-tap on the
+               name still lands in the editor (same as before), and a
+               miss-tap on the avatar still opens the avatar picker. -->
+          <div class="hero-identity">
+            <button
+              type="button"
+              class="hero-avatar-btn"
+              :aria-label="$t('Edit profile picture')"
+              @click="openProfileEditor"
+            >
+              <div class="hero-avatar-wrap">
+                <div
+                  class="hero-avatar"
+                  :class="$q.dark.isActive ? 'hero-avatar-dark' : 'hero-avatar-light'"
+                >
+                  <img
+                    v-if="resolvedAvatarUrl"
+                    :src="resolvedAvatarUrl"
+                    :alt="$t('Profile picture')"
+                    class="hero-avatar-img"
+                    @error="onAvatarLoadError"
+                  />
+                  <Icon
+                    v-else
+                    icon="tabler:user"
+                    width="36"
+                    height="36"
+                    class="hero-avatar-glyph"
+                    aria-hidden="true"
+                  />
+                </div>
+                <span class="hero-avatar-edit-badge" aria-hidden="true">
+                  <Icon icon="tabler:camera" width="13" height="13" />
+                </span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              class="hero-meta-btn"
+              :aria-label="$t('Edit profile')"
+              @click="openProfileEditor"
+            >
+              <div
+                class="hero-name"
+                :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+              >
+                {{ heroHeadline }}
+              </div>
+              <div
+                v-if="heroHandle || heroSubline"
+                class="hero-handle"
+                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+              >
+                {{ heroHandle || heroSubline }}
+              </div>
+            </button>
+          </div>
+
+        <!-- Addresses card — the "share me" surface. Up to two tap-to-
+             copy rows: the verified NIP-05 (always present once boot
+             registers the free handle) and the Lightning address (only
+             when the user has published one). Replaces the previous
+             standalone NIP-05 chip + grey lud16 subline so both
+             addresses get the same affordance and read as one zone
+             instead of two disparate elements. -->
+        <div
+          v-if="identity.bootstrapped && hasAnyAddress"
+          class="hero-addresses"
+          :class="$q.dark.isActive ? 'hero-addresses-dark' : 'hero-addresses-light'"
         >
+          <!-- Each row has TWO trailing affordances: a small QR button
+               that opens the ShareAddressSheet pre-selected to this
+               address, and the existing copy-on-tap on the row body.
+               The QR button has its own click target with stopPropagation
+               so it never bubbles into "copy" mode by accident. -->
           <div
-            class="hero-name"
-            :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+            v-if="displayNip05"
+            class="hero-address-row-wrap"
           >
-            {{ heroHeadline }}
+            <button
+              type="button"
+              class="hero-address-row"
+              :aria-label="$t('Copy your NIP-05 address')"
+              @click="copyNip05"
+            >
+              <span class="hero-address-icon hero-address-icon--check" aria-hidden="true">
+                <Icon icon="tabler:rosette-discount-check-filled" width="16" height="16" />
+              </span>
+              <span class="hero-address-text">{{ displayNip05 }}</span>
+              <Icon
+                :icon="nip05Copied ? 'tabler:check' : 'tabler:copy'"
+                width="14"
+                height="14"
+                class="hero-address-copy"
+              />
+            </button>
+            <button
+              type="button"
+              class="hero-address-qr-btn"
+              :class="$q.dark.isActive ? 'hero-address-qr-btn-dark' : 'hero-address-qr-btn-light'"
+              :aria-label="$t('Show QR code')"
+              @click.stop="openShareSheet('nip05')"
+            >
+              <Icon icon="tabler:qrcode" width="14" height="14" />
+            </button>
           </div>
+
           <div
-            v-if="heroSubline"
-            class="hero-subline"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+            v-if="displayLud16"
+            class="hero-address-row-wrap"
           >
-            {{ heroSubline }}
+            <button
+              type="button"
+              class="hero-address-row"
+              :aria-label="$t('Copy your Lightning address')"
+              @click="copyLud16"
+            >
+              <span class="hero-address-icon hero-address-icon--bolt" aria-hidden="true">
+                <Icon icon="tabler:bolt-filled" width="16" height="16" />
+              </span>
+              <span class="hero-address-text">{{ displayLud16 }}</span>
+              <Icon
+                :icon="lud16Copied ? 'tabler:check' : 'tabler:copy'"
+                width="14"
+                height="14"
+                class="hero-address-copy"
+              />
+            </button>
+            <button
+              type="button"
+              class="hero-address-qr-btn"
+              :class="$q.dark.isActive ? 'hero-address-qr-btn-dark' : 'hero-address-qr-btn-light'"
+              :aria-label="$t('Show QR code')"
+              @click.stop="openShareSheet('lud16')"
+            >
+              <Icon icon="tabler:qrcode" width="14" height="14" />
+            </button>
           </div>
-        </button>
+        </div>
 
         <!--
           Status pills (backup-state + publish-state) were removed in
@@ -122,33 +218,50 @@
           two primary CTAs (Edit, Share).
         -->
 
-        <!-- Two equal-width neutral pills side by side — Instagram /
-             Threads style. Both gated on `identity.bootstrapped` so
-             the row stays empty during the sub-100ms passive-
-             bootstrap window; `min-height` on `.hero-actions`
-             reserves the vertical slot so the page never jumps. -->
+        <!-- Action row. Two shapes:
+             - Empty profile  → single full-width primary CTA ("Get started")
+                                so the finishing step after the welcome
+                                carousel is unmistakable.
+             - Populated      → Instagram/Threads-style Edit + Share pair.
+             Both gated on `identity.bootstrapped` so the row stays empty
+             during the sub-100ms passive-bootstrap window; `min-height`
+             on `.hero-actions` reserves the vertical slot so the page
+             never jumps between states. -->
         <div class="hero-actions" v-if="identity.bootstrapped">
           <button
+            v-if="profile.isEmpty"
             type="button"
-            class="hero-cta"
-            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+            class="hero-cta-primary"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             @click="openProfileEditor"
           >
-            <Icon icon="tabler:pencil" width="15" height="15" />
-            <span>{{ $t('Edit profile') }}</span>
+            <Icon icon="tabler:sparkles" width="16" height="16" />
+            <span>{{ $t('Get started') }}</span>
           </button>
 
-          <button
-            v-if="!profile.isEmpty"
-            type="button"
-            class="hero-cta"
-            :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
-            @click="showProfileShareSheet = true"
-          >
-            <Icon icon="tabler:share-2" width="15" height="15" />
-            <span>{{ $t('Share profile') }}</span>
-          </button>
+          <template v-else>
+            <button
+              type="button"
+              class="hero-cta"
+              :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+              @click="openProfileEditor"
+            >
+              <Icon icon="tabler:pencil" width="15" height="15" />
+              <span>{{ $t('Edit profile') }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="hero-cta"
+              :class="$q.dark.isActive ? 'hero-cta-dark' : 'hero-cta-light'"
+              @click="showProfileShareSheet = true"
+            >
+              <Icon icon="tabler:share-2" width="15" height="15" />
+              <span>{{ $t('Share profile') }}</span>
+            </button>
+          </template>
         </div>
+        </div><!-- /hero-body -->
       </section>
 
       <!-- Sites the user has signed in to. Has three states:
@@ -307,10 +420,27 @@
          visibility, and identityStore for the cached npub. -->
     <ProfileShareSheet v-model="showProfileShareSheet" />
 
-    <!-- First-open intro carousel. Triggered from `created()` once
-         per identity; subsequent visits skip it via the persisted
-         `profileIntroSeenAt` flag on the identity store. -->
-    <ProfileIntroDialog v-model="showProfileIntro" />
+    <!-- QR share sheet: one sheet, switcher between NIP-05 and the
+         Lightning address. Opened from the small QR button on each
+         address row in the hero. -->
+    <ShareAddressSheet
+      v-model="showShareAddressSheet"
+      :initial-address="shareAddressInitial"
+      :nip05="displayNip05"
+      :lud16="displayLud16"
+      :npub="identity.nostrNpub || ''"
+    />
+
+    <!-- First-open intro carousel. Triggered from `created()` once per
+         identity; subsequent visits skip it via the persisted
+         `profileIntroSeenAt` flag on the identity store. On `finish`
+         (last slide OR skip) we hand the user straight into the editor
+         so the welcome flow lands somewhere actionable rather than
+         dropping them on a blank hero. -->
+    <ProfileIntroDialog
+      v-model="showProfileIntro"
+      @finish="onIntroFinished"
+    />
 
     <!-- Add-site sheet (paste lnurl1/keyauth link) → parses into a
          challenge, hands it to the IdentityAuthDialog below for the
@@ -432,6 +562,7 @@ import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
 import ProfileEditSheet from '../components/ProfileEditSheet.vue';
 import ProfileAvatarPickerSheet from '../components/ProfileAvatarPickerSheet.vue';
 import ProfileShareSheet from '../components/ProfileShareSheet.vue';
+import ShareAddressSheet from '../components/ShareAddressSheet.vue';
 import ProfileIntroDialog from '../components/ProfileIntroDialog.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteExamplesSheet from '../components/SiteExamplesSheet.vue';
@@ -460,6 +591,7 @@ export default {
     ProfileEditSheet,
     ProfileAvatarPickerSheet,
     ProfileShareSheet,
+    ShareAddressSheet,
     ProfileIntroDialog,
     AddSiteSheet,
     SiteExamplesSheet,
@@ -487,6 +619,14 @@ export default {
       // Profile bottom sheets.
       showProfileEditSheet: false,
       showProfileShareSheet: false,
+
+      // QR share sheet: switches between the user's NIP-05 and Lightning
+      // address, with the address that was tapped pre-selected. The
+      // sheet itself is stateless about which address is "primary" so a
+      // user who taps the Lightning QR from the row lands directly on
+      // that QR, not on NIP-05 with a redundant click.
+      showShareAddressSheet: false,
+      shareAddressInitial: 'nip05',
       showProfileAvatarPicker: false,
 
       // First-open intro carousel. Shown exactly once per identity;
@@ -524,12 +664,28 @@ export default {
 
       // Nostr identity dialog (view npub, reveal nsec, rotate key).
       showNostrIdentityDialog: false,
+
+      // Transient "copied" affordances for the two address rows. Each
+      // chip swaps its icon to a check for ~1.4s after a tap so the
+      // user gets a confirmation without a toast.
+      nip05Copied: false,
+      lud16Copied: false,
     };
   },
 
   computed: {
     connectedSites() {
       return this.identity.connectedSitesSorted;
+    },
+
+    /**
+     * The NIP-05 handle to show in the hero. Prefers the value the user
+     * actually publishes (`profile.nip05`, which may be a custom override)
+     * and falls back to the BuhoGO-managed `name@mybuho.de` the boot
+     * orchestrator registered.
+     */
+    displayNip05() {
+      return this.profile.nip05 || this.identity.nip05Address || '';
     },
 
     /**
@@ -568,18 +724,47 @@ export default {
     },
 
     /**
-     * Subline under the headline. Empty profile gets a one-liner
-     * that explains *what the profile is for* — the most common
-     * thing first-time users don't know. Once set up, we show the
-     * Lightning address (or the shortened profile address) so a
-     * friend has something concrete to copy into another app.
+     * Subline under the headline. The empty state gets an explanatory
+     * one-liner ("what is this for?"). For a set-up profile the lud16
+     * and NIP-05 live in the addresses card below the name, so the
+     * subline falls through to either nothing (when the card carries
+     * both addresses on its own) or the short npub as a quiet identity
+     * marker when neither address has been published yet.
      */
     heroSubline() {
       if (!this.identity.bootstrapped) return '';
       if (this.profile.isEmpty) {
         return this.$t('Add a name and picture so friends can find you and pay you.');
       }
-      if (this.profile.lud16) return this.profile.lud16;
+      // If the addresses card already carries at least one row, the
+      // subline would just be redundant.
+      if (this.hasAnyAddress) return '';
+      return this.shortNpub;
+    },
+
+    /** Lightning address surfaced as a chip row in the addresses card. */
+    displayLud16() {
+      return this.profile.lud16 || '';
+    },
+
+    /** True iff the addresses card has anything to render right now. */
+    hasAnyAddress() {
+      return !!(this.displayNip05 || this.displayLud16);
+    },
+
+    /**
+     * Twitter/Bluesky-style `@handle` shown next to the name in the
+     * identity row. The full domain (`@mybuho.de`) is implicit and lives
+     * in the addresses card below — repeating it here would crowd the
+     * narrow right column on phones. Falls back to the short npub when
+     * no handle has been registered yet (rare; the boot orchestrator
+     * usually has one within seconds).
+     */
+    heroHandle() {
+      if (!this.identity.bootstrapped) return '';
+      if (this.profile.isEmpty) return '';
+      const active = this.identity.nip05ActiveEntry;
+      if (active && active.handle) return `@${active.handle}`;
       return this.shortNpub;
     },
 
@@ -638,6 +823,60 @@ export default {
   },
 
   methods: {
+    /**
+     * Carousel completed (or skipped). Hand the user straight to the
+     * editor: at this point the identity is bootstrapped, the boot
+     * orchestrator has already registered (or queued) the verified
+     * `name@mybuho.de` handle, so the only fields they have to touch
+     * are name, picture, and an optional Lightning address.
+     *
+     * Kept distinct from a raw `update:modelValue:false` so any future
+     * programmatic close of the dialog does not silently shove the
+     * editor in the user's face.
+     */
+    onIntroFinished() {
+      this.openProfileEditor();
+    },
+
+    /** Copy the NIP-05 handle to the clipboard, with a brief check tick. */
+    async copyNip05() {
+      await this._copyAddress(this.displayNip05, 'nip05Copied');
+    },
+
+    /** Copy the Lightning address to the clipboard, with a brief check tick. */
+    async copyLud16() {
+      await this._copyAddress(this.displayLud16, 'lud16Copied');
+    },
+
+    /**
+     * Open the QR share sheet with the address the user tapped on
+     * pre-selected. The switcher inside the sheet still lets them flip
+     * between the two without closing if both are published.
+     */
+    openShareSheet(which) {
+      this.shareAddressInitial = which === 'lud16' ? 'lud16' : 'nip05';
+      this.showShareAddressSheet = true;
+    },
+
+    /**
+     * Shared clipboard write + transient confirmation for any of the
+     * address rows in the hero. The icon-swap on the row owns the
+     * inline confirmation; the toast is a redundant belt-and-braces
+     * for users whose eyes are off the screen mid-tap (clipboard apps
+     * on some Android builds eat the change without notice).
+     */
+    async _copyAddress(value, copiedFlag) {
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        this[copiedFlag] = true;
+        setTimeout(() => { this[copiedFlag] = false; }, 1400);
+        this.$q.notify({ type: 'positive', message: this.$t('Copied'), timeout: 1400, position: 'top' });
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
+      }
+    },
+
     /**
      * Single entry point into the editor sheet. Identity is
      * bootstrapped passively in `created()`, but we still re-await
@@ -924,25 +1163,78 @@ export default {
    the markup below is single-template-conditional-light because the
    three states share most of their structure. */
 
+/* Hero shell. The banner extends edge-to-edge inside this card, so we
+   clip overflow at the card boundary and let the body element below
+   own the inner padding. The card itself stays the lifted surface,
+   shadow-only (no hairline border). */
 .profile-hero {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 28px 16px 24px;
-  margin: 8px 0 16px;
-  border-radius: 18px;
-  text-align: center;
+  padding: 0;
+  margin: 8px 0 18px;
+  border-radius: 20px;
+  overflow: hidden;
 }
 
 .hero-light {
   background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow:
+    0 1px 0 rgba(15, 23, 42, 0.02),
+    0 8px 24px -12px rgba(15, 23, 42, 0.10);
 }
 
 .hero-dark {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.02),
+    0 10px 28px -14px rgba(0, 0, 0, 0.6);
+}
+
+/* Soft brand-green banner band along the top of the card. Calm enough
+   on the cream page to feel like part of the design language, present
+   enough to give the card a real "header zone." The avatar below
+   overlaps it for Twitter/Bluesky-style depth. */
+.hero-banner {
+  height: 72px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.hero-banner-light {
+  background: linear-gradient(
+    135deg,
+    rgba(21, 222, 114, 0.16) 0%,
+    rgba(21, 222, 114, 0.06) 60%,
+    rgba(21, 222, 114, 0.10) 100%
+  );
+}
+
+.hero-banner-dark {
+  background: linear-gradient(
+    135deg,
+    rgba(21, 222, 114, 0.20) 0%,
+    rgba(21, 222, 114, 0.08) 60%,
+    rgba(21, 222, 114, 0.14) 100%
+  );
+}
+
+/* Body sits below the banner. Owns the inner padding and the vertical
+   rhythm between identity row, addresses card, and CTAs. */
+.hero-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 20px 24px;
+}
+
+/* Identity row: avatar left, name + handle right. The negative top
+   margin lifts the avatar up into the banner so the bottom half of
+   the avatar overlaps the banner edge (modern social pattern). */
+.hero-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: -32px;
 }
 
 /* ---------- Hero avatar ----------
@@ -969,13 +1261,14 @@ export default {
    avatar inside still owns the clip for the image fill. */
 .hero-avatar-wrap {
   position: relative;
-  width: 96px;
-  height: 96px;
+  width: 84px;
+  height: 84px;
+  flex-shrink: 0;
 }
 
 .hero-avatar {
-  width: 96px;
-  height: 96px;
+  width: 84px;
+  height: 84px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -990,16 +1283,23 @@ export default {
   transition-duration: 0.08s;
 }
 
+/* The card-coloured ring around the avatar is what gives the overlap
+   composition its lift — the avatar reads as a token resting on the
+   card surface, not a hole punched through it. */
 .hero-avatar-light {
   background: rgba(15, 23, 42, 0.04);
   color: #0f172a;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+  box-shadow:
+    0 0 0 4px #ffffff,
+    inset 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
 .hero-avatar-dark {
   background: rgba(255, 255, 255, 0.04);
   color: #f8fafc;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 0 0 4px #0c0c0c,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.10);
 }
 
 .hero-avatar-img {
@@ -1042,26 +1342,31 @@ body.body--dark .hero-avatar-edit-badge {
   border-color: rgba(0, 0, 0, 0.4);
 }
 
-/* ---------- Name + subline ----------
-   Whole block is one tap target so a near-miss still opens the
-   editor. Padding mirrors the avatar gap so the row reads as the
-   same surface visually. */
+/* ---------- Name + handle (right of avatar) ----------
+   The whole block is one tap target so a miss-tap still opens the
+   editor. Sits in the identity row to the right of the avatar; the
+   `padding-top` pushes the name baseline down so it sits roughly
+   level with the avatar's vertical centre (the avatar is offset up
+   by 32px into the banner; we offset the text down to compensate). */
 .hero-meta-btn {
   background: transparent;
   border: 0;
-  padding: 4px 12px;
-  margin: -4px 0 0;
+  padding: 36px 0 0;
+  margin: 0;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
 
 .hero-meta-btn:focus-visible {
   outline: 2px solid #15DE72;
-  outline-offset: 2px;
+  outline-offset: 4px;
   border-radius: 10px;
 }
 
@@ -1069,21 +1374,166 @@ body.body--dark .hero-avatar-edit-badge {
   font-family: 'Manrope', sans-serif;
   font-size: 22px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   line-height: 1.2;
-  max-width: 320px;
-  /* Wrap on small screens rather than truncating to ellipsis — long
-     names are part of the user's identity, not noise. */
+  width: 100%;
+  /* Long names wrap; this is the user's identity, not noise. */
   word-break: break-word;
+  text-align: left;
 }
 
+.hero-handle {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* Legacy subline class kept for the empty-state subline copy that
+   still falls through `heroSubline`. Same metrics as `.hero-handle`. */
 .hero-subline {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 13.5px;
+  font-weight: 500;
   line-height: 1.4;
-  max-width: 320px;
+  width: 100%;
   word-break: break-word;
+  text-align: left;
 }
+
+/* ---------- NIP-05 handle chip ----------
+   Calm, tappable pill under the name. The check reads as "verified
+   handle"; the trailing copy glyph hints it's tappable. */
+/* ---------- Hero addresses card ----------
+   One unified surface that holds the user's shareable addresses (NIP-05
+   above, Lightning below). Replaces the previous standalone chip + the
+   grey plain-text lud16 subline: same number of elements as before, but
+   they read as a single "share me" zone instead of three disparate ones.
+
+   Each row is its own button so the chrome stays keyboard- and screen-
+   reader-accessible. Concept icons (rosette-check + lightning bolt)
+   carry the type distinction without us needing labels. */
+.hero-addresses {
+  /* Full width inside the body padding now that the hero composition
+     is asymmetric — the addresses card spans the entire body width
+     for a confident "this is what people see" surface. */
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.hero-addresses-light { background: rgba(15, 23, 42, 0.04); }
+.hero-addresses-dark  { background: rgba(255, 255, 255, 0.04); }
+
+/* Wrapper that pairs the row (long, copy-on-tap) with the trailing QR
+   button. Two distinct buttons rather than one combined: the row body
+   stays its own copy target, the QR icon has its own click without
+   stealing from the row. */
+.hero-address-row-wrap {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+/* Hairline divider between consecutive rows. Painted as an inset
+   shadow so it never adds layout height and disappears cleanly when
+   only one row is rendered. */
+.hero-addresses-light .hero-address-row-wrap + .hero-address-row-wrap {
+  box-shadow: inset 0 1px 0 0 rgba(15, 23, 42, 0.06);
+}
+.hero-addresses-dark .hero-address-row-wrap + .hero-address-row-wrap {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+.hero-address-qr-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  margin-right: 8px;
+  border-radius: 10px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, transform 0.08s ease;
+}
+
+.hero-address-qr-btn-light { color: #334155; }
+.hero-address-qr-btn-dark  { color: #cbd5e1; }
+
+.hero-address-qr-btn-light:hover { background: rgba(15, 23, 42, 0.05); }
+.hero-address-qr-btn-dark:hover  { background: rgba(255, 255, 255, 0.05); }
+
+.hero-address-qr-btn:active { transform: scale(0.96); }
+
+.hero-address-row {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, transform 0.08s ease;
+}
+
+.hero-addresses-light .hero-address-row { color: #334155; }
+.hero-addresses-dark  .hero-address-row { color: #cbd5e1; }
+
+.hero-addresses-light .hero-address-row:hover { background: rgba(15, 23, 42, 0.03); }
+.hero-addresses-dark  .hero-address-row:hover { background: rgba(255, 255, 255, 0.03); }
+
+.hero-address-row:active { transform: scale(0.998); }
+
+/* The body of the row stretches to fill the wrapper; the QR button
+   keeps its own width. Without this the row would shrink to its
+   content and the QR icon would sit oddly to the right of empty
+   space when the address text is short. */
+.hero-address-row-wrap > .hero-address-row { flex: 1 1 auto; min-width: 0; }
+
+.hero-address-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.hero-address-icon--check {
+  color: #15a35b;
+  background: rgba(21, 222, 114, 0.14);
+}
+
+.hero-address-icon--bolt {
+  color: #f7931a;
+  background: rgba(247, 147, 26, 0.14);
+}
+
+.hero-address-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.hero-address-copy { flex-shrink: 0; opacity: 0.55; }
 
 /* ---------- Hero status pills ----------
    Tappable rounded chips. Tone classes are semantic only (is-ok /
@@ -1204,6 +1654,24 @@ button.hero-pill:focus-visible {
 
 .hero-cta-dark:hover {
   background: rgba(255, 255, 255, 0.10);
+}
+
+/* ---------- Hero primary CTA (empty-state finishing step) ----------
+   One bold full-width button, used only when `profile.isEmpty`. Fill,
+   typography and interactions come from the global `dialog_add_btn_*`
+   theme classes so this matches the primary CTA on every other dialog
+   — the user has already seen that affordance pattern elsewhere. We
+   only own layout (size + spacing). */
+.hero-cta-primary {
+  width: 100%;
+  height: 48px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ---------- Section labels (cloned from Settings.vue) ---------- */

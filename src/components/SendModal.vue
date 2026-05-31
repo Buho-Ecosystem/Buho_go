@@ -611,7 +611,10 @@ export default {
       const paymentTypeMap = {
         spark: 'spark_address',
         bitcoin: 'bitcoin_address',
-        lightning: 'lightning_address'
+        lightning: 'lightning_address',
+        // LNURL contacts emit the same payment type the manual/scan LNURL path
+        // uses, so Wallet.onPaymentDetected resolves them via fetchLNURLInfo.
+        lnurl: 'lnurl'
       };
       const paymentType = paymentTypeMap[addressType] || 'lightning_address';
 

@@ -4,7 +4,7 @@
       class="scan-lede"
       :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
     >
-      {{ $t('Point your camera at a Nostr profile QR code.') }}
+      {{ $t('Point your camera at a Nostr profile, or a Lightning, Spark, or Bitcoin address.') }}
     </p>
 
     <!-- Camera frame. The <video> element is mounted via v-if (not
@@ -106,6 +106,7 @@ import { createQrScanner } from '../../utils/qrScanner';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { mapActions } from 'pinia';
 import { classifyIdentifier, lookupIdentifier } from '../../utils/nostrLookup.js';
+import { normalizePaymentAddress } from '../../utils/addressUtils.js';
 import { fetchProfile, parseProfileContent } from '../../utils/nostrFetch.js';
 import { copyToClipboard } from 'quasar';
 import NostrContactPreview from './NostrContactPreview.vue';
@@ -125,7 +126,7 @@ export default {
     active: { type: Boolean, default: false },
   },
 
-  emits: ['saved', 'open-existing', 'switch-to-search'],
+  emits: ['saved', 'open-existing', 'switch-to-search', 'detected-address'],
 
   data() {
     return {
@@ -259,25 +260,50 @@ export default {
     },
 
     /**
-     * Pre-filter QR payloads before paying for a relay round-trip.
-     * Reject anything that doesn't classify as a Nostr identifier —
-     * Lightning invoices, Bitcoin addresses, plain URLs all belong
-     * elsewhere and would only produce a confusing "no profile
-     * found" failure for the user.
+     * Route a scanned QR payload to the right add-contact flow.
+     *
+     * 1. Nostr identifier (npub / nprofile / hex) → resolve the
+     *    profile in place and offer the preview-card save.
+     * 2. Lightning address / Spark / Bitcoin / LNURL (after unwrapping
+     *    BIP21 `bitcoin:` and `lightning:` QR URIs) → hand the bare value
+     *    up to the parent, which flips to the manual "Enter" form with the
+     *    address pre-filled so the user just adds a name + note.
+     * 3. Anything else (BOLT11 invoice, plain URL, a bare NIP-05 that
+     *    isn't a Lightning address) → keep scanning; it isn't a contact
+     *    destination we can save.
+     *
+     * Ordering matters: `classifyIdentifier` reports `user@domain`
+     * as `nip05`, which we deliberately skip in step 1 so step 2's
+     * Lightning-address check can claim it instead.
      */
     onDetect(text) {
       if (this.detected || !text) return;
-      const kind = classifyIdentifier(text);
-      if (!kind || kind === 'nip05') {
-        // NIP-05 in a QR is theoretically possible but vanishingly
-        // rare — and rejecting them here means we can keep the
-        // status copy unambiguous ("scan a Nostr profile").
+      // Honor and strip the NIP-21 `nostr:` scheme up front so a
+      // `nostr:npub…` / `nostr:nprofile…` QR is treated exactly like the
+      // bare identifier. (`lightning:` / `bitcoin:` are unwrapped further
+      // down via normalizePaymentAddress.) The resolver also strips it, so
+      // this is belt-and-suspenders — it just removes the prefix as a
+      // variable across every downstream branch.
+      const trimmed = text.trim().replace(/^nostr:/i, '');
+
+      const kind = classifyIdentifier(trimmed);
+      if (kind && kind !== 'nip05') {
+        this.detected = true;
+        this.stopScanner();
+        this.showCamera = false;
+        this.resolveAndFetch(trimmed);
         return;
       }
-      this.detected = true;
-      this.stopScanner();
-      this.showCamera = false;
-      this.resolveAndFetch(text);
+
+      const candidate = normalizePaymentAddress(trimmed);
+      const paymentType = useAddressBookStore().detectAddressType(candidate);
+      if (paymentType) {
+        this.detected = true;
+        this.stopScanner();
+        this.showCamera = false;
+        this.$emit('detected-address', candidate);
+        return;
+      }
     },
 
     async resolveAndFetch(text) {

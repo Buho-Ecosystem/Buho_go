@@ -2469,21 +2469,6 @@ export default {
         });
       }
 
-      // 3. App lock disabled while biometrics are available. We don't
-      //    nag users on devices that can't do it (biometricsAvailable
-      //    is false) — surfacing an unfulfillable warning is worse
-      //    than no warning.
-      if (this.biometricsAvailable && !this.biometricsEnabled) {
-        warnings.push({
-          id: 'app-lock-off',
-          variant: 'info',
-          icon: 'tabler:lock-open',
-          title: this.$t('App lock is off'),
-          description: this.$t('Turn it on so only you can open BuhoGO.'),
-          ctaLabel: this.$t('Enable'),
-        });
-      }
-
       // Drop anything the user has swiped / X-ed away.
       return warnings.filter((w) => !this.dismissedWarnings.includes(w.id));
     },
@@ -3295,9 +3280,6 @@ export default {
           return;
         case 'identity-backup':
           this.openIdentitySeedDialog('backup');
-          return;
-        case 'app-lock-off':
-          this.toggleBiometrics(true);
           return;
       }
     },

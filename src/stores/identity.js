@@ -46,6 +46,7 @@
 
 import { defineStore } from 'pinia';
 import { encryptString, decryptString } from '../utils/deviceCrypto.js';
+import { nip05AddressFor } from '../services/nip05.js';
 import {
   generateIdentityMnemonic,
   isValidIdentityMnemonic,
@@ -76,6 +77,64 @@ const MAX_CONNECTED_SITES = 200;
  */
 const NOSTR_MAX_ACCOUNT = 2 ** 31;
 
+/**
+ * Defensive parser for the persisted `nip05Handles` array. Returns a fresh
+ * normalised array on success, or `null` if the input is missing/malformed
+ * so the caller can fall through to the legacy-shape migration.
+ *
+ * - Drops entries with a missing or non-string `handle`.
+ * - Coerces `isFree` / `isActive` to booleans.
+ * - At most one entry stays `isActive: true` (first-wins) so a hand-edited
+ *   localStorage blob can't put us in a "two actives" invalid state.
+ */
+function sanitiseNip05Handles(raw) {
+  if (!Array.isArray(raw)) return null;
+  let sawActive = false;
+  const cleaned = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry.handle !== 'string' || !entry.handle) continue;
+    const isActive = !sawActive && !!entry.isActive;
+    if (isActive) sawActive = true;
+    cleaned.push({
+      handle: entry.handle,
+      rotationSecret:
+        typeof entry.rotationSecret === 'string' ? entry.rotationSecret : null,
+      isFree: !!entry.isFree,
+      isActive,
+      addressId: typeof entry.addressId === 'string' ? entry.addressId : null,
+      createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : 0,
+      // Renewal feature disabled — extension doesn't enforce expiry.
+      // expiresAt: Number.isFinite(entry.expiresAt) ? entry.expiresAt : null,
+    });
+  }
+  // If nothing was marked active but the user does have handles, promote
+  // the first one. Keeps the "must always have an active" invariant alive.
+  if (cleaned.length > 0 && !sawActive) cleaned[0].isActive = true;
+  return cleaned;
+}
+
+/**
+ * One-time migration from the old single-handle persisted shape
+ * (`nip05Handle` + `nip05RotationSecret`) into the new array shape. Returns
+ * an empty array when the legacy fields are also absent — i.e. a never-
+ * registered identity.
+ */
+function legacyToHandleArray(parsed) {
+  const legacyHandle = typeof parsed?.nip05Handle === 'string' ? parsed.nip05Handle : null;
+  if (!legacyHandle) return [];
+  return [{
+    handle: legacyHandle,
+    rotationSecret:
+      typeof parsed.nip05RotationSecret === 'string' ? parsed.nip05RotationSecret : null,
+    isFree: true,
+    isActive: true,
+    addressId: null,
+    createdAt: 0,
+    // Renewal feature disabled — extension doesn't enforce expiry.
+    // expiresAt: null,
+  }];
+}
+
 export const useIdentityStore = defineStore('identity', {
   state: () => ({
     /** True once we've loaded any persisted state from disk. */
@@ -102,6 +161,29 @@ export const useIdentityStore = defineStore('identity', {
     /** Cached NIP-19 `npub1...` for the current account, or null. */
     nostrNpub: null,
     /**
+     * BuhoGO-managed NIP-05 handles for the current Nostr key, registered
+     * under `mybuho.de`. The first one is auto-registered as a free
+     * `.NNNNNN` identifier by `boot/nip05.js`; the user can later buy
+     * additional premium names from the profile editor's marketplace.
+     *
+     * Shape:
+     *   { handle, rotationSecret, isFree, isActive, addressId, createdAt }
+     *
+     * Invariants:
+     *   - At most one entry has `isActive: true`. That entry is the one
+     *     surfaced in the hero chip and published in the kind:0 `nip05`
+     *     field. All non-active entries still verify via the well-known
+     *     endpoint — they just aren't the "primary."
+     *   - Handles are unique by `handle` (local part).
+     *   - `rotationSecret` is the keyless management token the extension
+     *     returns and lets us manage/rotate the entry without an LNbits
+     *     account.
+     *
+     * Cleared on `rotateNostrIdentity` because every handle is bound to
+     * the previous pubkey.
+     */
+    nip05Handles: [],
+    /**
      * Epoch-ms the Profile intro carousel was first dismissed, or null
      * if the user has never opened ProfilePage. Used to show the intro
      * exactly once. Reset to null by `reset()` so a fresh identity sees
@@ -121,6 +203,17 @@ export const useIdentityStore = defineStore('identity', {
       return [...state.connectedSites].sort(
         (a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0),
       );
+    },
+
+    /** The currently-active NIP-05 entry, or null. */
+    nip05ActiveEntry(state) {
+      return state.nip05Handles.find((h) => h.isActive) || null;
+    },
+
+    /** Full `name@mybuho.de` of the active handle, or null. */
+    nip05Address(state) {
+      const active = state.nip05Handles.find((h) => h.isActive);
+      return active ? nip05AddressFor(active.handle) : null;
     },
 
     /** True iff the backup banner should be shown right now. */
@@ -172,6 +265,14 @@ export const useIdentityStore = defineStore('identity', {
                 : 0;
             this.nostrPubkeyHex = parsed.nostrPubkeyHex ?? null;
             this.nostrNpub = parsed.nostrNpub ?? null;
+            // NIP-05 handles. New shape is an array; older blobs (before
+            // the marketplace landed) persisted a single `nip05Handle` +
+            // `nip05RotationSecret`. Migrate transparently — the single
+            // handle becomes the only entry, marked free + active, so the
+            // boot orchestrator's idempotent path treats the user as
+            // "already registered" rather than racing to re-register.
+            this.nip05Handles = sanitiseNip05Handles(parsed.nip05Handles)
+              ?? legacyToHandleArray(parsed);
             this.profileIntroSeenAt = parsed.profileIntroSeenAt ?? null;
           }
         }
@@ -199,6 +300,7 @@ export const useIdentityStore = defineStore('identity', {
         nostrAccountIndex: this.nostrAccountIndex,
         nostrPubkeyHex: this.nostrPubkeyHex,
         nostrNpub: this.nostrNpub,
+        nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
         profileIntroSeenAt: this.profileIntroSeenAt,
       };
       localStorage.setItem(STORAGE_KEYS.METADATA, JSON.stringify(payload));
@@ -360,7 +462,89 @@ export const useIdentityStore = defineStore('identity', {
       this.nostrAccountIndex = 0;
       this.nostrPubkeyHex = null;
       this.nostrNpub = null;
+      this.nip05Handles = [];
       this.profileIntroSeenAt = null;
+    },
+
+    /**
+     * Append a newly-registered NIP-05 handle. The first handle added is
+     * marked active automatically; subsequent ones default to inactive so
+     * a background re-registration never reshuffles the user's published
+     * identity. The caller can promote later via `setActiveNip05`.
+     *
+     * Duplicate handles (same local part) are no-ops — the registration
+     * path retries with a fresh suffix on collision, so getting here with
+     * a duplicate means the boot orchestrator already added it.
+     *
+     * @param {{
+     *   handle: string,
+     *   rotationSecret?: string|null,
+     *   isFree?: boolean,
+     *   addressId?: string|null,
+     * }} info
+     */
+    addNip05Handle({ handle, rotationSecret = null, isFree = true, addressId = null /* , expiresAt = null */ }) {
+      if (!handle) return;
+      if (this.nip05Handles.some((h) => h.handle === handle)) return;
+      const isFirst = this.nip05Handles.length === 0;
+      this.nip05Handles.push({
+        handle,
+        rotationSecret,
+        isFree: !!isFree,
+        isActive: isFirst,
+        addressId: addressId || null,
+        createdAt: Date.now(),
+        // Renewal feature disabled — extension doesn't enforce expiry.
+        // expiresAt: Number.isFinite(expiresAt) ? expiresAt : null,
+      });
+      this._persistMetadata();
+    },
+
+    /**
+     * Make the given handle the active one — the address surfaced on the
+     * profile and published in the next kind:0. Republishing of the kind:0
+     * is NOT triggered here: the profile editor's "Save & Publish" stays
+     * the sole relay-broadcast gate, matching the rest of the publish
+     * contract.
+     *
+     * No-op if the handle isn't in the list or is already active.
+     *
+     * @param {string} handle
+     */
+    setActiveNip05(handle) {
+      if (!handle) return;
+      const target = this.nip05Handles.find((h) => h.handle === handle);
+      if (!target || target.isActive) return;
+      for (const entry of this.nip05Handles) {
+        entry.isActive = entry.handle === handle;
+      }
+      this._persistMetadata();
+    },
+
+    /**
+     * Drop a handle from the list. If the removed handle was active, the
+     * remaining handle with the earliest `createdAt` is promoted so the
+     * user never ends up with a populated list and no active entry.
+     *
+     * Not exposed to the v1 UI — there is no keyless delete-by-rotation
+     * endpoint on the extension, so a "removed" handle would keep
+     * resolving via the well-known. Kept for tests and future server
+     * support.
+     *
+     * @param {string} handle
+     */
+    removeNip05Handle(handle) {
+      if (!handle) return;
+      const before = this.nip05Handles.length;
+      this.nip05Handles = this.nip05Handles.filter((h) => h.handle !== handle);
+      if (this.nip05Handles.length === before) return;
+      if (!this.nip05Handles.some((h) => h.isActive) && this.nip05Handles.length > 0) {
+        const next = [...this.nip05Handles].sort(
+          (a, b) => (a.createdAt || 0) - (b.createdAt || 0),
+        )[0];
+        next.isActive = true;
+      }
+      this._persistMetadata();
     },
 
     /**
@@ -584,16 +768,23 @@ export const useIdentityStore = defineStore('identity', {
           account: this.nostrAccountIndex,
           pubkey: this.nostrPubkeyHex,
           npub: this.nostrNpub,
+          nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
         };
         this.nostrAccountIndex = nextAccount;
         this.nostrPubkeyHex = publicKeyHex;
         this.nostrNpub = npub;
+        // Every handle maps the *previous* pubkey; clear the list so the
+        // boot orchestrator registers a fresh free handle for the new key.
+        // Premium handles bought under the old key stay valid server-side
+        // but are no longer this app's to manage.
+        this.nip05Handles = [];
         try {
           this._persistMetadata();
         } catch (persistErr) {
           this.nostrAccountIndex = prev.account;
           this.nostrPubkeyHex = prev.pubkey;
           this.nostrNpub = prev.npub;
+          this.nip05Handles = prev.nip05Handles;
           throw persistErr;
         }
 

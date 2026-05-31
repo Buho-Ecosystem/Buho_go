@@ -508,5 +508,171 @@ await test('regenerate wipes and creates a fresh identity in one call', async ()
   assert.notEqual(s.nostrNpub, npubBefore);
 });
 
+// ---------------------------------------------------------------------------
+// NIP-05 handles — array shape, migration, add / setActive / remove
+// ---------------------------------------------------------------------------
+
+await test('hydrate: empty store starts with an empty nip05Handles list', async () => {
+  const s = freshEnv();
+  await s.hydrate();
+  assert.ok(Array.isArray(s.nip05Handles));
+  assert.equal(s.nip05Handles.length, 0);
+  assert.equal(s.nip05ActiveEntry, null);
+  assert.equal(s.nip05Address, null);
+});
+
+await test('hydrate: migrates legacy single-handle persisted shape to array', async () => {
+  // Simulate an old localStorage blob from a user who registered before
+  // the marketplace landed. Hand-roll the persisted shape so we test the
+  // migration path, not the addNip05Handle action.
+  globalThis.localStorage = new MemoryStorage();
+  globalThis.localStorage.setItem('buhoGO_identity_v1', JSON.stringify({
+    version: 1,
+    backupConfirmed: true,
+    fingerprint: null,
+    connectedSites: [],
+    nostrAccountIndex: 0,
+    nostrPubkeyHex: 'aa'.repeat(32),
+    nostrNpub: 'npub1legacy',
+    nip05Handle: 'satoshi.482913',
+    nip05RotationSecret: 'rot-secret-abc',
+    profileIntroSeenAt: null,
+  }));
+  setActivePinia(createPinia());
+  const s = useIdentityStore();
+  await s.hydrate();
+  assert.equal(s.nip05Handles.length, 1);
+  assert.equal(s.nip05Handles[0].handle, 'satoshi.482913');
+  assert.equal(s.nip05Handles[0].rotationSecret, 'rot-secret-abc');
+  assert.equal(s.nip05Handles[0].isFree, true);
+  assert.equal(s.nip05Handles[0].isActive, true);
+  assert.equal(s.nip05Address, 'satoshi.482913@mybuho.de');
+});
+
+await test('hydrate: malformed array entries are dropped, valid ones kept', async () => {
+  globalThis.localStorage = new MemoryStorage();
+  globalThis.localStorage.setItem('buhoGO_identity_v1', JSON.stringify({
+    version: 1,
+    nip05Handles: [
+      { handle: 'good.123456', isFree: true, isActive: true, createdAt: 5 },
+      { handle: '', isActive: true },           // empty handle → drop
+      { rotationSecret: 'x' },                  // missing handle → drop
+      { handle: 'also-good', isFree: false, isActive: false, createdAt: 9 },
+    ],
+  }));
+  setActivePinia(createPinia());
+  const s = useIdentityStore();
+  await s.hydrate();
+  assert.equal(s.nip05Handles.length, 2);
+  assert.deepEqual(s.nip05Handles.map((h) => h.handle), ['good.123456', 'also-good']);
+});
+
+await test('hydrate: two-actives blob is repaired to first-wins', async () => {
+  globalThis.localStorage = new MemoryStorage();
+  globalThis.localStorage.setItem('buhoGO_identity_v1', JSON.stringify({
+    version: 1,
+    nip05Handles: [
+      { handle: 'first', isActive: true },
+      { handle: 'second', isActive: true },
+    ],
+  }));
+  setActivePinia(createPinia());
+  const s = useIdentityStore();
+  await s.hydrate();
+  assert.equal(s.nip05Handles.filter((h) => h.isActive).length, 1);
+  assert.equal(s.nip05Handles[0].isActive, true);
+  assert.equal(s.nip05Handles[1].isActive, false);
+});
+
+await test('hydrate: no-active blob promotes the first entry', async () => {
+  globalThis.localStorage = new MemoryStorage();
+  globalThis.localStorage.setItem('buhoGO_identity_v1', JSON.stringify({
+    version: 1,
+    nip05Handles: [
+      { handle: 'only', isActive: false },
+    ],
+  }));
+  setActivePinia(createPinia());
+  const s = useIdentityStore();
+  await s.hydrate();
+  assert.equal(s.nip05Handles[0].isActive, true);
+});
+
+await test('addNip05Handle: first handle is auto-active and persists', async () => {
+  const s = freshEnv();
+  await s.hydrate();
+  s.addNip05Handle({ handle: 'alice.482913', rotationSecret: 'r1', isFree: true });
+  assert.equal(s.nip05Handles.length, 1);
+  assert.equal(s.nip05Handles[0].isActive, true);
+  assert.equal(s.nip05Address, 'alice.482913@mybuho.de');
+  // Round-trip through localStorage.
+  setActivePinia(createPinia());
+  const s2 = useIdentityStore();
+  await s2.hydrate();
+  assert.equal(s2.nip05Handles.length, 1);
+  assert.equal(s2.nip05ActiveEntry.handle, 'alice.482913');
+});
+
+await test('addNip05Handle: second handle defaults to inactive', async () => {
+  const s = freshEnv();
+  await s.hydrate();
+  s.addNip05Handle({ handle: 'free.482913', isFree: true });
+  s.addNip05Handle({ handle: 'alice', isFree: false, rotationSecret: 'r2', addressId: 'aid' });
+  assert.equal(s.nip05Handles.length, 2);
+  assert.equal(s.nip05Handles[0].isActive, true);   // still active
+  assert.equal(s.nip05Handles[1].isActive, false);  // premium added inactive
+  assert.equal(s.nip05Handles[1].addressId, 'aid');
+});
+
+await test('addNip05Handle: duplicate handle is a no-op', async () => {
+  const s = freshEnv();
+  await s.hydrate();
+  s.addNip05Handle({ handle: 'dup' });
+  s.addNip05Handle({ handle: 'dup', rotationSecret: 'different' });
+  assert.equal(s.nip05Handles.length, 1);
+});
+
+await test('setActiveNip05: swaps the active flag and clears the previous', async () => {
+  const s = freshEnv();
+  await s.hydrate();
+  s.addNip05Handle({ handle: 'free.482913' });
+  s.addNip05Handle({ handle: 'alice', isFree: false });
+  s.setActiveNip05('alice');
+  assert.equal(s.nip05Handles.find((h) => h.handle === 'free.482913').isActive, false);
+  assert.equal(s.nip05Handles.find((h) => h.handle === 'alice').isActive, true);
+  assert.equal(s.nip05Address, 'alice@mybuho.de');
+});
+
+await test('setActiveNip05: unknown handle is a no-op', async () => {
+  const s = freshEnv();
+  await s.hydrate();
+  s.addNip05Handle({ handle: 'free.482913' });
+  s.setActiveNip05('does-not-exist');
+  assert.equal(s.nip05ActiveEntry.handle, 'free.482913');
+});
+
+await test('removeNip05Handle: drops and promotes the earliest remaining handle', async () => {
+  const s = freshEnv();
+  await s.hydrate();
+  s.addNip05Handle({ handle: 'free.482913' });          // createdAt now
+  await new Promise((r) => setTimeout(r, 2));
+  s.addNip05Handle({ handle: 'alice' });                 // createdAt slightly later
+  s.setActiveNip05('alice');
+  s.removeNip05Handle('alice');                          // removes the active one
+  assert.equal(s.nip05Handles.length, 1);
+  assert.equal(s.nip05Handles[0].handle, 'free.482913');
+  assert.equal(s.nip05Handles[0].isActive, true);        // auto-promoted
+});
+
+await test('rotateNostrIdentity clears every handle (new key, fresh registration)', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  s.addNip05Handle({ handle: 'old.482913', rotationSecret: 'r', isFree: true });
+  assert.equal(s.nip05Handles.length, 1);
+  await s.rotateNostrIdentity();
+  assert.equal(s.nip05Handles.length, 0);
+  assert.equal(s.nip05Address, null);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

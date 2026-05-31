@@ -29,6 +29,10 @@ export default defineConfig((ctx) => {
       // forceSecure override guard. Safe to load everywhere — the
       // util layer no-ops on web.
       'secure-screen',
+      // 'nip05' silently registers/maintains the user's name@mybuho.de
+      // handle once an identity exists. Safe everywhere (a plain fetch);
+      // idempotent and best-effort.
+      'nip05',
       ctx.mode.capacitor ? 'deep-links' : '',
       ctx.mode.capacitor ? 'nfc' : '',
       ctx.dev ? 'audit' : ''
