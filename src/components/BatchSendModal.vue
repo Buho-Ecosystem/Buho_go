@@ -615,7 +615,8 @@ import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
-import LightningPaymentService from '../utils/lightning.js'
+import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
+import { bech32 } from 'bech32'
 import { getUserFriendlyError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
 import ContactAvatar from './AddressBook/ContactAvatar.vue'
 import SuccessCheckmark from './SuccessCheckmark.vue'
@@ -802,8 +803,8 @@ const estimatedFees = computed(() => {
     const contactAmount = getContactAmount(contact)
     if (type === 'spark') {
       fees += 0 // Zero fee
-    } else if (type === 'lightning') {
-      fees += Math.ceil(contactAmount * 0.01) // ~1%
+    } else if (type === 'lightning' || type === 'lnurl') {
+      fees += Math.ceil(contactAmount * 0.01) // ~1% (LNURL pays over Lightning)
     } else if (type === 'bitcoin') {
       fees += 500 // Rough estimate for on-chain
     }
@@ -1133,6 +1134,74 @@ async function fetchLightningAddressInvoice(address, amountSats) {
   return invoiceData.pr
 }
 
+// Resolve an LNURL-pay link (bech32 LNURL1… or LUD-17 lnurlp://…) to a payable
+// BOLT11 invoice. Same callback flow as fetchLightningAddressInvoice, differing
+// in two ways:
+//   1. a Lightning address derives its endpoint from user@domain, whereas an
+//      LNURL must be decoded to its endpoint URL first;
+//   2. fixed-amount links (minSendable === maxSendable) are honored — the
+//      server dictates the amount, so `requestedSats` is overridden by the
+//      fixed amount rather than rejected.
+// Returns { pr, amountSats } so the caller can record the amount actually sent.
+async function fetchLnurlInvoice(lnurl, requestedSats) {
+  const clean = (lnurl || '').trim().replace(/^lightning:/i, '')
+
+  // LUD-17 scheme (lnurlp://…) maps straight to https; otherwise bech32-decode.
+  let endpoint = resolveLUD17URL(clean)
+  if (!endpoint) {
+    try {
+      const decoded = bech32.decode(clean.toLowerCase(), 2000)
+      const bytes = bech32.fromWords(decoded.words)
+      endpoint = new TextDecoder().decode(new Uint8Array(bytes))
+    } catch (error) {
+      throw new Error(`Failed to decode LNURL: ${error.message}`)
+    }
+  }
+
+  const response = await fetch(endpoint)
+  if (!response.ok) {
+    throw new Error('Failed to fetch LNURL info')
+  }
+
+  const data = await response.json()
+  if (data.status === 'ERROR') {
+    throw new Error(data.reason || 'LNURL error')
+  }
+  if (data.tag !== 'payRequest') {
+    throw new Error('Not an LNURL-pay link')
+  }
+
+  // Honor fixed-amount links: when min === max the server fixes the amount, so
+  // we send exactly that and ignore the batch amount the user entered.
+  const isFixedAmount = data.minSendable === data.maxSendable
+  const amountSats = isFixedAmount
+    ? Math.floor(data.minSendable / 1000)
+    : requestedSats
+
+  const amountMs = amountSats * 1000
+  if (data.minSendable && amountMs < data.minSendable) {
+    throw new Error(`Minimum: ${Math.ceil(data.minSendable / 1000)} sats`)
+  }
+  if (data.maxSendable && amountMs > data.maxSendable) {
+    throw new Error(`Maximum: ${Math.floor(data.maxSendable / 1000)} sats`)
+  }
+
+  // Request invoice - use & if callback already has query params
+  const separator = data.callback.includes('?') ? '&' : '?'
+  const callbackUrl = `${data.callback}${separator}amount=${amountMs}`
+  const invoiceResponse = await fetch(callbackUrl)
+  if (!invoiceResponse.ok) {
+    throw new Error('Failed to get invoice')
+  }
+
+  const invoiceData = await invoiceResponse.json()
+  if (invoiceData.status === 'ERROR') {
+    throw new Error(invoiceData.reason || 'Invoice error')
+  }
+
+  return { pr: invoiceData.pr, amountSats }
+}
+
 function getActiveWallet() {
   return walletStore.connectedWallets?.find(
     w => w.id === walletStore.activeWalletId
@@ -1280,6 +1349,31 @@ async function startBatch() {
           await provider.sendOnChain(address, result.amount)
           result.status = 'success'
         }
+      }
+      // Handle LNURL static pay link. Resolve it to a BOLT11 invoice first —
+      // this honors fixed-amount links (overriding the batch amount) and the
+      // resulting invoice has the amount baked in, so every wallet type can
+      // settle it the same way: pay the invoice.
+      else if (addressType === 'lnurl') {
+        const { pr: invoice, amountSats } = await fetchLnurlInvoice(address, result.amount)
+        // Record the amount actually sent — a fixed-amount link overrides the
+        // batch amount, so the summary must reflect what really went out.
+        result.amount = amountSats
+
+        if (walletType === WALLET_TYPES.NWC) {
+          const nwcString = getActiveWalletNwcString()
+          if (!nwcString) {
+            throw new Error('NWC connection not found')
+          }
+          const lightningService = new LightningPaymentService(nwcString)
+          await lightningService.payInvoice(invoice)
+        } else if (walletType === WALLET_TYPES.LNBITS) {
+          const lnbitsProvider = await walletStore.ensureLNBitsConnected()
+          await lnbitsProvider.payInvoice({ invoice })
+        } else {
+          await provider.payInvoice({ invoice })
+        }
+        result.status = 'success'
       } else {
         result.status = 'skipped'
         result.error = t('Unknown type')

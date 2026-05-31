@@ -4,6 +4,7 @@ import {
   isSparkAddress,
   isBitcoinAddress,
   isLightningAddress,
+  isLnurl,
 } from '../utils/addressUtils.js'
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js'
 import {
@@ -19,7 +20,11 @@ import {
 export const ADDRESS_TYPES = {
   LIGHTNING: 'lightning',
   SPARK: 'spark',
-  BITCOIN: 'bitcoin'
+  BITCOIN: 'bitcoin',
+  // LNURL static pay links (bech32 LNURL1… or LUD-17 lnurlp://…). Stored as
+  // its own type for correct send routing, but presented as Lightning in the
+  // UI since it ultimately pays over Lightning.
+  LNURL: 'lnurl'
 }
 
 // Contact source — undefined on legacy entries; treat any
@@ -350,7 +355,8 @@ export const useAddressBookStore = defineStore('addressBook', {
           const errorMessages = {
             spark: 'Invalid Spark address format',
             bitcoin: 'Invalid Bitcoin address format',
-            lightning: 'Invalid Lightning address format'
+            lightning: 'Invalid Lightning address format',
+            lnurl: 'Invalid LNURL format'
           }
           throw new Error(errorMessages[addressType] || 'Invalid address format')
         }
@@ -418,7 +424,8 @@ export const useAddressBookStore = defineStore('addressBook', {
             const errorMessages = {
               spark: 'Invalid Spark address format',
               bitcoin: 'Invalid Bitcoin address format',
-              lightning: 'Invalid Lightning address format'
+              lightning: 'Invalid Lightning address format',
+              lnurl: 'Invalid LNURL format'
             }
             throw new Error(errorMessages[addressType] || 'Invalid address format')
           }
@@ -1185,6 +1192,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (type === 'bitcoin') {
         return this.isValidBitcoinAddress(address)
       }
+      if (type === 'lnurl') {
+        return isLnurl(address)
+      }
       return this.isValidLightningAddress(address)
     },
 
@@ -1208,6 +1218,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (!address) return null
       if (isSparkAddress(address)) return 'spark'
       if (isBitcoinAddress(address)) return 'bitcoin'
+      // LNURL before the lightning-address check: an LNURL has no `@`, so the
+      // two never collide, but keeping it explicit guards future edits.
+      if (isLnurl(address)) return 'lnurl'
       if (isLightningAddress(address)) return 'lightning'
       return null
     },

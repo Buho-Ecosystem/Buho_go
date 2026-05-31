@@ -187,7 +187,7 @@
                           <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                         </svg>
                         <Icon v-else :icon="getTypeIcon(contact.addressType)" width="10" height="10" />
-                        <span>{{ contact.addressType || 'lightning' }}</span>
+                        <span>{{ getTypeLabel(contact.addressType) }}</span>
                       </span>
                       <span class="row-address">{{ truncateAddress(contact.address || contact.lightningAddress) }}</span>
                     </div>
@@ -316,6 +316,13 @@ function getTypeIcon(type) {
     bitcoin: 'tabler:currency-bitcoin'
   };
   return icons[type] || icons.lightning;
+}
+
+// LNURL folds into the Lightning badge: it pays over Lightning, so we don't
+// surface a separate "lnurl" label. Everything else shows its own type.
+function getTypeLabel(type) {
+  if (type === 'lnurl') return 'lightning';
+  return type || 'lightning';
 }
 
 function isSparkType(type) {

@@ -36,9 +36,11 @@ export default boot(async () => {
       if (!identity.bootstrapped) return; // no identity yet — nothing to bind
       await profile.hydrate();
 
-      // Already registered: just make sure the profile field reflects it
-      // (covers users who registered before the profile field existed).
-      if (identity.nip05Handle) {
+      // Already registered (at least one handle on file): just make sure
+      // the profile field reflects the active one. Covers existing users
+      // who registered before the marketplace landed, and the everyday
+      // "user already has handles" case.
+      if (identity.nip05Handles.length > 0) {
         profile.adoptNip05(identity.nip05Address);
         return;
       }
@@ -63,7 +65,14 @@ export default boot(async () => {
         return;
       }
 
-      identity.setNip05({ handle: result.handle, rotationSecret: result.rotationSecret });
+      identity.addNip05Handle({
+        handle: result.handle,
+        rotationSecret: result.rotationSecret,
+        addressId: result.addressId,
+        isFree: true,
+        // Renewal feature disabled — extension doesn't enforce expiry.
+        // expiresAt: result.expiresAt,
+      });
       profile.adoptNip05(identity.nip05Address);
     } finally {
       inFlight = false;

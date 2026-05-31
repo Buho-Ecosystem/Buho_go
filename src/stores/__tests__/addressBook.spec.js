@@ -1316,5 +1316,36 @@ await test('recoverFromNostr: publishes the merged union and clears syncDirty (F
   assert.ok(Number.isFinite(store.lastSyncedAt));
 });
 
+// ---------------------------------------------------------------------------
+// LNURL contact type
+// ---------------------------------------------------------------------------
+
+const LNURL_BECH32 = 'LNURL1DP68GURN8GHJ7A339EKXUCNFW3EJUER99AKXUATJD3CZ7V6JTP5924GV0MDHZ';
+const LNURL_LUD17 = 'lnurlp://v1.lnbits.de/lnurlp/3RXhUU';
+
+await test('detectAddressType: recognizes bech32 LNURL and LUD-17 scheme', () => {
+  const store = freshStore();
+  assert.equal(store.detectAddressType(LNURL_BECH32), 'lnurl');
+  assert.equal(store.detectAddressType(LNURL_LUD17), 'lnurl');
+});
+
+await test('isValidAddress: validates the lnurl type', () => {
+  const store = freshStore();
+  assert.equal(store.isValidAddress(LNURL_BECH32, 'lnurl'), true);
+  assert.equal(store.isValidAddress('not-an-lnurl', 'lnurl'), false);
+});
+
+await test('addEntry: stores an LNURL contact that is payable', async () => {
+  const store = freshStore();
+  const entry = await store.addEntry({
+    name: 'LNbits link',
+    address: LNURL_LUD17,
+    addressType: 'lnurl',
+  });
+  assert.equal(entry.addressType, 'lnurl');
+  assert.equal(store.getEntryAddressType(entry), 'lnurl');
+  assert.equal(store.isEntryPayable(entry), true);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -158,6 +158,55 @@ export const isValidSparkAddress = isSparkAddress;
 export const isValidBitcoinAddress = isBitcoinAddress;
 
 // ----------------------------------------------------------------------------
+// URI unwrapping
+// ----------------------------------------------------------------------------
+
+/**
+ * Unwrap the URI conventions wallets emit in QR codes (and the occasional
+ * deep link) down to the bare payment identifier, so the predicates above can
+ * classify it. Real-world QR scans rarely carry a naked address:
+ *
+ *   - BIP21        — `bitcoin:<address>?amount=…&label=…&lightning=…`
+ *                    Returns just `<address>` (the on-chain destination).
+ *                    A unified `bitcoin:?lightning=…` QR has no on-chain
+ *                    address, so this returns '' and the caller falls through
+ *                    to "not a saveable address".
+ *   - `lightning:` — LUD-17 / BOLT11 deep-link scheme. Stripped so the LNURL /
+ *                    invoice / Lightning-address predicates see the payload.
+ *
+ * Anything without a recognized scheme (a bare address, an `npub`, a
+ * `nostr:` URI) is returned trimmed and otherwise untouched — this function
+ * never tries to validate, only to unwrap.
+ *
+ * @param {unknown} raw
+ * @returns {string} the unwrapped identifier, or '' for non-strings / empties
+ */
+export function normalizePaymentAddress(raw) {
+  if (typeof raw !== 'string') return '';
+  const value = raw.trim();
+  if (!value) return '';
+
+  // BIP21: the on-chain address is everything between `bitcoin:` and the
+  // query string. Case-insensitive scheme; the address itself is left as-is
+  // (bech32 is case-insensitive, base58 is case-sensitive — don't touch it).
+  const bip21 = /^bitcoin:([^?]*)/i.exec(value);
+  if (bip21) {
+    let address = bip21[1].trim();
+    try {
+      address = decodeURIComponent(address);
+    } catch {
+      /* malformed %-escapes — keep the raw slice */
+    }
+    return address.trim();
+  }
+
+  // `lightning:` wraps a BOLT11 invoice or an LNURL. The invoice/LNURL
+  // predicates already tolerate the prefix, but stripping it here keeps the
+  // returned value canonical for any downstream consumer.
+  return value.replace(/^lightning:/i, '').trim();
+}
+
+// ----------------------------------------------------------------------------
 // Display helpers
 // ----------------------------------------------------------------------------
 
