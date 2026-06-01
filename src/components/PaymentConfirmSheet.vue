@@ -69,27 +69,10 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <button
-                v-if="recipientAddress"
-                type="button"
-                class="recipient-via"
-                @click="showAddress = !showAddress"
-              >
-                <span>{{ viaLabel }}</span>
-                <Icon
-                  icon="tabler:chevron-down"
-                  width="12"
-                  height="12"
-                  class="recipient-via-chev"
-                  :class="{ flipped: showAddress }"
-                />
-              </button>
-              <div v-else class="recipient-via static">{{ viaLabel }}</div>
-              <transition name="fade-collapse">
-                <div v-if="showAddress && recipientAddress" class="recipient-address">
-                  {{ recipientAddress }}
-                </div>
-              </transition>
+              <BrantaVerifiedBadge
+                v-if="recipientVerification"
+                :verify-url="recipientVerification.verifyUrl"
+              />
             </div>
           </section>
 
@@ -107,10 +90,35 @@
             <span>{{ $t('Exchange rates may be outdated') }}</span>
           </div>
 
-          <!-- Description from invoice / LNURL metadata -->
-          <div v-if="payment?.description" class="description-row">
-            <Icon icon="tabler:file-description" width="14" height="14" class="description-icon" />
-            <span>{{ payment.description }}</span>
+          <!-- Payment indicator. Shows the payment description (or a
+               payment-type fallback) and, when there is a destination,
+               doubles as the tap-to-reveal raw-address control for manual
+               verification. This replaces the old "via X" line that used
+               to sit in the recipient hero and duplicated this row. Applies
+               to every payment, Branta-verified or not. -->
+          <div v-if="payment?.description || recipientAddress" class="payment-indicator">
+            <button
+              type="button"
+              class="payment-indicator-row"
+              :class="{ 'payment-indicator-row--static': !recipientAddress }"
+              @click="showAddress = !showAddress"
+            >
+              <Icon icon="tabler:file-description" width="14" height="14" class="payment-indicator-icon" />
+              <span class="payment-indicator-label">{{ paymentLabel }}</span>
+              <Icon
+                v-if="recipientAddress"
+                icon="tabler:chevron-down"
+                width="14"
+                height="14"
+                class="payment-indicator-chev"
+                :class="{ flipped: showAddress }"
+              />
+            </button>
+            <transition name="fade-collapse">
+              <div v-if="showAddress && recipientAddress" class="payment-indicator-address">
+                {{ recipientAddress }}
+              </div>
+            </transition>
           </div>
 
           <!-- Amount stage — locked, range, or free depending on mode. -->
@@ -224,6 +232,11 @@
             <div class="recipient-meta">
               <div class="confirm-eyebrow">{{ confirmEyebrow }}</div>
               <div class="recipient-name">{{ recipientName }}</div>
+              <BrantaVerifiedBadge
+                v-if="recipientVerification"
+                :verify-url="recipientVerification.verifyUrl"
+                compact
+              />
             </div>
           </section>
 
@@ -294,6 +307,7 @@ import { mapState } from 'pinia'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount } from '../utils/amountFormatting.js'
 import SlideToSend from './SlideToSend.vue'
+import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 
 const SLIDE_THRESHOLD_SATS = 20000
 
@@ -303,7 +317,7 @@ const FIAT_SYMBOLS = {
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend },
+  components: { SlideToSend, BrantaVerifiedBadge },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -389,6 +403,28 @@ export default {
         invoice: this.$t('via Lightning')
       }
       return labels[this.recipientAddressType] || labels.lightning
+    },
+
+    // Branta merchant verification, present only when the parent's adapter
+    // attached it after a positive lookup. Absent on every unverified
+    // payment, so the badge simply never renders in the common case.
+    recipientVerification() {
+      return this.payment?.recipient?.verification || null
+    },
+
+    // Label for the payment-indicator row: the human description when the
+    // invoice / LNURL carried one, otherwise a payment-type fallback so the
+    // row (and the address-reveal it hosts) is always present.
+    paymentLabel() {
+      if (this.payment?.description) return this.payment.description
+      const labels = {
+        lightning: this.$t('Lightning payment'),
+        invoice: this.$t('Lightning payment'),
+        spark: this.$t('Spark payment'),
+        bitcoin: this.$t('Bitcoin payment'),
+        lnurl: this.$t('LNURL payment'),
+      }
+      return labels[this.recipientAddressType] || this.$t('Payment')
     },
 
     // ───── Amount mode ─────
@@ -885,33 +921,9 @@ export default {
   50% { transform: scale(1.04); }
 }
 
-.recipient-via {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-  padding: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-.recipient-via.static { cursor: default; }
-.recipient-via:hover:not(.static) { color: var(--text-primary); }
-.recipient-via-chev { transition: transform 0.18s ease; opacity: 0.7; }
-.recipient-via-chev.flipped { transform: rotate(180deg); }
-
-.recipient-address {
-  margin-top: 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  word-break: break-all;
-  line-height: 1.45;
-}
+/* The recipient hero is identity-only now (logo, name, verified badge).
+   The "via X" line and inline address reveal moved to the payment
+   indicator below the hero. */
 .fade-collapse-enter-active, .fade-collapse-leave-active {
   transition: opacity 0.16s ease, max-height 0.2s ease;
   overflow: hidden;
@@ -948,19 +960,59 @@ export default {
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.28);
 }
 
-/* ─── Description (compose) ─── */
-.description-row {
+/* ─── Payment indicator (compose) ─── */
+/* The payment description / type row. When a destination exists it is a
+   button that folds out the raw address for manual verification, replacing
+   the redundant "via X" line that used to live in the recipient hero. */
+.payment-indicator { display: flex; flex-direction: column; }
+.payment-indicator-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
   padding: 10px 12px;
+  border: none;
   border-radius: var(--radius-md);
   background: var(--bg-input);
+  font-family: inherit;
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease;
 }
-.description-icon { color: var(--text-muted); flex-shrink: 0; margin-top: 2px; }
+.payment-indicator-row--static { cursor: default; }
+.body--light .payment-indicator-row:not(.payment-indicator-row--static):hover { background: rgba(17, 24, 39, 0.06); }
+.body--dark .payment-indicator-row:not(.payment-indicator-row--static):hover { background: rgba(255, 255, 255, 0.05); }
+.payment-indicator-icon { color: var(--text-muted); flex-shrink: 0; }
+.payment-indicator-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  word-break: break-word;
+}
+.payment-indicator-chev {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.18s ease;
+}
+.payment-indicator-chev.flipped { transform: rotate(180deg); }
+.payment-indicator-address {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+  line-height: 1.5;
+}
 
 /* ─── Amount stage ─── */
 .amount-stage {

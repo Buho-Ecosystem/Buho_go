@@ -35,11 +35,16 @@
         <!-- Recipient strip: bitcoin icon + truncated address with a tap-
              to-reveal toggle for the full address. -->
         <section class="recipient">
-          <div class="recipient-avatar">
-            <Icon icon="tabler:currency-bitcoin" width="28" height="28" />
+          <div class="recipient-avatar" :class="{ 'has-logo': merchantLogo }">
+            <img v-if="merchantLogo" :src="merchantLogo" :alt="merchantName" class="recipient-logo" />
+            <Icon v-else icon="tabler:currency-bitcoin" width="28" height="28" />
           </div>
           <div class="recipient-meta">
-            <div class="recipient-name">{{ $t('Bitcoin Address') }}</div>
+            <div class="recipient-name">{{ merchantName }}</div>
+            <BrantaVerifiedBadge
+              v-if="verification"
+              :verify-url="verification.verifyUrl"
+            />
             <button type="button" class="recipient-via" @click="showFullAddress = !showFullAddress">
               <span>{{ showFullAddress ? $t('Hide address') : truncateAddress(cleanedAddress) }}</span>
               <Icon
@@ -175,15 +180,22 @@ import { useWalletStore } from 'src/stores/wallet';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
 import { parseBip21 } from 'src/utils/bip21';
 import SlideToSend from './SlideToSend.vue';
+import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue';
 
 export default {
   name: 'L1BitcoinWithdraw',
-  components: { SlideToSend },
+  components: { SlideToSend, BrantaVerifiedBadge },
 
   props: {
     modelValue: { type: Boolean, default: false },
     destinationAddress: { type: String, required: true },
-    availableBalance: { type: Number, default: 0 }
+    availableBalance: { type: Number, default: 0 },
+    /**
+     * Branta merchant verification for this on-chain destination, attached
+     * by the parent after a positive lookup (only when the scanned QR
+     * carried the ZK params). Null on every unverified send.
+     */
+    verification: { type: Object, default: null }
   },
 
   emits: ['update:modelValue', 'withdrawal-submitted', 'withdrawal-error'],
@@ -223,6 +235,24 @@ export default {
       const raw = (this.destinationAddress || '').trim();
       const bip21 = parseBip21(raw);
       return bip21 ? bip21.address : raw;
+    },
+
+    /**
+     * Verified merchant identity from Branta, when present. The hero shows
+     * the merchant name + logo instead of the generic "Bitcoin Address"
+     * label, plus a "verified by Branta" badge.
+     */
+    merchantName() {
+      return this.verification?.name || this.$t('Bitcoin Address');
+    },
+    merchantLogo() {
+      const v = this.verification;
+      if (!v) return '';
+      // Dark background prefers the dark-bg logo, light prefers the light
+      // variant, each falling back to the other.
+      return this.$q.dark.isActive
+        ? (v.logoUrl || v.logoLightUrl)
+        : (v.logoLightUrl || v.logoUrl);
     },
 
     /** Currency label for amount input — respects user format preference. */
@@ -587,7 +617,13 @@ export default {
   color: #F7931A;
   box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.32);
   flex-shrink: 0;
+  overflow: hidden;
 }
+.recipient-avatar.has-logo {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--border-card);
+}
+.recipient-logo { width: 100%; height: 100%; object-fit: cover; }
 
 .recipient-meta { flex: 1; min-width: 0; }
 .recipient-name {

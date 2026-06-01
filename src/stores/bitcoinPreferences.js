@@ -75,7 +75,16 @@ export const useBitcoinPreferencesStore = defineStore('bitcoinPreferences', {
       // When true, auto-claim eligible deposits as soon as they reach
       // the SDK-required confirmation count. Surfaced in Settings as
       // "Auto-add Bitcoin deposits".
-      autoAddIncomingBitcoin: persisted?.autoAddIncomingBitcoin ?? true
+      autoAddIncomingBitcoin: persisted?.autoAddIncomingBitcoin ?? true,
+
+      // When true, look up merchant verification (Branta) for the payment
+      // the user is about to send and show a "verified by Branta" badge on
+      // the confirm sheet when there is a match. Default on. Lives here
+      // with the other payment-side preferences. The lookup runs in strict
+      // privacy mode (the destination is never sent to Branta in the
+      // clear) and a no-match simply shows nothing. Surfaced in Settings
+      // under Advanced as "Merchant verification".
+      brantaVerificationEnabled: persisted?.brantaVerificationEnabled ?? true
     }
   },
 
@@ -85,13 +94,19 @@ export const useBitcoinPreferencesStore = defineStore('bitcoinPreferences', {
       this._persist()
     },
 
+    setBrantaVerificationEnabled(value) {
+      this.brantaVerificationEnabled = !!value
+      this._persist()
+    },
+
     _persist() {
       if (typeof localStorage === 'undefined') return
       try {
         localStorage.setItem(
           STORAGE_KEY,
           JSON.stringify({
-            autoAddIncomingBitcoin: this.autoAddIncomingBitcoin
+            autoAddIncomingBitcoin: this.autoAddIncomingBitcoin,
+            brantaVerificationEnabled: this.brantaVerificationEnabled
           })
         )
       } catch (error) {

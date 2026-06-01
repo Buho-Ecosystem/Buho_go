@@ -487,6 +487,11 @@ export default {
         this.$emit('payment-detected', {
           data: cleanData,
           type: paymentType,
+          // Original, un-normalized input. Branta needs this for on-chain
+          // verification because the ZK params (branta_id / branta_secret)
+          // live in the bitcoin: URI query string, which normalization
+          // strips out of `data`.
+          rawInput: trimmedData,
           ...(bip21 ? { bip21 } : {})
         });
 

@@ -756,6 +756,41 @@
             />
           </template>
         </SettingsRow>
+
+        <!-- Merchant verification (Branta). When on, BuhoGO checks the
+             payment you are about to send and, for supported businesses,
+             shows the verified merchant name + logo on the confirm sheet.
+             The check runs privately (strict mode, the destination is
+             never sent in the clear) and a no-match simply shows nothing.
+             Default on. The info tooltip explains it in plain language for
+             anyone who wants the detail. -->
+        <SettingsRow
+          icon="tabler:rosette-discount-check"
+          :label="$t('Merchant verification')"
+          :caption="$t('Show a verified name and logo for supported businesses you pay.')"
+          :interactive="false"
+        >
+          <template #right>
+            <span
+              class="branta-info"
+              style="display:inline-flex;align-items:center;color:var(--text-muted);cursor:help;"
+            >
+              <Icon icon="tabler:info-circle" width="18" height="18" />
+              <q-tooltip
+                max-width="260px"
+                anchor="bottom right"
+                self="top right"
+              >
+                {{ $t('When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.') }}
+              </q-tooltip>
+            </span>
+            <q-toggle
+              :model-value="bitcoinPrefsStore.brantaVerificationEnabled"
+              @update:model-value="bitcoinPrefsStore.setBrantaVerificationEnabled"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
       </SettingsSection>
 
       <!-- ─────────────── DANGER ZONE ───────────────

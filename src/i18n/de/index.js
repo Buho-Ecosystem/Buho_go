@@ -2034,5 +2034,12 @@ export default {
   "Zoom out": "Verkleinern",
   "Nearby Bitcoin places": "Bitcoin-Orte in der Nähe",
   "Close filters": "Filter schließen",
-  "Close search": "Suche schließen"
+  "Close search": "Suche schließen",
+  "Verified by Branta": "Von Branta verifiziert",
+  "Lightning payment": "Lightning-Zahlung",
+  "Bitcoin payment": "Bitcoin-Zahlung",
+  "Spark payment": "Spark-Zahlung",
+  "Merchant verification": "Händler-Verifizierung",
+  "Show a verified name and logo for supported businesses you pay.": "Zeigt bei unterstützten Unternehmen den verifizierten Namen und das Logo an.",
+  "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.": "Wenn du ein unterstütztes Unternehmen bezahlst, zeigt BuhoGO vor dem Senden den verifizierten Namen und das Logo an, damit du sicher bist, dass dein Geld an die richtige Stelle geht. Die Prüfung erfolgt privat über Branta und kann hier ausgeschaltet werden."
 }
