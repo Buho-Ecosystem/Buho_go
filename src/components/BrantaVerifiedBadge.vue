@@ -19,7 +19,7 @@
   <button
     type="button"
     class="branta-verified"
-    :class="{ 'branta-verified--compact': compact }"
+    :class="{ 'branta-verified--compact': compact, 'branta-verified--static': !verifyUrl }"
     :aria-label="$t('Verified by Branta')"
     :title="$t('Verified by Branta')"
     @click.stop="open"
@@ -32,6 +32,7 @@
     />
     <span class="branta-verified-text">{{ $t('Verified by Branta') }}</span>
     <Icon
+      v-if="verifyUrl"
       icon="tabler:chevron-right"
       :width="compact ? 11 : 12"
       :height="compact ? 11 : 12"
@@ -71,9 +72,9 @@ export default {
 
 <style scoped>
 /*
-  A trust signal, not a CTA. Deliberately neutral: an ink chip with a gold
-  verified seal so it reads as "identity confirmed / premium" and never
-  competes with the green send button or reads as Branta's brand blue.
+  A trust signal, not a CTA. Deliberately neutral: a neutral ink chip with a
+  monochrome verified seal so it reads as "identity confirmed / premium" and
+  never competes with the green send button or reads as Branta's brand blue.
 
   `display: flex` + `width: fit-content` makes it a block-level,
   content-width pill: it claims its own line (so the via / address line
@@ -87,7 +88,7 @@ export default {
   align-items: center;
   gap: 6px;
   margin-top: 7px;
-  padding: 4px 9px 4px 7px;
+  padding: 6px 10px 6px 8px;
   border-radius: 999px;
   background: rgba(17, 24, 39, 0.05);
   box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.10);
@@ -104,15 +105,19 @@ export default {
 
 .branta-verified--compact {
   margin-top: 6px;
-  padding: 3px 8px 3px 6px;
+  padding: 5px 9px 5px 7px;
   font-size: 11px;
   gap: 5px;
 }
 
-.branta-verified:hover {
+/* Static variant: rendered when there is no verifyUrl to open, so the pill
+   reads as a seal rather than a tappable link (no chevron, no pointer). */
+.branta-verified--static { cursor: default; }
+
+.branta-verified:not(.branta-verified--static):hover {
   background: rgba(17, 24, 39, 0.08);
 }
-.branta-verified:active {
+.branta-verified:not(.branta-verified--static):active {
   transform: scale(0.97);
 }
 
@@ -140,7 +145,7 @@ body.body--dark .branta-verified {
   background: rgba(255, 255, 255, 0.07);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
-body.body--dark .branta-verified:hover {
+body.body--dark .branta-verified:not(.branta-verified--static):hover {
   background: rgba(255, 255, 255, 0.11);
 }
 body.body--dark .branta-verified-seal {

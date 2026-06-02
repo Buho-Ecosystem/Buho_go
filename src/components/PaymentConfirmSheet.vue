@@ -47,10 +47,16 @@
           <section class="recipient">
             <div
               class="recipient-avatar"
-              :class="{ 'has-logo': recipientLogo }"
-              :style="recipientLogo ? null : { background: recipientColor }"
+              :class="{ 'has-logo': showRecipientLogo }"
+              :style="showRecipientLogo ? null : { background: recipientColor }"
             >
-              <img v-if="recipientLogo" :src="recipientLogo" :alt="recipientName" class="recipient-logo" />
+              <img
+                v-if="showRecipientLogo"
+                :src="recipientLogo"
+                :alt="recipientName"
+                class="recipient-logo"
+                @error="logoFailed = true"
+              />
               <span v-else>{{ recipientInitial }}</span>
             </div>
             <div class="recipient-meta">
@@ -223,10 +229,16 @@
           <section class="recipient confirm-recipient">
             <div
               class="recipient-avatar small"
-              :class="{ 'has-logo': recipientLogo }"
-              :style="recipientLogo ? null : { background: recipientColor }"
+              :class="{ 'has-logo': showRecipientLogo }"
+              :style="showRecipientLogo ? null : { background: recipientColor }"
             >
-              <img v-if="recipientLogo" :src="recipientLogo" :alt="recipientName" class="recipient-logo" />
+              <img
+                v-if="showRecipientLogo"
+                :src="recipientLogo"
+                :alt="recipientName"
+                class="recipient-logo"
+                @error="logoFailed = true"
+              />
               <span v-else>{{ recipientInitial }}</span>
             </div>
             <div class="recipient-meta">
@@ -357,7 +369,8 @@ export default {
       currentCurrency: 'sats',
       isAmountFocused: false,
       comment: '',
-      fiatRates: {}
+      fiatRates: {},
+      logoFailed: false
     }
   },
   computed: {
@@ -377,6 +390,12 @@ export default {
     },
     recipientLogo() {
       return this.payment?.recipient?.logoUrl || ''
+    },
+    // Render the logo image only when we have a URL that has not failed to
+    // load; otherwise the avatar falls back to the colored initial rather
+    // than a broken-image glyph (this is a verified-merchant trust surface).
+    showRecipientLogo() {
+      return !!this.recipientLogo && !this.logoFailed
     },
     recipientInitial() {
       const explicit = this.payment?.recipient?.initial
@@ -663,6 +682,11 @@ export default {
         this.resetForFreshOpen()
         this.loadFiatRates()
       }
+    },
+    // A new/changed logo URL (e.g. a Branta verification arriving async
+    // after the sheet opened) gets a fresh chance to load.
+    recipientLogo() {
+      this.logoFailed = false
     }
   },
   methods: {
@@ -680,6 +704,7 @@ export default {
       this.stageTransitionName = 'stage-fwd'
       this.showAddress = false
       this.comment = ''
+      this.logoFailed = false
       this.currentCurrency = (this.denominationCurrency || 'sats')
       // For fixed mode, prefill the visible input so users can read the
       // amount they're about to send. The `readonly` flag on the input

@@ -35,8 +35,14 @@
         <!-- Recipient strip: bitcoin icon + truncated address with a tap-
              to-reveal toggle for the full address. -->
         <section class="recipient">
-          <div class="recipient-avatar" :class="{ 'has-logo': merchantLogo }">
-            <img v-if="merchantLogo" :src="merchantLogo" :alt="merchantName" class="recipient-logo" />
+          <div class="recipient-avatar" :class="{ 'has-logo': showMerchantLogo }">
+            <img
+              v-if="showMerchantLogo"
+              :src="merchantLogo"
+              :alt="merchantName"
+              class="recipient-logo"
+              @error="merchantLogoFailed = true"
+            />
             <Icon v-else icon="tabler:currency-bitcoin" width="28" height="28" />
           </div>
           <div class="recipient-meta">
@@ -215,7 +221,8 @@ export default {
       selectedSpeed: 'medium',
       isSending: false,
       feeQuoteDebounceTimer: null,
-      showFullAddress: false
+      showFullAddress: false,
+      merchantLogoFailed: false
     };
   },
 
@@ -253,6 +260,11 @@ export default {
       return this.$q.dark.isActive
         ? (v.logoUrl || v.logoLightUrl)
         : (v.logoLightUrl || v.logoUrl);
+    },
+    // Render the merchant logo only when present and not failed-to-load;
+    // otherwise fall back to the Bitcoin icon rather than a broken image.
+    showMerchantLogo() {
+      return !!this.merchantLogo && !this.merchantLogoFailed;
     },
 
     /** Currency label for amount input — respects user format preference. */

@@ -771,9 +771,13 @@
           :interactive="false"
         >
           <template #right>
-            <span
+            <q-btn
+              flat
+              round
+              dense
+              size="sm"
               class="branta-info"
-              style="display:inline-flex;align-items:center;color:var(--text-muted);cursor:help;"
+              :aria-label="$t('About merchant verification')"
             >
               <Icon icon="tabler:info-circle" width="18" height="18" />
               <q-tooltip
@@ -783,7 +787,7 @@
               >
                 {{ $t('When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.') }}
               </q-tooltip>
-            </span>
+            </q-btn>
             <q-toggle
               :model-value="bitcoinPrefsStore.brantaVerificationEnabled"
               @update:model-value="bitcoinPrefsStore.setBrantaVerificationEnabled"
@@ -5412,6 +5416,11 @@ export default {
 .currency-info,
 .language-info {
   flex: 1;
+}
+
+/* Info affordance next to the Merchant verification toggle (Advanced). */
+.branta-info {
+  color: var(--text-muted);
 }
 
 .currency-code,

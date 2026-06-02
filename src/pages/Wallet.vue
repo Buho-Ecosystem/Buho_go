@@ -774,7 +774,7 @@ import {
 } from '../stores/bitcoinPreferences';
 import { track as telemetryTrack } from '../utils/telemetry';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
-import {lookupBrantaVerification} from '../utils/branta.js';
+import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
 
 export default {
   name: 'WalletPage',
@@ -1292,6 +1292,10 @@ export default {
       return {
         recipient,
         amount,
+        // Description precedence is deliberate: the invoice / LNURL memo
+        // (what the user is actually paying for) wins; Branta's
+        // platform-level description is only a fallback when no memo exists.
+        // The verified identity (name + logo + badge) is surfaced above.
         description: p.description || p.defaultDescription || (bv && bv.description) || '',
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
@@ -1525,6 +1529,8 @@ export default {
     this.stopWithdrawMonitor();
     // Stop merchant countdown if active
     this.stopMerchantCountdown();
+    // Abort any in-flight Branta lookup
+    this.cancelBrantaLookup();
   },
   watch: {
     'walletState.balance': {
@@ -3859,7 +3865,7 @@ export default {
         if (this._brantaAbort) this._brantaAbort.abort();
         const controller = new AbortController();
         this._brantaAbort = controller;
-        const timer = setTimeout(() => controller.abort(), 8000);
+        const timer = setTimeout(() => controller.abort(), BRANTA_LOOKUP_TIMEOUT_MS);
 
         // Identity guard: only paint the badge if this is still the exact
         // same pending payment when the lookup resolves. Each new payment
@@ -3892,9 +3898,25 @@ export default {
       if (!raw || typeof raw !== 'string') return false;
       try {
         const url = new URL(raw);
-        return url.searchParams.has('branta_id') && url.searchParams.has('branta_secret');
+        // The SDK's QR parser lowercases query keys, so match
+        // case-insensitively to agree with it and not skip a
+        // non-canonical-cased QR.
+        const keys = [...url.searchParams.keys()].map((k) => k.toLowerCase());
+        return keys.includes('branta_id') && keys.includes('branta_secret');
       } catch {
         return false;
+      }
+    },
+
+    /**
+     * Abort and clear any in-flight Branta lookup. Called when a payment is
+     * abandoned (sheet cancelled, component unmounted) so a request for a
+     * payment the user dropped does not linger.
+     */
+    cancelBrantaLookup() {
+      if (this._brantaAbort) {
+        this._brantaAbort.abort();
+        this._brantaAbort = null;
       }
     },
 
@@ -4103,6 +4125,7 @@ export default {
     },
 
     onSendSheetCancel() {
+      this.cancelBrantaLookup();
       this.showSendSheet = false;
       this.pendingPayment = null;
       this.paymentAmount = '';
@@ -4133,6 +4156,7 @@ export default {
     },
 
     onWithdrawSheetCancel() {
+      this.cancelBrantaLookup();
       this.showWithdrawSheet = false;
       this.resetWithdrawState();
       this.pendingPayment = null;

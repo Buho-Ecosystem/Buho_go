@@ -2039,6 +2039,7 @@ export default {
   "Lightning payment": "Lightning-Zahlung",
   "Bitcoin payment": "Bitcoin-Zahlung",
   "Spark payment": "Spark-Zahlung",
+  "About merchant verification": "Über die Händler-Verifizierung",
   "Merchant verification": "Händler-Verifizierung",
   "Show a verified name and logo for supported businesses you pay.": "Zeigt bei unterstützten Unternehmen den verifizierten Namen und das Logo an.",
   "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.": "Wenn du ein unterstütztes Unternehmen bezahlst, zeigt BuhoGO vor dem Senden den verifizierten Namen und das Logo an, damit du sicher bist, dass dein Geld an die richtige Stelle geht. Die Prüfung erfolgt privat über Branta und kann hier ausgeschaltet werden."

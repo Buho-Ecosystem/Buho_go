@@ -78,6 +78,10 @@ function debug(...args) {
 
 const isHttps = (value) => typeof value === 'string' && value.startsWith('https://')
 
+// Abort a Branta lookup after this long. The lookup is fire-and-forget, so
+// this only bounds resource use; it never delays or affects a payment.
+export const BRANTA_LOOKUP_TIMEOUT_MS = 8000
+
 // Small bounded per-session cache keyed by the exact lookup text, so a
 // re-render or quick re-scan never issues a duplicate request and a repeat
 // of a known miss resolves instantly to null.
@@ -105,11 +109,13 @@ function normalize(result) {
     return null
   }
   const payment = result.payments[0]
-  const name = (payment.platform || '').trim()
-  // A verification with no platform name has nothing to display.
-  if (!name) return null
-  return {
-    name,
+  // A non-empty payments array means the destination IS verified, per the
+  // SDK contract, regardless of whether a display name was returned. We
+  // surface whatever Branta gave us; consumers fall back gracefully when
+  // the name is absent (the badge still reads "Verified by Branta", and the
+  // on-chain sheet falls back to "Bitcoin Address").
+  const verification = {
+    name: (payment.platform || '').trim(),
     // Branta serves a dark-background logo (platformLogoUrl) and an
     // optional light-background variant. The UI picks per theme.
     logoUrl: isHttps(payment.platformLogoUrl) ? payment.platformLogoUrl : '',
@@ -117,6 +123,11 @@ function normalize(result) {
     description: (payment.description || '').trim(),
     verifyUrl: isHttps(result.verifyUrl) ? result.verifyUrl : '',
   }
+  // Nothing displayable at all (no name, no logo, no link): treat as a miss.
+  if (!verification.name && !verification.logoUrl && !verification.logoLightUrl && !verification.verifyUrl) {
+    return null
+  }
+  return verification
 }
 
 /**
