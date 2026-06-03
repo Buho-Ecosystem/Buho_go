@@ -2053,6 +2053,8 @@ export default {
   "Close filters": "Close filters",
   "Close search": "Close search",
   "Verified by Branta": "Verified by Branta",
+  "You are about to pay a Kenyan phone number": "You are about to pay a Kenyan phone number",
+  "You are about to pay a Zambian phone number": "You are about to pay a Zambian phone number",
   "Lightning payment": "Lightning payment",
   "Bitcoin payment": "Bitcoin payment",
   "Spark payment": "Spark payment",

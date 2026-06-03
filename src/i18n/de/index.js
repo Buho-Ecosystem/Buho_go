@@ -2036,6 +2036,8 @@ export default {
   "Close filters": "Filter schließen",
   "Close search": "Suche schließen",
   "Verified by Branta": "Von Branta verifiziert",
+  "You are about to pay a Kenyan phone number": "Du zahlst gleich an eine kenianische Telefonnummer",
+  "You are about to pay a Zambian phone number": "Du zahlst gleich an eine sambische Telefonnummer",
   "Lightning payment": "Lightning-Zahlung",
   "Bitcoin payment": "Bitcoin-Zahlung",
   "Spark payment": "Spark-Zahlung",

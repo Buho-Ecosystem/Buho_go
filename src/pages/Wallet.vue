@@ -740,6 +740,7 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {isLightningInvoice as isLightningInvoiceShared} from '../utils/addressUtils.js';
+import {matchLnAddressService} from '../services/lnAddressServices';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
@@ -1203,6 +1204,17 @@ export default {
           addressType: 'lightning',
           address: p.lightningAddress,
         });
+
+        // Fiat-payout services (Tando, Bitzed, …): recognized locally by
+        // the address domain and branded by destination country, not by
+        // provider. Synchronous, no network lookup. A saved contact always
+        // wins, mirroring the Branta guard below.
+        const lnService = matchLnAddressService(p.lightningAddress);
+        if (lnService && !recipient.matchedContact) {
+          recipient.logoUrl = lnService.flag;     // country flag in the avatar
+          recipient.name = lnService.handle;      // the phone number
+          recipient.lnService = { hint: this.$t(lnService.hint) };
+        }
       } else if (p.sparkAddress) {
         const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
         recipient = this.recipientFromContact(contact, {

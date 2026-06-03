@@ -79,6 +79,10 @@
                 v-if="recipientVerification"
                 :verify-url="recipientVerification.verifyUrl"
               />
+              <div v-if="recipientLnService" class="ln-service-hint">
+                <Icon icon="tabler:device-mobile" width="13" height="13" />
+                <span>{{ recipientLnService.hint }}</span>
+              </div>
             </div>
           </section>
 
@@ -249,6 +253,10 @@
                 :verify-url="recipientVerification.verifyUrl"
                 compact
               />
+              <div v-if="recipientLnService" class="ln-service-hint">
+                <Icon icon="tabler:device-mobile" width="13" height="13" />
+                <span>{{ recipientLnService.hint }}</span>
+              </div>
             </div>
           </section>
 
@@ -429,6 +437,14 @@ export default {
     // payment, so the badge simply never renders in the common case.
     recipientVerification() {
       return this.payment?.recipient?.verification || null
+    },
+
+    // Fiat-payout service context (Tando, Bitzed, …), attached by the
+    // parent adapter when the destination is a recognized phone-payout
+    // Lightning Address. Absent on every normal payment, so the hint
+    // simply never renders in the common case.
+    recipientLnService() {
+      return this.payment?.recipient?.lnService || null
     },
 
     // Label for the payment-indicator row: the human description when the
@@ -909,6 +925,19 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Fiat-payout service hint (Tando, Bitzed, …): a quiet line under the
+   phone number reminding the user the money lands as local currency. */
+.ln-service-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text-secondary);
 }
 
 /* Countdown chip — neutral grey for the standing time, flips to a soft
