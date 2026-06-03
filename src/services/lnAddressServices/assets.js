@@ -13,11 +13,13 @@
 import keFlag from '../../assets/lnAddressServices/flags/circle-flags--ke.svg?url'
 import zmFlag from '../../assets/lnAddressServices/flags/circle-flags--zm.svg?url'
 import bitzedLogo from '../../assets/lnAddressServices/logos/bitzed.svg?url'
+import tandoLogo from '../../assets/lnAddressServices/logos/tando.png?url'
 
 const ASSET_URLS = {
   'flags/circle-flags--ke.svg': keFlag,
   'flags/circle-flags--zm.svg': zmFlag,
   'logos/bitzed.svg': bitzedLogo,
+  'logos/tando.png': tandoLogo,
 }
 
 /**

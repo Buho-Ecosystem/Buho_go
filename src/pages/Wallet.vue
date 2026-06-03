@@ -1002,13 +1002,15 @@ export default {
      */
     lastTxContact() {
       const tx = this.lastTransaction;
-      if (!tx || !tx.id || !this.transactionMetadataStore || !this.addressBookStore) {
+      if (!tx || !tx.id || !this.transactionMetadataStore) {
         return null;
       }
       try {
-        const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id);
-        if (!meta?.contactId) return null;
-        return this.addressBookStore.getEntryById(meta.contactId) || null;
+        // Same live resolution as the history list: explicit contactId,
+        // then manual removal, then the durable recipient address. This
+        // is why the home-screen preview now matches the list instead of
+        // only reacting to an explicit contactId.
+        return this.transactionMetadataStore.getContactForTransaction(tx.id) || null;
       } catch {
         return null;
       }

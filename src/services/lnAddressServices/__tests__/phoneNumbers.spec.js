@@ -49,7 +49,7 @@ function test(name, fn) {
 // Kenya — international + national
 // ---------------------------------------------------------------------------
 
-test('KE international (+254): exact, Safaricom, builds tando address', () => {
+test('KE international (+254): exact, Safaricom, builds Tando (bitcoin.co.ke) address', () => {
   const r = recognizePhoneNumber('+254712345678')
   assert.equal(r.country.code, 'KE')
   assert.equal(r.confidence, 'exact')
@@ -58,8 +58,8 @@ test('KE international (+254): exact, Safaricom, builds tando address', () => {
   assert.equal(r.nsn, '712345678')
   assert.equal(r.e164, '+254712345678')
   assert.equal(r.display, '+254 712 345 678')
-  assert.equal(r.lightningAddress, '254712345678@tando.me')
-  assert.equal(r.localPartVerified, false) // Tando format unconfirmed
+  assert.equal(r.lightningAddress, '254712345678@bitcoin.co.ke')
+  assert.equal(r.localPartVerified, true) // Tando format verified live (bitcoin.co.ke)
 })
 
 test('KE international without "+" (254...) is still exact', () => {
@@ -73,7 +73,7 @@ test('KE national (0712...): high confidence, single country', () => {
   assert.equal(r.country.code, 'KE')
   assert.equal(r.confidence, 'high')
   assert.equal(r.ambiguous, false)
-  assert.equal(r.lightningAddress, '254712345678@tando.me')
+  assert.equal(r.lightningAddress, '254712345678@bitcoin.co.ke')
 })
 
 test('KE 011x Safaricom block', () => {
@@ -153,7 +153,7 @@ test('ambiguous 077 (national): both candidates, KE preselected', () => {
   // each candidate carries its own provider address
   const ke = r.candidates.find((c) => c.country.code === 'KE')
   const zm = r.candidates.find((c) => c.country.code === 'ZM')
-  assert.equal(ke.lightningAddress, '254771234567@tando.me')
+  assert.equal(ke.lightningAddress, '254771234567@bitcoin.co.ke')
   assert.equal(zm.lightningAddress, '260771234567@bitzed.xyz')
 })
 
@@ -241,7 +241,7 @@ test('formatInternational / formatE164 / buildLightningAddress', () => {
   assert.equal(formatInternational(KE, '712345678'), '+254 712 345 678')
   assert.equal(formatInternational(ZM, '978123456'), '+260 978 123 456')
   assert.equal(formatE164(KE, '712345678'), '+254712345678')
-  assert.equal(buildLightningAddress(KE, '712345678'), '254712345678@tando.me')
+  assert.equal(buildLightningAddress(KE, '712345678'), '254712345678@bitcoin.co.ke')
   assert.equal(buildLightningAddress(ZM, '978123456'), '260978123456@bitzed.xyz')
 })
 

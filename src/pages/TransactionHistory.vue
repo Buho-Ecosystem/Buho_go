@@ -542,7 +542,14 @@
                     @click="toggleMicropaymentGroup(tx.id)"
                   >
                     <span class="tx-row-icon-wrap">
+                      <ContactAvatar
+                        v-if="getContactForGroup(tx)"
+                        class="tx-row-avatar"
+                        :entry="getContactForGroup(tx)"
+                        :initial-length="2"
+                      />
                       <span
+                        v-else
                         class="tx-row-icon"
                         :class="[
                           $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
@@ -920,6 +927,29 @@ export default {
         return this.metadataStore.getContactForTransaction(tx.id);
       } catch (error) {
         console.error('Error getting contact for transaction:', error);
+        return null;
+      }
+    },
+
+    /**
+     * Contact for a micropayment group. A group is, by construction,
+     * repeated payments to the same recipient, so any member that
+     * resolves identifies the whole group. Falls back to the group's
+     * recipient string when no member is stamped yet.
+     */
+    getContactForGroup(group) {
+      if (!group || !this.metadataStore) return null;
+      try {
+        const members = Array.isArray(group.transactions) ? group.transactions : [];
+        for (const inner of members) {
+          const contact = this.metadataStore.getContactForTransaction(inner.id);
+          if (contact) return contact;
+        }
+        if (group.recipient && this.addressBookStore) {
+          return this.addressBookStore.findContactByAddress(group.recipient);
+        }
+        return null;
+      } catch (error) {
         return null;
       }
     },

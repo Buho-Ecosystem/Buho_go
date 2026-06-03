@@ -58,23 +58,20 @@ export const PAYOUT_COUNTRIES = [
   {
     code: 'KE',
     flagFile: 'flags/circle-flags--ke.svg',
-    logoFile: null, // Tando logo not supplied yet -> brand Kenya with the flag.
+    logoFile: 'logos/tando.png', // Tando is the KE provider -> brand with its logo.
     hint: 'You are about to pay a Kenyan phone number',
     note: 'Tando Kenyan Lightning address', // prefilled when saving as a contact
     currency: 'KES',
-    domains: ['tando.me'],
-    sendDomain: 'tando.me',
+    domains: ['bitcoin.co.ke'], // Tando's live Lightning Address domain
+    sendDomain: 'bitcoin.co.ke',
     callingCode: '254',
     trunkPrefix: '0',
     nsnLength: 9,
-    // ASSUMPTION (unverified): Tando resolves the international local-part.
-    // Every synthetic test number 404'd on tando.me/.well-known/lnurlp/* —
-    // Tando appears to only mint a payRequest for a real, M-Pesa-registered
-    // number — so confirm against a live number before fully trusting
-    // construction. If it's actually the local form, flip localPartFormat
-    // to 'national0' here and nothing else needs to change.
+    // Verified live: bitcoin.co.ke (Tando) resolves both 254... (international)
+    // and 0... (local) local-parts to the same payout (callback .../254...).
+    // We construct the international form for consistent, readable display.
     localPartFormat: 'international',
-    localPartVerified: false,
+    localPartVerified: true,
     operators: [
       { name: 'Safaricom', prefixes: ['110-117', '700-729', '740-743', '745-746', '748', '757-759', '768-769', '790-799'] },
       { name: 'Airtel', prefixes: ['100-108', '730-739', '750-756', '762', '780-789'] },

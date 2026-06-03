@@ -170,7 +170,7 @@ export function formatPhoneHandle(countryCode, handle) {
  * Build the provider Lightning Address in the local-part shape it expects.
  * @param {object} country
  * @param {string} nsn
- * @returns {string} e.g. '254712345678@tando.me' or '260978123456@bitzed.xyz'
+ * @returns {string} e.g. '254712345678@bitcoin.co.ke' or '260978123456@bitzed.xyz'
  */
 export function buildLightningAddress(country, nsn) {
   let localPart

@@ -21,7 +21,7 @@ for (const country of PAYOUT_COUNTRIES) {
 }
 
 /**
- * @param {string} lightningAddress  e.g. "254712345678@tando.me"
+ * @param {string} lightningAddress  e.g. "254712345678@bitcoin.co.ke"
  * @returns {{ code: string, flag: string, logo: string|null, hint: string, currency: string, handle: string } | null}
  *          `flag` is a bundled SVG URL, `logo` an optional bundled provider
  *          logo (Zambia -> Bitzed; null otherwise), `hint` a flat i18n key,
