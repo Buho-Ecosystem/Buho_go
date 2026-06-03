@@ -1671,7 +1671,17 @@ export default {
       await Promise.allSettled(
         wallets.map(async (w) => {
           try {
-            await this.walletStore.refreshWalletData(w.id);
+            // Only live-refresh the active wallet. Refreshing an INACTIVE Spark
+            // wallet would reconnect it (refreshWalletData auto-connects on a
+            // miss), creating a second live Spark connection that corrupts the
+            // active wallet's SDK session (the SDK shares one gRPC channel +
+            // a global auth cache across instances). That's exactly what made
+            // the active wallet show "not connected" when this sheet opened.
+            // Inactive wallets render their cached balance via getDisplayBalance.
+            const inactiveSpark = w.type === 'spark' && w.id !== this.walletStore.activeWalletId;
+            if (!inactiveSpark) {
+              await this.walletStore.refreshWalletData(w.id);
+            }
           } catch { /* ignore */ }
           this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
         })
@@ -2515,6 +2525,23 @@ export default {
             // Don't spam console with expected "PIN required" messages
             if (!err.message?.includes('PIN')) {
               console.warn('Balance refresh skipped:', err.message);
+              // Self-heal a dropped Spark connection. The provider's
+              // isConnected flag stays true after an idle stream death on
+              // Android, so ensureSparkConnected hands back a stale provider
+              // and the wallet gets stuck showing "locked". A non-PIN failure
+              // means the wallet IS unlocked but its connection died — force a
+              // fresh reconnect so the next tick (or a user action) finds a
+              // live instance, instead of requiring a manual switch-and-back.
+              if (activeWalletId) {
+                try {
+                  // forceReinit: the cached SDK instance is alive-but-dead (its
+                  // stream dropped), so getOrCreateWallet would just hand the
+                  // same broken instance back. Force a clean teardown + rebuild.
+                  await this.walletStore.connectSparkWallet(activeWalletId, { forceReinit: true });
+                } catch (reconnectErr) {
+                  console.warn('Spark auto-reconnect failed:', reconnectErr.message);
+                }
+              }
             }
           }
           return;
@@ -4751,6 +4778,17 @@ export default {
   flex-direction: column;
   overflow-x: hidden;
   max-width: 100vw;
+}
+
+/* Top app bar. Quasar's default q-toolbar is 50px min-height with its own
+   vertical padding, which stacks on top of the --safe-top status-bar inset and
+   reads as an oversized gap. Trim it so the logo/icons sit just below the inset
+   — the inset itself stays (it's the required status-bar clearance). */
+.wallet-page-dark :deep(.q-toolbar),
+.wallet-page-light :deep(.q-toolbar) {
+  min-height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* Header */

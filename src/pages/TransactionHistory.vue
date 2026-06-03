@@ -625,7 +625,7 @@
     </q-scroll-area>
 
     <!-- Empty State -->
-    <div v-else-if="filteredTransactions.length === 0" class=" full-height"
+    <div v-else-if="filteredTransactions.length === 0"
          :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
       <img
         src="/Onboarding wizard spark/storyset-receipt-bro.svg"
@@ -1182,10 +1182,19 @@ export default {
 
       } catch (error) {
         console.error('Error loading transactions:', error);
+        // Surface the underlying error so device-only failures (e.g. Spark
+        // transport/connection errors that never reach the desktop console)
+        // are visible in the toast itself. Includes the error name when it
+        // adds signal (e.g. SparkAuthenticationError, NetworkError).
+        const rawMessage = error?.message || String(error) || 'Unknown error';
+        const errName = error?.name && error.name !== 'Error' ? `${error.name}: ` : '';
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
-
+          caption: `${errName}${rawMessage}`,
+          timeout: 0,
+          multiLine: true,
+          actions: [{ label: this.$t('Dismiss'), color: 'white' }],
         });
       } finally {
         this.isLoading = false;
@@ -2100,32 +2109,51 @@ export default {
 
 <style scoped>
 /* Base Page Styles */
+/* Fixed-height flex column: the screen is laid out once and never overflows
+   the safe viewport. Header + filters are fixed rows; the list (or empty
+   state) is the single flex child that scrolls internally. This replaces the
+   old min-height:100vh + magic vh heights which — once the Android safe-area
+   insets were added — pushed the page past the viewport (body scrolled, so the
+   sticky header slid over the filter tabs) and left a blank gap above the
+   title. The header now owns the top inset (see .page_header_*), so the global
+   .q-page top padding is cancelled here; the bottom inset clears the nav bar. */
 .transaction-history-page-dark {
   background: #171717;
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
   max-width: 100vw;
+  padding-top: 0;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 .transaction-history-page-light {
   background: #F6F6F6;
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
   max-width: 100vw;
+  padding-top: 0;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 /* Header Styles */
+/* Header owns the top safe-area inset: its background fills the area under the
+   status bar and the title sits just beneath it — no blank gap above. As a
+   fixed flex row at the top of the non-scrolling page column it stays put
+   without position:sticky. */
 .page_header_dark {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: calc(0.6rem + var(--safe-top, 0px)) 1rem 0.6rem;
   background: #0C0C0C;
   border-bottom: 1px solid #2A342A;
-  position: sticky;
-  top: var(--safe-top, 0px);
+  flex: 0 0 auto;
   z-index: 100;
 }
 
@@ -2133,11 +2161,10 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: calc(0.6rem + var(--safe-top, 0px)) 1rem 0.6rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
+  flex: 0 0 auto;
   z-index: 100;
 }
 
@@ -2190,6 +2217,10 @@ export default {
 }
 
 /* Filter Section */
+.filter-section {
+  flex: 0 0 auto;
+}
+
 .filter_section_dark {
   background: #0C0C0C;
   border-bottom: 1px solid #2A342A;
@@ -2350,13 +2381,25 @@ export default {
 }
 
 /* Transaction Content */
+/* The scroll viewport is sized off the full screen height minus the fixed
+   header/filter chrome (~200px). On Android the page also carries the
+   safe-area insets (top via the global .q-page rule, bottom via the page
+   root above), so they must be subtracted here too — otherwise the list
+   overflows past the safe viewport and pushes the header/tabs up under the
+   status bar and the last rows down under the nav bar. On web both insets
+   resolve to 0, so the math is unchanged. */
+/* The list region is the single flex child that scrolls. flex:1 fills the
+   space left by the header + filters; min-height:0 lets the inner QScrollArea
+   actually scroll instead of forcing the column taller than the viewport. */
 .transaction_content_dark {
-  height: calc(100vh - 200px);
+  flex: 1 1 auto;
+  min-height: 0;
   background: #171717;
 }
 
 .transaction_content_light {
-  height: calc(100vh - 200px);
+  flex: 1 1 auto;
+  min-height: 0;
   background: #F6F6F6;
 }
 
@@ -2986,7 +3029,8 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60vh;
+  flex: 1 1 auto;
+  min-height: 0;
   text-align: center;
   padding: 2rem;
   background: #0C0C0C;
@@ -2998,7 +3042,8 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60vh;
+  flex: 1 1 auto;
+  min-height: 0;
   text-align: center;
   padding: 2rem;
   background: var(--bg-primary);

@@ -252,16 +252,33 @@ export class SparkWalletProvider extends WalletProvider {
 
   /**
    * Initialize wallet with mnemonic (after PIN decryption)
+   *
+   * Uses the SDK's `getOrCreateWallet` rather than `initialize`. The SDK keeps
+   * a single instance per wallet identity (keyed by identity pubkey, guarded by
+   * an init mutex) and reuses it — its own docs state this "prevents duplicate
+   * streams, duplicate claims, and competing optimizations when the same wallet
+   * is initialized multiple times." The plain `initialize` spawns a fresh
+   * instance + background event stream on every call, and this app re-connects
+   * the same wallet from many call sites (startup, wallet switch, 30s balance
+   * poll, history load, auto-reconnect). With `initialize` those duplicate
+   * streams accumulate and starve each other, which is what dropped the active
+   * wallet's connection on Android. `getOrCreateWallet` collapses them to one.
+   *
    * @param {string} mnemonic - Space-separated mnemonic words
+   * @param {Object} [opts]
+   * @param {boolean} [opts.forceReinit=false] - Tear down the existing instance
+   *   and build a fresh one. Use only when recovering from a confirmed dead
+   *   connection — a normal reconnect should reuse the live instance.
    */
-  async initializeWithMnemonic(mnemonic) {
+  async initializeWithMnemonic(mnemonic, { forceReinit = false } = {}) {
     try {
       this.mnemonic = mnemonic;
 
-      const result = await SparkWallet.initialize({
+      const result = await SparkWallet.getOrCreateWallet({
         mnemonicOrSeed: mnemonic,
         accountNumber: this.accountNumber,
-        options: { network: this.network }
+        options: { network: this.network },
+        forceReinit
       });
 
       this.wallet = result.wallet;
@@ -392,7 +409,10 @@ export class SparkWalletProvider extends WalletProvider {
   async disconnect() {
     if (this.wallet) {
       try {
-        this.wallet.cleanupConnections();
+        // Await the teardown — cleanupConnections() is async (aborts the event
+        // stream, closes gRPC connections, flushes logging). Not awaiting it
+        // let a follow-up reconnect race a half-finished cleanup.
+        await this.wallet.cleanupConnections();
       } catch (error) {
         console.warn('Error cleaning up Spark connections:', error);
       }
@@ -948,7 +968,12 @@ export class SparkWalletProvider extends WalletProvider {
 
     try {
       // Spark SDK getTransfers returns { transfers: WalletTransfer[], offset: number }
-      const result = await this.wallet.getTransfers(limit, offset);
+      // Reads are idempotent, so retry transient transport faults — a single
+      // gRPC blip (common on Android right after a wallet switch) should not
+      // surface to the user as "Couldn't load history".
+      const result = await this._withTransportRetry(
+        () => this.wallet.getTransfers(limit, offset)
+      );
       const transferList = result.transfers || [];
 
       return transferList.map(transfer => ({
