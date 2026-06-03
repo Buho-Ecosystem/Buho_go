@@ -326,14 +326,11 @@ import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount } from '../utils/amountFormatting.js'
+import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 
 const SLIDE_THRESHOLD_SATS = 20000
-
-const FIAT_SYMBOLS = {
-  USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF ', AUD: 'A$', JPY: '¥'
-}
 
 export default {
   name: 'PaymentConfirmSheet',

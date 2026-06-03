@@ -2055,6 +2055,8 @@ export default {
   "Verified by Branta": "Verified by Branta",
   "You are about to pay a Kenyan phone number": "You are about to pay a Kenyan phone number",
   "You are about to pay a Zambian phone number": "You are about to pay a Zambian phone number",
+  "Tando Kenyan Lightning address": "Tando Kenyan Lightning address",
+  "Bitzed Zambian Lightning address": "Bitzed Zambian Lightning address",
   "Lightning payment": "Lightning payment",
   "Bitcoin payment": "Bitcoin payment",
   "Spark payment": "Spark payment",

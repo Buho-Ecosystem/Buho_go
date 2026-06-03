@@ -10,6 +10,7 @@
  * the caller then renders the address as usual.
  */
 import { PAYOUT_COUNTRIES } from './countries'
+import { assetUrl } from './assets'
 
 // domain (lowercased) -> country entry, built once at module load.
 const COUNTRY_BY_DOMAIN = new Map()
@@ -21,9 +22,10 @@ for (const country of PAYOUT_COUNTRIES) {
 
 /**
  * @param {string} lightningAddress  e.g. "254712345678@tando.me"
- * @returns {{ code: string, flag: string, hint: string, handle: string } | null}
- *          `flag` is a bundled SVG URL, `hint` a flat i18n key, `handle`
- *          the part before the "@" (the phone number). null on no match.
+ * @returns {{ code: string, flag: string, logo: string|null, hint: string, currency: string, handle: string } | null}
+ *          `flag` is a bundled SVG URL, `logo` an optional bundled provider
+ *          logo (Zambia -> Bitzed; null otherwise), `hint` a flat i18n key,
+ *          `handle` the part before the "@" (the phone number). null on no match.
  */
 export function matchLnAddressService(lightningAddress) {
   if (typeof lightningAddress !== 'string') return null
@@ -35,8 +37,25 @@ export function matchLnAddressService(lightningAddress) {
   if (!country) return null
   return {
     code: country.code,
-    flag: country.flag,
+    flag: assetUrl(country.flagFile),
+    logo: assetUrl(country.logoFile),
     hint: country.hint,
+    note: country.note,
+    currency: country.currency,
     handle: trimmed.slice(0, at),
   }
 }
+
+// Construction side: recognizing a raw phone number typed into the send field
+// and building the provider Lightning Address. Re-exported here so callers
+// have a single import surface for the lnAddressServices package.
+export {
+  recognizePhoneNumber,
+  buildLightningAddress,
+  formatInternational,
+  formatE164,
+  formatPhoneHandle,
+  matchOperator,
+  isValidMobile,
+  AMBIGUOUS_DEFAULT_CODE,
+} from './phoneNumbers'

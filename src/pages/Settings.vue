@@ -1111,7 +1111,7 @@
         <q-card-section class="dialog-content">
           <div class="currency-list">
             <div
-              v-for="currency in ['USD', 'EUR', 'GBP', 'JPY', 'CHF']"
+              v-for="currency in selectableFiatCurrencies()"
               :key="currency"
               class="currency-item"
               :class="{
@@ -1983,6 +1983,7 @@ import {useEarnStore} from '../stores/earn'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
+import { SELECTABLE_FIAT_CURRENCIES, fiatSymbol } from '../utils/fiatCurrencies.js'
 import {shareContent} from '../utils/share.js'
 import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
@@ -3369,15 +3370,12 @@ export default {
       })
     },
 
+    selectableFiatCurrencies() {
+      return SELECTABLE_FIAT_CURRENCIES
+    },
+
     getCurrencySymbol(currency) {
-      const symbols = {
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥',
-        CHF: 'CHF'
-      }
-      return symbols[currency] || currency
+      return fiatSymbol(currency)
     },
 
     formatBalance(balance) {

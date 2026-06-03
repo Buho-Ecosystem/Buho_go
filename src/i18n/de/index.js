@@ -2038,6 +2038,8 @@ export default {
   "Verified by Branta": "Von Branta verifiziert",
   "You are about to pay a Kenyan phone number": "Du zahlst gleich an eine kenianische Telefonnummer",
   "You are about to pay a Zambian phone number": "Du zahlst gleich an eine sambische Telefonnummer",
+  "Tando Kenyan Lightning address": "Tando Lightning-Adresse (Kenia)",
+  "Bitzed Zambian Lightning address": "Bitzed Lightning-Adresse (Sambia)",
   "Lightning payment": "Lightning-Zahlung",
   "Bitcoin payment": "Bitcoin-Zahlung",
   "Spark payment": "Spark-Zahlung",

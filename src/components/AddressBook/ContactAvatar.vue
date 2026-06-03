@@ -43,6 +43,8 @@
  * which uses `name.substring(0, 2)`.
  */
 
+import { matchLnAddressService } from '../../services/lnAddressServices'
+
 const DEFAULT_FALLBACK_COLOR = '#3B82F6'
 
 export default {
@@ -70,14 +72,32 @@ export default {
     visibleAvatarUrl() {
       if (this.imgBroken) return ''
       const explicit = typeof this.picture === 'string' ? this.picture.trim() : ''
-      if (explicit) return this.gateUrl(explicit)
+      if (explicit) {
+        const gated = this.gateUrl(explicit)
+        if (gated) return gated
+      }
       // We accept Nostr pictures from any source — the helper is also
       // used for entries the address-book store doesn't own yet (e.g.
       // search results, scan results). Treat `nostr_profile.picture`
       // as the canonical field and only render when it gates clean.
       const raw = this.entry?.nostr_profile?.picture
-      if (typeof raw !== 'string') return ''
-      return this.gateUrl(raw.trim())
+      if (typeof raw === 'string') {
+        const gated = this.gateUrl(raw.trim())
+        if (gated) return gated
+      }
+      // Fiat-payout provider logo (Bitzed for Zambia, …), derived from the
+      // contact's address so a saved mobile-money recipient reads clearly
+      // everywhere it appears (tx list, tx detail, address book). It's a
+      // trusted bundled asset, so it bypasses the URL gate that guards
+      // user/Nostr images, and is resolved fresh each render (never stored)
+      // so it survives asset-hash changes across builds.
+      return this.serviceLogoUrl
+    },
+
+    serviceLogoUrl() {
+      const address = this.entry?.address || this.entry?.lightningAddress || ''
+      const svc = matchLnAddressService(address)
+      return svc?.logo || ''
     },
 
     initial() {

@@ -683,6 +683,16 @@
         </q-card-section>
 
         <q-card-section class="save-contact-content">
+          <!-- Fiat-payout recipients (Bitzed/Tando) get the provider logo as
+               the contact picture, so the saved entry reads clearly as a
+               mobile-money number. Shown only when recognized. -->
+          <div v-if="saveContactServiceLogo" class="flex flex-center q-mb-sm">
+            <img
+              :src="saveContactServiceLogo"
+              alt=""
+              style="width: 56px; height: 56px; border-radius: 50%;"
+            />
+          </div>
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
             <Icon
               :icon="saveContactData.addressType === 'spark' ? 'tabler:flame' : 'tabler:bolt'"
@@ -740,7 +750,7 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {isLightningInvoice as isLightningInvoiceShared} from '../utils/addressUtils.js';
-import {matchLnAddressService} from '../services/lnAddressServices';
+import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
@@ -1172,6 +1182,12 @@ export default {
      * here keeps Wallet.vue's send-pipeline state untouched while the
      * sheet stays decoupled from any wallet/legacy specifics.
      */
+    // Provider logo for the save-contact dialog preview (Bitzed for Zambia,
+    // …). Null for any non-payout address, so the avatar simply doesn't show.
+    saveContactServiceLogo() {
+      return matchLnAddressService(this.saveContactData.address)?.logo || null;
+    },
+
     paymentSheetProps() {
       const p = this.pendingPayment;
       if (!p) return null;
@@ -1211,9 +1227,16 @@ export default {
         // wins, mirroring the Branta guard below.
         const lnService = matchLnAddressService(p.lightningAddress);
         if (lnService && !recipient.matchedContact) {
-          recipient.logoUrl = lnService.flag;     // country flag in the avatar
-          recipient.name = lnService.handle;      // the phone number
-          recipient.lnService = { hint: this.$t(lnService.hint) };
+          // Prefer the partner logo (Bitzed for Zambia) over the plain
+          // country flag; fall back to the flag where no logo exists (Kenya).
+          recipient.logoUrl = lnService.logo || lnService.flag;
+          // Show the number in readable international form (+260 777 491 011)
+          // rather than the raw handle (0777491011 / 260777491011).
+          recipient.name = formatPhoneHandle(lnService.code, lnService.handle);
+          recipient.lnService = {
+            hint: this.$t(lnService.hint),
+            currency: lnService.currency,         // local payout currency (KES/ZMW)
+          };
         }
       } else if (p.sparkAddress) {
         const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
@@ -4023,16 +4046,21 @@ export default {
         const shouldOfferSave = !!(recipientAddress && !existingContact);
         const recipientLabel = this.getRecipientDisplayLabel(existingContact);
 
-        // Queue the contact link by recipient address + amount + send
+        // Queue a pending link by recipient address + amount + send
         // time. The next tx-list refresh drains the queue and stamps
         // the newly observed outgoing tx — wallet-agnostic, so it
         // works the same for Spark (transfer id ≠ payment id), LNbits
         // (payment_hash directly), and NWC (only `preimage` comes
         // back) without us having to know which provider is active.
-        if (existingContact && recipientAddress) {
+        //
+        // We queue for ANY saveable recipient, not just known contacts,
+        // and carry contactId only when we already have it. The address
+        // is stamped durably on the tx so a contact added later still
+        // resolves live against this payment.
+        if (recipientAddress) {
           try {
             await this.transactionMetadataStore.enqueuePendingContactLink({
-              contactId: existingContact.id,
+              contactId: existingContact?.id || null,
               recipientAddress,
               amountSats: amount,
             });
@@ -4046,11 +4074,15 @@ export default {
         // needs even after the input state is reset. `saveContactData`
         // is what the existing save dialog already reads.
         if (shouldOfferSave) {
+          // Fiat-payout numbers (Bitzed/Tando): prefill the note so the saved
+          // contact reads clearly as a mobile-money recipient. Empty for any
+          // other address.
+          const payoutService = matchLnAddressService(recipientAddress);
           this.saveContactData = {
             address: recipientAddress,
             addressType: recipientAddressType,
             name: '',
-            notes: '',
+            notes: payoutService?.note ? this.$t(payoutService.note) : '',
             // Carry the amount so the post-save handler can queue a
             // pending contact link against the same outgoing tx the
             // existing-contact path uses.

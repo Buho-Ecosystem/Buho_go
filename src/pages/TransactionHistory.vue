@@ -912,11 +912,12 @@ export default {
     // New helper methods for redesigned transaction cards
 
     getContactForTransaction(tx) {
-      if (!tx || !tx.id || !this.metadataStore || !this.addressBookStore) return null;
+      if (!tx || !tx.id || !this.metadataStore) return null;
       try {
-        const metadata = this.metadataStore.getMetadataForTransaction(tx.id);
-        if (!metadata?.contactId) return null;
-        return this.addressBookStore.getEntryById(metadata.contactId);
+        // Single source of truth: the store getter resolves an explicit
+        // contactId, then a manual removal, then the durable recipient
+        // address live against the address book.
+        return this.metadataStore.getContactForTransaction(tx.id);
       } catch (error) {
         console.error('Error getting contact for transaction:', error);
         return null;

@@ -2,6 +2,7 @@
  * Fiat Rates Service
  * Handles fetching and caching of Bitcoin fiat exchange rates from Mempool API
  */
+import { FIAT_SYMBOLS, ALBY_RATE_CURRENCIES } from './fiatCurrencies.js'
 
 export class FiatRatesService {
   constructor() {
@@ -169,20 +170,23 @@ export class FiatRatesService {
         time: data.time || Math.floor(Date.now() / 1000)
       };
 
-      // Fetch ZAR rate from Alby (Mempool doesn't include ZAR)
-      try {
-        const zarResponse = await fetch('https://getalby.com/api/rates/zar.json', {
-          timeout: 5000
-        });
-        if (zarResponse.ok) {
-          const zarData = await zarResponse.json();
-          if (zarData && zarData.rate_float) {
-            this.rates.ZAR = zarData.rate_float;
+      // Currencies the Mempool /prices endpoint doesn't return (ZAR, KES,
+      // ZMW, …) come from Alby's per-currency endpoint. Fetched in parallel;
+      // one failure never blocks the others or the rest of the rates.
+      await Promise.all(ALBY_RATE_CURRENCIES.map(async (code) => {
+        try {
+          const res = await fetch(`https://getalby.com/api/rates/${code.toLowerCase()}.json`, {
+            timeout: 5000
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data && typeof data.rate_float === 'number') {
+            this.rates[code] = data.rate_float;
           }
+        } catch (err) {
+          console.warn(`Failed to fetch ${code} rate from Alby:`, err.message);
         }
-      } catch (zarError) {
-        console.warn('Failed to fetch ZAR rate from Alby:', zarError.message);
-      }
+      }));
 
       this.lastUpdate = new Date();
       this.ratesAvailable = true;
@@ -298,25 +302,14 @@ export class FiatRatesService {
    * Format fiat amount with currency symbol
    */
   formatFiatAmount(amount, currency) {
-    const symbols = {
-      USD: '$',
-      EUR: '€',
-      GBP: '£',
-      CAD: 'C$',
-      CHF: 'CHF ',
-      AUD: 'A$',
-      JPY: '¥',
-      ZAR: 'R'
-    };
-    
-    const symbol = symbols[currency.toUpperCase()] || currency.toUpperCase() + ' ';
-    
-    // Format based on currency
-    if (currency.toUpperCase() === 'JPY') {
+    const code = currency.toUpperCase();
+    const symbol = FIAT_SYMBOLS[code] || code + ' ';
+
+    // JPY has no minor unit, so render it without decimals.
+    if (code === 'JPY') {
       return symbol + Math.round(amount).toLocaleString();
-    } else {
-      return symbol + amount.toFixed(2);
     }
+    return symbol + amount.toFixed(2);
   }
 
   /**

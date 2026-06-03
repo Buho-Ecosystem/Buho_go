@@ -577,9 +577,9 @@ export default {
   computed: {
     assignedContact() {
       if (!this.transaction || !this.metadataStore) return null;
-      const metadata = this.metadataStore.getMetadataForTransaction(this.transaction.id);
-      if (!metadata?.contactId) return null;
-      return this.addressBookStore.getEntryById(metadata.contactId);
+      // Same live resolution as the history list: explicit contactId,
+      // then manual removal, then the durable recipient address.
+      return this.metadataStore.getContactForTransaction(this.transaction.id);
     },
 
     currentTags() {
@@ -689,7 +689,9 @@ export default {
 
     async removeContact() {
       try {
-        await this.metadataStore.setContactForTransaction(this.transaction.id, null);
+        // Use the dedicated clear so live address resolution won't
+        // immediately re-attach the same contact after removal.
+        await this.metadataStore.clearContactForTransaction(this.transaction.id);
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact removed'),
