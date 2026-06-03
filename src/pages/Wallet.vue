@@ -7,6 +7,21 @@
         <img src="buho_logo.svg" alt="Logo" class="app-logo">
       </q-avatar>
 
+      <!-- NFC-ready badge. Only shown on a device where NFC is actually
+           available + enabled, so it honestly signals "tap a Bolt Card / NFC
+           tag here". Tap it for a one-line explainer. -->
+      <button
+        v-if="nfcReady"
+        type="button"
+        class="nfc-badge"
+        :class="$q.dark.isActive ? 'nfc-badge-dark' : 'nfc-badge-light'"
+        @click="onNfcBadge"
+        aria-label="NFC ready"
+      >
+        <Icon icon="tabler:nfc" width="14" height="14" />
+        <span>NFC</span>
+      </button>
+
       <!-- Pending Bitcoin Deposits Chip (in header) -->
       <transition name="btc-banner-fade">
         <q-chip
@@ -24,12 +39,8 @@
       </transition>
 
       <q-space/>
-      <!-- Header icon row. Order is intentional: Address Book (least
-           personal, far left), Settings (configuration, middle),
-           Profile (you, right edge — matches every other app's
-           convention). The Profile button uses the same plain-icon
-           treatment as the Settings cog so it reads as a peer
-           destination. -->
+      <!-- Header icon row. Address Book (least personal) then Settings.
+           Profile now lives in the top-right of the Settings page. -->
       <q-btn
         flat
         round
@@ -46,23 +57,12 @@
         flat
         round
         dense
-        class="float-right q-mr-sm"
+        class="float-right"
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="$router.push('/settings')"
         aria-label="Settings"
       >
         <Icon icon="tabler:settings" width="18" height="18" />
-      </q-btn>
-      <q-btn
-        flat
-        round
-        dense
-        class="float-right"
-        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
-        @click="$router.push('/profile')"
-        aria-label="Profile"
-      >
-        <Icon icon="tabler:user" width="18" height="18" />
       </q-btn>
     </q-toolbar>
 
@@ -344,7 +344,11 @@
 
     <!-- Send Modal -->
     <SendModal
+      ref="sendModal"
       v-model="showSendModal"
+      :resolving="sendResolving"
+      :resolve-error="sendResolveError"
+      @update:resolve-error="sendResolveError = $event"
       @payment-detected="onPaymentDetected"
     />
 
@@ -753,10 +757,14 @@ import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {isLightningInvoice as isLightningInvoiceShared} from '../utils/addressUtils.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
+import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
+import {fetchProfile, parseProfileContent, DEFAULT_FETCH_TIMEOUT_MS} from '../utils/nostrFetch.js';
+import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
+import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import HiddenAmount from '../components/HiddenAmount.vue';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
@@ -818,6 +826,10 @@ export default {
   },
   data() {
     return {
+      // True only on a device where NFC is available + enabled — drives the
+      // small "NFC ready" badge next to the logo.
+      nfcReady: false,
+
       // Spark tab switching
       sparkTabSwitching: false,
 
@@ -852,6 +864,10 @@ export default {
 
       showReceiveModal: false,
       showSendModal: false,
+      // Drives the Send sheet's loading CTA + inline error while we fetch and
+      // validate a destination it emitted (before the confirm sheet opens).
+      sendResolving: false,
+      sendResolveError: '',
       // PaymentConfirmSheet flags. Both paths use the same shared sheet
       // component — the only difference is the `verb` prop (send vs
       // redeem) which switches all the labels, and the payload shape
@@ -1203,6 +1219,18 @@ export default {
       // recognized locally by the address domain. Applied as a backfall below.
       const walletBrand = this.resolveWalletBrand(p);
 
+      // Nostr-native address (npub.cash & co.): the address local part is an
+      // npub, i.e. a real person. Decoded here so the recipient can become
+      // their name + avatar instead of a 63-char key. null for every normal
+      // address. Works off the resolved address for both entry shapes.
+      const npubIds = npubFromLightningAddress(p.lightningAddress || walletBrand?.address);
+
+      // The Nostr person to show, from EITHER the npub-handle above OR a bare
+      // npub/nprofile/NIP-05 we resolved at send time (pubkey + profile carried
+      // on the payment). Either way the recipient becomes the real person.
+      const nostrPubkey = npubIds?.pubkey || p.nostrPubkey || null;
+      const nostrNpub = npubIds?.npub || p.nostrNpub || null;
+
       // ── Recipient ─────────────────────────────────────────────
       // Merchant payments (SA retail QR) get the merchant logo + name as
       // hero. Otherwise we use the address itself as the display name —
@@ -1250,13 +1278,23 @@ export default {
           };
         }
 
-        // Consumer-wallet branding: the hosting wallet's own logo + the
-        // username read far friendlier than a raw address. Backfall only — a
-        // saved contact or a payout service (both above) always wins.
-        if (walletBrand && !recipient.matchedContact && !recipient.lnService) {
-          recipient.logoUrl = walletBrand.brand.logo;
-          recipient.name = walletBrand.handle || walletBrand.brand.name;
-          recipient.walletBrand = walletBrand.brand.name;
+        // Identity backfall — a saved contact or a payout service (both above)
+        // always wins. A resolved Nostr person beats plain wallet branding.
+        if (!recipient.matchedContact && !recipient.lnService) {
+          if (nostrPubkey) {
+            // Nostr person — npub.cash address, or a bare npub/NIP-05 we resolved.
+            recipient = this.buildNostrPersonRecipient(
+              p, nostrPubkey, nostrNpub, p.lightningAddress, walletBrand ? walletBrand.brand : null
+            );
+          } else if (walletBrand) {
+            // Consumer-wallet branding: the hosting wallet's logo + username
+            // read far friendlier than a raw address.
+            recipient.logoUrl = walletBrand.brand.logo;
+            recipient.logoContain = walletBrand.brand.logoContain === true;
+            recipient.logoBg = walletBrand.brand.logoBg || '';
+            recipient.name = walletBrand.handle || walletBrand.brand.name;
+            recipient.walletBrand = walletBrand.brand.name;
+          }
         }
       } else if (p.sparkAddress) {
         const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
@@ -1267,7 +1305,16 @@ export default {
           address: p.sparkAddress,
         });
       } else if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
-        if (walletBrand) {
+        if (nostrPubkey) {
+          // Nostr person reached via a raw LNURL (npub.cash, or a resolved
+          // bare npub whose profile carried a lud06 LNURL). Reveal the npub /
+          // address rather than the opaque bech32.
+          recipient = this.buildNostrPersonRecipient(
+            p, nostrPubkey, nostrNpub,
+            walletBrand?.address || nostrNpub || (typeof p.data === 'string' ? p.data : ''),
+            walletBrand ? walletBrand.brand : null
+          );
+        } else if (walletBrand) {
           recipient = {
             name: walletBrand.handle || walletBrand.brand.name,
             color: '#3B82F6',
@@ -1275,6 +1322,8 @@ export default {
             // the indicator then reads "Lightning payment", not "LNURL payment".
             addressType: 'lightning',
             logoUrl: walletBrand.brand.logo,
+            logoContain: walletBrand.brand.logoContain === true,
+            logoBg: walletBrand.brand.logoBg || '',
             walletBrand: walletBrand.brand.name,
             address: walletBrand.address || (typeof p.data === 'string' ? p.data : '')
           };
@@ -1313,7 +1362,11 @@ export default {
           : (bv.logoLightUrl || bv.logoUrl);
         if (!recipient.matchedContact) {
           if (bv.name) recipient.name = bv.name;
-          if (verifiedLogo) recipient.logoUrl = verifiedLogo;
+          if (verifiedLogo) {
+            recipient.logoUrl = verifiedLogo;
+            // Branta-delivered brand marks render best contained (not cropped).
+            recipient.logoContain = true;
+          }
         }
         recipient.verification = { verifyUrl: bv.verifyUrl };
       }
@@ -1364,10 +1417,11 @@ export default {
         // (what the user is actually paying for) wins; Branta's
         // platform-level description is only a fallback when no memo exists.
         // The verified identity (name + logo + badge) is surfaced above.
-        // For a recognized consumer wallet the "memo" is just boilerplate
-        // metadata ("Pay to Wallet of Satoshi user: …"), already conveyed by
-        // the logo + username + brand hint, so we drop it rather than repeat it.
-        description: walletBrand ? '' : (p.description || p.defaultDescription || (bv && bv.description) || ''),
+        // For a recognized consumer wallet (or a resolved Nostr person) the
+        // "memo" is just boilerplate metadata ("Pay to Wallet of Satoshi user:
+        // …"), already conveyed by the logo + name + brand hint, so we drop it
+        // rather than repeat it.
+        description: (walletBrand || nostrPubkey) ? '' : (p.description || p.defaultDescription || (bv && bv.description) || ''),
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
         // Merchant-driven extras — countdown, ZAR fallback, stale rates.
@@ -1408,14 +1462,17 @@ export default {
       const p = this.pendingPayment;
       if (!p || p.type !== 'lnurl_withdraw') return null;
 
-      const sourceName = p.defaultDescription || this.$t('LNURL Withdrawal');
+      // A recognized Bolt Card gets its own mark + clean name instead of the
+      // generic blue ↓ and the technical "Boltcard (refund address …)" text.
+      const isBoltcard = this.isBoltcardWithdraw(p);
       const recipient = {
-        name: sourceName,
+        name: isBoltcard ? 'Bolt Card' : (p.defaultDescription || this.$t('LNURL Withdrawal')),
         initial: '↓',
         color: '#3B82F6',
         addressType: 'lnurl',
         viaOverride: this.$t('Lightning · Withdrawal'),
-        address: ''
+        address: '',
+        ...(isBoltcard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),
       };
 
       let amount;
@@ -1564,6 +1621,10 @@ export default {
     // right gradient (and the backup-pip with the right state) on first
     // mount. Idempotent and cheap.
     this.identityStore.hydrate();
+
+    // NFC capability for the "NFC ready" badge. Fire-and-forget — never blocks
+    // the wallet load, and stays false on web/PWA (no NFC there).
+    isNfcAvailable().then((ok) => { this.nfcReady = ok; }).catch(() => {});
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
@@ -1776,6 +1837,125 @@ export default {
     },
 
     /**
+     * Build the recipient identity for a Nostr-native address (npub.cash & co.,
+     * behind an address. Two sources feed it:
+     *   - the address local part is itself an npub (npub.cash), or
+     *   - we paid a bare npub/nprofile and carried the pubkey + profile here.
+     * Precedence, most-personal first:
+     *   1. a saved contact matched by pubkey — their name + avatar
+     *   2. the resolved Nostr profile — name + avatar (from p.nostrProfile,
+     *      set by the send-time resolve or runNostrRecipientEnrichment)
+     *   3. a tidy truncated npub over the provider logo — the instant baseline.
+     *
+     * @param {object} p        the pending payment (carries p.nostrProfile)
+     * @param {string} pubkey   the person's hex pubkey
+     * @param {string} npub     their npub (for the truncated baseline)
+     * @param {string} address  what the reveal row shows (lud16 / npub / lnurl)
+     * @param {{name: string, logo: string}|null} brand  provider brand, or null
+     */
+    buildNostrPersonRecipient(p, pubkey, npub, address, brand) {
+      // A Nostr friend the user already saved wins — matched by pubkey, not by
+      // this address (their saved address is usually a different lud16).
+      const contact = this.addressBookStore.findContactByPubkey(pubkey);
+      if (contact) {
+        return this.recipientFromContact(contact, {
+          fallbackName: shortenNpub(npub),
+          fallbackColor: '#3B82F6',
+          addressType: 'lightning',
+          address,
+        });
+      }
+      // Otherwise: the live profile avatar, else the provider brand logo, else
+      // the Nostr ostrich — so a profile-less npub still reads as a Nostr
+      // identity rather than a bare 'N' initial.
+      const prof = p.nostrProfile;
+      const picture = (prof && prof.picture) || '';
+      const usingBrandLogo = !picture && !!brand;
+      return {
+        name: (prof && prof.name) || shortenNpub(npub),
+        color: '#3B82F6',
+        addressType: 'lightning',
+        logoUrl: picture || (brand ? brand.logo : '/nostr/nostr.png'),
+        logoContain: usingBrandLogo && brand.logoContain === true,
+        logoBg: usingBrandLogo ? (brand.logoBg || '') : '',
+        walletBrand: brand ? brand.name : '',
+        address,
+      };
+    },
+
+    /**
+     * Thin wrapper around the Nostr resolver used by the NIP-05 fallback:
+     * returns the resolved {kind, address, pubkey, npub, profile} or null on any
+     * failure, so a miss simply leaves the original Lightning-address path
+     * untouched (no error surfaced — the address genuinely just didn't resolve).
+     */
+    async resolveNostrTarget(input) {
+      try {
+        // Bounded so the NIP-05 fallback (nostr.json + kind:0 fetch) can't leave
+        // the Send sheet resolving indefinitely.
+        return await resolveNostrLightningTarget(input, { timeoutMs: 8000 });
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Surface a send-resolution failure (a destination that didn't resolve).
+     * From the open Send sheet we show it inline in the field so the user can
+     * fix the input without leaving; otherwise (deep link, etc.) we fall back
+     * to the global error dialog. The caller has already set `resolved = false`.
+     */
+    failSendResolution(message, fromField, dialogOpts = {}) {
+      if (fromField) {
+        this.sendResolveError = message;
+      } else {
+        this.walletStore.showPaymentError(new Error(message), {
+          context: dialogOpts.context || 'payment',
+          route: dialogOpts.route || 'Payment dispatch',
+          t: this.$t.bind(this),
+        });
+      }
+    },
+
+    /**
+     * Resolve the real Nostr profile (name + avatar) behind an npub.cash-style
+     * address and patch it onto the live payment, so the confirm sheet upgrades
+     * from "Cashu + npub1abc…" to the actual person a moment after it opens.
+     *
+     * Fire-and-forget, mirroring runBrantaVerification: it can never block or
+     * break the send, every failure path resolves to "keep the baseline", and
+     * an identity guard stops a late result from landing on a different payment.
+     */
+    runNostrRecipientEnrichment(payment) {
+      try {
+        if (!payment) return;
+        const brand = this.resolveWalletBrand(payment);
+        if (!brand) return; // only providers we'd actually brand (npub.cash …)
+        const ids = npubFromLightningAddress(payment.lightningAddress || brand.address);
+        if (!ids) return;
+        // Already a saved contact? The sheet shows them from the local cache —
+        // no need to hit the relays at all.
+        if (this.addressBookStore.findContactByPubkey(ids.pubkey)) return;
+
+        const token = payment; // identity guard, same as Branta
+        fetchProfile(ids.pubkey, { timeoutMs: DEFAULT_FETCH_TIMEOUT_MS })
+          .then((event) => {
+            if (!event) return;
+            if (this.pendingPayment !== token) return;
+            const profile = parseProfileContent(event);
+            const name = profileDisplayName(profile);
+            const picture = sanitizeImageUrl(profile.picture);
+            if (!name && !picture) return; // nothing worth upgrading to
+            // Reactive patch -> paymentSheetProps re-runs -> the person appears.
+            this.pendingPayment.nostrProfile = { name, picture };
+          })
+          .catch(() => { /* never surfaces; baseline stays */ });
+      } catch {
+        // Defensive: enrichment must never disrupt the payment path.
+      }
+    },
+
+    /**
      * Build a PaymentConfirmSheet recipient payload from a saved
      * address-book contact, falling back to the supplied defaults
      * when no contact is found. Threads the Nostr `picture` field
@@ -1920,6 +2100,28 @@ export default {
     /**
      * Open receive modal with Bitcoin tab selected
      */
+    /**
+     * Recognize a Bolt Card behind an LNURL-withdraw, so the Redeem sheet can
+     * show the Bolt Card mark instead of a generic ↓. Two signals:
+     *   - `pinLimit` is set only by Bolt Card issuers (LUD-XX), or
+     *   - LNbits' Boltcard extension names the withdraw "Boltcard (refund …)".
+     */
+    isBoltcardWithdraw(p) {
+      if (!p) return false;
+      if (p.pinLimit != null) return true;
+      return /bolt\s*card/i.test(p.defaultDescription || '');
+    },
+
+    // One-line explainer for the NFC-ready badge.
+    onNfcBadge() {
+      this.$q.notify({
+        message: this.$t('NFC ready'),
+        caption: this.$t('Hold a Bolt Card or NFC tag to your phone to pay or redeem'),
+        timeout: 3500,
+        position: 'top',
+      });
+    },
+
     openReceiveModalBitcoin() {
       this.showReceiveModal = true;
       // The ReceiveModal will receive this via a prop or event
@@ -3771,6 +3973,14 @@ export default {
     async onPaymentDetected(paymentData) {
       console.log('Payment detected:', paymentData);
 
+      // Drive the Send sheet's loading CTA + inline error only when the request
+      // came from the open sheet. Deep-link / external calls (fromField=false)
+      // keep the existing dialog-based error path and never touch the sheet.
+      const fromField = this.showSendModal;
+      let delegated = false; // a nested re-dispatch (NIP-05 rescue) owns the outcome
+      let resolved = true;   // assume we'll reach a confirm sheet / handoff
+      if (fromField) { this.sendResolving = true; this.sendResolveError = ''; }
+
       try {
         // Transform the payment data to match expected structure
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
@@ -3798,19 +4008,13 @@ export default {
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
 
           if (lnurlInfo.error || !lnurlInfo.lnurlType) {
-            // Funnel through the global error dialog (PaymentErrorDialog)
-            // so the user sees a centered, friendlier explanation with the
-            // raw upstream reason collapsed into "Technical details" —
-            // matches the pattern used everywhere else that touches the
-            // network. `context: 'link'` keeps the title from saying
-            // "Payment failed" when no payment was attempted yet.
+            // Surface it where the user is: inline in the Send field when that's
+            // where it came from, else the global error dialog (PaymentErrorDialog)
+            // with the raw reason collapsed into "Technical details".
             const reason = lnurlInfo.reason
               || this.$t('The server did not respond or the link is no longer valid');
-            this.walletStore.showPaymentError(new Error(reason), {
-              context: 'link',
-              route: 'LUD-17 scan',
-              t: this.$t.bind(this),
-            });
+            resolved = false;
+            this.failSendResolution(reason, fromField, { context: 'link', route: 'LUD-17 scan' });
             return;
           }
 
@@ -3849,6 +4053,41 @@ export default {
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
           // Fetch LNURL info for all wallet types
           const lnurlInfo = await this.fetchLightningAddressInfo(paymentData.data);
+
+          // NIP-05 fallback. A name@domain that didn't resolve as a Lightning
+          // Address (empty lnurlInfo) might be a NIP-05 identifier instead —
+          // resolve it to the lud16 on the person's Nostr profile and pay that.
+          // Lightning-address interpretation always wins; this only rescues a
+          // miss. Skipped for SA-retail merchants (curated rails), and guarded
+          // (_nostrResolved + address-changed) so it runs once and can't loop.
+          if (!lnurlInfo.minSendable
+              && !paymentData._nostrResolved
+              && paymentData.source !== SA_RETAIL_SOURCE) {
+            const rescued = await this.resolveNostrTarget(paymentData.data);
+            if (rescued && rescued.address && rescued.address !== paymentData.data) {
+              delegated = true; // the recursive call owns resolving / close / error
+              return this.onPaymentDetected({
+                ...paymentData,
+                type: rescued.kind,        // 'lightning_address' | 'lnurl'
+                data: rescued.address,
+                _nostrResolved: true,
+                nostrPubkey: rescued.pubkey,
+                nostrNpub: rescued.npub,
+                nostrProfile: rescued.profile,
+              });
+            }
+          }
+
+          // The address didn't resolve as a Lightning Address, and the NIP-05
+          // rescue found nothing either — fail early, in the field, rather than
+          // open a confirm sheet that can only fail at send time. (SA-retail
+          // merchants are curated and keep their existing handling below.)
+          if (!lnurlInfo.minSendable && paymentData.source !== SA_RETAIL_SOURCE) {
+            resolved = false;
+            this.failSendResolution(this.$t("We couldn't find this Lightning address"), fromField);
+            return;
+          }
+
           const walletType = this.walletStore.activeWalletType;
 
           if (walletType === 'spark' || walletType === 'lnbits') {
@@ -3866,7 +4105,15 @@ export default {
             }
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-            this.pendingPayment = processedAddress;
+            // Keep the lightning address + any carried Nostr identity on the
+            // payload (processedAddress only exposes `address`), so the confirm
+            // sheet brands NWC sends the same as Spark/lnbits — wallet logo,
+            // payout-service hint, or the resolved Nostr person.
+            this.pendingPayment = {
+              ...paymentData,
+              ...processedAddress,
+              lightningAddress: paymentData.data,
+            };
           }
 
           // Enrich with SA retail merchant context
@@ -3895,6 +4142,7 @@ export default {
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
             if (paymentSats > 0 && paymentSats > this.walletState.balance) {
+              resolved = false; // keep the sheet open; the notify explains why
               this.$q.notify({
                 type: 'negative',
                 message: this.$t('Insufficient balance'),
@@ -3930,6 +4178,11 @@ export default {
         // adds a badge on a positive match. A miss does nothing.
         this.runBrantaVerification(this.pendingPayment);
 
+        // Nostr-profile enrichment for npub.cash-style addresses. Same
+        // fire-and-forget contract: upgrades the recipient to the real person
+        // (name + avatar) when relays answer, and does nothing on a miss.
+        this.runNostrRecipientEnrichment(this.pendingPayment);
+
         // Dispatch by payload shape:
         //   - Bitcoin on-chain → L1BitcoinWithdraw (own sheet)
         //   - LNURL-Withdraw   → PaymentConfirmSheet, verb='redeem'
@@ -3943,12 +4196,26 @@ export default {
         }
       } catch (error) {
         console.error('Error processing payment:', error);
-        this.walletStore.showPaymentError(error, {
-          context: 'payment',
-          walletType: this.walletStore.activeWalletType,
-          route: 'Payment dispatch',
-          t: this.$t.bind(this),
-        });
+        resolved = false;
+        if (fromField) {
+          this.sendResolveError = this.$t("We couldn't process this. Check it and try again");
+        } else {
+          this.walletStore.showPaymentError(error, {
+            context: 'payment',
+            walletType: this.walletStore.activeWalletType,
+            route: 'Payment dispatch',
+            t: this.$t.bind(this),
+          });
+        }
+      } finally {
+        // The nested NIP-05 rescue call already settled the outcome (closed the
+        // sheet or set the inline error); don't clobber it from the outer call.
+        if (!delegated) {
+          this.sendResolving = false;
+          // Close the Send sheet only on success; failures stay open so the
+          // user sees the inline error and can fix the input in place.
+          if (resolved && fromField) this.showSendModal = false;
+        }
       }
     },
 
@@ -4642,6 +4909,23 @@ export default {
     },
 
     /**
+     * fetch() bounded by a timeout so a hung LNURL / Lightning-address server
+     * can't leave the Send sheet spinning forever. On timeout it aborts; the
+     * caller's try/catch then treats it as "not found" (same as any failure).
+     * Manual AbortController keeps it working on the older WebKit we still
+     * target (AbortSignal.timeout isn't available there).
+     */
+    async fetchWithTimeout(url, ms = 10000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ms);
+      try {
+        return await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+
+    /**
      * Fetch LNURL info from a Lightning address
      * Returns min/max amounts and whether it's a fixed amount
      */
@@ -4653,7 +4937,7 @@ export default {
         }
 
         const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-        const response = await fetch(endpoint);
+        const response = await this.fetchWithTimeout(endpoint);
 
         if (!response.ok) {
           return {};
@@ -4738,7 +5022,7 @@ export default {
     async fetchLNURLInfo(lnurl) {
       try {
         const url = this.decodeLNURL(lnurl);
-        const response = await fetch(url);
+        const response = await this.fetchWithTimeout(url);
 
         if (!response.ok) {
           return { error: true, reason: `Server returned ${response.status}` };
@@ -7117,6 +7401,32 @@ export default {
 .btc-chip-light {
   background: rgba(247, 147, 26, 0.12) !important;
   border: 1px solid rgba(247, 147, 26, 0.3) !important;
+}
+
+/* NFC-ready badge next to the logo. Quiet pill: present enough to "feature"
+   tap-to-pay, restrained enough not to compete with the logo. */
+.nfc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.nfc-badge-dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary, #9ca3af);
+}
+.nfc-badge-light {
+  background: rgba(17, 24, 39, 0.06);
+  color: var(--text-secondary, #6b7280);
 }
 
 /* Animation for chip */

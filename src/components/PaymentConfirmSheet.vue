@@ -6,11 +6,11 @@
   PaymentModal.
 
   Responsibilities — strictly presentational:
-    - Renders the Compose stage (recipient hero, amount stage, quick chips,
-      optional comment) with proper handling for fixed / range / free
-      amount modes.
-    - Renders the Confirm stage (recipient summary, amount hero, slide-to-
-      send for ≥ 20k sats).
+    - One screen: recipient hero, amount (editable for free/range, locked for
+      fixed), optional comment, fee. The Branta verification seal sits in the
+      top-right corner when the parent attached a verified result.
+    - The commit control morphs into the filling ProgressCta on submit:
+      slide-to-confirm above the high-value threshold, a tap button below it.
     - Validates the entered amount against the supplied constraints before
       emitting `confirm`.
 
@@ -33,7 +33,15 @@
           <Icon icon="tabler:x" width="20" height="20" />
         </q-btn>
         <div class="top-title">{{ topTitle }}</div>
-        <div class="top-spacer"></div>
+        <!-- Verification sits in the top-right corner (Blitz-style): a single
+             tappable seal, not an inline pill under the recipient name. -->
+        <div class="top-action">
+          <BrantaVerifiedBadge
+            v-if="recipientVerification"
+            :verify-url="recipientVerification.verifyUrl"
+            icon-only
+          />
+        </div>
       </header>
 
       <!--
@@ -49,13 +57,16 @@
             <div
               class="recipient-avatar"
               :class="{ 'has-logo': showRecipientLogo }"
-              :style="showRecipientLogo ? null : { background: recipientColor }"
+              :style="showRecipientLogo
+                ? (recipientLogoBg ? { background: recipientLogoBg } : null)
+                : { background: recipientColor }"
             >
               <img
                 v-if="showRecipientLogo"
                 :src="recipientLogo"
                 :alt="recipientName"
                 class="recipient-logo"
+                :class="{ 'recipient-logo--contain': recipientLogoContain }"
                 @error="logoFailed = true"
               />
               <span v-else>{{ recipientInitial }}</span>
@@ -76,10 +87,6 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <BrantaVerifiedBadge
-                v-if="recipientVerification"
-                :verify-url="recipientVerification.verifyUrl"
-              />
               <div v-if="recipientLnService" class="ln-service-hint">
                 <Icon icon="tabler:device-mobile" width="13" height="13" />
                 <span>{{ recipientLnService.hint }}</span>
@@ -367,6 +374,18 @@ export default {
     // than a broken-image glyph (this is a verified-merchant trust surface).
     showRecipientLogo() {
       return !!this.recipientLogo && !this.logoFailed
+    },
+    // Branta-delivered merchant logos look best contained with ~golden-ratio
+    // breathing room rather than cropped edge-to-edge. Payout flags / wallet
+    // logos stay full-bleed; the parent sets this flag only for merchant logos.
+    recipientLogoContain() {
+      return this.payment?.recipient?.logoContain === true
+    },
+    // Optional avatar backdrop for a logo that needs one (e.g. ZBD's white
+    // wordmark, which would vanish on the default white circle). Empty -> the
+    // default `.has-logo` white background.
+    recipientLogoBg() {
+      return this.payment?.recipient?.logoBg || ''
     },
     recipientInitial() {
       const explicit = this.payment?.recipient?.initial
@@ -793,7 +812,14 @@ export default {
   color: var(--text-primary);
   letter-spacing: -0.005em;
 }
-.top-spacer { width: 36px; }
+/* Mirrors the left button's width so the title stays optically centered;
+   holds the top-right verification seal when present. */
+.top-action {
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
 
 /* ─── Stages ─── */
 .stage {
@@ -803,35 +829,38 @@ export default {
   gap: 14px;
   overflow-y: auto;
 }
-/* ─── Recipient ─── */
+/* ─── Recipient ───
+   Borderless, airy hero (Apple/Blitz-elegant): the recipient reads as
+   content, not a chunky filled card. No fill, no border, minimal padding —
+   the avatar + name carry it, verification lives in the top-right corner. */
 .recipient {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
-  background: var(--bg-input);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-card);
+  gap: 13px;
+  padding: 2px 2px 4px;
 }
 
 .recipient-avatar {
-  width: 56px;
-  height: 56px;
-  min-width: 56px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
   overflow: hidden;
 }
-.recipient-avatar.has-logo { background: #fff; }
+.recipient-avatar.has-logo { background: #fff; box-shadow: inset 0 0 0 1px var(--border-card); }
 .recipient-logo { width: 100%; height: 100%; object-fit: cover; }
+/* Merchant logos: contained with golden-ratio breathing room (logo ≈ 0.62 of
+   the avatar) so the delivered brand mark sits cleanly rather than cropped. */
+.recipient-logo--contain { object-fit: contain; padding: 9px; }
 
 .recipient-meta { flex: 1; min-width: 0; }
 
@@ -1185,8 +1214,8 @@ export default {
 
 @media (max-width: 480px) {
   .stage { padding: 8px 16px 10px; gap: 12px; }
-  .recipient { padding: 12px; }
-  .recipient-avatar { width: 48px; height: 48px; min-width: 48px; font-size: 19px; }
+  .recipient { padding: 2px 0 4px; }
+  .recipient-avatar { width: 44px; height: 44px; min-width: 44px; font-size: 18px; }
   .amount-input { font-size: 40px; }
   .primary-cta { height: 50px; font-size: 14.5px; }
 }

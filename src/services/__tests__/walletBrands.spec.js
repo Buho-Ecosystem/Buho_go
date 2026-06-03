@@ -52,19 +52,39 @@ test('Blink / Alby / Primal / ZBD / Fountain / Wavlake / Wavespace / YakiHonne /
   assert.equal(matchWalletBrand('yakihonne.com').name, 'YakiHonne')
   assert.equal(matchWalletBrand('zap.stream').name, 'zap.stream')
   assert.equal(matchWalletBrand('damus.io').name, 'Damus')
+  // ZBD's white wordmark needs a dark backdrop + contain to render in the avatar.
+  assert.equal(matchWalletBrand('zbd.gg').logoContain, true)
+  assert.match(matchWalletBrand('zbd.gg').logoBg, /^#[0-9a-fA-F]{6}$/)
+  assert.equal(matchWalletBrand('blitzwalletapp.com').name, 'Blitz Wallet')
+  assert.equal(matchWalletBrand('strike.me').name, 'Strike')
+  assert.equal(matchWalletBrand('strik.me').name, 'Strike')
 })
 
-test('LNbits flagship instances (lnbits.com / lnbits.de) share the bolt icon', () => {
+test('LNbits flagship (lnbits.com) uses the bolt icon', () => {
   const com = matchWalletBrand('lnbits.com')
-  const de = matchWalletBrand('lnbits.de')
   assert.equal(com.name, 'LNbits')
-  assert.equal(de.name, 'LNbits')
   assert.equal(com.logo, '/LNBits/lnbits-icon.svg')
-  assert.equal(de.logo, com.logo)
 })
 
-test('Ecash family (npub.cash / minibits.cash / sats.contact) shares the one Cashu brand + logo', () => {
-  const domains = ['npub.cash', 'minibits.cash', 'sats.contact']
+test('German LNbits instances carry the Business Bitcoin brand', () => {
+  for (const d of ['lnbits.de', 'timecatcher.lnbits.de']) {
+    const b = matchWalletBrand(d)
+    assert.equal(b.name, 'Business Bitcoin', `${d} -> Business Bitcoin`)
+    assert.equal(b.logo, '/Social_Wallet_logos/BusinessBitcoin.png', `${d} logo`)
+  }
+})
+
+test('Buho brand domains resolve to the Buho logo', () => {
+  for (const d of ['mybuho.de', 'pay.mybuho.de', 'btc.mybuho.de']) {
+    const b = matchWalletBrand(d)
+    assert.equal(b.name, 'Buho', `${d} -> Buho`)
+    assert.equal(b.logo, '/buho_logo_grey.svg', `${d} logo`)
+  }
+})
+
+test('Ecash family (npub.cash / minibits.cash / sats.contact / nutstash.app) shares the one Cashu brand + logo', () => {
+  const domains = ['npub.cash', 'minibits.cash', 'sats.contact', 'nutstash.app']
+  assert.equal(domains.length, 4)
   for (const d of domains) {
     const b = matchWalletBrand(d)
     assert.equal(b.name, 'Cashu', `${d} -> Cashu`)

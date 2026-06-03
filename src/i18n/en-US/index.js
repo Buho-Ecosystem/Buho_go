@@ -1525,6 +1525,15 @@ export default {
   "Incoming Bitcoin": "Incoming Bitcoin",
   "Auto-add Bitcoin deposits": "Auto-add Bitcoin deposits",
   "Add deposits to your balance without an extra step.": "Add deposits to your balance without an extra step.",
+  "About auto-add Bitcoin deposits": "About auto-add Bitcoin deposits",
+  "When someone sends you Bitcoin on-chain, it lands on your Spark wallet's own permanent Bitcoin address.": "When someone sends you Bitcoin on-chain, it lands on your Spark wallet's own permanent Bitcoin address.",
+  "On-chain payments need a few block confirmations before they can be spent. With this on, BuhoGO waits for them and moves the deposit into your spendable balance for you, with no extra step.": "On-chain payments need a few block confirmations before they can be spent. With this on, BuhoGO waits for them and moves the deposit into your spendable balance for you, with no extra step.",
+  "If a deposit's claim fee would be unusually high, or the amount very small, you're asked first, so it's never eaten up by fees.": "If a deposit's claim fee would be unusually high, or the amount very small, you're asked first, so it's never eaten up by fees.",
+  "Off: you add each confirmed deposit yourself with a tap.": "Off: you add each confirmed deposit yourself with a tap.",
+  "When you pay a supported business, BuhoGO shows its verified name and logo right on the confirm screen, so you know your money is going to the right place.": "When you pay a supported business, BuhoGO shows its verified name and logo right on the confirm screen, so you know your money is going to the right place.",
+  "The check runs privately. Your payment destination is never shared, and if there is no match, nothing extra is shown.": "The check runs privately. Your payment destination is never shared, and if there is no match, nothing extra is shown.",
+  "Off: payments are sent without the verification check.": "Off: payments are sent without the verification check.",
+  "Powered by": "Powered by",
   "Bitcoin received": "Bitcoin received",
   "sats added to your wallet": "sats added to your wallet",
   "Send back": "Send back",
@@ -2067,5 +2076,25 @@ export default {
   "About merchant verification": "About merchant verification",
   "Merchant verification": "Merchant verification",
   "Show a verified name and logo for supported businesses you pay.": "Show a verified name and logo for supported businesses you pay.",
-  "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.": "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here."
+  "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.": "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.",
+
+  // ── Nostr send: paying a bare npub/nprofile + the NIP-05 fallback ──
+  "Nostr profile": "Nostr profile",
+  "We couldn't resolve this Nostr profile": "We couldn't resolve this Nostr profile",
+  "Check the npub and your connection, then try again": "Check the npub and your connection, then try again",
+  "This Nostr profile has no Lightning address yet": "This Nostr profile has no Lightning address yet",
+  "Ask them to set a Lightning address on their profile": "Ask them to set a Lightning address on their profile",
+  "We couldn't find this Nostr profile": "We couldn't find this Nostr profile",
+  "No profile was published to the relays we checked": "No profile was published to the relays we checked",
+  "That Nostr key looks malformed": "That Nostr key looks malformed",
+  "Double-check the npub and try again": "Double-check the npub and try again",
+
+  // ── Send: fetch/validate the destination in the field ──
+  "Fetching…": "Fetching…",
+  "We couldn't find this Lightning address": "We couldn't find this Lightning address",
+  "We couldn't process this. Check it and try again": "We couldn't process this. Check it and try again",
+
+  // ── NFC-ready badge ──
+  "NFC ready": "NFC ready",
+  "Hold a Bolt Card or NFC tag to your phone to pay or redeem": "Hold a Bolt Card or NFC tag to your phone to pay or redeem"
 }

@@ -19,7 +19,11 @@
   <button
     type="button"
     class="branta-verified"
-    :class="{ 'branta-verified--compact': compact, 'branta-verified--static': !verifyUrl }"
+    :class="{
+      'branta-verified--compact': compact,
+      'branta-verified--static': !verifyUrl,
+      'branta-verified--icon': iconOnly,
+    }"
     :aria-label="$t('Verified by Branta')"
     :title="$t('Verified by Branta')"
     @click.stop="open"
@@ -30,14 +34,21 @@
       :height="iconSize"
       class="branta-verified-seal"
     />
-    <span class="branta-verified-text">{{ $t('Verified by Branta') }}</span>
-    <Icon
-      v-if="verifyUrl"
-      icon="tabler:chevron-right"
-      :width="compact ? 11 : 12"
-      :height="compact ? 11 : 12"
-      class="branta-verified-chev"
-    />
+    <!-- Icon-only variant (e.g. the confirm-sheet top-right corner) drops the
+         label + chevron; the tooltip carries the meaning. -->
+    <template v-if="!iconOnly">
+      <span class="branta-verified-text">{{ $t('Verified by Branta') }}</span>
+      <Icon
+        v-if="verifyUrl"
+        icon="tabler:chevron-right"
+        :width="compact ? 11 : 12"
+        :height="compact ? 11 : 12"
+        class="branta-verified-chev"
+      />
+    </template>
+    <q-tooltip v-if="iconOnly" anchor="bottom right" self="top right">
+      {{ $t('Verified by Branta') }}
+    </q-tooltip>
   </button>
 </template>
 
@@ -53,9 +64,12 @@ export default {
     verifyUrl: { type: String, default: '' },
     /** Smaller variant for the confirm-stage recipient summary. */
     compact: { type: Boolean, default: false },
+    /** Bare seal — no label/chevron/pill. Used in the sheet's top-right corner. */
+    iconOnly: { type: Boolean, default: false },
   },
   computed: {
     iconSize() {
+      if (this.iconOnly) return 22
       return this.compact ? 14 : 16
     },
   },
@@ -113,6 +127,24 @@ export default {
 /* Static variant: rendered when there is no verifyUrl to open, so the pill
    reads as a seal rather than a tappable link (no chevron, no pointer). */
 .branta-verified--static { cursor: default; }
+
+/* Icon-only variant: a bare round seal button for the sheet's top-right
+   corner — no pill background, no label. */
+.branta-verified--icon {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  margin-top: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  justify-content: center;
+}
+.branta-verified--icon:active { transform: scale(0.92); }
+body.body--dark .branta-verified--icon {
+  background: none;
+  box-shadow: none;
+}
 
 .branta-verified:not(.branta-verified--static):hover {
   background: rgba(17, 24, 39, 0.08);
