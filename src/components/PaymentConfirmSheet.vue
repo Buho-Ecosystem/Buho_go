@@ -84,6 +84,14 @@
                 <Icon icon="tabler:device-mobile" width="13" height="13" />
                 <span>{{ recipientLnService.hint }}</span>
               </div>
+              <!-- Hosting consumer wallet (Wallet of Satoshi, Phoenix, …),
+                   recognized from the address domain. The logo (avatar) and the
+                   username (name above) carry the identity; this quiet line
+                   names the wallet so it's unmistakable. -->
+              <div v-else-if="recipientWalletBrand" class="wallet-brand-hint">
+                <Icon icon="tabler:wallet" width="13" height="13" />
+                <span>{{ recipientWalletBrand }}</span>
+              </div>
             </div>
           </section>
 
@@ -224,35 +232,46 @@
             </span>
           </div>
 
-          <!-- Action: slide-to-send for ≥ 20k sats, a tap button otherwise.
-               This is the single commit gesture — no separate confirm screen,
-               so a fixed-amount destination (locked input above) lands here
-               with nothing extra to tap. -->
+          <!-- Commit control. Idle: slide-to-confirm above the threshold, a tap
+               button below it. Once committed (either way) it morphs into the
+               filling ProgressCta — trickle while in flight, then 100% + check
+               on success — bridging cleanly into the confirmation screen with
+               no separate confirm step and no blank in between. -->
           <div class="cta-row confirm-cta">
-            <SlideToSend
-              v-if="requiresSlide"
-              ref="slideRef"
-              :label="slideLabel"
-              :loading="isSending"
-              :disabled="!canSubmit"
-              @complete="emitConfirm"
-            />
-            <button
-              v-else
-              type="button"
-              class="primary-cta"
-              :disabled="!canSubmit || isSending"
-              @click="emitConfirm"
-            >
-              <q-spinner-dots v-if="isSending" class="q-mr-sm" />
-              <span>{{ primaryCtaLabel }}</span>
-            </button>
+            <transition name="cta-swap" mode="out-in">
+              <ProgressCta
+                v-if="isSending || isComplete"
+                key="progress"
+                :label="sendingLabel"
+                :done="isComplete"
+                :tall="requiresSlide"
+              />
+              <SlideToSend
+                v-else-if="requiresSlide"
+                key="slide"
+                ref="slideRef"
+                :label="slideLabel"
+                :disabled="!canSubmit"
+                @complete="emitConfirm"
+              />
+              <button
+                v-else
+                key="button"
+                type="button"
+                class="primary-cta"
+                :disabled="!canSubmit"
+                @click="emitConfirm"
+              >
+                {{ primaryCtaLabel }}
+              </button>
+            </transition>
+
             <!-- Status line during send takes priority over the generic fees
                  footnote, which only shows when no fee data is displayed. -->
             <div v-if="isSending && statusMessage" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
-            <div v-else-if="!feeRowVisible && verb === 'send'" class="fee-footnote">
+            <div v-else-if="!isSending && !isComplete && !feeRowVisible && verb === 'send'" class="fee-footnote">
               {{ $t('Network fees apply') }}
             </div>
           </div>
@@ -269,12 +288,15 @@ import { formatAmount } from '../utils/amountFormatting.js'
 import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
+import ProgressCta from './ProgressCta.vue'
 
-const SLIDE_THRESHOLD_SATS = 20000
+// Below this, a tap "Send" button; above it, slide-to-confirm. Both morph into
+// the same filling ProgressCta once committed.
+const SLIDE_THRESHOLD_SATS = 10000
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge },
+  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -285,6 +307,12 @@ export default {
     walletCanPay: { type: Boolean, default: true },
     walletHint: { type: String, default: '' },
     isSending: { type: Boolean, default: false },
+    /**
+     * Flips true the moment the payment SUCCEEDS, so the CTA can snap its
+     * fill to 100% + a checkmark before the success screen appears. Stays
+     * false on failure (the CTA returns to idle and the slide resets).
+     */
+    isComplete: { type: Boolean, default: false },
     /**
      * Verb mode. 'send' is the default outgoing-payment vocabulary;
      * 'redeem' switches every label to its incoming-withdrawal twin
@@ -365,6 +393,13 @@ export default {
     // simply never renders in the common case.
     recipientLnService() {
       return this.payment?.recipient?.lnService || null
+    },
+
+    // Hosting consumer wallet name (Wallet of Satoshi, Phoenix, Blink, …),
+    // attached by the parent adapter when the address domain matches a known
+    // wallet. Absent otherwise, so the brand hint never renders in that case.
+    recipientWalletBrand() {
+      return this.payment?.recipient?.walletBrand || null
     },
 
     // Label for the payment-indicator row: the human description when the
@@ -528,7 +563,8 @@ export default {
     },
 
     requiresSlide() {
-      return this.amountInSats >= SLIDE_THRESHOLD_SATS
+      // Tap button up to the threshold; slide-to-confirm above it.
+      return this.amountInSats > SLIDE_THRESHOLD_SATS
     },
 
     fiatEquivalent() {
@@ -581,15 +617,19 @@ export default {
       return `${phrase} ${this.formattedConfirmAmount}`
     },
 
+    // Idle tap-button label (the in-flight / done states are owned by
+    // ProgressCta now, so this no longer handles the sending case).
     primaryCtaLabel() {
-      if (this.isSending) {
-        return this.isRedeem ? this.$t('Redeeming...') : this.$t('Sending...')
-      }
       // No valid amount entered yet (free/range): prompt to enter one.
       if (!this.isAmountAcceptable && this.amountMode !== 'fixed') {
         return this.$t('Enter amount')
       }
       return this.confirmSendLabel
+    },
+
+    // In-flight label shown inside the filling ProgressCta.
+    sendingLabel() {
+      return this.isRedeem ? this.$t('Redeeming...') : this.$t('Sending...')
     }
   },
   watch: {
@@ -814,8 +854,11 @@ export default {
 }
 
 /* Fiat-payout service hint (Tando, Bitzed, …): a quiet line under the
-   phone number reminding the user the money lands as local currency. */
-.ln-service-hint {
+   phone number reminding the user the money lands as local currency.
+   The wallet-brand hint (Wallet of Satoshi, Phoenix, …) shares the look —
+   a quiet line under the username naming the hosting wallet. */
+.ln-service-hint,
+.wallet-brand-hint {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1122,6 +1165,13 @@ export default {
 .primary-cta:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .fee-footnote { text-align: center; font-size: 11px; color: var(--text-muted); }
+
+/* Idle CTA (button / slide) -> filling ProgressCta. A short cross-fade keeps
+   the morph smooth when the user commits. */
+.cta-swap-enter-active,
+.cta-swap-leave-active { transition: opacity 0.2s ease; }
+.cta-swap-enter-from,
+.cta-swap-leave-to { opacity: 0; }
 
 /* Optional rail line (e.g. LNURL-Withdraw → "Lightning · Withdrawal"). */
 .amount-confirm-via {

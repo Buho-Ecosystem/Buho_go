@@ -571,6 +571,7 @@
       :wallet-can-pay="paymentSheetWalletCanPay"
       :wallet-hint="paymentSheetWalletHint"
       :is-sending="isSendingPayment"
+      :is-complete="sendDidSucceed"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
     />
@@ -751,6 +752,7 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {isLightningInvoice as isLightningInvoiceShared} from '../utils/addressUtils.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
+import {matchWalletBrand} from '../services/walletBrands';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
@@ -877,6 +879,9 @@ export default {
       currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
       isSendingPayment: false,
+      // True for the brief completion beat after a send succeeds — drives the
+      // CTA's fill-to-100% + checkmark before the success screen appears.
+      sendDidSucceed: false,
       fiatRatesLoaded: false,
       secondaryValue: '',
       showWalletSwitcher: false,
@@ -1194,6 +1199,10 @@ export default {
       const p = this.pendingPayment;
       if (!p) return null;
 
+      // Consumer-wallet identity (Wallet of Satoshi, Phoenix, Blink, …),
+      // recognized locally by the address domain. Applied as a backfall below.
+      const walletBrand = this.resolveWalletBrand(p);
+
       // ── Recipient ─────────────────────────────────────────────
       // Merchant payments (SA retail QR) get the merchant logo + name as
       // hero. Otherwise we use the address itself as the display name —
@@ -1240,6 +1249,15 @@ export default {
             currency: lnService.currency,         // local payout currency (KES/ZMW)
           };
         }
+
+        // Consumer-wallet branding: the hosting wallet's own logo + the
+        // username read far friendlier than a raw address. Backfall only — a
+        // saved contact or a payout service (both above) always wins.
+        if (walletBrand && !recipient.matchedContact && !recipient.lnService) {
+          recipient.logoUrl = walletBrand.brand.logo;
+          recipient.name = walletBrand.handle || walletBrand.brand.name;
+          recipient.walletBrand = walletBrand.brand.name;
+        }
       } else if (p.sparkAddress) {
         const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
         recipient = this.recipientFromContact(contact, {
@@ -1249,12 +1267,25 @@ export default {
           address: p.sparkAddress,
         });
       } else if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
-        recipient = {
-          name: this.$t('LNURL payment'),
-          color: '#3B82F6',
-          addressType: 'lnurl',
-          address: typeof p.data === 'string' ? p.data : ''
-        };
+        if (walletBrand) {
+          recipient = {
+            name: walletBrand.handle || walletBrand.brand.name,
+            color: '#3B82F6',
+            // It is a Lightning Address under the hood, so label it as one:
+            // the indicator then reads "Lightning payment", not "LNURL payment".
+            addressType: 'lightning',
+            logoUrl: walletBrand.brand.logo,
+            walletBrand: walletBrand.brand.name,
+            address: walletBrand.address || (typeof p.data === 'string' ? p.data : '')
+          };
+        } else {
+          recipient = {
+            name: this.$t('LNURL payment'),
+            color: '#3B82F6',
+            addressType: 'lnurl',
+            address: typeof p.data === 'string' ? p.data : ''
+          };
+        }
       } else {
         // BOLT11 invoice or unknown — show description as the "name" if
         // we have it, otherwise fall back to a generic label.
@@ -1333,7 +1364,10 @@ export default {
         // (what the user is actually paying for) wins; Branta's
         // platform-level description is only a fallback when no memo exists.
         // The verified identity (name + logo + badge) is surfaced above.
-        description: p.description || p.defaultDescription || (bv && bv.description) || '',
+        // For a recognized consumer wallet the "memo" is just boilerplate
+        // metadata ("Pay to Wallet of Satoshi user: …"), already conveyed by
+        // the logo + username + brand hint, so we drop it rather than repeat it.
+        description: walletBrand ? '' : (p.description || p.defaultDescription || (bv && bv.description) || ''),
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
         // Merchant-driven extras — countdown, ZAR fallback, stale rates.
@@ -1687,6 +1721,60 @@ export default {
     }
   },
   methods: {
+    /**
+     * Recognize the consumer wallet behind a Lightning Address / LNURL so the
+     * confirm sheet can show its real logo + the username instead of a generic
+     * "LNURL payment" placeholder. Backfall only — the caller applies it after
+     * a saved contact and a payout-service match, never over them.
+     *
+     * Handles both entry shapes the send pipeline produces:
+     *   - a typed/scanned Lightning Address -> domain + handle split on "@"
+     *   - a raw LNURL (incl. an address already resolved to one) -> decode to
+     *     the lnurlp endpoint, then read the host (+ the handle from the
+     *     .../lnurlp/<handle> path segment).
+     *
+     * @returns {{ brand: {name, logo}, handle: string|null, address: string|null } | null}
+     */
+    resolveWalletBrand(p) {
+      if (!p) return null;
+
+      // Lightning Address: cleanest source — both parts are in the string.
+      if (typeof p.lightningAddress === 'string' && p.lightningAddress.includes('@')) {
+        const at = p.lightningAddress.lastIndexOf('@');
+        const brand = matchWalletBrand(p.lightningAddress.slice(at + 1));
+        return brand
+          ? { brand, handle: p.lightningAddress.slice(0, at), address: p.lightningAddress }
+          : null;
+      }
+
+      // Raw LNURL (e.g. a scanned QR): decode to the lnurlp URL and read its
+      // host. A Lightning Address resolved upstream lands here too, so the
+      // .well-known/lnurlp/<handle> path still yields the username.
+      if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
+        const encoded = p.lnurl || (typeof p.data === 'string' ? p.data : '');
+        if (!encoded) return null;
+        let host;
+        let handle = null;
+        try {
+          const url = new URL(this.decodeLNURL(encoded));
+          host = url.hostname;
+          const segs = url.pathname.split('/').filter(Boolean);
+          const i = segs.lastIndexOf('lnurlp');
+          if (i >= 0 && segs[i + 1]) handle = decodeURIComponent(segs[i + 1]);
+        } catch {
+          return null;
+        }
+        const brand = matchWalletBrand(host);
+        if (!brand) return null;
+        // Reconstruct the clean address for the tap-to-reveal row; fall back to
+        // the raw encoded string when the endpoint carried no handle.
+        const address = handle ? `${handle}@${host.toLowerCase()}` : null;
+        return { brand, handle, address };
+      }
+
+      return null;
+    },
+
     /**
      * Build a PaymentConfirmSheet recipient payload from a saved
      * address-book contact, falling back to the supplied defaults
@@ -3510,7 +3598,14 @@ export default {
 
       this.withdrawConfirmedAmount = amount;
 
-      // Calculate fiat value
+      // Surface the success screen and close the sheet FIRST, so the confirm
+      // sheet never lingers behind the (optional) fiat lookup. Fiat is
+      // decorative and fills in reactively below.
+      this.withdrawConfirmedFiat = '';
+      this.showWithdrawSheet = false;
+      this.pendingPayment = null;
+      this.showWithdrawSuccess = true;
+
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
@@ -3520,10 +3615,6 @@ export default {
       } catch (e) {
         // Fiat conversion optional
       }
-
-      this.showWithdrawSheet = false;
-      this.pendingPayment = null;
-      this.showWithdrawSuccess = true;
 
       await this.updateWalletBalance();
     },
@@ -4092,20 +4183,18 @@ export default {
           };
         }
 
-        this.pendingPayment = null;
-        this.paymentAmount = '';
-        this.paymentComment = '';
-        this.estimatedFee = null;
-        this.isEstimatingFee = false;
+        // Snap the CTA to its completed state (fill -> 100% + check) while the
+        // recipient payload is still intact, and let that brief micro-
+        // interaction play. This is the bridge from the send CTA to the
+        // confirmation screen.
+        this.sendDidSucceed = true;
+        await new Promise((resolve) => setTimeout(resolve, 450)); // CTA completion beat
 
-        await this.updateWalletBalance();
-
-        // Fire the success modal. The Spark provider's polling already
-        // resolved to a terminal status by the time we got here — if
-        // it timed out at 60s without settling, we land on PENDING and
-        // the modal uses softer "still routing" copy. NWC and LNbits
-        // payInvoice paths resolve completed-or-throw, so they always
-        // land on COMPLETED here.
+        // Surface the success screen FIRST, then tear the sheet down BEHIND it
+        // — clearing pendingPayment while the sheet is still visible is what
+        // used to flash the generic "Recipient" fallback. The Spark provider's
+        // polling already resolved to a terminal status by now; a 60s timeout
+        // without settling lands on PENDING with softer "still routing" copy.
         const status = (result && typeof result === 'object' && result.status) || 'completed';
         this.openSendSuccess({
           amount,
@@ -4113,6 +4202,17 @@ export default {
           status,
           showSaveContact: shouldOfferSave,
         });
+
+        this.showSendSheet = false;
+        this.pendingPayment = null;
+        this.paymentAmount = '';
+        this.paymentComment = '';
+        this.estimatedFee = null;
+        this.isEstimatingFee = false;
+        this.sendDidSucceed = false;
+
+        // Refresh the balance behind the now-visible success screen.
+        await this.updateWalletBalance();
 
       } catch (error) {
         console.error('Payment failed:', error);
@@ -4161,11 +4261,11 @@ export default {
 
       await this.confirmPayment();
 
-      // confirmPayment nulls pendingPayment on success and leaves it
-      // in place on failure (its catch block doesn't rethrow).
-      if (this.pendingPayment === null) {
-        this.showSendSheet = false;
-      } else {
+      // On success confirmPayment plays the CTA completion animation, shows the
+      // success screen, and closes the sheet itself. On failure pendingPayment
+      // survives (its catch block doesn't rethrow) — reset the slide so the
+      // user can retry without re-entering anything.
+      if (this.pendingPayment !== null) {
         this.$refs.sendSheetRef?.resetSlide();
       }
     },
@@ -4173,6 +4273,7 @@ export default {
     onSendSheetCancel() {
       this.cancelBrantaLookup();
       this.showSendSheet = false;
+      this.sendDidSucceed = false;
       this.pendingPayment = null;
       this.paymentAmount = '';
       this.paymentComment = '';
@@ -4373,6 +4474,10 @@ export default {
       this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted;
       this.sendSuccessFiat = '';
 
+      // Show the success surface immediately — fiat is decorative and must
+      // never gate the confirmation; it fills in reactively below.
+      this.showSendSuccess = true;
+
       // Best-effort fiat conversion. Mirrors the withdraw-success
       // pattern (~Wallet.vue:3085) — same try/catch shape so a stale
       // rate cache can never block the confirmation surface.
@@ -4391,8 +4496,6 @@ export default {
           console.warn('[wallet] send-success fiat lookup failed:', err);
         }
       }
-
-      this.showSendSuccess = true;
     },
 
     /**
