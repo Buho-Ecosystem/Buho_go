@@ -595,6 +595,7 @@
       v-model="showBitcoinSheet"
       :destination-address="pendingPayment.bitcoinAddress"
       :available-balance="walletState.balance"
+      :verification="pendingPayment?.brantaVerification || null"
       @withdrawal-submitted="handleBitcoinWithdrawalSubmitted"
       @withdrawal-error="handleBitcoinWithdrawalError"
     />
@@ -773,6 +774,7 @@ import {
 } from '../stores/bitcoinPreferences';
 import { track as telemetryTrack } from '../utils/telemetry';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
+import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
 
 export default {
   name: 'WalletPage',
@@ -1223,8 +1225,29 @@ export default {
           name: p.description || this.$t('Lightning invoice'),
           color: '#F59E0B',
           addressType: 'invoice',
-          address: ''
+          // The raw destination for invoices is the BOLT11 itself, surfaced
+          // (folded) under the payment indicator for manual verification.
+          address: p.invoice || p.data || ''
         };
+      }
+
+      // ── Branta merchant verification ──────────────────────────
+      // Attached asynchronously by runBrantaVerification on a positive
+      // lookup. We surface the verified business name + logo as the hero
+      // identity (overriding the generic "Lightning invoice" label and
+      // colored initial), but never relabel a contact the user saved
+      // themselves, and never override an SA-retail merchant. The tappable
+      // "verified by Branta" badge is attached whenever a match exists.
+      const bv = p.brantaVerification;
+      if (bv && !p.merchant) {
+        const verifiedLogo = this.$q.dark.isActive
+          ? (bv.logoUrl || bv.logoLightUrl)
+          : (bv.logoLightUrl || bv.logoUrl);
+        if (!recipient.matchedContact) {
+          if (bv.name) recipient.name = bv.name;
+          if (verifiedLogo) recipient.logoUrl = verifiedLogo;
+        }
+        recipient.verification = { verifyUrl: bv.verifyUrl };
       }
 
       // ── Amount mode ───────────────────────────────────────────
@@ -1269,7 +1292,11 @@ export default {
       return {
         recipient,
         amount,
-        description: p.description || p.defaultDescription || '',
+        // Description precedence is deliberate: the invoice / LNURL memo
+        // (what the user is actually paying for) wins; Branta's
+        // platform-level description is only a fallback when no memo exists.
+        // The verified identity (name + logo + badge) is surfaced above.
+        description: p.description || p.defaultDescription || (bv && bv.description) || '',
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
         // Merchant-driven extras — countdown, ZAR fallback, stale rates.
@@ -1502,6 +1529,8 @@ export default {
     this.stopWithdrawMonitor();
     // Stop merchant countdown if active
     this.stopMerchantCountdown();
+    // Abort any in-flight Branta lookup
+    this.cancelBrantaLookup();
   },
   watch: {
     'walletState.balance': {
@@ -1636,6 +1665,7 @@ export default {
           color: fallback.fallbackColor,
           addressType: fallback.addressType,
           address: fallback.address,
+          matchedContact: false,
         };
       }
       const nostrPicture = typeof contact.nostr_profile?.picture === 'string'
@@ -1648,6 +1678,7 @@ export default {
         logoUrl: safeLogoUrl,
         addressType: fallback.addressType,
         address: fallback.address,
+        matchedContact: true,
       };
     },
 
@@ -3766,6 +3797,11 @@ export default {
           this.pendingPayment = paymentData;
         }
 
+        // Merchant verification (Branta). Fire-and-forget: it runs in the
+        // background, can never block or break the send, and only ever
+        // adds a badge on a positive match. A miss does nothing.
+        this.runBrantaVerification(this.pendingPayment);
+
         // Dispatch by payload shape:
         //   - Bitcoin on-chain → L1BitcoinWithdraw (own sheet)
         //   - LNURL-Withdraw   → PaymentConfirmSheet, verb='redeem'
@@ -3785,6 +3821,102 @@ export default {
           route: 'Payment dispatch',
           t: this.$t.bind(this),
         });
+      }
+    },
+
+    /**
+     * Merchant verification (Branta), send side. Fired fire-and-forget
+     * after the payment payload is built and the confirm sheet is on its
+     * way up. It is a progressive enhancement and is wrapped so it can
+     * never disrupt the payment: every failure path resolves to "show
+     * nothing". Mirrors Blitz Wallet's gating and the official wallet docs.
+     *
+     * Verifiable in strict mode:
+     *   - BOLT11 invoices (scanned, pasted, or the lightning leg extracted
+     *     from a BIP21 QR): looked up privately, the raw invoice is never
+     *     sent to Branta. Badge shown on PaymentConfirmSheet.
+     *   - On-chain addresses whose QR carries branta_id + branta_secret
+     *     (ZK params): badge shown on the on-chain withdraw sheet.
+     * Raw Lightning Address / LNURL / Spark cannot resolve in strict mode
+     * and are intentionally skipped (Blitz Wallet skips them too).
+     */
+    runBrantaVerification(payment) {
+      try {
+        if (!this.bitcoinPrefsStore.brantaVerificationEnabled) return;
+        // SA-retail merchants carry their own curated identity and are not
+        // on Branta; skip so the two never collide.
+        if (!payment || payment.source === SA_RETAIL_SOURCE) return;
+
+        // Decide what raw text (if any) to hand the SDK.
+        let qrText = null;
+        if (payment.type === 'lightning_invoice') {
+          // The extracted BOLT11 (covers a direct scan, a paste, and the
+          // lightning leg of a BIP21 unified QR).
+          qrText = payment.invoice || payment.data || null;
+        } else if (payment.type === 'bitcoin_address') {
+          // On-chain only resolves when the QR carries the ZK params.
+          const raw = payment.rawInput || '';
+          if (this.hasBrantaParams(raw)) qrText = raw;
+        }
+        if (!qrText) return;
+
+        // Cancel any earlier in-flight lookup, then bound the new one with
+        // a short timeout so a hung request cannot linger.
+        if (this._brantaAbort) this._brantaAbort.abort();
+        const controller = new AbortController();
+        this._brantaAbort = controller;
+        const timer = setTimeout(() => controller.abort(), BRANTA_LOOKUP_TIMEOUT_MS);
+
+        // Identity guard: only paint the badge if this is still the exact
+        // same pending payment when the lookup resolves. Each new payment
+        // reassigns this.pendingPayment to a fresh object, so a late result
+        // can never land on a different payment.
+        const token = payment;
+
+        lookupBrantaVerification({ qrText, signal: controller.signal })
+          .then((verification) => {
+            if (!verification) return;
+            if (this.pendingPayment !== token) return;
+            // Adding the key on the reactive payload re-runs the sheet
+            // adapter (and the on-chain sheet prop), so the badge appears
+            // the moment the result lands.
+            this.pendingPayment.brantaVerification = verification;
+          })
+          .catch(() => { /* never surfaces; see utils/branta.js */ })
+          .finally(() => clearTimeout(timer));
+      } catch {
+        // Defensive: verification must never disrupt the payment path.
+      }
+    },
+
+    /**
+     * True when a bitcoin: URI carries both Branta ZK params, the only
+     * case an on-chain destination can be verified in strict mode. Mirrors
+     * Blitz Wallet's check.
+     */
+    hasBrantaParams(raw) {
+      if (!raw || typeof raw !== 'string') return false;
+      try {
+        const url = new URL(raw);
+        // The SDK's QR parser lowercases query keys, so match
+        // case-insensitively to agree with it and not skip a
+        // non-canonical-cased QR.
+        const keys = [...url.searchParams.keys()].map((k) => k.toLowerCase());
+        return keys.includes('branta_id') && keys.includes('branta_secret');
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * Abort and clear any in-flight Branta lookup. Called when a payment is
+     * abandoned (sheet cancelled, component unmounted) so a request for a
+     * payment the user dropped does not linger.
+     */
+    cancelBrantaLookup() {
+      if (this._brantaAbort) {
+        this._brantaAbort.abort();
+        this._brantaAbort = null;
       }
     },
 
@@ -3993,6 +4125,7 @@ export default {
     },
 
     onSendSheetCancel() {
+      this.cancelBrantaLookup();
       this.showSendSheet = false;
       this.pendingPayment = null;
       this.paymentAmount = '';
@@ -4023,6 +4156,7 @@ export default {
     },
 
     onWithdrawSheetCancel() {
+      this.cancelBrantaLookup();
       this.showWithdrawSheet = false;
       this.resetWithdrawState();
       this.pendingPayment = null;
