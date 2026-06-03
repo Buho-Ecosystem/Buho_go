@@ -20,8 +20,8 @@
  *
  * Codes are ISO 3166-1 alpha-2.
  */
-import keFlag from '../../assets/lnAddressServices/flags/ke.svg?url'
-import zmFlag from '../../assets/lnAddressServices/flags/zm.svg?url'
+import keFlag from '../../assets/lnAddressServices/flags/circle-flags--ke.svg?url'
+import zmFlag from '../../assets/lnAddressServices/flags/circle-flags--zm.svg?url'
 
 export const PAYOUT_COUNTRIES = [
   {
