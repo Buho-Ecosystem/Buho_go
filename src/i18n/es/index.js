@@ -1511,6 +1511,15 @@ export default {
   // ── Auto-claim incoming Bitcoin ──
   "Auto-add Bitcoin deposits": "Añadir depósitos de Bitcoin automáticamente",
   "Add deposits to your balance without an extra step.": "Añade los depósitos a tu saldo sin un paso adicional.",
+  "About auto-add Bitcoin deposits": "Acerca de añadir depósitos de Bitcoin automáticamente",
+  "When someone sends you Bitcoin on-chain, it lands on your Spark wallet's own permanent Bitcoin address.": "Cuando alguien te envía Bitcoin on-chain, llega a la dirección de Bitcoin permanente propia de tu monedero Spark.",
+  "On-chain payments need a few block confirmations before they can be spent. With this on, BuhoGO waits for them and moves the deposit into your spendable balance for you, with no extra step.": "Los pagos on-chain necesitan algunas confirmaciones de bloque antes de poder gastarse. Con esto activado, BuhoGO las espera y añade el depósito a tu saldo disponible, sin ningún paso adicional.",
+  "If a deposit's claim fee would be unusually high, or the amount very small, you're asked first, so it's never eaten up by fees.": "Si la comisión por reclamar un depósito fuera inusualmente alta, o el importe muy pequeño, se te pregunta primero, para que las comisiones nunca se lo coman.",
+  "Off: you add each confirmed deposit yourself with a tap.": "Desactivado: añades cada depósito confirmado tú mismo con un toque.",
+  "When you pay a supported business, BuhoGO shows its verified name and logo right on the confirm screen, so you know your money is going to the right place.": "Cuando pagas a un negocio compatible, BuhoGO muestra su nombre y logo verificados en la pantalla de confirmación, para que sepas que tu dinero va al lugar correcto.",
+  "The check runs privately. Your payment destination is never shared, and if there is no match, nothing extra is shown.": "La comprobación se hace de forma privada. Tu destino de pago nunca se comparte y, si no hay coincidencia, simplemente no se muestra nada.",
+  "Off: payments are sent without the verification check.": "Desactivado: los pagos se envían sin la comprobación de verificación.",
+  "Powered by": "Con la tecnología de",
   "Bitcoin received": "Bitcoin recibido",
   "sats added to your wallet": "sats añadidos a tu cartera",
   "Send back": "Devolver",
@@ -2048,5 +2057,25 @@ export default {
   "About merchant verification": "Acerca de la verificación de comercios",
   "Merchant verification": "Verificación de comercios",
   "Show a verified name and logo for supported businesses you pay.": "Muestra el nombre y el logotipo verificados de los comercios compatibles que pagas.",
-  "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.": "Cuando pagas a un comercio compatible, BuhoGO muestra su nombre y logotipo verificados antes de enviar, para que sepas que tu dinero va al lugar correcto. La comprobación se hace de forma privada con Branta y se puede desactivar aquí."
+  "When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.": "Cuando pagas a un comercio compatible, BuhoGO muestra su nombre y logotipo verificados antes de enviar, para que sepas que tu dinero va al lugar correcto. La comprobación se hace de forma privada con Branta y se puede desactivar aquí.",
+
+  // ── Envío por Nostr: pagar a un npub/nprofile + reserva NIP-05 ──
+  "Nostr profile": "Perfil de Nostr",
+  "We couldn't resolve this Nostr profile": "No pudimos resolver este perfil de Nostr",
+  "Check the npub and your connection, then try again": "Revisa el npub y tu conexión, y vuelve a intentarlo",
+  "This Nostr profile has no Lightning address yet": "Este perfil de Nostr aún no tiene dirección Lightning",
+  "Ask them to set a Lightning address on their profile": "Pídele que configure una dirección Lightning en su perfil",
+  "We couldn't find this Nostr profile": "No pudimos encontrar este perfil de Nostr",
+  "No profile was published to the relays we checked": "No se publicó ningún perfil en los relays que consultamos",
+  "That Nostr key looks malformed": "Esa clave de Nostr parece incorrecta",
+  "Double-check the npub and try again": "Vuelve a comprobar el npub e inténtalo de nuevo",
+
+  // ── Enviar: resolver/validar el destino en el propio campo ──
+  "Fetching…": "Resolviendo…",
+  "We couldn't find this Lightning address": "No pudimos encontrar esta dirección Lightning",
+  "We couldn't process this. Check it and try again": "No pudimos procesar esto. Revísalo e inténtalo de nuevo",
+
+  // ── Insignia NFC listo ──
+  "NFC ready": "NFC listo",
+  "Hold a Bolt Card or NFC tag to your phone to pay or redeem": "Acerca una Bolt Card o etiqueta NFC a tu teléfono para pagar o cobrar"
 }

@@ -15,7 +15,21 @@
       <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
         {{ $t('Settings') }}
       </div>
-      <div class="header-spacer"></div>
+      <!-- Profile lives here now (moved off the wallet header). `margin-left:auto`
+           pushes it to the far-right edge (the header row packs left otherwise).
+           Same plain-icon treatment as the back button so it reads as a peer. -->
+      <q-btn
+        flat
+        round
+        dense
+        style="margin-left: auto"
+        @click="$router.push('/profile')"
+        class="back-btn"
+        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+        aria-label="Profile"
+      >
+        <Icon icon="tabler:user" width="18" height="18" />
+      </q-btn>
     </div>
 
     <!-- Settings Content -->
@@ -749,6 +763,17 @@
           :interactive="false"
         >
           <template #right>
+            <q-btn
+              flat
+              round
+              dense
+              size="sm"
+              class="branta-info"
+              :aria-label="$t('About auto-add Bitcoin deposits')"
+              @click="showAutoAddDepositsDialog = true"
+            >
+              <Icon icon="tabler:info-circle" width="18" height="18" />
+            </q-btn>
             <q-toggle
               :model-value="bitcoinPrefsStore.autoAddIncomingBitcoin"
               @update:model-value="bitcoinPrefsStore.setAutoAddIncomingBitcoin"
@@ -778,15 +803,9 @@
               size="sm"
               class="branta-info"
               :aria-label="$t('About merchant verification')"
+              @click="showMerchantVerifyDialog = true"
             >
               <Icon icon="tabler:info-circle" width="18" height="18" />
-              <q-tooltip
-                max-width="260px"
-                anchor="bottom right"
-                self="top right"
-              >
-                {{ $t('When you pay a supported business, BuhoGO shows its verified name and logo before you send, so you know your money is going to the right place. The check is done privately with Branta and can be turned off here.') }}
-              </q-tooltip>
             </q-btn>
             <q-toggle
               :model-value="bitcoinPrefsStore.brantaVerificationEnabled"
@@ -1496,6 +1515,108 @@
     </q-dialog>
 
     <!-- Mempool API Dialog -->
+    <!-- Auto-add Bitcoin deposits — info popup. Explains, TLDR + friendly, how
+         on-chain deposits to a Spark wallet get claimed into the balance. -->
+    <q-dialog v-model="showAutoAddDepositsDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="dialog-card info-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Auto-add Bitcoin deposits') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            v-close-popup
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <div class="info-hero">
+            <img
+              src="/Learn and Earn/Question_pictures/money-income.svg"
+              class="info-hero-img"
+              alt=""
+              aria-hidden="true"
+            />
+          </div>
+
+          <p class="info-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t("When someone sends you Bitcoin on-chain, it lands on your Spark wallet's own permanent Bitcoin address.") }}
+          </p>
+          <p class="info-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t("On-chain payments need a few block confirmations before they can be spent. With this on, BuhoGO waits for them and moves the deposit into your spendable balance for you, with no extra step.") }}
+          </p>
+          <p class="info-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t("If a deposit's claim fee would be unusually high, or the amount very small, you're asked first, so it's never eaten up by fees.") }}
+          </p>
+          <p class="info-text info-text--muted" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Off: you add each confirmed deposit yourself with a tap.') }}
+          </p>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Merchant verification (Branta) — info popup. Same shell as the auto-add
+         dialog, finished with a sleek Branta-branded footer line. -->
+    <q-dialog v-model="showMerchantVerifyDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="dialog-card info-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header">
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Merchant verification') }}
+          </div>
+          <q-btn
+            flat
+            round
+            dense
+            v-close-popup
+            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </q-btn>
+        </q-card-section>
+
+        <q-card-section class="dialog-content">
+          <div class="info-hero">
+            <img
+              src="/Learn and Earn/Question_pictures/connected-world.svg"
+              class="info-hero-img"
+              alt=""
+              aria-hidden="true"
+            />
+          </div>
+
+          <p class="info-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('When you pay a supported business, BuhoGO shows its verified name and logo right on the confirm screen, so you know your money is going to the right place.') }}
+          </p>
+          <p class="info-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('The check runs privately. Your payment destination is never shared, and if there is no match, nothing extra is shown.') }}
+          </p>
+          <p class="info-text info-text--muted" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Off: payments are sent without the verification check.') }}
+          </p>
+
+          <!-- Sleek branded bottom line. The official Branta wordmark flips
+               black/white with the theme, so it stays crisp in both modes. -->
+          <div class="branta-footer">
+            <span class="branta-footer-label">{{ $t('Powered by') }}</span>
+            <img
+              :src="$q.dark.isActive ? '/Branta/logo-white-all.svg' : '/Branta/logo-black-all.svg'"
+              alt="Branta"
+              class="branta-footer-logo"
+            />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
     <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card mempool-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
@@ -2063,6 +2184,8 @@ export default {
       showNotificationsDialog: false,
       showSecurityDialog: false,
       showMempoolDialog: false,
+      showAutoAddDepositsDialog: false,
+      showMerchantVerifyDialog: false,
 
 
       // New wallet form
@@ -6078,6 +6201,67 @@ export default {
  * scrolls internally when content exceeds the viewport. Without this,
  * expanding the custom-server panel clips the Save button off-screen
  * on short devices. */
+/* Auto-add Bitcoin deposits info popup — same shell as the mempool dialog. */
+.info-dialog {
+  width: 100%;
+  max-width: 440px;
+  max-height: min(92vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+.info-dialog .dialog-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.info-hero {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0 14px;
+}
+.info-hero-img {
+  width: 72%;
+  max-width: 230px;
+  height: auto;
+}
+.info-text {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+.info-text--muted {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-bottom: 0;
+}
+
+/* Sleek partner-branding line at the bottom of an info popup. The Branta
+   wordmark is a dark logo on white, so it sits on a small white chip to stay
+   legible in both light and dark mode. */
+.branta-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-card);
+}
+.branta-footer-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.branta-footer-logo {
+  height: 16px;
+  width: auto;
+  display: block;
+}
+
 .mempool-dialog {
   width: 100%;
   max-width: 440px;

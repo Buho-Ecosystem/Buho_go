@@ -1,0 +1,9 @@
+<!--
+  LNBits bolt mark, carved out of the official lnbits-full.svg wordmark (its
+  first path) and centered in a square viewBox so it sits cleanly inside the
+  circular send-sheet avatar. The wordmark itself is too wide (3032x902) to
+  show in a 56px circle; this is the icon-only version.
+-->
+<svg width="1000" height="1000" viewBox="-249 -49 1000 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1" stroke="black" stroke-width="6"/>
+</svg>

@@ -28,7 +28,15 @@
           <Icon icon="tabler:x" width="20" height="20" />
         </q-btn>
         <div class="top-title">{{ $t('Send Bitcoin') }}</div>
-        <div class="top-spacer"></div>
+        <!-- Verification sits in the top-right corner (Blitz-style): a single
+             tappable seal, not an inline pill under the recipient name. -->
+        <div class="top-action">
+          <BrantaVerifiedBadge
+            v-if="verification"
+            :verify-url="verification.verifyUrl"
+            icon-only
+          />
+        </div>
       </header>
 
       <div class="stage">
@@ -41,16 +49,13 @@
               :src="merchantLogo"
               :alt="merchantName"
               class="recipient-logo"
+              :class="{ 'recipient-logo--contain': !!verification }"
               @error="merchantLogoFailed = true"
             />
-            <Icon v-else icon="tabler:currency-bitcoin" width="28" height="28" />
+            <Icon v-else icon="tabler:currency-bitcoin" width="26" height="26" />
           </div>
           <div class="recipient-meta">
             <div class="recipient-name">{{ merchantName }}</div>
-            <BrantaVerifiedBadge
-              v-if="verification"
-              :verify-url="verification.verifyUrl"
-            />
             <button type="button" class="recipient-via" @click="showFullAddress = !showFullAddress">
               <span>{{ showFullAddress ? $t('Hide address') : truncateAddress(cleanedAddress) }}</span>
               <Icon
@@ -596,7 +601,14 @@ export default {
   color: var(--text-primary);
   letter-spacing: -0.005em;
 }
-.top-spacer { width: 36px; }
+/* Mirrors the left button's width so the title stays optically centered;
+   holds the top-right verification seal when present. */
+.top-action {
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
 
 .stage {
   display: flex;
@@ -606,21 +618,21 @@ export default {
   overflow-y: auto;
 }
 
-/* ─── Recipient ─── */
+/* ─── Recipient ───
+   Borderless, airy hero (Apple/Blitz-elegant): the recipient reads as
+   content, not a chunky filled card. No fill, no border, minimal padding —
+   the avatar + name carry it, verification lives in the top-right corner. */
 .recipient {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
-  background: var(--bg-input);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-card);
+  gap: 13px;
+  padding: 2px 2px 4px;
 }
 
 .recipient-avatar {
-  width: 56px;
-  height: 56px;
-  min-width: 56px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -636,6 +648,9 @@ export default {
   box-shadow: inset 0 0 0 1px var(--border-card);
 }
 .recipient-logo { width: 100%; height: 100%; object-fit: cover; }
+/* Branta-delivered brand marks render best contained with golden-ratio
+   breathing room (logo ≈ 0.62 of the avatar), not cropped edge-to-edge. */
+.recipient-logo--contain { object-fit: contain; padding: 9px; }
 
 .recipient-meta { flex: 1; min-width: 0; }
 .recipient-name {
@@ -921,8 +936,8 @@ export default {
 
 @media (max-width: 480px) {
   .stage { padding: 8px 16px 10px; gap: 12px; }
-  .recipient { padding: 12px; }
-  .recipient-avatar { width: 48px; height: 48px; min-width: 48px; }
+  .recipient { padding: 2px 0 4px; }
+  .recipient-avatar { width: 44px; height: 44px; min-width: 44px; }
   .amount-input { font-size: 40px; }
   .speed-card { padding: 12px 8px 10px; }
   .speed-icon { width: 26px; height: 26px; }
