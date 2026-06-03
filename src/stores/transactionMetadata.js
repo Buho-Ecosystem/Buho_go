@@ -1,12 +1,21 @@
 import { defineStore } from 'pinia'
 import { useAddressBookStore } from './addressBook'
 
-// Window during which a pending contact link can be matched against a
-// newly observed outgoing transaction. 30 minutes is generous: it
-// accommodates Spark/LNBits/NWC settlement latency, app backgrounding,
-// and even a quick reconnect, while still preventing the queue from
-// growing unboundedly when a send fails silently.
-const PENDING_LINK_TTL_MS = 30 * 60 * 1000
+// How long a pending contact link survives in the queue. This must
+// outlive "send now, open history days later" — the link is the only
+// bridge between the send (where we know the recipient but not the
+// provider-assigned tx id) and the tx list (where the id appears). A
+// short TTL silently dropped these links before the user looked, which
+// is exactly why old sends showed a generic icon instead of the
+// contact. Matching precision does NOT come from the TTL — it comes
+// from PENDING_LINK_TIME_WINDOW_MS below, which pins the link to a tx
+// created within minutes of `sentAt`. So we can keep links for a long
+// time cheaply; the queue is also size-capped on enqueue.
+const PENDING_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+// Hard cap on the queue so the long TTL can't let unmatched links
+// (e.g. sends whose tx never surfaced) grow without bound.
+const MAX_PENDING_LINKS = 200
 
 // How far apart a tx's timestamp may be from the pending link's
 // `sentAt` for us to consider them the same payment. The tx list's
@@ -34,13 +43,24 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       return state.metadata[txId] || null
     },
 
-    // Get contact for a transaction (returns full contact object from address book)
+    // Get contact for a transaction (returns full contact object from
+    // address book). Resolution order:
+    //   1. An explicit contactId — a manual "Assign contact" choice wins.
+    //   2. A manual "Remove contact" (contactCleared) — stay anonymous
+    //      even if the address would otherwise resolve to a contact.
+    //   3. The durable recipientAddress, resolved LIVE against the
+    //      address book. This is what makes "add the contact later and
+    //      every past payment to that address lights up" work, with no
+    //      re-scan or re-stamp: the avatar/name simply follow the book.
     getContactForTransaction: (state) => (txId) => {
       const metadata = state.metadata[txId]
-      if (!metadata?.contactId) return null
+      if (!metadata) return null
 
       const addressBookStore = useAddressBookStore()
-      return addressBookStore.getEntryById(metadata.contactId)
+      if (metadata.contactId) return addressBookStore.getEntryById(metadata.contactId)
+      if (metadata.contactCleared) return null
+      if (metadata.recipientAddress) return addressBookStore.findContactByAddress(metadata.recipientAddress)
+      return null
     },
 
     // Get tags for a transaction
@@ -113,17 +133,23 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     },
 
     /**
-     * Queue a contact link for an in-flight send. Called from the
+     * Queue a pending link for an in-flight send. Called from the
      * Wallet's confirmPayment success path before we know the
      * provider-assigned tx id. `consumePendingContactLinks` resolves
      * the queue against the tx list on the next refresh.
+     *
+     * `recipientAddress` is required; `contactId` is optional. We queue
+     * a link for EVERY saveable outgoing send, not only ones to a known
+     * contact, so the recipient address gets stamped onto the tx no
+     * matter what. That durable address is what later lets a contact
+     * added/edited after the fact resolve live (see getContactForTransaction).
      *
      * Idempotent for the same (contactId, recipientAddress, amountSats)
      * triple within the TTL window — a rage-tap that submits twice
      * won't accidentally claim two unrelated outgoing txs.
      */
     async enqueuePendingContactLink({ contactId, recipientAddress, amountSats }) {
-      if (!contactId || !recipientAddress) return
+      if (!recipientAddress) return
       const now = Date.now()
       const normalisedAddress = String(recipientAddress).toLowerCase().trim()
       const amount = Number(amountSats) || 0
@@ -140,11 +166,17 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       )
 
       this.pendingContactLinks.push({
-        contactId,
+        contactId: contactId || null,
         recipientAddress: normalisedAddress,
         amountSats: amount,
         sentAt: now,
       })
+      // Bound the queue: with a long TTL, links for sends that never
+      // produced a visible tx would otherwise accumulate. Keep the most
+      // recent ones — the freshest sends are the ones worth resolving.
+      if (this.pendingContactLinks.length > MAX_PENDING_LINKS) {
+        this.pendingContactLinks = this.pendingContactLinks.slice(-MAX_PENDING_LINKS)
+      }
       await this.persistPendingLinks()
       console.log(
         '[txMetadata] queued contact link',
@@ -183,10 +215,14 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       let matched = 0
       let mutated = remaining.length !== this.pendingContactLinks.length
 
-      // Unassigned outgoing txs, newest first.
+      // Unstamped outgoing txs, newest first. A tx is "stamped" once it
+      // has either a contactId or a recipientAddress, so an address-only
+      // link can't re-claim a tx an earlier link already resolved.
       const candidates = transactions
         .filter((tx) => {
-          if (!tx?.id || this.metadata[tx.id]?.contactId) return false
+          if (!tx?.id) return false
+          const m = this.metadata[tx.id]
+          if (m?.contactId || m?.recipientAddress) return false
           const t = (tx.type || '').toLowerCase()
           if (t === 'send' || t === 'sent' || t === 'outgoing') return true
           if (t === 'receive' || t === 'received' || t === 'incoming') return false
@@ -221,7 +257,16 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         }
 
         try {
-          await this.setContactForTransaction(pick.tx.id, link.contactId)
+          // Always stamp the durable recipient address; stamp the
+          // contactId only when we knew it at send time. With the
+          // address recorded, the contact resolves live thereafter even
+          // if it was added/edited after this send.
+          if (link.recipientAddress) {
+            await this.setRecipientAddressForTransaction(pick.tx.id, link.recipientAddress)
+          }
+          if (link.contactId) {
+            await this.setContactForTransaction(pick.tx.id, link.contactId)
+          }
           claimed.add(pick.tx.id)
           remaining = remaining.filter((l) => l !== link)
           mutated = true
@@ -289,14 +334,73 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
         }
 
-        // Update contact ID
+        // Update contact ID. Assigning a real contact also lifts any
+        // prior manual "removed" flag, so re-assigning after a removal
+        // sticks instead of being suppressed by live resolution.
         this.metadata[txId].contactId = contactId
+        if (contactId) this.metadata[txId].contactCleared = false
         this.metadata[txId].updatedAt = Date.now()
 
         await this.persistMetadata()
         return this.metadata[txId]
       } catch (error) {
         console.error('Error setting contact for transaction:', error)
+        throw error
+      }
+    },
+
+    /**
+     * Stamp the durable recipient address on a transaction. This is the
+     * fact that survives — getContactForTransaction resolves it live
+     * against the address book, so a contact added later still lights
+     * up past payments to the same address. Never overwrites an address
+     * that's already set.
+     */
+    async setRecipientAddressForTransaction(txId, address) {
+      try {
+        if (!txId || !address) return null
+        if (!this.metadata[txId]) {
+          this.metadata[txId] = {
+            contactId: null,
+            customNote: '',
+            tags: [],
+            updatedAt: Date.now(),
+          }
+        }
+        if (this.metadata[txId].recipientAddress) return this.metadata[txId]
+        this.metadata[txId].recipientAddress = String(address).toLowerCase().trim()
+        this.metadata[txId].updatedAt = Date.now()
+        await this.persistMetadata()
+        return this.metadata[txId]
+      } catch (error) {
+        console.error('Error setting recipient address for transaction:', error)
+        return null
+      }
+    },
+
+    /**
+     * Manual "Remove contact". Clears the explicit contactId AND records
+     * that the user wants this tx to stay anonymous, so live address
+     * resolution won't immediately re-attach the same contact.
+     */
+    async clearContactForTransaction(txId) {
+      try {
+        if (!txId) return null
+        if (!this.metadata[txId]) {
+          this.metadata[txId] = {
+            contactId: null,
+            customNote: '',
+            tags: [],
+            updatedAt: Date.now(),
+          }
+        }
+        this.metadata[txId].contactId = null
+        this.metadata[txId].contactCleared = true
+        this.metadata[txId].updatedAt = Date.now()
+        await this.persistMetadata()
+        return this.metadata[txId]
+      } catch (error) {
+        console.error('Error clearing contact for transaction:', error)
         throw error
       }
     },

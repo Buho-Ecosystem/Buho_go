@@ -30,19 +30,20 @@
 
       <header class="top-row">
         <q-btn flat round dense @click="onTopAction" class="top-btn">
-          <Icon
-            :icon="stage === 'confirm' ? 'tabler:chevron-left' : 'tabler:x'"
-            width="20"
-            height="20"
-          />
+          <Icon icon="tabler:x" width="20" height="20" />
         </q-btn>
         <div class="top-title">{{ topTitle }}</div>
         <div class="top-spacer"></div>
       </header>
 
-      <transition :name="stageTransitionName" mode="out-in">
-        <!-- ─────────────  COMPOSE  ───────────── -->
-        <div v-if="stage === 'compose'" key="compose" class="stage stage-compose">
+      <!--
+        One confirm-and-send screen. The amount is editable for free/range and
+        locked for fixed (so a fixed-amount invoice / LNURL lands here directly,
+        with nothing to tap before the slide/Send), and the commit gesture lives
+        on the same screen. Each piece of info (recipient, payment type, amount,
+        fee) is shown exactly once.
+      -->
+      <div class="stage stage-compose">
           <!-- Recipient hero -->
           <section class="recipient">
             <div
@@ -79,6 +80,10 @@
                 v-if="recipientVerification"
                 :verify-url="recipientVerification.verifyUrl"
               />
+              <div v-if="recipientLnService" class="ln-service-hint">
+                <Icon icon="tabler:device-mobile" width="13" height="13" />
+                <span>{{ recipientLnService.hint }}</span>
+              </div>
             </div>
           </section>
 
@@ -127,7 +132,14 @@
             </transition>
           </div>
 
-          <!-- Amount stage — locked, range, or free depending on mode. -->
+          <!-- Optional rail line, only when the parent overrides it (LNURL-
+               Withdraw → "Lightning · Withdrawal"). Normal sends already show
+               the payment type in the indicator above, so it's never repeated. -->
+          <div v-if="payment?.recipient?.viaOverride" class="amount-confirm-via">
+            {{ payment.recipient.viaOverride }}
+          </div>
+
+          <!-- Amount — locked, range, or free depending on mode. -->
           <section class="amount-stage" :class="{ 'amount-stage--locked': amountMode === 'fixed' }">
             <input
               v-model="displayAmount"
@@ -212,94 +224,31 @@
             </span>
           </div>
 
-          <div class="cta-row">
-            <button
-              type="button"
-              class="primary-cta"
-              :disabled="!canContinue"
-              @click="goToConfirm"
-            >
-              {{ continueLabel }}
-            </button>
-          </div>
-        </div>
-
-        <!-- ─────────────  CONFIRM  ───────────── -->
-        <div v-else key="confirm" class="stage stage-confirm">
-          <section class="recipient confirm-recipient">
-            <div
-              class="recipient-avatar small"
-              :class="{ 'has-logo': showRecipientLogo }"
-              :style="showRecipientLogo ? null : { background: recipientColor }"
-            >
-              <img
-                v-if="showRecipientLogo"
-                :src="recipientLogo"
-                :alt="recipientName"
-                class="recipient-logo"
-                @error="logoFailed = true"
-              />
-              <span v-else>{{ recipientInitial }}</span>
-            </div>
-            <div class="recipient-meta">
-              <div class="confirm-eyebrow">{{ confirmEyebrow }}</div>
-              <div class="recipient-name">{{ recipientName }}</div>
-              <BrantaVerifiedBadge
-                v-if="recipientVerification"
-                :verify-url="recipientVerification.verifyUrl"
-                compact
-              />
-            </div>
-          </section>
-
-          <section class="amount-confirm">
-            <div class="amount-confirm-value">{{ formattedConfirmAmount }}</div>
-            <div v-if="fiatEquivalent" class="amount-confirm-fiat">{{ fiatEquivalent }}</div>
-            <div v-if="zarSecondary" class="amount-confirm-fiat">R{{ zarSecondary }} ZAR</div>
-            <div class="amount-confirm-via">{{ viaLabel }}</div>
-          </section>
-
-          <div v-if="feeRowVisible" class="fee-row fee-row--confirm">
-            <span class="fee-row-label">{{ $t('Network fee') }}</span>
-            <span class="fee-row-value">
-              <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" size="14px" />
-              <span v-else>{{ feeRowValueText }}</span>
-            </span>
-          </div>
-
-          <div v-if="payment?.description" class="description-confirm">
-            <Icon icon="tabler:file-description" width="13" height="13" />
-            <span>{{ payment.description }}</span>
-          </div>
-
-          <div v-if="comment" class="note-confirm">
-            <Icon icon="tabler:message-circle" width="13" height="13" />
-            <span>{{ comment }}</span>
-          </div>
-
+          <!-- Action: slide-to-send for ≥ 20k sats, a tap button otherwise.
+               This is the single commit gesture — no separate confirm screen,
+               so a fixed-amount destination (locked input above) lands here
+               with nothing extra to tap. -->
           <div class="cta-row confirm-cta">
             <SlideToSend
               v-if="requiresSlide"
               ref="slideRef"
               :label="slideLabel"
               :loading="isSending"
-              :disabled="!walletCanPay"
+              :disabled="!canSubmit"
               @complete="emitConfirm"
             />
             <button
               v-else
               type="button"
               class="primary-cta"
-              :disabled="!walletCanPay || isSending"
+              :disabled="!canSubmit || isSending"
               @click="emitConfirm"
             >
               <q-spinner-dots v-if="isSending" class="q-mr-sm" />
-              <span>{{ ctaInProgressLabel }}</span>
+              <span>{{ primaryCtaLabel }}</span>
             </button>
-            <!-- Per-stage status line. Surfaces both the parent-supplied
-                 statusMessage during sending and the generic fees footnote
-                 when no fee data is being shown. The status takes priority
-                 because it's the more informative line. -->
+            <!-- Status line during send takes priority over the generic fees
+                 footnote, which only shows when no fee data is displayed. -->
             <div v-if="isSending && statusMessage" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
@@ -308,7 +257,6 @@
             </div>
           </div>
         </div>
-      </transition>
     </q-card>
   </q-dialog>
 </template>
@@ -318,14 +266,11 @@ import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount } from '../utils/amountFormatting.js'
+import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 
 const SLIDE_THRESHOLD_SATS = 20000
-
-const FIAT_SYMBOLS = {
-  USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF ', AUD: 'A$', JPY: '¥'
-}
 
 export default {
   name: 'PaymentConfirmSheet',
@@ -362,8 +307,6 @@ export default {
   emits: ['update:modelValue', 'confirm', 'cancel'],
   data() {
     return {
-      stage: 'compose',
-      stageTransitionName: 'stage-fwd',
       showAddress: false,
       displayAmount: '',
       currentCurrency: 'sats',
@@ -409,26 +352,19 @@ export default {
     recipientAddressType() {
       return this.payment?.recipient?.addressType || 'lightning'
     },
-    viaLabel() {
-      // Allow callers to fully override the via line — used by LNURL-
-      // Withdraw to render "Lightning · Withdrawal" instead of "via X".
-      const override = this.payment?.recipient?.viaOverride
-      if (override) return override
-      const labels = {
-        lightning: this.$t('via Lightning'),
-        spark: this.$t('via Spark'),
-        bitcoin: this.$t('via Bitcoin'),
-        lnurl: this.$t('via LNURL'),
-        invoice: this.$t('via Lightning')
-      }
-      return labels[this.recipientAddressType] || labels.lightning
-    },
-
     // Branta merchant verification, present only when the parent's adapter
     // attached it after a positive lookup. Absent on every unverified
     // payment, so the badge simply never renders in the common case.
     recipientVerification() {
       return this.payment?.recipient?.verification || null
+    },
+
+    // Fiat-payout service context (Tando, Bitzed, …), attached by the
+    // parent adapter when the destination is a recognized phone-payout
+    // Lightning Address. Absent on every normal payment, so the hint
+    // simply never renders in the common case.
+    recipientLnService() {
+      return this.payment?.recipient?.lnService || null
     },
 
     // Label for the payment-indicator row: the human description when the
@@ -512,7 +448,7 @@ export default {
       return true
     },
 
-    canContinue() {
+    canSubmit() {
       return this.walletCanPay && this.isAmountAcceptable
     },
 
@@ -625,14 +561,6 @@ export default {
       return `${sats.toLocaleString()} sats`
     },
 
-    continueLabel() {
-      if (!this.isAmountAcceptable) {
-        if (this.amountMode === 'fixed') return this.$t('Continue')
-        return this.$t('Enter amount')
-      }
-      return `${this.$t('Continue')} · ${this.formattedConfirmAmount}`
-    },
-
     // ───── Verb-aware copy ─────
     // Centralized so the rest of the template stays oblivious to the
     // send/redeem distinction. New verbs (e.g. 'pay-request') would land
@@ -640,14 +568,7 @@ export default {
     isRedeem() { return this.verb === 'redeem' },
 
     topTitle() {
-      if (this.stage === 'confirm') {
-        return this.isRedeem ? this.$t('Confirm redeem') : this.$t('Confirm payment')
-      }
       return this.isRedeem ? this.$t('Redeem from') : this.$t('Send to')
-    },
-
-    confirmEyebrow() {
-      return this.isRedeem ? this.$t('Redeeming from') : this.$t('Sending to')
     },
 
     confirmSendLabel() {
@@ -660,9 +581,13 @@ export default {
       return `${phrase} ${this.formattedConfirmAmount}`
     },
 
-    ctaInProgressLabel() {
+    primaryCtaLabel() {
       if (this.isSending) {
         return this.isRedeem ? this.$t('Redeeming...') : this.$t('Sending...')
+      }
+      // No valid amount entered yet (free/range): prompt to enter one.
+      if (!this.isAmountAcceptable && this.amountMode !== 'fixed') {
+        return this.$t('Enter amount')
       }
       return this.confirmSendLabel
     }
@@ -700,8 +625,6 @@ export default {
     },
 
     resetForFreshOpen() {
-      this.stage = 'compose'
-      this.stageTransitionName = 'stage-fwd'
       this.showAddress = false
       this.comment = ''
       this.logoFailed = false
@@ -718,19 +641,8 @@ export default {
     },
 
     onTopAction() {
-      if (this.stage === 'confirm') {
-        this.stageTransitionName = 'stage-back'
-        this.stage = 'compose'
-      } else {
-        this.show = false
-        this.$emit('cancel')
-      }
-    },
-
-    goToConfirm() {
-      if (!this.canContinue) return
-      this.stageTransitionName = 'stage-fwd'
-      this.stage = 'confirm'
+      this.show = false
+      this.$emit('cancel')
     },
 
     onAmountChange() { /* reactive — kept for symmetry with focus/blur */ },
@@ -851,15 +763,6 @@ export default {
   gap: 14px;
   overflow-y: auto;
 }
-.stage-fwd-enter-active, .stage-fwd-leave-active,
-.stage-back-enter-active, .stage-back-leave-active {
-  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.stage-fwd-enter-from { opacity: 0; transform: translateX(24px); }
-.stage-fwd-leave-to   { opacity: 0; transform: translateX(-24px); }
-.stage-back-enter-from { opacity: 0; transform: translateX(-24px); }
-.stage-back-leave-to   { opacity: 0; transform: translateX(24px); }
-
 /* ─── Recipient ─── */
 .recipient {
   display: flex;
@@ -887,7 +790,6 @@ export default {
   flex-shrink: 0;
   overflow: hidden;
 }
-.recipient-avatar.small { width: 44px; height: 44px; min-width: 44px; font-size: 17px; }
 .recipient-avatar.has-logo { background: #fff; }
 .recipient-logo { width: 100%; height: 100%; object-fit: cover; }
 
@@ -909,6 +811,19 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Fiat-payout service hint (Tando, Bitzed, …): a quiet line under the
+   phone number reminding the user the money lands as local currency. */
+.ln-service-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text-secondary);
 }
 
 /* Countdown chip — neutral grey for the standing time, flips to a soft
@@ -955,16 +870,6 @@ export default {
   max-height: 80px;
 }
 .fade-collapse-enter-from, .fade-collapse-leave-to { opacity: 0; max-height: 0; }
-
-.confirm-recipient { background: transparent; border: none; padding: 4px 0; }
-.confirm-eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  margin-bottom: 2px;
-}
 
 /* ─── Wallet hint ─── */
 .wallet-hint {
@@ -1114,14 +1019,6 @@ export default {
   min-height: 32px;
 }
 
-.fee-row--confirm {
-  margin-top: 2px;
-  background: transparent;
-  padding: 0;
-  justify-content: center;
-  gap: 6px;
-}
-
 .fee-row-label {
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -1133,12 +1030,6 @@ export default {
   display: inline-flex;
   align-items: center;
   font-variant-numeric: tabular-nums;
-}
-
-.fee-row--confirm .fee-row-label,
-.fee-row--confirm .fee-row-value {
-  color: var(--text-muted);
-  font-weight: 500;
 }
 
 .range-hint {
@@ -1232,21 +1123,7 @@ export default {
 
 .fee-footnote { text-align: center; font-size: 11px; color: var(--text-muted); }
 
-/* ─── Confirm hero ─── */
-.amount-confirm {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 16px 0 8px;
-}
-.amount-confirm-value {
-  font-size: 40px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
-}
-.amount-confirm-fiat { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+/* Optional rail line (e.g. LNURL-Withdraw → "Lightning · Withdrawal"). */
 .amount-confirm-via {
   margin-top: 4px;
   font-size: 12px;
@@ -1256,27 +1133,11 @@ export default {
   text-transform: uppercase;
 }
 
-.description-confirm,
-.note-confirm {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--bg-input);
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-.note-confirm { font-style: italic; }
-.description-confirm svg, .note-confirm svg { color: var(--text-muted); flex-shrink: 0; }
-
 @media (max-width: 480px) {
   .stage { padding: 8px 16px 10px; gap: 12px; }
   .recipient { padding: 12px; }
   .recipient-avatar { width: 48px; height: 48px; min-width: 48px; font-size: 19px; }
   .amount-input { font-size: 40px; }
-  .amount-confirm-value { font-size: 34px; }
   .primary-cta { height: 50px; font-size: 14.5px; }
 }
 </style>

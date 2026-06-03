@@ -2266,6 +2266,9 @@ export const useWalletStore = defineStore('wallet', {
             chf: rates.CHF || 0,
             cad: rates.CAD || 0,
             aud: rates.AUD || 0,
+            zar: rates.ZAR || 0,
+            kes: rates.KES || 0,
+            zmw: rates.ZMW || 0,
           };
           this.exchangeRatesAvailable = true;
           this.exchangeRatesLastUpdate = new Date().toISOString();

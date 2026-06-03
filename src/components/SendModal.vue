@@ -180,7 +180,27 @@
         </section>
 
         <footer class="sheet-footer">
+          <!-- 075-078 are valid mobile prefixes in BOTH Kenya and Zambia.
+               Rather than silently guess (and risk paying the wrong country),
+               let the user pick. Unambiguous numbers and +CC input skip
+               straight to Continue / auto-advance. -->
+          <div v-if="phoneNeedsCountryChoice" class="country-choice">
+            <div class="country-choice-label">{{ $t('Which country?') }}</div>
+            <div class="country-choice-row">
+              <button
+                v-for="c in recognizedPhone.candidates"
+                :key="c.country.code"
+                type="button"
+                class="country-choice-btn"
+                @click="selectPhoneCountry(c)"
+              >
+                <span class="country-choice-name">{{ countryName(c.country.code) }}</span>
+                <span class="country-choice-number">{{ c.display }}</span>
+              </button>
+            </div>
+          </div>
           <button
+            v-else
             type="button"
             class="primary-cta"
             :disabled="!isValidManualInput"
@@ -214,6 +234,7 @@ import {
   isBitcoinAddress,
   isLightningAddress,
 } from '../utils/addressUtils';
+import { recognizePhoneNumber } from '../services/lnAddressServices';
 import AddressBookQuickModal from './AddressBookQuickModal.vue';
 
 export default {
@@ -283,6 +304,10 @@ export default {
       if (isLightningAddress(cleaned)) return 'lightning_address';
       if (isLnurl(cleaned)) return 'lnurl';
       if (isBitcoinAddress(cleaned)) return 'bitcoin_address';
+      // A bare phone number we can route to a fiat-payout provider
+      // (Zambia → Bitzed, Kenya → Tando). Strict: only a complete, valid
+      // KE/ZM mobile number matches, so partial digits never false-positive.
+      if (this.recognizedPhone) return 'phone_number';
       return null;
     },
 
@@ -293,7 +318,8 @@ export default {
         lightning_address: this.$t('Lightning Address'),
         lnurl: this.$t('LNURL'),
         bitcoin_address: this.$t('Bitcoin'),
-        bip21: this.$t('Bitcoin (BIP21)')
+        bip21: this.$t('Bitcoin (BIP21)'),
+        phone_number: this.$t('Phone number')
       };
       return labels[this.detectedInputType] || '';
     },
@@ -304,7 +330,8 @@ export default {
         lightning_address: 'tabler:bolt',
         lnurl: 'tabler:link',
         bitcoin_address: 'tabler:currency-bitcoin',
-        bip21: 'tabler:currency-bitcoin'
+        bip21: 'tabler:currency-bitcoin',
+        phone_number: 'tabler:device-mobile'
       };
       return icons[this.detectedInputType] || '';
     },
@@ -315,6 +342,25 @@ export default {
 
     isValidManualInput() {
       return !!this.detectedInputType;
+    },
+
+    // Full phone-number recognition for the current input (or null). Drives
+    // the 'phone_number' chip and the ambiguous-country chooser.
+    recognizedPhone() {
+      const raw = (this.manualInput || '').trim();
+      if (!raw) return null;
+      const cleaned = raw.toLowerCase().startsWith('lightning:')
+        ? raw.substring(10).trim()
+        : raw;
+      return recognizePhoneNumber(cleaned);
+    },
+
+    // True when the number is valid in more than one country (075-078 KE/ZM
+    // overlap) and no calling code was given — the user must pick.
+    phoneNeedsCountryChoice() {
+      return this.detectedInputType === 'phone_number'
+        && !!this.recognizedPhone
+        && this.recognizedPhone.ambiguous === true;
     }
   },
   watch: {
@@ -326,9 +372,24 @@ export default {
         this.showCamera = false;
         this.resetState();
       }
+    },
+    // Smart fetching: a typed PHONE NUMBER auto-advances once it's complete
+    // (recognizePhoneNumber only matches a full KE/ZM mobile number, so
+    // partial digits never fire, and a number that's a prefix of the full
+    // address resolves to the same destination anyway). Typed addresses /
+    // invoices keep the explicit Continue because their detection is
+    // prefix-based; pasted content auto-advances for any type (see
+    // pasteFromClipboard). The confirm sheet stays the review/commit gate.
+    manualInput() {
+      clearTimeout(this.phoneAdvanceTimer);
+      if (this.detectedInputType === 'phone_number' && !this.phoneNeedsCountryChoice) {
+        this.phoneAdvanceTimer = setTimeout(() => this.autoAdvance(), 700);
+      }
     }
   },
   beforeUnmount() {
+    clearTimeout(this.phoneAdvanceTimer);
+    clearTimeout(this.pasteAdvanceTimer);
     this.stopQrScanner();
   },
   methods: {
@@ -427,6 +488,23 @@ export default {
         }
 
         let trimmedData = inputData.trim();
+
+        // A recognized Kenyan/Zambian phone number is a fiat-payout destination
+        // — resolve it to its provider Lightning Address (Zambia → @bitzed.xyz,
+        // Kenya → @bitcoin.co.ke) up front, BEFORE the SA-retail QR check, whose
+        // numeric codes would otherwise swallow a 10-digit phone number. The
+        // built address then flows through the normal Lightning-address rails
+        // (which brand it).
+        const phone = recognizePhoneNumber(trimmedData);
+        if (phone) {
+          this.$emit('payment-detected', {
+            data: phone.lightningAddress,
+            type: 'lightning_address',
+            rawInput: trimmedData,
+          });
+          this.closeModal();
+          return;
+        }
 
         // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
         if (isSARetailerQR(trimmedData)) {
@@ -582,6 +660,13 @@ export default {
         this.$refs.manualTextarea?.focus();
       });
 
+      // Pasted content is complete, so fetch directly once it's recognized
+      // (any type) — a short beat lets the user glimpse what was pasted.
+      clearTimeout(this.pasteAdvanceTimer);
+      if (this.manualInput) {
+        this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 300);
+      }
+
       if (!clipboardText) {
         this.$q.notify({
           type: 'info',
@@ -659,6 +744,34 @@ export default {
       return '';
     },
 
+    countryName(code) {
+      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia') }[code] || code;
+    },
+
+    // Ambiguous-number chooser: emit the picked country's constructed address
+    // directly, bypassing the default-country resolution in processPaymentData.
+    selectPhoneCountry(candidate) {
+      if (!candidate) return;
+      this.showManualDialog = false;
+      this.isProcessing = true;
+      this.$emit('payment-detected', {
+        data: candidate.lightningAddress,
+        type: 'lightning_address',
+        rawInput: this.manualInput.trim(),
+      });
+      this.closeModal();
+    },
+
+    // Auto-advance (smart fetching) entry point used by the typed-phone watch
+    // and the paste hook. Guarded so a pending timer never fires after the
+    // sheet was closed, edited to something invalid, a send is in flight, or
+    // an ambiguous number still needs a KE/ZM choice.
+    autoAdvance() {
+      if (this.showManualDialog && !this.isProcessing && this.isValidManualInput && !this.phoneNeedsCountryChoice) {
+        this.processManualInput();
+      }
+    },
+
     async processManualInput() {
       if (!this.isValidManualInput) return;
 
@@ -682,6 +795,8 @@ export default {
     },
 
     resetState() {
+      clearTimeout(this.phoneAdvanceTimer);
+      clearTimeout(this.pasteAdvanceTimer);
       this.isProcessing = false;
       this.cameraError = null;
       this.manualInput = '';
@@ -1030,7 +1145,8 @@ export default {
 
 .detected-pill--lightning_address,
 .detected-pill--lightning_invoice,
-.detected-pill--lnurl {
+.detected-pill--lnurl,
+.detected-pill--phone_number {
   background: rgba(5, 149, 115, 0.12);
   color: #059573;
   box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.22);
@@ -1038,7 +1154,8 @@ export default {
 
 .body--dark .detected-pill--lightning_address,
 .body--dark .detected-pill--lightning_invoice,
-.body--dark .detected-pill--lnurl {
+.body--dark .detected-pill--lnurl,
+.body--dark .detected-pill--phone_number {
   background: rgba(21, 222, 114, 0.16);
   color: #15DE72;
   box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.28);
@@ -1135,6 +1252,33 @@ export default {
 .sheet-footer {
   padding: 14px 20px 6px;
 }
+
+/* Ambiguous KE/ZM number chooser (075-078 prefixes valid in both). */
+.country-choice { display: flex; flex-direction: column; gap: 8px; }
+.country-choice-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.country-choice-row { display: flex; gap: 10px; }
+.country-choice-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 8px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-card);
+  background: var(--bg-input);
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  transition: filter 0.15s ease, transform 0.08s ease;
+}
+.country-choice-btn:active { transform: scale(0.98); }
+.country-choice-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.country-choice-number { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
 /* Primary CTA — gradient-green on dark, neutral-dark pill on cream.
    Same language as PaymentModal, AddressBookModal, etc. */
