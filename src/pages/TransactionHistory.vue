@@ -1182,19 +1182,9 @@ export default {
 
       } catch (error) {
         console.error('Error loading transactions:', error);
-        // Surface the underlying error so device-only failures (e.g. Spark
-        // transport/connection errors that never reach the desktop console)
-        // are visible in the toast itself. Includes the error name when it
-        // adds signal (e.g. SparkAuthenticationError, NetworkError).
-        const rawMessage = error?.message || String(error) || 'Unknown error';
-        const errName = error?.name && error.name !== 'Error' ? `${error.name}: ` : '';
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
-          caption: `${errName}${rawMessage}`,
-          timeout: 0,
-          multiLine: true,
-          actions: [{ label: this.$t('Dismiss'), color: 'white' }],
         });
       } finally {
         this.isLoading = false;
