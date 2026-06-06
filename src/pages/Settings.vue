@@ -1325,8 +1325,12 @@
 
                 <!-- Wallet Actions -->
                 <div class="wallet-card-actions">
+                  <!-- Reconnect only makes sense for a wallet that's meant to be
+                       live: any non-Spark wallet, or the ACTIVE Spark wallet.
+                       Inactive Spark wallets are intentionally offline (single
+                       live connection) — use the switch button to activate them. -->
                   <q-btn
-                    v-if="!connectionStates[wallet.id]?.connected"
+                    v-if="!connectionStates[wallet.id]?.connected && (wallet.type !== 'spark' || wallet.id === activeWalletId)"
                     flat
                     round
                     dense
@@ -3704,7 +3708,16 @@ export default {
       try {
         const wallet = this.wallets.find(w => w.id === walletId)
         if (wallet?.type === 'spark') {
-          await this.connectSparkWallet(walletId)
+          // Preserve the single-live-Spark-connection invariant: drop every
+          // other Spark provider first, then connect this one fresh.
+          // Reconnecting a Spark wallet while another stays live re-creates the
+          // dual connection that corrupts the SDK's shared auth session.
+          for (const w of this.walletStore.sparkWallets) {
+            if (w.id !== walletId) {
+              await this.walletStore._disconnectSparkProvider(w.id)
+            }
+          }
+          await this.connectSparkWallet(walletId, { forceReinit: true })
         } else {
           await this.connectWallet(walletId)
         }

@@ -902,6 +902,12 @@ export const useWalletStore = defineStore('wallet', {
         personalWallet.isActive = true;
         personalWallet.isDefault = true;
 
+        // Both wallets were connected during creation (to validate them and
+        // cache balances). Enforce the single-live-connection invariant now so
+        // Business doesn't linger connected alongside the active Personal — two
+        // live Spark wallets corrupt each other's SDK auth session.
+        await this.connectAllSparkWallets();
+
         // Legacy store-level backup flag
         if (walletData.isRestore) {
           this.hasBackedUp = true;
@@ -1055,7 +1061,7 @@ export const useWalletStore = defineStore('wallet', {
      * Connect to a Spark wallet using device key
      * @param {string} walletId - Wallet ID
      */
-    async connectSparkWallet(walletId) {
+    async connectSparkWallet(walletId, { forceReinit = false } = {}) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet || wallet.type !== WALLET_TYPES.SPARK) {
         throw new Error('Spark wallet not found');
@@ -1074,8 +1080,12 @@ export const useWalletStore = defineStore('wallet', {
           accountNumber: wallet.connectionData.accountNumber,
         });
 
-        // Initialize with mnemonic
-        await provider.initializeWithMnemonic(mnemonic);
+        // Initialize with mnemonic. getOrCreateWallet (inside) reuses the SDK's
+        // single live instance for this wallet, so calling connectSparkWallet
+        // repeatedly (startup, switch, balance poll, history load) no longer
+        // piles up duplicate event streams. Pass forceReinit only when
+        // recovering from a confirmed-dead connection.
+        await provider.initializeWithMnemonic(mnemonic, { forceReinit });
 
         // Store provider
         this.providers[walletId] = provider;
@@ -1111,18 +1121,67 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Connect all Spark wallets using device key
+     * Bring Spark wallets into the correct connection state: exactly ONE live
+     * connection — the active wallet — with every other Spark wallet
+     * disconnected.
+     *
+     * Why single-connection: the Spark SDK shares a single gRPC channel
+     * (ConnectionManager.channelCache is keyed by operator address, NOT by
+     * wallet identity) and a process-global auth-token cache that it
+     * wholesale-clears on time-sync. Two live Spark wallets on the same network
+     * therefore cross-contaminate each other's session — the active wallet's
+     * re-auth (VerifyChallenge) fails on Android and it drops, while the idle
+     * wallet only looks "online" because nothing exercises it. A single live
+     * connection sidesteps this entirely (single-wallet users never hit the
+     * bug). Inactive wallets show their cached balance via getDisplayBalance
+     * and reconnect when switched to (switchActiveWallet) or for a transfer
+     * (ensureWalletConnectedForTransfer).
+     *
+     * Name kept for its existing call sites (startup, post-migration,
+     * checkSparkWalletUnlock).
      */
     async connectAllSparkWallets() {
+      const activeId = this.activeWalletId;
+
+      // Tear down every non-active Spark provider so only one stays live.
       for (const wallet of this.sparkWallets) {
-        try {
-          if (!this.connectionStates[wallet.id]?.connected) {
-            await this.connectSparkWallet(wallet.id);
-          }
-        } catch (err) {
-          console.warn(`Failed to connect Spark wallet "${wallet.name}":`, err.message);
+        if (wallet.id !== activeId) {
+          await this._disconnectSparkProvider(wallet.id);
         }
       }
+
+      // Connect the active wallet if it's Spark and not already live.
+      const active = this.wallets.find(w => w.id === activeId);
+      if (active?.type === WALLET_TYPES.SPARK && !this.connectionStates[activeId]?.connected) {
+        try {
+          await this.connectSparkWallet(activeId);
+        } catch (err) {
+          console.warn(`Failed to connect active Spark wallet "${active.name}":`, err.message);
+        }
+      }
+    },
+
+    /**
+     * Disconnect a single Spark provider and mark it offline (without an error
+     * flag), preserving its cached balance for display. Enforces the
+     * single-connection invariant from connectAllSparkWallets() and
+     * switchActiveWallet().
+     */
+    async _disconnectSparkProvider(walletId) {
+      const provider = this.providers[walletId];
+      if (provider) {
+        try {
+          await provider.disconnect();
+        } catch (err) {
+          console.warn('Spark provider disconnect failed:', err.message);
+        }
+        delete this.providers[walletId];
+      }
+      this.connectionStates[walletId] = {
+        connected: false,
+        lastConnected: this.connectionStates[walletId]?.lastConnected,
+        error: null,
+      };
     },
 
     /**
@@ -1563,11 +1622,21 @@ export const useWalletStore = defineStore('wallet', {
         wallet.lastUsed = Date.now();
         this.activeWalletId = walletId;
 
-        // Ensure connected
-        if (!this.connectionStates[walletId]?.connected) {
-          if (wallet.type === WALLET_TYPES.SPARK) {
-            await this.connectSparkWallet(walletId);
-          } else if (wallet.type === WALLET_TYPES.LNBITS) {
+        // Ensure connected.
+        if (wallet.type === WALLET_TYPES.SPARK) {
+          // Single live Spark connection (see connectAllSparkWallets): tear down
+          // every other Spark provider first so the wallet we switch TO is the
+          // only one authenticating against the shared SDK channel/auth cache,
+          // then connect it fresh. This is what stops the active wallet from
+          // losing its session after a switch on Android.
+          for (const w of this.sparkWallets) {
+            if (w.id !== walletId) {
+              await this._disconnectSparkProvider(w.id);
+            }
+          }
+          await this.connectSparkWallet(walletId);
+        } else if (!this.connectionStates[walletId]?.connected) {
+          if (wallet.type === WALLET_TYPES.LNBITS) {
             await this.connectLNBitsWallet(walletId);
           } else {
             await this.connectWallet(walletId);
@@ -2238,6 +2307,14 @@ export const useWalletStore = defineStore('wallet', {
         this.refreshWalletData(fromWalletId),
         this.refreshWalletData(toWalletId)
       ]);
+
+      // A transfer between two Spark wallets has to connect both for the
+      // duration of the transfer (ensureWalletConnectedForTransfer). Restore
+      // the single-live-connection invariant afterwards so the non-active
+      // wallet doesn't linger and degrade the active one's session.
+      if (fromType === 'spark' && toType === 'spark') {
+        await this.connectAllSparkWallets();
+      }
 
       return {
         success: true,

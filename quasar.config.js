@@ -15,9 +15,6 @@ export default defineConfig((ctx) => {
       // 'theme' runs first so the persisted light/dark choice is applied
       // before any component renders — avoids a flash of the wrong theme.
       'theme',
-      // 'spark-http' runs before any wallet provider boots so the
-      // gRPC-web fetch bypass is in place by the first Spark request.
-      ctx.mode.capacitor ? 'spark-http' : '',
       'axios',
       'i18n',
       'iconify',
