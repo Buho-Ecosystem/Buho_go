@@ -616,6 +616,7 @@ import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
+import { stripWrapperScheme } from '../utils/addressUtils'
 import { bech32 } from 'bech32'
 import { getUserFriendlyError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
 import ContactAvatar from './AddressBook/ContactAvatar.vue'
@@ -1144,7 +1145,7 @@ async function fetchLightningAddressInvoice(address, amountSats) {
 //      fixed amount rather than rejected.
 // Returns { pr, amountSats } so the caller can record the amount actually sent.
 async function fetchLnurlInvoice(lnurl, requestedSats) {
-  const clean = (lnurl || '').trim().replace(/^lightning:/i, '')
+  const clean = stripWrapperScheme(lnurl)
 
   // LUD-17 scheme (lnurlp://…) maps straight to https; otherwise bech32-decode.
   let endpoint = resolveLUD17URL(clean)

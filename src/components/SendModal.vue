@@ -251,6 +251,7 @@ import {
   isLnurl,
   isBitcoinAddress,
   isLightningAddress,
+  stripWrapperScheme,
 } from '../utils/addressUtils';
 import { recognizePhoneNumber } from '../services/lnAddressServices';
 import { classifyIdentifier, LOOKUP_ERROR } from '../utils/nostrLookup';
@@ -338,9 +339,7 @@ export default {
         if (parsed) return 'bip21';
       }
 
-      const cleaned = lower.startsWith('lightning:')
-        ? raw.substring(10).trim()
-        : raw;
+      const cleaned = stripWrapperScheme(raw);
 
       if (isSparkAddress(cleaned)) return 'spark';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
@@ -723,11 +722,10 @@ export default {
         return { cleaned: destination ? destination.value : '', bip21 };
       }
 
-      if (trimmed.toLowerCase().startsWith('lightning:')) {
-        return { cleaned: trimmed.substring(10), bip21: null };
-      }
-
-      return { cleaned: trimmed, bip21: null };
+      // Unwrap a `lightning:` / `lnurl:` scheme down to the bare payload so the
+      // type classifier and the emitted value are both wrapper-free. No-op when
+      // no wrapper is present.
+      return { cleaned: stripWrapperScheme(trimmed), bip21: null };
     },
 
     determinePaymentType(data) {
