@@ -108,9 +108,7 @@
 
               <!-- Avatar with Type Indicator -->
               <div class="avatar-wrap">
-                <div class="contact-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                  <span>{{ getInitial(contact.name) }}</span>
-                </div>
+                <ContactAvatar class="contact-avatar" :entry="contact" />
                 <div class="type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                   <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -169,9 +167,7 @@
                 class="mini-avatar-wrap"
                 :style="{ zIndex: 10 - idx }"
               >
-                <div class="mini-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                  {{ getInitial(contact.name) }}
-                </div>
+                <ContactAvatar class="mini-avatar" :entry="contact" />
                 <div class="mini-type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                   <svg v-if="contact.addressType === 'spark'" width="6" height="6" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -281,9 +277,7 @@
               >
                 <div class="custom-contact">
                   <div class="avatar-wrap">
-                    <div class="custom-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                      {{ getInitial(contact.name) }}
-                    </div>
+                    <ContactAvatar class="custom-avatar" :entry="contact" />
                     <div class="type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -367,9 +361,7 @@
               class="review-item"
             >
               <div class="avatar-wrap">
-                <div class="review-avatar" :style="{ background: contact.color || '#3B82F6' }">
-                  {{ getInitial(contact.name) }}
-                </div>
+                <ContactAvatar class="review-avatar" :entry="contact" />
                 <div class="type-dot" :style="{ background: getTypeColor(contact.addressType) }">
                   <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -427,9 +419,7 @@
               :class="'status-' + result.status"
             >
               <div class="avatar-wrap avatar-wrap-sm">
-                <div class="exec-avatar" :style="{ background: result.contact.color || '#3B82F6' }">
-                  {{ getInitial(result.contact.name) }}
-                </div>
+                <ContactAvatar class="exec-avatar" :entry="result.contact" />
                 <div class="type-dot type-dot-sm" :style="{ background: getTypeColor(result.contact.addressType) }">
                   <svg v-if="result.contact.addressType === 'spark'" width="8" height="8" viewBox="0 0 135 128" fill="white">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z"/>
@@ -471,18 +461,37 @@
           </q-btn>
         </section>
 
-        <!-- Step 5: Summary -->
+        <!--
+          Step 5: Summary.
+
+          Uses the same SuccessCheckmark primitive every other success
+          surface uses (single send, receive, withdraw, internal
+          transfer) so a batch result feels like the same family. The
+          accent shifts to Bitcoin orange when any payment failed —
+          the icon itself is the partial-outcome signal, so we don't
+          need a separate warning icon block.
+
+          Typography mirrors PaymentConfirmation: uppercase
+          tracking-wide label above a bold numeric anchor, then the
+          tighter stats / failed list as supporting detail. The
+          failed list stays content-driven (different content from a
+          single-send success), only the visual chrome is unified.
+        -->
         <section v-if="step === 5" class="step-content">
           <div class="summary-section">
-            <!-- Success Icon -->
-            <div class="summary-icon" :class="failedCount > 0 ? 'icon-partial' : 'icon-success'">
-              <Icon :icon="failedCount > 0 ? 'tabler:alert-circle' : 'tabler:circle-check'" />
+            <SuccessCheckmark
+              :animate="step === 5"
+              :accent="failedCount > 0 ? 'orange' : 'green'"
+            />
+
+            <div class="summary-label">
+              {{ failedCount === 0 ? $t('Batch Complete') : $t('Batch Finished') }}
             </div>
 
-            <!-- Stats -->
-            <h3 class="summary-title">
-              {{ failedCount === 0 ? $t('Batch Complete') : $t('Batch Finished') }}
-            </h3>
+            <div class="summary-total">
+              <strong>{{ formatSats(totalSent) }}</strong>
+              <span class="summary-total-unit">{{ $t('sats sent') }}</span>
+            </div>
 
             <div class="summary-stats">
               <div class="stat-item stat-success">
@@ -493,10 +502,6 @@
                 <Icon icon="tabler:x" />
                 <span>{{ failedCount }} {{ $t('failed') }}</span>
               </div>
-            </div>
-
-            <div class="summary-total">
-              {{ $t('Total sent') }}: <strong>{{ formatSats(totalSent) }} sats</strong>
             </div>
 
             <!-- Failed List -->
@@ -610,8 +615,11 @@ import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
-import LightningPaymentService from '../utils/lightning.js'
-import { getUserFriendlyErrorMessage } from '../utils/userErrors'
+import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
+import { bech32 } from 'bech32'
+import { getUserFriendlyError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
+import ContactAvatar from './AddressBook/ContactAvatar.vue'
+import SuccessCheckmark from './SuccessCheckmark.vue'
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -795,8 +803,8 @@ const estimatedFees = computed(() => {
     const contactAmount = getContactAmount(contact)
     if (type === 'spark') {
       fees += 0 // Zero fee
-    } else if (type === 'lightning') {
-      fees += Math.ceil(contactAmount * 0.01) // ~1%
+    } else if (type === 'lightning' || type === 'lnurl') {
+      fees += Math.ceil(contactAmount * 0.01) // ~1% (LNURL pays over Lightning)
     } else if (type === 'bitcoin') {
       fees += 500 // Rough estimate for on-chain
     }
@@ -943,6 +951,14 @@ function getStepClass(n) {
 }
 
 function canSelectContact(contact) {
+  // Identity-only Nostr contact — no resolved Lightning address yet,
+  // so it can't be a batch recipient. Still rendered in the list
+  // (dimmed via the existing `contact-disabled` class) so the user
+  // sees it's saved; it just isn't selectable until a refresh lands
+  // a lud16.
+  if (!addressBookStore.isEntryPayable(contact)) {
+    return false
+  }
   // Bitcoin and Spark contacts only available with Spark wallet
   if ((contact.addressType === 'bitcoin' || contact.addressType === 'spark') && !isSparkWallet.value) {
     return false
@@ -1118,6 +1134,74 @@ async function fetchLightningAddressInvoice(address, amountSats) {
   return invoiceData.pr
 }
 
+// Resolve an LNURL-pay link (bech32 LNURL1… or LUD-17 lnurlp://…) to a payable
+// BOLT11 invoice. Same callback flow as fetchLightningAddressInvoice, differing
+// in two ways:
+//   1. a Lightning address derives its endpoint from user@domain, whereas an
+//      LNURL must be decoded to its endpoint URL first;
+//   2. fixed-amount links (minSendable === maxSendable) are honored — the
+//      server dictates the amount, so `requestedSats` is overridden by the
+//      fixed amount rather than rejected.
+// Returns { pr, amountSats } so the caller can record the amount actually sent.
+async function fetchLnurlInvoice(lnurl, requestedSats) {
+  const clean = (lnurl || '').trim().replace(/^lightning:/i, '')
+
+  // LUD-17 scheme (lnurlp://…) maps straight to https; otherwise bech32-decode.
+  let endpoint = resolveLUD17URL(clean)
+  if (!endpoint) {
+    try {
+      const decoded = bech32.decode(clean.toLowerCase(), 2000)
+      const bytes = bech32.fromWords(decoded.words)
+      endpoint = new TextDecoder().decode(new Uint8Array(bytes))
+    } catch (error) {
+      throw new Error(`Failed to decode LNURL: ${error.message}`)
+    }
+  }
+
+  const response = await fetch(endpoint)
+  if (!response.ok) {
+    throw new Error('Failed to fetch LNURL info')
+  }
+
+  const data = await response.json()
+  if (data.status === 'ERROR') {
+    throw new Error(data.reason || 'LNURL error')
+  }
+  if (data.tag !== 'payRequest') {
+    throw new Error('Not an LNURL-pay link')
+  }
+
+  // Honor fixed-amount links: when min === max the server fixes the amount, so
+  // we send exactly that and ignore the batch amount the user entered.
+  const isFixedAmount = data.minSendable === data.maxSendable
+  const amountSats = isFixedAmount
+    ? Math.floor(data.minSendable / 1000)
+    : requestedSats
+
+  const amountMs = amountSats * 1000
+  if (data.minSendable && amountMs < data.minSendable) {
+    throw new Error(`Minimum: ${Math.ceil(data.minSendable / 1000)} sats`)
+  }
+  if (data.maxSendable && amountMs > data.maxSendable) {
+    throw new Error(`Maximum: ${Math.floor(data.maxSendable / 1000)} sats`)
+  }
+
+  // Request invoice - use & if callback already has query params
+  const separator = data.callback.includes('?') ? '&' : '?'
+  const callbackUrl = `${data.callback}${separator}amount=${amountMs}`
+  const invoiceResponse = await fetch(callbackUrl)
+  if (!invoiceResponse.ok) {
+    throw new Error('Failed to get invoice')
+  }
+
+  const invoiceData = await invoiceResponse.json()
+  if (invoiceData.status === 'ERROR') {
+    throw new Error(invoiceData.reason || 'Invoice error')
+  }
+
+  return { pr: invoiceData.pr, amountSats }
+}
+
 function getActiveWallet() {
   return walletStore.connectedWallets?.find(
     w => w.id === walletStore.activeWalletId
@@ -1139,6 +1223,42 @@ function getActiveWalletNwcString() {
 // Methods - Execution
 // ─────────────────────────────────────────────────────────────
 async function startBatch() {
+  // Pre-flight balance check.
+  //
+  // The step-2 review already disables the "Review" button when the
+  // typed total exceeds the cached balance, but two cases can still
+  // slip through to here:
+  //   - cached balance was stale when the modal opened (user spent
+  //     funds in another flow between cache and now)
+  //   - user back-and-forthed between steps after balance changed
+  //
+  // Without this guard, the SDK rejects the *first* payment with a
+  // structured "Total target amount exceeds available balance" error,
+  // every subsequent iteration hits the same wall, and the user lands
+  // on step 5 with N identical row-level errors and no clean overall
+  // message. Catching it at the door yields one clear modal instead.
+  const totalRequired = totalAmount.value
+  const currentBalance = Number(walletBalance.value) || 0
+  if (totalRequired > currentBalance) {
+    const breakdown = formatInsufficientBalanceBreakdown(
+      { balance: currentBalance, required: totalRequired },
+      t,
+    )
+    const err = new Error('BATCH_INSUFFICIENT_BALANCE')
+    err.code = 'BATCH_INSUFFICIENT_BALANCE'
+    walletStore.showPaymentError(err, {
+      context: 'payment',
+      walletType: getActiveWalletType(),
+      route: 'Batch send pre-flight',
+      amountSats: totalRequired,
+      reason: breakdown,
+      t,
+    })
+    // Stay on step 3 (review) so the user can adjust amounts or
+    // remove recipients without re-entering the picker.
+    return
+  }
+
   step.value = 4
   isExecuting.value = true
   isCancelled.value = false
@@ -1198,7 +1318,7 @@ async function startBatch() {
           await provider.payLightningAddress(address, result.amount)
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.LNBITS) {
-          // LNBits: fetch invoice then pay. Route through ensureLNBitsConnected
+          // LNbits: fetch invoice then pay. Route through ensureLNBitsConnected
           // per-iteration so a mid-batch credential failure self-heals (or
           // surfaces cleanly) rather than every remaining payment throwing
           // "wallet is not connected".
@@ -1229,6 +1349,31 @@ async function startBatch() {
           await provider.sendOnChain(address, result.amount)
           result.status = 'success'
         }
+      }
+      // Handle LNURL static pay link. Resolve it to a BOLT11 invoice first —
+      // this honors fixed-amount links (overriding the batch amount) and the
+      // resulting invoice has the amount baked in, so every wallet type can
+      // settle it the same way: pay the invoice.
+      else if (addressType === 'lnurl') {
+        const { pr: invoice, amountSats } = await fetchLnurlInvoice(address, result.amount)
+        // Record the amount actually sent — a fixed-amount link overrides the
+        // batch amount, so the summary must reflect what really went out.
+        result.amount = amountSats
+
+        if (walletType === WALLET_TYPES.NWC) {
+          const nwcString = getActiveWalletNwcString()
+          if (!nwcString) {
+            throw new Error('NWC connection not found')
+          }
+          const lightningService = new LightningPaymentService(nwcString)
+          await lightningService.payInvoice(invoice)
+        } else if (walletType === WALLET_TYPES.LNBITS) {
+          const lnbitsProvider = await walletStore.ensureLNBitsConnected()
+          await lnbitsProvider.payInvoice({ invoice })
+        } else {
+          await provider.payInvoice({ invoice })
+        }
+        result.status = 'success'
       } else {
         result.status = 'skipped'
         result.error = t('Unknown type')
@@ -1241,7 +1386,11 @@ async function startBatch() {
     } catch (error) {
       console.error('Batch send payment failed:', error)
       result.status = 'failed'
-      result.error = getUserFriendlyErrorMessage(error, 'payment', t)
+      // Show the upstream reason on the row so a 20-recipient batch
+      // summary lists what actually went wrong per address, not 20
+      // copies of "Payment failed". Fires no global dialog: batch
+      // failures are surfaced inline in the summary step.
+      result.error = getUserFriendlyError(error, 'payment', t).description
     }
 
     // Small delay for UI feedback
@@ -2454,6 +2603,11 @@ function retryFailed() {
 
 /* ════════════════════════════════════════════════════════════
    Step 5: Summary
+
+   Visual chrome mirrors PaymentConfirmation: uppercase tracked
+   label above a bold numeric anchor. The checkmark + pulse come
+   from the shared SuccessCheckmark primitive (orange tint when
+   any payment failed).
    ════════════════════════════════════════════════════════════ */
 .summary-section {
   display: flex;
@@ -2461,43 +2615,48 @@ function retryFailed() {
   align-items: center;
   text-align: center;
   padding: 20px 0;
+  gap: 18px;
 }
 
-.summary-icon {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
+.summary-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text2);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 6px;
+}
+
+.summary-total {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
+  gap: 4px;
+  margin-top: -4px;
 }
 
-.summary-icon i {
-  font-size: 48px;
-}
-
-.icon-success {
-  background: rgba(21, 222, 114, 0.1);
-  color: var(--c-success);
-}
-
-.icon-partial {
-  background: rgba(245, 158, 11, 0.1);
-  color: var(--c-warning);
-}
-
-.summary-title {
-  font-size: 22px;
-  font-weight: 700;
+.summary-total strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
   color: var(--c-text);
-  margin: 0 0 16px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.summary-total-unit {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .summary-stats {
   display: flex;
   gap: 20px;
-  margin-bottom: 16px;
 }
 
 .stat-item {
@@ -2514,16 +2673,6 @@ function retryFailed() {
 
 .stat-failed {
   color: var(--c-error);
-}
-
-.summary-total {
-  font-size: 16px;
-  color: var(--c-text2);
-  margin-bottom: 20px;
-}
-
-.summary-total strong {
-  color: var(--c-text);
 }
 
 .failed-list {

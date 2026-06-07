@@ -59,8 +59,7 @@
             class="seed-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="readyLabel"
-            :loading="isAuthenticating"
-            :disable="isLoadingMnemonic"
+            :loading="isAuthenticating || isLoadingMnemonic"
             @click="onReady"
           />
         </q-card-actions>
@@ -88,10 +87,7 @@
             </div>
             <div class="seed-callout-body">
               <div class="seed-callout-text">
-                {{ isDevicePinOnly
-                  ? $t('You are seeing this because no fingerprint or face is set up on this device. Your device lock is used instead.')
-                  : $t('Your biometric is processed by your phone, not by BuhoGO. We never see it.')
-                }}
+                {{ authPrivacyText }}
               </div>
             </div>
           </div>
@@ -119,30 +115,13 @@
         </q-card-actions>
       </template>
 
-      <!-- Step: Phrase reveal -->
+      <!--
+        Phrase reveal step. Same streamlined layout used by the
+        identity dialog: header row with optional countdown chip +
+        Show/Hide toggle, words grid, one short safety line below.
+      -->
       <template v-else-if="step === 'phrase'">
         <q-card-section class="seed-step-body phrase-body">
-          <div
-            class="phrase-countdown"
-            :class="[
-              $q.dark.isActive ? 'phrase-countdown-dark' : 'phrase-countdown-light',
-              { 'phrase-countdown-expiring': countdownRunning && countdownSeconds <= 10 },
-            ]"
-            role="status"
-            aria-live="polite"
-          >
-            <Icon :icon="countdownRunning ? 'tabler:clock' : 'tabler:eye-off'" width="14" height="14" />
-            <span v-if="countdownRunning">
-              {{ $t('Auto-hides in') }} {{ countdownText }}
-            </span>
-            <span v-else-if="timerExpired">
-              {{ $t('Hidden again. Tap Show words to reveal.') }}
-            </span>
-            <span v-else>
-              {{ $t('Tap Show words to reveal.') }}
-            </span>
-          </div>
-
           <MnemonicDisplay
             :initial-blurred="phraseBlurred"
             :words="mnemonicWords"
@@ -150,17 +129,31 @@
             :show-warning="false"
             :show-copy="false"
             @update:blurred="phraseBlurred = $event"
-          />
+          >
+            <template #header>
+              <span
+                v-if="countdownRunning"
+                class="seed-countdown-chip"
+                :class="[
+                  $q.dark.isActive ? 'seed-countdown-chip-dark' : 'seed-countdown-chip-light',
+                  { 'seed-countdown-chip--expiring': countdownSeconds <= 10 },
+                ]"
+                role="status"
+                aria-live="polite"
+              >
+                <Icon icon="tabler:clock" width="11" height="11" />
+                <span>{{ countdownText }}</span>
+              </span>
+            </template>
+          </MnemonicDisplay>
 
-          <div class="seed-callout" :class="$q.dark.isActive ? 'seed-callout-dark' : 'seed-callout-light'">
-            <div class="seed-callout-icon">
-              <Icon icon="tabler:shield" width="18" height="18" />
-            </div>
-            <div class="seed-callout-body">
-              <div class="seed-callout-text">
-                {{ $t('Never type this phrase into a website. Never share it in chat, photos, or cloud notes.') }}
-              </div>
-            </div>
+          <div
+            class="seed-warn"
+            :class="$q.dark.isActive ? 'seed-warn-dark' : 'seed-warn-light'"
+            role="note"
+          >
+            <Icon icon="tabler:shield" width="14" height="14" />
+            <span>{{ $t('Never type these words into a website or save them in cloud notes.') }}</span>
           </div>
         </q-card-section>
 
@@ -199,7 +192,6 @@ import MnemonicOrderVerify from './MnemonicOrderVerify.vue';
 import { useWalletStore } from '../stores/wallet';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { getBiometricMethodCopy } from '../utils/biometricCopy';
-import { secureScreen } from '../utils/secureScreen';
 
 const CONTEXT_ILLUSTRATION = '/Learn and Earn/Question_pictures/safe.svg';
 const REVEAL_DURATION_SECONDS = 120;
@@ -256,7 +248,6 @@ export default {
       countdownSeconds: REVEAL_DURATION_SECONDS,
       countdownInterval: null,
       timerExpired: false,
-      secureScreenActive: false,
 
       // Detected authentication method for the explanation screen.
       // Set by onReady() after isBiometricAvailable() resolves.
@@ -317,6 +308,16 @@ export default {
       return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can see your recovery phrase, even if they have your unlocked phone.')}`;
     },
 
+    authPrivacyText() {
+      if (this.isDevicePinOnly) {
+        return this.$t('You are seeing this because no fingerprint or face is set up on this device. Your device lock is used instead.');
+      }
+      // OS sheet still exposes a "Use PIN" fallback (useFallback: true).
+      // Tell the user so the PIN path is discoverable without having to
+      // first tap the biometric prompt and look for the small label.
+      return `${this.$t('Your biometric is processed by your phone, not by BuhoGO. We never see it.')} ${this.$t("Your phone's PIN, pattern, or password also works.")}`;
+    },
+
     countdownText() {
       const total = Math.max(0, this.countdownSeconds);
       const mins = Math.floor(total / 60);
@@ -368,10 +369,6 @@ export default {
   beforeUnmount() {
     this.stopCountdown();
     this.wipeMnemonic();
-    if (this.secureScreenActive) {
-      secureScreen.disable();
-      this.secureScreenActive = false;
-    }
   },
 
   methods: {
@@ -390,6 +387,15 @@ export default {
     async onReady() {
       if (this.isAuthenticating || this.isLoadingMnemonic) return;
 
+      // Only re-prompt for biometrics when the user has opted into App
+      // Lock. If they haven't, the "I'm ready" tap is the consent and we
+      // go straight to reveal — matches the gate in App.vue (which also
+      // keys off walletStore.biometricsEnabled) and the coinsnap flow.
+      if (!this.walletStore.biometricsEnabled) {
+        await this.loadMnemonicAndReveal();
+        return;
+      }
+
       // Keep the button in a loading state for the whole probe so a slow
       // plugin response (100-300ms on Android cold calls) doesn't invite
       // a double-tap.
@@ -402,8 +408,8 @@ export default {
         if (!this.modelValue) return;
 
         if (!available) {
-          // Web or devices without any lock — no system prompt exists,
-          // go straight to the reveal. The user approved via "I'm ready".
+          // App Lock is on but the device no longer reports a usable
+          // credential. Fall through rather than dead-end the user.
           await this.loadMnemonicAndReveal();
           return;
         }
@@ -434,7 +440,15 @@ export default {
         if (!ok) {
           // Cancelled or failed. Stay on authExplain so retry is one tap
           // away — going all the way back to context punishes the user
-          // for a mis-tap on the system sheet.
+          // for a mis-tap on the system sheet. Surface a notify so a
+          // genuine plugin failure (no biometrics enrolled + fallback
+          // misfires on Android) doesn't read as a dead button.
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Verification was not completed'),
+            caption: this.$t('Try again, or check that your phone has a screen lock set up.'),
+            timeout: 3500,
+          });
           return;
         }
 
@@ -463,11 +477,6 @@ export default {
         }
 
         this.mnemonicWords = mnemonic.split(' ');
-
-        // Turn on screenshot protection only once the words are about
-        // to hit the screen, and leave it on for the verify step too.
-        await secureScreen.enable();
-        this.secureScreenActive = true;
 
         this.step = 'phrase';
         this.phraseBlurred = true;
@@ -562,10 +571,6 @@ export default {
       // (shouldn't be, but defensively safe) or programmatically.
       this.stopCountdown();
       this.wipeMnemonic();
-      if (this.secureScreenActive) {
-        await secureScreen.disable();
-        this.secureScreenActive = false;
-      }
     },
 
     wipeMnemonic() {
@@ -640,35 +645,58 @@ export default {
   max-width: 380px;
 }
 
-/* ──────────── Phrase step ──────────── */
+/* ──────────── Phrase step ────────────
+   Auto-hide chip + compact safety warn. Same shape used by the
+   identity dialog so the two phrase surfaces look like one
+   family. */
 
-.phrase-countdown {
+.seed-countdown-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  align-self: center;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 3px 8px;
   border-radius: 999px;
   font-family: 'Manrope', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.phrase-countdown-light {
-  background: #f1f5f9;
+.seed-countdown-chip-light {
+  background: rgba(15, 23, 42, 0.06);
   color: #475569;
 }
 
-.phrase-countdown-dark {
-  background: rgba(255, 255, 255, 0.06);
+.seed-countdown-chip-dark {
+  background: rgba(255, 255, 255, 0.08);
   color: #cbd5e1;
 }
 
-.phrase-countdown-expiring {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+.seed-countdown-chip--expiring {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ef4444 !important;
+}
+
+.seed-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.seed-warn-light {
+  background: rgba(239, 68, 68, 0.06);
+  color: #b91c1c;
+}
+
+.seed-warn-dark {
+  background: rgba(239, 68, 68, 0.10);
+  color: #fca5a5;
 }
 
 /* ──────────── Quiet callout (replaces the yellow alert) ──────────── */

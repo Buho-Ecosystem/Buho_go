@@ -7,6 +7,21 @@
         <img src="buho_logo.svg" alt="Logo" class="app-logo">
       </q-avatar>
 
+      <!-- NFC-ready badge. Only shown on a device where NFC is actually
+           available + enabled, so it honestly signals "tap a Bolt Card / NFC
+           tag here". Tap it for a one-line explainer. -->
+      <button
+        v-if="nfcReady"
+        type="button"
+        class="nfc-badge"
+        :class="$q.dark.isActive ? 'nfc-badge-dark' : 'nfc-badge-light'"
+        @click="onNfcBadge"
+        aria-label="NFC ready"
+      >
+        <Icon icon="tabler:nfc" width="14" height="14" />
+        <span>NFC</span>
+      </button>
+
       <!-- Pending Bitcoin Deposits Chip (in header) -->
       <transition name="btc-banner-fade">
         <q-chip
@@ -24,21 +39,12 @@
       </transition>
 
       <q-space/>
+      <!-- Header icon row. Address Book (least personal) then Settings.
+           Profile now lives in the top-right of the Settings page. -->
       <q-btn
         flat
         round
-        dense
         class="float-right q-mr-sm"
-        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
-        @click="$router.push('/settings')"
-        aria-label="Settings"
-      >
-        <Icon icon="tabler:settings" width="18" height="18" />
-      </q-btn>
-      <q-btn
-        flat
-        round
-        class="float-right"
         :class="$q.dark.isActive ? 'dark-mode-btn-dark' : 'dark-mode-btn-light'"
         @click="showAddressBookQuick = true"
         padding="sm sm"
@@ -46,6 +52,17 @@
         aria-label="Address Book"
       >
         <Icon icon="tabler:address-book" width="18" height="18" />
+      </q-btn>
+      <q-btn
+        flat
+        round
+        dense
+        class="float-right"
+        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
+        @click="$router.push('/settings')"
+        aria-label="Settings"
+      >
+        <Icon icon="tabler:settings" width="18" height="18" />
       </q-btn>
     </q-toolbar>
 
@@ -137,7 +154,7 @@
           <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
           <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
         </svg>
-        <!-- LNBits Logo -->
+        <!-- LNbits Logo -->
         <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
         </svg>
@@ -149,10 +166,30 @@
 
       <!-- Balance Display -->
       <div class="balance-section">
-        <div class="balance-container" @click="toggleCurrency" :class="{ 'switching': isSwitchingCurrency }">
+        <!--
+          Tap-to-cycle: Bitcoin → Fiat → Hidden → Bitcoin. One-thumb
+          UX that lets the user roll between the two unit views
+          they actually toggle AND a privacy peek without ever
+          opening Settings. The Hide Balance Quick Toggle and this
+          tap path share the same `walletStore.balanceHidden`
+          field, so flipping it from either surface keeps them in
+          sync.
+        -->
+        <div
+          class="balance-container"
+          :class="{ 'switching': isSwitchingCurrency }"
+          @click="cycleBalanceDisplay"
+        >
           <div class="balance-amount">
             <div class="amount-display">
+              <span
+                v-if="walletStore.balanceHidden"
+                class="amount-number amount-number-hidden"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :aria-label="$t('Balance hidden')"
+              >••••</span>
               <NumberFlow
+                v-else
                 :value="balanceNumericValue"
                 :format="balanceNumberFormat"
                 :prefix="balancePrefix"
@@ -167,7 +204,10 @@
           <transition name="secondary-fade" mode="out-in">
             <div :key="currentDisplayMode" class="balance-secondary"
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
-              <span v-if="secondaryValue" class="secondary-amount-display">
+              <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
+                <span class="secondary-value">••••</span>
+              </span>
+              <span v-else-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
               <span v-else class="loading-secondary">&nbsp;</span>
@@ -215,7 +255,19 @@
           @click="openTransactionHistory"
           :aria-label="$t('Open transaction history')"
         >
-          <span class="last-tx-icon" :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'">
+          <!-- Contact-linked preview: render the contact's avatar
+               (real Nostr picture when present) so the home-screen
+               row looks like a person, not a generic direction icon. -->
+          <ContactAvatar
+            v-if="lastTxContact"
+            class="last-tx-avatar"
+            :entry="lastTxContact"
+          />
+          <span
+            v-else
+            class="last-tx-icon"
+            :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'"
+          >
             <Icon :icon="lastTxIcon" width="18" height="18" />
           </span>
           <span class="last-tx-info">
@@ -228,14 +280,14 @@
           </span>
           <span class="last-tx-amount-wrap">
             <span class="last-tx-amount" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              {{ lastTxAmountDisplay }}
+              <HiddenAmount>{{ lastTxAmountDisplay }}</HiddenAmount>
             </span>
             <span
               v-if="lastTxFiatDisplay"
               class="last-tx-fiat"
               :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'"
             >
-              {{ lastTxFiatDisplay }}
+              <HiddenAmount>{{ lastTxFiatDisplay }}</HiddenAmount>
             </span>
           </span>
         </button>
@@ -292,7 +344,11 @@
 
     <!-- Send Modal -->
     <SendModal
+      ref="sendModal"
       v-model="showSendModal"
+      :resolving="sendResolving"
+      :resolve-error="sendResolveError"
+      @update:resolve-error="sendResolveError = $event"
       @payment-detected="onPaymentDetected"
     />
 
@@ -386,7 +442,7 @@
                       </linearGradient>
                     </defs>
                   </svg>
-                  <!-- LNBits Logo -->
+                  <!-- LNbits Logo -->
                   <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
@@ -415,7 +471,7 @@
                       <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
                       <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
                     </svg>
-                    <!-- LNBits mini logo -->
+                    <!-- LNbits mini logo -->
                     <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                     </svg>
@@ -426,7 +482,7 @@
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
-                  <template v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</template>
+                  <HiddenAmount v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</HiddenAmount>
                 </div>
               </div>
 
@@ -465,7 +521,17 @@
             @click="goToSettings"
           >
             <Icon icon="tabler:settings" width="20" height="20" class="q-mr-sm" />
-            {{ $t('Manage Wallets') }}
+            <!--
+              Short verb on purpose. The WalletSwitcher already shows
+              your wallets directly above this button, so the noun is
+              implicit. Pairs visually with the equally-short
+              "Transfer Funds" → "Umbuchen" in German, preventing the
+              right-button label from wrapping to 2 lines on phones
+              where the modal is ~340px wide. The longer
+              "Manage Wallets" form is still used in Settings where
+              the noun is needed to disambiguate.
+            -->
+            {{ $t('Manage') }}
           </q-btn>
         </q-card-section>
       </q-card>
@@ -509,6 +575,7 @@
       :wallet-can-pay="paymentSheetWalletCanPay"
       :wallet-hint="paymentSheetWalletHint"
       :is-sending="isSendingPayment"
+      :is-complete="sendDidSucceed"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
     />
@@ -533,6 +600,7 @@
       v-model="showBitcoinSheet"
       :destination-address="pendingPayment.bitcoinAddress"
       :available-balance="walletState.balance"
+      :verification="pendingPayment?.brantaVerification || null"
       @withdrawal-submitted="handleBitcoinWithdrawalSubmitted"
       @withdrawal-error="handleBitcoinWithdrawalError"
     />
@@ -545,6 +613,60 @@
       label="Sats Received"
       :auto-close-delay="5"
       @closed="onWithdrawSuccessClosed"
+    />
+
+    <!--
+      Bolt Card PIN dialog — LUD-XX `pinLimit` gate.
+      Mounted at the wallet page level so the LNURL-withdraw flow
+      (NFC tap, QR scan, pasted lnurlw://) all funnel through the
+      same authorization surface. The dialog shows the invoice
+      amount as the spec requires, stays open through retries on
+      "Invalid PIN", and closes on success or "Card blocked".
+    -->
+    <PinEntryDialog
+      v-model="showBoltCardPinDialog"
+      :title="$t('Bolt Card PIN')"
+      :subtitle="$t('Enter your 4-digit PIN to confirm this withdrawal')"
+      :amount-display="boltCardPinAmountDisplay"
+      :fiat-amount="boltCardPinFiatAmount"
+      :pin-length="4"
+      mode="enter"
+      :show-back-button="true"
+      :error-message="boltCardPinError"
+      :loading="boltCardPinValidating"
+      :loading-text="$t('Authorizing…')"
+      :timeout-seconds="60"
+      @pin-complete="onBoltCardPinComplete"
+      @cancel="onBoltCardPinCancel"
+      @timeout="onBoltCardPinTimeout"
+    />
+
+    <!--
+      Send Success Screen.
+      Separate v-model from the withdraw success so the two surfaces
+      stay independent — a send completing and a withdraw landing
+      should never share lifecycle. The Save Contact button only
+      shows for new recipients (savable address not already in the
+      address book); when present it suppresses auto-close.
+    -->
+    <PaymentConfirmation
+      v-model="showSendSuccess"
+      :amount="sendSuccessAmount"
+      :fiat-amount="sendSuccessFiat"
+      :recipient="sendSuccessRecipient"
+      :label="sendSuccessLabel"
+      :show-save-contact="sendSuccessShowSaveContact"
+      :auto-close-delay="5"
+      @closed="onSendSuccessClosed"
+      @save-contact-clicked="onSendSaveContactClicked"
+    />
+
+    <!-- LUD-04 (LNURL-auth) identity dialog. Mounted at the wallet page
+         level so deep-link, QR scan, and pasted-input flows all funnel
+         into the same confirm → sign → submit → record pipeline. -->
+    <IdentityAuthDialog
+      v-model="showIdentityAuthDialog"
+      :challenge="identityAuthChallenge"
     />
 
     <!-- Save Contact Dialog -->
@@ -566,6 +688,16 @@
         </q-card-section>
 
         <q-card-section class="save-contact-content">
+          <!-- Fiat-payout recipients (Bitzed/Tando) get the provider logo as
+               the contact picture, so the saved entry reads clearly as a
+               mobile-money number. Shown only when recognized. -->
+          <div v-if="saveContactServiceLogo" class="flex flex-center q-mb-sm">
+            <img
+              :src="saveContactServiceLogo"
+              alt=""
+              style="width: 56px; height: 56px; border-radius: 50%;"
+            />
+          </div>
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
             <Icon
               :icon="saveContactData.addressType === 'spark' ? 'tabler:flame' : 'tabler:bolt'"
@@ -623,15 +755,24 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {isLightningInvoice as isLightningInvoiceShared} from '../utils/addressUtils.js';
+import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
+import {matchWalletBrand} from '../services/walletBrands';
+import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
+import {fetchProfile, parseProfileContent, DEFAULT_FETCH_TIMEOUT_MS} from '../utils/nostrFetch.js';
+import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
+import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
+import HiddenAmount from '../components/HiddenAmount.vue';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
+import PinEntryDialog from '../components/PinEntryDialog.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
+import {useTransactionMetadataStore} from '../stores/transactionMetadata';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
@@ -639,9 +780,14 @@ import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
+import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
+import {useIdentityStore} from '../stores/identity';
+import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
+import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
 import {
   useBitcoinPreferencesStore,
   BITCOIN_DEPOSIT_POLL_MS,
@@ -649,7 +795,7 @@ import {
 } from '../stores/bitcoinPreferences';
 import { track as telemetryTrack } from '../utils/telemetry';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
-import {EventBus} from '../utils/eventBus';
+import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
 
 export default {
   name: 'WalletPage',
@@ -664,16 +810,26 @@ export default {
     BatchSendModal,
     PaymentConfirmation,
     NumberFlow,
-    BackupBanner
+    HiddenAmount,
+    BackupBanner,
+    IdentityAuthDialog,
+    ContactAvatar,
+    PinEntryDialog,
   },
   setup() {
     const walletStore = useWalletStore();
     const addressBookStore = useAddressBookStore();
+    const transactionMetadataStore = useTransactionMetadataStore();
     const bitcoinPrefsStore = useBitcoinPreferencesStore();
-    return { walletStore, addressBookStore, bitcoinPrefsStore };
+    const identityStore = useIdentityStore();
+    return { walletStore, addressBookStore, transactionMetadataStore, bitcoinPrefsStore, identityStore };
   },
   data() {
     return {
+      // True only on a device where NFC is available + enabled — drives the
+      // small "NFC ready" badge next to the logo.
+      nfcReady: false,
+
       // Spark tab switching
       sparkTabSwitching: false,
 
@@ -708,6 +864,10 @@ export default {
 
       showReceiveModal: false,
       showSendModal: false,
+      // Drives the Send sheet's loading CTA + inline error while we fetch and
+      // validate a destination it emitted (before the confirm sheet opens).
+      sendResolving: false,
+      sendResolveError: '',
       // PaymentConfirmSheet flags. Both paths use the same shared sheet
       // component — the only difference is the `verb` prop (send vs
       // redeem) which switches all the labels, and the payload shape
@@ -735,6 +895,9 @@ export default {
       currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
       isSendingPayment: false,
+      // True for the brief completion beat after a send succeeds — drives the
+      // CTA's fill-to-100% + checkmark before the success screen appears.
+      sendDidSucceed: false,
       fiatRatesLoaded: false,
       secondaryValue: '',
       showWalletSwitcher: false,
@@ -747,7 +910,12 @@ export default {
         address: '',
         addressType: 'lightning',
         name: '',
-        notes: ''
+        notes: '',
+        // Set when the save-as-contact dialog is offered right after a
+        // successful send — saveRecipientAsContact queues a pending
+        // link with this amount so the freshly created contact gets
+        // its first tx stamped on the next list refresh.
+        amountSats: 0,
       },
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
@@ -765,11 +933,43 @@ export default {
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
+      // Bolt Card PIN dialog (LUD-XX pinLimit). The dialog stays open
+      // across "Invalid PIN" retries — only success, "Card blocked",
+      // an HTTPS guard failure, or a user cancel close it.
+      //  - amountDisplay/fiat: shown above the lock icon so the user
+      //    sees what they're authorizing (spec requires the invoice
+      //    amount on the PIN screen).
+      //  - validating: drives the dialog's loading state while the
+      //    callback round-trip is in flight.
+      //  - resolve: the awaited resolver for the current PIN attempt.
+      //    Replaced on each attempt; never carries over across closes.
+      showBoltCardPinDialog: false,
+      boltCardPinError: '',
+      boltCardPinResolve: null,
+      boltCardPinAmountDisplay: '',
+      boltCardPinFiatAmount: '',
+      boltCardPinValidating: false,
       withdrawPaymentMonitor: null,
       withdrawSparkUnsubscribe: null,
       showWithdrawSuccess: false,
       withdrawConfirmedAmount: 0,
-      withdrawConfirmedFiat: ''
+      withdrawConfirmedFiat: '',
+      // Send-success state. Mirrors the withdraw-success shape so the
+      // two surfaces feel like the same pattern. `showSaveContact` is
+      // computed once at send time (savable address && not already a
+      // contact); flipping it later would be a UX gotcha, so we lock
+      // it before opening the modal.
+      showSendSuccess: false,
+      sendSuccessAmount: 0,
+      sendSuccessFiat: '',
+      sendSuccessRecipient: '',
+      sendSuccessLabel: '',
+      sendSuccessShowSaveContact: false,
+      // LUD-04 (LNURL-auth) — the dialog re-renders the same parsed
+      // challenge across steps, so we hold it here rather than passing
+      // through emit chains.
+      showIdentityAuthDialog: false,
+      identityAuthChallenge: null,
     };
   },
   computed: {
@@ -777,6 +977,20 @@ export default {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
       ) || null;
+    },
+
+    /**
+     * Inline gradient for the small Profile avatar in the header. Derived
+     * from the identity fingerprint so the icon visually matches the big
+     * avatar on the Profile page itself — same identity, same colour.
+     * Before bootstrap, the helper returns a tasteful default so the
+     * button never renders flat or empty.
+     */
+    profileAvatarStyle() {
+      const { from, to } = identityFingerprintToGradient(
+        this.identityStore?.fingerprint,
+      );
+      return { background: `linear-gradient(135deg, ${from} 0%, ${to} 100%)` };
     },
 
     /**
@@ -800,7 +1014,33 @@ export default {
       return this.lastTxIsIncoming ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right';
     },
 
+    /**
+     * Address-book contact linked to the most recent transaction, if
+     * any. Drives the preview widget's avatar + title so the user
+     * sees "DrShift  ←  picture" instead of the generic
+     * "Payment Sent ← up-arrow" once a contact is associated. The
+     * association is written at send time by confirmPayment.
+     */
+    lastTxContact() {
+      const tx = this.lastTransaction;
+      if (!tx || !tx.id || !this.transactionMetadataStore) {
+        return null;
+      }
+      try {
+        // Same live resolution as the history list: explicit contactId,
+        // then manual removal, then the durable recipient address. This
+        // is why the home-screen preview now matches the list instead of
+        // only reacting to an explicit contactId.
+        return this.transactionMetadataStore.getContactForTransaction(tx.id) || null;
+      } catch {
+        return null;
+      }
+    },
+
     lastTxTitle() {
+      // Prefer the linked contact's name so the home-screen preview
+      // reads as "DrShift" instead of the generic direction label.
+      if (this.lastTxContact?.name) return this.lastTxContact.name;
       return this.lastTxIsIncoming
         ? this.$t('Payment Received')
         : this.$t('Payment Sent');
@@ -818,26 +1058,59 @@ export default {
       return this.formatRelativeTime(ts);
     },
 
+    /**
+     * The "user-meaningful" amount in sats for the home-page
+     * preview widget. Same derivation as TransactionDetails and
+     * TransactionHistory:
+     *   - Outgoing with a fee → recipient amount (gross − fee)
+     *   - Otherwise → gross
+     *
+     * Keeps the three surfaces telling the same story so a user who
+     * sees "−₿ 5" on the home widget, taps through to the history
+     * row showing "−₿ 5", and opens the detail page showing "−₿ 5"
+     * never has to reconcile three different headline numbers.
+     */
+    lastTxDisplayAmountSats() {
+      if (!this.lastTransaction) return 0;
+      const gross = Math.abs(Number(this.lastTransaction.amount) || 0);
+      const fee = Number(this.lastTransaction.fee) || 0;
+      if (!this.lastTxIsIncoming && fee > 0) {
+        return Math.max(0, gross - fee);
+      }
+      return gross;
+    },
+
     lastTxAmountDisplay() {
       if (!this.lastTransaction) return '';
-      const rawAmount = Math.abs(Number(this.lastTransaction.amount) || 0);
       const sign = this.lastTxIsIncoming ? '+' : '-';
       // Use the same formatter the rest of the app uses so unit
       // (sats / BTC) and BIP-177 formatting match.
-      const formatted = formatAmount(rawAmount, this.walletStore.useBip177Format);
+      const formatted = formatAmount(this.lastTxDisplayAmountSats, this.walletStore.useBip177Format);
       return `${sign}${formatted}`;
     },
 
     lastTxFiatDisplay() {
       if (!this.lastTransaction) return '';
-      const sats = Math.abs(Number(this.lastTransaction.amount) || 0);
+      const sats = this.lastTxDisplayAmountSats;
       if (sats === 0) return '';
       const currency = this.walletState.preferredFiatCurrency || 'USD';
       const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
       if (fiat === null || fiat === undefined) return '';
       // "about $0.02" matches the reference mock's softer tone vs an
       // exact value, which is appropriate for a preview.
-      return `${this.$t('about')} ${fiatRatesService.formatFiatAmount(fiat, currency)}`;
+      const fiatPart = `${this.$t('about')} ${fiatRatesService.formatFiatAmount(fiat, currency)}`;
+      // Append a compact fee note when there's a fee to surface, so
+      // the home widget visibly reconciles "I sent X, the network
+      // took Y" without needing a new row. Parens (not a "+"
+      // prefix) so the fee can't be misread as positive income on
+      // a small surface. Matches TransactionHistory's badge shape
+      // for consistency.
+      const fee = Number(this.lastTransaction.fee) || 0;
+      if (!this.lastTxIsIncoming && fee > 0) {
+        const feeFormatted = formatAmount(fee, this.walletStore.useBip177Format);
+        return `${fiatPart} (${feeFormatted} ${this.$t('fee')})`;
+      }
+      return fiatPart;
     },
     walletDisplayName() {
       if (!this.activeWallet) return '';
@@ -932,9 +1205,31 @@ export default {
      * here keeps Wallet.vue's send-pipeline state untouched while the
      * sheet stays decoupled from any wallet/legacy specifics.
      */
+    // Provider logo for the save-contact dialog preview (Bitzed for Zambia,
+    // …). Null for any non-payout address, so the avatar simply doesn't show.
+    saveContactServiceLogo() {
+      return matchLnAddressService(this.saveContactData.address)?.logo || null;
+    },
+
     paymentSheetProps() {
       const p = this.pendingPayment;
       if (!p) return null;
+
+      // Consumer-wallet identity (Wallet of Satoshi, Phoenix, Blink, …),
+      // recognized locally by the address domain. Applied as a backfall below.
+      const walletBrand = this.resolveWalletBrand(p);
+
+      // Nostr-native address (npub.cash & co.): the address local part is an
+      // npub, i.e. a real person. Decoded here so the recipient can become
+      // their name + avatar instead of a 63-char key. null for every normal
+      // address. Works off the resolved address for both entry shapes.
+      const npubIds = npubFromLightningAddress(p.lightningAddress || walletBrand?.address);
+
+      // The Nostr person to show, from EITHER the npub-handle above OR a bare
+      // npub/nprofile/NIP-05 we resolved at send time (pubkey + profile carried
+      // on the payment). Either way the recipient becomes the real person.
+      const nostrPubkey = npubIds?.pubkey || p.nostrPubkey || null;
+      const nostrNpub = npubIds?.npub || p.nostrNpub || null;
 
       // ── Recipient ─────────────────────────────────────────────
       // Merchant payments (SA retail QR) get the merchant logo + name as
@@ -952,26 +1247,94 @@ export default {
           address: ''
         };
       } else if (p.lightningAddress) {
-        recipient = {
-          name: p.lightningAddress,
-          color: '#F59E0B',
+        // If the destination matches a saved contact, surface their
+        // local name + color (and Nostr avatar when present) instead
+        // of the raw address. Works for every entry path — picker,
+        // typed address, or pasted link — because the lookup is on
+        // the resolved address, not on how it arrived.
+        const contact = this.addressBookStore.findContactByAddress(p.lightningAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: p.lightningAddress,
+          fallbackColor: '#F59E0B',
           addressType: 'lightning',
-          address: p.lightningAddress
-        };
+          address: p.lightningAddress,
+        });
+
+        // Fiat-payout services (Tando, Bitzed, …): recognized locally by
+        // the address domain and branded by destination country, not by
+        // provider. Synchronous, no network lookup. A saved contact always
+        // wins, mirroring the Branta guard below.
+        const lnService = matchLnAddressService(p.lightningAddress);
+        if (lnService && !recipient.matchedContact) {
+          // Prefer the partner logo (Bitzed for Zambia) over the plain
+          // country flag; fall back to the flag where no logo exists (Kenya).
+          recipient.logoUrl = lnService.logo || lnService.flag;
+          // Show the number in readable international form (+260 777 491 011)
+          // rather than the raw handle (0777491011 / 260777491011).
+          recipient.name = formatPhoneHandle(lnService.code, lnService.handle);
+          recipient.lnService = {
+            hint: this.$t(lnService.hint),
+            currency: lnService.currency,         // local payout currency (KES/ZMW)
+          };
+        }
+
+        // Identity backfall — a saved contact or a payout service (both above)
+        // always wins. A resolved Nostr person beats plain wallet branding.
+        if (!recipient.matchedContact && !recipient.lnService) {
+          if (nostrPubkey) {
+            // Nostr person — npub.cash address, or a bare npub/NIP-05 we resolved.
+            recipient = this.buildNostrPersonRecipient(
+              p, nostrPubkey, nostrNpub, p.lightningAddress, walletBrand ? walletBrand.brand : null
+            );
+          } else if (walletBrand) {
+            // Consumer-wallet branding: the hosting wallet's logo + username
+            // read far friendlier than a raw address.
+            recipient.logoUrl = walletBrand.brand.logo;
+            recipient.logoContain = walletBrand.brand.logoContain === true;
+            recipient.logoBg = walletBrand.brand.logoBg || '';
+            recipient.name = walletBrand.handle || walletBrand.brand.name;
+            recipient.walletBrand = walletBrand.brand.name;
+          }
+        }
       } else if (p.sparkAddress) {
-        recipient = {
-          name: this.$t('Spark address'),
-          color: '#6B7280',
+        const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: this.$t('Spark address'),
+          fallbackColor: '#6B7280',
           addressType: 'spark',
-          address: p.sparkAddress
-        };
+          address: p.sparkAddress,
+        });
       } else if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
-        recipient = {
-          name: this.$t('LNURL payment'),
-          color: '#3B82F6',
-          addressType: 'lnurl',
-          address: typeof p.data === 'string' ? p.data : ''
-        };
+        if (nostrPubkey) {
+          // Nostr person reached via a raw LNURL (npub.cash, or a resolved
+          // bare npub whose profile carried a lud06 LNURL). Reveal the npub /
+          // address rather than the opaque bech32.
+          recipient = this.buildNostrPersonRecipient(
+            p, nostrPubkey, nostrNpub,
+            walletBrand?.address || nostrNpub || (typeof p.data === 'string' ? p.data : ''),
+            walletBrand ? walletBrand.brand : null
+          );
+        } else if (walletBrand) {
+          recipient = {
+            name: walletBrand.handle || walletBrand.brand.name,
+            color: '#3B82F6',
+            // It is a Lightning Address under the hood, so label it as one:
+            // the indicator then reads "Lightning payment", not "LNURL payment".
+            addressType: 'lightning',
+            logoUrl: walletBrand.brand.logo,
+            logoContain: walletBrand.brand.logoContain === true,
+            logoBg: walletBrand.brand.logoBg || '',
+            walletBrand: walletBrand.brand.name,
+            address: walletBrand.address || (typeof p.data === 'string' ? p.data : '')
+          };
+        } else {
+          recipient = {
+            name: this.$t('LNURL payment'),
+            color: '#3B82F6',
+            addressType: 'lnurl',
+            address: typeof p.data === 'string' ? p.data : ''
+          };
+        }
       } else {
         // BOLT11 invoice or unknown — show description as the "name" if
         // we have it, otherwise fall back to a generic label.
@@ -979,8 +1342,33 @@ export default {
           name: p.description || this.$t('Lightning invoice'),
           color: '#F59E0B',
           addressType: 'invoice',
-          address: ''
+          // The raw destination for invoices is the BOLT11 itself, surfaced
+          // (folded) under the payment indicator for manual verification.
+          address: p.invoice || p.data || ''
         };
+      }
+
+      // ── Branta merchant verification ──────────────────────────
+      // Attached asynchronously by runBrantaVerification on a positive
+      // lookup. We surface the verified business name + logo as the hero
+      // identity (overriding the generic "Lightning invoice" label and
+      // colored initial), but never relabel a contact the user saved
+      // themselves, and never override an SA-retail merchant. The tappable
+      // "verified by Branta" badge is attached whenever a match exists.
+      const bv = p.brantaVerification;
+      if (bv && !p.merchant) {
+        const verifiedLogo = this.$q.dark.isActive
+          ? (bv.logoUrl || bv.logoLightUrl)
+          : (bv.logoLightUrl || bv.logoUrl);
+        if (!recipient.matchedContact) {
+          if (bv.name) recipient.name = bv.name;
+          if (verifiedLogo) {
+            recipient.logoUrl = verifiedLogo;
+            // Branta-delivered brand marks render best contained (not cropped).
+            recipient.logoContain = true;
+          }
+        }
+        recipient.verification = { verifyUrl: bv.verifyUrl };
       }
 
       // ── Amount mode ───────────────────────────────────────────
@@ -1007,7 +1395,7 @@ export default {
       }
 
       // ── Fee estimate ──────────────────────────────────────────
-      // Only Spark wallets expose pre-call fee data. NWC/LNBits omit the
+      // Only Spark wallets expose pre-call fee data. NWC/LNbits omit the
       // object entirely so the sheet renders nothing — better than
       // showing an empty "—" row that implies missing information.
       let feeEstimate = null;
@@ -1025,7 +1413,15 @@ export default {
       return {
         recipient,
         amount,
-        description: p.description || p.defaultDescription || '',
+        // Description precedence is deliberate: the invoice / LNURL memo
+        // (what the user is actually paying for) wins; Branta's
+        // platform-level description is only a fallback when no memo exists.
+        // The verified identity (name + logo + badge) is surfaced above.
+        // For a recognized consumer wallet (or a resolved Nostr person) the
+        // "memo" is just boilerplate metadata ("Pay to Wallet of Satoshi user:
+        // …"), already conveyed by the logo + name + brand hint, so we drop it
+        // rather than repeat it.
+        description: (walletBrand || nostrPubkey) ? '' : (p.description || p.defaultDescription || (bv && bv.description) || ''),
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
         // Merchant-driven extras — countdown, ZAR fallback, stale rates.
@@ -1066,14 +1462,17 @@ export default {
       const p = this.pendingPayment;
       if (!p || p.type !== 'lnurl_withdraw') return null;
 
-      const sourceName = p.defaultDescription || this.$t('LNURL Withdrawal');
+      // A recognized Bolt Card gets its own mark + clean name instead of the
+      // generic blue ↓ and the technical "Boltcard (refund address …)" text.
+      const isBoltcard = this.isBoltcardWithdraw(p);
       const recipient = {
-        name: sourceName,
+        name: isBoltcard ? 'Bolt Card' : (p.defaultDescription || this.$t('LNURL Withdrawal')),
         initial: '↓',
         color: '#3B82F6',
         addressType: 'lnurl',
         viaOverride: this.$t('Lightning · Withdrawal'),
-        address: ''
+        address: '',
+        ...(isBoltcard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),
       };
 
       let amount;
@@ -1114,7 +1513,7 @@ export default {
     },
     // Show fee estimate row only when we have actual fee data to display
     // - Spark wallet: Show when we have an estimate OR it's a free Spark transfer
-    // - NWC/LNBits: Never show (no fee estimation available)
+    // - NWC/LNbits: Never show (no fee estimation available)
     showFeeEstimate() {
       if (!this.pendingPayment) return false;
       if (!this.walletStore.isActiveWalletSpark) return false;
@@ -1218,6 +1617,14 @@ export default {
     // Restore display currency from user preference
     this.currentDisplayMode = this.walletStore.defaultDisplayCurrency || 'bitcoin';
     this.addressBookStore.initialize();
+    // Hydrate the Identity store so the header avatar paints with the
+    // right gradient (and the backup-pip with the right state) on first
+    // mount. Idempotent and cheap.
+    this.identityStore.hydrate();
+
+    // NFC capability for the "NFC ready" badge. Fire-and-forget — never blocks
+    // the wallet load, and stays false on web/PWA (no NFC there).
+    isNfcAvailable().then((ok) => { this.nfcReady = ok; }).catch(() => {});
     this.initializeWallet();
     // Check for Bitcoin withdrawal from contacts
     this.handleBitcoinWithdrawalFromQuery();
@@ -1225,9 +1632,21 @@ export default {
     this.$watch(() => this.walletStore.needsPinMigration, (needs) => {
       if (needs) this.showMigrationDialog = true;
     }, { immediate: true });
-    // Listen for deep link events (Android intent filters: lightning:, bitcoin:, lnurlp://, lnurlw://)
-    this._deepLinkHandler = (paymentData) => this.onPaymentDetected(paymentData);
-    EventBus.on('deep-link', this._deepLinkHandler);
+    // Drain any buffered deep-link / NFC payment intent. Boot files write to
+    // walletStore.pendingDeepLink instead of using a transient event so that
+    // intents arriving before this component mounts are never lost. The
+    // watcher fires immediately with the current value, then reactively on
+    // any subsequent write while we are mounted. We clear the buffer before
+    // processing so a remount does not double-process.
+    this.$watch(
+      () => this.walletStore.pendingDeepLink,
+      (paymentData) => {
+        if (!paymentData) return;
+        this.walletStore.pendingDeepLink = null;
+        this.onPaymentDetected(paymentData);
+      },
+      { immediate: true }
+    );
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -1242,10 +1661,8 @@ export default {
     this.stopWithdrawMonitor();
     // Stop merchant countdown if active
     this.stopMerchantCountdown();
-    // Clean up deep link listener
-    if (this._deepLinkHandler) {
-      EventBus.off('deep-link', this._deepLinkHandler);
-    }
+    // Abort any in-flight Branta lookup
+    this.cancelBrantaLookup();
   },
   watch: {
     'walletState.balance': {
@@ -1349,18 +1766,227 @@ export default {
           timeout: 4000
         })
       } else if (result.type === 'error') {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Auto-transfer failed'),
-          caption: result.message,
-          icon: 'error',
-          timeout: 5000
+        // Background flows funnel through the same dialog as
+        // user-initiated payments so the failure UI is consistent
+        // app-wide. The wallet name is woven into the route label
+        // so a copied report still says which wallet auto-fired.
+        this.walletStore.showPaymentError(result.error, {
+          context: 'withdraw',
+          walletType: result.walletType,
+          route: `Auto-transfer (${result.walletName})`,
+          amountSats: typeof result.amountSats === 'number' ? result.amountSats : undefined,
+          t: this.$t.bind(this),
         })
       }
       awStore.lastResult = null
     }
   },
   methods: {
+    /**
+     * Recognize the consumer wallet behind a Lightning Address / LNURL so the
+     * confirm sheet can show its real logo + the username instead of a generic
+     * "LNURL payment" placeholder. Backfall only — the caller applies it after
+     * a saved contact and a payout-service match, never over them.
+     *
+     * Handles both entry shapes the send pipeline produces:
+     *   - a typed/scanned Lightning Address -> domain + handle split on "@"
+     *   - a raw LNURL (incl. an address already resolved to one) -> decode to
+     *     the lnurlp endpoint, then read the host (+ the handle from the
+     *     .../lnurlp/<handle> path segment).
+     *
+     * @returns {{ brand: {name, logo}, handle: string|null, address: string|null } | null}
+     */
+    resolveWalletBrand(p) {
+      if (!p) return null;
+
+      // Lightning Address: cleanest source — both parts are in the string.
+      if (typeof p.lightningAddress === 'string' && p.lightningAddress.includes('@')) {
+        const at = p.lightningAddress.lastIndexOf('@');
+        const brand = matchWalletBrand(p.lightningAddress.slice(at + 1));
+        return brand
+          ? { brand, handle: p.lightningAddress.slice(0, at), address: p.lightningAddress }
+          : null;
+      }
+
+      // Raw LNURL (e.g. a scanned QR): decode to the lnurlp URL and read its
+      // host. A Lightning Address resolved upstream lands here too, so the
+      // .well-known/lnurlp/<handle> path still yields the username.
+      if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
+        const encoded = p.lnurl || (typeof p.data === 'string' ? p.data : '');
+        if (!encoded) return null;
+        let host;
+        let handle = null;
+        try {
+          const url = new URL(this.decodeLNURL(encoded));
+          host = url.hostname;
+          const segs = url.pathname.split('/').filter(Boolean);
+          const i = segs.lastIndexOf('lnurlp');
+          if (i >= 0 && segs[i + 1]) handle = decodeURIComponent(segs[i + 1]);
+        } catch {
+          return null;
+        }
+        const brand = matchWalletBrand(host);
+        if (!brand) return null;
+        // Reconstruct the clean address for the tap-to-reveal row; fall back to
+        // the raw encoded string when the endpoint carried no handle.
+        const address = handle ? `${handle}@${host.toLowerCase()}` : null;
+        return { brand, handle, address };
+      }
+
+      return null;
+    },
+
+    /**
+     * Build the recipient identity for a Nostr-native address (npub.cash & co.,
+     * behind an address. Two sources feed it:
+     *   - the address local part is itself an npub (npub.cash), or
+     *   - we paid a bare npub/nprofile and carried the pubkey + profile here.
+     * Precedence, most-personal first:
+     *   1. a saved contact matched by pubkey — their name + avatar
+     *   2. the resolved Nostr profile — name + avatar (from p.nostrProfile,
+     *      set by the send-time resolve or runNostrRecipientEnrichment)
+     *   3. a tidy truncated npub over the provider logo — the instant baseline.
+     *
+     * @param {object} p        the pending payment (carries p.nostrProfile)
+     * @param {string} pubkey   the person's hex pubkey
+     * @param {string} npub     their npub (for the truncated baseline)
+     * @param {string} address  what the reveal row shows (lud16 / npub / lnurl)
+     * @param {{name: string, logo: string}|null} brand  provider brand, or null
+     */
+    buildNostrPersonRecipient(p, pubkey, npub, address, brand) {
+      // A Nostr friend the user already saved wins — matched by pubkey, not by
+      // this address (their saved address is usually a different lud16).
+      const contact = this.addressBookStore.findContactByPubkey(pubkey);
+      if (contact) {
+        return this.recipientFromContact(contact, {
+          fallbackName: shortenNpub(npub),
+          fallbackColor: '#3B82F6',
+          addressType: 'lightning',
+          address,
+        });
+      }
+      // Otherwise: the live profile avatar, else the provider brand logo, else
+      // the Nostr ostrich — so a profile-less npub still reads as a Nostr
+      // identity rather than a bare 'N' initial.
+      const prof = p.nostrProfile;
+      const picture = (prof && prof.picture) || '';
+      const usingBrandLogo = !picture && !!brand;
+      return {
+        name: (prof && prof.name) || shortenNpub(npub),
+        color: '#3B82F6',
+        addressType: 'lightning',
+        logoUrl: picture || (brand ? brand.logo : '/nostr/nostr.png'),
+        logoContain: usingBrandLogo && brand.logoContain === true,
+        logoBg: usingBrandLogo ? (brand.logoBg || '') : '',
+        walletBrand: brand ? brand.name : '',
+        address,
+      };
+    },
+
+    /**
+     * Thin wrapper around the Nostr resolver used by the NIP-05 fallback:
+     * returns the resolved {kind, address, pubkey, npub, profile} or null on any
+     * failure, so a miss simply leaves the original Lightning-address path
+     * untouched (no error surfaced — the address genuinely just didn't resolve).
+     */
+    async resolveNostrTarget(input) {
+      try {
+        // Bounded so the NIP-05 fallback (nostr.json + kind:0 fetch) can't leave
+        // the Send sheet resolving indefinitely.
+        return await resolveNostrLightningTarget(input, { timeoutMs: 8000 });
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Surface a send-resolution failure (a destination that didn't resolve).
+     * From the open Send sheet we show it inline in the field so the user can
+     * fix the input without leaving; otherwise (deep link, etc.) we fall back
+     * to the global error dialog. The caller has already set `resolved = false`.
+     */
+    failSendResolution(message, fromField, dialogOpts = {}) {
+      if (fromField) {
+        this.sendResolveError = message;
+      } else {
+        this.walletStore.showPaymentError(new Error(message), {
+          context: dialogOpts.context || 'payment',
+          route: dialogOpts.route || 'Payment dispatch',
+          t: this.$t.bind(this),
+        });
+      }
+    },
+
+    /**
+     * Resolve the real Nostr profile (name + avatar) behind an npub.cash-style
+     * address and patch it onto the live payment, so the confirm sheet upgrades
+     * from "Cashu + npub1abc…" to the actual person a moment after it opens.
+     *
+     * Fire-and-forget, mirroring runBrantaVerification: it can never block or
+     * break the send, every failure path resolves to "keep the baseline", and
+     * an identity guard stops a late result from landing on a different payment.
+     */
+    runNostrRecipientEnrichment(payment) {
+      try {
+        if (!payment) return;
+        const brand = this.resolveWalletBrand(payment);
+        if (!brand) return; // only providers we'd actually brand (npub.cash …)
+        const ids = npubFromLightningAddress(payment.lightningAddress || brand.address);
+        if (!ids) return;
+        // Already a saved contact? The sheet shows them from the local cache —
+        // no need to hit the relays at all.
+        if (this.addressBookStore.findContactByPubkey(ids.pubkey)) return;
+
+        const token = payment; // identity guard, same as Branta
+        fetchProfile(ids.pubkey, { timeoutMs: DEFAULT_FETCH_TIMEOUT_MS })
+          .then((event) => {
+            if (!event) return;
+            if (this.pendingPayment !== token) return;
+            const profile = parseProfileContent(event);
+            const name = profileDisplayName(profile);
+            const picture = sanitizeImageUrl(profile.picture);
+            if (!name && !picture) return; // nothing worth upgrading to
+            // Reactive patch -> paymentSheetProps re-runs -> the person appears.
+            this.pendingPayment.nostrProfile = { name, picture };
+          })
+          .catch(() => { /* never surfaces; baseline stays */ });
+      } catch {
+        // Defensive: enrichment must never disrupt the payment path.
+      }
+    },
+
+    /**
+     * Build a PaymentConfirmSheet recipient payload from a saved
+     * address-book contact, falling back to the supplied defaults
+     * when no contact is found. Threads the Nostr `picture` field
+     * through the sheet's existing `logoUrl` slot so the real
+     * avatar appears on the Send-to screen — same plumbing the
+     * merchant QR flow uses.
+     */
+    recipientFromContact(contact, fallback) {
+      if (!contact) {
+        return {
+          name: fallback.fallbackName,
+          color: fallback.fallbackColor,
+          addressType: fallback.addressType,
+          address: fallback.address,
+          matchedContact: false,
+        };
+      }
+      const nostrPicture = typeof contact.nostr_profile?.picture === 'string'
+        ? contact.nostr_profile.picture.trim()
+        : '';
+      const safeLogoUrl = /^(https?:|data:image\/)/i.test(nostrPicture) ? nostrPicture : '';
+      return {
+        name: contact.name || fallback.fallbackName,
+        color: contact.color || fallback.fallbackColor,
+        logoUrl: safeLogoUrl,
+        addressType: fallback.addressType,
+        address: fallback.address,
+        matchedContact: true,
+      };
+    },
+
     goToBackup() {
       this.$router.push('/settings?section=backup');
     },
@@ -1381,7 +2007,17 @@ export default {
       await Promise.allSettled(
         wallets.map(async (w) => {
           try {
-            await this.walletStore.refreshWalletData(w.id);
+            // Only live-refresh the active wallet. Refreshing an INACTIVE Spark
+            // wallet would reconnect it (refreshWalletData auto-connects on a
+            // miss), creating a second live Spark connection that corrupts the
+            // active wallet's SDK session (the SDK shares one gRPC channel +
+            // a global auth cache across instances). That's exactly what made
+            // the active wallet show "not connected" when this sheet opened.
+            // Inactive wallets render their cached balance via getDisplayBalance.
+            const inactiveSpark = w.type === 'spark' && w.id !== this.walletStore.activeWalletId;
+            if (!inactiveSpark) {
+              await this.walletStore.refreshWalletData(w.id);
+            }
           } catch { /* ignore */ }
           this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
         })
@@ -1411,19 +2047,34 @@ export default {
     },
 
     /**
-     * Handle successful contact payment
+     * Handle successful contact payment.
+     *
+     * Funnels into the same success modal the free-amount send path
+     * uses, so the two routes feel like one. `showSaveContact` is
+     * always false here — by definition the recipient is already a
+     * saved contact (the user picked them from the address book).
      */
-    handleContactPaymentSent() {
+    handleContactPaymentSent(payload) {
+      const contact = this.selectedPayContact;
+      const recipient = contact?.name || '';
+      const amount = Number(payload?.amount) || 0;
       this.selectedPayContact = null;
-      this.$q.notify({
-        type: 'positive',
-        message: this.$t('Payment sent'),
-        timeout: 2000
-      });
+
       // Refresh balance for active wallet
       if (this.walletStore.activeWalletId) {
         this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
       }
+
+      // PaymentModal already resolved completed-or-throw before
+      // emitting `payment-sent`, so we can assume COMPLETED here. If a
+      // future PaymentModal change introduces pending semantics, the
+      // openSendSuccess helper accepts the status and adapts.
+      this.openSendSuccess({
+        amount,
+        recipient,
+        status: 'completed',
+        showSaveContact: false,
+      });
     },
 
     /**
@@ -1443,17 +2094,13 @@ export default {
     /**
      * Handle batch send completion
      */
-    handleBatchCompleted(results) {
-      const succeeded = results.filter(r => r.status === 'success').length;
-      const failed = results.filter(r => r.status === 'failed' || r.status === 'skipped').length;
-
-      this.$q.notify({
-        type: failed === 0 ? 'positive' : 'warning',
-        message: failed === 0
-          ? this.$t('{count} payments sent', { count: succeeded })
-          : this.$t('{sent} sent, {failed} failed', { sent: succeeded, failed }),
-        timeout: 3000
-      });
+    handleBatchCompleted(_results) {
+      // BatchSendModal step 5 already presents the full success
+      // surface (checkmark + total + per-recipient failure list).
+      // A trailing parent toast on top of that would be redundant
+      // chrome — the user has already seen the canonical result.
+      // Kept as a hook in case future flows need to react after a
+      // batch completes (e.g. refresh background data).
     },
 
     // ==========================================
@@ -1463,6 +2110,28 @@ export default {
     /**
      * Open receive modal with Bitcoin tab selected
      */
+    /**
+     * Recognize a Bolt Card behind an LNURL-withdraw, so the Redeem sheet can
+     * show the Bolt Card mark instead of a generic ↓. Two signals:
+     *   - `pinLimit` is set only by Bolt Card issuers (LUD-XX), or
+     *   - LNbits' Boltcard extension names the withdraw "Boltcard (refund …)".
+     */
+    isBoltcardWithdraw(p) {
+      if (!p) return false;
+      if (p.pinLimit != null) return true;
+      return /bolt\s*card/i.test(p.defaultDescription || '');
+    },
+
+    // One-line explainer for the NFC-ready badge.
+    onNfcBadge() {
+      this.$q.notify({
+        message: this.$t('NFC ready'),
+        caption: this.$t('Hold a Bolt Card or NFC tag to your phone to pay or redeem'),
+        timeout: 3500,
+        position: 'top',
+      });
+    },
+
     openReceiveModalBitcoin() {
       this.showReceiveModal = true;
       // The ReceiveModal will receive this via a prop or event
@@ -1974,7 +2643,11 @@ export default {
         ]);
       } catch (error) {
         console.error('Error switching Spark tab:', error);
-        this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t switch wallet') });
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Switch Spark tab',
+          t: this.$t.bind(this),
+        });
       } finally {
         this.sparkTabSwitching = false;
       }
@@ -2014,10 +2687,10 @@ export default {
         this.updateWalletBalance();
       } catch (error) {
         console.error('Error switching wallet:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t switch wallet'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'connect',
+          route: 'Switch wallet',
+          t: this.$t.bind(this),
         });
       }
     },
@@ -2076,7 +2749,7 @@ export default {
     getWalletTypeLabel(type) {
       switch (type) {
         case 'spark': return 'Spark';
-        case 'lnbits': return 'LNBits';
+        case 'lnbits': return 'LNbits';
         default: return 'NWC';
       }
     },
@@ -2179,7 +2852,7 @@ export default {
      *
      * Called from the 30s periodic tick, after every send/receive, on wallet
      * switch, and on app start. The balance-fetch logic branches per wallet
-     * type (Spark / LNBits / NWC) and each branch returns early after its
+     * type (Spark / LNbits / NWC) and each branch returns early after its
      * own fetch — so the last-transaction refresh lives in `finally` to
      * guarantee it runs for every wallet type, even when a branch throws.
      */
@@ -2210,12 +2883,29 @@ export default {
             // Don't spam console with expected "PIN required" messages
             if (!err.message?.includes('PIN')) {
               console.warn('Balance refresh skipped:', err.message);
+              // Self-heal a dropped Spark connection. The provider's
+              // isConnected flag stays true after an idle stream death on
+              // Android, so ensureSparkConnected hands back a stale provider
+              // and the wallet gets stuck showing "locked". A non-PIN failure
+              // means the wallet IS unlocked but its connection died — force a
+              // fresh reconnect so the next tick (or a user action) finds a
+              // live instance, instead of requiring a manual switch-and-back.
+              if (activeWalletId) {
+                try {
+                  // forceReinit: the cached SDK instance is alive-but-dead (its
+                  // stream dropped), so getOrCreateWallet would just hand the
+                  // same broken instance back. Force a clean teardown + rebuild.
+                  await this.walletStore.connectSparkWallet(activeWalletId, { forceReinit: true });
+                } catch (reconnectErr) {
+                  console.warn('Spark auto-reconnect failed:', reconnectErr.message);
+                }
+              }
             }
           }
           return;
         }
 
-        // Check if active wallet is LNBits
+        // Check if active wallet is LNbits
         if (this.walletStore.isActiveWalletLNBits) {
           try {
             const provider = await this.walletStore.ensureLNBitsConnected();
@@ -2241,7 +2931,7 @@ export default {
             // stays visible and the next tick will retry. We log so issues
             // are debuggable but don't surface a UI error for a transient
             // blip.
-            console.warn('LNBits balance refresh failed:', err.message);
+            console.warn('LNbits balance refresh failed:', err.message);
           }
           return;
         }
@@ -2287,7 +2977,7 @@ export default {
      *
      * Called from updateWalletBalance's `finally` block — so it fires on
      * the 30s periodic tick, after every send/receive, and on wallet
-     * switch, for every wallet type (Spark / LNBits / NWC). Also called
+     * switch, for every wallet type (Spark / LNbits / NWC). Also called
      * directly from created() after initial connect.
      */
     async loadLastTransaction() {
@@ -2305,11 +2995,23 @@ export default {
           return;
         }
 
-        const result = await provider.getTransactions({ limit: 1, offset: 0 });
-        // Providers return either an array or `{ transactions: [...] }`
-        // depending on the implementation. Handle both so new providers
-        // don't silently break this card.
+        // Fetch a small batch (not just the top one) so the pending-
+        // contact-link consumer has something to match against —
+        // settlement latency on some rails means our just-sent tx may
+        // not yet be the freshest row, or the user may have multiple
+        // sends in flight.
+        const result = await provider.getTransactions({ limit: 10, offset: 0 });
         const txs = Array.isArray(result) ? result : (result?.transactions || []);
+
+        // Drain the queued contact links before we publish the new
+        // lastTransaction, so the home-screen preview reads the
+        // freshly-stamped metadata on the same paint.
+        try {
+          await this.transactionMetadataStore.consumePendingContactLinks(txs);
+        } catch (err) {
+          console.warn('[wallet] pending-contact-link drain failed:', err);
+        }
+
         this.lastTransaction = txs.length > 0 ? txs[0] : null;
       } catch (err) {
         console.warn('Failed to load last transaction:', err);
@@ -2443,6 +3145,47 @@ export default {
       setTimeout(() => {
         this.isSwitchingCurrency = false;
       }, 200);
+    },
+
+    /**
+     * 3-state tap cycle on the hero balance:
+     *
+     *   Bitcoin visible  →  Fiat visible  →  Hidden  →  Bitcoin visible …
+     *
+     * Gives the user a one-handed thumb-roll between the two
+     * unit views they actually toggle between AND a privacy peek
+     * (which they can also reach via the Hide Balance Quick Toggle
+     * in Settings — both paths share the same persisted store
+     * field, so they stay in sync).
+     *
+     * Re-uses `toggleCurrency()` for the bitcoin↔fiat hop so the
+     * existing 200ms swap animation + persistence path is shared.
+     */
+    async cycleBalanceDisplay() {
+      if (this.isSwitchingCurrency) return;
+
+      // 3 → 1: leaving hidden mode lands on Bitcoin view so the
+      // cycle has a predictable start each time the user re-engages.
+      if (this.walletStore.balanceHidden) {
+        this.walletStore.setBalanceHidden(false);
+        if (this.currentDisplayMode !== 'bitcoin') {
+          this.walletState.displayMode = 'bitcoin';
+          this.currentDisplayMode = 'bitcoin';
+          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+        }
+        return;
+      }
+
+      // 1 → 2: bitcoin → fiat is the existing currency hop.
+      if (this.currentDisplayMode === 'bitcoin') {
+        await this.toggleCurrency();
+        return;
+      }
+
+      // 2 → 3: fiat → hidden. The currency mode stays on `fiat` so
+      // the next "unhide" tap can return to bitcoin (state 1) per
+      // the spec above; we don't need to clear it.
+      this.walletStore.setBalanceHidden(true);
     },
 
     formatMainBalance(balance) {
@@ -2669,18 +3412,96 @@ export default {
         const invoice = await this.createInvoiceForWithdraw(amountSats, description);
         this.lnurlWithdrawInvoice = invoice;
 
-        // Step 2: Submit callback to withdraw service
-        this.lnurlWithdrawStatus = 'submitting';
-        await this.submitWithdrawCallback(this.pendingPayment, invoice.payment_request);
+        // Step 2: PIN check (LUD-XX pinLimit). Required when `amount × 1000
+        // >= pinLimit`. The dialog stays open across "Invalid PIN" retries
+        // so the user can re-enter without re-sliding the confirm sheet;
+        // it closes on success, on "Card blocked", on any non-PIN error,
+        // or on user cancel.
+        const pinLimit = this.pendingPayment.pinLimit;
+        const pinRequired = pinLimit && amountSats * 1000 >= pinLimit;
 
-        // Step 3: Monitor for incoming payment
+        if (pinRequired) {
+          // LUD-XX: the service MUST invalidate the LNURL link after
+          // 3 consecutive PIN failures. We mirror the count locally so
+          // the user gets a fintech-style warning ladder as they
+          // approach the block — same UX pattern banking apps use
+          // for card PIN entry at an ATM.
+          let pinAttempts = 0;
+          const maxPinAttempts = 3;
+
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            const pin = await this.requestBoltCardPin(amountSats);
+            if (!pin) {
+              this.resetWithdrawState();
+              return;
+            }
+
+            this.boltCardPinValidating = true;
+            this.lnurlWithdrawStatus = 'submitting';
+            try {
+              await this.submitWithdrawCallback(
+                this.pendingPayment,
+                invoice.payment_request,
+                pin
+              );
+              this.closeBoltCardPinDialog();
+              break;
+            } catch (error) {
+              this.boltCardPinValidating = false;
+              if (this.isInvalidPinError(error)) {
+                pinAttempts += 1;
+                // Re-trigger the dialog's shake-and-clear by toggling
+                // the error message (PinEntryDialog watches for value
+                // changes, so we clear then re-set on the next tick).
+                this.boltCardPinError = '';
+                await this.$nextTick();
+                this.boltCardPinError = this.formatPinAttemptError(
+                  pinAttempts,
+                  maxPinAttempts
+                );
+                continue;
+              }
+              // Card blocked or unrelated failure — close the dialog
+              // and let the outer catch surface the error to the sheet.
+              this.closeBoltCardPinDialog();
+              throw error;
+            }
+          }
+        } else {
+          this.lnurlWithdrawStatus = 'submitting';
+          await this.submitWithdrawCallback(
+            this.pendingPayment,
+            invoice.payment_request,
+            null
+          );
+        }
+
+        // Step 3: Monitor for incoming payment — the existing
+        // PaymentConfirmation surface (SuccessCheckmark + amount)
+        // fires once the monitor confirms receipt.
         this.lnurlWithdrawStatus = 'monitoring';
         await this.startWithdrawPaymentMonitor(invoice, amountSats);
 
       } catch (error) {
-        console.error('Withdraw failed:', error);
+        // Sanitize the error before anything reads `.message` — the PIN
+        // could be in there via a platform-level network error stringifying
+        // the callback URL, and we don't want it landing in console output
+        // or the cross-app payment-error notification surface.
+        const safeMessage = this.redactPinFromString(error?.message || 'Something went wrong');
+        const safeError = new Error(safeMessage);
+        safeError.name = error?.name || 'Error';
+
+        console.error('Withdraw failed:', safeMessage);
         this.lnurlWithdrawStatus = 'error';
-        this.lnurlWithdrawError = error.message || 'Something went wrong';
+        this.lnurlWithdrawError = safeMessage;
+        this.walletStore.showPaymentError(safeError, {
+          context: 'withdraw',
+          walletType: this.walletStore.activeWalletType,
+          route: 'LNURL-withdraw',
+          amountSats: typeof amountSats === 'number' ? amountSats : undefined,
+          t: this.$t.bind(this),
+        });
         // Reset to idle after showing error briefly
         setTimeout(() => {
           if (this.lnurlWithdrawStatus === 'error') {
@@ -2736,23 +3557,118 @@ export default {
       };
     },
 
-    async submitWithdrawCallback(withdrawData, bolt11) {
+    async submitWithdrawCallback(withdrawData, bolt11, pin = null) {
       const callbackUrl = new URL(withdrawData.callback);
+
+      // LUD-XX: HTTPS is REQUIRED whenever a PIN is being transmitted.
+      // The PIN travels as a plaintext `pin=` query param, so a downgrade
+      // to http:// would expose it to any passive observer on the network
+      // path between the wallet and the service.
+      if (pin && callbackUrl.protocol !== 'https:') {
+        throw new Error(this.$t('PIN authorization requires a secure connection'));
+      }
+
       callbackUrl.searchParams.set('k1', withdrawData.k1);
       callbackUrl.searchParams.set('pr', bolt11);
+      if (pin) {
+        callbackUrl.searchParams.set('pin', pin);
+      }
 
-      const response = await fetch(callbackUrl.toString());
+      // Wrap the fetch so any network-layer error (DNS, CORS, TLS,
+      // offline) gets its message scrubbed of `pin=` before it
+      // propagates to console.error, Sentry, or the notify surface.
+      // Some platforms include the full URL in fetch error strings.
+      let response;
+      try {
+        response = await fetch(callbackUrl.toString());
+      } catch (networkError) {
+        const safeMessage = this.redactPinFromString(
+          networkError?.message || 'Network error contacting withdraw service'
+        );
+        throw new Error(safeMessage);
+      }
+
       if (!response.ok) {
         throw new Error(`Withdraw callback failed: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
       if (data.status === 'ERROR') {
-        throw new Error(data.reason || 'Withdraw service rejected the request');
+        // Translate the two spec-defined PIN error reasons so the
+        // sheet-level error surface shows them in the user's language.
+        // Unrecognised reasons pass through unchanged.
+        const reason = data.reason || 'Withdraw service rejected the request';
+        throw new Error(this.translateWithdrawErrorReason(reason));
       }
 
       // Some services return { status: "OK" }, others just return without error
       return data;
+    },
+
+    /**
+     * Strip `pin=XXXX` query parameters out of any string. The PIN
+     * is transmitted as a plaintext query parameter per LUD-XX, so
+     * the callback URL is sensitive — we don't want it surviving
+     * verbatim in console output, crash reports, or notify toasts.
+     *
+     * Defensive against:
+     *   - `?pin=1234`         (first param)
+     *   - `&pin=1234`         (mid-string)
+     *   - case variants (`PIN=`, `Pin=`)
+     *   - bordered by `&`, whitespace, or end-of-string
+     */
+    redactPinFromString(str) {
+      if (typeof str !== 'string') return str;
+      return str.replace(/([?&])pin=[^&\s]*/gi, '$1pin=[REDACTED]');
+    },
+
+    /**
+     * Map the two spec-defined LUD-XX pinLimit error reasons to localized
+     * strings. Falls back to the original reason if no match — that way an
+     * unrelated LUD-03 error reason (e.g. an expired k1) is still surfaced
+     * verbatim rather than masked.
+     */
+    translateWithdrawErrorReason(reason) {
+      const r = (reason || '').trim();
+      if (r === 'Invalid PIN') return this.$t('Invalid PIN');
+      if (/card blocked/i.test(r) && /pin/i.test(r)) {
+        return this.$t('Card blocked: too many incorrect PIN attempts');
+      }
+      return r;
+    },
+
+    /**
+     * Build the in-dialog error string shown after a failed PIN
+     * attempt. Mirrors fintech-app PIN ladders: an initial wrong-PIN
+     * notice, a "last attempt" warning before the terminal block,
+     * and a plain fallback for any defensive over-count (shouldn't
+     * happen — server returns Card blocked at attempt 3 — but kept
+     * so the UI degrades gracefully).
+     */
+    formatPinAttemptError(attempt, maxAttempts) {
+      const remaining = maxAttempts - attempt;
+      if (remaining >= 2) {
+        return this.$t('Invalid PIN. {n} attempts left.', { n: remaining });
+      }
+      if (remaining === 1) {
+        return this.$t('Invalid PIN. Last attempt.');
+      }
+      return this.$t('Invalid PIN');
+    },
+
+    /**
+     * Recognise the "wrong PIN, attempts remaining" error so the PIN
+     * dialog can stay open for a retry instead of dismissing back to
+     * the confirm sheet. Card-blocked deliberately does NOT match —
+     * that's the terminal state and the dialog must close.
+     */
+    isInvalidPinError(error) {
+      if (!error?.message) return false;
+      const msg = error.message;
+      if (/card blocked/i.test(msg)) return false;
+      // Match both the English spec string and our translated forms.
+      const invalidPinTranslated = this.$t('Invalid PIN');
+      return msg === 'Invalid PIN' || msg === invalidPinTranslated;
     },
 
     async startWithdrawPaymentMonitor(invoice, amountSats) {
@@ -2911,7 +3827,14 @@ export default {
 
       this.withdrawConfirmedAmount = amount;
 
-      // Calculate fiat value
+      // Surface the success screen and close the sheet FIRST, so the confirm
+      // sheet never lingers behind the (optional) fiat lookup. Fiat is
+      // decorative and fills in reactively below.
+      this.withdrawConfirmedFiat = '';
+      this.showWithdrawSheet = false;
+      this.pendingPayment = null;
+      this.showWithdrawSuccess = true;
+
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
@@ -2921,10 +3844,6 @@ export default {
       } catch (e) {
         // Fiat conversion optional
       }
-
-      this.showWithdrawSheet = false;
-      this.pendingPayment = null;
-      this.showWithdrawSuccess = true;
 
       await this.updateWalletBalance();
     },
@@ -2947,6 +3866,101 @@ export default {
       this.lnurlWithdrawInvoice = null;
       this.withdrawConfirmedAmount = 0;
       this.withdrawConfirmedFiat = '';
+    },
+
+    // ========================================================================
+    // Bolt Card PIN helpers (LUD-XX pinLimit)
+    // ========================================================================
+
+    /**
+     * Open (or re-arm) the Bolt Card PIN dialog and await one PIN attempt.
+     *
+     * On first call: populates the amount strip, clears any prior error,
+     * and shows the dialog. On subsequent calls during the same retry
+     * cycle (after an "Invalid PIN" response): the dialog is already
+     * open, the error message and shake have already been triggered by
+     * the caller, and this just registers the next resolver.
+     *
+     * Resolves with the entered PIN string, or `null` if the user cancels.
+     */
+    async requestBoltCardPin(amountSats) {
+      if (!this.showBoltCardPinDialog) {
+        this.boltCardPinError = '';
+        this.boltCardPinValidating = false;
+        this.boltCardPinAmountDisplay = this.formatAmountInline(amountSats);
+        this.boltCardPinFiatAmount = await this.computeFiatStringForSats(amountSats);
+        this.showBoltCardPinDialog = true;
+      }
+      return new Promise((resolve) => {
+        this.boltCardPinResolve = resolve;
+      });
+    },
+
+    /**
+     * Compute a localized "≈ <fiat>" string for the PIN amount strip.
+     * Returns '' when rates aren't loaded, sats is falsy, or anything
+     * goes wrong — the dialog hides the fiat line on empty string.
+     */
+    async computeFiatStringForSats(sats) {
+      if (!sats || !this.fiatRatesLoaded) return '';
+      try {
+        const currency = this.preferredFiatCurrency;
+        const fiat = await fiatRatesService.convertSatsToFiat(sats, currency);
+        if (fiat === null || fiat === undefined || isNaN(fiat)) return '';
+        return '≈ ' + fiatRatesService.formatFiatAmount(fiat, currency);
+      } catch (e) {
+        return '';
+      }
+    },
+
+    /**
+     * Fully close and reset the Bolt Card PIN dialog. Called on success,
+     * on terminal failure (card blocked / network / HTTPS guard), and
+     * on cancel — anywhere the retry cycle ends.
+     */
+    closeBoltCardPinDialog() {
+      this.showBoltCardPinDialog = false;
+      this.boltCardPinResolve = null;
+      this.boltCardPinValidating = false;
+      this.boltCardPinError = '';
+      this.boltCardPinAmountDisplay = '';
+      this.boltCardPinFiatAmount = '';
+    },
+
+    onBoltCardPinComplete(pin) {
+      // Hand the PIN to the awaiting executeWithdraw() attempt. The
+      // dialog stays open: the caller decides whether to close it
+      // (success / card blocked) or keep it open (Invalid PIN retry).
+      if (this.boltCardPinResolve) {
+        const resolve = this.boltCardPinResolve;
+        this.boltCardPinResolve = null;
+        resolve(pin);
+      }
+    },
+
+    onBoltCardPinCancel() {
+      // User dismissed the dialog via the back button. Close fully and
+      // resolve null so executeWithdraw() exits the retry loop cleanly.
+      const resolve = this.boltCardPinResolve;
+      this.closeBoltCardPinDialog();
+      if (resolve) resolve(null);
+    },
+
+    onBoltCardPinTimeout() {
+      // Session timeout — user left the PIN dialog idle past the
+      // configured window. Surface a brief notification so the screen
+      // doesn't appear to dismiss itself for no reason, then route
+      // through the same teardown as a manual cancel: resolve the
+      // awaited PIN promise with null and reset the withdraw flow.
+      this.$q.notify({
+        type: 'info',
+        icon: 'tabler:clock-x',
+        message: this.$t('PIN entry timed out'),
+        caption: this.$t('Tap the card again to retry'),
+        timeout: 3500,
+        position: 'top'
+      });
+      this.onBoltCardPinCancel();
     },
 
     startMerchantCountdown() {
@@ -2986,6 +4000,14 @@ export default {
     async onPaymentDetected(paymentData) {
       console.log('Payment detected:', paymentData);
 
+      // Drive the Send sheet's loading CTA + inline error only when the request
+      // came from the open sheet. Deep-link / external calls (fromField=false)
+      // keep the existing dialog-based error path and never touch the sheet.
+      const fromField = this.showSendModal;
+      let delegated = false; // a nested re-dispatch (NIP-05 rescue) owns the outcome
+      let resolved = true;   // assume we'll reach a confirm sheet / handoff
+      if (fromField) { this.sendResolving = true; this.sendResolveError = ''; }
+
       try {
         // Transform the payment data to match expected structure
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
@@ -2999,16 +4021,27 @@ export default {
             description: parsedInvoice.description
           };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
+          // LUD-04 (LNURL-auth) is identity, not payment. It uses the same
+          // bech32 carrier (lnurl1...) and the same lightning: deep-link
+          // scheme as LNURL-pay/withdraw, so the WalletFactory hands it to
+          // us classified as 'lnurl'. Detect it locally first — `tag=login`
+          // means we must NOT hit the callback URL with a plain GET (that
+          // would burn the k1 challenge before we sign it).
+          if (looksLikeLud04(paymentData.data) && this.openIdentityAuthFromLnurl(paymentData.data)) {
+            return;
+          }
+
           // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
 
           if (lnurlInfo.error || !lnurlInfo.lnurlType) {
-            this.$q.notify({
-              type: 'negative',
-              message: this.$t('Could not process this link'),
-              caption: lnurlInfo.reason || this.$t('The server did not respond or the link is no longer valid'),
-              timeout: 6000,
-            });
+            // Surface it where the user is: inline in the Send field when that's
+            // where it came from, else the global error dialog (PaymentErrorDialog)
+            // with the raw reason collapsed into "Technical details".
+            const reason = lnurlInfo.reason
+              || this.$t('The server did not respond or the link is no longer valid');
+            resolved = false;
+            this.failSendResolution(reason, fromField, { context: 'link', route: 'LUD-17 scan' });
             return;
           }
 
@@ -3047,10 +4080,45 @@ export default {
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
           // Fetch LNURL info for all wallet types
           const lnurlInfo = await this.fetchLightningAddressInfo(paymentData.data);
+
+          // NIP-05 fallback. A name@domain that didn't resolve as a Lightning
+          // Address (empty lnurlInfo) might be a NIP-05 identifier instead —
+          // resolve it to the lud16 on the person's Nostr profile and pay that.
+          // Lightning-address interpretation always wins; this only rescues a
+          // miss. Skipped for SA-retail merchants (curated rails), and guarded
+          // (_nostrResolved + address-changed) so it runs once and can't loop.
+          if (!lnurlInfo.minSendable
+              && !paymentData._nostrResolved
+              && paymentData.source !== SA_RETAIL_SOURCE) {
+            const rescued = await this.resolveNostrTarget(paymentData.data);
+            if (rescued && rescued.address && rescued.address !== paymentData.data) {
+              delegated = true; // the recursive call owns resolving / close / error
+              return this.onPaymentDetected({
+                ...paymentData,
+                type: rescued.kind,        // 'lightning_address' | 'lnurl'
+                data: rescued.address,
+                _nostrResolved: true,
+                nostrPubkey: rescued.pubkey,
+                nostrNpub: rescued.npub,
+                nostrProfile: rescued.profile,
+              });
+            }
+          }
+
+          // The address didn't resolve as a Lightning Address, and the NIP-05
+          // rescue found nothing either — fail early, in the field, rather than
+          // open a confirm sheet that can only fail at send time. (SA-retail
+          // merchants are curated and keep their existing handling below.)
+          if (!lnurlInfo.minSendable && paymentData.source !== SA_RETAIL_SOURCE) {
+            resolved = false;
+            this.failSendResolution(this.$t("We couldn't find this Lightning address"), fromField);
+            return;
+          }
+
           const walletType = this.walletStore.activeWalletType;
 
           if (walletType === 'spark' || walletType === 'lnbits') {
-            // For Spark and LNBits wallets, include LNURL info for amount handling
+            // For Spark and LNbits wallets, include LNURL info for amount handling
             this.pendingPayment = {
               ...paymentData,
               lightningAddress: paymentData.data,
@@ -3064,7 +4132,15 @@ export default {
             }
             const lightningService = new LightningPaymentService(activeWallet.nwcString);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
-            this.pendingPayment = processedAddress;
+            // Keep the lightning address + any carried Nostr identity on the
+            // payload (processedAddress only exposes `address`), so the confirm
+            // sheet brands NWC sends the same as Spark/lnbits — wallet logo,
+            // payout-service hint, or the resolved Nostr person.
+            this.pendingPayment = {
+              ...paymentData,
+              ...processedAddress,
+              lightningAddress: paymentData.data,
+            };
           }
 
           // Enrich with SA retail merchant context
@@ -3093,6 +4169,7 @@ export default {
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
             if (paymentSats > 0 && paymentSats > this.walletState.balance) {
+              resolved = false; // keep the sheet open; the notify explains why
               this.$q.notify({
                 type: 'negative',
                 message: this.$t('Insufficient balance'),
@@ -3123,6 +4200,16 @@ export default {
           this.pendingPayment = paymentData;
         }
 
+        // Merchant verification (Branta). Fire-and-forget: it runs in the
+        // background, can never block or break the send, and only ever
+        // adds a badge on a positive match. A miss does nothing.
+        this.runBrantaVerification(this.pendingPayment);
+
+        // Nostr-profile enrichment for npub.cash-style addresses. Same
+        // fire-and-forget contract: upgrades the recipient to the real person
+        // (name + avatar) when relays answer, and does nothing on a miss.
+        this.runNostrRecipientEnrichment(this.pendingPayment);
+
         // Dispatch by payload shape:
         //   - Bitcoin on-chain → L1BitcoinWithdraw (own sheet)
         //   - LNURL-Withdraw   → PaymentConfirmSheet, verb='redeem'
@@ -3136,12 +4223,122 @@ export default {
         }
       } catch (error) {
         console.error('Error processing payment:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Payment failed'),
-          caption: this.$t('Please try again'),
+        resolved = false;
+        if (fromField) {
+          this.sendResolveError = this.$t("We couldn't process this. Check it and try again");
+        } else {
+          this.walletStore.showPaymentError(error, {
+            context: 'payment',
+            walletType: this.walletStore.activeWalletType,
+            route: 'Payment dispatch',
+            t: this.$t.bind(this),
+          });
+        }
+      } finally {
+        // The nested NIP-05 rescue call already settled the outcome (closed the
+        // sheet or set the inline error); don't clobber it from the outer call.
+        if (!delegated) {
+          this.sendResolving = false;
+          // Close the Send sheet only on success; failures stay open so the
+          // user sees the inline error and can fix the input in place.
+          if (resolved && fromField) this.showSendModal = false;
+        }
+      }
+    },
 
-        });
+    /**
+     * Merchant verification (Branta), send side. Fired fire-and-forget
+     * after the payment payload is built and the confirm sheet is on its
+     * way up. It is a progressive enhancement and is wrapped so it can
+     * never disrupt the payment: every failure path resolves to "show
+     * nothing". Mirrors Blitz Wallet's gating and the official wallet docs.
+     *
+     * Verifiable in strict mode:
+     *   - BOLT11 invoices (scanned, pasted, or the lightning leg extracted
+     *     from a BIP21 QR): looked up privately, the raw invoice is never
+     *     sent to Branta. Badge shown on PaymentConfirmSheet.
+     *   - On-chain addresses whose QR carries branta_id + branta_secret
+     *     (ZK params): badge shown on the on-chain withdraw sheet.
+     * Raw Lightning Address / LNURL / Spark cannot resolve in strict mode
+     * and are intentionally skipped (Blitz Wallet skips them too).
+     */
+    runBrantaVerification(payment) {
+      try {
+        if (!this.bitcoinPrefsStore.brantaVerificationEnabled) return;
+        // SA-retail merchants carry their own curated identity and are not
+        // on Branta; skip so the two never collide.
+        if (!payment || payment.source === SA_RETAIL_SOURCE) return;
+
+        // Decide what raw text (if any) to hand the SDK.
+        let qrText = null;
+        if (payment.type === 'lightning_invoice') {
+          // The extracted BOLT11 (covers a direct scan, a paste, and the
+          // lightning leg of a BIP21 unified QR).
+          qrText = payment.invoice || payment.data || null;
+        } else if (payment.type === 'bitcoin_address') {
+          // On-chain only resolves when the QR carries the ZK params.
+          const raw = payment.rawInput || '';
+          if (this.hasBrantaParams(raw)) qrText = raw;
+        }
+        if (!qrText) return;
+
+        // Cancel any earlier in-flight lookup, then bound the new one with
+        // a short timeout so a hung request cannot linger.
+        if (this._brantaAbort) this._brantaAbort.abort();
+        const controller = new AbortController();
+        this._brantaAbort = controller;
+        const timer = setTimeout(() => controller.abort(), BRANTA_LOOKUP_TIMEOUT_MS);
+
+        // Identity guard: only paint the badge if this is still the exact
+        // same pending payment when the lookup resolves. Each new payment
+        // reassigns this.pendingPayment to a fresh object, so a late result
+        // can never land on a different payment.
+        const token = payment;
+
+        lookupBrantaVerification({ qrText, signal: controller.signal })
+          .then((verification) => {
+            if (!verification) return;
+            if (this.pendingPayment !== token) return;
+            // Adding the key on the reactive payload re-runs the sheet
+            // adapter (and the on-chain sheet prop), so the badge appears
+            // the moment the result lands.
+            this.pendingPayment.brantaVerification = verification;
+          })
+          .catch(() => { /* never surfaces; see utils/branta.js */ })
+          .finally(() => clearTimeout(timer));
+      } catch {
+        // Defensive: verification must never disrupt the payment path.
+      }
+    },
+
+    /**
+     * True when a bitcoin: URI carries both Branta ZK params, the only
+     * case an on-chain destination can be verified in strict mode. Mirrors
+     * Blitz Wallet's check.
+     */
+    hasBrantaParams(raw) {
+      if (!raw || typeof raw !== 'string') return false;
+      try {
+        const url = new URL(raw);
+        // The SDK's QR parser lowercases query keys, so match
+        // case-insensitively to agree with it and not skip a
+        // non-canonical-cased QR.
+        const keys = [...url.searchParams.keys()].map((k) => k.toLowerCase());
+        return keys.includes('branta_id') && keys.includes('branta_secret');
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * Abort and clear any in-flight Branta lookup. Called when a payment is
+     * abandoned (sheet cancelled, component unmounted) so a request for a
+     * payment the user dropped does not linger.
+     */
+    cancelBrantaLookup() {
+      if (this._brantaAbort) {
+        this._brantaAbort.abort();
+        this._brantaAbort = null;
       }
     },
 
@@ -3181,9 +4378,14 @@ export default {
 
       this.isSendingPayment = true;
 
+      // Lifted out of the try block so the catch can hand the
+      // attempted amount to the payment-error dialog (used by the
+      // insufficient-funds enhancer to break the upstream total into
+      // send + fee).
+      let amount = null;
+
       try {
         // Determine the amount to send
-        let amount = null;
         if (this.needsAmountInput && this.paymentAmount) {
           // Variable amount - convert to sats if user entered in fiat
           amount = this.sendAmountSats;
@@ -3220,51 +4422,122 @@ export default {
 
         console.log('Payment sent:', result);
 
-        // Check if we should offer to save this recipient as a contact
+        // Address-book context: do we know this recipient, and is the
+        // recipient saveable at all? Computed up-front because both the
+        // pending-link queue and the success modal depend on it.
         const recipientAddress = this.getRecipientAddress();
         const recipientAddressType = this.getRecipientAddressType();
-        const shouldOfferSave = recipientAddress && !this.addressBookStore.findContactByAddress(recipientAddress);
+        const existingContact = recipientAddress
+          ? this.addressBookStore.findContactByAddress(recipientAddress)
+          : null;
+        const shouldOfferSave = !!(recipientAddress && !existingContact);
+        const recipientLabel = this.getRecipientDisplayLabel(existingContact);
 
-        const pendingPaymentBackup = this.pendingPayment; // Keep reference for save dialog
+        // Queue a pending link by recipient address + amount + send
+        // time. The next tx-list refresh drains the queue and stamps
+        // the newly observed outgoing tx — wallet-agnostic, so it
+        // works the same for Spark (transfer id ≠ payment id), LNbits
+        // (payment_hash directly), and NWC (only `preimage` comes
+        // back) without us having to know which provider is active.
+        //
+        // We queue for ANY saveable recipient, not just known contacts,
+        // and carry contactId only when we already have it. The address
+        // is stamped durably on the tx so a contact added later still
+        // resolves live against this payment.
+        if (recipientAddress) {
+          try {
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: existingContact?.id || null,
+              recipientAddress,
+              amountSats: amount,
+            });
+          } catch (err) {
+            console.warn('[wallet] could not queue contact link:', err);
+          }
+        }
+
+        // Stash the save-contact payload BEFORE clearing pendingPayment,
+        // so the modal's "Save to Contacts" button has everything it
+        // needs even after the input state is reset. `saveContactData`
+        // is what the existing save dialog already reads.
+        if (shouldOfferSave) {
+          // Fiat-payout numbers (Bitzed/Tando): prefill the note so the saved
+          // contact reads clearly as a mobile-money recipient. Empty for any
+          // other address.
+          const payoutService = matchLnAddressService(recipientAddress);
+          this.saveContactData = {
+            address: recipientAddress,
+            addressType: recipientAddressType,
+            name: '',
+            notes: payoutService?.note ? this.$t(payoutService.note) : '',
+            // Carry the amount so the post-save handler can queue a
+            // pending contact link against the same outgoing tx the
+            // existing-contact path uses.
+            amountSats: amount,
+          };
+        }
+
+        // Snap the CTA to its completed state (fill -> 100% + check) while the
+        // recipient payload is still intact, and let that brief micro-
+        // interaction play. This is the bridge from the send CTA to the
+        // confirmation screen.
+        this.sendDidSucceed = true;
+        await new Promise((resolve) => setTimeout(resolve, 450)); // CTA completion beat
+
+        // Surface the success screen FIRST, then tear the sheet down BEHIND it
+        // — clearing pendingPayment while the sheet is still visible is what
+        // used to flash the generic "Recipient" fallback. The Spark provider's
+        // polling already resolved to a terminal status by now; a 60s timeout
+        // without settling lands on PENDING with softer "still routing" copy.
+        const status = (result && typeof result === 'object' && result.status) || 'completed';
+        this.openSendSuccess({
+          amount,
+          recipient: recipientLabel,
+          status,
+          showSaveContact: shouldOfferSave,
+        });
+
+        this.showSendSheet = false;
         this.pendingPayment = null;
         this.paymentAmount = '';
         this.paymentComment = '';
         this.estimatedFee = null;
         this.isEstimatingFee = false;
+        this.sendDidSucceed = false;
 
+        // Refresh the balance behind the now-visible success screen.
         await this.updateWalletBalance();
-
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Sent'),
-
-        });
-
-        // Offer to save contact if this is a new recipient
-        if (shouldOfferSave) {
-          this.saveContactData = {
-            address: recipientAddress,
-            addressType: recipientAddressType,
-            name: '',
-            notes: ''
-          };
-          // Small delay so the success notification is seen first
-          setTimeout(() => {
-            this.showSaveContactDialog = true;
-          }, 500);
-        }
 
       } catch (error) {
         console.error('Payment failed:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Payment failed'),
-          caption: this.$t('Please try again'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'payment',
+          walletType: this.walletStore.activeWalletType,
+          route: this.routeLabelForPendingPayment(),
+          amountSats: typeof amount === 'number' ? amount : undefined,
+          t: this.$t.bind(this),
         });
       } finally {
         this.isSendingPayment = false;
       }
+    },
+
+    /**
+     * Short, debug-friendly label describing how the current
+     * pendingPayment is being routed. Included in the technical
+     * details panel of the global payment-error dialog so a copied
+     * report tells a developer what path actually ran.
+     */
+    routeLabelForPendingPayment() {
+      const p = this.pendingPayment;
+      if (!p) return null;
+      if (p.bitcoinAddress)    return 'Bitcoin on-chain';
+      if (p.sparkAddress)      return 'Spark transfer';
+      if (p.invoice)           return 'BOLT11 invoice';
+      if (p.lightningAddress)  return 'Lightning Address';
+      if (p.lnurl)             return 'LNURL-pay';
+      if (p.type === 'lnurl_withdraw') return 'LNURL-withdraw';
+      return p.type || null;
     },
 
     /**
@@ -3282,17 +4555,19 @@ export default {
 
       await this.confirmPayment();
 
-      // confirmPayment nulls pendingPayment on success and leaves it
-      // in place on failure (its catch block doesn't rethrow).
-      if (this.pendingPayment === null) {
-        this.showSendSheet = false;
-      } else {
+      // On success confirmPayment plays the CTA completion animation, shows the
+      // success screen, and closes the sheet itself. On failure pendingPayment
+      // survives (its catch block doesn't rethrow) — reset the slide so the
+      // user can retry without re-entering anything.
+      if (this.pendingPayment !== null) {
         this.$refs.sendSheetRef?.resetSlide();
       }
     },
 
     onSendSheetCancel() {
+      this.cancelBrantaLookup();
       this.showSendSheet = false;
+      this.sendDidSucceed = false;
       this.pendingPayment = null;
       this.paymentAmount = '';
       this.paymentComment = '';
@@ -3322,6 +4597,7 @@ export default {
     },
 
     onWithdrawSheetCancel() {
+      this.cancelBrantaLookup();
       this.showWithdrawSheet = false;
       this.resetWithdrawState();
       this.pendingPayment = null;
@@ -3409,7 +4685,7 @@ export default {
         return await provider.payInvoice({ invoice });
       }
 
-      throw new Error('Unsupported payment type for LNBits wallet');
+      throw new Error('Unsupported payment type for LNbits wallet');
     },
 
     isLightningInvoice(input) { return isLightningInvoiceShared(input); },
@@ -3443,6 +4719,119 @@ export default {
       return 'lightning';
     },
 
+    /**
+     * Build the human-readable recipient string for the success
+     * modal's "To {recipient}" line. Order of preference:
+     *   1. Existing contact name (most personal)
+     *   2. Lightning address (already human-readable)
+     *   3. Spark address (truncated, machine-y but identifies a peer)
+     *   4. '' → modal omits the line entirely (raw bolt11 / generic
+     *      LNURL have no stable counterparty identity to show)
+     *
+     * @param {object|null} existingContact - May be null for new recipients.
+     * @returns {string}
+     */
+    getRecipientDisplayLabel(existingContact) {
+      if (existingContact?.name) return existingContact.name;
+      if (!this.pendingPayment) return '';
+      if (this.pendingPayment.lightningAddress) {
+        return this.pendingPayment.lightningAddress;
+      }
+      if (this.pendingPayment.sparkAddress) {
+        return this.truncateAddress(this.pendingPayment.sparkAddress);
+      }
+      return '';
+    },
+
+    /**
+     * Open the send-success modal. Centralises the state writes so
+     * both call sites (free-amount pay flow + contact pay flow) drive
+     * the modal through the same door.
+     *
+     * Fiat is computed best-effort — failure is silent and just hides
+     * the fiat line; we never want a fiat-rate hiccup to block the
+     * success confirmation.
+     *
+     * Label adapts to the status: COMPLETED gets a definite "Payment
+     * Sent"; PENDING gets softer "Still sending…" wording since Spark
+     * may still be routing. Save-Contact is only honoured for
+     * COMPLETED — promoting a contact off a payment that may yet
+     * fail would be misleading.
+     */
+    async openSendSuccess({ amount, recipient, status, showSaveContact }) {
+      const isCompleted = status !== 'pending';
+      this.sendSuccessAmount = Number(amount) || 0;
+      this.sendSuccessRecipient = recipient || '';
+      this.sendSuccessLabel = isCompleted
+        ? this.$t('Payment Sent')
+        : this.$t('Still sending…');
+      this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted;
+      this.sendSuccessFiat = '';
+
+      // Show the success surface immediately — fiat is decorative and must
+      // never gate the confirmation; it fills in reactively below.
+      this.showSendSuccess = true;
+
+      // Best-effort fiat conversion. Mirrors the withdraw-success
+      // pattern (~Wallet.vue:3085) — same try/catch shape so a stale
+      // rate cache can never block the confirmation surface.
+      if (this.sendSuccessAmount > 0) {
+        try {
+          const currency = this.walletState.preferredFiatCurrency || 'USD';
+          const fiat = await fiatRatesService.convertSatsToFiat(
+            this.sendSuccessAmount,
+            currency,
+          );
+          if (fiat !== null) {
+            this.sendSuccessFiat = '≈ ' + fiatRatesService.formatFiatAmount(fiat, currency);
+          }
+        } catch (err) {
+          // Fiat is decorative here; never let it block the modal.
+          console.warn('[wallet] send-success fiat lookup failed:', err);
+        }
+      }
+    },
+
+    /**
+     * User dismissed the send-success modal via Done / Close Now /
+     * auto-close countdown. Clean up state. If the Save-Contact button
+     * was offered but ignored, that's an explicit opt-out — we drop
+     * the pre-staged save payload so the next send starts clean.
+     */
+    onSendSuccessClosed() {
+      this.showSendSuccess = false;
+      this.sendSuccessAmount = 0;
+      this.sendSuccessFiat = '';
+      this.sendSuccessRecipient = '';
+      this.sendSuccessLabel = '';
+      this.sendSuccessShowSaveContact = false;
+      // Reset any save payload that was pre-staged for the modal's
+      // Save button. Users who wanted to save would have tapped it
+      // already (see onSendSaveContactClicked).
+      this.saveContactData = {
+        address: '',
+        addressType: 'lightning',
+        name: '',
+        notes: '',
+        amountSats: 0,
+      };
+    },
+
+    /**
+     * User tapped "Save to Contacts" in the success modal. The modal
+     * has already dismissed itself; we just open the existing save
+     * dialog onto the freshly-cleared stack. `saveContactData` was
+     * pre-populated during the pay() success block so the form has
+     * the address + amount it needs.
+     */
+    onSendSaveContactClicked() {
+      this.showSendSuccess = false;
+      this.sendSuccessShowSaveContact = false;
+      // Reuse the existing save-contact dialog — same form, same
+      // validation, same save handler.
+      this.showSaveContactDialog = true;
+    },
+
     // Save recipient as contact
     async saveRecipientAsContact() {
       try {
@@ -3455,12 +4844,28 @@ export default {
           return;
         }
 
-        await this.addressBookStore.addEntry({
+        const newContact = await this.addressBookStore.addEntry({
           name: this.saveContactData.name.trim(),
           address: this.saveContactData.address,
           addressType: this.saveContactData.addressType,
           notes: this.saveContactData.notes?.trim() || ''
         });
+
+        // Queue the contact link for the outgoing tx that just landed
+        // (or is about to land). The pending-link consumer matches by
+        // address + amount + recent timestamp on the next tx-list
+        // refresh, so we don't need to know the provider-assigned id.
+        if (newContact?.id) {
+          try {
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: newContact.id,
+              recipientAddress: this.saveContactData.address,
+              amountSats: this.saveContactData.amountSats,
+            });
+          } catch (err) {
+            console.warn('[wallet] could not queue contact link for new contact:', err);
+          }
+        }
 
         this.showSaveContactDialog = false;
         this.$q.notify({
@@ -3486,7 +4891,8 @@ export default {
         address: '',
         addressType: 'lightning',
         name: '',
-        notes: ''
+        notes: '',
+        amountSats: 0,
       };
     },
 
@@ -3530,6 +4936,23 @@ export default {
     },
 
     /**
+     * fetch() bounded by a timeout so a hung LNURL / Lightning-address server
+     * can't leave the Send sheet spinning forever. On timeout it aborts; the
+     * caller's try/catch then treats it as "not found" (same as any failure).
+     * Manual AbortController keeps it working on the older WebKit we still
+     * target (AbortSignal.timeout isn't available there).
+     */
+    async fetchWithTimeout(url, ms = 10000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ms);
+      try {
+        return await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+
+    /**
      * Fetch LNURL info from a Lightning address
      * Returns min/max amounts and whether it's a fixed amount
      */
@@ -3541,7 +4964,7 @@ export default {
         }
 
         const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-        const response = await fetch(endpoint);
+        const response = await this.fetchWithTimeout(endpoint);
 
         if (!response.ok) {
           return {};
@@ -3574,15 +4997,59 @@ export default {
     },
 
     /**
+     * Try to interpret an inbound LNURL string as a LUD-04 (LNURL-auth)
+     * challenge. If it parses as one, open the identity-auth dialog and
+     * return true so the caller short-circuits the regular pay/withdraw
+     * flow. If the input is a different LNURL variant, return false and
+     * let the caller proceed.
+     *
+     * We deliberately do not surface parsing errors as user-facing
+     * notifications — a malformed `keyauth://` URL still has a chance of
+     * being something else, and the regular LNURL fetch path will return
+     * its own descriptive error if it can't reach the server either.
+     *
+     * @param {string} lnurl
+     * @returns {boolean} whether the input was consumed as LUD-04
+     */
+    openIdentityAuthFromLnurl(lnurl) {
+      let challenge;
+      try {
+        challenge = parseLud04Input(lnurl);
+      } catch (err) {
+        // The URL was recognisably LUD-04 but used `http:` — surface
+        // the global error dialog and consume the input so no downstream
+        // handler retries it. Other parse failures (e.g. `tag=login`
+        // missing) fall through with `return false` so payment LNURLs
+        // can be handled by the payment path.
+        if (err?.code === LUD04_ERROR.INSECURE_SCHEME) {
+          // 'identity' context produces "Couldn't sign you in" as the
+          // title — same surface as every other sign-in failure.
+          this.walletStore.showPaymentError(err, {
+            context: 'identity',
+            route: 'LUD-04 scheme check',
+            reason: this.$t('That link uses an insecure connection. Sign-in only works over HTTPS.'),
+            t: this.$t.bind(this),
+          });
+          return true;
+        }
+        return false;
+      }
+
+      this.identityAuthChallenge = challenge;
+      this.showIdentityAuthDialog = true;
+      return true;
+    },
+
+    /**
      * Fetch LNURL endpoint info (min/max amounts, fixed amount detection)
-     * Used by Spark and LNBits wallets to get paycode parameters before confirmation.
+     * Used by Spark and LNbits wallets to get paycode parameters before confirmation.
      * @param {string} lnurl - The LNURL string (bech32 encoded)
      * @returns {Promise<Object>} LNURL info with minSendable, maxSendable, isFixedAmount, etc.
      */
     async fetchLNURLInfo(lnurl) {
       try {
         const url = this.decodeLNURL(lnurl);
-        const response = await fetch(url);
+        const response = await this.fetchWithTimeout(url);
 
         if (!response.ok) {
           return { error: true, reason: `Server returned ${response.status}` };
@@ -3611,7 +5078,15 @@ export default {
             maxSats,
             isFixedAmount,
             fixedAmountSats: isFixedAmount ? maxSats : null,
-            defaultDescription: data.defaultDescription || 'Withdrawal'
+            defaultDescription: data.defaultDescription || 'Withdrawal',
+            // LUD-XX: `pinLimit` MUST be a positive integer in millisats.
+            // Coerce anything else (negative, zero, string, NaN, Infinity,
+            // missing) to null so a malformed server response can't
+            // silently bypass the PIN check via comparison short-circuits
+            // (`amount * 1000 >= NaN` is always false).
+            pinLimit: Number.isInteger(data.pinLimit) && data.pinLimit > 0
+              ? data.pinLimit
+              : null
           };
         }
 
@@ -3637,7 +5112,13 @@ export default {
         };
       } catch (error) {
         console.warn('Failed to fetch LNURL info:', error.message);
-        return {};
+        // Surface the underlying error so the caller's error dialog can
+        // translate it via `translateTechJargon` (network/DNS issues
+        // become "Couldn't reach the network..."; anything else falls
+        // through to the standard generic). Returning {} would have
+        // dropped the diagnostic and forced the caller into a misleading
+        // upstream-attributed message.
+        return { error: true, reason: error?.message || 'Network error' };
       }
     },
 
@@ -3713,6 +5194,9 @@ export default {
     decodeLNURL(lnurl) {
       const clean = lnurl.trim().replace(/^lightning:/i, '');
 
+      // Plain https:// or http:// URL (e.g. Bolt Card NFC URL — already decoded)
+      if (/^https?:\/\//i.test(clean)) return clean;
+
       // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
       const lud17Url = resolveLUD17URL(clean);
       if (lud17Url) return lud17Url;
@@ -3781,7 +5265,7 @@ export default {
       }
 
       // === LNBITS WALLET: No fee estimation available ===
-      // LNBits API does not provide routing fee estimation
+      // LNbits API does not provide routing fee estimation
       if (this.walletStore.isActiveWalletLNBits) {
         this.estimatedFee = null;
         return;
@@ -3861,6 +5345,17 @@ export default {
   flex-direction: column;
   overflow-x: hidden;
   max-width: 100vw;
+}
+
+/* Top app bar. Quasar's default q-toolbar is 50px min-height with its own
+   vertical padding, which stacks on top of the --safe-top status-bar inset and
+   reads as an oversized gap. Trim it so the logo/icons sit just below the inset
+   — the inset itself stays (it's the required status-bar clearance). */
+.wallet-page-dark :deep(.q-toolbar),
+.wallet-page-light :deep(.q-toolbar) {
+  min-height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* Header */
@@ -4361,6 +5856,16 @@ export default {
 .last-tx-icon-dark {
   background: rgba(255, 255, 255, 0.06);
   color: #cbd5e1;
+}
+
+/* Inherit-class slot for the ContactAvatar substitution — matches the
+   icon's footprint so the row's rhythm stays identical whether the
+   preview shows a contact picture or the generic arrow. */
+.last-tx-avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
 }
 
 .last-tx-info {
@@ -5934,6 +7439,32 @@ export default {
 .btc-chip-light {
   background: rgba(247, 147, 26, 0.12) !important;
   border: 1px solid rgba(247, 147, 26, 0.3) !important;
+}
+
+/* NFC-ready badge next to the logo. Quiet pill: present enough to "feature"
+   tap-to-pay, restrained enough not to compete with the logo. */
+.nfc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.nfc-badge-dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary, #9ca3af);
+}
+.nfc-badge-light {
+  background: rgba(17, 24, 39, 0.06);
+  color: var(--text-secondary, #6b7280);
 }
 
 /* Animation for chip */

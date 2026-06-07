@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Abstract logo with teal rounded form and two green circles on dark background">
+  <rect width="1024" height="1024" fill="#303030"/>
+
+  <path d="M478 111
+           C303 111 165 252 165 421
+           L165 893
+           C339 893 478 752 478 580
+           Z" fill="#15917e"/>
+
+  <circle cx="694.5" cy="282.5" r="171.5" fill="#70df29"/>
+  <circle cx="695" cy="683" r="178" fill="#3aaf55"/>
+</svg>

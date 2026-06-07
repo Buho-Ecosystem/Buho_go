@@ -380,7 +380,7 @@
             :class="$q.dark.isActive ? 'create-invoice-btn-dark' : 'create-invoice-btn-light'"
             :loading="isCreatingInvoice"
             @click="createInvoice"
-            :disable="!isValidAmount"
+            :disable="!isValidAmount || !hasActiveWallet"
             no-caps
             unelevated
           >
@@ -521,6 +521,17 @@ export default {
     },
     isValidAmount() {
       return this.amountInSats > 0;
+    },
+    /**
+     * True when the Pinia wallet store has an active wallet that exists.
+     * Used to short-circuit createInvoice and disable the button when the
+     * store is empty (fresh install, HMR state wipe, etc.) instead of
+     * letting `activeWalletType` crash inside `inferWalletType(undefined)`.
+     */
+    hasActiveWallet() {
+      const id = this.walletStore.activeWalletId;
+      const wallets = this.walletStore.wallets || [];
+      return !!id && wallets.some((w) => w.id === id);
     },
     /**
      * Source of truth for invoice amount. Derived from the keypad input
@@ -1051,7 +1062,7 @@ export default {
 
     /**
      * Start monitoring for payment confirmation
-     * Uses event-based for Spark (instant), polling for LNBits/NWC
+     * Uses event-based for Spark (instant), polling for LNbits/NWC
      */
     async startPaymentMonitor() {
       if (!this.generatedInvoice?.payment_hash) {
@@ -1215,24 +1226,43 @@ export default {
         return;
       }
 
-      // Wrap the provider with robust payment status detection
-      // Many NWC wallets don't support lookupInvoice, so we use listTransactions as fallback
+      // Per-session capability flag for `lookup_invoice`.
+      //
+      // Some NWC wallets either don't implement lookup_invoice or only
+      // index invoices once they've been paid — both surface as
+      // "invoice not found" rejections when we poll. The Alby SDK logs
+      // each failure to console.error *before* rejecting the promise,
+      // so a multi-minute receive window can produce 30+ noisy log
+      // lines for a flow that's actually working (via the
+      // listTransactions fallback below).
+      //
+      // After the first failure we mark lookup_invoice unavailable for
+      // the rest of this monitor session and skip straight to the
+      // fallback. The flag is intentionally per-session (closure-scoped)
+      // rather than memoised across sessions — wallet capabilities can
+      // change between connections, so the next receive should re-probe.
+      let lookupInvoiceAvailable = true;
+
       wrappedProvider = {
         lookupInvoice: async (hash) => {
-          // Try lookupInvoice first (may not be supported by all wallets)
-          try {
-            const invoice = await rawProvider.lookupInvoice({ payment_hash: hash });
-            if (invoice) {
-              const isPaid = checkNWCPaymentStatus(invoice);
-              if (isPaid) {
+          if (lookupInvoiceAvailable) {
+            try {
+              const invoice = await rawProvider.lookupInvoice({ payment_hash: hash });
+              if (invoice && checkNWCPaymentStatus(invoice)) {
                 return { paid: true, preimage: invoice?.preimage, amount: invoice?.amount };
               }
+            } catch {
+              // Sticky-flag the wallet's lookup_invoice as unreliable
+              // for the rest of this monitor session — see comment
+              // above. The fallback below takes over from here.
+              lookupInvoiceAvailable = false;
             }
-          } catch (e) {
-            // lookupInvoice not supported or timed out - use fallback
           }
 
-          // Fallback: Search in recent transactions
+          // Fallback: scan recent incoming transactions for our
+          // payment_hash. Used when lookup_invoice isn't available, or
+          // when it returned an unpaid result and the transaction list
+          // might already reflect a payment the invoice index hasn't.
           try {
             const txResponse = await rawProvider.listTransactions({
               limit: 50,
@@ -1253,8 +1283,10 @@ export default {
                 };
               }
             }
-          } catch (listError) {
-            // listTransactions also failed - return not paid
+          } catch {
+            // listTransactions also failed — return not paid; the
+            // monitor accumulates consecutive errors and stops after
+            // the configured threshold.
           }
 
           return { paid: false };
@@ -1280,8 +1312,8 @@ export default {
     },
 
     /**
-     * Start LNBits payment monitoring using polling
-     * Uses the LNBits API to check payment status
+     * Start LNbits payment monitoring using polling
+     * Uses the LNbits API to check payment status
      */
     async startLNBitsPollingMonitor() {
       let rawProvider = null;
@@ -1289,24 +1321,24 @@ export default {
       try {
         rawProvider = this.walletStore.getActiveProvider();
       } catch (error) {
-        console.warn('Could not get LNBits provider for payment monitoring:', error.message);
+        console.warn('Could not get LNbits provider for payment monitoring:', error.message);
         return;
       }
 
       if (!rawProvider) {
-        console.warn('No LNBits provider available for payment monitoring');
+        console.warn('No LNbits provider available for payment monitoring');
         return;
       }
 
-      // Wrap the LNBits provider with the expected interface
+      // Wrap the LNbits provider with the expected interface
       const wrappedProvider = {
         lookupInvoice: async (hash) => {
           try {
-            // LNBits lookupInvoice expects a string payment hash
+            // LNbits lookupInvoice expects a string payment hash
             const result = await rawProvider.lookupInvoice(hash);
             return result;
           } catch (error) {
-            console.warn('LNBits lookupInvoice error:', error.message);
+            console.warn('LNbits lookupInvoice error:', error.message);
             return { paid: false };
           }
         }
@@ -1464,6 +1496,17 @@ export default {
     async createInvoice() {
       if (!this.isValidAmount) return;
 
+      // Guard against missing active wallet — the activeWalletType getter
+      // crashes inside inferWalletType(undefined) and surfaces an opaque
+      // TypeError. Catch it here with a clear message instead.
+      if (!this.hasActiveWallet) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('No active wallet. Please connect a wallet first.'),
+        });
+        return;
+      }
+
       this.isCreatingInvoice = true;
       try {
         const invoiceParams = {
@@ -1494,10 +1537,10 @@ export default {
             expires_at: result.expiresAt
           };
         } else if (walletType === 'lnbits') {
-          // Use LNBits wallet provider
+          // Use LNbits wallet provider
           const provider = this.walletStore.getActiveProvider();
           if (!provider) {
-            throw new Error('LNBits wallet not connected');
+            throw new Error('LNbits wallet not connected');
           }
 
           const result = await provider.createInvoice(invoiceParams);
@@ -1564,11 +1607,17 @@ export default {
       } catch (error) {
         console.error('Error creating invoice:', error);
 
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t create invoice'),
-          caption: this.$t('Please try again'),
-          
+        // Funnel into the global payment-error dialog so the upstream
+        // prose (NWC Nip47WalletError message, LNbits detail, Spark SDK
+        // error) reaches the user verbatim instead of being swallowed by
+        // a generic "Please try again" toast. See utils/userErrors.js
+        // and stores/wallet.js → showPaymentError for the contract.
+        this.walletStore.showPaymentError(error, {
+          context: 'receive',
+          walletType: this.walletStore.activeWalletType,
+          route: 'Invoice creation',
+          amountSats: this.amountInSats,
+          t: this.$t.bind(this),
         });
 
         this.generatedInvoice = null;

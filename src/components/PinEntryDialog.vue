@@ -37,6 +37,33 @@
 
       <!-- Content -->
       <q-card-section class="pin-content">
+        <!--
+          Authorization amount strip — fintech-style transaction context.
+          Renders only when `amountDisplay` is provided (Bolt Card PIN
+          flow), so the dialog stays clean for other uses like wallet
+          unlock. Sits above the lock icon so the user sees what they're
+          authorizing before they touch the keypad.
+        -->
+        <div
+          v-if="amountDisplay"
+          class="auth-amount-strip"
+          :class="$q.dark.isActive ? 'auth-amount-dark' : 'auth-amount-light'"
+        >
+          <div class="auth-amount-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Authorize withdrawal') }}
+          </div>
+          <div class="auth-amount-value" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+            {{ amountDisplay }}
+          </div>
+          <div
+            v-if="fiatAmount"
+            class="auth-amount-fiat"
+            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+          >
+            {{ fiatAmount }}
+          </div>
+        </div>
+
         <!-- Lock Icon -->
         <div class="lock-icon-container">
           <div class="lock-icon-bg" :class="[
@@ -50,7 +77,10 @@
           </div>
         </div>
 
-        <!-- Loading state — shown after PIN submitted while wallet unlocks -->
+        <!-- Loading state — shown after PIN submitted while wallet unlocks
+             (or, for the Bolt Card flow, while the withdraw callback is in
+             flight). `loadingText` lets callers swap the copy; defaults to
+             the wallet-unlock string to keep prior call sites unchanged. -->
         <transition name="fade" mode="out-in">
           <div v-if="loading" key="loading" class="unlock-loading">
             <!-- PIN dots stay filled -->
@@ -65,7 +95,7 @@
 
             <q-spinner-dots size="40px" color="brand-green" />
             <div class="unlock-loading-text" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Unlocking your wallet...') }}
+              {{ loadingText || $t('Unlocking your wallet...') }}
             </div>
           </div>
 
@@ -189,15 +219,69 @@ export default {
     loading: {
       type: Boolean,
       default: false
+    },
+    /**
+     * Pre-formatted primary amount line (e.g. "1,500 sats"). When set,
+     * an authorization strip is rendered above the lock icon — the spec
+     * for LUD-XX pinLimit requires the invoice amount to be visible on
+     * the PIN screen. Left empty for non-payment uses (wallet unlock,
+     * settings PIN), keeping the existing layout untouched.
+     */
+    amountDisplay: {
+      type: String,
+      default: ''
+    },
+    /**
+     * Pre-formatted secondary fiat line (e.g. "≈ €1.27"). Hidden when
+     * empty so callers without a fiat conversion don't get a stray
+     * empty row. Only renders when `amountDisplay` is also present.
+     */
+    fiatAmount: {
+      type: String,
+      default: ''
+    },
+    /**
+     * Override for the in-flight loading copy. Defaults to the
+     * "Unlocking your wallet..." string used by the lock-screen
+     * caller. The Bolt Card flow passes "Authorizing…" while the
+     * LNURL-withdraw callback round-trips.
+     */
+    loadingText: {
+      type: String,
+      default: ''
+    },
+    /**
+     * Opt-in idle timeout in seconds. When > 0, the dialog emits
+     * `timeout` after this many seconds without user input, and the
+     * parent is expected to close the dialog (matches fintech
+     * session-timeout patterns — the user shouldn't be able to leave
+     * a sensitive surface open indefinitely).
+     *
+     * Lifecycle:
+     *   - Timer arms when the dialog opens AND we're not in loading
+     *     state (the parent's network round-trip is its own concern).
+     *   - Each digit / backspace resets the countdown ("activity").
+     *   - Timer disarms when the dialog closes or transitions into
+     *     loading state.
+     *
+     * Default `0` keeps existing call sites (wallet unlock, settings
+     * PIN) timeout-free.
+     */
+    timeoutSeconds: {
+      type: Number,
+      default: 0
     }
   },
-  emits: ['update:modelValue', 'pin-complete', 'cancel', 'forgot-pin'],
+  emits: ['update:modelValue', 'pin-complete', 'cancel', 'forgot-pin', 'timeout'],
   data() {
     return {
       pin: '',
       hasError: false,
       pressedKey: null,
-      touchHandled: false
+      touchHandled: false,
+      // Handle for the idle-timeout setTimeout. null when no timer is
+      // armed; non-null while waiting for the user.
+      idleTimerId: null
     }
   },
   computed: {
@@ -219,10 +303,21 @@ export default {
     }
   },
   watch: {
-    modelValue(newVal) {
-      if (newVal) {
-        this.resetPin();
-      }
+    modelValue() {
+      // Reset on every open/close transition. Opening starts fresh so
+      // a previously entered PIN never bleeds into a new session.
+      // Closing wipes any digits still in component memory — a
+      // defence-in-depth pass for programmatic dismiss paths (parent
+      // calling v-model=false directly, app backgrounding, unmount),
+      // since submitPin() already clears on the happy path.
+      this.resetPin();
+      this.syncIdleTimer();
+    },
+    loading() {
+      // Pause the idle timer while the parent is mid-network call —
+      // it's no longer the user's turn to act, so timing them out
+      // would be unfair.
+      this.syncIdleTimer();
     },
     errorMessage(newVal) {
       if (newVal) {
@@ -230,6 +325,13 @@ export default {
         this.shakeAndClear();
       }
     }
+  },
+  beforeUnmount() {
+    // Belt-and-braces: stop any pending timer when the component
+    // unmounts so a setTimeout doesn't fire against a destroyed
+    // instance (would only log a Vue warning, but cleanliness is
+    // free).
+    this.stopIdleTimer();
   },
   methods: {
     onTouchStart(key, event) {
@@ -281,6 +383,7 @@ export default {
       if (this.pin.length < this.pinLength) {
         this.hasError = false;
         this.pin += digit;
+        this.bumpIdleTimer();
 
         // Auto-submit when PIN is complete (for 'enter' mode only)
         if (this.pin.length === this.pinLength && this.mode === 'enter') {
@@ -293,13 +396,20 @@ export default {
       if (this.pin.length > 0) {
         this.pin = this.pin.slice(0, -1);
         this.hasError = false;
+        this.bumpIdleTimer();
       }
     },
 
     submitPin() {
-      if (this.pin.length === this.pinLength) {
-        this.$emit('pin-complete', this.pin);
-      }
+      if (this.pin.length !== this.pinLength) return;
+      // Hand the PIN to the parent and clear our local copy in the
+      // same tick. The emitted argument is the only reference the
+      // PIN needs from here on; keeping it in component state past
+      // the emit would leave the digits sitting in memory for the
+      // entire round-trip (and beyond, until the dialog re-opens).
+      const pin = this.pin;
+      this.pin = '';
+      this.$emit('pin-complete', pin);
     },
 
     resetPin() {
@@ -324,6 +434,51 @@ export default {
     // Public method to clear the PIN from parent
     clear() {
       this.resetPin();
+    },
+
+    // -----------------------------------------------------------------
+    // Idle timeout
+    // -----------------------------------------------------------------
+
+    /**
+     * Reconcile timer state with current props. Called from the
+     * modelValue and `loading` watchers and after each activity bump.
+     * The timer should be armed only when the dialog is open, not
+     * loading, and a non-zero `timeoutSeconds` was passed.
+     */
+    syncIdleTimer() {
+      if (this.modelValue && !this.loading && this.timeoutSeconds > 0) {
+        this.startIdleTimer();
+      } else {
+        this.stopIdleTimer();
+      }
+    },
+
+    startIdleTimer() {
+      this.stopIdleTimer();
+      this.idleTimerId = window.setTimeout(() => {
+        this.idleTimerId = null;
+        this.$emit('timeout');
+      }, this.timeoutSeconds * 1000);
+    },
+
+    stopIdleTimer() {
+      if (this.idleTimerId !== null) {
+        window.clearTimeout(this.idleTimerId);
+        this.idleTimerId = null;
+      }
+    },
+
+    /**
+     * Refresh the countdown on user activity. Only restarts an
+     * already-armed timer — if no timer is supposed to be running
+     * (closed, loading, opt-out), a stray digit press won't create
+     * one.
+     */
+    bumpIdleTimer() {
+      if (this.idleTimerId !== null) {
+        this.startIdleTimer();
+      }
     }
   }
 }
@@ -387,6 +542,56 @@ export default {
   padding: 2rem 1.5rem;
   padding-bottom: max(2rem, var(--safe-bottom, 0px));
   gap: 1rem;
+}
+
+/*
+  Authorization amount strip — fintech-style transaction context.
+  Sits above the lock icon, only renders when `amountDisplay` is set.
+  Light and dark palettes use the same neutral surface treatment as
+  the rest of the app's card surfaces so it reads as native UI.
+*/
+.auth-amount-strip {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  border: 1px solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 0.5rem;
+}
+
+.auth-amount-light {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.auth-amount-dark {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.auth-amount-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.auth-amount-value {
+  font-family: 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.auth-amount-fiat {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 /* Lock Icon */

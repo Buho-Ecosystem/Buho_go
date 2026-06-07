@@ -148,7 +148,33 @@
             <div class="detail-field-container">{{ getExtraComment() }}</div>
           </div>
 
-          <div v-if="transaction.fee && transaction.fee > 0" class="detail-field-group">
+          <!--
+            Fee + total breakdown for outgoing payments with a fee.
+
+            The hero shows what the recipient actually received (the
+            amount the user typed). These two rows explain what was
+            added on top: the SSP/network fee, and the resulting
+            total deducted from the wallet. Together they make the
+            balance change reconcile without any mental math.
+
+            Spark-to-Spark transfers carry no fee → both rows hide.
+            Incoming flows fall through to the single Fee row below
+            for now (informational only) — separate change.
+          -->
+          <template v-if="showFeeBreakdown">
+            <div class="detail-field-group">
+              <div class="detail-field-label">{{ $t('Network Fee') }}</div>
+              <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
+            </div>
+            <div class="detail-field-group">
+              <div class="detail-field-label">{{ $t('Total deducted') }}</div>
+              <div class="detail-field-container">{{ formatAmount(totalDeductedSats, walletStore.useBip177Format) }}</div>
+            </div>
+          </template>
+          <div
+            v-else-if="transaction.fee && transaction.fee > 0"
+            class="detail-field-group"
+          >
             <div class="detail-field-label">{{ $t('Fee') }}</div>
             <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
           </div>
@@ -232,9 +258,11 @@
 
           <q-item v-else>
             <q-item-section avatar>
-              <div class="contact-avatar-small" :style="{ backgroundColor: assignedContact.color }">
-                {{ assignedContact.name.substring(0, 2).toUpperCase() }}
-              </div>
+              <ContactAvatar
+                class="contact-avatar-small"
+                :entry="assignedContact"
+                :initial-length="2"
+              />
             </q-item-section>
             <q-item-section>
               <q-item-label class="item-label">
@@ -439,9 +467,11 @@
               class="contact-item"
             >
               <q-item-section avatar>
-                <div class="contact-avatar-picker" :style="{ backgroundColor: contact.color }">
-                  {{ contact.name.substring(0, 2).toUpperCase() }}
-                </div>
+                <ContactAvatar
+                  class="contact-avatar-picker"
+                  :entry="contact"
+                  :initial-length="2"
+                />
               </q-item-section>
               <q-item-section>
                 <q-item-label class="item-label">
@@ -487,10 +517,11 @@ import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 import { shareContent } from '../utils/share';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 
 export default {
   name: 'TransactionDetailsPage',
-  components: {},
+  components: { ContactAvatar },
   data() {
     return {
       loading: true,
@@ -546,9 +577,9 @@ export default {
   computed: {
     assignedContact() {
       if (!this.transaction || !this.metadataStore) return null;
-      const metadata = this.metadataStore.getMetadataForTransaction(this.transaction.id);
-      if (!metadata?.contactId) return null;
-      return this.addressBookStore.getEntryById(metadata.contactId);
+      // Same live resolution as the history list: explicit contactId,
+      // then manual removal, then the durable recipient address.
+      return this.metadataStore.getContactForTransaction(this.transaction.id);
     },
 
     currentTags() {
@@ -573,6 +604,44 @@ export default {
         c.name.toLowerCase().includes(query) ||
         c.address.toLowerCase().includes(query)
       );
+    },
+
+    /**
+     * The "user-meaningful" amount in sats for this view's hero:
+     *
+     *   - Outgoing with a fee → recipient amount (gross − fee).
+     *     Matches what the user typed when they hit Send, which is
+     *     the mental model most Lightning wallets present on a
+     *     transaction detail page.
+     *   - Otherwise → gross transfer amount unchanged.
+     *
+     * `transaction.amount` itself stays as the gross movement so
+     * downstream list views (TransactionHistory, balance-delta
+     * math) keep matching real wallet movement. Only the detail
+     * page's hero + fiat conversion read from this derived value.
+     *
+     * @returns {number} non-negative sats
+     */
+    displayAmountSats() {
+      const gross = Math.abs(Number(this.transaction?.amount) || 0);
+      const fee = Number(this.transaction?.fee) || 0;
+      if (this.transaction?.type === 'outgoing' && fee > 0) {
+        // Defensive: clamp to 0 if a malformed record reports a fee
+        // larger than the gross — never render a negative hero.
+        return Math.max(0, gross - fee);
+      }
+      return gross;
+    },
+
+    /** True when the fee + total breakdown rows should render. */
+    showFeeBreakdown() {
+      const fee = Number(this.transaction?.fee) || 0;
+      return this.transaction?.type === 'outgoing' && fee > 0;
+    },
+
+    /** Gross deducted total for the "Total" row in the breakdown. */
+    totalDeductedSats() {
+      return Math.abs(Number(this.transaction?.amount) || 0);
     }
   },
 
@@ -620,7 +689,9 @@ export default {
 
     async removeContact() {
       try {
-        await this.metadataStore.setContactForTransaction(this.transaction.id, null);
+        // Use the dedicated clear so live address resolution won't
+        // immediately re-attach the same contact after removal.
+        await this.metadataStore.clearContactForTransaction(this.transaction.id);
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact removed'),
@@ -805,7 +876,7 @@ export default {
     async fetchLNBitsTransaction(txId) {
       const activeWallet = this.walletStore.activeWallet;
       if (!activeWallet) {
-        throw new Error('No active LNBits wallet found');
+        throw new Error('No active LNbits wallet found');
       }
 
       let provider = this.walletStore.providers[activeWallet.id];
@@ -815,14 +886,14 @@ export default {
       }
 
       if (!provider) {
-        throw new Error('Could not connect to LNBits wallet');
+        throw new Error('Could not connect to LNbits wallet');
       }
 
       const transactions = await provider.getTransactions({ limit: 100, offset: 0 });
       const found = transactions.find(tx => tx.id === txId);
 
       if (found) {
-        // Normalize LNBits transaction to expected format
+        // Normalize LNbits transaction to expected format
         this.transaction = {
           id: found.id,
           type: found.type === 'receive' ? 'incoming' : 'outgoing',
@@ -979,9 +1050,25 @@ export default {
       return null;
     },
 
+    /**
+     * Template-facing wrapper around the imported `formatAmount`
+     * helper from `utils/amountFormatting.js`. Module-level imports
+     * aren't auto-exposed on an Options API component instance, so
+     * the template can't reach the helper directly. Wrapping it as
+     * a method (same name, same signature) lets every existing
+     * call site in the template — `formatAmount(transaction.fee,
+     * walletStore.useBip177Format)` etc. — resolve correctly.
+     *
+     * @param {number} sats
+     * @param {boolean} useBip177
+     */
+    formatAmount(sats, useBip177) {
+      return formatAmount(sats, useBip177);
+    },
+
     getFormattedAmount() {
       const prefix = this.transaction.type === 'incoming' ? '+' : '-';
-      return formatAmountWithPrefix(Math.abs(this.transaction.amount), this.walletStore.useBip177Format, prefix);
+      return formatAmountWithPrefix(this.displayAmountSats, this.walletStore.useBip177Format, prefix);
     },
 
     async loadFiatRates() {
@@ -1003,7 +1090,10 @@ export default {
 
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(this.transaction.amount), currency);
+        // Fiat tracks the hero amount so the two never disagree.
+        // For an outgoing payment with a fee, both reflect what the
+        // recipient received (not the gross deducted).
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(this.displayAmountSats, currency);
 
         // Handle unavailable rates
         if (fiatValue === null) {

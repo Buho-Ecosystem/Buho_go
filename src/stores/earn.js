@@ -11,7 +11,31 @@
  */
 
 import { defineStore } from 'pinia'
-import quizData from '../data/earn-quizzes.json'
+import { i18n } from '../boot/i18n'
+import quizEnUS from '../data/earn-quizzes.en-US.json'
+import quizDe from '../data/earn-quizzes.de.json'
+import quizEs from '../data/earn-quizzes.es.json'
+
+// Locale-keyed quiz content. Structure (IDs, illustrations, ordering) is
+// identical across files; only user-facing strings differ. Resolved each
+// time `quizData()` is called so language switches at runtime show the
+// new content immediately. Reading `i18n.global.locale.value` inside a
+// Pinia getter also wires reactive tracking, so any UI that depends on
+// `groups`, `totalQuestions`, etc. re-renders on locale change.
+const QUIZ_LOCALES = {
+  'en-US': quizEnUS,
+  'de': quizDe,
+  'es': quizEs,
+}
+
+function quizData() {
+  // vue-i18n v9 exposes `locale` as a Ref in both legacy and composition
+  // modes — read `.value` when present, fall back to the raw value (older
+  // legacy builds) or DEFAULT_LOCALE if both miss.
+  const loc = i18n?.global?.locale
+  const code = (loc && typeof loc === 'object' && 'value' in loc) ? loc.value : loc
+  return QUIZ_LOCALES[code] || QUIZ_LOCALES['en-US']
+}
 
 const STORAGE_KEY = 'buhoGO_earn_progress'
 const PAYOUT_THRESHOLD = 25
@@ -35,10 +59,10 @@ export const useEarnStore = defineStore('earn', {
   }),
 
   getters: {
-    groups: () => quizData.groups,
+    groups: () => quizData().groups,
 
     totalQuestions: () => {
-      return quizData.groups.reduce((sum, g) =>
+      return quizData().groups.reduce((sum, g) =>
         sum + g.chapters.reduce((s, c) => s + c.questions.length, 0), 0)
     },
 
@@ -60,7 +84,7 @@ export const useEarnStore = defineStore('earn', {
     },
 
     groupProgress: (state) => (groupId) => {
-      const group = quizData.groups.find(g => g.id === groupId)
+      const group = quizData().groups.find(g => g.id === groupId)
       if (!group) return { completed: 0, total: 0, percentage: 0 }
       const total = group.chapters.reduce((s, c) => s + c.questions.length, 0)
       const completed = group.chapters.reduce((s, c) =>
@@ -69,9 +93,9 @@ export const useEarnStore = defineStore('earn', {
     },
 
     isGroupUnlocked: (state) => (groupId) => {
-      const groupIndex = quizData.groups.findIndex(g => g.id === groupId)
+      const groupIndex = quizData().groups.findIndex(g => g.id === groupId)
       if (groupIndex <= 0) return true
-      const prevGroup = quizData.groups[groupIndex - 1]
+      const prevGroup = quizData().groups[groupIndex - 1]
       const prevTotal = prevGroup.chapters.reduce((s, c) => s + c.questions.length, 0)
       const prevCompleted = prevGroup.chapters.reduce((s, c) =>
         s + c.questions.filter(q => state.completedQuestions.includes(q.id)).length, 0)
@@ -79,7 +103,7 @@ export const useEarnStore = defineStore('earn', {
     },
 
     chapterProgress: (state) => (chapterId) => {
-      for (const group of quizData.groups) {
+      for (const group of quizData().groups) {
         const chapter = group.chapters.find(c => c.id === chapterId)
         if (chapter) {
           const total = chapter.questions.length
@@ -92,7 +116,7 @@ export const useEarnStore = defineStore('earn', {
     },
 
     isChapterComplete: (state) => (chapterId) => {
-      for (const group of quizData.groups) {
+      for (const group of quizData().groups) {
         const chapter = group.chapters.find(c => c.id === chapterId)
         if (chapter) {
           return chapter.questions.every(q => state.completedQuestions.includes(q.id))
@@ -102,7 +126,7 @@ export const useEarnStore = defineStore('earn', {
     },
 
     nextQuestionInChapter: (state) => (chapterId) => {
-      for (const group of quizData.groups) {
+      for (const group of quizData().groups) {
         const chapter = group.chapters.find(c => c.id === chapterId)
         if (chapter) {
           return chapter.questions.find(q => !state.completedQuestions.includes(q.id)) || null
@@ -437,7 +461,7 @@ export const useEarnStore = defineStore('earn', {
     },
 
     getQuestion(questionId) {
-      for (const group of quizData.groups) {
+      for (const group of quizData().groups) {
         for (const chapter of group.chapters) {
           const q = chapter.questions.find(q => q.id === questionId)
           if (q) return q
@@ -447,11 +471,11 @@ export const useEarnStore = defineStore('earn', {
     },
 
     getGroupForChapter(chapterId) {
-      return quizData.groups.find(g => g.chapters.some(c => c.id === chapterId)) || null
+      return quizData().groups.find(g => g.chapters.some(c => c.id === chapterId)) || null
     },
 
     getChapter(chapterId) {
-      for (const group of quizData.groups) {
+      for (const group of quizData().groups) {
         const chapter = group.chapters.find(c => c.id === chapterId)
         if (chapter) return chapter
       }

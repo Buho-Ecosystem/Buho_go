@@ -194,6 +194,12 @@ export class NWCWalletProvider extends WalletProvider {
 
       return {
         preimage: payment.preimage,
+        // Note: @getalby/sdk's NostrWebLNProvider.sendPayment strips
+        // `fees_paid` from the response (only `preimage` is returned).
+        // Kept here as a defensive fallback in case the SDK adds it
+        // back in a later version. Values come in sats — the WebLN
+        // wrapper does its own msats→sats conversion internally on
+        // every method that returns amounts (see `mapNip47TransactionToTransaction`).
         fee: payment.fees_paid || payment.feesPaid || 0,
         status: 'completed'
       };
@@ -315,6 +321,11 @@ export class NWCWalletProvider extends WalletProvider {
         return [];
       }
 
+      // `this.nwc` is `NostrWebLNProvider`, whose `listTransactions`
+      // already converts msats→sats internally via the SDK's
+      // `mapNip47TransactionToTransaction` helper before handing
+      // results to us. Values arrive in sats — no further unit
+      // conversion needed here.
       return transactions.transactions.map(tx => ({
         id: tx.payment_hash || tx.paymentHash || tx.id,
         type: tx.type === 'incoming' || tx.amount > 0 ? 'receive' : 'send',

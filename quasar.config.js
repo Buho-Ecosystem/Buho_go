@@ -20,7 +20,18 @@ export default defineConfig((ctx) => {
       'iconify',
       'safe-area',
       'kiosk',
+      // 'secure-screen' reconciles the Pinia screen-privacy field
+      // with the native SharedPreferences value applied by
+      // MainActivity.onCreate, and installs the router-meta
+      // forceSecure override guard. Safe to load everywhere — the
+      // util layer no-ops on web.
+      'secure-screen',
+      // 'nip05' silently registers/maintains the user's name@mybuho.de
+      // handle once an identity exists. Safe everywhere (a plain fetch);
+      // idempotent and best-effort.
+      'nip05',
       ctx.mode.capacitor ? 'deep-links' : '',
+      ctx.mode.capacitor ? 'nfc' : '',
       ctx.dev ? 'audit' : ''
     ].filter(Boolean),
 
@@ -87,7 +98,7 @@ export default defineConfig((ctx) => {
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework
     framework: {
       config: {
-        dark: true,
+        dark: false,
         notify: {
           position: 'bottom',
           timeout: 2500,

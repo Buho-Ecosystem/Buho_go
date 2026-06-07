@@ -50,7 +50,7 @@
         <q-card-section class="q-pt-none">
           <div class="lnbits-logo-container">
             <div class="lnbits-logo-bg">
-              <!-- LNBits Lightning Bolt (official) -->
+              <!-- LNbits Lightning Bolt (official) -->
               <svg xmlns="http://www.w3.org/2000/svg" width="50" height="60" viewBox="0 0 502 902" fill="none">
                 <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
               </svg>
@@ -58,11 +58,11 @@
           </div>
 
           <div class="welcome-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Connect LNBits') }}
+            {{ $t('Connect LNbits') }}
           </div>
 
           <div class="welcome-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Enter your LNBits server details') }}
+            {{ $t('Enter your LNbits server details') }}
           </div>
 
           <!-- Server URL Input -->
@@ -79,19 +79,19 @@
             class="q-mb-md"
           />
 
-          <!-- Wallet ID Input -->
-          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Wallet ID') }}
-          </div>
-          <q-input
-            v-model="walletId"
-            :placeholder="$t('e.g. 7459bdd6e60346bcade5db10fcba648b')"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            input-class="q-px-md"
-            borderless
-            dense
-            class="q-mb-md"
-          />
+          <!--
+            Wallet ID is intentionally *not* in this form.
+
+            LNbits server-side scopes each admin key to exactly one wallet,
+            so `GET /api/v1/wallet` with just the admin key reveals the
+            walletId. `LNBitsWalletProvider.validateCredentials` already
+            does this discovery, and `addLNBitsWallet` persists the
+            server-returned id into `connectionData.walletId`.
+
+            Asking the user for it would be redundant data entry — and
+            LNbits doesn't even issue a QR for it (only a copy button),
+            so it's the most friction-heavy field by far. We just skip it.
+          -->
 
           <!-- Admin Key Input -->
           <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
@@ -131,7 +131,7 @@
               :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
               :loading="isConnecting"
               @click="validateAndConnect"
-              :disable="!serverUrl || !walletId || !adminKey"
+              :disable="!serverUrl || !adminKey"
               no-caps
               unelevated
             >
@@ -145,17 +145,37 @@
             <q-btn
               unelevated
               class="scan-qr-btn-inline"
-              :class="$q.dark.isActive ? 'btn_dark' : 'btn_light'"
+              :class="$q.dark.isActive ? 'scan-qr-btn-inline-dark' : 'scan-qr-btn-inline-light'"
               @click="openScanner"
               no-caps
             >
-              <Icon icon="tabler:qrcode-scan" width="16" height="16" class="q-mr-sm" />
-              {{ $t('Scan') }}
+              <!--
+                Inline SVG (Tabler "scan" outline) rather than the Iconify
+                <Icon> component: the network-loaded `tabler:qrcode-scan`
+                resolves to an empty SVG in this build (see DOM audit at
+                the time of the fix), and inlining keeps the button
+                icon-on-first-paint with no async dependency.
+              -->
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="18" height="18" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"
+                class="q-mr-sm scan-qr-btn-icon"
+                aria-hidden="true"
+              >
+                <path d="M4 7V6a2 2 0 0 1 2-2h2" />
+                <path d="M4 17v1a2 2 0 0 0 2 2h2" />
+                <path d="M16 4h2a2 2 0 0 1 2 2v1" />
+                <path d="M16 20h2a2 2 0 0 0 2-2v-1" />
+                <path d="M5 12h14" />
+              </svg>
+              <span>{{ $t('Scan') }}</span>
             </q-btn>
           </div>
 
           <div class="help-text q-mt-md" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Find wallet ID and admin key in LNBits under API Info') }}
+            {{ $t('Find your admin key in LNbits under API Info') }}
           </div>
         </q-card-section>
 
@@ -184,7 +204,24 @@
                 {{ $t('Scan QR Code') }}
               </div>
               <div class="scanner-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-                {{ scanMode === 'url' ? $t('Scan your LNBits server URL') : $t('Scan your admin key') }}
+                {{ scannerSubtitle }}
+              </div>
+              <!--
+                Progress strip — shows which of the two scannable values
+                are already captured. Both have QRs in LNbits, so the
+                user can scan both in one continuous session without
+                reopening the camera.
+              -->
+              <div class="scan-progress-strip">
+                <span class="scan-progress-pill" :class="{ 'scan-progress-pill-done': scanProgress.server }">
+                  <Icon v-if="scanProgress.server" icon="tabler:check" width="12" height="12" />
+                  <span>{{ $t('Server') }}</span>
+                </span>
+                <span class="scan-progress-divider">·</span>
+                <span class="scan-progress-pill" :class="{ 'scan-progress-pill-done': scanProgress.adminKey }">
+                  <Icon v-if="scanProgress.adminKey" icon="tabler:check" width="12" height="12" />
+                  <span>{{ $t('Admin Key') }}</span>
+                </span>
               </div>
             </div>
             <div class="header-spacer"></div>
@@ -280,7 +317,7 @@
 
             <q-input
               v-model="walletName"
-              :placeholder="validatedWalletName || $t('My LNBits Wallet')"
+              :placeholder="validatedWalletName || $t('My LNbits Wallet')"
               :rules="[val => !!val || $t('Wallet name is required')]"
               autofocus
               :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
@@ -333,6 +370,7 @@
 
 <script>
 import QrScanner from 'qr-scanner'
+import { createQrScanner } from '../utils/qrScanner'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import { useWalletStore } from '../stores/wallet'
@@ -349,13 +387,18 @@ export default {
   data() {
     return {
       serverUrl: '',
-      walletId: '',
       adminKey: '',
       showAdminKey: false,
       isConnecting: false,
       errorMessage: '',
       showScanner: false,
-      scanMode: 'url', // 'url', 'walletId', or 'key'
+      // Continuous-scan flow state. The scanner stays open until both
+      // scannable values (serverUrl, adminKey) are populated or the
+      // user cancels. `scanMode` is the value we're currently prompting
+      // for; it auto-advances after each successful scan. Wallet ID
+      // isn't here — LNbits server-side scopes the adminKey to one
+      // wallet, so the store action discovers it via GET /api/v1/wallet.
+      scanMode: 'url', // 'url' | 'key'
       cameraError: false,
       cameraErrorMessage: '',
       cameraLoading: true,
@@ -391,13 +434,43 @@ export default {
       } catch {
         return this.validatedServerUrl;
       }
-    }
+    },
+
+    /**
+     * Has the current scanner session captured each scannable value?
+     * Wallet ID isn't here because LNbits doesn't issue a QR for it.
+     */
+    scanProgress() {
+      return {
+        server: !!this.serverUrl,
+        adminKey: !!this.adminKey,
+      };
+    },
+
+    /**
+     * True when both scannable values are in. Scanner closes when this
+     * flips to true (see handleQrScan).
+     */
+    allScannableFieldsCaptured() {
+      return this.scanProgress.server && this.scanProgress.adminKey;
+    },
+
+    /**
+     * Header subtitle for the scanner — reflects what we're currently
+     * asking the user to scan, based on which field is still missing.
+     */
+    scannerSubtitle() {
+      if (this.scanMode === 'url' && !this.serverUrl) {
+        return this.$t('Scan your LNbits server URL');
+      }
+      return this.$t('Scan your admin key');
+    },
   },
   beforeUnmount() {
     this.stopQrScanner();
   },
   methods: {
-    ...mapActions(useWalletStore, ['addLNBitsWallet', 'setWalletLightningAddress']),
+    ...mapActions(useWalletStore, ['addLNBitsWallet', 'setWalletLightningAddress', 'showPaymentError']),
 
     goBack() {
       if (window.history.length > 1) {
@@ -408,7 +481,7 @@ export default {
     },
 
     async validateAndConnect() {
-      if (!this.serverUrl.trim() || !this.walletId.trim() || !this.adminKey.trim()) {
+      if (!this.serverUrl.trim() || !this.adminKey.trim()) {
         this.errorMessage = this.$t('Please fill in all fields');
         return;
       }
@@ -417,10 +490,12 @@ export default {
       this.errorMessage = '';
 
       try {
-        // Validate credentials
+        // Walletid is server-side scoped to the admin key, so we don't
+        // require it from the user — validateCredentials() will discover
+        // it via GET /api/v1/wallet and we'll persist whatever comes back.
         const validation = await LNBitsWalletProvider.validateCredentials(
           this.serverUrl.trim(),
-          this.walletId.trim(),
+          undefined, // walletId — auto-discover
           this.adminKey.trim()
         );
 
@@ -435,7 +510,7 @@ export default {
         this.showNameDialog = true;
 
       } catch (error) {
-        console.error('LNBits validation failed:', error);
+        console.error('LNbits validation failed:', error);
         this.errorMessage = getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this));
       } finally {
         this.isConnecting = false;
@@ -461,12 +536,12 @@ export default {
         this.loadingText = this.$t('Loading wallet...');
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
-        console.error('Failed to add LNBits wallet:', error);
+        console.error('Failed to add LNbits wallet:', error);
         this.showLoadingScreen = false;
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to add wallet'),
-          caption: getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this)),
+        this.showPaymentError(error, {
+          context: 'connect',
+          route: 'Add LNbits wallet',
+          t: this.$t.bind(this),
         });
         return;
       }
@@ -498,7 +573,7 @@ export default {
     },
 
     /**
-     * Check whether the connected LNBits server has the lnurlp extension and,
+     * Check whether the connected LNbits server has the lnurlp extension and,
      * if so, open the lightning-address dialog pre-populated with any
      * existing addresses on the wallet.
      *
@@ -586,6 +661,9 @@ export default {
     },
 
     async openScanner() {
+      // Pick initial mode based on which scannable field is still empty.
+      // The mode auto-advances after each successful scan inside the
+      // continuous-scan loop (see handleQrScan).
       this.showScanner = true;
       this.scanMode = !this.serverUrl ? 'url' : 'key';
       this.cameraError = false;
@@ -594,6 +672,16 @@ export default {
 
       await this.$nextTick();
       await this.startQrScanner();
+    },
+
+    /**
+     * Pick the next mode based on which scannable field is still empty.
+     * Returns `null` if both are captured (caller closes the scanner).
+     */
+    nextScanMode() {
+      if (!this.serverUrl) return 'url';
+      if (!this.adminKey) return 'key';
+      return null;
     },
 
     closeScanner() {
@@ -615,7 +703,7 @@ export default {
           throw new Error('No camera found on this device.');
         }
 
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           this.$refs.videoElement,
           (result) => this.handleQrScan(result.data),
           {
@@ -644,77 +732,89 @@ export default {
       }
     },
 
+    /**
+     * Classify a scanned QR payload into one of the two scannable fields,
+     * then advance the continuous-scan flow:
+     *
+     *   • URL                → fills serverUrl (origin only — strips path/query)
+     *   • 32+ character string → fills adminKey
+     *
+     * After capture, the scanner advances `scanMode` to whichever
+     * scannable field is still empty and stays open. It only closes
+     * once both `serverUrl` and `adminKey` are populated, or the user
+     * taps Cancel.
+     *
+     * Re-scans of an already-captured field are non-blocking: we toast
+     * "already captured" and keep listening so the user can keep aiming
+     * at the next QR without re-opening the scanner.
+     */
     handleQrScan(qrData) {
       if (!qrData) return;
 
       const data = qrData.trim();
+      let captured = null; // 'server' | 'key' — what we just filled
 
-      // Check if it's a URL (could contain wallet params)
       if (data.startsWith('http://') || data.startsWith('https://')) {
+        // Strip path + query to keep just the origin. Handles users
+        // scanning their LNbits wallet page URL (`/wallet?usr=…&wal=…`)
+        // instead of the bare Node URL QR — we want the server origin
+        // regardless of which one they aimed at.
+        let serverUrl = data;
         try {
           const url = new URL(data);
-          // Check for LNBits wallet URL format: /wallet?usr=...&wal=...
-          const walParam = url.searchParams.get('wal');
-          if (walParam) {
-            // Extract server URL without query params
-            this.serverUrl = `${url.protocol}//${url.host}`;
-            this.walletId = walParam;
-            this.closeScanner();
-            this.$q.notify({
-              type: 'positive',
-              message: this.$t('Server URL and Wallet ID extracted'),
-              caption: this.$t('Please enter your admin key'),
-              
-              timeout: 2000,
-            });
-            return;
-          }
+          serverUrl = `${url.protocol}//${url.host}`;
         } catch {
-          // Not a valid URL with params, use as-is
+          // Unparseable URL — fall through and use the raw string. The
+          // connect step will surface the real error.
         }
-
-        this.serverUrl = data;
-        this.closeScanner();
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Server URL scanned'),
-          
-          timeout: 1500,
-        });
-        return;
-      }
-
-      // Check if it looks like a wallet ID (32 char hex)
-      if (data.length === 32 && /^[a-f0-9]+$/i.test(data) && !this.walletId) {
-        this.walletId = data;
-        this.closeScanner();
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Wallet ID scanned'),
-          
-          timeout: 1500,
-        });
-        return;
-      }
-
-      // Otherwise treat as admin key (32+ chars)
-      if (data.length >= 32) {
+        if (!this.serverUrl) {
+          this.serverUrl = serverUrl;
+          captured = 'server';
+        }
+      } else if (data.length >= 32 && !this.adminKey) {
+        // Admin key — anything 32+ chars that isn't a URL. The server
+        // is the arbiter of whether the key is actually valid; we just
+        // classify the QR payload here.
         this.adminKey = data;
-        this.closeScanner();
+        captured = 'key';
+      }
+
+      if (!captured) {
+        // Either we couldn't classify, or every field we *could* fill
+        // is already filled. Distinguish the two for a useful message.
+        const alreadyHave = (
+          (data.startsWith('http') && this.serverUrl) ||
+          (data.length >= 32 && this.adminKey)
+        );
         this.$q.notify({
-          type: 'positive',
-          message: this.$t('Admin key scanned'),
-          
+          type: alreadyHave ? 'info' : 'warning',
+          message: alreadyHave ? this.$t('Already captured') : this.$t('Unrecognized QR code'),
+          caption: alreadyHave ? null : this.$t('Expected a URL or an admin key'),
           timeout: 1500,
         });
         return;
       }
 
+      const next = this.nextScanMode();
+      if (next === null) {
+        // Both scannable values captured — close.
+        this.closeScanner();
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Both fields captured. Review and connect.'),
+          timeout: 1800,
+        });
+        return;
+      }
+
+      // Stay open, advance the mode, give a brief positive cue.
+      this.scanMode = next;
       this.$q.notify({
-        type: 'warning',
-        message: this.$t('Unrecognized QR code'),
-        caption: this.$t('Expected a URL, wallet ID, or admin key'),
-        
+        type: 'positive',
+        message: captured === 'server'
+          ? this.$t('Server URL scanned')
+          : this.$t('Admin key scanned'),
+        timeout: 1200,
       });
     },
 
@@ -818,7 +918,7 @@ export default {
   50% { background-position: 100% 50%; }
 }
 
-/* LNBits Logo */
+/* LNbits Logo */
 .lnbits-logo-container {
   display: flex;
   justify-content: center;
@@ -909,14 +1009,34 @@ export default {
   font-weight: 400;
 }
 
+/* Secondary "Scan" CTA — paired visually with the primary "Connect"
+   button beside it. Earlier revisions referenced .btn_light / .btn_dark
+   which weren't defined anywhere global, so the button rendered with
+   no background and a white-on-cream icon (invisible) in light mode.
+   Explicit styling here keeps the icon legible across themes. */
 .scan-qr-btn-inline {
   flex: 1;
   height: 52px;
   border-radius: 20px;
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   min-width: 0;
+}
+.scan-qr-btn-inline-light {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
+}
+.scan-qr-btn-inline-dark {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8eaed;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* Force the QR icon to follow the button's text colour so it stays
+   visible regardless of Quasar's q-btn defaults or theme variant. */
+.scan-qr-btn-icon {
+  color: currentColor;
 }
 
 /* Help Text */
@@ -949,6 +1069,67 @@ export default {
   line-height: 1.4;
 }
 
+/* Continuous-scan progress strip — two pills (Server, Admin Key) that
+   light up as their respective values get captured. Sits right under
+   the scanner subtitle and provides the only visual feedback that the
+   scanner is staying open for more input. */
+.scan-progress-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.scan-progress-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.body--light .scan-progress-pill {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.45);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+.scan-progress-pill-done {
+  background: rgba(21, 222, 114, 0.16);
+  color: #15DE72;
+  border-color: rgba(21, 222, 114, 0.22);
+}
+body.body--light .scan-progress-pill-done {
+  background: rgba(5, 149, 115, 0.10);
+  color: #059573;
+  border-color: rgba(5, 149, 115, 0.20);
+}
+.scan-progress-divider {
+  color: rgba(255, 255, 255, 0.25);
+  font-weight: 400;
+}
+body.body--light .scan-progress-divider {
+  color: rgba(0, 0, 0, 0.2);
+}
+
+/* Hidden-shortcut tip — only shown in URL mode before serverUrl is set.
+   Surfaces the `?wal=` two-in-one scan that the parser handles
+   automatically but is invisible to first-time users. */
+.scan-tip {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.75;
+}
+
 .qr-scanner-container {
   height: 280px;
   display: flex;
@@ -970,14 +1151,21 @@ export default {
   border-color: var(--border-card);
 }
 
+/*
+  Overlay the camera-error / camera-loading states on top of the
+  <video> element rather than rendering them as sibling flex items.
+  Without `position: absolute` the <video> (100% × 100%) and the
+  overlay share row-flex space, squeezing the overlay text into a
+  narrow column at the right edge of the scanner box.
+*/
 .camera-error,
 .camera-loading {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  width: 100%;
   text-align: center;
   padding: 2rem;
 }

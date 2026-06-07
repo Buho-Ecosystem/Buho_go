@@ -48,7 +48,7 @@
       <!-- Camera View -->
       <div class="camera-container">
         <video
-          v-if="showCamera && !isProcessing"
+          v-if="showCamera && !ctaBusy"
           ref="videoElement"
           class="camera-view"
           style="width: 100%; height: 100%; object-fit: cover;"
@@ -56,8 +56,9 @@
         />
 
         <!-- Processing Overlay — neutral grey, no brand accents in the
-             scanner per design direction. -->
-        <div v-if="isProcessing" class="processing-overlay">
+             scanner per design direction. Stays up through the parent's
+             address fetch (ctaBusy), not just our local decode. -->
+        <div v-if="ctaBusy" class="processing-overlay">
           <q-spinner-dots color="grey-5" size="3rem" />
           <div class="processing-text">{{ $t('Processing payment...') }}</div>
         </div>
@@ -120,12 +121,17 @@
       v-model="showManualDialog"
       position="bottom"
       class="manual-sheet-dialog"
+      :persistent="ctaBusy"
     >
       <q-card class="manual-sheet" :class="$q.dark.isActive ? 'manual-sheet-dark' : 'manual-sheet-light'">
         <div class="grab-bar"></div>
 
         <header class="sheet-top">
-          <q-btn flat round dense v-close-popup class="sheet-top-btn">
+          <!-- Always present so the user is never trapped mid-resolve. While
+               busy it cancels the whole Send flow (closing only the inner sheet
+               would strand the parent fetch + spinner); otherwise it just backs
+               out of the manual sheet. -->
+          <q-btn flat round dense class="sheet-top-btn" @click="onManualClose">
             <Icon icon="tabler:x" width="20" height="20" />
           </q-btn>
           <div class="sheet-top-title">{{ $t('Pay anyone') }}</div>
@@ -158,18 +164,24 @@
             class="manual-textarea"
             :class="[
               $q.dark.isActive ? 'manual-textarea-dark' : 'manual-textarea-light',
-              manualInputShowsError ? 'manual-textarea--error' : ''
+              (manualInputShowsError || resolveError) ? 'manual-textarea--error' : ''
             ]"
             :placeholder="$t('Paste an invoice or enter an address from your friend or shop')"
             rows="3"
             autocapitalize="off"
             autocorrect="off"
             spellcheck="false"
+            :disabled="ctaBusy"
             ref="manualTextarea"
+            @paste="onTextareaPaste"
           />
 
-          <div class="input-helper">
-            <template v-if="manualInputShowsError">
+          <div class="input-helper" :class="{ 'input-helper--error': resolveError || manualInputShowsError }">
+            <template v-if="resolveError">
+              <Icon icon="tabler:alert-circle" width="13" height="13" class="helper-icon-error" />
+              <span>{{ resolveError }}</span>
+            </template>
+            <template v-else-if="manualInputShowsError">
               <Icon icon="tabler:alert-circle" width="13" height="13" class="helper-icon-error" />
               <span>{{ $t("We don't recognize this format") }}</span>
             </template>
@@ -180,7 +192,33 @@
         </section>
 
         <footer class="sheet-footer">
+          <!-- While we fetch + validate the destination, the CTA becomes the
+               shared filling loading-button (same one the send/commit flow
+               uses), so the wait reads as "we're resolving this", not a frozen
+               button. The parent closes the sheet on success or pushes an
+               inline error above on failure. -->
+          <ProgressCta v-if="ctaBusy" :label="$t('Fetching…')" />
+          <!-- 075-078 are valid mobile prefixes in BOTH Kenya and Zambia.
+               Rather than silently guess (and risk paying the wrong country),
+               let the user pick. Unambiguous numbers and +CC input skip
+               straight to Continue / auto-advance. -->
+          <div v-else-if="phoneNeedsCountryChoice" class="country-choice">
+            <div class="country-choice-label">{{ $t('Which country?') }}</div>
+            <div class="country-choice-row">
+              <button
+                v-for="c in recognizedPhone.candidates"
+                :key="c.country.code"
+                type="button"
+                class="country-choice-btn"
+                @click="selectPhoneCountry(c)"
+              >
+                <span class="country-choice-name">{{ countryName(c.country.code) }}</span>
+                <span class="country-choice-number">{{ c.display }}</span>
+              </button>
+            </div>
+          </div>
           <button
+            v-else
             type="button"
             class="primary-cta"
             :disabled="!isValidManualInput"
@@ -202,6 +240,7 @@
 
 <script>
 import QrScanner from 'qr-scanner';
+import { createQrScanner } from '../utils/qrScanner';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
@@ -213,18 +252,36 @@ import {
   isBitcoinAddress,
   isLightningAddress,
 } from '../utils/addressUtils';
+import { recognizePhoneNumber } from '../services/lnAddressServices';
+import { classifyIdentifier, LOOKUP_ERROR } from '../utils/nostrLookup';
+import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
 import AddressBookQuickModal from './AddressBookQuickModal.vue';
+import ProgressCta from './ProgressCta.vue';
 
 export default {
   name: 'SendModal',
-  components: { AddressBookQuickModal },
+  components: { AddressBookQuickModal, ProgressCta },
   props: {
     modelValue: {
       type: Boolean,
       default: false
+    },
+    // True while the parent (Wallet.onPaymentDetected) is fetching/validating
+    // the destination after we emitted it. Drives the loading CTA so the user
+    // sees that we are resolving the address, not guessing it.
+    resolving: {
+      type: Boolean,
+      default: false
+    },
+    // Set by the parent when resolution fails (e.g. the Lightning address
+    // doesn't exist). Shown inline in the field so the user can fix it without
+    // ever leaving the "Pay anyone" sheet. Cleared on edit (update:resolveError).
+    resolveError: {
+      type: String,
+      default: ''
     }
   },
-  emits: ['update:modelValue', 'payment-detected'],
+  emits: ['update:modelValue', 'payment-detected', 'update:resolveError'],
   setup() {
     const addressBookStore = useAddressBookStore();
     const walletStore = useWalletStore();
@@ -243,6 +300,14 @@ export default {
     }
   },
   computed: {
+    // Loading from the moment we submit (local isProcessing, covers our own
+    // npub resolve + the QR decode) through the parent's fetch (resolving prop),
+    // until the parent either shows the confirm sheet (closes us) or reports an
+    // error. One flag drives both the camera overlay and the manual CTA.
+    ctaBusy() {
+      return this.isProcessing || this.resolving;
+    },
+
     show: {
       get() {
         return this.modelValue;
@@ -279,9 +344,21 @@ export default {
 
       if (isSparkAddress(cleaned)) return 'spark';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
+      // Bare Nostr key: `npub1…` / `nprofile1…` (optionally `nostr:`-prefixed).
+      // Unambiguous — nothing else looks like this — so we resolve it to the
+      // person's Lightning address. NIP-05 (`name@domain`) is intentionally
+      // NOT matched here: it's indistinguishable from a Lightning Address, so
+      // it stays on the Lightning-address rails (and is only Nostr-resolved as
+      // a fallback if that lookup misses — see Wallet.onPaymentDetected).
+      const nostrKind = classifyIdentifier(cleaned);
+      if (nostrKind === 'npub' || nostrKind === 'nprofile') return 'nostr_identifier';
       if (isLightningAddress(cleaned)) return 'lightning_address';
       if (isLnurl(cleaned)) return 'lnurl';
       if (isBitcoinAddress(cleaned)) return 'bitcoin_address';
+      // A bare phone number we can route to a fiat-payout provider
+      // (Zambia → Bitzed, Kenya → Tando). Strict: only a complete, valid
+      // KE/ZM mobile number matches, so partial digits never false-positive.
+      if (this.recognizedPhone) return 'phone_number';
       return null;
     },
 
@@ -292,7 +369,9 @@ export default {
         lightning_address: this.$t('Lightning Address'),
         lnurl: this.$t('LNURL'),
         bitcoin_address: this.$t('Bitcoin'),
-        bip21: this.$t('Bitcoin (BIP21)')
+        bip21: this.$t('Bitcoin (BIP21)'),
+        phone_number: this.$t('Phone number'),
+        nostr_identifier: this.$t('Nostr profile')
       };
       return labels[this.detectedInputType] || '';
     },
@@ -303,7 +382,9 @@ export default {
         lightning_address: 'tabler:bolt',
         lnurl: 'tabler:link',
         bitcoin_address: 'tabler:currency-bitcoin',
-        bip21: 'tabler:currency-bitcoin'
+        bip21: 'tabler:currency-bitcoin',
+        phone_number: 'tabler:device-mobile',
+        nostr_identifier: 'tabler:user-bolt'
       };
       return icons[this.detectedInputType] || '';
     },
@@ -314,6 +395,25 @@ export default {
 
     isValidManualInput() {
       return !!this.detectedInputType;
+    },
+
+    // Full phone-number recognition for the current input (or null). Drives
+    // the 'phone_number' chip and the ambiguous-country chooser.
+    recognizedPhone() {
+      const raw = (this.manualInput || '').trim();
+      if (!raw) return null;
+      const cleaned = raw.toLowerCase().startsWith('lightning:')
+        ? raw.substring(10).trim()
+        : raw;
+      return recognizePhoneNumber(cleaned);
+    },
+
+    // True when the number is valid in more than one country (075-078 KE/ZM
+    // overlap) and no calling code was given — the user must pick.
+    phoneNeedsCountryChoice() {
+      return this.detectedInputType === 'phone_number'
+        && !!this.recognizedPhone
+        && this.recognizedPhone.ambiguous === true;
     }
   },
   watch: {
@@ -325,9 +425,53 @@ export default {
         this.showCamera = false;
         this.resetState();
       }
+    },
+    // Smart fetching: a typed PHONE NUMBER auto-advances once it's complete
+    // (recognizePhoneNumber only matches a full KE/ZM mobile number, so
+    // partial digits never fire, and a number that's a prefix of the full
+    // address resolves to the same destination anyway). Typed addresses /
+    // invoices keep the explicit Continue because their detection is
+    // prefix-based; pasted content auto-advances for any type (see
+    // pasteFromClipboard). The confirm sheet stays the review/commit gate.
+    manualInput() {
+      // Editing clears a stale "couldn't resolve" error from the previous try.
+      if (this.resolveError) this.$emit('update:resolveError', '');
+      clearTimeout(this.phoneAdvanceTimer);
+      if (this.detectedInputType === 'phone_number' && !this.phoneNeedsCountryChoice) {
+        this.phoneAdvanceTimer = setTimeout(() => this.autoAdvance(), 700);
+      }
+    },
+    // The parent flips `resolving` back to false the moment its fetch settles
+    // (success OR failure, including notify-only paths) — clear the local
+    // spinner so the CTA leaves "Fetching…".
+    resolving(now, was) {
+      if (!(was && !now)) return;
+      this.isProcessing = false;
+      // A scan / contact-pick FAILURE leaves the sheet open (success already set
+      // show=false) but has no field to retry in — close it so the live scanner
+      // can't re-detect the same code in a loop. The manual sheet stays open to
+      // show its inline error.
+      if (this.show && !this.showManualDialog) this.closeModal();
+    },
+    // A failure message arriving. Clear the spinner here too: on a synchronous
+    // throw the parent sets sendResolving true->false within one tick, so the
+    // `resolving` watcher above never fires and the CTA would freeze. Without a
+    // manual sheet to host the inline error, toast it and close.
+    resolveError(message) {
+      if (!message) return;
+      this.isProcessing = false;
+      // Scan / contact failure on a still-open sheet: toast + close (no field to
+      // retry in). `this.show` guards against toasting after the user already
+      // cancelled (closeModal) while a late result arrives.
+      if (this.show && !this.showManualDialog) {
+        this.$q.notify({ type: 'negative', message });
+        this.closeModal();
+      }
     }
   },
   beforeUnmount() {
+    clearTimeout(this.phoneAdvanceTimer);
+    clearTimeout(this.pasteAdvanceTimer);
     this.stopQrScanner();
   },
   methods: {
@@ -356,7 +500,7 @@ export default {
 
         this.videoElement = this.$refs.videoElement;
 
-        this.qrScanner = new QrScanner(
+        this.qrScanner = createQrScanner(
           this.videoElement,
           (result) => {
             const data = typeof result === 'string' ? result : (result?.data || result?.text || '');
@@ -427,6 +571,22 @@ export default {
 
         let trimmedData = inputData.trim();
 
+        // A recognized Kenyan/Zambian phone number is a fiat-payout destination
+        // — resolve it to its provider Lightning Address (Zambia → @bitzed.xyz,
+        // Kenya → @bitcoin.co.ke) up front, BEFORE the SA-retail QR check, whose
+        // numeric codes would otherwise swallow a 10-digit phone number. The
+        // built address then flows through the normal Lightning-address rails
+        // (which brand it).
+        const phone = recognizePhoneNumber(trimmedData);
+        if (phone) {
+          this.$emit('payment-detected', {
+            data: phone.lightningAddress,
+            type: 'lightning_address',
+            rawInput: trimmedData,
+          });
+          return;
+        }
+
         // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
         if (isSARetailerQR(trimmedData)) {
           const result = convertToLightningAddress(trimmedData);
@@ -437,7 +597,6 @@ export default {
               source: SA_RETAIL_SOURCE,
               merchant: result.merchant,
             });
-            this.closeModal();
             return;
           }
           const merchant = getMerchantInfo(trimmedData);
@@ -463,6 +622,30 @@ export default {
           cleanData = cleanData.toLowerCase();
         }
 
+        // Bare Nostr key (npub / nprofile, optionally nostr:-prefixed): resolve
+        // the person's profile to their Lightning address (lud16) or LNURL
+        // (lud06) and pay that, carrying their name + avatar so the confirm
+        // sheet shows who they are. The processing overlay is already up
+        // (processManualInput / processQRCode set isProcessing).
+        const nostrKind = classifyIdentifier(cleanData);
+        if (nostrKind === 'npub' || nostrKind === 'nprofile') {
+          try {
+            const target = await resolveNostrLightningTarget(cleanData, { timeoutMs: 8000 });
+            this.$emit('payment-detected', {
+              data: target.address,
+              type: target.kind, // 'lightning_address' | 'lnurl'
+              rawInput: trimmedData,
+              nostrPubkey: target.pubkey,
+              nostrNpub: target.npub,
+              nostrProfile: target.profile,
+            });
+          } catch (err) {
+            this.isProcessing = false;
+            this.notifyNostrResolveError(err);
+          }
+          return;
+        }
+
         const paymentType = this.determinePaymentType(cleanData);
 
         if (paymentType === 'spark_address' && !this.isActiveWalletSpark) {
@@ -486,14 +669,42 @@ export default {
         this.$emit('payment-detected', {
           data: cleanData,
           type: paymentType,
+          // Original, un-normalized input. Branta needs this for on-chain
+          // verification because the ZK params (branta_id / branta_secret)
+          // live in the bitcoin: URI query string, which normalization
+          // strips out of `data`.
+          rawInput: trimmedData,
           ...(bip21 ? { bip21 } : {})
         });
-
-        this.closeModal();
-
+        // No closeModal here: we stay open showing the loading CTA while the
+        // parent fetches/validates the destination. It closes us on success,
+        // or pushes an inline error back via :resolve-error on failure.
       } catch (error) {
         throw error;
       }
+    },
+
+    /**
+     * Map a Nostr-resolution failure to a friendly notification. The error's
+     * `.code` distinguishes "profile has no Lightning address" from "couldn't
+     * find / reach the profile" so the user knows whether to fix the npub or
+     * just retry.
+     */
+    notifyNostrResolveError(err) {
+      const code = err?.code;
+      let message = this.$t("We couldn't resolve this Nostr profile");
+      let caption = this.$t('Check the npub and your connection, then try again');
+      if (code === NOSTR_TARGET_ERROR.NO_ADDRESS) {
+        message = this.$t('This Nostr profile has no Lightning address yet');
+        caption = this.$t('Ask them to set a Lightning address on their profile');
+      } else if (code === NOSTR_TARGET_ERROR.NO_PROFILE) {
+        message = this.$t("We couldn't find this Nostr profile");
+        caption = this.$t('No profile was published to the relays we checked');
+      } else if (code === LOOKUP_ERROR.INVALID_NPUB || code === LOOKUP_ERROR.INVALID_NPROFILE) {
+        message = this.$t('That Nostr key looks malformed');
+        caption = this.$t('Double-check the npub and try again');
+      }
+      this.$q.notify({ type: 'negative', message, caption });
     },
 
     /**
@@ -533,6 +744,9 @@ export default {
 
     openManual() {
       this.manualInput = '';
+      // Drop any inline error carried over from a prior contact/scan failure so
+      // it can't show over a fresh, empty field.
+      if (this.resolveError) this.$emit('update:resolveError', '');
       this.showManualDialog = true;
       this.$nextTick(() => {
         this.$refs.manualTextarea?.focus();
@@ -576,6 +790,13 @@ export default {
         this.$refs.manualTextarea?.focus();
       });
 
+      // Pasted content is complete, so fetch directly once it's recognized
+      // (any type) — a short beat lets the user glimpse what was pasted.
+      clearTimeout(this.pasteAdvanceTimer);
+      if (this.manualInput) {
+        this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 300);
+      }
+
       if (!clipboardText) {
         this.$q.notify({
           type: 'info',
@@ -610,16 +831,20 @@ export default {
       const paymentTypeMap = {
         spark: 'spark_address',
         bitcoin: 'bitcoin_address',
-        lightning: 'lightning_address'
+        lightning: 'lightning_address',
+        // LNURL contacts emit the same payment type the manual/scan LNURL path
+        // uses, so Wallet.onPaymentDetected resolves them via fetchLNURLInfo.
+        lnurl: 'lnurl'
       };
       const paymentType = paymentTypeMap[addressType] || 'lightning_address';
 
+      this.showQuickContacts = false;
+      this.isProcessing = true; // show the scanner loading overlay while the parent resolves
       this.$emit('payment-detected', {
         data: address,
         type: paymentType
       });
-      this.showQuickContacts = false;
-      this.closeModal();
+      // Parent closes us on success / surfaces an error on failure.
     },
 
     // Contact helpers (used by the contact-picker handler above).
@@ -650,10 +875,41 @@ export default {
       return '';
     },
 
-    async processManualInput() {
-      if (!this.isValidManualInput) return;
+    countryName(code) {
+      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia') }[code] || code;
+    },
 
-      this.showManualDialog = false;
+    // Ambiguous-number chooser: emit the picked country's constructed address
+    // directly, bypassing the default-country resolution in processPaymentData.
+    selectPhoneCountry(candidate) {
+      if (!candidate) return;
+      // Keep the sheet open with the loading CTA while the parent resolves the
+      // constructed provider address; it closes us on success.
+      this.isProcessing = true;
+      this.$emit('payment-detected', {
+        data: candidate.lightningAddress,
+        type: 'lightning_address',
+        rawInput: this.manualInput.trim(),
+      });
+    },
+
+    // Auto-advance (smart fetching) entry point used by the typed-phone watch
+    // and the paste hook. Guarded so a pending timer never fires after the
+    // sheet was closed, edited to something invalid, a send is in flight, or
+    // an ambiguous number still needs a KE/ZM choice.
+    autoAdvance() {
+      if (this.showManualDialog && !this.isProcessing && this.isValidManualInput && !this.phoneNeedsCountryChoice) {
+        this.processManualInput();
+      }
+    },
+
+    async processManualInput() {
+      if (!this.isValidManualInput || this.ctaBusy) return;
+
+      // Keep the manual sheet OPEN and swap its CTA for the loading button —
+      // the fetch/validation happens here (and in the parent) before we ever
+      // leave this field, so a bad address surfaces inline instead of failing
+      // later. The parent closes the sheet once the destination is resolved.
       this.isProcessing = true;
 
       try {
@@ -668,16 +924,38 @@ export default {
       }
     },
 
+    // OS paste (Cmd/Ctrl+V or long-press → Paste) straight into the field. A
+    // pasted destination is complete, so once the value settles we auto-advance
+    // into the fetch — same intent as the Paste button. Typed input keeps the
+    // explicit Continue, since prefix detection can match a half-typed address.
+    onTextareaPaste() {
+      clearTimeout(this.pasteAdvanceTimer);
+      this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 200);
+    },
+
+    // Manual sheet "X". Mid-resolve it cancels the whole Send flow (the parent
+    // fetch keeps running but its result is harmless — it can only surface the
+    // confirm sheet the user was already heading to); otherwise it just closes
+    // the manual sheet back to the scanner.
+    onManualClose() {
+      if (this.ctaBusy) this.closeModal();
+      else this.showManualDialog = false;
+    },
+
     closeModal() {
       this.show = false;
     },
 
     resetState() {
+      clearTimeout(this.phoneAdvanceTimer);
+      clearTimeout(this.pasteAdvanceTimer);
       this.isProcessing = false;
       this.cameraError = null;
       this.manualInput = '';
       this.showManualDialog = false;
       this.showQuickContacts = false;
+      // Clear any inline resolve error so a fresh open starts clean.
+      if (this.resolveError) this.$emit('update:resolveError', '');
     }
   }
 }
@@ -1021,7 +1299,8 @@ export default {
 
 .detected-pill--lightning_address,
 .detected-pill--lightning_invoice,
-.detected-pill--lnurl {
+.detected-pill--lnurl,
+.detected-pill--phone_number {
   background: rgba(5, 149, 115, 0.12);
   color: #059573;
   box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.22);
@@ -1029,7 +1308,8 @@ export default {
 
 .body--dark .detected-pill--lightning_address,
 .body--dark .detected-pill--lightning_invoice,
-.body--dark .detected-pill--lnurl {
+.body--dark .detected-pill--lnurl,
+.body--dark .detected-pill--phone_number {
   background: rgba(21, 222, 114, 0.16);
   color: #15DE72;
   box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.28);
@@ -1123,15 +1403,50 @@ export default {
   flex-shrink: 0;
 }
 
+/* Whole helper row turns red when showing a format / resolution error so the
+   message (e.g. "We couldn't find this Lightning address") reads clearly. */
+.input-helper--error {
+  color: #EF4444;
+}
+
 .sheet-footer {
   padding: 14px 20px 6px;
 }
+
+/* Ambiguous KE/ZM number chooser (075-078 prefixes valid in both). */
+.country-choice { display: flex; flex-direction: column; gap: 8px; }
+.country-choice-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.country-choice-row { display: flex; gap: 10px; }
+.country-choice-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 8px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-card);
+  background: var(--bg-input);
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  transition: filter 0.15s ease, transform 0.08s ease;
+}
+.country-choice-btn:active { transform: scale(0.98); }
+.country-choice-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.country-choice-number { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
 /* Primary CTA — gradient-green on dark, neutral-dark pill on cream.
    Same language as PaymentModal, AddressBookModal, etc. */
 .primary-cta {
   width: 100%;
-  height: 50px;
+  /* Match ProgressCta's height so the idle CTA -> loading-button morph doesn't
+     jump (ProgressCta is 56px, 50px under 480px — mirrored below). */
+  height: 56px;
   border-radius: var(--radius-pill);
   border: none;
   font-family: 'Manrope', sans-serif;
@@ -1167,6 +1482,11 @@ export default {
 @media (max-width: 480px) {
   .action-tile {
     height: 76px;
+  }
+
+  /* Mirror ProgressCta's mobile height so the CTA morph stays seamless. */
+  .primary-cta {
+    height: 50px;
   }
 
   .tile-label {

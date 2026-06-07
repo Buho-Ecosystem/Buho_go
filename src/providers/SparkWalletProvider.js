@@ -137,6 +137,36 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Truncate a string to fit within maxBytes UTF-8 bytes without splitting
+   * a multi-byte character. Used to enforce Spark's 120-byte memo cap when
+   * the description comes from an external source (e.g. LNURL server) that
+   * the user cannot shorten themselves.
+   */
+  static _truncateMemoToBytes(str, maxBytes = 120) {
+    if (!str) return str;
+    if (typeof TextEncoder !== 'undefined') {
+      const encoder = new TextEncoder();
+      if (encoder.encode(str).length <= maxBytes) return str;
+      // Binary-search for longest prefix that still fits.
+      let lo = 0, hi = str.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (encoder.encode(str.slice(0, mid)).length <= maxBytes) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return str.slice(0, lo);
+    }
+    // Fallback without TextEncoder.
+    while (unescape(encodeURIComponent(str)).length > maxBytes) {
+      str = str.slice(0, -1);
+    }
+    return str;
+  }
+
+  /**
    * Normalize the SDK's `expiresAt` into a Unix-seconds integer.
    *
    * The Spark SDK has surfaced this as either an ISO-8601 string or a
@@ -222,16 +252,33 @@ export class SparkWalletProvider extends WalletProvider {
 
   /**
    * Initialize wallet with mnemonic (after PIN decryption)
+   *
+   * Uses the SDK's `getOrCreateWallet` rather than `initialize`. The SDK keeps
+   * a single instance per wallet identity (keyed by identity pubkey, guarded by
+   * an init mutex) and reuses it — its own docs state this "prevents duplicate
+   * streams, duplicate claims, and competing optimizations when the same wallet
+   * is initialized multiple times." The plain `initialize` spawns a fresh
+   * instance + background event stream on every call, and this app re-connects
+   * the same wallet from many call sites (startup, wallet switch, 30s balance
+   * poll, history load, auto-reconnect). With `initialize` those duplicate
+   * streams accumulate and starve each other, which is what dropped the active
+   * wallet's connection on Android. `getOrCreateWallet` collapses them to one.
+   *
    * @param {string} mnemonic - Space-separated mnemonic words
+   * @param {Object} [opts]
+   * @param {boolean} [opts.forceReinit=false] - Tear down the existing instance
+   *   and build a fresh one. Use only when recovering from a confirmed dead
+   *   connection — a normal reconnect should reuse the live instance.
    */
-  async initializeWithMnemonic(mnemonic) {
+  async initializeWithMnemonic(mnemonic, { forceReinit = false } = {}) {
     try {
       this.mnemonic = mnemonic;
 
-      const result = await SparkWallet.initialize({
+      const result = await SparkWallet.getOrCreateWallet({
         mnemonicOrSeed: mnemonic,
         accountNumber: this.accountNumber,
-        options: { network: this.network }
+        options: { network: this.network },
+        forceReinit
       });
 
       this.wallet = result.wallet;
@@ -362,7 +409,10 @@ export class SparkWalletProvider extends WalletProvider {
   async disconnect() {
     if (this.wallet) {
       try {
-        this.wallet.cleanupConnections();
+        // Await the teardown — cleanupConnections() is async (aborts the event
+        // stream, closes gRPC connections, flushes logging). Not awaiting it
+        // let a follow-up reconnect race a half-finished cleanup.
+        await this.wallet.cleanupConnections();
       } catch (error) {
         console.warn('Error cleaning up Spark connections:', error);
       }
@@ -490,15 +540,10 @@ export class SparkWalletProvider extends WalletProvider {
     if (descriptionHash) {
       invoiceParams.descriptionHash = descriptionHash;
     } else if (description) {
-      // Spark caps memos at 120 UTF-8 bytes — fail fast with a clear error
-      // instead of letting the SDK surface a generic validation failure.
-      const memoBytes = SparkWalletProvider._utf8ByteLength(description);
-      if (memoBytes > 120) {
-        throw new Error(
-          `Invoice memo too long: ${memoBytes} bytes (max 120). Shorten the description.`
-        );
-      }
-      invoiceParams.memo = description;
+      // Spark caps memos at 120 UTF-8 bytes. When the description comes from
+      // an external source (e.g. a LNURL-withdraw server) the user cannot
+      // shorten it manually, so we truncate silently rather than failing.
+      invoiceParams.memo = SparkWalletProvider._truncateMemoToBytes(description, 120);
     }
 
     try {
@@ -923,17 +968,30 @@ export class SparkWalletProvider extends WalletProvider {
 
     try {
       // Spark SDK getTransfers returns { transfers: WalletTransfer[], offset: number }
-      const result = await this.wallet.getTransfers(limit, offset);
+      // Reads are idempotent, so retry transient transport faults — a single
+      // gRPC blip (common on Android right after a wallet switch) should not
+      // surface to the user as "Couldn't load history".
+      const result = await this._withTransportRetry(
+        () => this.wallet.getTransfers(limit, offset)
+      );
       const transferList = result.transfers || [];
 
       return transferList.map(transfer => ({
         id: transfer.id,
         type: this._mapTransferType(transfer),
+        // `totalValue` is the gross amount moved between the user's
+        // leaves and the SSP — for a Lightning send this is
+        // (recipient amount + SSP fee). We preserve that semantic
+        // here so list-view sums (TransactionHistory.vue groups,
+        // balance-delta math) keep matching the real wallet
+        // movement. The fee is exposed separately on `.fee` so the
+        // detail view can split it out without changing what
+        // `amount` means.
         amount: Number(transfer.totalValue || transfer.amount || 0),
         timestamp: this._parseTimestamp(transfer.createdTime || transfer.updatedTime),
         description: this._decodeBase64Memo(transfer.userRequest?.invoice?.memo) || '',
         status: this._normalizeStatus(transfer.status),
-        fee: Number(transfer.feeSats || transfer.fees || transfer.fee || 0),
+        fee: SparkWalletProvider._extractTransferFeeSats(transfer),
         // Determine if this is a Spark-to-Spark transfer (zero fee) vs Lightning
         sparkTransfer: this._isSparkTransfer(transfer),
         // Keep original transfer data for debugging
@@ -943,6 +1001,79 @@ export class SparkWalletProvider extends WalletProvider {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Extract the SSP fee (in **sats**, always) attached to a Spark
+   * SDK `WalletTransfer`.
+   *
+   * Per the SDK type definitions
+   * (`@buildonspark/spark-sdk/dist/types-CPXB2AOW.d.ts`):
+   *
+   *   transfer.userRequest.fee  → CurrencyAmount
+   *                                  ↳ originalValue: number
+   *                                  ↳ originalUnit:  CurrencyUnit
+   *                                       ("SATOSHI" | "MILLISATOSHI" |
+   *                                        "BITCOIN" | fiat | ...)
+   *
+   * The Spark SSP returns Lightning fees in **MILLISATOSHI** (the
+   * native Lightning protocol unit), not SATOSHI. Treating
+   * `originalValue` as sats directly produced numbers 1000× too
+   * large in the UI (a 4-sat fee rendered as "4,000" / "4.000" in
+   * locale-formatted output). We must normalise via `originalUnit`.
+   *
+   * `WalletTransfer` itself carries no fee field at the root — the
+   * SDK packages all request-specific economics (preimage, invoice,
+   * fee) onto the discriminated `userRequest` union.
+   *
+   * Spark-to-Spark transfers have no `userRequest` (the move is
+   * atomic between leaves and free), so this naturally returns 0.
+   * Incoming Lightning receives also expose a fee through the same
+   * shape (the SSP's routing fee), which is captured here too.
+   *
+   * Defensive against shape drift:
+   *   - Missing path → 0 (not NaN), so `fee > 0` predicates stay correct.
+   *   - Unknown unit → 0 + warn, rather than silently rendering a
+   *     mis-scaled value. Better to under-report than mislead.
+   *   - Final result rounded to the nearest integer sat (UI doesn't
+   *     show fractional sats).
+   *
+   * @param {object} transfer  Spark SDK WalletTransfer
+   * @returns {number}         Fee in sats (>= 0, integer)
+   * @private
+   */
+  static _extractTransferFeeSats(transfer) {
+    const feeObj = transfer?.userRequest?.fee;
+    if (!feeObj) return 0;
+    const raw = Number(feeObj.originalValue);
+    if (!Number.isFinite(raw) || raw <= 0) return 0;
+
+    const unit = String(feeObj.originalUnit || '').toUpperCase();
+    let sats;
+    switch (unit) {
+      case 'SATOSHI':
+        sats = raw;
+        break;
+      case 'MILLISATOSHI':
+        sats = raw / 1000;
+        break;
+      case 'BITCOIN':
+        sats = raw * 1e8;
+        break;
+      default:
+        // Don't guess. Fiat (USD/MXN/...) shouldn't surface here for
+        // a Lightning fee, but if it ever does, returning 0 avoids
+        // accidentally rendering a fiat figure as sats. The console
+        // line is enough breadcrumb for a future debugger to find
+        // this branch without polluting normal logs.
+        console.warn(
+          '[SparkWalletProvider] Unrecognised fee currency unit; reporting 0 sats:',
+          unit,
+        );
+        return 0;
+    }
+
+    return Math.max(0, Math.round(sats));
   }
 
   /**

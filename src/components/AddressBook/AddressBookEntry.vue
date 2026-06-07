@@ -4,14 +4,16 @@
     :class="$q.dark.isActive ? 'contact-card-dark' : 'contact-card-light'"
     @click="$emit('pay', entry)"
   >
-    <!-- Avatar -->
-    <div
+    <!-- Avatar — real picture for nostr-sourced contacts, colored
+         initial otherwise. The change-color emit still fires on the
+         circle either way; for nostr contacts it's a no-op-friendly
+         click target (color picker just won't show a visible ring
+         under the photo). -->
+    <ContactAvatar
       class="contact-avatar"
-      :style="{ backgroundColor: entry.color }"
+      :entry="entry"
       @click.stop="$emit('change-color', entry)"
-    >
-      <span class="avatar-initial">{{ getInitial(entry.name) }}</span>
-    </div>
+    />
 
     <!-- Entry Details -->
     <div class="contact-details">
@@ -28,8 +30,23 @@
           <span>{{ addressTypeLabel }}</span>
         </div>
       </div>
-      <div class="contact-address" :class="$q.dark.isActive ? 'contact-address-dark' : 'contact-address-light'">
+      <div
+        v-if="isPayable"
+        class="contact-address"
+        :class="$q.dark.isActive ? 'contact-address-dark' : 'contact-address-light'"
+      >
         {{ truncatedAddress }}
+      </div>
+      <!-- Identity-only Nostr contact: restored (or saved) without a
+           current Lightning address. Shown calmly, not as an error —
+           a tap-to-pay still works, it just explains and waits for
+           the contact to publish a lud16. -->
+      <div
+        v-else
+        class="contact-address contact-address--unpayable"
+      >
+        <Icon icon="tabler:bolt-off" width="11" height="11" />
+        <span>{{ $t('No Lightning address yet') }}</span>
       </div>
       <!-- Notes Preview -->
       <div v-if="entry.notes" class="contact-notes" :class="$q.dark.isActive ? 'contact-notes-dark' : 'contact-notes-light'">
@@ -112,8 +129,11 @@
 </template>
 
 <script>
+import ContactAvatar from './ContactAvatar.vue'
+
 export default {
   name: 'AddressBookEntry',
+  components: { ContactAvatar },
   props: {
     entry: {
       type: Object,
@@ -127,6 +147,16 @@ export default {
     },
     displayAddress() {
       return this.entry.address || this.entry.lightningAddress || ''
+    },
+    /**
+     * Whether this entry has a usable payment destination right now.
+     * Mirrors the store's `isEntryPayable` predicate but kept local —
+     * a list row should never reach into the store just to render.
+     * The only entries this flags false are identity-only Nostr
+     * contacts whose `address` hasn't been resolved yet.
+     */
+    isPayable() {
+      return !!this.displayAddress
     },
     truncatedAddress() {
       const address = this.displayAddress
@@ -170,11 +200,7 @@ export default {
       return classes[this.addressType] || classes.lightning
     }
   },
-  methods: {
-    getInitial(name) {
-      return name ? name.charAt(0).toUpperCase() : '?'
-    }
-  }
+  methods: {}
 }
 </script>
 
@@ -209,6 +235,7 @@ export default {
 
 /* Avatar */
 .contact-avatar {
+  position: relative;
   width: 48px;
   height: 48px;
   min-width: 48px;
@@ -222,16 +249,11 @@ export default {
   flex-shrink: 0;
   cursor: pointer;
   transition: transform 0.15s ease;
+  overflow: hidden;
 }
 
 .contact-avatar:hover {
   transform: scale(1.05);
-}
-
-.avatar-initial {
-  font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
 }
 
 /* Details */
@@ -311,6 +333,24 @@ export default {
 
 .contact-address-light {
   color: var(--text-muted);
+}
+
+/* Identity-only Nostr contact — calm muted hint, not an error tone.
+   Uses the Manrope UI font (not the mono address font) because it's
+   a status phrase, not an address. */
+.contact-address--unpayable {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.contact-address--unpayable :deep(svg),
+.contact-address--unpayable svg {
+  flex-shrink: 0;
 }
 
 /* Notes */
@@ -498,10 +538,6 @@ export default {
     width: 42px;
     height: 42px;
     min-width: 42px;
-  }
-
-  .avatar-initial {
-    font-size: 15px;
   }
 
   .contact-name {

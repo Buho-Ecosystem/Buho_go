@@ -11,9 +11,13 @@ const routes = [
       { path: '/lnbits-setup', component: () => import('pages/LNBitsSetupPage.vue') },
       { path: '/wallet', component: () => import('pages/Wallet.vue') },
       { path: '/settings', component: () => import('pages/Settings.vue') },
+      { path: '/profile', component: () => import('pages/ProfilePage.vue') },
       { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
+      // Bitcoin merchant map. Lazy-loaded so maplibre-gl (~200KB gzipped)
+      // never lands in the initial bundle. `?place=<id>` deep-links a pin.
+      { path: '/map', component: () => import('pages/MapPage.vue') },
       { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') },
       { path: '/learn', component: () => import('pages/EarnMap.vue') },
       { path: '/learn/summary', component: () => import('pages/EarnSummary.vue') },

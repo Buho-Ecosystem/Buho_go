@@ -1,5 +1,140 @@
 package org.capacitor.quasar.app;
 
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.nfc.NfcAdapter;
+import android.os.Build;
+import android.os.Bundle;
+
 import com.getcapacitor.BridgeActivity;
 
-public class MainActivity extends BridgeActivity {}
+public class MainActivity extends BridgeActivity {
+
+    private NfcAdapter nfcAdapter;
+    private PendingIntent nfcPendingIntent;
+    private IntentFilter[] nfcIntentFilters;
+
+    /**
+     * Register Capacitor plugins and prepare foreground NFC dispatch.
+     * Foreground dispatch lets this activity claim exclusive tag
+     * priority over any other installed wallet while it is in the
+     * foreground, bypassing the Android app chooser entirely.
+     *
+     * Screen-privacy flag is applied BEFORE super.onCreate() so the
+     * window has FLAG_SECURE set before the first frame is rendered.
+     * Reads the persisted preference straight from SharedPreferences
+     * (owned by SecureScreenPlugin) — synchronous and safe to call
+     * here, no JS / WebView dependency. Fail-secure on first launch:
+     * default is ON until the user explicitly opts out.
+     */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(NfcPlugin.class);
+        registerPlugin(SecureScreenPlugin.class);
+
+        if (SecureScreenPlugin.readPersistedPreference(this)) {
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        }
+
+        super.onCreate(savedInstanceState);
+
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+        if (nfcAdapter == null) return;
+
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            ? PendingIntent.FLAG_MUTABLE : 0;
+
+        nfcPendingIntent = PendingIntent.getActivity(
+            this, 0,
+            new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            flags
+        );
+
+        // Cover every action dispatchNfcIntent() routes. Without
+        // TAG_DISCOVERED and TECH_DISCOVERED in the filter, non-NDEF
+        // tags fall back to the manifest path where the chooser can
+        // reappear if another wallet declares the same filters.
+        try {
+            IntentFilter ndef = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
+            ndef.addDataType("*/*");
+            IntentFilter tag = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
+            IntentFilter tech = new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED);
+            nfcIntentFilters = new IntentFilter[]{ ndef, tag, tech };
+        } catch (IntentFilter.MalformedMimeTypeException e) {
+            // "*/*" is well-formed so this branch is unreachable in
+            // practice. If it ever fired we'd rather disable foreground
+            // dispatch entirely than register a null filter array,
+            // which would silently intercept every tag the device
+            // sees while the activity is in the foreground.
+            nfcAdapter = null;
+        }
+    }
+
+    /**
+     * Re-enable foreground dispatch and process any tag intent the
+     * activity was launched with (cold start via tag scan).
+     *
+     * Also re-applies FLAG_SECURE from the persisted preference. Some
+     * Android lifecycle paths (multi-window, configuration changes,
+     * certain OEM skins on resume) can clear or reset window flags,
+     * so we re-state our intent on every resume.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+
+        SecureScreenPlugin.applyFlagToWindow(
+            this,
+            SecureScreenPlugin.readPersistedPreference(this)
+        );
+
+        if (nfcAdapter != null && nfcAdapter.isEnabled()) {
+            nfcAdapter.enableForegroundDispatch(this, nfcPendingIntent, nfcIntentFilters, null);
+        }
+        dispatchNfcIntent(getIntent());
+    }
+
+    /**
+     * Release foreground dispatch so the rest of the system regains
+     * its normal NFC routing while the activity is not visible.
+     */
+    @Override
+    public void onPause() {
+        super.onPause();
+        if (nfcAdapter != null) {
+            nfcAdapter.disableForegroundDispatch(this);
+        }
+    }
+
+    /**
+     * Receive tag and deep-link intents delivered while the activity
+     * is already running. setIntent() keeps getIntent() in sync with
+     * the most recent delivery so Capacitor and any later readers see
+     * the same value; dispatchNfcIntent() then routes NFC actions and
+     * consumes the intent so onResume cannot replay them.
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        dispatchNfcIntent(intent);
+    }
+
+    private void dispatchNfcIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)
+            || NfcAdapter.ACTION_TAG_DISCOVERED.equals(action)
+            || NfcAdapter.ACTION_TECH_DISCOVERED.equals(action)) {
+            NfcPlugin plugin = (NfcPlugin) getBridge().getPlugin("Nfc").getInstance();
+            if (plugin != null) {
+                plugin.handleNfcIntent(intent);
+            }
+            // Consume the intent so a subsequent onResume cycle cannot
+            // re-dispatch the same tag (e.g. user backgrounds and
+            // returns after a Boltcard scan would otherwise replay it).
+            setIntent(new Intent());
+        }
+    }
+}

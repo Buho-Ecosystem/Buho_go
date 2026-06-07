@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
 import { LightningAddress } from '@getalby/lightning-tools'
-import { getUserFriendlyErrorMessage } from '../utils/userErrors'
 
 const STORAGE_KEY = 'buhoGO_auto_withdraw'
 const SPEED_LABELS = { low: 'Economy', medium: 'Standard', high: 'Priority' }
@@ -175,15 +174,19 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       } catch (error) {
         console.error('[Auto-withdraw] Failed:', error.message)
 
-        // Notify UI — error
+        // Hand the raw error to the UI watcher so it can route it
+        // through the global payment-error dialog (same surface as
+        // every user-initiated failure). Keeping the raw Error here
+        // means the watcher can pass it to buildPaymentError with
+        // $t and an enriched context (wallet type, route, amount).
         const baseId = configKey.includes(':') ? configKey.split(':').slice(0, -1).join(':') : configKey
+        const wallet = walletStore.wallets.find(w => w.id === baseId)
         this.lastResult = {
           type: 'error',
-          // The store has no $t (Pinia stores run outside the Vue component
-          // tree); the utility falls back to its English keys, which the UI
-          // layer can re-translate if it ever surfaces this message.
-          message: getUserFriendlyErrorMessage(error, 'withdraw'),
-          walletName: walletStore.wallets.find(w => w.id === baseId)?.name || 'Wallet'
+          error,
+          amountSats: sendAmount,
+          walletName: wallet?.name || 'Wallet',
+          walletType: wallet?.type || null,
         }
       } finally {
         _activeWithdrawals.delete(configKey)

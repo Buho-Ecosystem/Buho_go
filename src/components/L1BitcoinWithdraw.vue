@@ -28,18 +28,34 @@
           <Icon icon="tabler:x" width="20" height="20" />
         </q-btn>
         <div class="top-title">{{ $t('Send Bitcoin') }}</div>
-        <div class="top-spacer"></div>
+        <!-- Verification sits in the top-right corner (Blitz-style): a single
+             tappable seal, not an inline pill under the recipient name. -->
+        <div class="top-action">
+          <BrantaVerifiedBadge
+            v-if="verification"
+            :verify-url="verification.verifyUrl"
+            icon-only
+          />
+        </div>
       </header>
 
       <div class="stage">
         <!-- Recipient strip: bitcoin icon + truncated address with a tap-
              to-reveal toggle for the full address. -->
         <section class="recipient">
-          <div class="recipient-avatar">
-            <Icon icon="tabler:currency-bitcoin" width="28" height="28" />
+          <div class="recipient-avatar" :class="{ 'has-logo': showMerchantLogo }">
+            <img
+              v-if="showMerchantLogo"
+              :src="merchantLogo"
+              :alt="merchantName"
+              class="recipient-logo"
+              :class="{ 'recipient-logo--contain': !!verification }"
+              @error="merchantLogoFailed = true"
+            />
+            <Icon v-else icon="tabler:currency-bitcoin" width="26" height="26" />
           </div>
           <div class="recipient-meta">
-            <div class="recipient-name">{{ $t('Bitcoin Address') }}</div>
+            <div class="recipient-name">{{ merchantName }}</div>
             <button type="button" class="recipient-via" @click="showFullAddress = !showFullAddress">
               <span>{{ showFullAddress ? $t('Hide address') : truncateAddress(cleanedAddress) }}</span>
               <Icon
@@ -149,7 +165,7 @@
              PaymentConfirmSheet wallet-hint so the UI stays unified. -->
         <div v-if="insufficientBalance && amountSats > 0" class="wallet-hint">
           <Icon icon="tabler:alert-triangle" width="14" height="14" />
-          <span>{{ $t('Total exceeds your balance — try a smaller amount') }}</span>
+          <span>{{ $t('Total exceeds your balance, try a smaller amount') }}</span>
         </div>
 
         <!-- Slide-to-send. Bitcoin sends are always above the threshold
@@ -175,15 +191,22 @@ import { useWalletStore } from 'src/stores/wallet';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
 import { parseBip21 } from 'src/utils/bip21';
 import SlideToSend from './SlideToSend.vue';
+import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue';
 
 export default {
   name: 'L1BitcoinWithdraw',
-  components: { SlideToSend },
+  components: { SlideToSend, BrantaVerifiedBadge },
 
   props: {
     modelValue: { type: Boolean, default: false },
     destinationAddress: { type: String, required: true },
-    availableBalance: { type: Number, default: 0 }
+    availableBalance: { type: Number, default: 0 },
+    /**
+     * Branta merchant verification for this on-chain destination, attached
+     * by the parent after a positive lookup (only when the scanned QR
+     * carried the ZK params). Null on every unverified send.
+     */
+    verification: { type: Object, default: null }
   },
 
   emits: ['update:modelValue', 'withdrawal-submitted', 'withdrawal-error'],
@@ -203,7 +226,8 @@ export default {
       selectedSpeed: 'medium',
       isSending: false,
       feeQuoteDebounceTimer: null,
-      showFullAddress: false
+      showFullAddress: false,
+      merchantLogoFailed: false
     };
   },
 
@@ -223,6 +247,29 @@ export default {
       const raw = (this.destinationAddress || '').trim();
       const bip21 = parseBip21(raw);
       return bip21 ? bip21.address : raw;
+    },
+
+    /**
+     * Verified merchant identity from Branta, when present. The hero shows
+     * the merchant name + logo instead of the generic "Bitcoin Address"
+     * label, plus a "verified by Branta" badge.
+     */
+    merchantName() {
+      return this.verification?.name || this.$t('Bitcoin Address');
+    },
+    merchantLogo() {
+      const v = this.verification;
+      if (!v) return '';
+      // Dark background prefers the dark-bg logo, light prefers the light
+      // variant, each falling back to the other.
+      return this.$q.dark.isActive
+        ? (v.logoUrl || v.logoLightUrl)
+        : (v.logoLightUrl || v.logoUrl);
+    },
+    // Render the merchant logo only when present and not failed-to-load;
+    // otherwise fall back to the Bitcoin icon rather than a broken image.
+    showMerchantLogo() {
+      return !!this.merchantLogo && !this.merchantLogoFailed;
     },
 
     /** Currency label for amount input — respects user format preference. */
@@ -358,8 +405,18 @@ export default {
         this.feeQuote = await provider.getWithdrawalFeeQuote(this.amountSats, this.cleanedAddress);
       } catch (error) {
         console.error('Failed to fetch fee quote:', error);
+        // Local translator's titles ("Amount too small", "Connection
+        // problem", "Wallet locked") are more accurate than the generic
+        // "Bitcoin transaction failed" for these precondition errors,
+        // so pass them through. Same modal shell as everywhere else.
         const msg = this.getUserFriendlyError(error);
-        this.$q.notify({ type: 'negative', message: msg.title, caption: msg.description });
+        this.walletStore.showPaymentError(error, {
+          context: 'l1',
+          route: 'L1 withdrawal fee quote',
+          title: msg.title,
+          reason: msg.description,
+          t: this.$t.bind(this),
+        });
         this.feeQuote = null;
       } finally {
         this.isLoadingFeeQuote = false;
@@ -403,7 +460,14 @@ export default {
       } catch (error) {
         console.error('Withdrawal failed:', error);
         const msg = this.getUserFriendlyError(error);
-        this.$q.notify({ type: 'negative', message: msg.title, caption: msg.description });
+        this.walletStore.showPaymentError(error, {
+          context: 'withdraw',
+          route: 'L1 withdrawal',
+          amountSats: this.amountSats,
+          title: msg.title,
+          reason: msg.description,
+          t: this.$t.bind(this),
+        });
         this.$emit('withdrawal-error', error);
         this.$refs.slideRef?.reset();
       } finally {
@@ -537,7 +601,14 @@ export default {
   color: var(--text-primary);
   letter-spacing: -0.005em;
 }
-.top-spacer { width: 36px; }
+/* Mirrors the left button's width so the title stays optically centered;
+   holds the top-right verification seal when present. */
+.top-action {
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
 
 .stage {
   display: flex;
@@ -547,21 +618,21 @@ export default {
   overflow-y: auto;
 }
 
-/* ─── Recipient ─── */
+/* ─── Recipient ───
+   Borderless, airy hero (Apple/Blitz-elegant): the recipient reads as
+   content, not a chunky filled card. No fill, no border, minimal padding —
+   the avatar + name carry it, verification lives in the top-right corner. */
 .recipient {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
-  background: var(--bg-input);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-card);
+  gap: 13px;
+  padding: 2px 2px 4px;
 }
 
 .recipient-avatar {
-  width: 56px;
-  height: 56px;
-  min-width: 56px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -570,7 +641,16 @@ export default {
   color: #F7931A;
   box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.32);
   flex-shrink: 0;
+  overflow: hidden;
 }
+.recipient-avatar.has-logo {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--border-card);
+}
+.recipient-logo { width: 100%; height: 100%; object-fit: cover; }
+/* Branta-delivered brand marks render best contained with golden-ratio
+   breathing room (logo ≈ 0.62 of the avatar), not cropped edge-to-edge. */
+.recipient-logo--contain { object-fit: contain; padding: 9px; }
 
 .recipient-meta { flex: 1; min-width: 0; }
 .recipient-name {
@@ -856,8 +936,8 @@ export default {
 
 @media (max-width: 480px) {
   .stage { padding: 8px 16px 10px; gap: 12px; }
-  .recipient { padding: 12px; }
-  .recipient-avatar { width: 48px; height: 48px; min-width: 48px; }
+  .recipient { padding: 2px 0 4px; }
+  .recipient-avatar { width: 44px; height: 44px; min-width: 44px; }
   .amount-input { font-size: 40px; }
   .speed-card { padding: 12px 8px 10px; }
   .speed-icon { width: 26px; height: 26px; }

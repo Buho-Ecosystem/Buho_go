@@ -372,12 +372,20 @@ export default {
         }
       } catch (error) {
         console.error('Failed to load Bitcoin deposit address:', error);
+        // Unified error dialog. The local translator has Spark-specific
+        // headlines ("Wallet locked", "Still confirming") that read
+        // better than the generic context fallback ("Bitcoin transaction
+        // failed") when the failure is a precondition rather than a
+        // transaction. Pass both title and reason so the user reads
+        // accurate copy; the modal shell is identical to every other
+        // error surface in the app.
         const userMessage = this.getUserFriendlyError(error, 'address');
-        this.$q.notify({
-          type: 'negative',
-          message: userMessage.title,
-          caption: userMessage.description,
-          
+        this.walletStore.showPaymentError(error, {
+          context: 'l1',
+          route: 'L1 deposit address',
+          title: userMessage.title,
+          reason: userMessage.description,
+          t: this.$t.bind(this),
         });
       } finally {
         this.isLoadingAddress = false;
@@ -504,10 +512,12 @@ export default {
       } catch (error) {
         console.error('Failed to get claim fee quote:', error);
         const userMessage = this.getUserFriendlyError(error, 'claim');
-        this.$q.notify({
-          type: 'negative',
-          message: userMessage.title,
-          caption: userMessage.description
+        this.walletStore.showPaymentError(error, {
+          context: 'claim',
+          route: 'L1 claim fee quote',
+          title: userMessage.title,
+          reason: userMessage.description,
+          t: this.$t.bind(this),
         });
         // Close the sheet on quote failure — without a quote there's
         // nothing actionable for the user to see.
@@ -636,10 +646,12 @@ export default {
           this.walletStore.signalDepositsRefresh();
         } else {
           const userMessage = this.getUserFriendlyError(error, 'claim');
-          this.$q.notify({
-            type: 'negative',
-            message: userMessage.title,
-            caption: userMessage.description
+          this.walletStore.showPaymentError(error, {
+            context: 'claim',
+            route: 'L1 deposit claim',
+            title: userMessage.title,
+            reason: userMessage.description,
+            t: this.$t.bind(this),
           });
         }
 

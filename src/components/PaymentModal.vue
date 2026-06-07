@@ -9,7 +9,7 @@
     2. Delegates the entire UI (recipient hero, amount stage with quick
        chips, optional comment, slide-to-send for ≥ 20k sats, etc.) to
        the shared sheet.
-    3. Owns the send pipeline — Spark / LNBits / NWC routing, LNURL
+    3. Owns the send pipeline — Spark / LNbits / NWC routing, LNURL
        resolution, error mapping — and runs it on the sheet's `confirm`
        event.
 
@@ -101,15 +101,25 @@ export default {
      * LNURL metadata (and therefore don't know about fixed / min-max
      * constraints) at this layer. If the user enters an out-of-range
      * amount, the LNURL endpoint rejects it and the error surfaces via
-     * `getPaymentErrorMessage` below.
+     * the global payment-error dialog (translateInternalCode handles
+     * the few internal code-style throws first).
      */
     sheetPayment() {
       if (!this.contact) return null
+      // Surface the Nostr profile picture (when this contact came from
+      // a kind:0 sync) so the confirm sheet shows the real avatar
+      // instead of the colored initial. The sheet already supports
+      // `logoUrl` for merchant QRs — same plumbing.
+      const nostrPicture = typeof this.contact.nostr_profile?.picture === 'string'
+        ? this.contact.nostr_profile.picture.trim()
+        : ''
+      const safeLogoUrl = /^(https?:|data:image\/)/i.test(nostrPicture) ? nostrPicture : ''
       return {
         recipient: {
           name: this.contact.name,
           color: this.contact.color || '#3B82F6',
           initial: this.contact.name ? this.contact.name.charAt(0).toUpperCase() : '?',
+          logoUrl: safeLogoUrl,
           addressType: this.contactAddressType,
           address: this.contactAddress
         },
@@ -177,11 +187,19 @@ export default {
       } catch (error) {
         console.error('Payment error:', error)
         this.$refs.sheetRef?.resetSlide()
-        this.$q.notify({
-          type: 'negative',
-          message: this.getPaymentErrorMessage(error),
-          caption: this.getPaymentErrorCaption(error),
-          timeout: 5000
+        // PaymentModal's own send methods throw internal code-style
+        // errors (NO_ACTIVE_WALLET, SPARK_NOT_CONNECTED, …) that would
+        // surface as raw uppercase strings in the global dialog. Map
+        // them to prose first; SDK/server errors fall through with
+        // their upstream reason intact.
+        const friendlyError = this.translateInternalCode(error)
+        const walletStore = useWalletStore()
+        walletStore.showPaymentError(friendlyError, {
+          context: 'payment',
+          walletType: walletStore.activeWalletType,
+          route: this.isSparkContact ? 'Spark contact' : 'Lightning contact',
+          amountSats,
+          t: this.$t.bind(this),
         })
       } finally {
         this.isSending = false
@@ -318,7 +336,7 @@ export default {
      * LNURL bech32 / LUD-17 → URL. Kept inline rather than hoisted to
      * addressUtils because the rest of the app routes LNURL resolution
      * through provider methods; this is the one place that still needs
-     * a manual decode (the NWC + LNBits paths).
+     * a manual decode (the NWC + LNbits paths).
      */
     decodeLNURL(lnurl) {
       const clean = lnurl.trim().replace(/^lightning:/i, '')
@@ -353,32 +371,22 @@ export default {
       return new TextDecoder().decode(new Uint8Array(bytes))
     },
 
-    getPaymentErrorMessage(error) {
-      const code = error.message || ''
-      switch (code) {
-        case 'NO_ACTIVE_WALLET':       return this.$t('No wallet connected')
-        case 'SPARK_NOT_CONNECTED':    return this.$t('Spark wallet not unlocked')
-        case 'LNBITS_NOT_CONNECTED':   return this.$t('LNBits wallet not connected')
-        case 'INSUFFICIENT_BALANCE':   return this.$t('Insufficient balance')
-        case 'PAYMENT_FAILED':         return this.$t('Payment failed')
-        case 'UNSUPPORTED_PAYMENT_TYPE': return this.$t('Unsupported payment format')
+    /**
+     * Map PaymentModal's own internal code-style throws to prose. SDK
+     * and server errors fall through unchanged so the global dialog
+     * can surface their upstream reason verbatim.
+     */
+    translateInternalCode(error) {
+      const code = error?.message || ''
+      const prose = {
+        NO_ACTIVE_WALLET:        this.$t('No wallet connected. Please connect a wallet first.'),
+        SPARK_NOT_CONNECTED:     this.$t('Spark wallet not unlocked. Please try again.'),
+        LNBITS_NOT_CONNECTED:    this.$t('LNbits wallet is not connected.'),
+        INSUFFICIENT_BALANCE:    this.$t("You don't have enough funds for this payment."),
+        PAYMENT_FAILED:          this.$t('Payment failed.'),
+        UNSUPPORTED_PAYMENT_TYPE: this.$t('Unsupported payment format. Use a Lightning invoice, address, or LNURL.'),
       }
-      if (code.includes('insufficient') || code.includes('balance')) return this.$t('Insufficient balance')
-      if (code.includes('timeout') || code.includes('Timeout'))     return this.$t('Payment timed out')
-      if (code.includes('network') || code.includes('Network'))    return this.$t('Network error')
-      if (code.includes('LNURL') || code.includes('lnurl'))        return this.$t('LNURL error')
-      return this.$t('Payment failed')
-    },
-
-    getPaymentErrorCaption(error) {
-      const code = error.message || ''
-      switch (code) {
-        case 'NO_ACTIVE_WALLET':       return this.$t('Please connect a wallet first')
-        case 'SPARK_NOT_CONNECTED':    return this.$t('Spark wallet not connected. Please try again.')
-        case 'INSUFFICIENT_BALANCE':   return this.$t("You don't have enough funds for this payment")
-        case 'UNSUPPORTED_PAYMENT_TYPE': return this.$t('Use a Lightning invoice, address, or LNURL')
-      }
-      return code.length < 100 ? code : this.$t('Please try again later')
+      return prose[code] ? new Error(prose[code]) : error
     }
   }
 }

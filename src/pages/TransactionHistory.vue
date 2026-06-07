@@ -74,10 +74,10 @@
             </span>
           </div>
           <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            {{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}
+            <HiddenAmount>{{ formatAmountWithSign(Math.abs(netAmount), netAmount >= 0) }}</HiddenAmount>
           </div>
           <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ getFiatAmountForStats(netAmount) }}
+            <HiddenAmount>{{ getFiatAmountForStats(netAmount) }}</HiddenAmount>
           </div>
         </div>
 
@@ -93,10 +93,10 @@
             </span>
           </div>
           <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            {{ formatAmountWithSign(totalReceived, true) }}
+            <HiddenAmount>{{ formatAmountWithSign(totalReceived, true) }}</HiddenAmount>
           </div>
           <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ getFiatAmountForStats(totalReceived) }}
+            <HiddenAmount>{{ getFiatAmountForStats(totalReceived) }}</HiddenAmount>
           </div>
         </div>
 
@@ -113,10 +113,10 @@
             </span>
           </div>
           <div class="stats-card-value" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            {{ formatAmountWithSign(totalSent, false) }}
+            <HiddenAmount>{{ formatAmountWithSign(totalSent, false) }}</HiddenAmount>
           </div>
           <div class="stats-card-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ getFiatAmountForStats(totalSent) }}
+            <HiddenAmount>{{ getFiatAmountForStats(totalSent) }}</HiddenAmount>
           </div>
         </div>
       </div>
@@ -183,7 +183,7 @@
 
         <span class="tx-row-amount-col">
           <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-            +{{ formatAmount(deposit.amount) }}
+            <HiddenAmount>+{{ formatAmount(deposit.amount) }}</HiddenAmount>
           </span>
           <span v-if="deposit.confirmed" class="tx-deposit-action">
             <q-btn
@@ -374,31 +374,38 @@
       @closed="onClaimSuccessClosed"
     />
 
-    <!-- Skeleton loading state — shape matches the live row for a
-         seamless hand-off when real data lands. -->
+    <!-- Skeleton loading state — wraps in .tx-groups > .tx-group > .tx-rows
+         so it inherits the same horizontal padding (16px) and inter-row
+         gap (8px) as the live list, giving a seamless hand-off when real
+         data lands. -->
     <div v-if="showLoadingScreen || isLoading" class="transaction-content" :class="$q.dark.isActive ? 'transaction_content_dark' : 'transaction_content_light'">
-      <div class="tx-group-header-skeleton" :class="$q.dark.isActive ? 'tx-group-header-dark' : 'tx-group-header-light'">
-        <q-skeleton type="text" width="80px" height="14px" animation="wave" />
-        <q-skeleton type="text" width="44px" height="14px" animation="wave" />
-      </div>
-
-      <div
-        v-for="n in 6"
-        :key="'skel-'+n"
-        class="tx-row tx-row-skeleton"
-        :class="$q.dark.isActive ? 'tx-row-dark' : 'tx-row-light'"
-      >
-        <span class="tx-row-icon-wrap">
-          <q-skeleton type="circle" size="36px" animation="wave" />
-        </span>
-        <span class="tx-row-body">
-          <q-skeleton type="text" width="60%" height="14px" animation="wave" />
-          <q-skeleton type="text" width="35%" height="12px" animation="wave" />
-        </span>
-        <span class="tx-row-amount-col">
-          <q-skeleton type="text" width="68px" height="14px" animation="wave" />
-          <q-skeleton type="text" width="46px" height="12px" animation="wave" />
-        </span>
+      <div class="tx-groups">
+        <div class="tx-group">
+          <div class="tx-group-header-skeleton" :class="$q.dark.isActive ? 'tx-group-header-dark' : 'tx-group-header-light'">
+            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
+            <q-skeleton type="text" width="44px" height="14px" animation="wave" />
+          </div>
+          <div class="tx-rows">
+            <div
+              v-for="n in 6"
+              :key="'skel-'+n"
+              class="tx-row tx-row-skeleton"
+              :class="$q.dark.isActive ? 'tx-row-dark' : 'tx-row-light'"
+            >
+              <span class="tx-row-icon-wrap">
+                <q-skeleton type="circle" size="36px" animation="wave" />
+              </span>
+              <span class="tx-row-body">
+                <q-skeleton type="text" width="60%" height="14px" animation="wave" />
+                <q-skeleton type="text" width="35%" height="12px" animation="wave" />
+              </span>
+              <span class="tx-row-amount-col">
+                <q-skeleton type="text" width="68px" height="14px" animation="wave" />
+                <q-skeleton type="text" width="46px" height="12px" animation="wave" />
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -456,13 +463,12 @@
                 >
                   <!-- Icon / avatar -->
                   <span class="tx-row-icon-wrap">
-                    <span
+                    <ContactAvatar
                       v-if="getContactForTransaction(tx)"
                       class="tx-row-avatar"
-                      :style="{ backgroundColor: getContactForTransaction(tx).color }"
-                    >
-                      {{ getContactForTransaction(tx).name.substring(0, 2).toUpperCase() }}
-                    </span>
+                      :entry="getContactForTransaction(tx)"
+                      :initial-length="2"
+                    />
                     <span
                       v-else
                       class="tx-row-icon"
@@ -501,13 +507,25 @@
                     </span>
                   </span>
 
-                  <!-- Amount column -->
+                  <!--
+                    Amount column.
+
+                    Headline shows the *recipient amount* (what the
+                    user typed when sending), not the gross deducted.
+                    The fee, when present, surfaces as a small inline
+                    note on the existing fiat sub-line so the user
+                    can reconcile "I sent X, the network took Y" at
+                    a glance — without adding a new row of vertical
+                    chrome. Spark-to-Spark and incoming transactions
+                    omit the fee badge entirely (getFeeBadge returns
+                    '').
+                  -->
                   <span class="tx-row-amount-col">
                     <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                      {{ getFormattedAmount(tx) }}
+                      <HiddenAmount>{{ getFormattedAmount(tx) }}</HiddenAmount>
                     </span>
                     <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-                      {{ getFiatAmount(tx) }}
+                      <HiddenAmount>{{ getFiatAmount(tx) }}</HiddenAmount><template v-if="getFeeBadge(tx)"> · {{ getFeeBadge(tx) }}</template>
                     </span>
                   </span>
                 </button>
@@ -524,7 +542,14 @@
                     @click="toggleMicropaymentGroup(tx.id)"
                   >
                     <span class="tx-row-icon-wrap">
+                      <ContactAvatar
+                        v-if="getContactForGroup(tx)"
+                        class="tx-row-avatar"
+                        :entry="getContactForGroup(tx)"
+                        :initial-length="2"
+                      />
                       <span
+                        v-else
                         class="tx-row-icon"
                         :class="[
                           $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
@@ -545,7 +570,7 @@
                     </span>
                     <span class="tx-row-amount-col">
                       <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                        {{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}
+                        <HiddenAmount>{{ formatAmountWithSign(tx.totalAmount, tx.transactionType === 'incoming') }}</HiddenAmount>
                       </span>
                       <Icon
                         :icon="expandedMicropaymentGroups.has(tx.id) ? 'tabler:chevron-up' : 'tabler:chevron-down'"
@@ -569,7 +594,7 @@
                           {{ formatShortTime(innerTx.settled_at) }}
                         </span>
                         <span class="tx-micro-item-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                          {{ formatAmountWithSign(innerTx.amount, innerTx.type === 'incoming') }}
+                          <HiddenAmount>{{ formatAmountWithSign(innerTx.amount, innerTx.type === 'incoming') }}</HiddenAmount>
                         </span>
                       </button>
                     </div>
@@ -607,7 +632,7 @@
     </q-scroll-area>
 
     <!-- Empty State -->
-    <div v-else-if="filteredTransactions.length === 0" class=" full-height"
+    <div v-else-if="filteredTransactions.length === 0"
          :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
       <img
         src="/Onboarding wizard spark/storyset-receipt-bro.svg"
@@ -641,6 +666,8 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
+import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import HiddenAmount from '../components/HiddenAmount.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
@@ -652,7 +679,9 @@ import { groupMicropayments } from '../composables/useTransactionGrouping';
 export default {
   name: 'TransactionHistoryPage',
   components: {
-    PaymentConfirmation
+    PaymentConfirmation,
+    ContactAvatar,
+    HiddenAmount,
   },
   data() {
     return {
@@ -890,13 +919,37 @@ export default {
     // New helper methods for redesigned transaction cards
 
     getContactForTransaction(tx) {
-      if (!tx || !tx.id || !this.metadataStore || !this.addressBookStore) return null;
+      if (!tx || !tx.id || !this.metadataStore) return null;
       try {
-        const metadata = this.metadataStore.getMetadataForTransaction(tx.id);
-        if (!metadata?.contactId) return null;
-        return this.addressBookStore.getEntryById(metadata.contactId);
+        // Single source of truth: the store getter resolves an explicit
+        // contactId, then a manual removal, then the durable recipient
+        // address live against the address book.
+        return this.metadataStore.getContactForTransaction(tx.id);
       } catch (error) {
         console.error('Error getting contact for transaction:', error);
+        return null;
+      }
+    },
+
+    /**
+     * Contact for a micropayment group. A group is, by construction,
+     * repeated payments to the same recipient, so any member that
+     * resolves identifies the whole group. Falls back to the group's
+     * recipient string when no member is stamped yet.
+     */
+    getContactForGroup(group) {
+      if (!group || !this.metadataStore) return null;
+      try {
+        const members = Array.isArray(group.transactions) ? group.transactions : [];
+        for (const inner of members) {
+          const contact = this.metadataStore.getContactForTransaction(inner.id);
+          if (contact) return contact;
+        }
+        if (group.recipient && this.addressBookStore) {
+          return this.addressBookStore.findContactByAddress(group.recipient);
+        }
+        return null;
+      } catch (error) {
         return null;
       }
     },
@@ -1056,6 +1109,17 @@ export default {
         return;
       }
 
+      // First pass: drain pending-contact links queued by the send
+      // flow. This stamps outgoing txs whose recipient we already
+      // knew at send time but whose provider-assigned id we couldn't
+      // predict. Reliable for every wallet rail because we match on
+      // amount + recent timestamp, not on a derived id.
+      try {
+        await this.metadataStore.consumePendingContactLinks(this.transactions);
+      } catch (err) {
+        console.warn('[txHistory] pending-contact-link drain failed:', err);
+      }
+
       console.log('Auto-assigning contacts for transactions...');
       let assignedCount = 0;
 
@@ -1152,7 +1216,6 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
-
         });
       } finally {
         this.isLoading = false;
@@ -1319,7 +1382,14 @@ export default {
         return;
       }
 
-      // Normalize and append to transactions array
+      // Normalize and append to transactions array.
+      //
+      // Note on units: NIP-47 reports `amount` and `fees_paid` in
+      // millisatoshis, BUT the @getalby/sdk NostrWebLNProvider that
+      // backs LightningPaymentService converts msats→sats
+      // internally (see `mapNip47TransactionToTransaction` in the
+      // SDK source). Values arrive in sats — no further unit
+      // conversion needed here.
       const normalizedTransactions = transactionsResponse.transactions.map(tx => ({
         ...tx,
         id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
@@ -1342,10 +1412,10 @@ export default {
     },
 
     async loadLNBitsTransactionsBatch() {
-      // Ensure LNBits wallet is connected
+      // Ensure LNbits wallet is connected
       const activeWallet = this.walletStore.activeWallet;
       if (!activeWallet) {
-        throw new Error('No active LNBits wallet found');
+        throw new Error('No active LNbits wallet found');
       }
 
       let provider = this.walletStore.providers[activeWallet.id];
@@ -1356,7 +1426,7 @@ export default {
       }
 
       if (!provider) {
-        throw new Error('Could not connect to LNBits wallet');
+        throw new Error('Could not connect to LNbits wallet');
       }
 
       // Fetch batch with current offset
@@ -1382,7 +1452,7 @@ export default {
         status: tx.status || 'completed'
       }));
 
-      console.log(`LNBits batch loaded: ${normalizedTransactions.length} transactions`);
+      console.log(`LNbits batch loaded: ${normalizedTransactions.length} transactions`);
 
       this.transactions.push(...normalizedTransactions);
       this.currentOffset += this.batchSize;
@@ -1658,9 +1728,56 @@ export default {
       return tx.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
 
+    /**
+     * The "user-meaningful" amount in sats for a list row:
+     *
+     *   - Outgoing with a fee → recipient amount (gross − fee).
+     *     Matches what the user typed when they hit Send, and stays
+     *     consistent with TransactionDetails' hero.
+     *   - Otherwise → gross amount unchanged.
+     *
+     * Pure derivation — does NOT mutate tx. Stats-card aggregates
+     * (Total Sent / Net) keep summing `tx.amount` directly so the
+     * card totals continue to match the real balance delta.
+     *
+     * @param {object} tx
+     * @returns {number} non-negative sats
+     */
+    getDisplayAmountSats(tx) {
+      const gross = Math.abs(Number(tx?.amount) || 0);
+      const fee = Number(tx?.fee) || 0;
+      if (tx?.type === 'outgoing' && fee > 0) {
+        return Math.max(0, gross - fee);
+      }
+      return gross;
+    },
+
     getFormattedAmount(tx) {
       const prefix = tx.type === 'incoming' ? '+' : '-';
-      return formatAmountWithPrefix(Math.abs(tx.amount), this.walletStore.useBip177Format, prefix);
+      return formatAmountWithPrefix(this.getDisplayAmountSats(tx), this.walletStore.useBip177Format, prefix);
+    },
+
+    /**
+     * Inline fee note appended to the row's fiat sub-line so the
+     * user can see at a glance "I sent 5, the network took 4 on
+     * top" without opening the detail page.
+     *
+     * Wrapped in parentheses on purpose: a bare "+4 sats" next to a
+     * fiat figure can be misread as positive income. Parens read as
+     * a side note instead of a math operator.
+     *
+     * Returns an empty string when there's no fee to surface
+     * (incoming, Spark-to-Spark, unsettled state); the template
+     * uses that to suppress both the separator and the badge.
+     *
+     * @param {object} tx
+     * @returns {string}  e.g. "(₿ 4 fee)" / "(4 sats fee)", or "".
+     */
+    getFeeBadge(tx) {
+      const fee = Number(tx?.fee) || 0;
+      if (tx?.type !== 'outgoing' || fee <= 0) return '';
+      const feeAmount = formatAmountUtil(fee, this.walletStore.useBip177Format);
+      return `(${feeAmount} ${this.$t('fee')})`;
     },
 
     formatAmount(amount) {
@@ -1691,7 +1808,10 @@ export default {
 
       try {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(tx.amount), currency);
+        // Fiat tracks the row's headline amount so they can't disagree.
+        // For an outgoing payment with a fee, both reflect what the
+        // recipient received (gross − fee), not the gross deducted.
+        const fiatValue = fiatRatesService.convertSatsToFiatSync(this.getDisplayAmountSats(tx), currency);
 
         // Handle unavailable rates
         if (fiatValue === null) {
@@ -1799,10 +1919,10 @@ export default {
         this.claimFeeQuote = quote;
         this.showClaimDialog = true;
       } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t get fee quote'),
-
+        this.walletStore.showPaymentError(error, {
+          context: 'l1',
+          route: 'L1 claim fee quote',
+          t: this.$t.bind(this),
         });
       } finally {
         this.claimingTxId = null;
@@ -1989,16 +2109,16 @@ export default {
         return result;
       } catch (error) {
         console.error('Refund failed:', error);
-        // Surface the provider's friendly error message when present
+        // The provider sometimes throws a user-actionable message
         // (e.g. "Could not determine refund destination..." after both
-        // mempool sources fail), so the user knows to use Advanced.
-        const friendly = error?.message && !error.message.includes('Network')
-          ? error.message
-          : this.$t('Please try again');
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Could not return Bitcoin'),
-          caption: friendly
+        // mempool sources fail) and sometimes a raw network error.
+        // The unified pipeline (buildPaymentError → translateTechJargon)
+        // handles both cases: prose passes through with attribution,
+        // bare network errors become "Couldn't reach the network...".
+        this.walletStore.showPaymentError(error, {
+          context: 'l1',
+          route: 'L1 refund to mempool',
+          t: this.$t.bind(this),
         });
       } finally {
         this.isRefundingDeposit = false;
@@ -2010,32 +2130,51 @@ export default {
 
 <style scoped>
 /* Base Page Styles */
+/* Fixed-height flex column: the screen is laid out once and never overflows
+   the safe viewport. Header + filters are fixed rows; the list (or empty
+   state) is the single flex child that scrolls internally. This replaces the
+   old min-height:100vh + magic vh heights which — once the Android safe-area
+   insets were added — pushed the page past the viewport (body scrolled, so the
+   sticky header slid over the filter tabs) and left a blank gap above the
+   title. The header now owns the top inset (see .page_header_*), so the global
+   .q-page top padding is cancelled here; the bottom inset clears the nav bar. */
 .transaction-history-page-dark {
   background: #171717;
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
   max-width: 100vw;
+  padding-top: 0;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 .transaction-history-page-light {
   background: #F6F6F6;
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
   max-width: 100vw;
+  padding-top: 0;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 /* Header Styles */
+/* Header owns the top safe-area inset: its background fills the area under the
+   status bar and the title sits just beneath it — no blank gap above. As a
+   fixed flex row at the top of the non-scrolling page column it stays put
+   without position:sticky. */
 .page_header_dark {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: calc(0.6rem + var(--safe-top, 0px)) 1rem 0.6rem;
   background: #0C0C0C;
   border-bottom: 1px solid #2A342A;
-  position: sticky;
-  top: var(--safe-top, 0px);
+  flex: 0 0 auto;
   z-index: 100;
 }
 
@@ -2043,11 +2182,10 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: calc(0.6rem + var(--safe-top, 0px)) 1rem 0.6rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
+  flex: 0 0 auto;
   z-index: 100;
 }
 
@@ -2100,6 +2238,10 @@ export default {
 }
 
 /* Filter Section */
+.filter-section {
+  flex: 0 0 auto;
+}
+
 .filter_section_dark {
   background: #0C0C0C;
   border-bottom: 1px solid #2A342A;
@@ -2260,13 +2402,25 @@ export default {
 }
 
 /* Transaction Content */
+/* The scroll viewport is sized off the full screen height minus the fixed
+   header/filter chrome (~200px). On Android the page also carries the
+   safe-area insets (top via the global .q-page rule, bottom via the page
+   root above), so they must be subtracted here too — otherwise the list
+   overflows past the safe viewport and pushes the header/tabs up under the
+   status bar and the last rows down under the nav bar. On web both insets
+   resolve to 0, so the math is unchanged. */
+/* The list region is the single flex child that scrolls. flex:1 fills the
+   space left by the header + filters; min-height:0 lets the inner QScrollArea
+   actually scroll instead of forcing the column taller than the viewport. */
 .transaction_content_dark {
-  height: calc(100vh - 200px);
+  flex: 1 1 auto;
+  min-height: 0;
   background: #171717;
 }
 
 .transaction_content_light {
-  height: calc(100vh - 200px);
+  flex: 1 1 auto;
+  min-height: 0;
   background: #F6F6F6;
 }
 
@@ -2896,7 +3050,8 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60vh;
+  flex: 1 1 auto;
+  min-height: 0;
   text-align: center;
   padding: 2rem;
   background: #0C0C0C;
@@ -2908,7 +3063,8 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60vh;
+  flex: 1 1 auto;
+  min-height: 0;
   text-align: center;
   padding: 2rem;
   background: var(--bg-primary);

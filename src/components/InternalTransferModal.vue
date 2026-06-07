@@ -152,18 +152,22 @@
           <p class="note">{{ $t('This transfer happens instantly via Lightning') }}</p>
         </section>
 
-        <!-- Success -->
-        <section v-if="state.transferComplete" class="step-panel step-panel--center">
-          <div class="success-ring"><Icon icon="tabler:check" width="32" height="32" /></div>
-          <h3 class="success-title">{{ $t('Transfer Complete') }}</h3>
-          <p class="success-amount">{{ fmt(parseInt(state.amount)) }}</p>
-          <p class="success-route">{{ state.fromWallet?.name }} → {{ state.toWallet?.name }}</p>
+        <!--
+          Success panel.
+
+          Uses the shared SuccessCheckmark + the same uppercase
+          label / bold numeric anchor pattern as PaymentConfirmation
+          and BatchSendModal step 5. The "From → To" route stays —
+          it's the one piece of context unique to this flow and it
+          tells the user which side of the move they're looking at.
+        -->
+        <section v-if="state.transferComplete" class="step-panel step-panel--center transfer-success">
+          <SuccessCheckmark :animate="state.transferComplete" accent="green" />
+          <div class="success-label">{{ $t('Transfer Complete') }}</div>
+          <div class="success-amount">{{ fmt(parseInt(state.amount)) }}</div>
+          <div class="success-route">{{ state.fromWallet?.name }} → {{ state.toWallet?.name }}</div>
         </section>
 
-        <div v-if="state.transferError" class="banner banner--error banner--lg">
-          <Icon icon="tabler:alert-triangle" width="18" height="18" />
-          <span>{{ state.transferError }}</span>
-        </div>
       </main>
 
       <!-- Footer -->
@@ -246,10 +250,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, h } from 'vue';
+import { ref, reactive, computed, watch, nextTick, h, getCurrentInstance } from 'vue';
 import { useQuasar } from 'quasar';
 import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
+import SuccessCheckmark from './SuccessCheckmark.vue';
+
+// vue-i18n is configured in legacy mode (see src/boot/i18n.js), so
+// useI18n() throws "Not available in legacy mode". Reach $t through the
+// component proxy — same pattern as BatchSendModal.
+const { proxy } = getCurrentInstance();
+const t = (key, params) => proxy.$t(key, params);
 
 // ─────────────────────────────────────────────────────────────
 // Sub-components (functional)
@@ -285,7 +296,7 @@ const WalletAvatar = {
           fill: '#897FFF'
         })
       ]),
-      // LNBits - pink fill
+      // LNbits - pink fill
       props.type === 'lnbits' && h('svg', { width: '18', height: '18', viewBox: '0 0 502 902', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
         h('path', {
           d: 'M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z',
@@ -352,7 +363,6 @@ const state = reactive({
   showToPicker: false,
   isTransferring: false,
   transferComplete: false,
-  transferError: '',
   isReconnecting: false,
   isMaxAmount: false
 });
@@ -489,7 +499,6 @@ function goBack() {
 async function doTransfer() {
   if (state.isTransferring) return;
   state.isTransferring = true;
-  state.transferError = '';
   try {
     haptics.medium();
     await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, parseInt(state.amount));
@@ -497,7 +506,17 @@ async function doTransfer() {
     haptics.success();
     emit('transfer-complete', { fromWallet: state.fromWallet, toWallet: state.toWallet, amount: parseInt(state.amount) });
   } catch (e) {
-    state.transferError = e.message || 'Transfer failed';
+    // Surface the failure in the global payment-error dialog so the
+    // transfer-fail screen looks the same as every other payment
+    // surface. The inline banner that used to live on step 3 has
+    // been retired in favour of the dialog.
+    store.showPaymentError(e, {
+      context: 'transfer',
+      walletType: state.fromWallet?.type || null,
+      route: `Transfer (${state.fromWallet?.name || '?'} → ${state.toWallet?.name || '?'})`,
+      amountSats: parseInt(state.amount) || undefined,
+      t: t,
+    });
     haptics.error();
   } finally {
     state.isTransferring = false;
@@ -513,7 +532,6 @@ function resetState() {
     amountError: '',
     isTransferring: false,
     transferComplete: false,
-    transferError: '',
     isMaxAmount: false,
     isReconnecting: false
   });
@@ -812,12 +830,48 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 
 /* ════════════════════════════════════════════════════════════
    Success
+
+   Same visual chrome as PaymentConfirmation + BatchSendModal step 5:
+   shared SuccessCheckmark primitive, uppercase tracked label, bold
+   numeric anchor for the amount, supporting route line. The
+   `.transfer-success` wrapper just adds column gap + bottom padding
+   so the panel breathes inside the modal.
    ════════════════════════════════════════════════════════════ */
-.success-ring { width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 50%; background: rgba(21,222,114,.15); color: #15DE72; display: flex; align-items: center; justify-content: center; animation: pop .4s cubic-bezier(.175,.885,.32,1.275); }
-@keyframes pop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
-.success-title { margin: 0 0 8px; font-size: 20px; font-weight: 600; color: var(--c-text); }
-.success-amount { margin: 0 0 8px; font-size: 32px; font-weight: 700; color: #15DE72; }
-.success-route { margin: 0; font-size: 14px; color: var(--c-text2); }
+.transfer-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0 24px;
+}
+
+.success-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text2);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 6px;
+}
+
+.success-amount {
+  font-family: 'Manrope', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--c-text);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.success-route {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text2);
+  margin: 0;
+}
 
 /* ════════════════════════════════════════════════════════════
    Footer
@@ -900,9 +954,12 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 /* Transfer-complete ring and amount stay coloured — this is the
    semantic "success" state, not decoration. Softened to the muted
    dark-green so it sits naturally on cream. */
-.body--light .success-ring { background: rgba(5, 149, 115, 0.12); color: #059573; }
-.body--light .success-amount { color: #059573; }
-
+/*
+  Success amount now reads in the neutral primary-text colour like
+  PaymentConfirmation's amount-value. Removed the previous green
+  tint here — the SuccessCheckmark already carries the colour
+  signal, so doubling up on the amount overwhelmed the layout.
+*/
 .body--light .check { color: #059573; }
 .body--light .dot--ok { background: #059573; }
 .body--light .picker-row.selected { background: rgba(5, 149, 115, 0.08); }

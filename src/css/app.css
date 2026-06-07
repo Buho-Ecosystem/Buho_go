@@ -88,13 +88,22 @@ body {
 }
 
 /*
- * Android fallback: env(safe-area-inset-top) returns 0 on many Android
- * WebViews/browsers even with display cutouts. Use a sensible default.
- * The JS boot/safe-area.js will refine this at runtime.
+ * Android fallback: env(safe-area-inset-top) returns 0 on Capacitor
+ * edge-to-edge WebViews even when there's a real status bar / nav bar,
+ * because the inset is reported by Android Window-Insets which the
+ * WebView doesn't surface to CSS without a native bridge. The 24px
+ * fallback in env() only kicks in when env() is *unsupported* — not
+ * when it returns 0 — so we wrap it in max() with a generous floor
+ * that clears the status bar (28px) and gesture nav indicator (24px).
+ * boot/safe-area.js refines this at runtime; the floor remains the
+ * lower bound so JS detection can only ever increase it.
  */
 body.platform-android {
-  --safe-top: env(safe-area-inset-top, 24px);
-  --safe-bottom: env(safe-area-inset-bottom, 16px);
+  --safe-top: max(env(safe-area-inset-top, 0px), 28px);
+  /* 32px floor handles both gesture nav (~24dp indicator) and most
+     3-button nav bars (~48dp) with a slight visual buffer. JS lifts
+     this further when screen-vs-viewport math finds a larger inset. */
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), 32px);
 }
 
 /* 2) Apply safe-area top padding to ALL pages automatically */
@@ -202,6 +211,21 @@ body.platform-android {
     --btn-neutral-bg:     #1A1A1A;
     --btn-neutral-fg:     #FFFFFF;
     --btn-neutral-border: transparent;
+
+    /* ─── Bitcoin Map accents ──────────────────────────────────
+       Map UI leans on green in dark mode (it pops on the dark
+       basemap) but goes black-forward in light mode — green is
+       used sparingly there. Pins stay Bitcoin-orange in both, and
+       the freshness "verified" check stays green in both (it's a
+       semantic signal, not decoration). These tokens centralize
+       the swap so the map components don't carry light/dark chains.
+         --map-accent       emphasis text + active states
+         --map-accent-soft  tinted selection washes
+         --map-cta-bg/-fg   primary action button (Directions, Search) */
+    --map-accent:         var(--color-green);
+    --map-accent-soft:    var(--brand-accent-soft);
+    --map-cta-bg:         var(--color-green);
+    --map-cta-fg:         #0E1F17;
     --radius-sm: 8px;
     --radius-md: 16px;
     --radius-lg: 20px;
@@ -265,6 +289,16 @@ body.body--light {
        var(--color-green) will now get the muted accent instead of
        the bright brand green. */
     --color-green: #059573;
+
+    /* Map goes black-forward in light mode: emphasis, active states,
+       and primary actions render in near-black on cream rather than
+       green. (Freshness "verified" check + Bitcoin-orange pins keep
+       their own colours — they're semantic, set directly in their
+       components, not via these tokens.) */
+    --map-accent:         #1A1A1C;
+    --map-accent-soft:    rgba(0, 0, 0, 0.05);
+    --map-cta-bg:         #1A1A1C;
+    --map-cta-fg:         #FAF7EF;
 }
 
 /* Ensure Quasar's page chrome picks up the cream paper, not its default white.

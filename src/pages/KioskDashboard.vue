@@ -98,7 +98,7 @@
           <div class="pos-keypad">
             <button v-for="n in ['1','2','3','4','5','6','7','8','9']" :key="n" class="pos-key pos-key-num" @click.stop="handleNumpad(n)">{{ n }}</button>
             <button v-if="isFiatMode" class="pos-key pos-key-num" @click.stop="handleNumpad('.')">.</button>
-            <button v-else class="pos-key" disabled style="visibility:hidden" />
+            <button v-else class="pos-key pos-key-num" @click.stop="handleNumpad('000')">000</button>
             <button class="pos-key pos-key-num" @click.stop="handleNumpad('0')">0</button>
             <button class="pos-key pos-key-action" @click.stop="handleNumpad('delete')"><q-icon name="backspace" size="22px" /></button>
           </div>
@@ -164,11 +164,9 @@
 <script>
 import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
-import { useQuasar } from 'quasar'
 import { useWalletStore } from 'stores/wallet'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
-import { getUserFriendlyErrorMessage } from 'src/utils/userErrors'
 
 export default defineComponent({
   name: 'KioskDashboard',
@@ -176,7 +174,6 @@ export default defineComponent({
 
   setup() {
     const router = useRouter()
-    const $q = useQuasar()
     const store = useWalletStore()
     const { proxy } = getCurrentInstance()
     const t = (key) => proxy.$t(key)
@@ -253,10 +250,17 @@ export default defineComponent({
     function handleNumpad(btn) {
       if (btn === 'delete') { rawInput.value = rawInput.value.length <= 1 ? '0' : rawInput.value.slice(0, -1); return }
       if (btn === '.') { if (!isFiatMode.value || rawInput.value.includes('.')) return; rawInput.value += '.'; return }
-      if (rawInput.value === '0') { rawInput.value = btn; return }
-      if (rawInput.value.length > 12) return
+      if (rawInput.value.length >= 12) return
       if (isFiatMode.value && rawInput.value.includes('.')) { const d = rawInput.value.split('.')[1]; if (d && d.length >= 2) return }
-      rawInput.value += btn
+      // Append, then collapse leading zeros so '0' + '5' becomes '5', not '05',
+      // and '0' + '000' becomes '0' (still a valid zero state). Mirrors the
+      // receive modal numpad's keypadTap() behaviour.
+      let next = rawInput.value + btn
+      while (next.length > 1 && next.startsWith('0') && !next.startsWith('0.')) {
+        next = next.slice(1)
+      }
+      if (next.length > 12) next = next.slice(0, 12)
+      rawInput.value = next
     }
     function addToAccumulated() { if (amountSats.value <= 0) return; accumulatedItems.value.push(amountSats.value); rawInput.value = '0' }
     function removeAccumulatedItem(idx) {
@@ -277,15 +281,23 @@ export default defineComponent({
     async function createCharge() {
       state.value = 'processing'; invoiceData.value = null; qrDataUrl.value = ''
       try {
-        const provider = store.providers[store.kioskWalletId]
-        if (!provider) throw new Error('Wallet not connected')
+        // `store.providers[id]` may hold a stale entry whose underlying SDK
+        // wallet was released (hot reload, wallet switch, Spark disconnect
+        // on lock). `ensureWalletConnectedForTransfer` is the same guard
+        // the transfer/batch/auto-withdraw paths use — reconnect if the
+        // provider isn't actually connected, then return a live one.
+        const provider = await store.ensureWalletConnectedForTransfer(store.kioskWalletId)
         const result = await provider.createInvoice({ amount: finalAmountSats.value, description: 'Kiosk Payment' })
         invoiceData.value = result
         qrDataUrl.value = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
         state.value = 'payment'; startPolling()
       } catch (err) {
         console.error('[kiosk] charge error:', err)
-        $q.notify({ type: 'negative', message: getUserFriendlyErrorMessage(err, 'kiosk', t) })
+        // Unified dialog. Same modal users see across every other
+        // payment failure in the app, so the kiosk operator gets a
+        // familiar surface (and a "Copy details" button for support)
+        // instead of a thin caption-only toast.
+        store.showPaymentError(err, { context: 'kiosk', t })
         state.value = 'input'
       }
     }
@@ -423,14 +435,14 @@ export default defineComponent({
         return
       }
 
-      // Connect only the kiosk wallet
+      // Connect only the kiosk wallet. Use ensureWalletConnectedForTransfer
+      // so a stale provider entry (where this.wallet was released) is
+      // detected and reconnected — `providers[id]` alone is not a liveness
+      // check for Spark.
       const walletId = store.kioskWalletId
-      if (walletId && !store.providers[walletId]) {
+      if (walletId) {
         try {
-          const wallet = store.wallets.find(w => w.id === walletId)
-          if (wallet) {
-            await store.connectWallet(walletId)
-          }
+          await store.ensureWalletConnectedForTransfer(walletId)
         } catch (err) {
           console.error('[kiosk] Failed to connect wallet:', err.message)
         }
@@ -579,7 +591,10 @@ export default defineComponent({
 .pos-key-action:active { color: inherit; transform: scale(0.94); }
 
 /* Actions */
-.pos-actions { display: flex; gap: 10px; padding-bottom: max(16px, var(--safe-bottom, 16px)); }
+/* 48px floor clears a 3-button Android nav bar even when the WebView
+   reports zero bottom inset (edge-to-edge mode). var(--safe-bottom)
+   wins on devices that report a larger inset (notch landscape, etc.). */
+.pos-actions { display: flex; gap: 10px; padding-bottom: max(48px, var(--safe-bottom, 16px)); }
 .pos-add-btn { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0; background: rgba(5,149,115,0.08); color: #059573; border: 1.5px solid rgba(5,149,115,0.25); border-radius: 14px; cursor: pointer; transition: transform 0.08s ease, background 0.08s ease; -webkit-tap-highlight-color: transparent; }
 .pos-add-btn:active:not(:disabled) { transform: scale(0.94); background: rgba(5,149,115,0.15); }
 .kiosk-light .pos-add-btn { background: rgba(5,149,115,0.05); }

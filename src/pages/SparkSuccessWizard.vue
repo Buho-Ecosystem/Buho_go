@@ -81,7 +81,20 @@
             </div>
           </q-carousel-slide>
 
-          <!-- 5: Internal Transfer -->
+          <!-- 5: NFC / Bolt Card -->
+          <q-carousel-slide name="nfc" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Onboarding wizard spark/storyset-mobile-payments-bro.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Tap to Pay with NFC') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Accept Bolt Card payments with a single tap. Customers hold their card to your phone and pay instantly.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+
+          <!-- 6: Internal Transfer -->
           <q-carousel-slide name="transfer" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-transfer-money-bro.svg" class="slide-illustration" alt="" />
@@ -133,7 +146,20 @@
             </div>
           </q-carousel-slide>
 
-          <!-- 8: Amount Display -->
+          <!-- 9: Identity -->
+          <q-carousel-slide name="identity" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Onboarding wizard spark/storyset-account-bro.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Your BuhoGO Identity') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('One profile to share, sign in to social apps with a tap, and let others add you with a quick scan.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+
+          <!-- 10: Amount Display -->
           <q-carousel-slide name="display" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-mobile-apps-bro.svg" class="slide-illustration" alt="" />
@@ -211,7 +237,20 @@
             </div>
           </q-carousel-slide>
 
-          <!-- 14: You're ready! -->
+          <!-- 14: Bitcoin Map -->
+          <q-carousel-slide name="map" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Onboarding wizard spark/storyset-Papermap-bro.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Find Places to Spend') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Open the Bitcoin map to discover shops, cafés, and businesses that accept Bitcoin near you. Tap a pin for details and directions.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+
+          <!-- 15: You're ready! -->
           <q-carousel-slide name="ready" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-setup-wizard-bro.svg" class="slide-illustration" alt="" />
@@ -302,13 +341,13 @@ const SPARK_INTRO = ['personal', 'business', 'savings']
 
 // All feature screens (shown after Spark intro or standalone for NWC/LNbits)
 const ALL_FEATURES = [
-  'send-receive', 'transfer', 'auto-transfer', 'history',
-  'contacts', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'lessons', 'ready'
+  'send-receive', 'nfc', 'transfer', 'auto-transfer', 'history',
+  'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'lessons', 'map', 'ready'
 ]
 
 // NWC/LNbits: only features that apply (no internal transfer, auto-transfer, or seed backup)
 const NWC_LNBITS_FEATURES = [
-  'send-receive', 'history', 'contacts', 'display', 'more-wallets', 'security', 'lessons', 'ready'
+  'send-receive', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'lessons', 'map', 'ready'
 ]
 
 export default {
@@ -341,7 +380,7 @@ export default {
     expandWizard() {
       this.showExtended = true
       this.$nextTick(() => {
-        this.currentSlide = EXTENDED_SLIDES[0]
+        this.currentSlide = ALL_FEATURES[0]
       })
     },
     goToWallet() {

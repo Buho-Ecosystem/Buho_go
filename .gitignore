@@ -5,6 +5,7 @@ node_modules
 # LLM Stuff
 /.claude
 /Plans WIP
+/Articels
 /cloud_backup.md
 /audit
 /playwright.config.mjs
@@ -41,3 +42,12 @@ yarn-error.log*
 .env.local*
 .env
 /CLAUDE.md
+
+# Local map dev screenshots / Playwright artifacts
+map-phase*.png
+.playwright-mcp/
+
+# Stray screenshot drops (German "Bildschirmfoto" / English "Screenshot")
+Bildschirmfoto*.png
+Screenshot*.png
+/*.png
