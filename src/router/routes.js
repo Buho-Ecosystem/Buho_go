@@ -21,6 +21,9 @@ const routes = [
       // eSIM + VPN shop (nadanada). Lazy-loaded so the catalog + QR code only
       // enter the bundle when the user opens the store. Same pattern as /map.
       { path: '/shop', component: () => import('pages/ShopPage.vue') },
+      // Online shops directory (BitcoinListings + BTCPay + Nostr). Lazy-loaded
+      // so the adapters + Nostr code never land in the initial bundle.
+      { path: '/online-shops', component: () => import('pages/OnlineShopsPage.vue') },
       { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') },
       { path: '/learn', component: () => import('pages/EarnMap.vue') },
       { path: '/learn/summary', component: () => import('pages/EarnSummary.vue') },

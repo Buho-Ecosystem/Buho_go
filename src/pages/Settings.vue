@@ -293,6 +293,24 @@
       </button>
 
       <!--
+        Online shops hero card — the online counterpart to the Bitcoin Map.
+        Same map-hero layout; a storefront icon + shopping-bag watermark give
+        it its own identity. Discover web shops that accept Bitcoin.
+      -->
+      <button type="button" class="map-hero-card online-hero-card" @click="$router.push('/online-shops')">
+        <span class="hero-watermark" aria-hidden="true">
+          <Icon icon="tabler:shopping-bag" width="172" height="172" />
+        </span>
+        <span class="map-hero-icon">
+          <Icon icon="tabler:building-store" width="26" height="26" />
+        </span>
+        <span class="map-hero-text">
+          <span class="map-hero-title">{{ $t('Spend online') }}</span>
+          <span class="map-hero-sub">{{ $t('Shops worldwide that accept Bitcoin') }}</span>
+        </span>
+      </button>
+
+      <!--
         Reusable lightning-address dialog. Always mounted (gated by its
         own v-if) so the trigger row stays simple. Same component used
         by LNBitsSetupPage during onboarding — the prop contract
@@ -8041,6 +8059,10 @@ body.body--dark .map-hero-card:active {
    styling exactly (var(--map-accent)); identity comes from the SIM icon plus
    the globe watermark, not a different colour. */
 .shop-hero-card {
+  margin-top: -18px;
+}
+/* Online shops hero, tightly stacked under the eSIM card. */
+.online-hero-card {
   margin-top: -18px;
 }
 

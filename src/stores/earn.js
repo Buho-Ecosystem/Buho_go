@@ -376,10 +376,19 @@ export const useEarnStore = defineStore('earn', {
         const { useWalletStore } = await import('./wallet')
         const walletStore = useWalletStore()
 
-        const wallet = walletStore.wallets.find(w => w.id === this.selectedWalletId)
-        if (!wallet) throw new Error('Selected wallet not found')
+        // Prefer the earn-selected wallet, but it is persisted across sessions
+        // and may have since been removed (or never set if storage was
+        // cleared). Fall back to the active wallet so the reward still lands in
+        // a wallet the user controls instead of failing the whole claim.
+        let walletId = this.selectedWalletId
+        let wallet = walletStore.wallets.find(w => w.id === walletId)
+        if (!wallet) {
+          walletId = walletStore.activeWalletId
+          wallet = walletStore.wallets.find(w => w.id === walletId)
+        }
+        if (!wallet) throw new Error('No wallet available to receive payout')
 
-        const provider = await walletStore.ensureWalletConnectedForTransfer(this.selectedWalletId)
+        const provider = await walletStore.ensureWalletConnectedForTransfer(walletId)
         if (!provider) throw new Error('Wallet not connected')
 
         const type = (wallet.type || 'nwc').toLowerCase()
