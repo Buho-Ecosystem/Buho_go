@@ -92,7 +92,18 @@ export default defineConfig((ctx) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#devserver
     devServer: {
       // https: true,
-      open: true // opens browser window automatically
+      open: true, // opens browser window automatically
+      // nadanada's API sends no CORS headers, so the browser blocks direct
+      // calls. Proxy /nadanada-api -> the live API (server-to-server, no CORS)
+      // for web dev. On native we hit the API directly via CapacitorHttp, so
+      // this only matters for `quasar dev` and the web build.
+      proxy: {
+        '/nadanada-api': {
+          target: 'https://nadanada.me/api/v2',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/nadanada-api/, '')
+        }
+      }
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework

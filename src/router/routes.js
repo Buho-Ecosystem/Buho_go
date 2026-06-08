@@ -18,6 +18,9 @@ const routes = [
       // Bitcoin merchant map. Lazy-loaded so maplibre-gl (~200KB gzipped)
       // never lands in the initial bundle. `?place=<id>` deep-links a pin.
       { path: '/map', component: () => import('pages/MapPage.vue') },
+      // eSIM + VPN shop (nadanada). Lazy-loaded so the catalog + QR code only
+      // enter the bundle when the user opens the store. Same pattern as /map.
+      { path: '/shop', component: () => import('pages/ShopPage.vue') },
       { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') },
       { path: '/learn', component: () => import('pages/EarnMap.vue') },
       { path: '/learn/summary', component: () => import('pages/EarnSummary.vue') },

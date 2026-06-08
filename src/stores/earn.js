@@ -357,6 +357,19 @@ export const useEarnStore = defineStore('earn', {
 
     /**
      * Create an invoice on the user's selected wallet.
+     *
+     * `walletStore.providers` is a runtime-only map populated only for
+     * currently-connected Spark/LNbits wallets — and never for NWC wallets,
+     * which live in `connectionStates[id].nwcInstance`. The earn-selected
+     * wallet id is persisted across sessions, so by the time a payout or bonus
+     * is claimed the wallet is frequently not live (app restart, a different
+     * active wallet, or a locked Spark wallet). Reading `providers[id]`
+     * directly therefore failed for every NWC user and for anyone claiming in
+     * a later session, surfacing as `payout_failed`.
+     *
+     * Mirror the proven internal-transfer path: ensure a connected provider
+     * via `ensureWalletConnectedForTransfer`, then branch on wallet type —
+     * NWC exposes the WebLN `makeInvoice`, Spark/LNbits use `createInvoice`.
      */
     async _createUserInvoice(amountSats) {
       try {
@@ -366,15 +379,24 @@ export const useEarnStore = defineStore('earn', {
         const wallet = walletStore.wallets.find(w => w.id === this.selectedWalletId)
         if (!wallet) throw new Error('Selected wallet not found')
 
-        const provider = walletStore.providers[this.selectedWalletId]
+        const provider = await walletStore.ensureWalletConnectedForTransfer(this.selectedWalletId)
         if (!provider) throw new Error('Wallet not connected')
 
-        const result = await provider.createInvoice({
+        const type = (wallet.type || 'nwc').toLowerCase()
+        if (type === 'spark' || type === 'lnbits') {
+          const result = await provider.createInvoice({
+            amount: amountSats,
+            description: 'BuhoGO Learn & Earn reward',
+          })
+          return result.paymentRequest || result.payment_request || result.bolt11 || result
+        }
+
+        // NWC wallets use the WebLN interface; makeInvoice expects sats.
+        const result = await provider.makeInvoice({
           amount: amountSats,
           description: 'BuhoGO Learn & Earn reward',
         })
-
-        return result.paymentRequest || result.payment_request || result.bolt11 || result
+        return result.invoice || result.paymentRequest || result.bolt11
       } catch (error) {
         console.error('[earn] Create invoice failed:', error)
         return null
@@ -403,7 +425,18 @@ export const useEarnStore = defineStore('earn', {
 
     /**
      * Execute the completion bonus: double all earnings.
-     * The bonus equals totalEarned + pendingSats, so final total is 2x.
+     *
+     * "Doubling" means the user should ultimately receive 2x what they earned
+     * from answering (`totalEarned`). They may have already withdrawn part of
+     * it via `claimPayout`; that withdrawn portion is `totalEarned - pendingSats`.
+     * So this single payout settles the remaining unclaimed sats (`pendingSats`)
+     * plus a matching bonus equal to `totalEarned`:
+     *
+     *   payout = pendingSats + totalEarned
+     *
+     * which brings the lifetime amount received to exactly 2 x totalEarned.
+     * (The previous formula `totalEarned + 2 x pendingSats` over-paid anyone
+     * who had not claimed along the way.)
      */
     async executeCompletionBonus() {
       if (this.bonusPaid) return { amount: 0, alreadyPaid: true }
@@ -414,12 +447,11 @@ export const useEarnStore = defineStore('earn', {
         return { amount: 0, success: false, error: 'cooldown', minutesLeft: mins }
       }
 
-      const earned = this.totalEarned + this.pendingSats
-      const bonus = earned // doubling means the bonus equals what was already earned
+      const baseEarned = this.totalEarned         // lifetime sats earned from answers
+      const bonus = baseEarned                     // the doubling match
+      const totalPayout = this.pendingSats + bonus // settle unclaimed + bonus
 
       try {
-        // Create withdraw link for bonus + any remaining pending sats
-        const totalPayout = bonus + this.pendingSats
         const withdrawLink = await this._createWithdrawLink(totalPayout)
         if (!withdrawLink) throw new Error('Failed to create bonus withdraw link')
 
@@ -432,13 +464,14 @@ export const useEarnStore = defineStore('earn', {
         const claimed = await this._claimWithdraw(withdrawInfo.callback, withdrawInfo.k1, invoice)
         if (!claimed) throw new Error('Failed to claim bonus')
 
-        this.totalEarned = earned * 2
+        this.totalEarned = baseEarned * 2
         this.pendingSats = 0
         this.bonusPaid = true
         this.lastPayoutAt = Date.now()
+        this.answerTimings = [] // reset timings after a successful claim, like claimPayout
         this.persist()
 
-        return { bonus, totalEarned: this.totalEarned, success: true }
+        return { amount: totalPayout, bonus, totalPayout, totalEarned: this.totalEarned, success: true }
       } catch (error) {
         console.error('[earn] Bonus payout failed:', error.message)
         return { amount: 0, success: false, error: 'payout_failed', message: error.message }
