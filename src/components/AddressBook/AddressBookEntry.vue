@@ -26,6 +26,7 @@
             :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
             alt="Spark"
           />
+          <ArkadeLogo v-else-if="addressType === 'arkade'" variant="mark" color="white" :size="10" />
           <Icon v-else :icon="addressTypeIcon" width="10" height="10" />
           <span>{{ addressTypeLabel }}</span>
         </div>
@@ -130,10 +131,11 @@
 
 <script>
 import ContactAvatar from './ContactAvatar.vue'
+import ArkadeLogo from '../ArkadeLogo.vue'
 
 export default {
   name: 'AddressBookEntry',
-  components: { ContactAvatar },
+  components: { ContactAvatar, ArkadeLogo },
   props: {
     entry: {
       type: Object,
@@ -187,6 +189,7 @@ export default {
       const labels = {
         lightning: 'Lightning',
         spark: 'Spark',
+        arkade: 'Arkade',
         bitcoin: 'Bitcoin'
       }
       return labels[this.addressType] || labels.lightning
@@ -195,6 +198,7 @@ export default {
       const classes = {
         lightning: 'badge-lightning',
         spark: 'badge-spark',
+        arkade: 'badge-arkade',
         bitcoin: 'badge-bitcoin'
       }
       return classes[this.addressType] || classes.lightning
@@ -309,6 +313,11 @@ export default {
 
 .badge-spark {
   background: #000;
+  color: white;
+}
+
+.badge-arkade {
+  background: linear-gradient(135deg, #F14317, #C0360F);
   color: white;
 }
 

@@ -68,7 +68,7 @@
 
     <!-- Backup Reminder Banner -->
     <BackupBanner
-      :visible="walletStore.shouldPromptBackup && walletStore.isActiveWalletSpark"
+      :visible="walletStore.shouldPromptBackup && (walletStore.isActiveWalletSpark || walletStore.isActiveWalletArkade)"
       @backup="goToBackup"
       @dismiss="walletStore.dismissBackupPrompt()"
     />
@@ -158,11 +158,22 @@
         <svg v-else-if="activeWallet.type === 'lnbits'" width="10" height="12" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
         </svg>
+        <!-- Arkade brand mark -->
+        <ArkadeLogo v-else-if="activeWallet.type === 'arkade'" variant="mark" :size="14" class="wallet-chip-icon" />
         <!-- Default wallet icon -->
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
         {{ walletDisplayName }}
         <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
       </q-chip>
+
+      <!-- Subtle background-maintenance indicator (Arkade VTXO renew/recover) -->
+      <div
+        v-if="walletStore.arkadeMaintaining && walletStore.isActiveWalletArkade"
+        class="arkade-maintenance"
+      >
+        <q-spinner-dots size="14px" />
+        <span>{{ $t('Updating your wallet...') }}</span>
+      </div>
 
       <!-- Balance Display -->
       <div class="balance-section">
@@ -446,6 +457,8 @@
                   <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
+                  <!-- Arkade brand mark -->
+                  <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="orange" :size="20" />
                   <!-- Default wallet icon -->
                   <Icon v-else icon="tabler:wallet" width="20" height="20" />
                 </div>
@@ -475,6 +488,7 @@
                     <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                     </svg>
+                    <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="white" :size="9" />
                     <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
@@ -778,6 +792,7 @@ import SendModal from '../components/SendModal.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
+import ArkadeLogo from '../components/ArkadeLogo.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
@@ -802,6 +817,7 @@ export default {
   components: {
     ReceiveModal,
     SendModal,
+    ArkadeLogo,
     L1BitcoinWithdraw,
     InternalTransferModal,
     AddressBookQuickModal,
@@ -1150,9 +1166,16 @@ export default {
       // LNURL-withdraw has its own amount handling
       if (this.pendingPayment.type === 'lnurl_withdraw') return false;
 
-      // Spark addresses always need amount input (no embedded amount)
-      if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress) {
+      // Spark / Arkade addresses always need amount input (no embedded amount)
+      if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress ||
+          this.pendingPayment.type === 'arkade_address' || this.pendingPayment.arkadeAddress) {
         return true;
+      }
+
+      // Bitcoin on-chain (Arkade offboard via the send sheet): a bare bc1
+      // address carries no amount; a BIP21 one may. Ask unless we already have it.
+      if (this.pendingPayment.bitcoinAddress) {
+        return !(this.pendingPayment.amount > 0);
       }
 
       // Lightning Address always needs amount input (no embedded amount in address)
@@ -1304,6 +1327,22 @@ export default {
           addressType: 'spark',
           address: p.sparkAddress,
         });
+      } else if (p.arkadeAddress) {
+        const contact = this.addressBookStore.findContactByAddress(p.arkadeAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: this.$t('Arkade address'),
+          fallbackColor: '#F14317',
+          addressType: 'arkade',
+          address: p.arkadeAddress,
+        });
+      } else if (p.bitcoinAddress) {
+        const contact = this.addressBookStore.findContactByAddress(p.bitcoinAddress);
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: this.$t('Bitcoin address'),
+          fallbackColor: '#F7931A',
+          addressType: 'bitcoin',
+          address: p.bitcoinAddress,
+        });
       } else if (p.type === 'lnurl' || p.type === 'lnurl_pay') {
         if (nostrPubkey) {
           // Nostr person reached via a raw LNURL (npub.cash, or a resolved
@@ -1408,6 +1447,19 @@ export default {
         } else if (this.estimatedFee !== null && this.estimatedFee !== undefined) {
           feeEstimate = { sats: this.estimatedFee, isEstimating: false };
         }
+      } else if (this.walletStore.isActiveWalletArkade) {
+        if (p.arkadeAddress) {
+          // ark1 → ark1 is instant and effectively free.
+          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free (Arkade transfer)') };
+        } else if (p.bitcoinAddress) {
+          // On-chain offboard pays a Bitcoin network fee, deducted from the
+          // amount. Plain-language note (no pre-call number is exposed).
+          feeEstimate = { sats: null, isEstimating: false, label: this.$t('Includes a network fee') };
+        } else {
+          // Lightning over Arkade carries a small fee, deducted automatically
+          // (no pre-call estimate). Surface a plain-language note, not a number.
+          feeEstimate = { sats: null, isEstimating: false, label: this.$t('Includes a small Lightning fee') };
+        }
       }
 
       return {
@@ -1442,11 +1494,18 @@ export default {
       if (p.sparkAddress || p.type === 'spark_address') {
         return this.walletStore.isActiveWalletSpark;
       }
+      if (p.arkadeAddress || p.type === 'arkade_address') {
+        return this.walletStore.isActiveWalletArkade;
+      }
       return true;
     },
 
     paymentSheetWalletHint() {
       if (this.paymentSheetWalletCanPay) return '';
+      const p = this.pendingPayment;
+      if (p?.arkadeAddress || p?.type === 'arkade_address') {
+        return this.$t('Switch to your Arkade wallet to pay this address');
+      }
       return this.$t('Switch to your Spark wallet to pay this address');
     },
 
@@ -2749,6 +2808,7 @@ export default {
     getWalletTypeLabel(type) {
       switch (type) {
         case 'spark': return 'Spark';
+        case 'arkade': return 'Arkade';
         case 'lnbits': return 'LNbits';
         default: return 'NWC';
       }
@@ -2756,6 +2816,7 @@ export default {
     getWalletTypeBadgeClass(type) {
       switch (type) {
         case 'spark': return 'type-spark';
+        case 'arkade': return 'type-arkade';
         case 'lnbits': return 'type-lnbits';
         default: return 'type-nwc';
       }
@@ -2932,6 +2993,31 @@ export default {
             // are debuggable but don't surface a UI error for a transient
             // blip.
             console.warn('LNbits balance refresh failed:', err.message);
+          }
+          return;
+        }
+
+        // Arkade wallet flow (provider-based, like Spark/LNbits — never NWC)
+        if (this.walletStore.isActiveWalletArkade) {
+          try {
+            const provider = await this.walletStore.ensureArkadeConnected();
+            const balanceResult = await provider.getBalance();
+            this.walletState.balance = balanceResult.balance;
+
+            const activeWallet = this.walletState.connectedWallets.find(
+              w => w.id === this.walletState.activeWalletId
+            );
+            if (activeWallet) {
+              activeWallet.balance = balanceResult.balance;
+            }
+
+            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+
+            if (balanceResult.balance > 0 && activeWalletId) {
+              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
+            }
+          } catch (err) {
+            console.warn('Arkade balance refresh failed:', err.message);
           }
           return;
         }
@@ -3523,6 +3609,11 @@ export default {
         const provider = this.walletStore.getActiveProvider();
         if (!provider) throw new Error('No LNbits provider available');
         result = await provider.createInvoice({ amount: amountSats, description });
+      } else if (walletType === 'arkade') {
+        // Arkade receives Lightning via a Boltz reverse swap; the provider
+        // returns { paymentRequest, paymentHash } normalized below.
+        const provider = await this.walletStore.ensureArkadeConnected();
+        result = await provider.createInvoice({ amount: amountSats, description });
       } else {
         // NWC - LightningPaymentService uses positional args and returns snake_case
         const activeWallet = this.getActiveWallet();
@@ -3710,7 +3801,9 @@ export default {
           console.warn('Spark event monitoring failed, falling back to polling:', error);
           this.startWithdrawPollingMonitor(invoice, amountSats);
         }
-      } else if (walletType === 'lnbits') {
+      } else if (walletType === 'lnbits' || walletType === 'arkade') {
+        // Both expose a provider `lookupInvoice(hash)`; the generic polling
+        // monitor confirms the reverse-swap / invoice settling into the wallet.
         this.startWithdrawPollingMonitor(invoice, amountSats);
       } else {
         // NWC
@@ -4059,7 +4152,7 @@ export default {
           } else {
             // LNURL-pay: existing flow
             const walletType = this.walletStore.activeWalletType;
-            if (walletType === 'spark' || walletType === 'lnbits') {
+            if (walletType === 'spark' || walletType === 'lnbits' || walletType === 'arkade') {
               this.pendingPayment = {
                 ...paymentData,
                 lnurl: paymentData.data,
@@ -4117,8 +4210,9 @@ export default {
 
           const walletType = this.walletStore.activeWalletType;
 
-          if (walletType === 'spark' || walletType === 'lnbits') {
-            // For Spark and LNbits wallets, include LNURL info for amount handling
+          if (walletType === 'spark' || walletType === 'lnbits' || walletType === 'arkade') {
+            // For Spark, LNbits and Arkade, include LNURL info for amount handling
+            // — the confirm sheet + per-type send path own the actual payment.
             this.pendingPayment = {
               ...paymentData,
               lightningAddress: paymentData.data,
@@ -4187,10 +4281,16 @@ export default {
             ...paymentData,
             sparkAddress: paymentData.data
           };
+        } else if (paymentData.type === 'arkade_address' && paymentData.data) {
+          // Arkade address payment (instant ark1 → ark1, near-zero fee)
+          this.pendingPayment = {
+            ...paymentData,
+            arkadeAddress: paymentData.data
+          };
         } else if (paymentData.type === 'bitcoin_address' && paymentData.data) {
-          // Bitcoin L1 withdrawal (Spark only)
-          if (!this.walletStore.isActiveWalletSpark) {
-            throw new Error('Bitcoin withdrawals require a Spark wallet');
+          // Bitcoin on-chain: Spark (L1 withdraw) or Arkade (Ramps offboard).
+          if (!this.walletStore.isActiveWalletSpark && !this.walletStore.isActiveWalletArkade) {
+            throw new Error('Bitcoin withdrawals require a Spark or Arkade wallet');
           }
           this.pendingPayment = {
             ...paymentData,
@@ -4215,7 +4315,13 @@ export default {
         //   - LNURL-Withdraw   → PaymentConfirmSheet, verb='redeem'
         //   - Everything else  → PaymentConfirmSheet, verb='send'
         if (this.pendingPayment?.bitcoinAddress) {
-          this.showBitcoinSheet = true;
+          // Arkade offboards on-chain through the standard confirm sheet +
+          // Ramps; the Spark-specific L1 withdraw sheet only applies to Spark.
+          if (this.walletStore.isActiveWalletArkade) {
+            this.showSendSheet = true;
+          } else {
+            this.showBitcoinSheet = true;
+          }
         } else if (this.pendingPayment?.type === 'lnurl_withdraw') {
           this.showWithdrawSheet = true;
         } else {
@@ -4414,6 +4520,8 @@ export default {
         const walletType = this.walletStore.activeWalletType;
         if (walletType === 'spark') {
           result = await this.sendSparkPayment(amount, comment);
+        } else if (walletType === 'arkade') {
+          result = await this.sendArkadePayment(amount, comment);
         } else if (walletType === 'lnbits') {
           result = await this.sendLNBitsPayment(amount, comment);
         } else {
@@ -4533,6 +4641,7 @@ export default {
       if (!p) return null;
       if (p.bitcoinAddress)    return 'Bitcoin on-chain';
       if (p.sparkAddress)      return 'Spark transfer';
+      if (p.arkadeAddress)     return 'Arkade transfer';
       if (p.invoice)           return 'BOLT11 invoice';
       if (p.lightningAddress)  return 'Lightning Address';
       if (p.lnurl)             return 'LNURL-pay';
@@ -4646,6 +4755,58 @@ export default {
       throw new Error('Unsupported payment type for Spark wallet');
     },
 
+    /**
+     * Arkade send executor. Routes by destination type, mirroring the LNbits
+     * flow (Arkade pays Lightning via a resolved bolt11 invoice, not a native
+     * address-pay) plus the instant ark1 fast path:
+     *   - ark1 → ark1            : transferToArkadeAddress (near-zero fee)
+     *   - BOLT11 invoice         : Boltz submarine swap (payInvoice)
+     *   - Lightning address/LNURL: resolve to bolt11, then swap
+     *   - on-chain bc1…          : Ramps offboard — phase-second
+     */
+    async sendArkadePayment(amount, comment) {
+      const provider = await this.walletStore.ensureArkadeConnected();
+
+      // Native ark1 → ark1: instant, near-zero fee fast path.
+      if (this.pendingPayment.arkadeAddress) {
+        return await provider.transferToArkadeAddress({
+          arkadeAddress: this.pendingPayment.arkadeAddress,
+          amount,
+        });
+      }
+
+      // BOLT11 invoice → Boltz submarine swap.
+      if (this.pendingPayment.invoice) {
+        return await provider.payInvoice({ invoice: this.pendingPayment.invoice });
+      }
+
+      // Lightning address → fetch a bolt11 for the amount, then swap.
+      if (this.pendingPayment.lightningAddress) {
+        const invoice = await this.fetchLightningAddressInvoice(
+          this.pendingPayment.lightningAddress,
+          amount,
+          comment
+        );
+        return await provider.payInvoice({ invoice });
+      }
+
+      // LNURL-pay → fetch the encoded-amount invoice, then swap.
+      if (this.pendingPayment.lnurl) {
+        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
+        return await provider.payInvoice({ invoice });
+      }
+
+      // On-chain (bc1…): collaborative exit (offboard) via Ramps.
+      if (this.pendingPayment.bitcoinAddress) {
+        return await provider.offboardToBitcoin({
+          bitcoinAddress: this.pendingPayment.bitcoinAddress,
+          amount,
+        });
+      }
+
+      throw new Error('Unsupported payment type for Arkade wallet');
+    },
+
     async sendNWCPayment(amount, comment) {
       const activeWallet = this.getActiveWallet();
       if (!activeWallet?.nwcString) {
@@ -4708,6 +4869,8 @@ export default {
       if (this.pendingPayment.lightningAddress) return this.pendingPayment.lightningAddress;
       // Spark address
       if (this.pendingPayment.sparkAddress) return this.pendingPayment.sparkAddress;
+      // Arkade address
+      if (this.pendingPayment.arkadeAddress) return this.pendingPayment.arkadeAddress;
       // LNURL is not saveable as a stable address
       return null;
     },
@@ -4716,6 +4879,7 @@ export default {
     getRecipientAddressType() {
       if (!this.pendingPayment) return 'lightning';
       if (this.pendingPayment.sparkAddress) return 'spark';
+      if (this.pendingPayment.arkadeAddress) return 'arkade';
       return 'lightning';
     },
 
@@ -4739,6 +4903,9 @@ export default {
       }
       if (this.pendingPayment.sparkAddress) {
         return this.truncateAddress(this.pendingPayment.sparkAddress);
+      }
+      if (this.pendingPayment.arkadeAddress) {
+        return this.truncateAddress(this.pendingPayment.arkadeAddress);
       }
       return '';
     },
@@ -7197,6 +7364,21 @@ export default {
 
 .type-spark {
   background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
+}
+
+.type-arkade {
+  background: linear-gradient(135deg, #F14317, #C0360F);
+}
+
+.arkade-maintenance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 -4px;
 }
 
 .type-nwc {

@@ -801,6 +801,8 @@ export default {
           await this.fetchSparkTransaction(txId);
         } else if (this.walletStore.isActiveWalletLNBits) {
           await this.fetchLNBitsTransaction(txId);
+        } else if (this.walletStore.isActiveWalletArkade) {
+          await this.fetchArkadeTransaction(txId);
         } else {
           await this.fetchNWCTransaction(txId);
         }
@@ -835,6 +837,28 @@ export default {
           sparkTransfer: found.sparkTransfer || false
         };
         console.log('Transaction loaded with description:', this.transaction.description);
+      }
+    },
+
+    async fetchArkadeTransaction(txId) {
+      // Arkade uses a provider like Spark; getTransactions() already returns
+      // direction as 'incoming'/'outgoing' and unix-seconds timestamps.
+      const provider = await this.walletStore.ensureArkadeConnected(this.walletStore.activeWalletId);
+
+      const transactions = await provider.getTransactions();
+      const found = transactions.find(tx => tx.id === txId);
+
+      if (found) {
+        this.transaction = {
+          id: found.id,
+          type: found.type === 'incoming' ? 'incoming' : 'outgoing',
+          amount: found.amount,
+          description: found.description || '',
+          memo: found.description || '',
+          settled_at: found.timestamp,
+          fee: found.fee || 0,
+          status: found.status || 'completed'
+        };
       }
     },
 

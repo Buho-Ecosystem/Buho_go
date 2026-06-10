@@ -15,6 +15,7 @@
 import { strict as assert } from 'node:assert';
 import {
   isSparkAddress,
+  isArkadeAddress,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
@@ -56,6 +57,22 @@ test('isSparkAddress: new + legacy prefixes', () => {
   assert.equal(isSparkAddress('spark1abcdef'), true);
   assert.equal(isSparkAddress('sp1abcdef'), true);
   assert.equal(isSparkAddress('bc1qabc'), false);
+});
+
+test('isArkadeAddress: ark1 / tark1, case-insensitive, no cross-type collisions', () => {
+  assert.equal(isArkadeAddress('ark1qabcdef'), true);
+  assert.equal(isArkadeAddress('tark1qabcdef'), true);
+  assert.equal(isArkadeAddress('ARK1QABCDEF'), true);
+  assert.equal(isArkadeAddress('  ark1qabcdef  '), true);
+  // Must not swallow Spark / invoice / on-chain / junk.
+  assert.equal(isArkadeAddress('spark1abcdef'), false);
+  assert.equal(isArkadeAddress('sp1abcdef'), false);
+  assert.equal(isArkadeAddress('lnbc10n1pjxyz'), false);
+  assert.equal(isArkadeAddress('bc1qabc'), false);
+  assert.equal(isArkadeAddress('arkade'), false);
+  assert.equal(isArkadeAddress(null), false);
+  // And Spark must not swallow Arkade.
+  assert.equal(isSparkAddress('ark1qabcdef'), false);
 });
 
 test('isLightningInvoice / isLnurl: tolerate lightning: wrapper', () => {

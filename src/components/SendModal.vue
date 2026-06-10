@@ -59,7 +59,7 @@
              scanner per design direction. Stays up through the parent's
              address fetch (ctaBusy), not just our local decode. -->
         <div v-if="ctaBusy" class="processing-overlay">
-          <q-spinner-dots color="grey-5" size="3rem" />
+          <q-spinner-dots color="grey-5" size="48px" />
           <div class="processing-text">{{ $t('Processing payment...') }}</div>
         </div>
 
@@ -247,6 +247,7 @@ import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_S
 import { parseBip21, selectBip21Destination } from '../utils/bip21';
 import {
   isSparkAddress,
+  isArkadeAddress,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
@@ -321,6 +322,10 @@ export default {
       return this.walletStore.isActiveWalletSpark;
     },
 
+    isActiveWalletArkade() {
+      return this.walletStore.isActiveWalletArkade;
+    },
+
     // Live detection mirrors AddressBookModal's pattern. We strip URI
     // wrappers (lightning:, bitcoin:) so a paste like
     // "lightning:lnbc1..." resolves to lightning_invoice rather than
@@ -343,6 +348,7 @@ export default {
         : raw;
 
       if (isSparkAddress(cleaned)) return 'spark';
+      if (isArkadeAddress(cleaned)) return 'arkade';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
       // Bare Nostr key: `npub1…` / `nprofile1…` (optionally `nostr:`-prefixed).
       // Unambiguous — nothing else looks like this — so we resolve it to the
@@ -657,11 +663,20 @@ export default {
           });
         }
 
-        if (paymentType === 'bitcoin_address' && !this.isActiveWalletSpark) {
+        if (paymentType === 'arkade_address' && !this.isActiveWalletArkade) {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Arkade address detected'),
+            caption: this.$t('Switch to Arkade wallet to pay this address'),
+            timeout: 4000,
+          });
+        }
+
+        if (paymentType === 'bitcoin_address' && !this.isActiveWalletSpark && !this.isActiveWalletArkade) {
           this.$q.notify({
             type: 'warning',
             message: this.$t('Bitcoin address detected'),
-            caption: this.$t('Switch to Spark wallet to send to Bitcoin addresses'),
+            caption: this.$t('Switch to a Spark or Arkade wallet to send Bitcoin'),
             timeout: 4000,
           });
         }
@@ -735,6 +750,7 @@ export default {
       if (!cleaned) return 'unknown';
 
       if (isSparkAddress(cleaned)) return 'spark_address';
+      if (isArkadeAddress(cleaned)) return 'arkade_address';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
       if (isLightningAddress(cleaned)) return 'lightning_address';
       if (isLnurl(cleaned)) return 'lnurl';
@@ -830,6 +846,7 @@ export default {
 
       const paymentTypeMap = {
         spark: 'spark_address',
+        arkade: 'arkade_address',
         bitcoin: 'bitcoin_address',
         lightning: 'lightning_address',
         // LNURL contacts emit the same payment type the manual/scan LNURL path
@@ -858,8 +875,16 @@ export default {
 
     canPayContact(contact) {
       const type = this.getContactAddressType(contact);
-      if (type === 'spark' || type === 'bitcoin') {
+      if (type === 'spark') {
         return this.isActiveWalletSpark;
+      }
+      // On-chain Bitcoin: Spark (L1 withdraw) or Arkade (Ramps offboard).
+      if (type === 'bitcoin') {
+        return this.isActiveWalletSpark || this.isActiveWalletArkade;
+      }
+      // ark1 can only be paid by an Arkade wallet (different network than Spark).
+      if (type === 'arkade') {
+        return this.isActiveWalletArkade;
       }
       return true;
     },
@@ -868,7 +893,10 @@ export default {
       if (!this.canPayContact(contact)) {
         const type = this.getContactAddressType(contact);
         if (type === 'bitcoin') {
-          return this.$t('Switch to Spark wallet to send Bitcoin');
+          return this.$t('Switch to a Spark or Arkade wallet to send Bitcoin');
+        }
+        if (type === 'arkade') {
+          return this.$t('Switch to Arkade wallet to pay this contact');
         }
         return this.$t('Switch to Spark wallet to pay this contact');
       }
