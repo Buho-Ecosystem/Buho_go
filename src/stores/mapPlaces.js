@@ -83,10 +83,10 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     bitcoinjungle: [],
     moneybadger: [],
 
-    // Blink / Bitcoin Jungle / MoneyBadger are off by default and fetch lazily
-    // the first time the user switches them on — keeps the initial map light
-    // (their combined ~6–7k pins aren't pulled unless asked for).
-    enabled: { btcmap: true, osm: true, btcpay: true, blink: false, bitcoinjungle: false, moneybadger: false },
+    // Only BTC Map loads on open. Every other source is opt-in and fetches its
+    // data lazily the first time the user switches it on (see toggleSource), so
+    // the initial map is a single, light dataset instead of six.
+    enabled: { btcmap: true, osm: false, btcpay: false, blink: false, bitcoinjungle: false, moneybadger: false },
     buckets: { food: true, retail: true, lodging: true, services: true, atm: true, fuel: true, leisure: true, other: true },
     favoritesOnly: false,
 
@@ -102,6 +102,7 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     // than rendering the whole global set.
     viewportBbox: null, // { south, west, north, east } | null
     viewportCenter: null, // { lat, lon } | null
+    viewportZoom: 2, // last map zoom — lets a lazy OSM enable refetch the view
   }),
   getters: {
     merged(state) {
@@ -184,10 +185,9 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
   },
   actions: {
     async loadGlobal() {
-      // Only the always-on global sources load on map open. BTC Map + BTCPay are
-      // global, no bbox required; run them in parallel. The opt-in regional
-      // directories load lazily via toggleSource() when enabled.
-      await Promise.allSettled([this.loadBtcMap(), this.loadBtcPay()])
+      // BTC Map is the only source loaded on map open. Everything else is
+      // opt-in and fetches lazily the first time it's enabled (toggleSource).
+      await this.loadBtcMap()
     },
 
     // Generic loader for a global, cacheable source. Mirrors loadBtcMap/
@@ -254,6 +254,10 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     },
 
     async loadViewport(bbox, zoom) {
+      // Remember the zoom so a lazy OSM enable can refetch the current view.
+      this.viewportZoom = zoom
+      // OSM/Overpass is opt-in: skip entirely unless the user enabled it.
+      if (!this.enabled.osm) return
       // Overpass is bbox-scoped; gate at a regional zoom so the world-wide view
       // doesn't blow up the query, but a country-level zoom already populates.
       if (!bbox || zoom < 4) return
@@ -290,14 +294,19 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
 
     toggleSource(source) {
       this.enabled[source] = !this.enabled[source]
-      // Lazy sources fetch only the first time they're switched on (cache-hit
-      // on subsequent toggles, so flipping off/on again is instant).
-      if (
-        this.enabled[source] &&
-        LAZY_SOURCES[source] &&
-        this[source].length === 0 &&
-        !this.loading[source]
-      ) {
+      if (!this.enabled[source]) return // turning off just hides; merged drops it
+
+      // Switched ON: fetch this source's data if we don't already have it.
+      if (source === 'btcmap') {
+        if (this.btcmap.length === 0 && !this.loading.btcmap) void this.loadBtcMap()
+      } else if (source === 'btcpay') {
+        if (this.btcpay.length === 0 && !this.loading.btcpay) void this.loadBtcPay()
+      } else if (source === 'osm') {
+        // Viewport-scoped — (re)fetch for the current view.
+        void this.loadViewport(this.viewportBbox, this.viewportZoom)
+      } else if (LAZY_SOURCES[source] && this[source].length === 0 && !this.loading[source]) {
+        // Global regional directories cache after the first fetch, so a later
+        // off/on toggle is instant.
         void this.loadCachedSource(source, LAZY_SOURCES[source])
       }
     },

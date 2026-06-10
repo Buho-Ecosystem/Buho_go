@@ -65,7 +65,7 @@ const filtersActive = computed(() => {
   const b = store.buckets
   return (
     store.favoritesOnly ||
-    !e.btcmap || !e.osm || !e.btcpay ||
+    !e.btcmap ||
     Object.values(b).some((v) => !v)
   )
 })
