@@ -2079,5 +2079,13 @@ export default {
 
   // ── NFC-bereit-Badge ──
   "NFC ready": "NFC bereit",
-  "Hold a Bolt Card or NFC tag to your phone to pay or redeem": "Halte eine Bolt Card oder einen NFC-Tag an dein Telefon, um zu zahlen oder einzulösen"
+  "Hold a Bolt Card or NFC tag to your phone to pay or redeem": "Halte eine Bolt Card oder einen NFC-Tag an dein Telefon, um zu zahlen oder einzulösen",
+
+  // ── LNbits verbinden: LNDhub-Link-Unterstützung ──
+  "Or paste an LNDhub link and we will fill both fields": "Oder füge einen LNDhub-Link ein, wir füllen beide Felder aus",
+  "LNbits connection details detected": "LNbits-Verbindungsdaten erkannt",
+  "LNbits connection scanned": "LNbits-Verbindung gescannt",
+  "This LNDhub link is not from an LNbits server": "Dieser LNDhub-Link stammt nicht von einem LNbits-Server",
+  "That looks like an invoice (read-only) key": "Das sieht nach einem Invoice-Schlüssel (nur Lesen) aus",
+  "You can receive but not send": "Du kannst empfangen, aber nicht senden"
 }

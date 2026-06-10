@@ -177,6 +177,9 @@
           <div class="help-text q-mt-md" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
             {{ $t('Find your admin key in LNbits under API Info') }}
           </div>
+          <div class="help-text q-mt-xs" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+            {{ $t('Or paste an LNDhub link and we will fill both fields') }}
+          </div>
         </q-card-section>
 
       </q-card>
@@ -377,6 +380,7 @@ import { useWalletStore } from '../stores/wallet'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 import { mapActions, mapState } from 'pinia'
 import { getUserFriendlyErrorMessage } from '../utils/userErrors'
+import { isLndhubUri, parseLndhubUri } from '../utils/lndhub'
 
 export default {
   name: 'LNBitsSetupPage',
@@ -466,11 +470,81 @@ export default {
       return this.$t('Scan your admin key');
     },
   },
+  watch: {
+    // Accept an LNbits LNDhub export pasted into EITHER field. The URI
+    // carries the server URL + admin key, so we split it across both
+    // fields wherever it lands. Setting the fields with the exploded
+    // (non-lndhub) values re-triggers these watchers harmlessly —
+    // isLndhubUri() short-circuits, so there's no recursion.
+    serverUrl(val) {
+      this.applyLndhubUri(val);
+    },
+    adminKey(val) {
+      this.applyLndhubUri(val);
+    },
+  },
   beforeUnmount() {
     this.stopQrScanner();
   },
   methods: {
     ...mapActions(useWalletStore, ['addLNBitsWallet', 'setWalletLightningAddress', 'showPaymentError']),
+
+    /**
+     * If `value` is an LNbits LNDhub export URI, explode it into the
+     * serverUrl + adminKey fields and return true. LNbits hands users a
+     * single `lndhub://login:key@host/lndhub/ext/` string that already
+     * carries exactly what this form needs, so we accept it pasted into
+     * either field or scanned, rather than making them tease it apart.
+     *
+     * @param {string} value
+     * @param {{scanned?: boolean}} [opts] - tweaks the feedback wording and
+     *        routes parse errors to a toast (scan) vs the inline error (form).
+     * @returns {boolean} true if an LNDhub URI was consumed.
+     */
+    applyLndhubUri(value, { scanned = false } = {}) {
+      if (!isLndhubUri(value)) return false;
+
+      const parsed = parseLndhubUri(value);
+      if (!parsed) {
+        // Looked like lndhub:// but wasn't an LNbits endpoint we can use.
+        // Only complain once it's a complete-looking URI (has the '@host'
+        // part) so we don't nag mid-paste / mid-type.
+        if (value.includes('@')) {
+          const msg = this.$t('This LNDhub link is not from an LNbits server');
+          if (scanned) {
+            this.$q.notify({ type: 'warning', message: msg, timeout: 2200 });
+          } else {
+            this.errorMessage = msg;
+          }
+        }
+        return false;
+      }
+
+      this.serverUrl = parsed.serverUrl;
+      this.adminKey = parsed.adminKey;
+      this.errorMessage = '';
+
+      if (parsed.login === 'invoice') {
+        // The invoice key is read-only: it can receive but never pay. Fill
+        // the field anyway (receive-only is still useful) but warn loudly,
+        // or the user only finds out when their first send fails.
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('That looks like an invoice (read-only) key'),
+          caption: this.$t('You can receive but not send'),
+          timeout: 3000,
+        });
+      } else {
+        this.$q.notify({
+          type: 'positive',
+          message: scanned
+            ? this.$t('LNbits connection scanned')
+            : this.$t('LNbits connection details detected'),
+          timeout: 1700,
+        });
+      }
+      return true;
+    },
 
     goBack() {
       if (window.history.length > 1) {
@@ -752,6 +826,21 @@ export default {
       if (!qrData) return;
 
       const data = qrData.trim();
+
+      // LNbits LNDhub export — one QR that carries BOTH the server URL and
+      // the admin key. Explode it and finish; no need to scan twice. Must
+      // run before the URL / 32+ char classification below, or this long
+      // string would be mistaken for a bare admin key.
+      if (isLndhubUri(data)) {
+        if (this.applyLndhubUri(data, { scanned: true })) {
+          this.closeScanner();
+        }
+        // Whether or not it parsed, it was an LNDhub attempt — don't fall
+        // through to the URL/key classifier (applyLndhubUri already gave
+        // feedback on failure).
+        return;
+      }
+
       let captured = null; // 'server' | 'key' — what we just filled
 
       if (data.startsWith('http://') || data.startsWith('https://')) {
