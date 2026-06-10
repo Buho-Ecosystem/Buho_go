@@ -35,6 +35,15 @@ const CACHE_KEYS = {
 // list shows the nearest slice so the scroll container stays light.
 const LIST_CAP = 60
 
+// Sources that are NOT fetched on map open. They pull their dataset only the
+// first time the user switches them on (see toggleSource), so the initial map
+// stays light instead of eagerly downloading every regional directory.
+const LAZY_SOURCES = {
+  blink: fetchBlink,
+  bitcoinjungle: fetchBitcoinJungle,
+  moneybadger: fetchMoneyBadger,
+}
+
 function readCache(key) {
   try {
     const raw = sessionStorage.getItem(key)
@@ -74,7 +83,10 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     bitcoinjungle: [],
     moneybadger: [],
 
-    enabled: { btcmap: true, osm: true, btcpay: true, blink: true, bitcoinjungle: true, moneybadger: true },
+    // Blink / Bitcoin Jungle / MoneyBadger are off by default and fetch lazily
+    // the first time the user switches them on — keeps the initial map light
+    // (their combined ~6–7k pins aren't pulled unless asked for).
+    enabled: { btcmap: true, osm: true, btcpay: true, blink: false, bitcoinjungle: false, moneybadger: false },
     buckets: { food: true, retail: true, lodging: true, services: true, atm: true, fuel: true, leisure: true, other: true },
     favoritesOnly: false,
 
@@ -172,15 +184,10 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
   },
   actions: {
     async loadGlobal() {
-      // All of these return their whole dataset in one shot (no bbox). Run them
-      // in parallel; each fails soft into its own `errors[source]` slot.
-      await Promise.allSettled([
-        this.loadBtcMap(),
-        this.loadBtcPay(),
-        this.loadCachedSource('blink', fetchBlink),
-        this.loadCachedSource('bitcoinjungle', fetchBitcoinJungle),
-        this.loadCachedSource('moneybadger', fetchMoneyBadger),
-      ])
+      // Only the always-on global sources load on map open. BTC Map + BTCPay are
+      // global, no bbox required; run them in parallel. The opt-in regional
+      // directories load lazily via toggleSource() when enabled.
+      await Promise.allSettled([this.loadBtcMap(), this.loadBtcPay()])
     },
 
     // Generic loader for a global, cacheable source. Mirrors loadBtcMap/
@@ -283,6 +290,16 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
 
     toggleSource(source) {
       this.enabled[source] = !this.enabled[source]
+      // Lazy sources fetch only the first time they're switched on (cache-hit
+      // on subsequent toggles, so flipping off/on again is instant).
+      if (
+        this.enabled[source] &&
+        LAZY_SOURCES[source] &&
+        this[source].length === 0 &&
+        !this.loading[source]
+      ) {
+        void this.loadCachedSource(source, LAZY_SOURCES[source])
+      }
     },
     toggleBucket(bucket) {
       this.buckets[bucket] = !this.buckets[bucket]

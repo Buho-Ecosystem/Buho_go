@@ -66,7 +66,6 @@ const filtersActive = computed(() => {
   return (
     store.favoritesOnly ||
     !e.btcmap || !e.osm || !e.btcpay ||
-    !e.blink || !e.bitcoinjungle || !e.moneybadger ||
     Object.values(b).some((v) => !v)
   )
 })
