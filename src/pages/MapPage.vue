@@ -6,6 +6,7 @@ import { useQuasar } from 'quasar'
 import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../stores/mapPlaces.js'
 import { useMapBasemapStore } from '../stores/mapBasemap.js'
+import { useMapMeetupsStore } from '../stores/mapMeetups.js'
 import { useWalletStore } from '../stores/wallet'
 import {
   getCurrentPosition,
@@ -18,6 +19,7 @@ import PlaceListRow from '../components/map/PlaceListRow.vue'
 import PlaceDetail from '../components/map/PlaceDetail.vue'
 import MapSearch from '../components/map/MapSearch.vue'
 import MapFilters from '../components/map/MapFilters.vue'
+import MeetupDetail from '../components/map/MeetupDetail.vue'
 
 /**
  * MapPage — orchestrator for the Bitcoin merchant map.
@@ -36,14 +38,17 @@ const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 const store = useMapPlacesStore()
 const basemapStore = useMapBasemapStore()
+const meetupsStore = useMapMeetupsStore()
 const walletStore = useWalletStore()
 const { featureCollection, userLocation, listPlaces, visibleCount } = storeToRefs(store)
 const { styleUrl: basemapStyleUrl, pitch3D: mapTilted } = storeToRefs(basemapStore)
+const { visibleCollection: meetupsCollection } = storeToRefs(meetupsStore)
 
 const mapRef = ref(null)
 const sheetRef = ref(null)
 const selectedId = ref('')
 const selectedPlace = ref(null) // canonical detail object, null = show list
+const selectedMeetup = ref(null) // selected Einundzwanzig meetup, null = none
 const locating = ref(false)
 
 const sheetDetent = ref('peek')
@@ -61,6 +66,7 @@ const filtersActive = computed(() => {
   return (
     store.favoritesOnly ||
     !e.btcmap || !e.osm || !e.btcpay ||
+    !e.blink || !e.bitcoinjungle || !e.moneybadger ||
     Object.values(b).some((v) => !v)
   )
 })
@@ -149,6 +155,7 @@ function toDetail(p) {
 function selectPlace(place) {
   selectedId.value = place.id || ''
   selectedPlace.value = toDetail(place)
+  selectedMeetup.value = null // a merchant tap wins over any open meetup card
 
   // The sheet settles to at least half on select, so offset the fly by the
   // half height (or the current height if already taller) to keep the pin
@@ -166,7 +173,26 @@ function selectPlace(place) {
 
 function backToList() {
   selectedPlace.value = null
+  selectedMeetup.value = null
   selectedId.value = ''
+}
+
+// Tapping an Einundzwanzig meetup pin: open its detail (no merchant highlight),
+// lift the sheet, and fly to it. Mirrors selectPlace but for the meetups layer.
+function selectMeetup(m) {
+  selectedMeetup.value = { ...m }
+  selectedPlace.value = null
+  selectedId.value = ''
+
+  if (sheetDetent.value === 'peek') sheetRef.value?.setDetent('half')
+  const halfPx = (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.5
+  const inset = Math.min(Math.max(sheetHeight.value, halfPx), (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.55)
+
+  const lat = Number(m.lat)
+  const lon = Number(m.lon)
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    mapRef.value?.flyTo(lat, lon, 13, { bottomInset: inset })
+  }
 }
 
 // "Pay this merchant" — hand the Lightning Address to the wallet's own send
@@ -268,6 +294,7 @@ onMounted(async () => {
     <MapView
       ref="mapRef"
       :data="featureCollection"
+      :meetups="meetupsCollection"
       :style-url="basemapStyleUrl"
       :tilted="mapTilted"
       :selected-id="selectedId"
@@ -277,6 +304,7 @@ onMounted(async () => {
       @ready="onMapReady"
       @move="onMapMove"
       @select="selectPlace"
+      @select-meetup="selectMeetup"
       @recenter-request="locateUser"
       @user-pan="onUserPan"
     />
@@ -338,7 +366,7 @@ onMounted(async () => {
       @dragging="(v) => (sheetDragging = v)"
     >
       <template #header>
-        <div v-if="!selectedPlace" class="sheet-summary">
+        <div v-if="!selectedPlace && !selectedMeetup" class="sheet-summary">
           <span class="sheet-summary-count">{{ summaryText }}</span>
           <q-spinner-dots
             v-if="store.isLoading"
@@ -348,9 +376,15 @@ onMounted(async () => {
         </div>
       </template>
 
-      <!-- Detail card replaces the list when a place is selected. -->
+      <!-- Detail card replaces the list when a place or meetup is selected. -->
+      <MeetupDetail
+        v-if="selectedMeetup"
+        :meetup="selectedMeetup"
+        @back="backToList"
+      />
+
       <PlaceDetail
-        v-if="selectedPlace"
+        v-else-if="selectedPlace"
         :place="selectedPlace"
         @back="backToList"
         @pay="onPayMerchant"

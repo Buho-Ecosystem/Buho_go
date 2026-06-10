@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { fetchBtcMap } from '../services/map/btcmap.js'
 import { fetchOverpass } from '../services/map/overpass.js'
 import { fetchBtcPay } from '../services/map/btcpay.js'
+import { fetchBlink } from '../services/map/blink.js'
+import { fetchBitcoinJungle } from '../services/map/bitcoinjungle.js'
+import { fetchMoneyBadger } from '../services/map/moneybadger.js'
 import {
   mergePlaces,
   toFeatureCollection,
@@ -20,7 +23,13 @@ import { useMapFavoritesStore } from './mapFavorites.js'
 // the same session is instant without holding stale data across days.
 
 const CACHE_TTL_MS = 10 * 60 * 1000
-const CACHE_KEYS = { btcmap: 'btcmap-cache-v1', btcpay: 'btcpay-cache-v1' }
+const CACHE_KEYS = {
+  btcmap: 'btcmap-cache-v1',
+  btcpay: 'btcpay-cache-v1',
+  blink: 'blink-cache-v1',
+  bitcoinjungle: 'bitcoinjungle-cache-v1',
+  moneybadger: 'moneybadger-cache-v1',
+}
 
 // Max rows rendered in the list sheet. The map still shows every pin; the
 // list shows the nearest slice so the scroll container stays light.
@@ -61,13 +70,16 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     btcmap: [],
     osm: [],
     btcpay: [],
+    blink: [],
+    bitcoinjungle: [],
+    moneybadger: [],
 
-    enabled: { btcmap: true, osm: true, btcpay: true },
+    enabled: { btcmap: true, osm: true, btcpay: true, blink: true, bitcoinjungle: true, moneybadger: true },
     buckets: { food: true, retail: true, lodging: true, services: true, atm: true, fuel: true, leisure: true, other: true },
     favoritesOnly: false,
 
-    loading: { btcmap: false, osm: false, btcpay: false },
-    errors: { btcmap: null, osm: null, btcpay: null },
+    loading: { btcmap: false, osm: false, btcpay: false, blink: false, bitcoinjungle: false, moneybadger: false },
+    errors: { btcmap: null, osm: null, btcpay: null, blink: null, bitcoinjungle: null, moneybadger: null },
     lastViewportFetchAt: 0,
 
     // Set once geolocation resolves. Distance origin preference for the list.
@@ -85,6 +97,9 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       if (state.enabled.btcmap) lists.push(state.btcmap)
       if (state.enabled.osm) lists.push(state.osm)
       if (state.enabled.btcpay) lists.push(state.btcpay)
+      if (state.enabled.blink) lists.push(state.blink)
+      if (state.enabled.bitcoinjungle) lists.push(state.bitcoinjungle)
+      if (state.enabled.moneybadger) lists.push(state.moneybadger)
       let all = mergePlaces(...lists)
       all = all.filter((p) => state.buckets[bucketFor(p.category)])
       if (state.favoritesOnly) {
@@ -146,6 +161,9 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
         btcmap: state.btcmap.length,
         osm: state.osm.length,
         btcpay: state.btcpay.length,
+        blink: state.blink.length,
+        bitcoinjungle: state.bitcoinjungle.length,
+        moneybadger: state.moneybadger.length,
       }
     },
     isLoading(state) {
@@ -154,8 +172,38 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
   },
   actions: {
     async loadGlobal() {
-      // BTC Map + BTCPay are global, no bbox required. Run them in parallel.
-      await Promise.allSettled([this.loadBtcMap(), this.loadBtcPay()])
+      // All of these return their whole dataset in one shot (no bbox). Run them
+      // in parallel; each fails soft into its own `errors[source]` slot.
+      await Promise.allSettled([
+        this.loadBtcMap(),
+        this.loadBtcPay(),
+        this.loadCachedSource('blink', fetchBlink),
+        this.loadCachedSource('bitcoinjungle', fetchBitcoinJungle),
+        this.loadCachedSource('moneybadger', fetchMoneyBadger),
+      ])
+    },
+
+    // Generic loader for a global, cacheable source. Mirrors loadBtcMap/
+    // loadBtcPay but parameterized so the regional Lightning directories
+    // (Blink / Bitcoin Jungle / MoneyBadger) don't each need a bespoke action.
+    async loadCachedSource(name, fetchFn) {
+      if (this.loading[name]) return
+      this.loading[name] = true
+      this.errors[name] = null
+      try {
+        const cached = readCache(CACHE_KEYS[name])
+        if (cached) {
+          this[name] = cached
+        } else {
+          const list = await fetchFn()
+          this[name] = list
+          writeCache(CACHE_KEYS[name], list)
+        }
+      } catch (e) {
+        this.errors[name] = e.message || String(e)
+      } finally {
+        this.loading[name] = false
+      }
     },
 
     async loadBtcMap() {
