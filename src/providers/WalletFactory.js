@@ -8,10 +8,12 @@
 import { SparkWalletProvider } from './SparkWalletProvider';
 import { NWCWalletProvider } from './NWCWalletProvider';
 import { LNBitsWalletProvider } from './LNBitsWalletProvider';
+import { ArkadeWalletProvider } from './ArkadeWalletProvider';
 import { WalletProvider } from './WalletProvider';
 import { parseBip21, selectBip21Destination } from '../utils/bip21';
 import {
   isSparkAddress,
+  isArkadeAddress,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
@@ -40,6 +42,18 @@ export function createWalletProvider(wallet) {
         network: wallet.connectionData?.network || 'MAINNET',
         accountNumber: wallet.connectionData?.accountNumber,
         encryptedMnemonic: wallet.connectionData?.encryptedMnemonic,
+        ...wallet
+      });
+
+    case 'arkade':
+      if (!wallet.connectionData?.encryptedMnemonic) {
+        throw new Error('Arkade wallet requires an encrypted recovery phrase');
+      }
+      return new ArkadeWalletProvider(wallet.id, {
+        name: wallet.name,
+        network: wallet.connectionData?.network,
+        arkServerUrl: wallet.connectionData?.arkServerUrl,
+        encryptedMnemonic: wallet.connectionData.encryptedMnemonic,
         ...wallet
       });
 
@@ -85,6 +99,12 @@ export function inferWalletType(wallet) {
     return wallet.type;
   }
 
+  // Arkade and Spark both store an encrypted mnemonic, so disambiguate on the
+  // Arkade-only `arkServerUrl` marker BEFORE falling through to Spark.
+  if (wallet.connectionData?.encryptedMnemonic && wallet.connectionData?.arkServerUrl) {
+    return 'arkade';
+  }
+
   // Check for Spark-specific properties
   if (wallet.connectionData?.encryptedMnemonic) {
     return 'spark';
@@ -104,8 +124,8 @@ export function inferWalletType(wallet) {
   return 'nwc';
 }
 
-// `isSparkAddress` is re-exported from addressUtils below — no wrapper needed.
-export { isSparkAddress } from '../utils/addressUtils';
+// `isSparkAddress` / `isArkadeAddress` are re-exported from addressUtils — no wrapper needed.
+export { isSparkAddress, isArkadeAddress } from '../utils/addressUtils';
 
 /**
  * Parse a payment destination and determine its type
@@ -143,6 +163,17 @@ export function parsePaymentDestination(input) {
   if (isSparkAddress(cleaned)) {
     return withBip21({
       type: 'spark_address',
+      address: cleaned,
+      isZeroFee: true,
+      valid: true,
+    });
+  }
+
+  // Arkade native address — instant ark1 → ark1 fast path, near-zero fee
+  // (the Ark analogue of the Spark zero-fee path above).
+  if (isArkadeAddress(cleaned)) {
+    return withBip21({
+      type: 'arkade_address',
       address: cleaned,
       isZeroFee: true,
       valid: true,
@@ -196,7 +227,8 @@ export function parsePaymentDestination(input) {
 export const WALLET_TYPES = {
   SPARK: 'spark',
   NWC: 'nwc',
-  LNBITS: 'lnbits'
+  LNBITS: 'lnbits',
+  ARKADE: 'arkade'
 };
 
 /**
@@ -204,6 +236,7 @@ export const WALLET_TYPES = {
  */
 export const PAYMENT_TYPES = {
   SPARK_ADDRESS: 'spark_address',
+  ARKADE_ADDRESS: 'arkade_address',
   LIGHTNING_INVOICE: 'lightning_invoice',
   LIGHTNING_ADDRESS: 'lightning_address',
   LNURL: 'lnurl',
@@ -216,6 +249,7 @@ export default {
   createWalletProvider,
   inferWalletType,
   isSparkAddress,
+  isArkadeAddress,
   parsePaymentDestination,
   WALLET_TYPES,
   PAYMENT_TYPES

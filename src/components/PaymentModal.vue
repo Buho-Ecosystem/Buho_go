@@ -38,6 +38,7 @@ import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import {
   isLightningInvoice as isLightningInvoiceShared,
   isLnurl as isLnurlShared,
+  isArkadeAddress as isArkadeAddressShared,
 } from '../utils/addressUtils.js'
 import PaymentConfirmSheet from './PaymentConfirmSheet.vue'
 
@@ -75,20 +76,26 @@ export default {
 
     isSparkContact() { return this.contactAddressType === 'spark' },
     isBitcoinContact() { return this.contactAddressType === 'bitcoin' },
+    isArkadeContact() { return this.contactAddressType === 'arkade' },
 
     /**
-     * Capability check — Spark and Bitcoin contacts can only be paid
-     * from a Spark wallet; Lightning contacts work from any wallet type.
+     * Capability check — Spark and Bitcoin contacts can only be paid from a
+     * Spark wallet; an Arkade (ark1) contact can only be paid from an Arkade
+     * wallet; Lightning contacts work from any wallet type.
      */
     canPayContact() {
       if (this.isSparkContact || this.isBitcoinContact) {
         return useWalletStore().isActiveWalletSpark
+      }
+      if (this.isArkadeContact) {
+        return useWalletStore().activeWalletType === 'arkade'
       }
       return true
     },
 
     walletHint() {
       if (this.canPayContact) return ''
+      if (this.isArkadeContact) return this.$t('Switch to Arkade wallet to pay this contact')
       return this.isBitcoinContact
         ? this.$t('Switch to your Spark wallet to send Bitcoin')
         : this.$t('Switch to your Spark wallet to send to this address')
@@ -258,6 +265,28 @@ export default {
         throw new Error('UNSUPPORTED_PAYMENT_TYPE')
       }
 
+      if (walletType === 'arkade') {
+        const provider = await walletStore.ensureArkadeConnected()
+
+        // Native ark1 → ark1: instant, near-zero fee, no swap.
+        if (this.isArkadeAddress(address)) {
+          return await provider.transferToArkadeAddress({ arkadeAddress: address, amount: amountSats })
+        }
+        // Lightning (invoice / address / LNURL) → Boltz submarine swap.
+        if (this.isLightningInvoice(address)) {
+          return await provider.payInvoice({ invoice: address })
+        }
+        if (this.isLightningAddress(address)) {
+          const invoice = await this.fetchLightningAddressInvoice(address, amountSats, comment)
+          return await provider.payInvoice({ invoice })
+        }
+        if (this.isLNURL(address)) {
+          const invoice = await this.fetchLNURLInvoice(address, amountSats)
+          return await provider.payInvoice({ invoice })
+        }
+        throw new Error('UNSUPPORTED_PAYMENT_TYPE')
+      }
+
       // NWC fallback
       const activeWallet = this.walletState.connectedWallets?.find(
         w => w.id === this.walletState.activeWalletId
@@ -277,6 +306,7 @@ export default {
     isLightningInvoice(input) { return isLightningInvoiceShared(input) },
     isLightningAddress(input) { return input.includes('@') && !input.startsWith('lnurl') },
     isLNURL(input) { return isLnurlShared(input) },
+    isArkadeAddress(input) { return isArkadeAddressShared(input) },
 
     async fetchLNURLInvoice(lnurl, amountSats) {
       const url = this.decodeLNURL(lnurl)

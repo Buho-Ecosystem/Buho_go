@@ -40,8 +40,8 @@
 
       <!-- Content -->
       <q-card-section class="receive-content">
-        <!-- Receive Mode Toggle (for Spark wallets) -->
-        <div v-if="isSparkWallet && !showSpecificInvoiceView && !showAmountInput" class="receive-type-toggle">
+        <!-- Receive Mode Toggle (Spark + Arkade wallets) -->
+        <div v-if="(isSparkWallet || isArkadeWallet) && !showSpecificInvoiceView && !showAmountInput" class="receive-type-toggle">
           <q-btn-toggle
             v-model="receiveMode"
             :options="receiveModeOptions"
@@ -56,8 +56,14 @@
             <template v-if="receiveMode === 'spark'">
               {{ $t('Spark-to-Spark only, zero fees') }}
             </template>
+            <template v-else-if="receiveMode === 'arkade'">
+              {{ $t('Arkade-to-Arkade only, instant and near zero fees') }}
+            </template>
             <template v-else-if="receiveMode === 'bitcoin'">
               {{ $t('From any Bitcoin wallet (takes ~10-60 min)') }}
+            </template>
+            <template v-else-if="isArkadeWallet">
+              {{ $t('Receive over Lightning (a small fee applies)') }}
             </template>
             <template v-else>
               {{ $t('One-time request with amount') }}
@@ -121,6 +127,114 @@
           </div>
         </div>
 
+        <!-- Arkade Address View -->
+        <div v-if="showArkadeAddressView && arkadeAddress" class="spark-address-view">
+          <!-- QR Code Section -->
+          <div class="qr-section">
+            <div class="qr-card" @click="copyArkadeAddress">
+              <div class="qr-frame">
+                <vue-qrcode
+                  ref="arkadeQr"
+                  :value="arkadeAddress"
+                  :options="sparkQrOptions"
+                  class="qr-code"
+                />
+              </div>
+            </div>
+            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Tap QR to copy address') }}
+            </div>
+          </div>
+
+          <!-- Address Display - Compact Pill -->
+          <div
+            class="address-pill"
+            :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
+            @click="copyArkadeAddress"
+          >
+            <img :src="arkadePillIcon" class="pill-icon-img" />
+            <span class="pill-address">{{ truncateArkadeAddress(arkadeAddress) }}</span>
+            <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-buttons">
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="copyArkadeAddress"
+            >
+              <Icon icon="tabler:copy" width="18" height="18" />
+              <span>{{ $t('Copy Request') }}</span>
+            </button>
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="shareArkadeAddress"
+            >
+              <Icon icon="tabler:share" width="18" height="18" />
+              <span>{{ $t('Share Invoice') }}</span>
+            </button>
+          </div>
+
+          <!-- User Hint -->
+          <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Share this address to receive instant, near zero fee payments from other Arkade wallets.') }}
+          </div>
+        </div>
+
+        <!-- Arkade Boarding (on-chain receive) View -->
+        <div v-if="showArkadeBoardingView" class="spark-address-view">
+          <div v-if="arkadeBoardingAddress" class="qr-section">
+            <div class="qr-card" @click="copyArkadeBoardingAddress">
+              <div class="qr-frame">
+                <vue-qrcode
+                  ref="arkadeBoardingQr"
+                  :value="arkadeBoardingAddress"
+                  :options="sparkQrOptions"
+                  class="qr-code"
+                />
+              </div>
+            </div>
+            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Tap QR to copy address') }}
+            </div>
+          </div>
+
+          <div v-else class="default-zero-loading">
+            <q-spinner-dots size="40px" :color="$q.dark.isActive ? 'white' : 'grey-7'" />
+            <div class="default-zero-loading-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('Preparing address...') }}
+            </div>
+          </div>
+
+          <template v-if="arkadeBoardingAddress">
+            <div
+              class="address-pill"
+              :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
+              @click="copyArkadeBoardingAddress"
+            >
+              <span class="pill-address">{{ truncateArkadeAddress(arkadeBoardingAddress) }}</span>
+              <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
+            </div>
+
+            <div class="action-buttons">
+              <button class="action-btn" :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'" @click="copyArkadeBoardingAddress">
+                <Icon icon="tabler:copy" width="18" height="18" />
+                <span>{{ $t('Copy Request') }}</span>
+              </button>
+              <button class="action-btn" :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'" @click="shareArkadeBoardingAddress">
+                <Icon icon="tabler:share" width="18" height="18" />
+                <span>{{ $t('Share Invoice') }}</span>
+              </button>
+            </div>
+          </template>
+
+          <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Send Bitcoin to this address. It will arrive in your wallet shortly.') }}
+          </div>
+        </div>
+
         <!-- Bitcoin (L1) Receive View -->
         <L1BitcoinReceive
           v-if="showBitcoinReceiveView"
@@ -146,6 +260,10 @@
             </span>
             <span class="ln-fiat" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
               {{ formatInvoiceFiat(generatedInvoice.amount) }}
+            </span>
+            <span v-if="generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
+                  class="ln-memo" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+              {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
             </span>
             <span v-if="generatedInvoice.description && generatedInvoice.description !== 'BuhoGO Payment'"
                   class="ln-memo" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
@@ -492,7 +610,8 @@ export default {
       // Guard so we don't fire two parallel mints if the modal-open and
       // tab-change paths both trigger.
       isMintingDefaultZero: false,
-      receiveMode: 'lightning', // 'lightning', 'spark', or 'bitcoin'
+      arkadeBoardingAddress: '', // on-chain boarding address (Arkade bitcoin tab)
+      receiveMode: 'lightning', // 'lightning', 'spark', 'arkade', or 'bitcoin'
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
@@ -614,14 +733,26 @@ export default {
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
     },
+    isArkadeWallet() {
+      return this.walletStore.isActiveWalletArkade;
+    },
     isLNBitsWallet() {
       return this.walletStore.isActiveWalletLNBits;
     },
     sparkAddress() {
       return this.walletStore.activeSparkAddress;
     },
+    arkadeAddress() {
+      return this.walletStore.activeArkadeAddress;
+    },
     showSparkAddressView() {
       return this.isSparkWallet && this.receiveMode === 'spark' && !this.generatedInvoice;
+    },
+    showArkadeAddressView() {
+      return this.isArkadeWallet && this.receiveMode === 'arkade' && !this.generatedInvoice;
+    },
+    showArkadeBoardingView() {
+      return this.isArkadeWallet && this.receiveMode === 'bitcoin' && !this.generatedInvoice;
     },
     showBitcoinReceiveView() {
       return this.isSparkWallet && this.receiveMode === 'bitcoin' && !this.generatedInvoice;
@@ -675,6 +806,8 @@ export default {
     showAmountKeypadView() {
       if (this.showDefaultZeroLoading) return false;
       return !this.showSparkAddressView
+        && !this.showArkadeAddressView
+        && !this.showArkadeBoardingView
         && !this.showBitcoinReceiveView
         && !this.showSpecificInvoiceView
         && !this.showDefaultZeroInvoiceView
@@ -741,6 +874,17 @@ export default {
       };
     },
     receiveModeOptions() {
+      if (this.isArkadeWallet) {
+        const arkadeIcon = this.$q.dark.isActive
+          ? 'img:/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg'
+          : 'img:/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg';
+        // Arkade address first — instant, near-zero fee is the primary path.
+        return [
+          { label: this.$t('Arkade'), value: 'arkade', icon: arkadeIcon },
+          { label: this.$t('Lightning'), value: 'lightning', icon: 'bolt' },
+          { label: this.$t('Bitcoin'), value: 'bitcoin', icon: 'currency_bitcoin' },
+        ];
+      }
       const sparkIcon = this.$q.dark.isActive
         ? 'img:/Spark/Spark Asterisk White.svg'
         : 'img:/Spark/Spark Asterisk Black.svg';
@@ -754,6 +898,11 @@ export default {
       return this.$q.dark.isActive
         ? '/Spark/Spark Asterisk White.svg'
         : '/Spark/Spark Asterisk Black.svg';
+    },
+    arkadePillIcon() {
+      return this.$q.dark.isActive
+        ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg'
+        : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg';
     },
     sparkQrOptions() {
       return getQrOptions();
@@ -774,6 +923,10 @@ export default {
         this.$nextTick(() => {
           if (this.isSparkWallet && this.receiveMode === 'lightning') {
             this.mintDefaultZeroInvoice();
+          } else if (this.isArkadeWallet && this.receiveMode === 'arkade') {
+            // Arkade opens on its native ark1 tab — start a best-effort live
+            // monitor so an incoming ark1 receipt shows the in-modal success.
+            this.startArkadeNativeMonitor();
           }
         });
       } else {
@@ -797,6 +950,16 @@ export default {
         if (this.isSparkWallet && !this.generatedInvoice && !this.showAmountInput) {
           this.mintDefaultZeroInvoice();
         }
+      } else if (newMode === 'bitcoin' && this.isArkadeWallet && !this.arkadeBoardingAddress) {
+        // Fetch the on-chain boarding address lazily when the tab is opened.
+        this.loadArkadeBoardingAddress();
+      }
+      // Arkade native ark1 tab has no generatedInvoice, so the lightning
+      // teardown above doesn't cover it — start/stop its monitor explicitly.
+      if (oldMode === 'arkade' && newMode !== 'arkade') {
+        this.stopPaymentMonitor();
+      } else if (newMode === 'arkade' && oldMode !== 'arkade') {
+        this.startArkadeNativeMonitor();
       }
     }
   },
@@ -834,7 +997,10 @@ export default {
       this.generatedInvoice = null;
       this.showAmountInput = false;
       this.isMintingDefaultZero = false;
-      this.receiveMode = 'lightning';
+      this.arkadeBoardingAddress = '';
+      // Arkade opens on its instant, near-zero-fee address tab; everyone else
+      // defaults to Lightning.
+      this.receiveMode = this.isArkadeWallet ? 'arkade' : 'lightning';
       this.paymentStatus = PaymentStatus.PENDING;
       this.paymentStatusMessage = '';
       this.isPaymentConfirmed = false;
@@ -1058,6 +1224,11 @@ export default {
         document.removeEventListener('visibilitychange', this.sparkVisibilityHandler);
         this.sparkVisibilityHandler = null;
       }
+      // Stop the Arkade incoming-funds subscription
+      if (this._arkadeStopIncoming) {
+        try { this._arkadeStopIncoming(); } catch (e) { /* ignore */ }
+        this._arkadeStopIncoming = null;
+      }
     },
 
     /**
@@ -1075,10 +1246,74 @@ export default {
 
       if (this.isSparkWallet) {
         await this.startSparkEventMonitor();
+      } else if (this.isArkadeWallet) {
+        await this.startArkadeIncomingMonitor();
       } else if (this.isLNBitsWallet) {
         await this.startLNBitsPollingMonitor();
       } else {
         await this.startNWCPollingMonitor();
+      }
+    },
+
+    /**
+     * Arkade Lightning receive monitor. The Boltz reverse swap is auto-claimed
+     * by the SwapManager into a VTXO, which surfaces through notifyIncomingFunds
+     * — the same signal as a native ark1 receipt. We treat the next incoming
+     * funds while this invoice is open as the payment landing. Best-effort: if
+     * the stream is unavailable the balance/tx list still reflects the payment.
+     */
+    async startArkadeIncomingMonitor() {
+      let provider;
+      try {
+        provider = await this.walletStore.ensureArkadeConnected();
+      } catch (error) {
+        console.warn('Could not connect Arkade provider for monitoring:', error);
+        return;
+      }
+      try {
+        this._arkadeStopIncoming = await provider.startIncomingFundsListener(() => {
+          if (this.isPaymentConfirmed) return;
+          const hash = this.generatedInvoice?.payment_hash;
+          if (hash) provider.markReverseSwapClaimed(hash);
+          this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
+            amount: this.generatedInvoice?.amount,
+          });
+        });
+      } catch (error) {
+        console.warn('Could not start Arkade incoming-funds monitor:', error);
+      }
+    },
+
+    /**
+     * Live monitor for the native ark1 address tab (no generated invoice). The
+     * received amount isn't known up front, so we capture the balance at open
+     * and report the delta when funds land. Best-effort: balance/tx list still
+     * reflect the payment if the stream is unavailable.
+     */
+    async startArkadeNativeMonitor() {
+      let provider;
+      try {
+        provider = await this.walletStore.ensureArkadeConnected();
+      } catch (error) {
+        console.warn('Could not connect Arkade provider for native monitoring:', error);
+        return;
+      }
+      let baseline = 0;
+      try { baseline = Number((await provider.getBalance())?.balance ?? 0); } catch (e) { /* ignore */ }
+      this.paymentStatus = PaymentStatus.PENDING;
+      try {
+        this._arkadeStopIncoming = await provider.startIncomingFundsListener(async () => {
+          if (this.isPaymentConfirmed) return;
+          let received;
+          try {
+            const now = Number((await provider.getBalance())?.balance ?? 0);
+            const delta = now - baseline;
+            received = delta > 0 ? delta : undefined;
+          } catch (e) { /* fall back to unknown amount */ }
+          this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: received });
+        });
+      } catch (error) {
+        console.warn('Could not start Arkade native incoming monitor:', error);
       }
     },
 
@@ -1551,6 +1786,24 @@ export default {
             description: invoiceParams.description,
             expires_at: result.expiresAt
           };
+        } else if (walletType === 'arkade') {
+          // Arkade Lightning = Boltz reverse swap (provider.createInvoice).
+          const provider = this.walletStore.getActiveProvider();
+          if (!provider) {
+            throw new Error('Arkade wallet not connected');
+          }
+
+          const result = await provider.createInvoice(invoiceParams);
+          invoice = {
+            paymentRequest: result.paymentRequest,
+            payment_hash: result.paymentHash,
+            amount: this.amountInSats,
+            // Net sats that land after the Boltz reverse-swap fee. The QR keeps
+            // encoding the gross `amount` the payer pays; this is display-only.
+            amountReceivable: result.amountReceivable,
+            description: invoiceParams.description,
+            expires_at: result.expiresAt
+          };
         } else {
           // Use NWC for NWC wallets
           const activeWallet = this.walletState.connectedWallets?.find(
@@ -1587,6 +1840,9 @@ export default {
           payment_hash: paymentHash,
           invoice_id: invoice.invoice_id || invoice.id || null,
           amount: invoice.amount || this.amountInSats,
+          // Carry the Arkade reverse-swap net amount through so the receive
+          // view can show it (undefined for other wallet types -> hint hidden).
+          amountReceivable: invoice.amountReceivable,
           description: invoice.description || this.description || 'BuhoGO Payment',
           expires_at: invoice.expires_at || invoice.expiresAt,
           created_at: Math.floor(Date.now() / 1000)
@@ -1733,6 +1989,87 @@ export default {
 
     truncateSparkAddress(address) {
       return truncateAddress(address);
+    },
+
+    truncateArkadeAddress(address) {
+      return truncateAddress(address);
+    },
+
+    async loadArkadeBoardingAddress() {
+      try {
+        const provider = await this.walletStore.ensureArkadeConnected();
+        this.arkadeBoardingAddress = await provider.getBoardingAddress();
+      } catch (error) {
+        console.warn('Could not load Arkade boarding address:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t("Couldn't load address"),
+        });
+      }
+    },
+
+    async copyArkadeBoardingAddress() {
+      if (!this.arkadeBoardingAddress) return;
+      try {
+        await navigator.clipboard.writeText(this.arkadeBoardingAddress);
+        this.$q.notify({ type: 'positive', message: this.$t('Address copied') });
+      } catch (error) {
+        this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t copy') });
+      }
+    },
+
+    async shareArkadeBoardingAddress() {
+      if (!this.arkadeBoardingAddress) return;
+      const qrBlob = await qrBlobFromRef(this.$refs.arkadeBoardingQr);
+      const result = await shareContent({
+        title: this.$t('Bitcoin Address'),
+        text: this.arkadeBoardingAddress,
+        files: qrBlob ? [{ blob: qrBlob, name: 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
+      });
+      if (result.success) {
+        this.$q.notify({ type: 'positive', message: this.$t('Shared') });
+      } else if (result.reason === 'unsupported' || result.reason === 'error') {
+        if (result.reason === 'error') console.error('Failed to share boarding address:', result.error);
+        await this.copyArkadeBoardingAddress();
+      }
+    },
+
+    async copyArkadeAddress() {
+      if (!this.arkadeAddress) return;
+      try {
+        await navigator.clipboard.writeText(this.arkadeAddress);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Arkade address copied'),
+        });
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t copy'),
+        });
+      }
+    },
+
+    async shareArkadeAddress() {
+      if (!this.arkadeAddress) return;
+
+      const qrBlob = await qrBlobFromRef(this.$refs.arkadeQr);
+      const result = await shareContent({
+        title: this.$t('Arkade Address'),
+        text: this.arkadeAddress,
+        files: qrBlob ? [{ blob: qrBlob, name: 'arkade-address.png', mimeType: 'image/png' }] : undefined,
+      });
+
+      if (result.success) {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Shared'),
+        });
+      } else if (result.reason === 'unsupported' || result.reason === 'error') {
+        if (result.reason === 'error') console.error('Failed to share Arkade address:', result.error);
+        await this.copyArkadeAddress();
+      }
+      // 'cancelled' → user closed the dialog, no action needed.
     },
 
     formatInvoiceAmount(sats) {

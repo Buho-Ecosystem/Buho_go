@@ -32,7 +32,7 @@ export default boot(({ router }) => {
 
     // Kiosk is locked — only allow setup routes
     const setupRoutes = ['/spark-setup', '/spark-restore', '/spark-success',
-      '/nwc-setup', '/lnbits-setup']
+      '/nwc-setup', '/lnbits-setup', '/arkade-setup', '/arkade-restore']
     if (setupRoutes.includes(to.path)) return true
 
     return { path: '/kiosk' }

@@ -466,7 +466,7 @@ export default {
     async loadMnemonicAndReveal() {
       this.isLoadingMnemonic = true;
       try {
-        const mnemonic = await this.walletStore.getSparkMnemonic(this.walletId || undefined);
+        const mnemonic = await this.walletStore.getMnemonicForWallet(this.walletId || undefined);
         // Dialog may have been closed while waiting for decryption. Wipe
         // what we just produced and bail — never stash a mnemonic in a
         // component the user isn't looking at.

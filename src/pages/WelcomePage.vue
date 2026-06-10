@@ -44,8 +44,18 @@
         <div class="bgo-bot">
           <div class="bgo-section-label">{{ $t('Other options') }}</div>
           <div class="bgo-rows">
-            <button class="bgo-rowitem" @click="goToSparkRestore">
+            <button class="bgo-rowitem" @click="goToArkadeSetup">
               <span class="num">I.</span>
+              <span class="label">
+                <div class="t">{{ $t('Create an Arkade wallet') }}</div>
+                <div class="d">{{ $t('Instant, near zero fees') }}</div>
+              </span>
+              <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M1 1l5.5 5.5L1 12"/>
+              </svg>
+            </button>
+            <button class="bgo-rowitem" @click="goToRestore">
+              <span class="num">II.</span>
               <span class="label">
                 <div class="t">{{ $t('Restore from backup') }}</div>
                 <div class="d">{{ $t('Use your recovery phrase') }}</div>
@@ -55,7 +65,7 @@
               </svg>
             </button>
             <button class="bgo-rowitem" @click="openAdvanced">
-              <span class="num">II.</span>
+              <span class="num">III.</span>
               <span class="label">
                 <div class="t">{{ $t('Advanced setup') }}</div>
                 <div class="d">NWC · LNbits</div>
@@ -258,7 +268,8 @@ export default {
       this.currentView = 'welcome'
     },
     goToSparkSetup() { this.$router.push('/spark-setup') },
-    goToSparkRestore() { this.$router.push('/spark-restore') },
+    goToArkadeSetup() { this.$router.push('/arkade-setup') },
+    goToRestore() { this.$router.push('/restore') },
     goToNWCSetup() { this.$router.push('/nwc-setup') },
     goToLNBitsSetup() { this.$router.push('/lnbits-setup') },
     changeLocale(code) {

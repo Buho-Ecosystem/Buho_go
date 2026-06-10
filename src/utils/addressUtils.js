@@ -35,6 +35,18 @@ export const SPARK_PREFIXES = Object.freeze([
   'sp1', 'tsp1', 'sprt1',
 ]);
 
+/**
+ * Arkade (Ark L2) address prefixes. Bech32m, case-insensitive.
+ *   - `ark1`  — mainnet
+ *   - `tark1` — testnet / regtest
+ * See https://docs.arkadeos.com/wallets/getting-started/arkade-addresses
+ * @readonly
+ */
+export const ARKADE_PREFIXES = Object.freeze([
+  'ark1',   // mainnet
+  'tark1',  // testnet / regtest
+]);
+
 /** @readonly */
 export const LIGHTNING_INVOICE_HRPS = Object.freeze([
   'lnbc',    // mainnet
@@ -83,6 +95,20 @@ export function isSparkAddress(address) {
   const lower = norm(address);
   if (!lower) return false;
   return SPARK_PREFIXES.some(prefix => lower.startsWith(prefix));
+}
+
+/**
+ * True if the input looks like an Arkade address (`ark1…` / `tark1…`).
+ * Mirrors {@link isSparkAddress}: case-insensitive prefix match, the
+ * single source of truth for the Arkade fast-path branch in the factory
+ * and the address-type classification across the app.
+ * @param {unknown} address
+ * @returns {boolean}
+ */
+export function isArkadeAddress(address) {
+  const lower = norm(address);
+  if (!lower) return false;
+  return ARKADE_PREFIXES.some(prefix => lower.startsWith(prefix));
 }
 
 /**
@@ -155,6 +181,7 @@ export function isLightningAddress(address) {
 
 export const isValidLightningAddress = isLightningAddress;
 export const isValidSparkAddress = isSparkAddress;
+export const isValidArkadeAddress = isArkadeAddress;
 export const isValidBitcoinAddress = isBitcoinAddress;
 
 // ----------------------------------------------------------------------------

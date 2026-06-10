@@ -136,6 +136,45 @@
           />
         </template>
 
+        <!-- Arkade Wallet -->
+        <template v-else-if="isActiveWalletArkade">
+          <SettingsRow
+            icon="tabler:qrcode"
+            :label="$t('Arkade Address')"
+            :caption="truncateAddress(activeArkadeAddress) || $t('Not available')"
+            caption-mono
+            :interactive="false"
+          >
+            <template #right>
+              <q-btn flat round dense size="sm" @click="copyArkadeAddress">
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </q-btn>
+              <q-btn flat round dense size="sm" @click="shareArkadeAddress">
+                <Icon icon="tabler:share" width="16" height="16" />
+              </q-btn>
+            </template>
+          </SettingsRow>
+
+          <SettingsRow
+            v-if="!activeArkadeBackedUp"
+            icon="tabler:shield-check"
+            :label="$t('Backup Seed Phrase')"
+            :caption="$t('Verify your recovery phrase')"
+            :badge="$t('Not verified')"
+            badge-variant="warning"
+            @click="openSeedPhraseDialog('backup')"
+          />
+          <SettingsRow
+            v-else
+            icon="tabler:eye"
+            :label="$t('View Seed Phrase')"
+            :caption="$t('Show your recovery phrase')"
+            :badge="$t('Verified')"
+            badge-variant="success"
+            @click="openSeedPhraseDialog('view')"
+          />
+        </template>
+
         <template v-else-if="isActiveWalletNWC">
           <!--
             Hero row for the active NWC connection: the user-given
@@ -550,6 +589,7 @@
                   <svg v-else-if="w.type === 'lnbits'" width="13" height="18" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
+                  <ArkadeLogo v-else-if="w.type === 'arkade'" variant="mark" :size="18" />
                   <Icon v-else icon="tabler:wallet" width="18" height="18" />
                 </span>
               </button>
@@ -660,6 +700,8 @@
                   <svg v-else-if="w.type === 'lnbits'" width="14" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
+                  <!-- Arkade -->
+                  <ArkadeLogo v-else-if="w.type === 'arkade'" variant="mark" :size="20" />
                   <!-- Fallback -->
                   <Icon v-else icon="tabler:wallet" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
                 </q-item-section>
@@ -1274,6 +1316,8 @@
                     <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                     </svg>
+                    <!-- Arkade brand mark -->
+                    <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="orange" :size="20" />
                     <!-- Default wallet icon -->
                     <Icon v-else icon="tabler:wallet" width="20" height="20" style="color: white;" />
                   </div>
@@ -1310,6 +1354,7 @@
                       <svg v-else-if="wallet.type === 'lnbits'" width="9" height="10" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                       </svg>
+                      <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="white" :size="10" />
                       <Icon v-else icon="tabler:wallet" width="10" height="10" />
                       <span>{{ getWalletTypeLabel(wallet) }}</span>
                     </div>
@@ -1440,6 +1485,53 @@
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
                   {{ $t('Restore Spark Wallet') }}
+                </div>
+                <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ $t('Import existing seed phrase') }}
+                </div>
+              </div>
+              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
+            </div>
+
+            <q-separator class="q-my-md" :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'"/>
+          </div>
+
+          <!-- Arkade Wallet Section (one Arkade wallet only — hidden once it exists) -->
+          <div v-if="!hasArkadeWallet" class="wallet-type-section">
+            <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Arkade Wallet') }}
+            </div>
+
+            <div
+              class="wallet-type-option"
+              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              @click="navigateToCreateArkade"
+            >
+              <div class="option-icon arkade-option-icon">
+                <ArkadeLogo variant="mark" color="orange" :size="26" />
+              </div>
+              <div class="option-content">
+                <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ $t('Create Arkade Wallet') }}
+                </div>
+                <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ $t('Instant, near zero fees') }}
+                </div>
+              </div>
+              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
+            </div>
+
+            <div
+              class="wallet-type-option"
+              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              @click="navigateToRestoreArkade"
+            >
+              <div class="option-icon arkade-option-icon">
+                <ArkadeLogo variant="mark" color="orange" :size="26" />
+              </div>
+              <div class="option-content">
+                <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ $t('Restore Arkade Wallet') }}
                 </div>
                 <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
                   {{ $t('Import existing seed phrase') }}
@@ -1870,6 +1962,8 @@
                 <svg v-else-if="entry.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
                 </svg>
+                <!-- Arkade -->
+                <ArkadeLogo v-else-if="entry.type === 'arkade'" variant="mark" color="orange" :size="16" />
                 <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
               </div>
               <div class="aw-dialog-item-info">
@@ -2004,6 +2098,43 @@
             </div>
           </div>
 
+          <!-- Payout type (Arkade — native ark1 or Lightning) -->
+          <div v-else-if="awConfigWallet?.type === 'arkade'" class="aw-field-group">
+            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
+              {{ $t('Transfer via') }}
+            </div>
+            <div class="aw-payout-pills">
+              <div
+                class="aw-pill-option"
+                :class="[
+                  awConfigForm.payoutType === 'arkade' ? 'aw-pill-selected aw-pill-sel-spark' : '',
+                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
+                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
+                ]"
+                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'arkade')"
+              >
+                <ArkadeLogo variant="mark" :size="16" />
+                {{ $t('Arkade') }}
+              </div>
+              <div
+                class="aw-pill-option"
+                :class="[
+                  awConfigForm.payoutType === 'lightning' ? 'aw-pill-selected aw-pill-sel-spark' : '',
+                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
+                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
+                ]"
+                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'lightning')"
+              >
+                <Icon icon="tabler:bolt" width="16" height="16" />
+                {{ $t('Lightning') }}
+              </div>
+            </div>
+            <div v-if="awConfigForm.payoutType === 'arkade'" class="aw-spark-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
+              <Icon icon="tabler:discount-check" width="14" height="14" />
+              {{ $t('Arkade transfers are instant and near free') }}
+            </div>
+          </div>
+
           <!-- Destination -->
           <div class="aw-field-group">
             <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
@@ -2023,6 +2154,16 @@
               v-else-if="awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark'"
               v-model="awConfigForm.bitcoinAddress"
               :placeholder="$t('bc1q...')"
+              borderless
+              dense
+              class="aw-input"
+              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
+              :disable="!awConfigForm.enabled"
+            />
+            <q-input
+              v-else-if="awConfigForm.payoutType === 'arkade' && awConfigWallet?.type === 'arkade'"
+              v-model="awConfigForm.arkadeAddress"
+              :placeholder="$t('ark1...')"
               borderless
               dense
               class="aw-input"
@@ -2119,6 +2260,7 @@ import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
+import ArkadeLogo from '../components/ArkadeLogo.vue'
 import IdentitySeedPhraseDialog from '../components/IdentitySeedPhraseDialog.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
@@ -2162,6 +2304,7 @@ export default {
   name: 'SettingsPage',
   components: {
     VueQrcode,
+    ArkadeLogo,
     SparkSeedPhraseDialog,
     IdentitySeedPhraseDialog,
     BiometricEnableDialog,
@@ -2375,6 +2518,7 @@ export default {
         lightningAddress: '',
         bitcoinAddress: '',
         sparkAddress: '',
+        arkadeAddress: '',
         feeSpeed: 'medium',
       },
       feeSpeedOptions: [
@@ -2398,10 +2542,14 @@ export default {
       'exchangeRates',
       'hasSparkWallet',
       'hasAnySparkWallet',
+      'hasArkadeWallet',
       'sparkWallet',
       'sparkWallets',
       'isActiveWalletSpark',
       'activeSparkAddress',
+      'isActiveWalletArkade',
+      'arkadeWallet',
+      'activeArkadeAddress',
       'useBip177Format',
       'hasBackedUp',
       'sparkBusinessWallet',
@@ -2595,6 +2743,10 @@ export default {
       return this.sparkWallet?.metadata?.hasBackedUp ?? this.hasBackedUp;
     },
 
+    activeArkadeBackedUp() {
+      return !!this.arkadeWallet?.metadata?.hasBackedUp;
+    },
+
     /**
      * Computed warning list driving the SettingsAttentionStrip at the
      * top of Settings. Only items that actually need the user's
@@ -2609,9 +2761,12 @@ export default {
     attentionWarnings() {
       const warnings = [];
 
-      // 1. Wallet seed backup outstanding (Spark only — NWC/LNbits
-      //    don't have a local seed to back up).
-      if (this.hasSparkWallet && !this.activeSparkBackedUp) {
+      // 1. Wallet seed backup outstanding (seed-based backends only — Spark
+      //    and Arkade; NWC/LNbits have no local seed to back up).
+      const seedBackupOutstanding =
+        (this.hasSparkWallet && !this.activeSparkBackedUp) ||
+        (this.arkadeWallet && !this.activeArkadeBackedUp);
+      if (seedBackupOutstanding) {
         warnings.push({
           id: 'wallet-seed-backup',
           variant: 'warning',
@@ -2906,6 +3061,9 @@ export default {
         if (this.awConfigForm.payoutType === 'spark') return this.$t('Spark address');
         if (this.awConfigForm.payoutType === 'onchain') return this.$t('Bitcoin address');
       }
+      if (this.awConfigWallet?.type === 'arkade' && this.awConfigForm.payoutType === 'arkade') {
+        return this.$t('Arkade address');
+      }
       return this.$t('Lightning address');
     },
 
@@ -2917,6 +3075,9 @@ export default {
       }
       if (this.awConfigForm.payoutType === 'onchain' && this.awConfigWallet?.type === 'spark') {
         return !!this.awConfigForm.bitcoinAddress.trim();
+      }
+      if (this.awConfigForm.payoutType === 'arkade' && this.awConfigWallet?.type === 'arkade') {
+        return !!this.awConfigForm.arkadeAddress?.trim();
       }
       return !!this.awConfigForm.lightningAddress.trim();
     },
@@ -3023,8 +3184,13 @@ export default {
       this.loadExchangeRates();
     }, 300000); // 5 minutes
 
-    // Handle deep link from backup banner
-    if (this.$route.query.section === 'backup' && this.hasSparkWallet && !this.activeSparkBackedUp) {
+    // Handle deep link from backup banner (Spark or Arkade — whichever
+    // seed wallet still needs its phrase confirmed). The dialog resolves the
+    // active seed wallet itself.
+    const needsSeedBackup =
+      (this.hasSparkWallet && !this.activeSparkBackedUp) ||
+      (this.arkadeWallet && !this.activeArkadeBackedUp);
+    if (this.$route.query.section === 'backup' && needsSeedBackup) {
       this.$nextTick(() => this.openSeedPhraseDialog('backup'));
     }
 
@@ -4241,6 +4407,7 @@ export default {
     getWalletTypeLabel(wallet) {
       switch (wallet.type) {
         case 'spark': return 'Spark';
+        case 'arkade': return 'Arkade';
         case 'lnbits': return 'LNbits';
         case 'nwc':
         default: return 'NWC';
@@ -4250,6 +4417,7 @@ export default {
     getTypeBadgeClass(type) {
       switch (type) {
         case 'spark': return 'type-spark';
+        case 'arkade': return 'type-arkade';
         case 'lnbits': return 'type-lnbits';
         case 'nwc':
         default: return 'type-nwc';
@@ -4294,6 +4462,28 @@ export default {
         await this.copySparkAddress();
       }
       // Don't do anything for 'cancelled' - user just closed the dialog
+    },
+
+    async copyArkadeAddress() {
+      await this.copyToClipboard(this.activeArkadeAddress, this.$t('Arkade address copied'));
+    },
+
+    async shareArkadeAddress() {
+      if (!this.activeArkadeAddress) return;
+
+      const result = await shareContent({
+        title: this.$t('Arkade Address'),
+        text: this.activeArkadeAddress
+      });
+
+      if (result.success) {
+        // Native share UI provides its own feedback.
+      } else if (result.reason === 'unsupported' || result.reason === 'error') {
+        if (result.reason === 'error') {
+          console.error('Failed to share Arkade address:', result.error);
+        }
+        await this.copyArkadeAddress();
+      }
     },
 
     // ==========================================
@@ -4382,6 +4572,16 @@ export default {
       this.$router.push('/nwc-setup');
     },
 
+    navigateToCreateArkade() {
+      this.showAddWalletDialog = false;
+      this.$router.push('/arkade-setup');
+    },
+
+    navigateToRestoreArkade() {
+      this.showAddWalletDialog = false;
+      this.$router.push('/arkade-restore');
+    },
+
     // Auto-withdraw methods
     getAutoWithdrawConfig(walletId) {
       if (!walletId) return null;
@@ -4395,6 +4595,7 @@ export default {
       let dest = '';
       if (config.payoutType === 'spark') dest = config.sparkAddress;
       else if (config.payoutType === 'onchain') dest = config.bitcoinAddress;
+      else if (config.payoutType === 'arkade') dest = config.arkadeAddress;
       else dest = config.lightningAddress;
       if (!dest) return '';
       if (dest.includes('@')) return dest;
@@ -4423,16 +4624,19 @@ export default {
           lightningAddress: existing.lightningAddress || '',
           bitcoinAddress: existing.bitcoinAddress || '',
           sparkAddress: existing.sparkAddress || '',
+          arkadeAddress: existing.arkadeAddress || '',
           feeSpeed: existing.feeSpeed || 'medium',
         };
       } else {
         this.awConfigForm = {
           enabled: false,
           thresholdSats: 0,
-          payoutType: 'lightning',
+          // Arkade defaults to its instant, near-zero-fee native payout.
+          payoutType: wallet?.type === 'arkade' ? 'arkade' : 'lightning',
           lightningAddress: '',
           bitcoinAddress: '',
           sparkAddress: '',
+          arkadeAddress: '',
           feeSpeed: 'medium',
         };
       }
@@ -5965,6 +6169,10 @@ export default {
   background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
 }
 
+.type-arkade {
+  background: linear-gradient(135deg, #F14317, #C0360F);
+}
+
 .type-nwc {
   background: linear-gradient(135deg, #FFCA4A, #F7931A);
 }
@@ -6746,6 +6954,10 @@ export default {
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
 }
 
+.arkade-option-icon {
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
 .option-content {
   flex: 1;
 }
@@ -7339,6 +7551,9 @@ export default {
 .aw-avatar-nwc {
   background: linear-gradient(135deg, #FFCA4A, #F7931A);
 }
+.aw-avatar-arkade {
+  background: linear-gradient(135deg, #F14317, #C0360F);
+}
 
 .aw-wallet-info {
   flex: 1;
@@ -7519,6 +7734,10 @@ export default {
 .aw-icon-wrap-nwc {
   background: rgba(247, 147, 26, 0.1);
   color: #F7931A;
+}
+.aw-icon-wrap-arkade {
+  background: rgba(241, 67, 23, 0.1);
+  color: #F14317;
 }
 
 .aw-dialog-title {
@@ -7732,6 +7951,8 @@ export default {
 .aw-save-lnbits:hover { background: rgba(255, 31, 225, 0.25); }
 .aw-save-nwc { background: rgba(247, 147, 26, 0.15); color: #D97706; }
 .aw-save-nwc:hover { background: rgba(247, 147, 26, 0.25); }
+.aw-save-arkade { background: rgba(241, 67, 23, 0.15); color: #F14317; }
+.aw-save-arkade:hover { background: rgba(241, 67, 23, 0.25); }
 
 .aw-remove-btn {
   width: 100%;

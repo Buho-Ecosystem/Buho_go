@@ -95,9 +95,13 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
     reason = ctx.reason.trim();
     reasonSource = 'curated';
   } else {
+    const byCode = translateErrorCode(error, t);
     const breakdown = expandInsufficientFunds(raw, ctx.amountSats, t);
     const translated = translateTechJargon(raw, t);
-    if (breakdown) {
+    if (byCode) {
+      reason = byCode;
+      reasonSource = 'curated';
+    } else if (breakdown) {
       reason = breakdown;
       reasonSource = 'curated';
     } else if (translated) {
@@ -291,6 +295,52 @@ export function formatInsufficientBalanceBreakdown(parts, t) {
     lines.push(`${translate('Required')}: ${fmt(required)} ${translate('sats')}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * Map a stable error `code` (set by providers) to a friendly, actionable
+ * reason. Used for Arkade Lightning (Boltz swap) failures, where the raw
+ * SDK message is terse/technical but the failure mode is well-defined — and
+ * crucially we can tell the user when a refundable failure already returned
+ * their funds. Returns null when there's no code-specific mapping.
+ */
+function translateErrorCode(error, t) {
+  const code = error && typeof error === 'object' ? error.code : null;
+  if (!code || typeof code !== 'string') return null;
+
+  switch (code) {
+    case 'ARKADE_LN_UNAVAILABLE':
+      return t('Lightning is temporarily unavailable. You can still receive with your Arkade address, or try again shortly.');
+    case 'ARKADE_ONCHAIN_SOON':
+      return t("Sending to a Bitcoin address automatically isn't available for Arkade yet. Use a Lightning or Arkade address instead.");
+    case 'ARKADE_SWAP_InsufficientFundsError':
+      return t('Not enough balance to cover this payment and its fee.');
+    case 'ARKADE_SWAP_InvoiceExpiredError':
+      return t('This Lightning invoice expired before it could be paid. Ask for a fresh one.');
+    case 'ARKADE_SWAP_InvoiceFailedToPayError':
+      return t("The Lightning payment couldn't be completed, so your funds were returned.");
+    case 'ARKADE_SWAP_TransactionFailedError':
+      return t("The payment didn't go through, so your funds were returned. Please try again.");
+    case 'ARKADE_SWAP_SwapExpiredError':
+      return t('This took too long to finish, so your funds were returned.');
+    case 'ARKADE_SWAP_NetworkError':
+      return t("Couldn't reach Lightning. Check your connection and try again.");
+    case 'ARKADE_SWAP_QuoteRejectedError':
+      return t("That amount can't be sent over Lightning right now. Try a different amount, or use your Arkade address.");
+    case 'ARKADE_SWAP_PreimageFetchError':
+      return t('Your payment was sent. It will show in your balance in a moment.');
+    case 'ARKADE_OFFBOARD_BELOW_MIN':
+      return t('That amount is too small to send to a Bitcoin address. The minimum is {min} sats.', { min: error.minSats || 0 });
+    case 'ARKADE_OFFBOARD_FAILED':
+      return t("Sending to a Bitcoin address didn't go through. Please try again.");
+    default:
+      if (code.startsWith('ARKADE_SWAP_')) {
+        return error.isRefundable
+          ? t("The Lightning payment failed, so your funds were returned. Please try again.")
+          : t("The Lightning payment couldn't be completed. Please try again.");
+      }
+      return null;
+  }
 }
 
 /**

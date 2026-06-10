@@ -1,11 +1,17 @@
 /**
  * WalletProvider - Abstract base class for wallet implementations
  *
- * This provides a unified interface for both Spark and NWC wallets.
- * All wallet providers must implement these methods.
+ * This provides a unified interface across every BuhoGO backend — Spark,
+ * NWC, LNbits, and Arkade. All wallet providers must implement these methods;
+ * backend-specific fast paths (Spark `sp1`, Arkade `ark1`) are exposed as
+ * optional methods that default to a no-op / throw here and are overridden by
+ * the relevant subclass.
  */
 
-import { isSparkAddress as isSparkAddressPredicate } from '../utils/addressUtils';
+import {
+  isSparkAddress as isSparkAddressPredicate,
+  isArkadeAddress as isArkadeAddressPredicate,
+} from '../utils/addressUtils';
 
 export class WalletProvider {
   constructor(walletId, walletData) {
@@ -141,6 +147,47 @@ export class WalletProvider {
    */
   static isSparkAddress(address) {
     return isSparkAddressPredicate(address);
+  }
+
+  // ==========================================
+  // Arkade-specific methods (optional for the others)
+  // ==========================================
+
+  /**
+   * Check if this is an Arkade wallet
+   * @returns {boolean}
+   */
+  isArkade() {
+    return false;
+  }
+
+  /**
+   * Get Arkade address (Arkade wallets only)
+   * @returns {Promise<string|null>}
+   */
+  async getArkadeAddress() {
+    return null;
+  }
+
+  /**
+   * Transfer to an Arkade address (Arkade wallets only) — the instant,
+   * near-zero-fee ark1 → ark1 fast path.
+   * @param {Object} params
+   * @param {string} params.arkadeAddress - Recipient Arkade address (ark1.../tark1...)
+   * @param {number} params.amount - Amount in sats
+   * @returns {Promise<{id: string, status: string}>}
+   */
+  async transferToArkadeAddress({ arkadeAddress, amount }) {
+    throw new Error('Arkade-to-Arkade transfers are only available for Arkade wallets');
+  }
+
+  /**
+   * Check if a string is a valid Arkade address (ark1.../tark1...)
+   * @param {string} address
+   * @returns {boolean}
+   */
+  static isArkadeAddress(address) {
+    return isArkadeAddressPredicate(address);
   }
 
   // ==========================================

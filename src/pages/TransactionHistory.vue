@@ -1236,6 +1236,8 @@ export default {
 
       if (this.walletStore.isActiveWalletSpark) {
         await this.loadSparkTransactionsBatch();
+      } else if (this.walletStore.isActiveWalletArkade) {
+        await this.loadArkadeTransactionsBatch();
       } else if (this.walletStore.isActiveWalletLNBits) {
         await this.loadLNBitsTransactionsBatch();
       } else {
@@ -1265,6 +1267,8 @@ export default {
 
           if (this.walletStore.isActiveWalletSpark) {
             await this.loadSparkTransactionsBatch();
+          } else if (this.walletStore.isActiveWalletArkade) {
+            await this.loadArkadeTransactionsBatch();
           } else if (this.walletStore.isActiveWalletLNBits) {
             await this.loadLNBitsTransactionsBatch();
           } else {
@@ -1463,6 +1467,56 @@ export default {
       }
     },
 
+    /**
+     * Arkade history. The SDK's getTransactionHistory returns the full list
+     * (no offset/limit), so we fetch once and mark the list complete — there
+     * are no further batches to page through.
+     */
+    async loadArkadeTransactionsBatch() {
+      const activeWallet = this.walletStore.activeWallet;
+      if (!activeWallet) {
+        this.hasMoreTransactions = false;
+        return;
+      }
+
+      // Already fetched the whole history on the first call.
+      if (this.currentOffset > 0) {
+        this.hasMoreTransactions = false;
+        return;
+      }
+
+      let provider = this.walletStore.providers[activeWallet.id];
+      if (!provider) {
+        await this.walletStore.connectArkadeWallet(activeWallet.id);
+        provider = this.walletStore.providers[activeWallet.id];
+      }
+      if (!provider) {
+        throw new Error('Could not connect to Arkade wallet');
+      }
+
+      const arkadeTransactions = await provider.getTransactions();
+      this.currentOffset += this.batchSize;
+      this.hasMoreTransactions = false;
+
+      if (!arkadeTransactions || arkadeTransactions.length === 0) {
+        return;
+      }
+
+      const normalizedTransactions = arkadeTransactions.map(tx => ({
+        id: tx.id,
+        type: tx.type === 'incoming' ? 'incoming' : 'outgoing',
+        amount: tx.amount || 0,
+        description: tx.description || '',
+        memo: tx.description || '',
+        settled_at: tx.timestamp || null,
+        fee: tx.fee || 0,
+        status: tx.status || 'completed'
+      }));
+
+      console.log(`Arkade batch loaded: ${normalizedTransactions.length} transactions`);
+      this.transactions.push(...normalizedTransactions);
+    },
+
     async refreshTransactions() {
       // Abort any ongoing background fetch
       this.backgroundFetchAborted = true;
@@ -1500,9 +1554,12 @@ export default {
 
       this.isLoadingMore = true;
       try {
-        const provider = await this.walletStore.getProvider();
-        if (provider.isSpark && provider.isSpark()) {
+        if (this.walletStore.isActiveWalletSpark) {
           await this.loadSparkTransactionsBatch();
+        } else if (this.walletStore.isActiveWalletArkade) {
+          await this.loadArkadeTransactionsBatch();
+        } else if (this.walletStore.isActiveWalletLNBits) {
+          await this.loadLNBitsTransactionsBatch();
         } else {
           await this.loadNWCTransactionsBatch();
         }

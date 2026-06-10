@@ -430,6 +430,7 @@ export default {
         lightning: this.$t('Lightning payment'),
         invoice: this.$t('Lightning payment'),
         spark: this.$t('Spark payment'),
+        arkade: this.$t('Arkade payment'),
         bitcoin: this.$t('Bitcoin payment'),
         lnurl: this.$t('LNURL payment'),
       }

@@ -10,6 +10,8 @@ import { NostrWebLNProvider } from '@getalby/sdk';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { SparkWalletProvider, SPARK_ACCOUNT_DEFAULTS } from '../providers/SparkWalletProvider';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
+import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
+import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { getUserFriendlyErrorMessage } from '../utils/userErrors';
@@ -133,6 +135,9 @@ export const useWalletStore = defineStore('wallet', {
     isLoading: false,
     isConnecting: false,
     walletSwitching: false,
+    // True while an Arkade wallet is renewing/recovering VTXOs in the
+    // background (drives the subtle "wallet maintenance" indicator).
+    arkadeMaintaining: false,
 
     // Buffered payment intent from a boot-time deep link / NFC scan.
     // Boot files (deep-links.js, nfc.js) write here when a payment URI arrives
@@ -349,11 +354,19 @@ export const useWalletStore = defineStore('wallet', {
      */
     shouldPromptBackup: (state) => {
       if (state.backupDismissedUntil && Date.now() < state.backupDismissedUntil) return false;
-      const sparkWallets = state.wallets.filter(w => w.type === WALLET_TYPES.SPARK);
-      if (sparkWallets.length === 0) return false;
-      // Check per-wallet backup status first, fall back to store-level for pre-migration wallets
-      return sparkWallets.some(w => {
-        const backedUp = w.metadata?.hasBackedUp ?? state.hasBackedUp;
+      // Seed-based backends (Spark, Arkade) are the only ones whose funds live
+      // or die by a recovery phrase. Backup is deferred at onboarding by design;
+      // we prompt once a wallet actually holds sats and isn't confirmed backed up.
+      const seedWallets = state.wallets.filter(
+        (w) => w.type === WALLET_TYPES.SPARK || w.type === WALLET_TYPES.ARKADE
+      );
+      if (seedWallets.length === 0) return false;
+      return seedWallets.some((w) => {
+        // Spark falls back to the legacy store-level flag for pre-migration
+        // installs; Arkade (new) always uses its own per-wallet metadata flag.
+        const backedUp = w.type === WALLET_TYPES.SPARK
+          ? (w.metadata?.hasBackedUp ?? state.hasBackedUp)
+          : !!w.metadata?.hasBackedUp;
         if (backedUp) return false;
         const balance = state.balances[w.id] || 0;
         return balance > 0;
@@ -468,6 +481,47 @@ export const useWalletStore = defineStore('wallet', {
       if (activeWallet?.type !== 'spark') return null;
       return state.walletInfos[state.activeWalletId]?.sparkAddress
         || activeWallet?.metadata?.sparkAddress
+        || null;
+    },
+
+    // ─── Arkade getters (mirror the Spark block; single wallet, no pair) ───
+
+    /** Whether an Arkade wallet exists (only one is allowed — see D2). */
+    hasArkadeWallet: (state) => {
+      return state.wallets.some((w) => w.type === WALLET_TYPES.ARKADE);
+    },
+
+    /** The active Arkade wallet, or fall back to the (single) Arkade wallet. */
+    arkadeWallet: (state) => {
+      const active = state.wallets.find((w) => w.id === state.activeWalletId);
+      if (active?.type === WALLET_TYPES.ARKADE) return active;
+      return state.wallets.find((w) => w.type === WALLET_TYPES.ARKADE) || null;
+    },
+
+    /** Whether the active wallet is Arkade. */
+    isActiveWalletArkade: (state) => {
+      const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
+      return activeWallet?.type === WALLET_TYPES.ARKADE;
+    },
+
+    /**
+     * Get the Arkade (ark1/tark1) address for any wallet by ID. Falls back to
+     * the address cached in metadata so it resolves even before reconnect.
+     */
+    getArkadeAddress: (state) => (walletId) => {
+      const wallet = state.wallets.find((w) => w.id === walletId);
+      if (!wallet || wallet.type !== WALLET_TYPES.ARKADE) return null;
+      return state.walletInfos[walletId]?.arkadeAddress
+        || wallet?.metadata?.arkadeAddress
+        || null;
+    },
+
+    /** The active Arkade address (the active wallet's ark1/tark1 address). */
+    activeArkadeAddress: (state) => {
+      const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
+      if (activeWallet?.type !== WALLET_TYPES.ARKADE) return null;
+      return state.walletInfos[state.activeWalletId]?.arkadeAddress
+        || activeWallet?.metadata?.arkadeAddress
         || null;
     },
 
@@ -798,14 +852,26 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} [walletId] - Specific wallet ID (defaults to active Spark wallet)
      */
     async confirmBackup(walletId) {
-      // Mark ALL Spark wallets as backed up (they share the same mnemonic)
-      for (const w of this.sparkWallets) {
-        if (w.metadata) {
-          w.metadata.hasBackedUp = true;
+      // Resolve the wallet being confirmed. The dialog passes a specific id;
+      // with none, default to the active seed wallet (Arkade or Spark).
+      const target = walletId
+        ? this.wallets.find((w) => w.id === walletId)
+        : (this.activeWallet?.type === WALLET_TYPES.ARKADE ? this.activeWallet : this.sparkWallet);
+
+      if (target?.type === WALLET_TYPES.ARKADE) {
+        // Arkade is a single wallet — mark just this one.
+        if (!target.metadata) target.metadata = {};
+        target.metadata.hasBackedUp = true;
+      } else {
+        // Spark: all Spark wallets share one mnemonic, so mark them together.
+        for (const w of this.sparkWallets) {
+          if (w.metadata) {
+            w.metadata.hasBackedUp = true;
+          }
         }
+        // Legacy store-level flag
+        this.hasBackedUp = true;
       }
-      // Legacy store-level flag
-      this.hasBackedUp = true;
       this.backupDismissedUntil = null;
       await this.persistState();
     },
@@ -1251,6 +1317,207 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     // ==========================================
+    // Arkade Wallet Methods
+    // ==========================================
+
+    /**
+     * Create or restore the (single) Arkade wallet. Mirrors addLNBitsWallet's
+     * single-wallet add → activate → connect → persist shape, plus the
+     * mnemonic generation + device-key encryption that Spark does.
+     *
+     * @param {Object} walletData
+     * @param {string} [walletData.name] - Display name (default 'Arkade')
+     * @param {string} [walletData.mnemonic] - Restore phrase; omit to generate fresh
+     * @param {boolean} [walletData.isRestore] - True on restore (marks backed up)
+     * @param {string} [walletData.network] - SDK NetworkName (default mainnet 'bitcoin')
+     * @param {string} [walletData.arkServerUrl]
+     * @param {Function} [walletData.onProgress] - ('encrypting'|'connecting'|'done') => void
+     * @returns {Promise<Object>} The created wallet object
+     */
+    async addArkadeWallet(walletData = {}) {
+      this.isConnecting = true;
+      this.lastError = null;
+      const onProgress = walletData.onProgress || (() => {});
+
+      // Snapshot for atomic rollback (mirror addSparkWallet).
+      const previousActiveWalletId = this.activeWalletId;
+      let addedWalletId = null;
+
+      try {
+        // Only one Arkade wallet is allowed (D2 — not a Business/Personal pair).
+        if (this.hasArkadeWallet) {
+          const err = new Error('Arkade wallet already exists');
+          err.code = 'ARKADE_WALLET_EXISTS';
+          throw err;
+        }
+
+        const network = walletData.network || ARKADE_DEFAULT_NETWORK;
+        const arkServerUrl = walletData.arkServerUrl || ARKADE_MAINNET_SERVER;
+
+        // Generate a fresh phrase, or accept the one being restored. Validate
+        // either way so a bad restore phrase fails fast — before we encrypt and
+        // persist a wallet that could never connect.
+        const mnemonic = walletData.mnemonic || ArkadeWalletProvider.generateMnemonic();
+        if (!ArkadeWalletProvider.isValidMnemonic(mnemonic)) {
+          const err = new Error('Invalid recovery phrase');
+          err.code = 'ARKADE_INVALID_MNEMONIC';
+          throw err;
+        }
+
+        onProgress('encrypting');
+        const encryptedMnemonic = await CryptoUtils.encryptMnemonic(mnemonic);
+
+        const wallet = {
+          id: this.generateWalletId(),
+          type: WALLET_TYPES.ARKADE,
+          name: walletData.name || 'Arkade',
+          isActive: false,
+          isDefault: this.wallets.length === 0,
+          createdAt: Date.now(),
+          lastUsed: Date.now(),
+          connectionData: {
+            encryptedMnemonic,
+            arkServerUrl,
+            network,
+          },
+          metadata: {
+            // Backup is deferred at onboarding: a fresh wallet is NOT marked
+            // backed up, so shouldPromptBackup nudges the user once funds land.
+            // A restore implies the user already holds the phrase.
+            hasBackedUp: !!walletData.isRestore,
+          },
+        };
+
+        this.wallets.push(wallet);
+        addedWalletId = wallet.id;
+
+        // Land on the new wallet, then connect it (builds the provider, caches
+        // balance + the ark1 address). A connect failure rolls everything back.
+        this.activeWalletId = wallet.id;
+        wallet.isActive = true;
+
+        onProgress('connecting');
+        await this.connectArkadeWallet(wallet.id);
+
+        onProgress('done');
+        await this.persistState();
+        return wallet;
+      } catch (error) {
+        // Atomic rollback — never leave a half-added Arkade wallet in memory or
+        // storage (mirror _rollbackSparkWalletEntries, single wallet).
+        if (addedWalletId) {
+          const provider = this.providers[addedWalletId];
+          if (provider) {
+            try { provider.disconnect(); } catch (e) { /* ignore */ }
+            delete this.providers[addedWalletId];
+          }
+          delete this.walletInfos[addedWalletId];
+          delete this.balances[addedWalletId];
+          delete this.connectionStates[addedWalletId];
+          const idx = this.wallets.findIndex((w) => w.id === addedWalletId);
+          if (idx !== -1) this.wallets.splice(idx, 1);
+        }
+        this.activeWalletId = previousActiveWalletId;
+        this.lastError = error.message;
+        throw error;
+      } finally {
+        this.isConnecting = false;
+      }
+    },
+
+    /**
+     * Connect (or reconnect) the Arkade wallet: build the provider, open the
+     * SDK wallet from the encrypted seed, and cache balance + info. Mirrors
+     * connectLNBitsWallet.
+     * @param {string} walletId
+     */
+    async connectArkadeWallet(walletId) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      if (!wallet || wallet.type !== WALLET_TYPES.ARKADE) {
+        throw new Error('Arkade wallet not found');
+      }
+
+      try {
+        const provider = new ArkadeWalletProvider(walletId, {
+          name: wallet.name,
+          network: wallet.connectionData.network,
+          arkServerUrl: wallet.connectionData.arkServerUrl,
+          encryptedMnemonic: wallet.connectionData.encryptedMnemonic,
+        });
+
+        // Mirror background VTXO maintenance into reactive store state so the
+        // UI can show a subtle indicator while a settlement is in flight.
+        provider._onMaintenance = (active) => { this.arkadeMaintaining = active; };
+
+        await provider.connect();
+        this.providers[walletId] = provider;
+        this.connectionStates[walletId] = {
+          connected: true,
+          lastConnected: Date.now(),
+          error: null,
+        };
+
+        const balanceResult = await provider.getBalance();
+        this.balances[walletId] = balanceResult.balance;
+
+        const info = await provider.getInfo();
+        this.walletInfos[walletId] = info;
+
+        // Cache the ark1 address on the wallet so it renders while locked /
+        // before reconnect (mirrors Spark's metadata.sparkAddress cache).
+        if (info?.arkadeAddress) {
+          if (!wallet.metadata) wallet.metadata = {};
+          wallet.metadata.arkadeAddress = info.arkadeAddress;
+        }
+      } catch (error) {
+        this.connectionStates[walletId] = {
+          connected: false,
+          lastConnected: Date.now(),
+          error: error.message,
+        };
+        throw error;
+      }
+    },
+
+    /**
+     * Get the decrypted recovery phrase for the (active) Arkade wallet.
+     * @param {string} [walletId]
+     * @returns {Promise<string>}
+     */
+    async getArkadeMnemonic(walletId) {
+      const wallet = walletId
+        ? this.wallets.find((w) => w.id === walletId && w.type === WALLET_TYPES.ARKADE)
+        : this.arkadeWallet;
+      if (!wallet) {
+        throw new Error('No Arkade wallet found');
+      }
+      return CryptoUtils.decryptMnemonic(wallet.connectionData.encryptedMnemonic);
+    },
+
+    /**
+     * Decrypt the recovery phrase for any seed-based wallet (Spark or Arkade),
+     * by id or — with none — the active seed wallet. Both backends store
+     * `connectionData.encryptedMnemonic` under the same device key, so the
+     * decrypt is identical and the shared seed-phrase dialog can reveal either.
+     * @param {string} [walletId]
+     * @returns {Promise<string>}
+     */
+    async getMnemonicForWallet(walletId) {
+      let wallet;
+      if (walletId) {
+        wallet = this.wallets.find((w) => w.id === walletId);
+      } else if (this.activeWallet?.connectionData?.encryptedMnemonic) {
+        wallet = this.activeWallet;
+      } else {
+        wallet = this.sparkWallet || this.arkadeWallet;
+      }
+      if (!wallet || !wallet.connectionData?.encryptedMnemonic) {
+        throw new Error('No recovery phrase found for this wallet');
+      }
+      return CryptoUtils.decryptMnemonic(wallet.connectionData.encryptedMnemonic);
+    },
+
+    // ==========================================
     // NWC Wallet Methods (original functionality)
     // ==========================================
 
@@ -1544,6 +1811,13 @@ export const useWalletStore = defineStore('wallet', {
           delete this.providers[walletId];
         }
 
+        // Permanent removal: delete the Arkade IndexedDB cache (best-effort).
+        // disconnectWallet() above already released the SDK's db handle. NOT
+        // done on disconnect — that runs on every wallet switch.
+        if (wallet.type === WALLET_TYPES.ARKADE) {
+          await ArkadeWalletProvider.deleteStorage(walletId);
+        }
+
         // If this wallet is in a group, also remove all other group members
         const groupId = wallet.connectionData?.walletGroupId;
         if (groupId) {
@@ -1675,6 +1949,12 @@ export const useWalletStore = defineStore('wallet', {
         return this.providers[walletId];
       }
 
+      // Handle Arkade wallet
+      if (wallet.type === WALLET_TYPES.ARKADE) {
+        await this.connectArkadeWallet(walletId);
+        return this.providers[walletId];
+      }
+
       // NWC wallet
       try {
         const nwc = new NostrWebLNProvider({
@@ -1713,7 +1993,11 @@ export const useWalletStore = defineStore('wallet', {
       const wallet = this.wallets.find(w => w.id === walletId);
       const state = this.connectionStates[walletId];
 
-      if (wallet?.type === WALLET_TYPES.SPARK || wallet?.type === WALLET_TYPES.LNBITS) {
+      if (
+        wallet?.type === WALLET_TYPES.SPARK ||
+        wallet?.type === WALLET_TYPES.LNBITS ||
+        wallet?.type === WALLET_TYPES.ARKADE
+      ) {
         const provider = this.providers[walletId];
         if (provider) {
           await provider.disconnect();
@@ -1776,6 +2060,27 @@ export const useWalletStore = defineStore('wallet', {
 
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
+        } else if (wallet.type === WALLET_TYPES.ARKADE) {
+          let provider = this.providers[walletId];
+
+          if (!provider || !this.connectionStates[walletId]?.connected) {
+            await this.connectArkadeWallet(walletId);
+            provider = this.providers[walletId];
+          }
+
+          const [balanceResult, info] = await Promise.all([
+            provider.getBalance(),
+            provider.getInfo()
+          ]);
+
+          this.balances[walletId] = balanceResult.balance;
+          this.walletInfos[walletId] = info;
+
+          // Keep VTXOs alive (renew near-expiry, reclaim recoverable). Throttled
+          // inside the provider, fire-and-forget so it never blocks the refresh.
+          provider.checkLiveness?.().catch((e) =>
+            console.warn('[arkade] liveness pass failed:', e?.message || e)
+          );
         } else {
           // NWC wallet
           let nwc = this.connectionStates[walletId]?.nwcInstance;
@@ -1913,7 +2218,11 @@ export const useWalletStore = defineStore('wallet', {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return null;
 
-      if (wallet.type === WALLET_TYPES.SPARK || wallet.type === WALLET_TYPES.LNBITS) {
+      if (
+        wallet.type === WALLET_TYPES.SPARK ||
+        wallet.type === WALLET_TYPES.LNBITS ||
+        wallet.type === WALLET_TYPES.ARKADE
+      ) {
         return this.providers[walletId] || null;
       }
       return this.connectionStates[walletId]?.nwcInstance || null;
@@ -2000,6 +2309,34 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Return the connected Arkade provider for `walletId` (or the active
+     * wallet), self-healing a dropped connection before a send. Mirrors
+     * ensureLNBitsConnected.
+     * @param {string} [walletId]
+     * @returns {Promise<ArkadeWalletProvider>}
+     */
+    async ensureArkadeConnected(walletId) {
+      const targetId = walletId || this.activeWalletId;
+      const wallet = this.wallets.find((w) => w.id === targetId);
+      if (!wallet || wallet.type !== WALLET_TYPES.ARKADE) {
+        throw new Error('Not an Arkade wallet');
+      }
+
+      const cached = this.getProvider(targetId);
+      if (cached && cached.isConnected) {
+        return cached;
+      }
+
+      await this.connectArkadeWallet(targetId);
+      const provider = this.getProvider(targetId);
+      if (provider && provider.isConnected) {
+        return provider;
+      }
+
+      throw new Error('Arkade wallet could not be connected.');
+    },
+
+    /**
      * Validate all wallets and remove invalid ones
      */
     async validateWallets() {
@@ -2013,6 +2350,11 @@ export const useWalletStore = defineStore('wallet', {
         if (wallet.type === WALLET_TYPES.LNBITS) {
           const valid = wallet.connectionData?.serverUrl && wallet.connectionData?.adminKey;
           if (!valid) console.warn(`[validateWallets] Removing LNBits wallet "${wallet.name}" (${wallet.id}): missing serverUrl or adminKey`);
+          return valid;
+        }
+        if (wallet.type === WALLET_TYPES.ARKADE) {
+          const valid = !!wallet.connectionData?.encryptedMnemonic;
+          if (!valid) console.warn(`[validateWallets] Removing Arkade wallet "${wallet.name}" (${wallet.id}): missing encryptedMnemonic`);
           return valid;
         }
         // NWC wallet
@@ -2164,6 +2506,7 @@ export const useWalletStore = defineStore('wallet', {
       let provider = this.getProvider(walletId);
       const isActuallyConnected = provider && (
         (wallet.type === WALLET_TYPES.SPARK && provider.isConnected) ||
+        (wallet.type === WALLET_TYPES.ARKADE && provider.isConnected) ||
         (wallet.type === WALLET_TYPES.NWC && this.connectionStates[walletId]?.nwcInstance)
       );
 
@@ -2263,8 +2606,10 @@ export const useWalletStore = defineStore('wallet', {
         // Lightning path: create invoice on destination, pay from source
         let invoice;
         try {
-          if (toType === 'spark' || toType === 'lnbits') {
-            // Spark and LNBits both use createInvoice({ amount, description })
+          if (toType === 'spark' || toType === 'lnbits' || toType === 'arkade') {
+            // Spark, LNBits and Arkade all expose createInvoice({ amount,
+            // description }). For Arkade this mints a Boltz reverse-swap invoice;
+            // the source wallet then pays it like any other bolt11.
             const invoiceResult = await toProvider.createInvoice({
               amount: amountSats,
               description: transferMemo
@@ -2289,8 +2634,9 @@ export const useWalletStore = defineStore('wallet', {
         }
 
         try {
-          if (fromType === 'spark' || fromType === 'lnbits') {
-            // Spark and LNBits both use payInvoice({ invoice })
+          if (fromType === 'spark' || fromType === 'lnbits' || fromType === 'arkade') {
+            // Spark, LNBits and Arkade all use payInvoice({ invoice }). For
+            // Arkade this is a Boltz submarine swap.
             paymentResult = await fromProvider.payInvoice({ invoice });
           } else {
             // NWC wallet - use sendPayment with just the invoice string

@@ -87,6 +87,7 @@
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                       </svg>
+                      <ArkadeLogo v-else-if="contact.addressType === 'arkade'" variant="mark" color="white" :size="10" />
                       <Icon v-else :icon="getTypeIcon(contact.addressType)" width="10" height="10" />
                     </div>
                   </div>
@@ -121,6 +122,7 @@
                       <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                       </svg>
+                      <ArkadeLogo v-else-if="contact.addressType === 'arkade'" variant="mark" color="white" :size="10" />
                       <Icon v-else :icon="getTypeIcon(contact.addressType)" width="10" height="10" />
                     </div>
                   </div>
@@ -186,6 +188,7 @@
                         <svg v-if="contact.addressType === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
                         </svg>
+                        <ArkadeLogo v-else-if="contact.addressType === 'arkade'" variant="mark" color="orange" :size="10" />
                         <Icon v-else :icon="getTypeIcon(contact.addressType)" width="10" height="10" />
                         <span>{{ getTypeLabel(contact.addressType) }}</span>
                       </span>
@@ -235,6 +238,7 @@ import { useRouter } from 'vue-router';
 import { useAddressBookStore } from '../stores/addressBook';
 import AddressBookModal from './AddressBook/AddressBookModal.vue';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
+import ArkadeLogo from './ArkadeLogo.vue';
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -333,6 +337,7 @@ function getTypeColor(type) {
   const colors = {
     lightning: '#F59E0B',
     spark: '#000', // Black background for Spark
+    arkade: '#F14317',
     bitcoin: '#F7931A'
   };
   return colors[type] || colors.lightning;
@@ -342,6 +347,7 @@ function getTypeBgColor(type) {
   const colors = {
     lightning: 'rgba(245,158,11,.12)',
     spark: '#000', // Black background for Spark
+    arkade: 'rgba(241,67,23,.12)',
     bitcoin: 'rgba(247,147,26,.12)'
   };
   return colors[type] || colors.lightning;
