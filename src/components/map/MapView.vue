@@ -308,35 +308,41 @@ async function addMeetupLayer() {
   }
   if (!map) return
 
-  if (!map.getSource(MEETUP_SOURCE_ID)) {
-    map.addSource(MEETUP_SOURCE_ID, { type: 'geojson', data: props.meetups || emptyFC() })
-  }
-
-  if (!map.getLayer('meetups')) {
-    map.addLayer({
-      id: 'meetups',
-      type: 'symbol',
-      source: MEETUP_SOURCE_ID,
-      layout: {
-        'icon-image': MEETUP_IMAGE_ID,
-        'icon-size': 0.9,
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
-    })
-
-    const onMeetupTap = (e) => {
-      const f = e.features?.[0]
-      if (!f) return
-      const [lon, lat] = f.geometry?.coordinates || []
-      emit('select-meetup', { ...f.properties, lat, lon })
+  // Defensive: never let a MapLibre error here reject the fire-and-forget call
+  // (or tear down the merchant map). The meetups layer is purely additive.
+  try {
+    if (!map.getSource(MEETUP_SOURCE_ID)) {
+      map.addSource(MEETUP_SOURCE_ID, { type: 'geojson', data: props.meetups || emptyFC() })
     }
-    map.on('click', 'meetups', onMeetupTap)
-    map.on('mouseenter', 'meetups', () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'meetups', () => { map.getCanvas().style.cursor = '' })
-  }
 
-  pushMeetupData()
+    if (!map.getLayer('meetups')) {
+      map.addLayer({
+        id: 'meetups',
+        type: 'symbol',
+        source: MEETUP_SOURCE_ID,
+        layout: {
+          'icon-image': MEETUP_IMAGE_ID,
+          'icon-size': 0.9,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      })
+
+      const onMeetupTap = (e) => {
+        const f = e.features?.[0]
+        if (!f) return
+        const [lon, lat] = f.geometry?.coordinates || []
+        emit('select-meetup', { ...f.properties, lat, lon })
+      }
+      map.on('click', 'meetups', onMeetupTap)
+      map.on('mouseenter', 'meetups', () => { map.getCanvas().style.cursor = 'pointer' })
+      map.on('mouseleave', 'meetups', () => { map.getCanvas().style.cursor = '' })
+    }
+
+    pushMeetupData()
+  } catch (e) {
+    console.warn('Einundzwanzig meetups layer skipped:', e)
+  }
 }
 
 function pushMeetupData() {
