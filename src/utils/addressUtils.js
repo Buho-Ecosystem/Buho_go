@@ -23,6 +23,8 @@
  * them as-is, and the regex uses the `/i` flag only for the bech32 arms.
  */
 
+import { extractLnFallbackParam } from './bip21.js';
+
 // ----------------------------------------------------------------------------
 // Constants — exported so other modules can reuse them without re-typing
 // ----------------------------------------------------------------------------
@@ -199,6 +201,12 @@ export function normalizePaymentAddress(raw) {
     }
     return address.trim();
   }
+
+  // http(s) "fallback URL" carrying the LNURL in a `lightning=` query param
+  // (LNbits / Fossa ATMs, Phoenix, WoS, …). Extract the bare LNURL/invoice so
+  // the predicates can classify it; otherwise fall through to passthrough.
+  const lnFallback = extractLnFallbackParam(value);
+  if (lnFallback) return lnFallback;
 
   // `lightning:` wraps a BOLT11 invoice or an LNURL. The invoice/LNURL
   // predicates already tolerate the prefix, but stripping it here keeps the
