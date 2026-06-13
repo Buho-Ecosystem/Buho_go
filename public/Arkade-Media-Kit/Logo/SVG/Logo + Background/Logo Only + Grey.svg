@@ -1,0 +1,13 @@
+<svg width="94" height="94" viewBox="0 0 94 94" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="93.1066" height="93.1066" transform="translate(0.12793)" fill="#A1A1A1"/>
+<rect x="46.6812" y="23.2767" width="11.6383" height="11.6383" fill="#F6F6F6"/>
+<rect x="35.043" y="23.2767" width="11.6383" height="11.6383" fill="#F6F6F6"/>
+<rect x="58.3198" y="34.915" width="11.6383" height="11.6383" fill="#F6F6F6"/>
+<rect width="11.6383" height="11.6383" transform="matrix(-1 0 0 1 35.043 34.915)" fill="#F6F6F6"/>
+<rect width="11.6383" height="11.6383" transform="matrix(-1 0 0 1 46.6812 46.5533)" fill="#F6F6F6"/>
+<rect width="11.6383" height="11.6383" transform="matrix(-1 0 0 1 58.3198 46.5533)" fill="#F6F6F6"/>
+<rect x="58.3198" y="58.1917" width="11.6383" height="11.6383" fill="#F6F6F6"/>
+<rect width="11.6383" height="11.6383" transform="matrix(-1 0 0 1 35.043 58.1917)" fill="#F6F6F6"/>
+<path d="M58.3198 23.2767L69.9581 34.9151H58.3198V23.2767Z" fill="#F6F6F6"/>
+<path d="M35.043 23.2767L23.4046 34.9151H35.043V23.2767Z" fill="#F6F6F6"/>
+</svg>
