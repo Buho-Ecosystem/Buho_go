@@ -15,6 +15,7 @@ import {
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
+  stripWrapperScheme,
 } from '../utils/addressUtils';
 
 /**
@@ -132,8 +133,6 @@ export function parsePaymentDestination(input) {
       return { type: 'unknown', valid: false, bip21 };
     }
     cleaned = destination.value;
-  } else if (cleaned.toLowerCase().startsWith('lightning:')) {
-    cleaned = cleaned.substring(10);
   } else {
     // http(s) "fallback URL" with the LNURL/invoice in a `lightning=` query
     // param (LNbits / Fossa ATMs). Pull it out so the branches below classify
@@ -141,6 +140,11 @@ export function parsePaymentDestination(input) {
     const lnFallback = extractLnFallbackParam(cleaned);
     if (lnFallback) {
       cleaned = lnFallback;
+    } else {
+      // Otherwise strip a wrapper URI scheme (`lightning:` / `lnurl:`) so the
+      // bare payload reaches the prefix-based branches below. No-op when none
+      // is present.
+      cleaned = stripWrapperScheme(cleaned);
     }
   }
 

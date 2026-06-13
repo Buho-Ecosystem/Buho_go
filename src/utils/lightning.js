@@ -16,6 +16,7 @@ import {
   isLightningAddress as isLightningAddressShared,
   isLightningInvoice as isLightningInvoiceShared,
   isLnurl as isLnurlShared,
+  stripWrapperScheme,
 } from './addressUtils';
 
 /**
@@ -218,7 +219,7 @@ export class LightningPaymentService {
    */
   async handleLNURL(lnurlInput) {
     try {
-      const cleanLnurl = lnurlInput.replace(/^lightning:/i, '');
+      const cleanLnurl = stripWrapperScheme(lnurlInput);
       const url = this.decodeLNURL(cleanLnurl);
 
       const response = await fetch(url);
@@ -531,7 +532,7 @@ export class LightningPaymentService {
    * @throws {Error} If decoding fails
    */
   decodeLNURL(lnurl) {
-    const clean = lnurl.trim().replace(/^lightning:/i, '');
+    const clean = stripWrapperScheme(lnurl);
 
     // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
     const lud17Url = resolveLUD17URL(clean);

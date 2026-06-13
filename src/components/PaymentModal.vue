@@ -38,6 +38,7 @@ import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import {
   isLightningInvoice as isLightningInvoiceShared,
   isLnurl as isLnurlShared,
+  stripWrapperScheme,
 } from '../utils/addressUtils.js'
 import PaymentConfirmSheet from './PaymentConfirmSheet.vue'
 
@@ -339,7 +340,7 @@ export default {
      * a manual decode (the NWC + LNbits paths).
      */
     decodeLNURL(lnurl) {
-      const clean = lnurl.trim().replace(/^lightning:/i, '')
+      const clean = stripWrapperScheme(lnurl)
 
       const lud17Url = resolveLUD17URL(clean)
       if (lud17Url) return lud17Url

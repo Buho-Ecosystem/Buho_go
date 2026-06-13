@@ -754,7 +754,7 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
-import {isLightningInvoice as isLightningInvoiceShared} from '../utils/addressUtils.js';
+import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
 import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
@@ -5192,7 +5192,7 @@ export default {
 
     // Helper: Decode LNURL (bech32 LUD-01 or URL scheme LUD-17) to URL
     decodeLNURL(lnurl) {
-      const clean = lnurl.trim().replace(/^lightning:/i, '');
+      const clean = stripWrapperScheme(lnurl);
 
       // Plain https:// or http:// URL (e.g. Bolt Card NFC URL — already decoded)
       if (/^https?:\/\//i.test(clean)) return clean;

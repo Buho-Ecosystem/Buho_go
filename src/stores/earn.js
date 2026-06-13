@@ -12,6 +12,7 @@
 
 import { defineStore } from 'pinia'
 import { i18n } from '../boot/i18n'
+import { stripWrapperScheme } from '../utils/addressUtils'
 import quizEnUS from '../data/earn-quizzes.en-US.json'
 import quizDe from '../data/earn-quizzes.de.json'
 import quizEs from '../data/earn-quizzes.es.json'
@@ -333,12 +334,14 @@ export const useEarnStore = defineStore('earn', {
      */
     async _fetchWithdrawInfo(lnurl) {
       try {
-        // Decode LNURL (bech32) to URL
-        let url = lnurl
-        if (lnurl.toLowerCase().startsWith('lnurl')) {
+        // Decode LNURL (bech32) to URL. Unwrap any `lightning:` / `lnurl:`
+        // scheme first so a wrapped voucher still decodes.
+        const clean = stripWrapperScheme(lnurl)
+        let url = clean
+        if (clean.toLowerCase().startsWith('lnurl')) {
           // Import bech32 decode from existing utility
           const { bech32 } = await import('bech32')
-          const decoded = bech32.decode(lnurl.toLowerCase(), 2000)
+          const decoded = bech32.decode(clean.toLowerCase(), 2000)
           const bytes = bech32.fromWords(decoded.words)
           url = new TextDecoder().decode(new Uint8Array(bytes))
         }
