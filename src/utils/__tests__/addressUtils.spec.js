@@ -117,6 +117,41 @@ test('LUD-17 lnurlp:// passes through untouched and is recognized', () => {
   assert.equal(isLnurl(lud17), true);
 });
 
+// ---------------------------------------------------------------------------
+// normalizePaymentAddress — http(s) LNURL fallback URL (LNbits / Fossa ATMs)
+// ---------------------------------------------------------------------------
+
+const ATM_LNURL =
+  'LNURL1DP68GURN8GHJ7V33D45K7TNNWPSKXEF0VEHHXUMP9ASHQ6F0WCCJ7MRWW4EXCTMX89G9YWPLWQ742VJXWDJYW4NTTQCJ6U6ND9HKX42PG5MX2J3SWA6NZCT02P8NSUMG2YM55D3EW4FHZVNH85CF52CD';
+
+test('http fallback URL: extracts the uppercase LNURL from ?lightning=', () => {
+  const url = `https://21mio.space/fossa/atm?lightning=${ATM_LNURL}`;
+  const bare = normalizePaymentAddress(url);
+  assert.equal(bare, ATM_LNURL);
+  assert.equal(isLnurl(bare), true);
+});
+
+test('http fallback URL: case-insensitive param key, extra params ignored', () => {
+  const url = `https://example.com/atm?foo=bar&LIGHTNING=${ATM_LNURL}&x=1`;
+  assert.equal(normalizePaymentAddress(url), ATM_LNURL);
+});
+
+test('http fallback URL: carries a BOLT11 invoice too', () => {
+  const url = 'https://pay.example.com/x?lightning=lnbc10n1pjxyz';
+  assert.equal(normalizePaymentAddress(url), 'lnbc10n1pjxyz');
+});
+
+test('http fallback URL: no lightning param → left untouched (passthrough)', () => {
+  const url = 'https://example.com/just/a/page?foo=bar';
+  assert.equal(normalizePaymentAddress(url), url);
+});
+
+test('http fallback URL: junk lightning param is not extracted', () => {
+  const url = 'https://example.com/atm?lightning=not-a-lnurl';
+  // Falls through to passthrough — the param isn't a usable destination.
+  assert.equal(normalizePaymentAddress(url), url);
+});
+
 test('passthrough: bare address / npub / nostr URI returned trimmed, untouched', () => {
   assert.equal(normalizePaymentAddress('  alice@example.com  '), 'alice@example.com');
   assert.equal(normalizePaymentAddress('spark1abcdef'), 'spark1abcdef');

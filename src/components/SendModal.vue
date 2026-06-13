@@ -244,7 +244,7 @@ import { createQrScanner } from '../utils/qrScanner';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
-import { parseBip21, selectBip21Destination } from '../utils/bip21';
+import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
 import {
   isSparkAddress,
   isLightningInvoice,
@@ -338,9 +338,15 @@ export default {
         if (parsed) return 'bip21';
       }
 
-      const cleaned = lower.startsWith('lightning:')
-        ? raw.substring(10).trim()
-        : raw;
+      // http(s) "fallback URL" with the LNURL in a `lightning=` query param
+      // (LNbits / Fossa ATMs) — surface it as LNURL while typing.
+      const lnFallback = extractLnFallbackParam(raw);
+
+      const cleaned = lnFallback
+        ? lnFallback
+        : lower.startsWith('lightning:')
+          ? raw.substring(10).trim()
+          : raw;
 
       if (isSparkAddress(cleaned)) return 'spark';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
@@ -721,6 +727,14 @@ export default {
       if (bip21) {
         const destination = selectBip21Destination(bip21);
         return { cleaned: destination ? destination.value : '', bip21 };
+      }
+
+      // http(s) "fallback URL" carrying the LNURL in a `lightning=` query param
+      // (LNbits / Fossa ATMs). Pull out the bare LNURL/invoice so the
+      // recognizers downstream can classify it.
+      const lnFallback = extractLnFallbackParam(trimmed);
+      if (lnFallback) {
+        return { cleaned: lnFallback, bip21: null };
       }
 
       if (trimmed.toLowerCase().startsWith('lightning:')) {

@@ -9,7 +9,12 @@ const SPEED_LABELS = { low: 'Economy', medium: 'Standard', high: 'Priority' }
 // fee quote is keyed by slow/medium/fast. Translate at the boundary so
 // Settings UX stays stable while the provider speaks the SDK's language.
 const FEE_SPEED_TO_QUOTE_KEY = { low: 'slow', medium: 'medium', high: 'fast' }
-const COOLDOWN_MS = 60_000 // 60s between triggers per wallet
+const COOLDOWN_MS = 60_000 // 60s between successful triggers per wallet
+// A failed attempt shouldn't hold the wallet hostage for the full 60s success
+// cooldown — transient blips (dropped NWC/Spark connection, LN-address resolve
+// hiccup) deserve a quicker retry. After a failure we roll the cooldown back so
+// the next balance tick can retry once this much time has elapsed.
+const FAILURE_RETRY_MS = 15_000 // 15s backoff before retrying a failed transfer
 const MIN_SEND_SATS = 10   // Don't send dust
 
 // Module-level lock — not in Pinia state, avoids reactivity issues
@@ -109,7 +114,10 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       if (!threshold || threshold <= 0) return
 
       const balance = Number(balanceSats)
-      if (balance <= threshold) return
+      // Guard non-finite balances explicitly: `NaN <= threshold` is false, so
+      // without this an undefined/garbage balance would slip past the check
+      // below and we'd compute a NaN send amount.
+      if (!Number.isFinite(balance) || balance <= threshold) return
 
       // Lock guard — prevent concurrent execution for same config
       if (_activeWithdrawals.has(configKey)) return
@@ -125,11 +133,17 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       // Resolve base walletId from composite key (e.g. 'walletId:2' → 'walletId')
       const baseWalletId = configKey.includes(':') ? configKey.split(':').slice(0, -1).join(':') : configKey
 
+      // Declared in the action scope (not inside `try`) so the `catch` block
+      // can report the attempted amount — a `const` inside `try` would be a
+      // ReferenceError in `catch`, which previously masked the real failure
+      // and left the error toast/dialog unshown.
+      let sendAmount = 0
+
       try {
         const wallet = walletStore.wallets.find(w => w.id === baseWalletId)
         if (!wallet) return
 
-        const sendAmount = Math.floor(balance * 0.97)
+        sendAmount = Math.floor(balance * 0.97)
         if (sendAmount < MIN_SEND_SATS) return
 
         const walletType = wallet.type?.toLowerCase() || 'nwc'
@@ -173,6 +187,13 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         }
       } catch (error) {
         console.error('[Auto-withdraw] Failed:', error.message)
+
+        // The cooldown was set to "now" before the attempt to dam the storm of
+        // balance-refresh ticks. On failure, roll it back so the next tick can
+        // retry after FAILURE_RETRY_MS instead of waiting out the full 60s
+        // success cooldown — the difference between "intermittently works" and
+        // "works on the next refresh".
+        _lastTriggerTime.set(configKey, Date.now() - COOLDOWN_MS + FAILURE_RETRY_MS)
 
         // Hand the raw error to the UI watcher so it can route it
         // through the global payment-error dialog (same surface as
@@ -273,7 +294,14 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const result = await provider.payInvoice({ invoice })
         return { id: result.payment_hash || result.id || null, status: 'completed' }
       } else {
-        const nwc = walletStore.connectionStates[walletId]?.nwcInstance
+        // Self-heal a dropped NWC connection (e.g. after an app resume or a
+        // relay disconnect) rather than failing the transfer outright — mirrors
+        // the LNbits ensureLNBitsConnected path above. connectWallet rebuilds
+        // and enables a fresh NWC instance.
+        let nwc = walletStore.connectionStates[walletId]?.nwcInstance
+        if (!nwc) {
+          nwc = await walletStore.connectWallet(walletId)
+        }
         if (!nwc) throw new Error('NWC not connected')
         const result = await nwc.sendPayment(invoice)
         return { id: result.payment_hash || result.paymentHash || result.preimage || null, status: 'completed' }
