@@ -1,45 +1,76 @@
-identifier: de.mybuho.buhogo
+# Zapstore publish config (zsp schema) - https://zapstore.dev/docs/publish
+# Publish with:  SIGN_WITH=<nsec|bunker> zsp publish zapstore.yaml
+# The app id (mybuho.buhogo) and version (1.8.3) are read from the APK below.
+
+# Source code repository (shown in the app store)
+repository: https://github.com/Buho-Ecosystem/Buho_go
+
+# Where to fetch the APK. A local path lets us ship the local icon and
+# screenshots below. Bump this filename on each release.
+release_source: ./output/BuhoGO_v1_8_3.apk
+
+# ---------------------------------------------------------------------------
+# App metadata
+# ---------------------------------------------------------------------------
 name: BuhoGO
-summary: Bitcoin payments made simple
+summary: The friendly Bitcoin and Lightning wallet
+
 description: |
-  BuhoGO is an open-source Bitcoin and Lightning wallet for mobile.
-  Connect the wallets you already use through Nostr Wallet Connect (NWC) or LNBits, or create and restore a self-custodial Spark wallet inside the app.
+  BuhoGO is a friendly, open-source Bitcoin and Lightning wallet. Hold your own keys, pay anyone, and spend anywhere, all from one clean app.
 
-  BuhoGO is built for fast everyday payments with a clean interface for sending, receiving, and managing multiple wallets in one place.
-  It works well for first-time Bitcoin users and for people who already have their own setup.
+  Bring the wallets you already use through Nostr Wallet Connect (NWC) or LNbits, or create a self-custodial Spark wallet right inside BuhoGO. Switch between your Business and Personal balances with a tap.
 
-  ## Key Features
-  - Open-source wallet with self-custodial Spark support
-  - Connect multiple NWC and LNBits wallets
-  - Create or restore a Spark wallet with seed backup and PIN protection
-  - Pay Lightning invoices, Lightning addresses, LNURL requests, and Spark addresses
-  - Receive with invoices, Lightning addresses, and Spark address QR codes
-  - Spark on-chain receive and Bitcoin withdrawals
-  - Contacts and address book for faster repeat payments
-  - Batch payments to multiple contacts
-  - Easy sats transfers between your connected wallets
-  - Auto-withdraw to move funds automatically once a threshold is reached
-  - Transaction history with fiat conversion
-  - Dark and light themes
-  - Multi-language support
+  ## What you can do
+  - Pay Lightning invoices, Lightning addresses, LNURL, and Spark addresses
+  - Send to a Nostr profile or a NIP-05 name
+  - Scan any QR, including LNbits and Bitcoin ATM withdraw codes
+  - Receive over Lightning, on-chain, and with Spark address QR codes
+  - Discover Bitcoin-friendly places near you on the built-in map
+  - Buy eSIMs and VPNs, and browse online and Nostr shops without leaving the app
+  - Pay many contacts at once with batch payments
+  - Move funds automatically with Auto-Transfer, over Lightning or on-chain
+  - Keep an address book for faster repeat payments
+  - Follow your history with live fiat conversion
+  - Switch between a polished dark and light theme, in your language
 
   ## Why BuhoGO?
-  Unlike wallets that lock you into a single provider, BuhoGO works with your existing stack or lets you start fresh with Spark in minutes.
-  It is designed for clarity, speed, and flexibility without giving up self-custody.
-repository: https://github.com/Buho-Ecosystem/Buho_go
-pubkey: npub17c2szua46mc8ndp4grvy4z5465x0qxjge8tqx7vyu0vkqr24y2hssuuy6f
-homepage: https://home.mybuho.de/buhogo
-license: MIT
-tags: bitcoin lightning wallet payments nwc nostr android spark lnbits drshift pratik227
-icon: public/Buho_logo__Sharp_grey.jpg
+  Most wallets lock you into one provider. BuhoGO works with the setup you already have, or lets you start fresh with Spark in minutes. It is built for clarity, speed, and self-custody, without the jargon.
+
+# SPDX license identifier (the repo ships the GNU AGPL v3)
+license: AGPL-3.0-only
+
+website: https://home.mybuho.de/buhogo
+
+tags:
+  - bitcoin
+  - lightning
+  - wallet
+  - payments
+  - nostr
+  - nostrcore
+  - nwc
+  - lnbits
+  - spark
+  - self-custody
+
+# ---------------------------------------------------------------------------
+# Media (local paths work because release_source is a local APK)
+# ---------------------------------------------------------------------------
+icon: ./public/Buho_logo__Sharp_grey.jpg
+
 images:
-  - public/Playstore/Buho_go_1_Playstore.png
-  - public/Playstore/Buho_go_1_playstore_light.png
-  - public/Playstore/Buho_go_2_playstore.png
-  - public/Playstore/Buho_go_3_playstore.png
-  - public/Playstore/Buho_go_3_Playstore_light.png
-blossom_servers:
-  - https://cdn.zapstore.dev
-  - https://blossom.band
-remote_metadata:
+  - ./public/Playstore/Playstore1.png    # Clean home, Business and Personal
+  - ./public/Playstore/Playstore2.png    # Wallet overview
+  - ./public/Playstore/Playstore2_1.png  # Wallet transactions
+  - ./public/Playstore/Playstore3.png    # Discover Bitcoin-friendly places (map)
+  - ./public/Playstore/Playstore3_1.png  # Send to anyone over Lightning
+  - ./public/Playstore/Playstore4.png    # Clean Auto-Transfer
+  - ./public/Playstore/Playstore5.png    # Batch payments
+  - ./public/Playstore/Playstore6.png    # Auto-Transfer
+  - ./public/Playstore/Playstore7.png    # Dark mode
+
+# ---------------------------------------------------------------------------
+# Enrichment (YAML values above always take priority)
+# ---------------------------------------------------------------------------
+metadata_sources:
   - github
