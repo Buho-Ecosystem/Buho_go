@@ -1873,6 +1873,9 @@ export default {
   "View your address and reveal your private key": "Adresse ansehen und privaten Schlüssel einblenden",
   "Your public profile": "Dein öffentliches Profil",
   "Your private key": "Dein privater Schlüssel",
+  "Nostr key": "Nostr-Schlüssel",
+  "Advanced. Sign in to other Nostr apps with this profile.": "Erweitert. Melde dich mit diesem Profil in anderen Nostr-Apps an.",
+  "This is the private key (nsec) for your profile on Nostr. Use it to sign in to other Nostr apps as the same profile. Your recovery phrase already backs it up.": "Das ist der private Schlüssel (nsec) für dein Profil auf Nostr. Nutze ihn, um dich in anderen Nostr-Apps mit demselben Profil anzumelden. Deine Wiederherstellungswörter sichern ihn bereits.",
   "Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your profile too.": "Wird aus deinen BuhoGO-Wiederherstellungswörtern abgeleitet. Wenn du diese sicherst, sicherst du auch dein Profil.",
   "Profile address": "Profil-Adresse",
   "Private key": "Privater Schlüssel",
@@ -1956,6 +1959,7 @@ export default {
 
   // Profile / identity refresh — simpler copy without Nostr jargon.
   "Set up your profile": "Profil einrichten",
+  "Add name & picture": "Name & Bild hinzufügen",
   "Add a name and picture so friends can find you and pay you.": "Füge einen Namen und ein Bild hinzu, damit Freunde dich finden und bezahlen können.",
   "Start a new profile?": "Neues Profil starten?",
   "Start a new profile": "Neues Profil starten",

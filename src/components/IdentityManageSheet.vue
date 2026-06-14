@@ -137,10 +137,10 @@
             </q-item-section>
             <q-item-section>
               <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ $t('Reveal private key') }}
+                {{ $t('Nostr key') }}
               </q-item-label>
               <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('Advanced. Lets you sign in to your profile on other apps.') }}
+                {{ $t('Advanced. Sign in to other Nostr apps with this profile.') }}
               </q-item-label>
             </q-item-section>
             <q-item-section side>

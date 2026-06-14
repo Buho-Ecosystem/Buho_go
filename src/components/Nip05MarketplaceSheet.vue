@@ -361,7 +361,7 @@ import { useProfileStore } from '../stores/profile';
 import { useWalletStore } from '../stores/wallet';
 import {
   NIP05_DOMAIN,
-  deriveBaseSlug,
+  deriveNameSlug,
   isLikelyAvailableLocalPart,
   searchHandle,
   registerFreeHandle,
@@ -732,13 +732,14 @@ export default {
       this.purchasedAddress = '';
       this.walletMenuOpen = false;
       this.selectedWalletId = this.walletStore.activeWalletId || null;
-      // Pre-fill the name input with a slugified guess from the profile
-      // so the user can hit Continue immediately if they like the default.
-      const guess = deriveBaseSlug({
+      // Pre-fill the name input with a slugified guess from the profile name
+      // so the user can hit Continue immediately if they like it. When there's
+      // no real name yet, `deriveNameSlug` returns '' and we leave the field
+      // blank — the memorable free-handle fallback is intentionally NOT
+      // suggested here, since this picker is for a self-chosen (premium) name.
+      this.nameInput = deriveNameSlug({
         name: this.profile.displayName || this.profile.name,
-        npub: this.identity.nostrNpub,
       });
-      this.nameInput = guess.startsWith('buho') ? '' : guess;
       this.nameInputDebounced = this.nameInput;
       if (this.nameInput && this.localValidation.ok) {
         // Kick off the first search so the CTA can light up without

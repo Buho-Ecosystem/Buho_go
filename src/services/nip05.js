@@ -17,6 +17,8 @@
  *   201   { local_part, pubkey, active:true, is_free:true, rotation_secret, … }
  */
 
+import { deriveMemorableSlug } from './nip05Names.js';
+
 // ── Config (mybuho.de domain on the timecatcher LNbits instance) ────────────
 export const NIP05_DOMAIN = 'mybuho.de';
 const LNBITS_BASE = 'https://timecatcher.lnbits.de';
@@ -72,28 +74,39 @@ export function normaliseExpiresAt(raw, years = 1) {
 }
 
 /**
- * Derive the base (suffix-less) local-part for a new handle. Prefers a slug
- * of the user's profile name; falls back to an npub-derived slug so every
- * identity can get a handle even before a profile name is set.
+ * Slugify a human profile name into a NIP-05-safe local-part base.
  *
  * Output is `[a-z0-9]`, ≤ 20 chars — the lowest-common-denominator that any
- * NIP-05 server accepts. The `.NNNNNN` free suffix is appended at register
- * time, not here.
+ * NIP-05 server accepts. Returns `''` when there's no usable name (fewer than
+ * two slug characters), so callers can choose their own fallback: the
+ * marketplace leaves the premium input blank, while `deriveBaseSlug` swaps in
+ * a memorable word pair.
+ *
+ * @param {{ name?: string }} input
+ * @returns {string} the slug, or '' when there's no usable name
+ */
+export function deriveNameSlug({ name } = {}) {
+  const slug = String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, BASE_MAX);
+  return slug.length >= 2 ? slug : '';
+}
+
+/**
+ * Derive the base (suffix-less) local-part for a new *free* handle. Prefers a
+ * slug of the user's profile name; falls back to a deterministic, memorable
+ * `{adjective}{animal}` slug derived from the npub (e.g. `bravefox`) so every
+ * identity gets a recognizable handle even before a profile name is set.
+ *
+ * Always returns a non-empty, registerable base. The `.NNNNNN` free suffix is
+ * appended at register time, not here.
  *
  * @param {{ name?: string, npub?: string }} input
  * @returns {string}
  */
 export function deriveBaseSlug({ name, npub } = {}) {
-  const slug = String(name || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '')
-    .slice(0, BASE_MAX);
-  if (slug.length >= 2) return slug;
-
-  // Fallback: `buho` + a stable chunk of the npub's bech32 body. npub is
-  // `npub1<data>`; chars after the `npub1` prefix are [a-z0-9].
-  const tail = String(npub || '').replace(/^npub1/, '').slice(0, 8);
-  return `buho${tail}` || 'buho';
+  return deriveNameSlug({ name }) || deriveMemorableSlug(npub);
 }
 
 /** Random 6-digit string (zero-padded) — the free-identifier marker. */

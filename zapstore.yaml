@@ -52,6 +52,7 @@ tags:
   - lnbits
   - spark
   - self-custody
+  - ark
 
 # ---------------------------------------------------------------------------
 # Media (local paths work because release_source is a local APK)
