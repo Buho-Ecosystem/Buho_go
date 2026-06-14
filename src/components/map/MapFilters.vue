@@ -3,6 +3,7 @@ import { computed, getCurrentInstance } from 'vue'
 import { Icon } from '@iconify/vue'
 import { storeToRefs } from 'pinia'
 import { useMapPlacesStore } from '../../stores/mapPlaces.js'
+import { useMapMeetupsStore } from '../../stores/mapMeetups.js'
 import { useMapFavoritesStore } from '../../stores/mapFavorites.js'
 import { useMapBasemapStore, BASEMAPS, BASEMAP_LABELS } from '../../stores/mapBasemap.js'
 import { useMapUnitsStore, DISTANCE_UNITS } from '../../stores/mapUnits.js'
@@ -27,6 +28,8 @@ const t = (key, params) => proxy.$t(key, params)
 
 const store = useMapPlacesStore()
 const { enabled, buckets, favoritesOnly, counts } = storeToRefs(store)
+const meetups = useMapMeetupsStore()
+const { enabled: meetupsEnabled, count: meetupsCount } = storeToRefs(meetups)
 const favorites = useMapFavoritesStore()
 const basemap = useMapBasemapStore()
 const { style: basemapStyle, pitch3D } = storeToRefs(basemap)
@@ -38,8 +41,11 @@ const open = computed({
   set: (v) => emit('update:modelValue', v),
 })
 
-const sources = ['btcmap', 'osm', 'btcpay']
+const sources = ['btcmap', 'osm', 'btcpay', 'blink', 'bitcoinjungle', 'moneybadger']
 const bucketKeys = ['food', 'retail', 'lodging', 'services', 'atm', 'fuel', 'leisure', 'other']
+
+// Base-aware URL to the Einundzwanzig logo (public/), used as the toggle icon.
+const eunzLogo = (import.meta.env.BASE_URL || '/') + 'Einundzwanzig/einundzwanzig-square.svg'
 
 function bucketLabel(key) {
   // i18n keys mirror the canonical English bucket labels.
@@ -136,6 +142,21 @@ function bucketLabel(key) {
               {{ u === 'auto' ? $t('Auto') : u }}
             </button>
           </div>
+        </section>
+
+        <!-- Layers -->
+        <section class="filters-section">
+          <h3 class="filters-label">{{ $t('Layers') }}</h3>
+          <button type="button" class="filters-toggle-row" @click="meetups.toggle()">
+            <span class="filters-toggle-text">
+              <img :src="eunzLogo" alt="" width="20" height="20" class="filters-eunz-logo" />
+              {{ $t('Einundzwanzig meetups') }}
+              <span v-if="meetupsCount" class="filters-toggle-count">{{ meetupsCount }}</span>
+            </span>
+            <span class="filters-switch" :class="{ on: meetupsEnabled }">
+              <span class="filters-knob" />
+            </span>
+          </button>
         </section>
 
         <!-- Sources -->
@@ -249,6 +270,12 @@ function bucketLabel(key) {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
+}
+.filters-eunz-logo {
+  display: block;
+  border-radius: 5px;
+  background: #fff;
+  padding: 1px;
 }
 .filters-switch {
   width: 40px;

@@ -9,12 +9,13 @@ import { SparkWalletProvider } from './SparkWalletProvider';
 import { NWCWalletProvider } from './NWCWalletProvider';
 import { LNBitsWalletProvider } from './LNBitsWalletProvider';
 import { WalletProvider } from './WalletProvider';
-import { parseBip21, selectBip21Destination } from '../utils/bip21';
+import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
 import {
   isSparkAddress,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
+  stripWrapperScheme,
 } from '../utils/addressUtils';
 
 /**
@@ -132,8 +133,19 @@ export function parsePaymentDestination(input) {
       return { type: 'unknown', valid: false, bip21 };
     }
     cleaned = destination.value;
-  } else if (cleaned.toLowerCase().startsWith('lightning:')) {
-    cleaned = cleaned.substring(10);
+  } else {
+    // http(s) "fallback URL" with the LNURL/invoice in a `lightning=` query
+    // param (LNbits / Fossa ATMs). Pull it out so the branches below classify
+    // it (LNURL-withdraw in the ATM case); leave non-matching URLs untouched.
+    const lnFallback = extractLnFallbackParam(cleaned);
+    if (lnFallback) {
+      cleaned = lnFallback;
+    } else {
+      // Otherwise strip a wrapper URI scheme (`lightning:` / `lnurl:`) so the
+      // bare payload reaches the prefix-based branches below. No-op when none
+      // is present.
+      cleaned = stripWrapperScheme(cleaned);
+    }
   }
 
   // Attach BIP21 metadata (amount, label, message, ...) to every result so

@@ -867,4 +867,29 @@ body.body--light .q-skeleton {
   opacity: 1;
 }
 
+/* ============================================================
+   MLKit BARCODE SCANNER (transparent webview)
+   The native MLKit scanner renders the camera feed BEHIND the
+   webview. For it to be visible, every webview surface must drop
+   its background and everything that isn't part of the scanner
+   overlay must be hidden — otherwise an opaque element paints over
+   the camera. `.barcode-scanner-modal` (the ScannerOverlay root,
+   teleported to <body>) is the one thing kept visible; Quasar's
+   notification portal is also spared so toasts still surface.
+   ============================================================ */
+html:has(body.barcode-scanner-active),
+body.barcode-scanner-active,
+body.barcode-scanner-active #q-app {
+  background: transparent !important;
+}
+
+body.barcode-scanner-active > *:not(.barcode-scanner-modal):not(.q-notifications) {
+  visibility: hidden !important;
+}
+
+body.barcode-scanner-active .barcode-scanner-modal,
+body.barcode-scanner-active .barcode-scanner-modal * {
+  visibility: visible !important;
+}
+
 

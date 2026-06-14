@@ -252,7 +252,7 @@ export default {
         if (result.success) {
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Bonus claimed! {amount} sats earned', { amount: result.bonus }),
+            message: this.$t('Bonus claimed! {amount} sats earned', { amount: result.totalPayout }),
           })
         } else if (result.error === 'cooldown') {
           this.$q.notify({

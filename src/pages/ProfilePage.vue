@@ -227,7 +227,11 @@
              during the sub-100ms passive-bootstrap window; `min-height`
              on `.hero-actions` reserves the vertical slot so the page
              never jumps between states. -->
-        <div class="hero-actions" v-if="identity.bootstrapped">
+        <div
+          class="hero-actions"
+          :class="{ 'hero-actions--centered': profile.isEmpty }"
+          v-if="identity.bootstrapped"
+        >
           <button
             v-if="profile.isEmpty"
             type="button"
@@ -236,7 +240,7 @@
             @click="openProfileEditor"
           >
             <Icon icon="tabler:sparkles" width="16" height="16" />
-            <span>{{ $t('Get started') }}</span>
+            <span>{{ $t('Add name & picture') }}</span>
           </button>
 
           <template v-else>
@@ -1613,6 +1617,13 @@ button.hero-pill:focus-visible {
      sub-100ms passive-bootstrap window when the buttons aren't
      rendered yet. */
   min-height: 44px;
+}
+
+/* Empty-state single CTA: centre the action block under the full-width
+   address chip so it reads as balanced on wide screens (no-op on phones,
+   where the block already fills the row). */
+.hero-actions--centered {
+  align-self: center;
 }
 
 .hero-cta {

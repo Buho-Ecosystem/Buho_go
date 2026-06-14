@@ -1,10 +1,11 @@
 {
   "name": "buho-app",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "BuhoGo - A Bitcoin Lightning Wallet for the Web",
   "author": "pratikpatel <pratikpatelpp802@gmail.com> & drshift <keleeweb@tutanota.com>",
   "private": true,
   "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "8.0.1",
     "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/cli": "^8.0.0",

@@ -23,6 +23,8 @@
  * them as-is, and the regex uses the `/i` flag only for the bech32 arms.
  */
 
+import { extractLnFallbackParam } from './bip21.js';
+
 // ----------------------------------------------------------------------------
 // Constants — exported so other modules can reuse them without re-typing
 // ----------------------------------------------------------------------------
@@ -75,6 +77,44 @@ function norm(value) {
 }
 
 /**
+ * Strip a leading wrapper URI scheme (`lightning:` / `lnurl:`) down to the bare
+ * payload, case-insensitively. Real-world tags, QR codes and deep links carry
+ * the bech32 LNURL (or BOLT11) wrapped in one of these schemes; classification
+ * and bech32 decoding both need it gone first. Inputs without a wrapper are
+ * returned trimmed and otherwise untouched; non-strings yield an empty string.
+ *
+ * Payload casing is preserved: bech32 LNURL / BOLT11 are case-insensitive per
+ * spec, but base58 and some decoders are not, so we only remove the wrapper.
+ *
+ * Two deliberate exclusions keep this from clipping a real payload:
+ *   - LUD-17 schemes (`lnurlp://`, `lnurlw://`, `lnurlc://`, `keyauth://`) — the
+ *     scheme *is* the type. They diverge from `lnurl:` at the character after
+ *     `lnurl`, so the `lnurl:` check never matches them.
+ *   - the authority-style `lnurl://host` alias — stripping `lnurl:` there would
+ *     leave a dangling `//host`, so we only unwrap `lnurl:` when no `//` follows.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function stripWrapperScheme(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+
+  // `lightning:` is always opaque (no `lightning://` form exists) — unwrap it.
+  if (lower.startsWith('lightning:')) {
+    return trimmed.slice('lightning:'.length).trim();
+  }
+
+  // `lnurl:` wraps a bare bech32 LNURL (`lnurl:LNURL1…`); skip `lnurl://…`.
+  if (lower.startsWith('lnurl:') && !lower.startsWith('lnurl://')) {
+    return trimmed.slice('lnurl:'.length).trim();
+  }
+
+  return trimmed;
+}
+
+/**
  * True if the input looks like a Spark address (any supported prefix).
  * @param {unknown} address
  * @returns {boolean}
@@ -93,19 +133,19 @@ export function isSparkAddress(address) {
  * @returns {boolean}
  */
 export function isLightningInvoice(invoice) {
-  const lower = norm(invoice).replace(/^lightning:/, '');
+  const lower = stripWrapperScheme(invoice).toLowerCase();
   if (!lower) return false;
   return LIGHTNING_INVOICE_HRPS.some(hrp => lower.startsWith(hrp));
 }
 
 /**
  * True if the input looks like an LNURL (bech32 or LUD-17 scheme).
- * A leading `lightning:` wrapper is tolerated.
+ * A leading `lightning:` or `lnurl:` wrapper is tolerated.
  * @param {unknown} lnurl
  * @returns {boolean}
  */
 export function isLnurl(lnurl) {
-  const lower = norm(lnurl).replace(/^lightning:/, '');
+  const lower = stripWrapperScheme(lnurl).toLowerCase();
   if (!lower) return false;
   return LNURL_PREFIXES.some(prefix => lower.startsWith(prefix));
 }
@@ -171,8 +211,9 @@ export const isValidBitcoinAddress = isBitcoinAddress;
  *                    A unified `bitcoin:?lightning=…` QR has no on-chain
  *                    address, so this returns '' and the caller falls through
  *                    to "not a saveable address".
- *   - `lightning:` — LUD-17 / BOLT11 deep-link scheme. Stripped so the LNURL /
- *                    invoice / Lightning-address predicates see the payload.
+ *   - `lightning:` / `lnurl:` — deep-link wrapper schemes. Stripped so the
+ *                    LNURL / invoice / Lightning-address predicates see the
+ *                    bare payload. (See stripWrapperScheme for the exact rules.)
  *
  * Anything without a recognized scheme (a bare address, an `npub`, a
  * `nostr:` URI) is returned trimmed and otherwise untouched — this function
@@ -200,10 +241,17 @@ export function normalizePaymentAddress(raw) {
     return address.trim();
   }
 
-  // `lightning:` wraps a BOLT11 invoice or an LNURL. The invoice/LNURL
-  // predicates already tolerate the prefix, but stripping it here keeps the
-  // returned value canonical for any downstream consumer.
-  return value.replace(/^lightning:/i, '').trim();
+  // http(s) "fallback URL" carrying the LNURL in a `lightning=` query param
+  // (LNbits / Fossa ATMs, Phoenix, WoS, …). Extract the bare LNURL/invoice so
+  // the predicates can classify it; otherwise fall through to passthrough.
+  const lnFallback = extractLnFallbackParam(value);
+  if (lnFallback) return lnFallback;
+
+  // `lightning:` / `lnurl:` wrap a BOLT11 invoice or an LNURL. The predicates
+  // already tolerate these, but stripping here keeps the returned value
+  // canonical for any downstream consumer. (See stripWrapperScheme for the
+  // exact rules.)
+  return stripWrapperScheme(value);
 }
 
 // ----------------------------------------------------------------------------

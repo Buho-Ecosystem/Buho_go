@@ -44,7 +44,11 @@
         the first fold still gets the high-value entry points
         (identity, warnings, frequent toggles).
       -->
-      <SettingsProfileCard />
+      <!-- Shown only once the profile is set up (has a name/picture). While
+           it's empty we keep this section hidden so a fresh Settings stays
+           clean: setup is still reachable from the header profile icon, and
+           the backup nudge is carried by the attention strip below. -->
+      <SettingsProfileCard v-if="!profileStore.isEmpty" />
 
       <SettingsAttentionStrip
         :warnings="attentionWarnings"
@@ -262,6 +266,7 @@
         rather than a fourth small grid tile.
       -->
       <button type="button" class="map-hero-card" @click="$router.push('/map')">
+        <span class="hero-watermark--map" aria-hidden="true"></span>
         <span class="map-hero-icon">
           <Icon icon="tabler:map-2" width="26" height="26" />
         </span>
@@ -269,8 +274,36 @@
           <span class="map-hero-title">{{ $t('Bitcoin Map') }}</span>
           <span class="map-hero-sub">{{ $t('Find shops that accept Bitcoin near you') }}</span>
         </span>
-        <span class="map-hero-go">
-          <Icon icon="tabler:chevron-right" width="18" height="18" />
+      </button>
+
+      <!--
+        eSIM & VPN shop hero card — the second spend-side hook, paired with
+        the Bitcoin Map above. Buy mobile data or a private connection and pay
+        straight from the wallet balance. Shares the map hero layout + icon
+        styling; a SIM icon makes the eSIM offer instantly recognisable.
+      -->
+      <button type="button" class="map-hero-card shop-hero-card" @click="$router.push('/shop')">
+        <span class="map-hero-icon">
+          <Icon icon="tabler:device-sim" width="26" height="26" />
+        </span>
+        <span class="map-hero-text">
+          <span class="map-hero-title">{{ $t('eSIM & VPN') }}</span>
+          <span class="map-hero-sub">{{ $t('Mobile data and a private connection, paid in bitcoin') }}</span>
+        </span>
+      </button>
+
+      <!--
+        Online shops hero card — the online counterpart to the Bitcoin Map.
+        Same map-hero layout; a storefront icon marks it. Discover web shops
+        that accept Bitcoin.
+      -->
+      <button type="button" class="map-hero-card online-hero-card" @click="$router.push('/online-shops')">
+        <span class="map-hero-icon">
+          <Icon icon="tabler:building-store" width="26" height="26" />
+        </span>
+        <span class="map-hero-text">
+          <span class="map-hero-title">{{ $t('Spend online') }}</span>
+          <span class="map-hero-sub">{{ $t('Shops worldwide that accept Bitcoin') }}</span>
         </span>
       </button>
 
@@ -7955,17 +7988,35 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
      margin here gives the hero clear breathing room before the next settings
      section instead of being glued to its label. */
   margin: 6px 0 28px;
-  padding: 18px;
+  padding: 18px 20px 18px 18px; /* +2px right so the title clears the motif */
   border-radius: var(--radius-md, 16px);
-  background: var(--bg-card);
+  background-color: var(--bg-card);
+  /* Soft corner depth wash, anchored to the same corner the motif bleeds from
+     and stopped before the text column. */
+  background-image: radial-gradient(120% 90% at 100% 0%, rgba(26, 26, 28, 0.04) 0%, transparent 60%);
   border: 1px solid var(--border-card);
+  /* One layer of depth: a top sheen + a warm bottom seat. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(40, 34, 20, 0.03);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.18s ease, border-color 0.18s ease;
+  transition: transform 0.16s ease, border-color 0.18s ease, box-shadow 0.16s ease;
+  /* Clip the corner watermark to the rounded card. */
+  position: relative;
+  overflow: hidden;
 }
+body.body--dark .map-hero-card {
+  background-image: radial-gradient(120% 90% at 100% 0%, rgba(255, 255, 255, 0.06) 0%, transparent 60%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.40);
+}
+/* The chevron is gone, so the press state carries the tappable affordance:
+   the card seats into the page (collapses its lift). */
 .map-hero-card:active {
-  transform: scale(0.99);
+  transform: scale(0.985);
   border-color: var(--map-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0), inset 0 -1px 0 rgba(40, 34, 20, 0.05);
+}
+body.body--dark .map-hero-card:active {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), inset 0 -1px 0 rgba(0, 0, 0, 0.50);
 }
 .map-hero-icon {
   flex-shrink: 0;
@@ -8001,16 +8052,44 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
   color: var(--text-muted);
   line-height: 1.3;
 }
-.map-hero-go {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--bg-input);
-  color: var(--text-secondary);
+/* Shop hero: paired tightly under the map hero. Its icon shares the map hero
+   styling exactly (var(--map-accent)); identity comes from the SIM icon plus
+   the globe watermark, not a different colour. */
+.shop-hero-card {
+  margin-top: -18px;
+}
+/* Online shops hero, tightly stacked under the eSIM card. */
+.online-hero-card {
+  margin-top: -18px;
+}
+
+/* Lift the card content above the watermark. */
+.map-hero-icon,
+.map-hero-text {
+  position: relative;
+  z-index: 1;
+}
+
+/* Map card: a REAL OpenFreeMap street map (positron / dark, baked as a static
+   image with Bitcoin-orange pins) fills the card, anchored right and dissolved
+   toward the left so the title + subtitle stay on clean background. Held behind
+   the content (z-index) and non-interactive; the card radius clips it. */
+.hero-watermark--map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  background-image: url('/maps/btc-map-light.jpg');
+  background-size: cover;
+  background-position: center right;
+  opacity: 0.5;
+  -webkit-mask-image: linear-gradient(to left, #000 30%, transparent 80%);
+  mask-image: linear-gradient(to left, #000 30%, transparent 80%);
+}
+body.body--dark .hero-watermark--map {
+  background-image: url('/maps/btc-map-dark.jpg');
+  opacity: 0.62;
 }
 
 </style>

@@ -235,22 +235,55 @@
       v-model="showQuickContacts"
       @pay-contact="onContactPicked"
     />
+
+    <!-- ─────────────  NATIVE SCANNER (iOS/Android)  ─────────────
+         MLKit live camera behind a transparent webview. Carries the same
+         Manual / Paste / Contacts tiles so they stay reachable mid-scan. -->
+    <ScannerOverlay
+      v-if="shouldNativeScan"
+      :active="shouldNativeScan"
+      :title="$t('Send')"
+      :prompt="$t('Point your camera at a QR code')"
+      continuous
+      @scanned="onQRDetect"
+      @close="closeModal"
+    >
+      <template #actions>
+        <div class="action-buttons scanner-tiles">
+          <button type="button" class="action-tile scanner-tile" @click="openManual">
+            <span class="scanner-tile-chip"><Icon icon="tabler:keyboard" width="20" height="20" /></span>
+            <span class="tile-label">{{ $t('Manual') }}</span>
+          </button>
+          <button type="button" class="action-tile scanner-tile" @click="pasteFromClipboard">
+            <span class="scanner-tile-chip"><Icon icon="tabler:clipboard" width="20" height="20" /></span>
+            <span class="tile-label">{{ $t('Paste') }}</span>
+          </button>
+          <button type="button" class="action-tile scanner-tile" @click="openContacts">
+            <span class="scanner-tile-chip"><Icon icon="tabler:address-book" width="20" height="20" /></span>
+            <span class="tile-label">{{ $t('Contacts') }}</span>
+          </button>
+        </div>
+      </template>
+    </ScannerOverlay>
   </q-dialog>
 </template>
 
 <script>
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
+import { isNativeScannerAvailable } from '../utils/nativeScanner';
+import ScannerOverlay from './ScannerOverlay.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
-import { parseBip21, selectBip21Destination } from '../utils/bip21';
+import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
 import {
   isSparkAddress,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
   isLightningAddress,
+  stripWrapperScheme,
 } from '../utils/addressUtils';
 import { recognizePhoneNumber } from '../services/lnAddressServices';
 import { classifyIdentifier, LOOKUP_ERROR } from '../utils/nostrLookup';
@@ -260,7 +293,7 @@ import ProgressCta from './ProgressCta.vue';
 
 export default {
   name: 'SendModal',
-  components: { AddressBookQuickModal, ProgressCta },
+  components: { AddressBookQuickModal, ProgressCta, ScannerOverlay },
   props: {
     modelValue: {
       type: Boolean,
@@ -296,7 +329,10 @@ export default {
       showQuickContacts: false,
       manualInput: '',
       qrScanner: null,
-      videoElement: null
+      videoElement: null,
+      // True on iOS/Android where the native MLKit scanner replaces the web
+      // qr-scanner video. Drives the ScannerOverlay branch below.
+      isNativeScanner: isNativeScannerAvailable(),
     }
   },
   computed: {
@@ -306,6 +342,20 @@ export default {
     // error. One flag drives both the camera overlay and the manual CTA.
     ctaBusy() {
       return this.isProcessing || this.resolving;
+    },
+
+    // The native scanner runs only while the Send sheet is open, nothing is
+    // layered on top (manual / contacts sheet), and we're not mid-resolve.
+    // Toggling a sub-sheet flips this false, which unmounts ScannerOverlay and
+    // stops the camera; closing the sub-sheet flips it back and resumes — no
+    // explicit start/stop calls needed at the call sites.
+    shouldNativeScan() {
+      return this.isNativeScanner
+        && this.show
+        && !this.showManualDialog
+        && !this.showQuickContacts
+        && !this.ctaBusy
+        && !this.cameraError;
     },
 
     show: {
@@ -338,9 +388,11 @@ export default {
         if (parsed) return 'bip21';
       }
 
-      const cleaned = lower.startsWith('lightning:')
-        ? raw.substring(10).trim()
-        : raw;
+      // http(s) "fallback URL" with the LNURL in a `lightning=` query param
+      // (LNbits / Fossa ATMs) — surface it as LNURL while typing. Otherwise
+      // strip a wrapper URI scheme (`lightning:` / `lnurl:`) off the raw paste.
+      const lnFallback = extractLnFallbackParam(raw);
+      const cleaned = lnFallback ? lnFallback : stripWrapperScheme(raw);
 
       if (isSparkAddress(cleaned)) return 'spark';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
@@ -477,6 +529,10 @@ export default {
   methods: {
     async initializeCamera() {
       this.cameraError = null;
+      // Native (iOS/Android): the ScannerOverlay (driven by `shouldNativeScan`)
+      // owns the camera — nothing to start here. Web/PWA keeps the in-card
+      // qr-scanner video path below.
+      if (this.isNativeScanner) return;
       try {
         const hasCamera = await QrScanner.hasCamera();
         if (!hasCamera) {
@@ -723,11 +779,18 @@ export default {
         return { cleaned: destination ? destination.value : '', bip21 };
       }
 
-      if (trimmed.toLowerCase().startsWith('lightning:')) {
-        return { cleaned: trimmed.substring(10), bip21: null };
+      // http(s) "fallback URL" carrying the LNURL in a `lightning=` query param
+      // (LNbits / Fossa ATMs). Pull out the bare LNURL/invoice so the
+      // recognizers downstream can classify it.
+      const lnFallback = extractLnFallbackParam(trimmed);
+      if (lnFallback) {
+        return { cleaned: lnFallback, bip21: null };
       }
 
-      return { cleaned: trimmed, bip21: null };
+      // Otherwise unwrap a `lightning:` / `lnurl:` scheme down to the bare
+      // payload so the type classifier and the emitted value are both
+      // wrapper-free. No-op when no wrapper is present.
+      return { cleaned: stripWrapperScheme(trimmed), bip21: null };
     },
 
     determinePaymentType(data) {
@@ -1193,6 +1256,52 @@ export default {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.005em;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Scanner tiles (native ScannerOverlay actions slot)
+   These sit over the live camera, so each is a solid frosted pill
+   with a circular icon chip — legible against any scene, unlike the
+   in-card translucent tiles.
+   ───────────────────────────────────────────────────────────── */
+.scanner-tiles {
+  width: 100%;
+  gap: 12px;
+}
+
+.scanner-tiles .scanner-tile {
+  flex: 1 1 0;
+  min-width: 0;
+  height: auto;
+  gap: 8px;
+  padding: 14px 8px;
+  border-radius: 18px;
+  background: rgba(18, 18, 18, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.scanner-tiles .scanner-tile:active {
+  background: rgba(40, 40, 40, 0.72);
+}
+
+.scanner-tile-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.scanner-tiles .tile-label {
+  color: #fff;
+  font-size: 12.5px;
 }
 
 /* ─────────────────────────────────────────────────────────────

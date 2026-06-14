@@ -2,6 +2,7 @@
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { loadEinundzwanzigPinImage } from '../../services/map/meetupPin.js'
 
 /**
  * MapView — the MapLibre GL surface for the Bitcoin map.
@@ -16,12 +17,18 @@ import 'maplibre-gl/dist/maplibre-gl.css'
  */
 
 const SOURCE_ID = 'places'
+// Einundzwanzig meetups ride their own source/layer above the merchant pins so
+// they keep their distinct logo pin and never fold into a merchant cluster.
+const MEETUP_SOURCE_ID = 'meetups'
+const MEETUP_IMAGE_ID = 'pin-meetup'
 const PIN_COLOR = '#f7931a' // Bitcoin orange — same in both themes for brand consistency.
 const PITCH_3D = 60 // Camera tilt for the 3D view (MapLibre's default max pitch).
 
 const props = defineProps({
   // GeoJSON FeatureCollection from the store.
   data: { type: Object, default: () => ({ type: 'FeatureCollection', features: [] }) },
+  // Einundzwanzig meetups FeatureCollection (empty when the layer is toggled off).
+  meetups: { type: Object, default: () => ({ type: 'FeatureCollection', features: [] }) },
   // Resolved basemap tile-style URL (chosen in the map's style picker).
   styleUrl: { type: String, required: true },
   // 3D view: when true, tilt the camera to a 60° pitch.
@@ -37,7 +44,7 @@ const props = defineProps({
   userLocation: { type: Object, default: null },
 })
 
-const emit = defineEmits(['ready', 'select', 'move', 'recenter-request', 'user-pan'])
+const emit = defineEmits(['ready', 'select', 'select-meetup', 'move', 'recenter-request', 'user-pan'])
 
 const mapContainer = ref(null)
 
@@ -266,11 +273,81 @@ function addLayers() {
   }
 
   pushData()
+  // Meetups ride on top of the merchant pins. Async (the logo pin rasterizes
+  // from an <img>), so fire-and-forget — the merchant map is already usable.
+  void addMeetupLayer()
 }
 
 function pushData() {
   const src = map?.getSource(SOURCE_ID)
   if (src) src.setData(props.data || emptyFC())
+}
+
+// ── Einundzwanzig meetups layer ─────────────────────────────────────────────
+// A separate source + symbol layer using the Einundzwanzig logo as the pin.
+// Added once the logo image has rasterized; idempotent so the style-swap
+// re-add path (reAddCustomLayers) can call it again safely.
+let meetupImageLoading = false
+async function addMeetupLayer() {
+  if (!map) return
+
+  if (!map.hasImage(MEETUP_IMAGE_ID) && !meetupImageLoading) {
+    meetupImageLoading = true
+    try {
+      const image = await loadEinundzwanzigPinImage(72)
+      if (map && !map.hasImage(MEETUP_IMAGE_ID)) {
+        map.addImage(MEETUP_IMAGE_ID, image, { pixelRatio: 2 })
+      }
+    } catch (e) {
+      // Logo couldn't rasterize — skip the layer; merchants still render fine.
+      console.warn('Einundzwanzig meetup pin unavailable:', e)
+      return
+    } finally {
+      meetupImageLoading = false
+    }
+  }
+  if (!map) return
+
+  // Defensive: never let a MapLibre error here reject the fire-and-forget call
+  // (or tear down the merchant map). The meetups layer is purely additive.
+  try {
+    if (!map.getSource(MEETUP_SOURCE_ID)) {
+      map.addSource(MEETUP_SOURCE_ID, { type: 'geojson', data: props.meetups || emptyFC() })
+    }
+
+    if (!map.getLayer('meetups')) {
+      map.addLayer({
+        id: 'meetups',
+        type: 'symbol',
+        source: MEETUP_SOURCE_ID,
+        layout: {
+          'icon-image': MEETUP_IMAGE_ID,
+          'icon-size': 0.9,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      })
+
+      const onMeetupTap = (e) => {
+        const f = e.features?.[0]
+        if (!f) return
+        const [lon, lat] = f.geometry?.coordinates || []
+        emit('select-meetup', { ...f.properties, lat, lon })
+      }
+      map.on('click', 'meetups', onMeetupTap)
+      map.on('mouseenter', 'meetups', () => { map.getCanvas().style.cursor = 'pointer' })
+      map.on('mouseleave', 'meetups', () => { map.getCanvas().style.cursor = '' })
+    }
+
+    pushMeetupData()
+  } catch (e) {
+    console.warn('Einundzwanzig meetups layer skipped:', e)
+  }
+}
+
+function pushMeetupData() {
+  const src = map?.getSource(MEETUP_SOURCE_ID)
+  if (src) src.setData(props.meetups || emptyFC())
 }
 
 function applySelectedFilter() {
@@ -369,6 +446,10 @@ onBeforeUnmount(() => {
 
 watch(() => props.data, () => {
   if (map && map.isStyleLoaded()) pushData()
+})
+
+watch(() => props.meetups, () => {
+  if (map && map.isStyleLoaded()) pushMeetupData()
 })
 
 // Re-style whenever the user picks a different basemap. The chosen tile URL is
