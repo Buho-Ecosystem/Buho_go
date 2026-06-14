@@ -249,6 +249,17 @@
         </q-card>
       </q-dialog>
     </div>
+
+    <!-- Native MLKit scanner (iOS/Android). Teleports to <body>. -->
+    <ScannerOverlay
+      v-if="nativeScannerActive"
+      :active="nativeScannerActive"
+      :title="$t('Scan QR Code')"
+      :prompt="$t('Point your camera at the QR code from your wallet app')"
+      continuous
+      @scanned="handleNWCScan"
+      @close="closeScanner"
+    />
   </q-page>
 </template>
 
@@ -256,6 +267,8 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import QrScanner from 'qr-scanner'
 import { createQrScanner } from '../utils/qrScanner'
+import { isNativeScannerAvailable } from '../utils/nativeScanner'
+import ScannerOverlay from '../components/ScannerOverlay.vue'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import {useWalletStore} from '../stores/wallet'
 import {mapActions} from 'pinia'
@@ -277,12 +290,14 @@ export default {
   name: 'WalletConnectPage',
   components: {
     LoadingScreen,
+    ScannerOverlay,
   },
   data() {
     return {
       nwcString: '',
       isConnecting: false,
       showScanner: false,
+      nativeScannerActive: false,
       isScanning: false,
       scanError: null,
       showNameDialog: false,
@@ -346,12 +361,18 @@ export default {
     },
 
     async openScanner() {
+      // Native (iOS/Android): mount the MLKit ScannerOverlay. Web/PWA keeps the
+      // in-page qr-scanner video below.
+      if (isNativeScannerAvailable()) {
+        this.nativeScannerActive = true;
+        return;
+      }
       this.showScanner = true;
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
       this.isScanning = false;
-      
+
       // Wait for the next tick to ensure the video element is rendered
       await this.$nextTick();
       await this.startQrScanner();
@@ -359,6 +380,7 @@ export default {
 
     closeScanner() {
       this.stopQrScanner();
+      this.nativeScannerActive = false;
       this.showScanner = false;
       this.cameraError = false;
       this.cameraLoading = true;

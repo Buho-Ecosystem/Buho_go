@@ -226,12 +226,25 @@
       </q-card>
 
     </div>
+
+    <!-- Native MLKit scanner (iOS/Android). Teleports to <body>. -->
+    <ScannerOverlay
+      v-if="nativeScannerActive"
+      :active="nativeScannerActive"
+      :title="$t('Scan QR Code')"
+      :prompt="$t('Scan your NWC connection QR code')"
+      continuous
+      @scanned="handleQrScan"
+      @close="closeScanner"
+    />
   </q-page>
 </template>
 
 <script>
 import QrScanner from 'qr-scanner'
 import { createQrScanner } from '../utils/qrScanner'
+import { isNativeScannerAvailable } from '../utils/nativeScanner'
+import ScannerOverlay from '../components/ScannerOverlay.vue'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import { useWalletStore } from '../stores/wallet'
 import { mapActions } from 'pinia'
@@ -242,6 +255,7 @@ export default {
   name: 'NWCSetupPage',
   components: {
     LoadingScreen,
+    ScannerOverlay,
   },
   data() {
     return {
@@ -250,6 +264,7 @@ export default {
       isConnecting: false,
       errorMessage: '',
       showScanner: false,
+      nativeScannerActive: false,
       cameraError: false,
       cameraErrorMessage: '',
       cameraLoading: true,
@@ -321,6 +336,12 @@ export default {
     },
 
     async openScanner() {
+      // Native (iOS/Android): mount the MLKit ScannerOverlay. Web/PWA keeps the
+      // in-page qr-scanner video.
+      if (isNativeScannerAvailable()) {
+        this.nativeScannerActive = true;
+        return;
+      }
       this.showScanner = true;
       this.cameraError = false;
       this.cameraLoading = true;
@@ -332,6 +353,7 @@ export default {
 
     closeScanner() {
       this.stopQrScanner();
+      this.nativeScannerActive = false;
       this.showScanner = false;
       this.cameraError = false;
       this.cameraLoading = true;

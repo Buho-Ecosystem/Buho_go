@@ -368,12 +368,26 @@
         @skip="onLightningAddressSkip"
       />
     </div>
+
+    <!-- Native MLKit scanner (iOS/Android). Continuous so it captures both the
+         server URL and admin key in one session. Teleports to <body>. -->
+    <ScannerOverlay
+      v-if="nativeScannerActive"
+      :active="nativeScannerActive"
+      :title="$t('Scan QR Code')"
+      :prompt="$t('Scan your LNbits server URL and admin key')"
+      continuous
+      @scanned="handleQrScan"
+      @close="closeScanner"
+    />
   </q-page>
 </template>
 
 <script>
 import QrScanner from 'qr-scanner'
 import { createQrScanner } from '../utils/qrScanner'
+import { isNativeScannerAvailable } from '../utils/nativeScanner'
+import ScannerOverlay from '../components/ScannerOverlay.vue'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import { useWalletStore } from '../stores/wallet'
@@ -387,6 +401,7 @@ export default {
   components: {
     LoadingScreen,
     LNBitsLightningAddressDialog,
+    ScannerOverlay,
   },
   data() {
     return {
@@ -396,6 +411,7 @@ export default {
       isConnecting: false,
       errorMessage: '',
       showScanner: false,
+      nativeScannerActive: false,
       // Continuous-scan flow state. The scanner stays open until both
       // scannable values (serverUrl, adminKey) are populated or the
       // user cancels. `scanMode` is the value we're currently prompting
@@ -736,10 +752,17 @@ export default {
 
     async openScanner() {
       // Pick initial mode based on which scannable field is still empty.
-      // The mode auto-advances after each successful scan inside the
-      // continuous-scan loop (see handleQrScan).
-      this.showScanner = true;
+      // The mode auto-advances after each successful scan (see handleQrScan).
       this.scanMode = !this.serverUrl ? 'url' : 'key';
+
+      // Native (iOS/Android): mount the MLKit ScannerOverlay in continuous mode
+      // so it keeps scanning across both fields. Web/PWA keeps the in-page
+      // qr-scanner video.
+      if (isNativeScannerAvailable()) {
+        this.nativeScannerActive = true;
+        return;
+      }
+      this.showScanner = true;
       this.cameraError = false;
       this.cameraLoading = true;
       this.cameraErrorMessage = '';
@@ -760,6 +783,7 @@ export default {
 
     closeScanner() {
       this.stopQrScanner();
+      this.nativeScannerActive = false;
       this.showScanner = false;
       this.cameraError = false;
       this.cameraLoading = true;
