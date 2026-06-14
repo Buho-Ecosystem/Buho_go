@@ -1893,6 +1893,9 @@ export default {
   "View your address and reveal your private key": "View your address and reveal your private key",
   "Your public profile": "Your public profile",
   "Your private key": "Your private key",
+  "Nostr key": "Nostr key",
+  "Advanced. Sign in to other Nostr apps with this profile.": "Advanced. Sign in to other Nostr apps with this profile.",
+  "This is the private key (nsec) for your profile on Nostr. Use it to sign in to other Nostr apps as the same profile. Your recovery phrase already backs it up.": "This is the private key (nsec) for your profile on Nostr. Use it to sign in to other Nostr apps as the same profile. Your recovery phrase already backs it up.",
   "Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your profile too.": "Derived from your BuhoGO recovery phrase. Backing up the phrase backs up your profile too.",
   "Profile address": "Profile address",
   "Private key": "Private key",
@@ -1976,6 +1979,7 @@ export default {
 
   // Profile / identity refresh — simplified copy for non-Nostr users.
   "Set up your profile": "Set up your profile",
+  "Add name & picture": "Add name & picture",
   "Add a name and picture so friends can find you and pay you.": "Add a name and picture so friends can find you and pay you.",
   "Start a new profile?": "Start a new profile?",
   "Start a new profile": "Start a new profile",

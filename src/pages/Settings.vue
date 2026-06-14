@@ -44,7 +44,11 @@
         the first fold still gets the high-value entry points
         (identity, warnings, frequent toggles).
       -->
-      <SettingsProfileCard />
+      <!-- Shown only once the profile is set up (has a name/picture). While
+           it's empty we keep this section hidden so a fresh Settings stays
+           clean: setup is still reachable from the header profile icon, and
+           the backup nudge is carried by the attention strip below. -->
+      <SettingsProfileCard v-if="!profileStore.isEmpty" />
 
       <SettingsAttentionStrip
         :warnings="attentionWarnings"
@@ -262,7 +266,7 @@
         rather than a fourth small grid tile.
       -->
       <button type="button" class="map-hero-card" @click="$router.push('/map')">
-        <span class="hero-watermark hero-watermark--map" aria-hidden="true"></span>
+        <span class="hero-watermark--map" aria-hidden="true"></span>
         <span class="map-hero-icon">
           <Icon icon="tabler:map-2" width="26" height="26" />
         </span>
@@ -276,13 +280,9 @@
         eSIM & VPN shop hero card — the second spend-side hook, paired with
         the Bitcoin Map above. Buy mobile data or a private connection and pay
         straight from the wallet balance. Shares the map hero layout + icon
-        styling; a SIM icon makes the eSIM offer instantly recognisable, and a
-        globe watermark gives it its own personality.
+        styling; a SIM icon makes the eSIM offer instantly recognisable.
       -->
       <button type="button" class="map-hero-card shop-hero-card" @click="$router.push('/shop')">
-        <span class="hero-watermark" aria-hidden="true">
-          <Icon icon="tabler:globe-filled" width="172" height="172" />
-        </span>
         <span class="map-hero-icon">
           <Icon icon="tabler:device-sim" width="26" height="26" />
         </span>
@@ -294,13 +294,10 @@
 
       <!--
         Online shops hero card — the online counterpart to the Bitcoin Map.
-        Same map-hero layout; a storefront icon + shopping-bag watermark give
-        it its own identity. Discover web shops that accept Bitcoin.
+        Same map-hero layout; a storefront icon marks it. Discover web shops
+        that accept Bitcoin.
       -->
       <button type="button" class="map-hero-card online-hero-card" @click="$router.push('/online-shops')">
-        <span class="hero-watermark" aria-hidden="true">
-          <Icon icon="tabler:shopping-bag" width="172" height="172" />
-        </span>
         <span class="map-hero-icon">
           <Icon icon="tabler:building-store" width="26" height="26" />
         </span>
@@ -8073,45 +8070,16 @@ body.body--dark .map-hero-card:active {
   z-index: 1;
 }
 
-/* Premium corner motif — a single oversized FILLED glyph, tinted (never pure
-   black/white), dissolved into the card on its left + bottom edges via a
-   composited mask, cropped by the card radius, and held behind content. A
-   filled silhouette reads as a clean tonal mass where a thin outline would
-   fragment into shimmering hairlines. */
-.hero-watermark {
+/* Map card: a REAL OpenFreeMap street map (positron / dark, baked as a static
+   image with Bitcoin-orange pins) fills the card, anchored right and dissolved
+   toward the left so the title + subtitle stay on clean background. Held behind
+   the content (z-index) and non-interactive; the card radius clips it. */
+.hero-watermark--map {
   position: absolute;
+  inset: 0;
   z-index: 0;
   pointer-events: none;
   user-select: none;
-  display: inline-flex;
-  top: -34px;
-  right: -40px;
-  transform: rotate(-12deg);
-  transform-origin: center;
-  color: #1a1a1c;
-  opacity: 0.055;
-  -webkit-mask-image:
-    linear-gradient(to left, #000 32%, transparent 100%),
-    linear-gradient(to bottom, #000 58%, transparent 100%);
-  mask-image:
-    linear-gradient(to left, #000 32%, transparent 100%),
-    linear-gradient(to bottom, #000 58%, transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
-}
-body.body--dark .hero-watermark {
-  /* Dark eats low opacity, so a notch higher; cream-lift, not pure white. */
-  color: #f2efe6;
-  opacity: 0.075;
-}
-/* Map card: a REAL OpenFreeMap street map (positron / dark, baked as a static
-   image with Bitcoin-orange pins) fills the card, anchored right and dissolved
-   toward the left so the title + subtitle stay on clean background. */
-.hero-watermark--map {
-  inset: 0;
-  width: auto;
-  height: auto;
-  transform: none;
   background-image: url('/maps/btc-map-light.jpg');
   background-size: cover;
   background-position: center right;

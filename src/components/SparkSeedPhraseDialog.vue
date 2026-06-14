@@ -390,7 +390,7 @@ export default {
       // Only re-prompt for biometrics when the user has opted into App
       // Lock. If they haven't, the "I'm ready" tap is the consent and we
       // go straight to reveal — matches the gate in App.vue (which also
-      // keys off walletStore.biometricsEnabled) and the coinsnap flow.
+      // keys off walletStore.biometricsEnabled).
       if (!this.walletStore.biometricsEnabled) {
         await this.loadMnemonicAndReveal();
         return;
