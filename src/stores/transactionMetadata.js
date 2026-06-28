@@ -75,6 +75,13 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       return metadata?.customNote || ''
     },
 
+    // Get the LUD-09 successAction (the recipient's post-payment message)
+    // attached to a transaction, already resolved for display.
+    getSuccessActionForTransaction: (state) => (txId) => {
+      const metadata = state.metadata[txId]
+      return metadata?.successAction || null
+    },
+
     // Get all transactions that have a specific tag
     getTransactionsWithTag: (state) => (tag) => {
       return Object.keys(state.metadata).filter(txId => {
@@ -148,14 +155,24 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * triple within the TTL window — a rage-tap that submits twice
      * won't accidentally claim two unrelated outgoing txs.
      */
-    async enqueuePendingContactLink({ contactId, recipientAddress, amountSats }) {
-      if (!recipientAddress) return
+    async enqueuePendingContactLink({ contactId, recipientAddress, amountSats, successAction = null }) {
+      // Queue when there's anything to stamp once the tx surfaces: a recipient
+      // address (for live contact resolution) and/or a LUD-09 successAction
+      // (the recipient's post-payment message we want to keep on the tx).
+      if (!recipientAddress && !successAction) return
       const now = Date.now()
-      const normalisedAddress = String(recipientAddress).toLowerCase().trim()
+      const normalisedAddress = recipientAddress
+        ? String(recipientAddress).toLowerCase().trim()
+        : ''
       const amount = Number(amountSats) || 0
 
-      // Drop any equivalent entry already in the queue (re-submission).
+      // Drop an equivalent entry already in the queue (double-submit). We never
+      // collapse a link that carries a successAction (neither an existing one
+      // nor the incoming one): those messages are per-payment — especially a
+      // one-time `aes` secret — and each must reach its own tx.
       this.pendingContactLinks = this.pendingContactLinks.filter((link) => !(
+        !link.successAction &&
+        !successAction &&
         link.contactId === contactId &&
         link.recipientAddress === normalisedAddress &&
         link.amountSats === amount
@@ -169,6 +186,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         contactId: contactId || null,
         recipientAddress: normalisedAddress,
         amountSats: amount,
+        successAction: successAction || null,
         sentAt: now,
       })
       // Bound the queue: with a long TTL, links for sends that never
@@ -216,13 +234,13 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       let mutated = remaining.length !== this.pendingContactLinks.length
 
       // Unstamped outgoing txs, newest first. A tx is "stamped" once it
-      // has either a contactId or a recipientAddress, so an address-only
+      // has a contactId, a recipientAddress, or a successAction, so a later
       // link can't re-claim a tx an earlier link already resolved.
       const candidates = transactions
         .filter((tx) => {
           if (!tx?.id) return false
           const m = this.metadata[tx.id]
-          if (m?.contactId || m?.recipientAddress) return false
+          if (m?.contactId || m?.recipientAddress || m?.successAction) return false
           const t = (tx.type || '').toLowerCase()
           if (t === 'send' || t === 'sent' || t === 'outgoing') return true
           if (t === 'receive' || t === 'received' || t === 'incoming') return false
@@ -266,6 +284,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
           if (link.contactId) {
             await this.setContactForTransaction(pick.tx.id, link.contactId)
+          }
+          if (link.successAction) {
+            await this.setSuccessActionForTransaction(pick.tx.id, link.successAction)
           }
           claimed.add(pick.tx.id)
           remaining = remaining.filter((l) => l !== link)
@@ -430,6 +451,39 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         return this.metadata[txId]
       } catch (error) {
         console.error('Error setting note for transaction:', error)
+        throw error
+      }
+    },
+
+    /**
+     * Persist a resolved LUD-09 successAction (the recipient's post-payment
+     * message) on a transaction. Stored already-resolved — the `aes` variant
+     * is decrypted at payment time, while the preimage is in hand — so Tx
+     * Details can re-display it later without needing the preimage again.
+     * (A decrypted `aes` secret therefore rests in localStorage — the same
+     * on-device trust model as the preimage / notes this store already keeps.)
+     */
+    async setSuccessActionForTransaction(txId, successAction) {
+      try {
+        if (!txId) throw new Error('Transaction ID is required')
+        if (!successAction) return this.metadata[txId] || null
+
+        if (!this.metadata[txId]) {
+          this.metadata[txId] = {
+            contactId: null,
+            customNote: '',
+            tags: [],
+            updatedAt: Date.now()
+          }
+        }
+
+        this.metadata[txId].successAction = successAction
+        this.metadata[txId].updatedAt = Date.now()
+
+        await this.persistMetadata()
+        return this.metadata[txId]
+      } catch (error) {
+        console.error('Error setting successAction for transaction:', error)
         throw error
       }
     },

@@ -33,6 +33,7 @@ const LN_ADDRESS_DEFAULTS = Object.freeze({
 });
 
 import { WalletProvider } from './WalletProvider';
+import { SUCCESS_ACTION_MAX_CHARS } from '../utils/successAction.js';
 
 export class LNBitsWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
@@ -574,6 +575,7 @@ export class LNBitsWalletProvider extends WalletProvider {
     max = LN_ADDRESS_DEFAULTS.maxSats,
     commentChars = LN_ADDRESS_DEFAULTS.commentChars,
     zaps = LN_ADDRESS_DEFAULTS.zapsEnabled,
+    successText = '',
   } = {}) {
     const cleanUsername = (username || '').trim().toLowerCase();
     if (!cleanUsername) {
@@ -593,6 +595,18 @@ export class LNBitsWalletProvider extends WalletProvider {
       currency: null,
       fiat_base_multiplier: 100,
     };
+
+    // LUD-09 receiver-side support — the ONE place BuhoGO can attach a
+    // post-payment message to funds it receives. The LNbits LNURLp extension
+    // serves this pay-link's callback and echoes `success_text` back as the
+    // `{ tag: "message" }` successAction every payer sees. It is STATIC (set
+    // once here at creation), not per-payment, because BuhoGO runs no server of
+    // its own. (The extension also supports `success_url` for the `url`
+    // variant; left unwired until there's a UI for it.) Spark and NWC addresses
+    // are served by their own infrastructure and cannot carry a successAction
+    // at all — see SparkWalletProvider.getSparkAddress / NWCWalletProvider.getInfo.
+    const trimmedText = (successText || '').trim();
+    if (trimmedText) payload.success_text = trimmedText.slice(0, SUCCESS_ACTION_MAX_CHARS);
 
     const response = await this._apiRequest('/lnurlp/api/v1/links', {
       method: 'POST',

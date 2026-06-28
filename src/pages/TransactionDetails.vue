@@ -203,6 +203,50 @@
         </div>
       </div>
 
+      <!-- LUD-09 message from the recipient, persisted from the send. -->
+      <div v-if="currentSuccessAction" class="details-section">
+        <div class="section-label">
+          {{ $t('Message from recipient') }}
+        </div>
+        <div class="settings-card detail-card">
+          <div class="success-action-detail">
+            <!-- message: plain text -->
+            <div v-if="currentSuccessAction.tag === 'message'" class="sa-detail-text">
+              {{ currentSuccessAction.message }}
+            </div>
+
+            <!-- url: optional description + a tappable link -->
+            <template v-else-if="currentSuccessAction.tag === 'url'">
+              <div v-if="currentSuccessAction.description" class="sa-detail-text">
+                {{ currentSuccessAction.description }}
+              </div>
+              <div class="sa-detail-row" @click="openSuccessActionUrl">
+                <span class="sa-detail-link">{{ currentSuccessAction.url }}</span>
+                <Icon icon="tabler:external-link" width="16" height="16" />
+              </div>
+            </template>
+
+            <!-- aes: decrypted secret (tap to copy) -->
+            <template v-else-if="currentSuccessAction.tag === 'aes'">
+              <div v-if="currentSuccessAction.description" class="sa-detail-text">
+                {{ currentSuccessAction.description }}
+              </div>
+              <div v-if="currentSuccessAction.decryptError" class="sa-detail-error">
+                {{ $t('Could not decrypt the message') }}
+              </div>
+              <div
+                v-else
+                class="sa-detail-row"
+                @click="copySuccessSecret(currentSuccessAction.secret)"
+              >
+                <span class="sa-detail-secret">{{ currentSuccessAction.secret }}</span>
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
       <!-- Nostr Profile Section -->
       <div
         v-if="transaction.senderNpub && nostrProfile"
@@ -517,6 +561,8 @@ import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 import { shareContent } from '../utils/share';
+import { openInAppBrowser } from '../utils/inAppBrowser.js';
+import { copySensitive } from '../utils/sensitiveClipboard.js';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 
 export default {
@@ -590,6 +636,13 @@ export default {
     currentNote() {
       if (!this.transaction || !this.metadataStore) return '';
       return this.metadataStore.getNoteForTransaction(this.transaction.id);
+    },
+
+    // LUD-09 message the recipient returned on this payment, persisted at send
+    // time (already resolved — aes is decrypted before storage).
+    currentSuccessAction() {
+      if (!this.transaction || !this.metadataStore) return null;
+      return this.metadataStore.getSuccessActionForTransaction(this.transaction.id);
     },
 
     filteredContacts() {
@@ -1172,6 +1225,26 @@ export default {
       }
     },
 
+    // Open a `url` successAction in the in-app browser (explicit tap only).
+    openSuccessActionUrl() {
+      const action = this.currentSuccessAction;
+      if (action?.tag !== 'url' || !action.url) return;
+      openInAppBrowser(action.url);
+    },
+
+    // The decrypted `aes` secret is proof-of-payment material, so copy it via
+    // the sensitive-clipboard helper (auto-wipe), matching the success screen.
+    async copySuccessSecret(secret) {
+      if (!secret) return;
+      try {
+        await copySensitive(secret);
+        this.$q.notify({ type: 'positive', message: this.$t('Copied') });
+      } catch (error) {
+        console.error('Failed to copy secret:', error);
+        this.$q.notify({ type: 'negative', message: this.$t("Couldn't copy") });
+      }
+    },
+
     viewNostrProfile() {
       if (this.transaction.senderNpub) {
         const nostrUrl = `https://snort.social/p/${this.transaction.senderNpub}`;
@@ -1300,6 +1373,57 @@ export default {
   font-size: 13px;
   color: var(--text-primary);
   line-height: 1.5;
+}
+
+/* ===== LUD-09 message from recipient ===== */
+.success-action-detail {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sa-detail-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.sa-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sa-detail-link {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--brand-accent);
+  word-break: break-all;
+}
+
+.sa-detail-secret {
+  font-family: 'SF Mono', ui-monospace, 'Roboto Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.sa-detail-error {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: #FF6B6B;
 }
 
 /* ===== Loading States ===== */

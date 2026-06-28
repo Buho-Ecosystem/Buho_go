@@ -656,6 +656,7 @@
       :recipient="sendSuccessRecipient"
       :label="sendSuccessLabel"
       :show-save-contact="sendSuccessShowSaveContact"
+      :success-action="sendSuccessAction"
       :auto-close-delay="5"
       @closed="onSendSuccessClosed"
       @save-contact-clicked="onSendSaveContactClicked"
@@ -754,6 +755,7 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
+import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
@@ -965,6 +967,8 @@ export default {
       sendSuccessRecipient: '',
       sendSuccessLabel: '',
       sendSuccessShowSaveContact: false,
+      // LUD-09 message from the recipient, shown on the send-success screen.
+      sendSuccessAction: null,
       // LUD-04 (LNURL-auth) — the dialog re-renders the same parsed
       // challenge across steps, so we hold it here rather than passing
       // through emit chains.
@@ -2065,6 +2069,19 @@ export default {
         this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
       }
 
+      // Persist the recipient's LUD-09 message onto the outgoing tx (rides the
+      // same deferred queue the main send flow uses). Gated on successAction so
+      // we don't alter contact-linking behaviour for ordinary contact pays.
+      const successActionAddress = contact?.address || contact?.lightningAddress || '';
+      if (payload?.successAction) {
+        this.transactionMetadataStore.enqueuePendingContactLink({
+          contactId: contact?.id || null,
+          recipientAddress: successActionAddress,
+          amountSats: amount,
+          successAction: payload.successAction,
+        }).catch((err) => console.warn('[wallet] could not queue successAction link:', err));
+      }
+
       // PaymentModal already resolved completed-or-throw before
       // emitting `payment-sent`, so we can assume COMPLETED here. If a
       // future PaymentModal change introduces pending semantics, the
@@ -2074,6 +2091,9 @@ export default {
         recipient,
         status: 'completed',
         showSaveContact: false,
+        // Forward any LUD-09 message PaymentModal surfaced from the pay-link
+        // callback (contact pay flow).
+        successAction: payload?.successAction || null,
       });
     },
 
@@ -4422,6 +4442,14 @@ export default {
 
         console.log('Payment sent:', result);
 
+        // LUD-09: the recipient may have returned a successAction alongside the
+        // invoice (a post-payment message, link, or AES-encrypted secret).
+        // Resolve it now — decrypting the `aes` variant with this payment's
+        // preimage — into a display-ready, storage-friendly object. This never
+        // throws: a decrypt failure degrades to a flagged state and never
+        // blocks the success screen.
+        const successAction = await resolveSuccessAction(result?.successAction, result?.preimage);
+
         // Address-book context: do we know this recipient, and is the
         // recipient saveable at all? Computed up-front because both the
         // pending-link queue and the success modal depend on it.
@@ -4444,12 +4472,15 @@ export default {
         // and carry contactId only when we already have it. The address
         // is stamped durably on the tx so a contact added later still
         // resolves live against this payment.
-        if (recipientAddress) {
+        if (recipientAddress || successAction) {
           try {
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: existingContact?.id || null,
               recipientAddress,
               amountSats: amount,
+              // Ride the same deferred queue to durably stamp the recipient's
+              // LUD-09 message onto the outgoing tx once it surfaces in history.
+              successAction,
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link:', err);
@@ -4495,6 +4526,7 @@ export default {
           recipient: recipientLabel,
           status,
           showSaveContact: shouldOfferSave,
+          successAction,
         });
 
         this.showSendSheet = false;
@@ -4634,13 +4666,14 @@ export default {
       // LNURL - decode and fetch invoice, then pay
       // Note: LNURL invoices already have amount encoded, so don't pass amountSats
       if (this.pendingPayment.lnurl) {
-        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
-        return await provider.payInvoice({
-          invoice,
+        const { pr, successAction } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
+        const result = await provider.payInvoice({
+          invoice: pr,
           preferSpark: true,
           maxFee: this.estimatedFee || undefined // Pass UI-displayed fee estimate
           // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
+        return { ...result, successAction };
       }
 
       throw new Error('Unsupported payment type for Spark wallet');
@@ -4671,18 +4704,20 @@ export default {
 
       // Lightning address - fetch invoice first then pay
       if (this.pendingPayment.lightningAddress) {
-        const invoice = await this.fetchLightningAddressInvoice(
+        const { pr, successAction } = await this.fetchLightningAddressInvoice(
           this.pendingPayment.lightningAddress,
           amount,
           comment
         );
-        return await provider.payInvoice({ invoice });
+        const result = await provider.payInvoice({ invoice: pr });
+        return { ...result, successAction };
       }
 
       // LNURL - fetch invoice then pay
       if (this.pendingPayment.lnurl) {
-        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
-        return await provider.payInvoice({ invoice });
+        const { pr, successAction } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
+        const result = await provider.payInvoice({ invoice: pr });
+        return { ...result, successAction };
       }
 
       throw new Error('Unsupported payment type for LNbits wallet');
@@ -4758,7 +4793,7 @@ export default {
      * COMPLETED — promoting a contact off a payment that may yet
      * fail would be misleading.
      */
-    async openSendSuccess({ amount, recipient, status, showSaveContact }) {
+    async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null }) {
       const isCompleted = status !== 'pending';
       this.sendSuccessAmount = Number(amount) || 0;
       this.sendSuccessRecipient = recipient || '';
@@ -4766,6 +4801,9 @@ export default {
         ? this.$t('Payment Sent')
         : this.$t('Still sending…');
       this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted;
+      // LUD-09 message from the recipient. Only surfaced once the payment has
+      // completed — a still-pending send has no settled message to trust yet.
+      this.sendSuccessAction = isCompleted ? (successAction || null) : null;
       this.sendSuccessFiat = '';
 
       // Show the success surface immediately — fiat is decorative and must
@@ -4805,6 +4843,7 @@ export default {
       this.sendSuccessRecipient = '';
       this.sendSuccessLabel = '';
       this.sendSuccessShowSaveContact = false;
+      this.sendSuccessAction = null;
       // Reset any save payload that was pre-staged for the modal's
       // Save button. Users who wanted to save would have tapped it
       // already (see onSendSaveContactClicked).
@@ -4932,7 +4971,10 @@ export default {
       const invoiceData = await invoiceResponse.json();
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
 
-      return invoiceData.pr;
+      // Return the invoice together with any LUD-09 successAction the callback
+      // included (the recipient's post-payment message). Callers thread it to
+      // the success screen; null when absent.
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction) };
     },
 
     /**
@@ -5174,7 +5216,9 @@ export default {
         throw new Error(invoiceData.reason || 'Invoice generation failed');
       }
 
-      return invoiceData.pr;
+      // Return the invoice together with any LUD-09 successAction the callback
+      // included (the recipient's post-payment message). null when absent.
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction) };
     },
 
     /**
