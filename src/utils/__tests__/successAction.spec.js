@@ -100,14 +100,33 @@ await test('parse: clamps message to the spec cap', () => {
   );
 });
 
-await test('parse: url accepts http(s), rejects other schemes', () => {
+await test('parse: url accepts http(s) on the callback domain, rejects other schemes', () => {
+  const cb = 'https://ex.com/lnurlp/callback';
   assert.deepEqual(
-    parseSuccessAction({ tag: 'url', description: 'Receipt', url: 'https://ex.com/r/1' }),
+    parseSuccessAction({ tag: 'url', description: 'Receipt', url: 'https://ex.com/r/1' }, cb),
     { tag: 'url', description: 'Receipt', url: 'https://ex.com/r/1' },
   );
-  assert.equal(parseSuccessAction({ tag: 'url', url: 'ftp://x' }), null);
-  assert.equal(parseSuccessAction({ tag: 'url', url: 'not a url' }), null);
-  assert.equal(parseSuccessAction({ tag: 'url', url: 'javascript:alert(1)' }), null);
+  assert.equal(parseSuccessAction({ tag: 'url', url: 'ftp://x' }, cb), null);
+  assert.equal(parseSuccessAction({ tag: 'url', url: 'not a url' }, cb), null);
+  assert.equal(parseSuccessAction({ tag: 'url', url: 'javascript:alert(1)' }, cb), null);
+});
+
+await test('parse: url enforces the LUD-09 same-domain rule', () => {
+  // Different domain than the callback → degrade to the description as a message.
+  assert.deepEqual(
+    parseSuccessAction(
+      { tag: 'url', description: 'See details', url: 'https://evil.com/x' },
+      'https://ex.com/cb',
+    ),
+    { tag: 'message', message: 'See details' },
+  );
+  // Different domain, no description → dropped entirely.
+  assert.equal(
+    parseSuccessAction({ tag: 'url', url: 'https://evil.com/x' }, 'https://ex.com/cb'),
+    null,
+  );
+  // No callback to validate against → fails closed.
+  assert.equal(parseSuccessAction({ tag: 'url', url: 'https://ex.com/x' }), null);
 });
 
 await test('parse: aes requires ciphertext + iv', () => {

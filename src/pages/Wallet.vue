@@ -4974,7 +4974,7 @@ export default {
       // Return the invoice together with any LUD-09 successAction the callback
       // included (the recipient's post-payment message). Callers thread it to
       // the success screen; null when absent.
-      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction) };
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction, data.callback) };
     },
 
     /**
@@ -5218,7 +5218,7 @@ export default {
 
       // Return the invoice together with any LUD-09 successAction the callback
       // included (the recipient's post-payment message). null when absent.
-      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction) };
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction, data.callback) };
     },
 
     /**

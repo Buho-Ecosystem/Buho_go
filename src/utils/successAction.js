@@ -67,20 +67,37 @@ function isHttpUrl(value) {
 }
 
 /**
+ * Whether two URLs share the same host — the LUD-09 rule that a `url`
+ * successAction must live on the same domain as the LNURL callback. An
+ * unparseable or missing callback fails closed (treated as a mismatch).
+ */
+function sameDomain(a, b) {
+  try {
+    return new URL(a).hostname === new URL(b).hostname;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Normalize a raw `successAction` from an LNURL-pay callback into a validated,
  * display-safe shape — or `null` when absent or malformed.
  *
  * Strict by design: the object arrives from a remote server, so we whitelist
  * the three LUD-09 tags, clamp free text, and reject a `url` that isn't
- * http(s). The `aes` ciphertext/iv are kept verbatim for later decryption.
+ * http(s). Per LUD-09 a `url`'s domain MUST equal the `callback` domain; a
+ * mismatch is degraded to its description (a plain message) rather than shown
+ * as a link. The `aes` ciphertext/iv are kept verbatim for later decryption.
  *
  * @param {any} raw
+ * @param {string} [callbackUrl] the LNURL-pay `callback` the invoice came from,
+ *   used to enforce the LUD-09 same-domain rule on a `url` action.
  * @returns {null
  *   | {tag:'message', message:string}
  *   | {tag:'url', description:string, url:string}
  *   | {tag:'aes', description:string, ciphertext:string, iv:string}}
  */
-export function parseSuccessAction(raw) {
+export function parseSuccessAction(raw, callbackUrl) {
   if (!raw || typeof raw !== 'object') return null;
 
   switch (raw.tag) {
@@ -91,7 +108,15 @@ export function parseSuccessAction(raw) {
     case 'url': {
       const url = typeof raw.url === 'string' ? raw.url.trim() : '';
       if (!isHttpUrl(url)) return null;
-      return { tag: 'url', description: clampText(raw.description), url };
+      const description = clampText(raw.description);
+      // LUD-09: the url's domain MUST equal the LNURL `callback` domain. A
+      // mismatch is a phishing vector (a merchant pointing the payer at an
+      // unrelated site), so we refuse to surface it as a link — degrade to the
+      // description as a plain message, or drop it entirely.
+      if (!sameDomain(url, callbackUrl)) {
+        return description ? { tag: 'message', message: description } : null;
+      }
+      return { tag: 'url', description, url };
     }
     case 'aes': {
       const ciphertext = typeof raw.ciphertext === 'string' ? raw.ciphertext.trim() : '';

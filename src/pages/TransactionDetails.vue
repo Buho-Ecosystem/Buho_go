@@ -215,15 +215,12 @@
               {{ currentSuccessAction.message }}
             </div>
 
-            <!-- url: optional description + a tappable link -->
+            <!-- url: description + an IN-APP preview (never opens a browser) -->
             <template v-else-if="currentSuccessAction.tag === 'url'">
               <div v-if="currentSuccessAction.description" class="sa-detail-text">
                 {{ currentSuccessAction.description }}
               </div>
-              <div class="sa-detail-row" @click="openSuccessActionUrl">
-                <span class="sa-detail-link">{{ currentSuccessAction.url }}</span>
-                <Icon icon="tabler:external-link" width="16" height="16" />
-              </div>
+              <SuccessActionUrlPreview :url="currentSuccessAction.url" />
             </template>
 
             <!-- aes: decrypted secret (tap to copy) -->
@@ -561,13 +558,13 @@ import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 import { shareContent } from '../utils/share';
-import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
+import SuccessActionUrlPreview from '../components/SuccessActionUrlPreview.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 
 export default {
   name: 'TransactionDetailsPage',
-  components: { ContactAvatar },
+  components: { ContactAvatar, SuccessActionUrlPreview },
   data() {
     return {
       loading: true,
@@ -1225,13 +1222,6 @@ export default {
       }
     },
 
-    // Open a `url` successAction in the in-app browser (explicit tap only).
-    openSuccessActionUrl() {
-      const action = this.currentSuccessAction;
-      if (action?.tag !== 'url' || !action.url) return;
-      openInAppBrowser(action.url);
-    },
-
     // The decrypted `aes` secret is proof-of-payment material, so copy it via
     // the sensitive-clipboard helper (auto-wipe), matching the success screen.
     async copySuccessSecret(secret) {
@@ -1402,14 +1392,6 @@ export default {
   background: var(--bg-input);
   color: var(--text-muted);
   cursor: pointer;
-}
-
-.sa-detail-link {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--brand-accent);
-  word-break: break-all;
 }
 
 .sa-detail-secret {

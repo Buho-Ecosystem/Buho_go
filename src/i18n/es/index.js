@@ -1,7 +1,7 @@
 export default {
   // --- LUD-09 successAction (recipient's post-payment message) ---
   "Message from recipient": "Mensaje del destinatario",
-  "Open link": "Abrir enlace",
+  "Copy link": "Copiar enlace",
   "Could not decrypt the message": "No se pudo descifrar el mensaje",
   "Thank-you message (optional)": "Mensaje de agradecimiento (opcional)",
   "Shown to anyone who pays this address, right after they pay.": "Se muestra a quien pague esta dirección, justo después de pagar.",

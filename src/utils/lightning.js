@@ -401,7 +401,7 @@ export class LightningPaymentService {
     const result = await this.nwc.sendPayment(data.pr);
     // Preserve the recipient's LUD-09 post-payment message so the caller can
     // surface it once the payment settles.
-    return { ...result, successAction: parseSuccessAction(data.successAction) };
+    return { ...result, successAction: parseSuccessAction(data.successAction, callback) };
   }
 
   /**
@@ -450,7 +450,7 @@ export class LightningPaymentService {
     const result = await this.nwc.sendPayment(data.pr);
     // Preserve the LUD-09 successAction (recipient's post-payment message) so
     // the caller can show it once the payment settles.
-    return { ...result, successAction: parseSuccessAction(data.successAction) };
+    return { ...result, successAction: parseSuccessAction(data.successAction, paymentData.callback) };
   }
 
   // ============================================================================

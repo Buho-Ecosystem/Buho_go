@@ -310,7 +310,7 @@ export default {
       const invoiceData = await invoiceResponse.json()
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error')
       // Carry the LUD-09 successAction (recipient's post-payment message) too.
-      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction) }
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction, data.callback) }
     },
 
     async fetchLightningAddressInvoice(address, amountSats, comment) {
@@ -342,7 +342,7 @@ export default {
       const invoiceData = await invoiceResponse.json()
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice generation failed')
       // Carry the LUD-09 successAction (recipient's post-payment message) too.
-      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction) }
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction, data.callback) }
     },
 
     /**

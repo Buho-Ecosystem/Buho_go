@@ -78,7 +78,7 @@
               {{ successAction.message }}
             </div>
 
-            <!-- url: optional description + an explicit, non-auto-opening link -->
+            <!-- url: description + an IN-APP preview (never opens a browser) -->
             <template v-else-if="successAction.tag === 'url'">
               <div
                 v-if="successAction.description"
@@ -87,18 +87,7 @@
               >
                 {{ successAction.description }}
               </div>
-              <q-btn
-                outline
-                no-caps
-                rounded
-                class="success-action-btn"
-                :class="$q.dark.isActive ? 'sa-btn-dark' : 'sa-btn-light'"
-                @click="openSuccessUrl"
-              >
-                <Icon icon="tabler:external-link" width="16" height="16" class="q-mr-xs" />
-                {{ $t('Open link') }}
-              </q-btn>
-              <div class="success-action-host">{{ successUrlHost }}</div>
+              <SuccessActionUrlPreview :url="successAction.url" />
             </template>
 
             <!-- aes: decrypted secret (tap to copy), or a graceful failure note -->
@@ -202,13 +191,13 @@
 import { Icon } from '@iconify/vue';
 import { formatAmount as formatAmountUtil } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
-import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
 import SuccessCheckmark from './SuccessCheckmark.vue';
+import SuccessActionUrlPreview from './SuccessActionUrlPreview.vue';
 
 export default {
   name: 'PaymentConfirmation',
-  components: { Icon, SuccessCheckmark },
+  components: { Icon, SuccessCheckmark, SuccessActionUrlPreview },
   props: {
     modelValue: {
       type: Boolean,
@@ -332,15 +321,6 @@ export default {
     keepsOpen() {
       return this.showSaveContact || !!this.successAction
     },
-    /** Host of a `url` successAction, shown so the user sees where a tap leads. */
-    successUrlHost() {
-      if (this.successAction?.tag !== 'url') return ''
-      try {
-        return new URL(this.successAction.url).host
-      } catch {
-        return ''
-      }
-    },
     /**
      * Close-button copy. "Close Now" reads right with a visible
      * countdown ("close it sooner than the timer"); when the timer is
@@ -439,20 +419,6 @@ export default {
     formatAmount(sats) {
       if (!sats) return formatAmountUtil(0, this.walletStore.useBip177Format);
       return formatAmountUtil(sats, this.walletStore.useBip177Format);
-    },
-
-    /**
-     * Open a `url` successAction. Routes through the in-app browser helper and
-     * never auto-opens: this only fires on an explicit tap (LUD-09 leaves the
-     * decision to the user, and we show the host first).
-     */
-    async openSuccessUrl() {
-      if (this.successAction?.tag !== 'url' || !this.successAction.url) return;
-      try {
-        await openInAppBrowser(this.successAction.url);
-      } catch (err) {
-        console.warn('[PaymentConfirmation] could not open successAction url:', err);
-      }
     },
 
     /**
@@ -785,30 +751,6 @@ export default {
   word-break: break-word;
   max-height: 38vh;
   overflow-y: auto;
-}
-
-.success-action-btn {
-  padding: 8px 18px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.sa-btn-dark {
-  color: #FFF;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.sa-btn-light {
-  color: var(--text-primary);
-  border-color: var(--border-card);
-}
-
-.success-action-host {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  opacity: 0.6;
-  word-break: break-all;
 }
 
 .success-action-error {

@@ -1292,7 +1292,7 @@ export class SparkWalletProvider extends WalletProvider {
         // LUD-09: carry the recipient's post-payment message (if any) up to the
         // UI. Parsed at this boundary because the raw callback response — the
         // only place `successAction` lives — is available only here.
-        successAction: parseSuccessAction(invoiceData.successAction),
+        successAction: parseSuccessAction(invoiceData.successAction, lnurlData.callback),
       };
     } catch (error) {
       this.setError(error);
