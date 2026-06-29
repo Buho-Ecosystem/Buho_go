@@ -1479,7 +1479,17 @@ export default {
       if (p.isFixedAmount) {
         amount = { mode: 'fixed', fixedSats: p.fixedAmountSats };
       } else if (p.minSats && p.maxSats && p.minSats !== p.maxSats) {
-        amount = { mode: 'range', minSats: p.minSats, maxSats: p.maxSats };
+        const defaultAmount = (p.receiveAmount
+          && p.receiveAmount >= p.minSats
+          && p.receiveAmount <= p.maxSats)
+          ? p.receiveAmount
+          : null;
+        amount = {
+          mode: 'range',
+          minSats: p.minSats,
+          maxSats: p.maxSats,
+          ...(defaultAmount ? { defaultAmount } : {})
+        };
       } else {
         // Defensive — every spec-compliant withdraw QR carries a range
         // or a fixed amount, but if metadata is missing fall back to a
@@ -4048,13 +4058,23 @@ export default {
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
             this.resetWithdrawState();
+
+            // If the Receive modal is open with a specific invoice amount, capture
+            // it so the withdrawal sheet can pre-fill the field instead of showing 0.
+            const invoiceAmount = (this.showReceiveModal &&
+              this.$refs.receiveModal?.generatedInvoice?.amount > 0)
+              ? this.$refs.receiveModal.generatedInvoice.amount
+              : null;
+            if (invoiceAmount !== null) this.showReceiveModal = false;
+
             this.pendingPayment = {
               ...paymentData,
               type: 'lnurl_withdraw',
               lnurl: paymentData.data,
               ...lnurlInfo,
               amount: lnurlInfo.fixedAmountSats || 0,
-              description: lnurlInfo.defaultDescription
+              description: lnurlInfo.defaultDescription,
+              receiveAmount: invoiceAmount
             };
           } else {
             // LNURL-pay: existing flow

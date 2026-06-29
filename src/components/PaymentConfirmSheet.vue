@@ -694,6 +694,9 @@ export default {
       if (this.amountMode === 'fixed') {
         this.displayAmount = String(this.fixedSats)
         this.currentCurrency = 'sats'
+      } else if (this.payment?.amount?.defaultAmount) {
+        this.displayAmount = String(this.payment.amount.defaultAmount)
+        this.currentCurrency = 'sats'
       } else {
         this.displayAmount = ''
       }
