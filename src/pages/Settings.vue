@@ -3332,8 +3332,10 @@ export default {
         defaultUsername: wallet.name || '',
         // Closure keeps the provider instance alive for the dialog's
         // lifecycle — see LNBitsSetupPage.maybePromptLightningAddress
-        // for the same pattern.
-        createAddress: (username) => provider.createLightningAddress({ username }),
+        // for the same pattern. `options` carries an optional LUD-09
+        // successText (success_text) for the new pay link.
+        createAddress: (username, options = {}) =>
+          provider.createLightningAddress({ username, successText: options.successText }),
       };
     },
 

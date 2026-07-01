@@ -1,4 +1,10 @@
 export default {
+  // --- LUD-09 successAction (recipient's post-payment message) ---
+  "Message from recipient": "Message from recipient",
+  "Copy link": "Copy link",
+  "Could not decrypt the message": "Could not decrypt the message",
+  "Thank-you message (optional)": "Thank-you message (optional)",
+  "Shown to anyone who pays this address, right after they pay.": "Shown to anyone who pays this address, right after they pay.",
   "Tip the seller": "Tip the seller",
   "Browse and order on the seller's Nostr market.": "Browse and order on the seller's Nostr market.",
   "Nostr market": "Nostr market",

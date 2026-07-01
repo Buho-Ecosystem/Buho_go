@@ -1509,6 +1509,13 @@ export default {
 
       this.isCreatingInvoice = true;
       try {
+        // LUD-09 note: `successAction` does not apply to a plain BOLT11 invoice.
+        // It is an LNURL-pay concept returned alongside the invoice from a
+        // pay-link callback. BuhoGO runs no HTTP server, so the only
+        // receiver-side successAction we can set is on an LNbits Lightning
+        // address at creation time (success_text/success_url) — see
+        // LNBitsWalletProvider.createLightningAddress. Spark/NWC addresses are
+        // served by their own infrastructure and cannot carry one.
         const invoiceParams = {
           amount: this.amountInSats,
           description: this.description || 'BuhoGO Payment',

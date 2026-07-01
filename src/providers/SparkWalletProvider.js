@@ -30,6 +30,7 @@ const ExitSpeed = Object.freeze({
   SLOW: 'SLOW'
 });
 import { Invoice } from '@getalby/lightning-tools';
+import { parseSuccessAction } from '../utils/successAction.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
 
@@ -1169,6 +1170,13 @@ export class SparkWalletProvider extends WalletProvider {
   // ==========================================
 
   async getSparkAddress() {
+    // LUD-09 receiver-side limitation: a Spark address is served by Spark
+    // infrastructure, not by BuhoGO — the app runs no HTTP server of its own —
+    // so we cannot attach a `successAction` to payments received here. (Unlike
+    // LNbits, where we set it at pay-link creation; see
+    // LNBitsWalletProvider.createLightningAddress.) As the *payer* we still
+    // read and display any successAction a recipient returns; see
+    // payLightningAddress above.
     this._ensureConnected();
 
     if (this.sparkAddress) {
@@ -1280,7 +1288,11 @@ export class SparkWalletProvider extends WalletProvider {
 
       return {
         ...result,
-        lightningAddress: lightningAddress
+        lightningAddress: lightningAddress,
+        // LUD-09: carry the recipient's post-payment message (if any) up to the
+        // UI. Parsed at this boundary because the raw callback response — the
+        // only place `successAction` lives — is available only here.
+        successAction: parseSuccessAction(invoiceData.successAction, lnurlData.callback),
       };
     } catch (error) {
       this.setError(error);

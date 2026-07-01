@@ -131,7 +131,14 @@ export class NWCWalletProvider extends WalletProvider {
     try {
       const info = await this.nwc.getInfo();
 
-      // Extract lightning address from NWC URL if not in info
+      // Extract lightning address from NWC URL if not in info.
+      //
+      // LUD-09 receiver-side limitation: this lud16 address is served by the
+      // backend NWC wallet (e.g. Alby), not by BuhoGO — the app runs no HTTP
+      // server — so we cannot attach a `successAction` to payments received
+      // here. Any such message is configured in that wallet's own service. As
+      // the payer we still read and display a recipient's successAction (see
+      // payInvoice).
       let lightningAddress = info.lud16 || this.metadata.lud16;
       if (!lightningAddress && this.nwcUrl) {
         try {
