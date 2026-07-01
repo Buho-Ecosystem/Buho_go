@@ -689,6 +689,20 @@ export default {
         && !this.generatedInvoice
         && !this.showAmountInput;
     },
+    /**
+     * Public accessor — the sats amount the user currently intends to
+     * receive. The wallet reads this when a withdraw (a Bolt Card or an
+     * LNURL-withdraw voucher) is initiated from this modal, so the redeem
+     * sheet pre-fills the amount instead of opening at 0. A created
+     * specific-amount invoice wins; otherwise the value typed on the keypad.
+     * Returns 0 when neither applies (a default amountless invoice, or an
+     * untouched keypad), which the caller reads as "nothing to carry".
+     */
+    intendedReceiveSats() {
+      if (this.generatedInvoice?.amount > 0) return this.generatedInvoice.amount;
+      if (this.showAmountKeypadView && this.amountInSats > 0) return this.amountInSats;
+      return 0;
+    },
     paymentStatusClass() {
       switch (this.paymentStatus) {
         case PaymentStatus.CONFIRMED:

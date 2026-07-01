@@ -876,6 +876,11 @@ export default {
       // built by the corresponding `*SheetProps` computed below.
       showSendSheet: false,
       showWithdrawSheet: false,
+      // Set when a withdraw is initiated from the Receive modal's "Redeem"
+      // button, which closes the modal before the scan happens. Carried into
+      // the redeem sheet by onPaymentDetected (then cleared), so the amount
+      // the user already entered survives the modal handoff.
+      pendingWithdrawTargetSats: null,
       // Bitcoin on-chain runs through L1BitcoinWithdraw, which owns its
       // own bottom-sheet and bundles fee-priority selection + the
       // dust/balance checks the LN paths don't need.
@@ -1483,7 +1488,17 @@ export default {
       if (p.isFixedAmount) {
         amount = { mode: 'fixed', fixedSats: p.fixedAmountSats };
       } else if (p.minSats && p.maxSats && p.minSats !== p.maxSats) {
-        amount = { mode: 'range', minSats: p.minSats, maxSats: p.maxSats };
+        const defaultAmount = (p.receiveAmount
+          && p.receiveAmount >= p.minSats
+          && p.receiveAmount <= p.maxSats)
+          ? p.receiveAmount
+          : null;
+        amount = {
+          mode: 'range',
+          minSats: p.minSats,
+          maxSats: p.maxSats,
+          ...(defaultAmount ? { defaultAmount } : {})
+        };
       } else {
         // Defensive — every spec-compliant withdraw QR carries a range
         // or a fixed amount, but if metadata is missing fall back to a
@@ -1674,6 +1689,17 @@ export default {
         this.updateSecondaryValue();
       },
       immediate: true
+    },
+
+    /**
+     * The Receive modal's "Redeem" button stashes the user's intended amount
+     * in `pendingWithdrawTargetSats` and opens this scanner so the redeem
+     * sheet can pre-fill it once the withdraw QR is scanned. If the scanner
+     * is dismissed without a scan, drop the stash so it can't pre-fill a
+     * later, unrelated withdraw.
+     */
+    showSendModal(open) {
+      if (!open) this.pendingWithdrawTargetSats = null;
     },
 
     /**
@@ -3400,6 +3426,11 @@ export default {
     },
 
     handleScanWithdraw() {
+      // Carry whatever amount the user already set — a created invoice or the
+      // value typed on the keypad — into the redeem scan, mirroring the
+      // NFC-tap path. The modal closes here, so stash it for onPaymentDetected
+      // to read after the withdraw QR is scanned.
+      this.pendingWithdrawTargetSats = this.$refs.receiveModal?.intendedReceiveSats || null;
       this.showReceiveModal = false;
       this.$nextTick(() => {
         this.showSendModal = true;
@@ -4028,6 +4059,13 @@ export default {
       let resolved = true;   // assume we'll reach a confirm sheet / handoff
       if (fromField) { this.sendResolving = true; this.sendResolveError = ''; }
 
+      // Consume any amount stashed by the Receive modal's "Redeem" button
+      // (which closes the modal before this scan, so it can't be read live
+      // below). Cleared unconditionally so a stale value can never leak into
+      // an unrelated withdraw.
+      const deferredWithdrawTargetSats = this.pendingWithdrawTargetSats;
+      this.pendingWithdrawTargetSats = null;
+
       try {
         // Transform the payment data to match expected structure
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
@@ -4068,13 +4106,29 @@ export default {
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
             this.resetWithdrawState();
+
+            // Pre-fill the redeem sheet with the amount the user intended to
+            // receive, instead of opening at 0. Two sources feed this:
+            //   - live: the Receive modal is still open (NFC tap or paste while
+            //     viewing it) — read its current intended amount directly.
+            //   - deferred: the user tapped "Redeem", which closed the modal
+            //     before this scan — handleScanWithdraw stashed the amount.
+            // Either way, close the modal so the redeem sheet never stacks on
+            // top of it.
+            let receiveAmount = deferredWithdrawTargetSats;
+            if (this.showReceiveModal) {
+              receiveAmount = this.$refs.receiveModal?.intendedReceiveSats || null;
+              this.showReceiveModal = false;
+            }
+
             this.pendingPayment = {
               ...paymentData,
               type: 'lnurl_withdraw',
               lnurl: paymentData.data,
               ...lnurlInfo,
               amount: lnurlInfo.fixedAmountSats || 0,
-              description: lnurlInfo.defaultDescription
+              description: lnurlInfo.defaultDescription,
+              receiveAmount
             };
           } else {
             // LNURL-pay: existing flow
