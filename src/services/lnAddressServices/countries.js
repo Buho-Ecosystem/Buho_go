@@ -8,7 +8,7 @@
  * Some Lightning Address providers don't pay the recipient in Bitcoin —
  * they convert it and deliver local currency to a phone / mobile-money
  * account. Kenya (Tando) settles to M-Pesa; Zambia (Bitzed) settles to
- * local mobile money.
+ * local mobile money; Tanzania (ChapSmart) settles TZS to M-Pesa.
  *
  * This registry powers two things:
  *   1. RECOGNITION of a pasted Lightning Address (`<phone>@<domain>`) —
@@ -51,8 +51,9 @@
  * ../../assets/lnAddressServices/flags/, register it in ./assets.js, add the
  * `hint` key to the en-US / de / es catalogs, and fill in the numbering fields.
  *
- * Sources: ZICTA / ITU numbering plan (Zambia, +260) and CA Kenya
- * March 2025 numbering plan (Kenya, +254).
+ * Sources: ZICTA / ITU numbering plan (Zambia, +260), CA Kenya
+ * March 2025 numbering plan (Kenya, +254), and the TCRA National Numbering
+ * Plan July 2025 (Tanzania, +255).
  */
 export const PAYOUT_COUNTRIES = [
   {
@@ -112,6 +113,37 @@ export const PAYOUT_COUNTRIES = [
       { name: 'MTN', prefixes: ['76', '96'] },
       { name: 'Zamtel', prefixes: ['75', '95'] },
       { name: 'Beeline', prefixes: ['78', '98'] }, // 78 reserved for Beeline
+    ],
+  },
+  {
+    code: 'TZ',
+    flagFile: 'flags/circle-flags--tz.svg',
+    logoFile: 'logos/chapsmart.png', // ChapSmart is the sole TZ provider -> brand with its logo.
+    hint: 'You are about to pay a Tanzanian phone number',
+    note: 'ChapSmart Tanzanian Lightning address', // prefilled when saving as a contact
+    currency: 'TZS',
+    domains: ['chapsmart.com'],
+    sendDomain: 'chapsmart.com',
+    callingCode: '255',
+    trunkPrefix: '0',
+    nsnLength: 9,
+    // Verified live: chapsmart.com resolves the international 255... local-part
+    // (255740034110@chapsmart.com) to a TZS payout on M-Pesa. We construct the
+    // international form for consistent, readable display.
+    localPartFormat: 'international',
+    localPartVerified: true,
+    // ChapSmart currently settles ONLY to Vodacom M-Pesa numbers — its LNURL
+    // endpoint rejects every other network ("Invalid Tanzanian M-Pesa number").
+    // So we recognize only Vodacom's blocks; matching a number ChapSmart can't
+    // pay would dead-end the user at resolution. Vodacom = NSN prefixes
+    // 74/75/76/79 (national 0740-0749 / 0750-0759 / 0760-0769 / 0790-0799),
+    // per the TCRA July 2025 plan. When ChapSmart adds other networks, append
+    // their prefixes here (Airtel 68/69/78, Yas 65/67/71/77, Halotel 61,
+    // TTCL 73). Note: Vodacom sits entirely in 07x, so every LOCAL Tanzanian
+    // number collides with Kenya (75/76 also with Zambia); only the +255
+    // international form is unambiguous — the country chooser resolves the rest.
+    operators: [
+      { name: 'Vodacom', prefixes: ['74', '75', '76', '79'] },
     ],
   },
 ]

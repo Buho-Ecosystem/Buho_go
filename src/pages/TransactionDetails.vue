@@ -215,13 +215,17 @@
               {{ currentSuccessAction.message }}
             </div>
 
-            <!-- url: description + an IN-APP preview (never opens a browser) -->
-            <template v-else-if="currentSuccessAction.tag === 'url'">
-              <div v-if="currentSuccessAction.description" class="sa-detail-text">
-                {{ currentSuccessAction.description }}
-              </div>
-              <SuccessActionUrlPreview :url="currentSuccessAction.url" />
-            </template>
+            <!-- url: one elegant tap to open (new tab on web, in-app view on
+                 native). Domain-validated upstream to the callback host. -->
+            <button
+              v-else-if="currentSuccessAction.tag === 'url'"
+              type="button"
+              class="sa-detail-open"
+              @click="openSuccessActionUrl(currentSuccessAction.url)"
+            >
+              <span class="sa-detail-open-label">{{ currentSuccessAction.description || $t('Open link') }}</span>
+              <Icon icon="tabler:external-link" width="16" height="16" class="sa-detail-open-icon" />
+            </button>
 
             <!-- aes: decrypted secret (tap to copy) -->
             <template v-else-if="currentSuccessAction.tag === 'aes'">
@@ -240,6 +244,29 @@
                 <Icon icon="tabler:copy" width="16" height="16" />
               </div>
             </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- LUD-21 delivery confirmation (fiat landed on the recipient's mobile
+           money), shown once confirmed. -->
+      <div v-if="deliveryStatus && deliveryStatus.delivered" class="details-section">
+        <div class="section-label">
+          {{ $t('Delivery') }}
+        </div>
+        <div class="settings-card detail-card">
+          <div class="success-action-detail">
+            <div class="delivery-detail">
+              <Icon icon="tabler:circle-check-filled" width="18" height="18" class="delivery-detail-ok" />
+              <div class="delivery-detail-text">
+                <div class="delivery-detail-title">{{ $t('Delivered') }}</div>
+                <div v-if="deliveryStatus.recipient || deliveryStatus.receipt" class="delivery-detail-sub">
+                  <span v-if="deliveryStatus.recipient">{{ deliveryStatus.recipient }}</span>
+                  <span v-if="deliveryStatus.recipient && deliveryStatus.receipt"> · </span>
+                  <span v-if="deliveryStatus.receipt">{{ $t('Receipt') }} {{ deliveryStatus.receipt }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -559,12 +586,14 @@ import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 import { shareContent } from '../utils/share';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
-import SuccessActionUrlPreview from '../components/SuccessActionUrlPreview.vue';
+import { openInAppBrowser } from '../utils/inAppBrowser.js';
+import { pollVerify } from '../utils/lnurlVerify.js';
+import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 
 export default {
   name: 'TransactionDetailsPage',
-  components: { ContactAvatar, SuccessActionUrlPreview },
+  components: { ContactAvatar, Icon },
   data() {
     return {
       loading: true,
@@ -575,6 +604,9 @@ export default {
       walletStore: null,
       addressBookStore: null,
       metadataStore: null,
+      // LUD-21 delivery status for this tx (fiat-payout sends only): cached from
+      // a prior confirmation, or re-checked once from the stored verify URL.
+      deliveryStatus: null,
       showLoadingScreen: true,
       fiatRates: {},
       loadingFiatRates: true,
@@ -798,6 +830,9 @@ export default {
         await this.loadTransactionDetails();
         this.loadDeveloperModePreference();
         this.showLoadingScreen = false;
+        // Runs only after the transaction is loaded (cache hit OR async fetch),
+        // so the stored verify URL / cached delivery status is always available.
+        this.resolveDeliveryStatus();
       } catch (error) {
         console.error('Error initializing transaction details:', error);
         this.showLoadingScreen = false;
@@ -1222,6 +1257,33 @@ export default {
       }
     },
 
+    // Open a LUD-09 `url` successAction (e.g. a payment receipt). Domain-
+    // validated upstream, so it only points back at the service that was paid.
+    // New tab on web, in-app view (Custom Tab / SFSafariViewController) on native.
+    openSuccessActionUrl(url) {
+      if (url) openInAppBrowser(url);
+    },
+
+    // LUD-21: show the fiat-delivery confirmation for this tx. Prefer a cached
+    // status; otherwise do a single re-check of the stored verify URL (already
+    // validated same-domain at send time). Best-effort — never blocks the view.
+    async resolveDeliveryStatus() {
+      if (!this.transaction || !this.metadataStore) return;
+      const cached = this.metadataStore.getDeliveryStatusForTransaction(this.transaction.id);
+      if (cached) { this.deliveryStatus = cached; return; }
+      const verifyUrl = this.metadataStore.getVerifyUrlForTransaction(this.transaction.id);
+      if (!verifyUrl) return;
+      const status = await pollVerify(verifyUrl, null, { timeoutMs: 0, intervalMs: 0 });
+      if (!status) return;
+      this.deliveryStatus = status;
+      // Cache once delivery is confirmed so later views are instant and offline.
+      if (status.delivered) {
+        try {
+          await this.metadataStore.setDeliveryStatusForTransaction(this.transaction.id, status);
+        } catch { /* best-effort cache */ }
+      }
+    },
+
     // The decrypted `aes` secret is proof-of-payment material, so copy it via
     // the sensitive-clipboard helper (auto-wipe), matching the success screen.
     async copySuccessSecret(secret) {
@@ -1400,6 +1462,68 @@ export default {
   font-weight: 600;
   color: var(--text-primary);
   word-break: break-all;
+}
+
+/* url action: a single elegant "open" row (new tab on web, in-app on native). */
+.sa-detail-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  transition: filter 0.15s ease, transform 0.08s ease;
+}
+
+.sa-detail-open:active { transform: scale(0.99); }
+
+.sa-detail-open-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-detail-open-icon {
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+/* LUD-21 delivery confirmation row. */
+.delivery-detail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.delivery-detail-ok {
+  color: #34C759;
+  flex-shrink: 0;
+}
+.delivery-detail-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.delivery-detail-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.delivery-detail-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-word;
 }
 
 .sa-detail-error {

@@ -5,14 +5,16 @@
  * 1 sat per correct answer. Claimable every 25 sats.
  * Complete all lessons to get earnings doubled.
  *
- * Anti-abuse:
- *   - Rate limit: 1 claim per 30 minutes
- *   - Answer timing: average < 3 seconds = blocked
+ * Payouts go through the buhogo-earn-api service: the app creates an
+ * invoice on the user's wallet and posts it to the claim endpoint, which
+ * holds the funding-wallet key and enforces all limits server-side
+ * (cooldown, lifetime cap, per-IP and daily budgets). The checks below
+ * (cooldown, answer timing) are kept purely as fast local UX feedback;
+ * the server is the enforcement point.
  */
 
 import { defineStore } from 'pinia'
 import { i18n } from '../boot/i18n'
-import { stripWrapperScheme } from '../utils/addressUtils'
 import quizEnUS from '../data/earn-quizzes.en-US.json'
 import quizDe from '../data/earn-quizzes.de.json'
 import quizEs from '../data/earn-quizzes.es.json'
@@ -43,9 +45,24 @@ const PAYOUT_THRESHOLD = 25
 const CLAIM_COOLDOWN_MS = 30 * 60 * 1000 // 30 minutes
 const MIN_AVG_ANSWER_TIME_MS = 3000 // 3 seconds
 
-// LNbits funding config
-const LNBITS_URL = 'https://lnbits.de'
-const LNBITS_API_KEY = 'e823f6517cae4fe2aefc0a03d928ddc9'
+// Payout service (holds the funding-wallet key, enforces claim rules)
+const EARN_API_URL = 'https://buhogo-earn-api.netlify.app'
+const DEVICE_ID_KEY = 'buhoGO_earn_device_id'
+
+/**
+ * Stable per-install identifier for the payout service's rate limiting.
+ * Self-issued and therefore spoofable; the server combines it with the
+ * client IP and global budgets, so it only needs to be honest-user stable.
+ */
+function earnDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY)
+  if (!id) {
+    id = (globalThis.crypto?.randomUUID?.()) ||
+      `dev-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
+    localStorage.setItem(DEVICE_ID_KEY, id)
+  }
+  return id
+}
 
 export const useEarnStore = defineStore('earn', {
   state: () => ({
@@ -271,23 +288,9 @@ export const useEarnStore = defineStore('earn', {
       }
 
       try {
-        // Create LNURL-withdraw on LNbits
-        const withdrawLink = await this._createWithdrawLink(claimable)
-        if (!withdrawLink) throw new Error('Failed to create withdraw link')
+        const result = await this._requestPayout('claim', claimable)
+        if (!result.success) return { amount: 0, ...result }
 
-        // Get the LNURL-withdraw details
-        const withdrawInfo = await this._fetchWithdrawInfo(withdrawLink.lnurl)
-        if (!withdrawInfo) throw new Error('Failed to fetch withdraw info')
-
-        // Create invoice on user's wallet
-        const invoice = await this._createUserInvoice(claimable)
-        if (!invoice) throw new Error('Failed to create invoice')
-
-        // Claim the withdraw with the invoice
-        const claimed = await this._claimWithdraw(withdrawInfo.callback, withdrawInfo.k1, invoice)
-        if (!claimed) throw new Error('Failed to claim withdraw')
-
-        // Success — update state
         this.pendingSats -= claimable
         this.lastPayoutAt = Date.now()
         this.answerTimings = [] // Reset timings after successful claim
@@ -301,61 +304,38 @@ export const useEarnStore = defineStore('earn', {
     },
 
     /**
-     * Create a one-time LNURL-withdraw link on LNbits.
+     * Request a payout from the earn API: create an invoice on the user's
+     * wallet, send it to the claim endpoint, and map the response onto the
+     * store's result shape. The server pays the invoice from the funding
+     * wallet only if all its limits pass.
      */
-    async _createWithdrawLink(amountSats) {
+    async _requestPayout(kind, amountSats) {
+      const invoice = await this._createUserInvoice(amountSats)
+      if (!invoice) throw new Error('Failed to create invoice')
+
+      const response = await fetch(`${EARN_API_URL}/api/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId: earnDeviceId(),
+          kind,
+          amount: amountSats,
+          invoice,
+        }),
+      })
+
+      let data = null
       try {
-        const response = await fetch(`${LNBITS_URL}/withdraw/api/v1/links`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Key': LNBITS_API_KEY,
-          },
-          body: JSON.stringify({
-            title: `BuhoGO Learn & Earn - ${amountSats} sats`,
-            min_withdrawable: amountSats,
-            max_withdrawable: amountSats,
-            uses: 1,
-            wait_time: 1,
-            is_unique: true,
-          }),
-        })
-
-        if (!response.ok) throw new Error(`LNbits API error: ${response.status}`)
-        return await response.json()
-      } catch (error) {
-        console.error('[earn] Create withdraw link failed:', error)
-        return null
+        data = await response.json()
+      } catch {
+        // Non-JSON body (gateway error page); fall through to payout_failed.
       }
-    },
 
-    /**
-     * Fetch LNURL-withdraw info (callback + k1) from an LNURL.
-     */
-    async _fetchWithdrawInfo(lnurl) {
-      try {
-        // Decode LNURL (bech32) to URL. Unwrap any `lightning:` / `lnurl:`
-        // scheme first so a wrapped voucher still decodes.
-        const clean = stripWrapperScheme(lnurl)
-        let url = clean
-        if (clean.toLowerCase().startsWith('lnurl')) {
-          // Import bech32 decode from existing utility
-          const { bech32 } = await import('bech32')
-          const decoded = bech32.decode(clean.toLowerCase(), 2000)
-          const bytes = bech32.fromWords(decoded.words)
-          url = new TextDecoder().decode(new Uint8Array(bytes))
-        }
+      if (response.ok && data?.ok) return { success: true }
 
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`LNURL fetch failed: ${response.status}`)
-        const data = await response.json()
-
-        if (data.tag !== 'withdrawRequest') throw new Error('Not a withdraw request')
-        return { callback: data.callback, k1: data.k1 }
-      } catch (error) {
-        console.error('[earn] Fetch withdraw info failed:', error)
-        return null
-      }
+      const result = { success: false, error: data?.error || 'payout_failed' }
+      if (data?.minutesLeft) result.minutesLeft = data.minutesLeft
+      return result
     },
 
     /**
@@ -416,26 +396,6 @@ export const useEarnStore = defineStore('earn', {
     },
 
     /**
-     * Claim a LNURL-withdraw with an invoice.
-     */
-    async _claimWithdraw(callback, k1, invoice) {
-      try {
-        const separator = callback.includes('?') ? '&' : '?'
-        const url = `${callback}${separator}k1=${k1}&pr=${invoice}`
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`Claim failed: ${response.status}`)
-
-        const data = await response.json()
-        if (data.status === 'ERROR') throw new Error(data.reason || 'Withdraw failed')
-
-        return true
-      } catch (error) {
-        console.error('[earn] Claim withdraw failed:', error)
-        return false
-      }
-    },
-
-    /**
      * Execute the completion bonus: double all earnings.
      *
      * "Doubling" means the user should ultimately receive 2x what they earned
@@ -464,17 +424,8 @@ export const useEarnStore = defineStore('earn', {
       const totalPayout = this.pendingSats + bonus // settle unclaimed + bonus
 
       try {
-        const withdrawLink = await this._createWithdrawLink(totalPayout)
-        if (!withdrawLink) throw new Error('Failed to create bonus withdraw link')
-
-        const withdrawInfo = await this._fetchWithdrawInfo(withdrawLink.lnurl)
-        if (!withdrawInfo) throw new Error('Failed to fetch bonus withdraw info')
-
-        const invoice = await this._createUserInvoice(totalPayout)
-        if (!invoice) throw new Error('Failed to create bonus invoice')
-
-        const claimed = await this._claimWithdraw(withdrawInfo.callback, withdrawInfo.k1, invoice)
-        if (!claimed) throw new Error('Failed to claim bonus')
+        const result = await this._requestPayout('bonus', totalPayout)
+        if (!result.success) return { amount: 0, ...result }
 
         this.totalEarned = baseEarned * 2
         this.pendingSats = 0

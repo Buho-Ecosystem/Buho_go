@@ -47,6 +47,42 @@
         </div>
 
         <!--
+          LUD-21 delivery status — a fiat-payout send (ChapSmart/Tando/Bitzed)
+          confirms, live, that the local currency actually landed on the
+          recipient's mobile-money account, with the receipt id + verified name.
+        -->
+        <div
+          v-if="deliveryStatus"
+          class="delivery-status"
+          :class="[$q.dark.isActive ? 'delivery-status--dark' : 'delivery-status--light', { 'fade-in': showAmount }]"
+        >
+          <template v-if="deliveryStatus.delivered">
+            <Icon icon="tabler:circle-check-filled" width="18" height="18" class="delivery-status-ok" />
+            <div class="delivery-status-text">
+              <div class="delivery-status-title">{{ $t('Delivered') }}</div>
+              <div v-if="deliveryStatus.recipient || deliveryStatus.receipt" class="delivery-status-sub">
+                <span v-if="deliveryStatus.recipient">{{ deliveryStatus.recipient }}</span>
+                <span v-if="deliveryStatus.recipient && deliveryStatus.receipt"> · </span>
+                <span v-if="deliveryStatus.receipt">{{ $t('Receipt') }} {{ deliveryStatus.receipt }}</span>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="!deliveryStatus.done">
+            <q-spinner size="16px" :color="$q.dark.isActive ? 'grey-5' : 'grey-7'" />
+            <div class="delivery-status-text">
+              <div class="delivery-status-title">{{ $t('Confirming delivery…') }}</div>
+            </div>
+          </template>
+          <template v-else>
+            <Icon icon="tabler:clock" width="18" height="18" class="delivery-status-pending" />
+            <div class="delivery-status-text">
+              <div class="delivery-status-title">{{ $t('Delivery in progress') }}</div>
+              <div class="delivery-status-sub">{{ $t('It can take a moment to reach the recipient') }}</div>
+            </div>
+          </template>
+        </div>
+
+        <!--
           LUD-09 successAction — the recipient's post-payment message. Shown as
           a distinct card (not the faint footer `description`) because it can
           carry a link to open or a one-time secret to copy. Its presence also
@@ -62,7 +98,10 @@
             class="success-action-card"
             :class="$q.dark.isActive ? 'sa-card-dark' : 'sa-card-light'"
           >
+            <!-- A `url` action is a self-explanatory call to action (its own
+                 description labels the button), so it skips the generic caption. -->
             <div
+              v-if="successAction.tag !== 'url'"
               class="success-action-label"
               :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
             >
@@ -78,17 +117,20 @@
               {{ successAction.message }}
             </div>
 
-            <!-- url: description + an IN-APP preview (never opens a browser) -->
-            <template v-else-if="successAction.tag === 'url'">
-              <div
-                v-if="successAction.description"
-                class="success-action-text"
-                :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'"
-              >
-                {{ successAction.description }}
-              </div>
-              <SuccessActionUrlPreview :url="successAction.url" />
-            </template>
+            <!-- url: one elegant tap to open. The link is domain-validated
+                 upstream (same host as the callback just paid), so opening it is
+                 safe; openInAppBrowser opens a new tab on web and an in-app view
+                 (Custom Tab / SFSafariViewController) on native. -->
+            <button
+              v-else-if="successAction.tag === 'url'"
+              type="button"
+              class="success-action-open"
+              :class="$q.dark.isActive ? 'sa-open-dark' : 'sa-open-light'"
+              @click="openSuccessActionUrl"
+            >
+              <span class="success-action-open-label">{{ successAction.description || $t('Open link') }}</span>
+              <Icon icon="tabler:external-link" width="16" height="16" class="success-action-open-icon" />
+            </button>
 
             <!-- aes: decrypted secret (tap to copy), or a graceful failure note -->
             <template v-else-if="successAction.tag === 'aes'">
@@ -193,11 +235,11 @@ import { formatAmount as formatAmountUtil } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
 import SuccessCheckmark from './SuccessCheckmark.vue';
-import SuccessActionUrlPreview from './SuccessActionUrlPreview.vue';
+import { openInAppBrowser } from '../utils/inAppBrowser.js';
 
 export default {
   name: 'PaymentConfirmation',
-  components: { Icon, SuccessCheckmark, SuccessActionUrlPreview },
+  components: { Icon, SuccessCheckmark },
   props: {
     modelValue: {
       type: Boolean,
@@ -284,6 +326,15 @@ export default {
     successAction: {
       type: Object,
       default: null
+    },
+    /**
+     * LUD-21 delivery status for a fiat-payout send, updated live as we poll
+     * the provider's verify URL: { settled, delivered, receipt, recipient,
+     * amount, done }. `done` marks the poll terminal. null on ordinary sends.
+     */
+    deliveryStatus: {
+      type: Object,
+      default: null
     }
   },
   emits: ['update:modelValue', 'closed', 'save-contact-clicked'],
@@ -319,7 +370,10 @@ export default {
      * so either one suppresses the countdown.
      */
     keepsOpen() {
-      return this.showSaveContact || !!this.successAction
+      // A pending delivery keeps the screen open so the user can watch it land;
+      // once terminal it no longer holds the screen (the receipt/save decision may).
+      const deliveryPending = !!this.deliveryStatus && !this.deliveryStatus.done
+      return this.showSaveContact || !!this.successAction || deliveryPending
     },
     /**
      * Close-button copy. "Close Now" reads right with a visible
@@ -341,6 +395,21 @@ export default {
         this.startAnimationSequence()
       } else {
         this.cleanup()
+      }
+    },
+    // Auto-close is decided once (700ms into the entry animation) based on
+    // keepsOpen. But keepsOpen has live inputs — most notably a pending LUD-21
+    // delivery poll — so when the hold is released mid-view (delivery confirms,
+    // or a message/save state clears) the initial decision is stale. Re-sync the
+    // countdown here so a resolved screen actually auto-closes instead of
+    // freezing on "Closing in 5s...".
+    keepsOpen(holdOpen) {
+      if (!this.modelValue || !this.showCountdown) return
+      if (holdOpen) {
+        this.clearCountdown()
+      } else {
+        this.countdown = this.autoCloseDelay
+        this.startCountdown()
       }
     }
   },
@@ -376,12 +445,20 @@ export default {
     },
 
     startCountdown() {
+      this.clearCountdown()
       this.countdownInterval = setInterval(() => {
         this.countdown--
         if (this.countdown <= 0) {
           this.closeNow()
         }
       }, 1000)
+    },
+
+    clearCountdown() {
+      if (this.countdownInterval) {
+        clearInterval(this.countdownInterval)
+        this.countdownInterval = null
+      }
     },
 
     closeNow() {
@@ -426,6 +503,17 @@ export default {
      * value is wiped after a short window — it's proof-of-payment material the
      * user can also re-copy later from Transaction Details.
      */
+    /**
+     * Open a LUD-09 `url` successAction (e.g. a payment receipt). Domain-
+     * validated upstream (parseSuccessAction pins it to the callback host), so
+     * it can only point back at the service just paid. New tab on web, in-app
+     * view on native.
+     */
+    openSuccessActionUrl() {
+      const url = this.successAction?.url;
+      if (url) openInAppBrowser(url);
+    },
+
     async copySecret() {
       const secret = this.successAction?.secret;
       if (!secret) return;
@@ -698,6 +786,36 @@ export default {
 }
 
 /* LUD-09 successAction card */
+/* LUD-21 delivery status: a compact live confirmation row (fiat landed). */
+.delivery-status {
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  text-align: left;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.delivery-status.fade-in { opacity: 1; transform: translateY(0); }
+.delivery-status--dark { background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); }
+.delivery-status--light { background: rgba(0, 0, 0, 0.03); border: 1px solid var(--border-card); }
+.delivery-status-ok { color: #34C759; flex-shrink: 0; }
+.delivery-status-pending { color: #F59E0B; flex-shrink: 0; }
+.delivery-status-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.delivery-status-title { font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.delivery-status-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
 .success-action-area {
   width: 100%;
   display: flex;
@@ -757,6 +875,48 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   color: #FF6B6B;
+}
+
+/* url action: a single elegant "open" pill (new tab on web, in-app on native). */
+.success-action-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  padding: 0.625rem 1rem;
+  border-radius: 12px;
+  border: 1px solid;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  transition: filter 0.15s ease, transform 0.08s ease;
+}
+
+.success-action-open:hover { filter: brightness(1.06); }
+.success-action-open:active { transform: scale(0.98); }
+
+.sa-open-dark {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #FFF;
+}
+
+.sa-open-light {
+  border-color: var(--border-card);
+  color: var(--text-primary);
+}
+
+.success-action-open-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.success-action-open-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 /* Decrypted secret: a tap-to-copy chip styled to read as "copyable value". */

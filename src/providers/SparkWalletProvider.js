@@ -31,6 +31,8 @@ const ExitSpeed = Object.freeze({
 });
 import { Invoice } from '@getalby/lightning-tools';
 import { parseSuccessAction } from '../utils/successAction.js';
+import { validateVerifyUrl } from '../utils/lnurlVerify.js';
+import { buildLnurlPayCallbackUrl } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
 
@@ -1227,7 +1229,7 @@ export class SparkWalletProvider extends WalletProvider {
    * @param {number} amountSats - Amount in sats
    * @param {string} comment - Optional comment
    */
-  async payLightningAddress(lightningAddress, amountSats, comment = '') {
+  async payLightningAddress(lightningAddress, amountSats, comment = '', payout = null) {
     this._ensureConnected();
 
     try {
@@ -1247,24 +1249,22 @@ export class SparkWalletProvider extends WalletProvider {
 
       const lnurlData = await response.json();
 
-      // Validate amount is within bounds
-      const minSendable = Math.ceil((lnurlData.minSendable || 1000) / 1000);
-      const maxSendable = Math.floor((lnurlData.maxSendable || 100000000000) / 1000);
-
-      if (amountSats < minSendable || amountSats > maxSendable) {
-        throw new Error(`Amount must be between ${minSendable} and ${maxSendable} sats`);
+      // Standard sat sends are bounds-checked here; a currency (Option-A) send
+      // is bounded by the provider in its own units (it rejects out-of-range).
+      if (!(payout && payout.code && payout.amount > 0)) {
+        const minSendable = Math.ceil((lnurlData.minSendable || 1000) / 1000);
+        const maxSendable = Math.floor((lnurlData.maxSendable || 100000000000) / 1000);
+        if (amountSats < minSendable || amountSats > maxSendable) {
+          throw new Error(`Amount must be between ${minSendable} and ${maxSendable} sats`);
+        }
       }
-
-      // Request invoice
-      const amountMs = amountSats * 1000;
-      // Use & if callback already has query params, otherwise use ?
-      const separator = lnurlData.callback.includes('?') ? '&' : '?';
-      let callbackUrl = `${lnurlData.callback}${separator}amount=${amountMs}`;
-
-      if (comment && lnurlData.commentAllowed > 0) {
-        const truncatedComment = comment.substring(0, lnurlData.commentAllowed);
-        callbackUrl += `&comment=${encodeURIComponent(truncatedComment)}`;
-      }
+      const callbackUrl = buildLnurlPayCallbackUrl({
+        callback: lnurlData.callback,
+        amountSats,
+        payout,
+        comment,
+        commentAllowed: lnurlData.commentAllowed,
+      });
 
       const invoiceResponse = await fetch(callbackUrl);
       if (!invoiceResponse.ok) {
@@ -1293,6 +1293,10 @@ export class SparkWalletProvider extends WalletProvider {
         // UI. Parsed at this boundary because the raw callback response — the
         // only place `successAction` lives — is available only here.
         successAction: parseSuccessAction(invoiceData.successAction, lnurlData.callback),
+        // LUD-21: verification URL to poll for fiat settlement (e.g. M-Pesa
+        // delivery). Absent on ordinary Lightning addresses; validated
+        // same-domain against the callback here (never a third-party URL).
+        verify: validateVerifyUrl(invoiceData.verify, lnurlData.callback),
       };
     } catch (error) {
       this.setError(error);
