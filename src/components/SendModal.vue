@@ -204,15 +204,25 @@
                straight to Continue / auto-advance. -->
           <div v-else-if="phoneNeedsCountryChoice" class="country-choice">
             <div class="country-choice-label">{{ $t('Which country?') }}</div>
-            <div class="country-choice-row">
+            <div class="country-choice-list">
               <button
-                v-for="c in recognizedPhone.candidates"
+                v-for="c in orderedPhoneCandidates"
                 :key="c.country.code"
                 type="button"
                 class="country-choice-btn"
                 @click="selectPhoneCountry(c)"
               >
-                <span class="country-choice-name">{{ countryName(c.country.code) }}</span>
+                <img
+                  v-if="c.brandLogo"
+                  :src="c.brandLogo"
+                  class="country-choice-logo"
+                  alt=""
+                  aria-hidden="true"
+                />
+                <span class="country-choice-text">
+                  <span class="country-choice-name">{{ countryName(c.country.code) }}</span>
+                  <span v-if="c.operator" class="country-choice-op">{{ c.operator }}</span>
+                </span>
                 <span class="country-choice-number">{{ c.display }}</span>
               </button>
             </div>
@@ -285,7 +295,8 @@ import {
   isLightningAddress,
   stripWrapperScheme,
 } from '../utils/addressUtils';
-import { recognizePhoneNumber } from '../services/lnAddressServices';
+import { recognizePhoneNumber, matchLnAddressService } from '../services/lnAddressServices';
+import { getPreferredPayoutCountry, rememberPayoutCountry } from '../utils/payoutCountryPreference';
 import { classifyIdentifier, LOOKUP_ERROR } from '../utils/nostrLookup';
 import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
 import AddressBookQuickModal from './AddressBookQuickModal.vue';
@@ -333,6 +344,11 @@ export default {
       // True on iOS/Android where the native MLKit scanner replaces the web
       // qr-scanner video. Drives the ScannerOverlay branch below.
       isNativeScanner: isNativeScannerAvailable(),
+      // Sticky default for the ambiguous-country chooser: the payout country the
+      // user last picked, so a bare (no calling code) number that is valid in
+      // more than one country leads with their country. Ordering only — an
+      // ambiguous number always still requires an explicit tap.
+      preferredPayoutCountry: getPreferredPayoutCountry(),
     }
   },
   computed: {
@@ -466,6 +482,25 @@ export default {
       return this.detectedInputType === 'phone_number'
         && !!this.recognizedPhone
         && this.recognizedPhone.ambiguous === true;
+    },
+
+    // The ambiguous-country candidates, each enriched with its provider brand
+    // logo and ordered so the user's last-chosen country leads (see
+    // payoutCountryPreference). This is presentation only — selecting still
+    // requires an explicit tap; we never auto-pick a country for an ambiguous
+    // number because a wrong-country payout is irreversible.
+    orderedPhoneCandidates() {
+      const phone = this.recognizedPhone;
+      if (!phone || !Array.isArray(phone.candidates)) return [];
+      const preferred = this.preferredPayoutCountry;
+      const ordered = [
+        ...phone.candidates.filter((c) => c.country.code === preferred),
+        ...phone.candidates.filter((c) => c.country.code !== preferred),
+      ];
+      return ordered.map((c) => {
+        const brand = matchLnAddressService(c.lightningAddress);
+        return { ...c, brandLogo: (brand && (brand.logo || brand.flag)) || '' };
+      });
     }
   },
   watch: {
@@ -939,13 +974,16 @@ export default {
     },
 
     countryName(code) {
-      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia') }[code] || code;
+      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia'), TZ: this.$t('Tanzania') }[code] || code;
     },
 
     // Ambiguous-number chooser: emit the picked country's constructed address
     // directly, bypassing the default-country resolution in processPaymentData.
     selectPhoneCountry(candidate) {
       if (!candidate) return;
+      // Remember the choice so the chooser leads with this country next time.
+      this.preferredPayoutCountry = candidate.country.code;
+      rememberPayoutCountry(candidate.country.code);
       // Keep the sheet open with the loading CTA while the parent resolves the
       // constructed provider address; it closes us on success.
       this.isProcessing = true;
@@ -1522,7 +1560,10 @@ export default {
   padding: 14px 20px 6px;
 }
 
-/* Ambiguous KE/ZM number chooser (075-078 prefixes valid in both). */
+/* Ambiguous-country chooser: a bare (no calling code) 07x number can be a valid
+   mobile in Kenya, Zambia AND Tanzania. We never guess (wrong country is
+   irreversible) — instead we show rich, one-tap rows (provider logo, country,
+   operator, international number) with the user's last-picked country first. */
 .country-choice { display: flex; flex-direction: column; gap: 8px; }
 .country-choice-label {
   font-size: 12.5px;
@@ -1530,24 +1571,41 @@ export default {
   color: var(--text-secondary);
   text-align: center;
 }
-.country-choice-row { display: flex; gap: 10px; }
+.country-choice-list { display: flex; flex-direction: column; gap: 8px; }
 .country-choice-btn {
-  flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 12px 8px;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-card);
   background: var(--bg-input);
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
+  text-align: left;
   transition: filter 0.15s ease, transform 0.08s ease;
 }
-.country-choice-btn:active { transform: scale(0.98); }
+.country-choice-btn:hover { filter: brightness(1.03); }
+.country-choice-btn:active { transform: scale(0.99); }
+.country-choice-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #fff;
+}
+.country-choice-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .country-choice-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
-.country-choice-number { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.country-choice-op { font-size: 11.5px; color: var(--text-secondary); }
+.country-choice-number {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 /* Primary CTA — gradient-green on dark, neutral-dark pill on cream.
    Same language as PaymentModal, AddressBookModal, etc. */

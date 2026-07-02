@@ -436,6 +436,29 @@ export default {
       return labels[this.recipientAddressType] || this.$t('Payment')
     },
 
+    // LUD-21 / currency-extension (#207) payout currency, present when the
+    // provider returns one (fiat-payout addresses: ChapSmart TZS, Tando KES,
+    // Bitzed ZMW). Shape: { code, symbol, decimals, minSendable, maxSendable,
+    // multiplier }, where multiplier is millisats per 1 unit of the currency.
+    // Lets the sender denominate in the recipient's currency with the sat cost
+    // derived from the callback's own multiplier — no external rate needed.
+    payoutCurrency() {
+      return this.payment?.payoutCurrency || null
+    },
+    // True while the amount is being entered in the recipient's local currency.
+    isLocalDenomination() {
+      return !!this.payoutCurrency && this.currentCurrency === this.payoutCurrency.code
+    },
+    // Single source of truth for how the amount is denominated, so every
+    // consumer switches on one value instead of re-deriving from currentCurrency
+    // (which now also holds a payout code like 'TZS', not just sats/btc/fiat).
+    denominationMode() {
+      if (this.isLocalDenomination) return 'local'
+      if (this.currentCurrency === 'sats') return 'sats'
+      if (this.currentCurrency === 'btc') return 'btc'
+      return 'fiat'
+    },
+
     // ───── Amount mode ─────
     amountMode() {
       return this.payment?.amount?.mode || 'free'
@@ -457,6 +480,7 @@ export default {
       return FIAT_SYMBOLS[this.fiatCurrencyCode] || (this.fiatCurrencyCode + ' ')
     },
     unitPillLabel() {
+      if (this.isLocalDenomination) return this.payoutCurrency.code
       if (this.currentCurrency === 'sats') return 'sats'
       if (this.currentCurrency === 'btc') return 'BTC'
       return this.fiatCurrencyCode
@@ -467,6 +491,12 @@ export default {
       if (this.amountMode === 'fixed') return this.fixedSats
       const n = parseFloat(this.displayAmount)
       if (!isFinite(n) || n <= 0) return 0
+      // Local payout currency: sats = localAmount × (millisats-per-unit) / 1000.
+      // This is an estimate for the recipient amount; the provider fee is added
+      // on top and reflected in the real invoice we fetch at send time.
+      if (this.isLocalDenomination) {
+        return Math.floor((n * this.payoutCurrency.multiplier) / 1000)
+      }
       if (this.currentCurrency === 'sats') return Math.floor(n)
       if (this.currentCurrency === 'btc')  return Math.floor(n * 100000000)
       const rate = this.fiatRates[this.fiatCurrencyCode]
@@ -475,6 +505,7 @@ export default {
     },
 
     amountPlaceholder() {
+      if (this.isLocalDenomination) return this.payoutCurrency.decimals > 0 ? '0.00' : '0'
       if (this.currentCurrency === 'sats') return '0'
       if (this.currentCurrency === 'btc')  return '0.00000000'
       return '0.00'
@@ -486,6 +517,22 @@ export default {
     // sees a literal "{n}" in the UI.
     amountInvalidReason() {
       if (!this.displayAmount || this.amountMode === 'fixed') return ''
+      // Local-currency mode: validate the entered LOCAL amount against the
+      // provider's own min/max. Runs before the sats>0 check below so a
+      // sub-1-sat entry still gets a clear "minimum" message instead of a
+      // silently-disabled button. The sat estimate excludes the provider fee,
+      // so the sat bounds don't line up and must not be used here.
+      if (this.isLocalDenomination) {
+        const n = parseFloat(this.displayAmount)
+        if (!isFinite(n) || n <= 0) return ''
+        const { minSendable, maxSendable, multiplier, code } = this.payoutCurrency
+        // Smallest local amount worth at least 1 sat — guards the case where a
+        // provider omits its local minimum (avoids a silent 0-sat dead-end).
+        const effectiveMin = minSendable || Math.max(1, Math.ceil(1000 / multiplier))
+        if (n < effectiveMin) return this.$t('Minimum is {n} {code}', { n: effectiveMin.toLocaleString(), code })
+        if (maxSendable && n > maxSendable) return this.$t('Maximum is {n} {code}', { n: maxSendable.toLocaleString(), code })
+        return ''
+      }
       const sats = this.amountInSats
       if (sats <= 0) return ''
       if (this.amountMode === 'range') {
@@ -508,6 +555,15 @@ export default {
 
     rangeHintText() {
       if (this.amountMode !== 'range') return ''
+      if (this.isLocalDenomination) {
+        const { minSendable, maxSendable, code } = this.payoutCurrency
+        // Only show the bounds we actually have — never "Min 0 · Max 0".
+        if (!minSendable && !maxSendable) return ''
+        const parts = []
+        if (minSendable) parts.push(`${this.$t('Min')} ${minSendable.toLocaleString()}`)
+        if (maxSendable) parts.push(`${this.$t('Max')} ${maxSendable.toLocaleString()}`)
+        return `${parts.join(' · ')} ${code}`
+      }
       return `${this.$t('Min')} ${this.minSats.toLocaleString()} · ${this.$t('Max')} ${this.maxSats.toLocaleString()} sats`
     },
 
@@ -564,6 +620,10 @@ export default {
     // amount that would fail validation.
     quickAmounts() {
       if (this.amountMode === 'fixed') return []
+      // No preset chips in local-currency mode: sat/fiat presets are meaningless
+      // in the recipient's currency, and inventing round local amounts would be
+      // a guess. The user types the amount directly.
+      if (this.isLocalDenomination) return []
       const baseSats = [1000, 5000, 10000, 21000]
       if (this.currentCurrency === 'sats') {
         const chips = baseSats.map(v => ({ value: v, label: this.formatChipLabel(v, 'sats') }))
@@ -588,7 +648,14 @@ export default {
 
     fiatEquivalent() {
       const sats = this.amountInSats
-      if (!sats || !this.fiatRates) return ''
+      if (!sats) return ''
+      // Denominating in the recipient's currency → the shadow shows the sat
+      // estimate for the amount (the recipient still receives the exact local
+      // amount; the fee is added on top in the real invoice).
+      if (this.isLocalDenomination) {
+        return `≈ ${formatAmount(sats, this.useBip177Format)}`
+      }
+      if (!this.fiatRates) return ''
       try {
         const currency = this.fiatCurrencyCode
         if (this.currentCurrency === currency.toLowerCase()) {
@@ -606,9 +673,17 @@ export default {
     formattedConfirmAmount() {
       const sats = this.amountInSats
       if (!sats) return ''
-      // Always render the confirm-stage hero in sats-or-fiat-friendly form,
-      // not BTC, since confirm is about reading at a glance.
-      if (this.currentCurrency === 'sats' || this.currentCurrency === 'btc') {
+      // Local-currency mode: the commit label MUST read in the recipient's
+      // currency (e.g. "10,000 TZS"), never the sender's global fiat symbol.
+      if (this.denominationMode === 'local') {
+        const n = parseFloat(this.displayAmount)
+        if (!isFinite(n) || n <= 0) return `${sats.toLocaleString()} sats`
+        const decimals = this.payoutCurrency.decimals || 0
+        const local = n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+        return `${local} ${this.payoutCurrency.code}`
+      }
+      // Render sats/btc as sats (confirm is about reading at a glance).
+      if (this.denominationMode === 'sats' || this.denominationMode === 'btc') {
         return `${sats.toLocaleString()} sats`
       }
       const n = parseFloat(this.displayAmount)
@@ -687,7 +762,10 @@ export default {
       this.showAddress = false
       this.comment = ''
       this.logoFailed = false
-      this.currentCurrency = (this.denominationCurrency || 'sats')
+      // Fiat-payout addresses default to the recipient's own currency (the
+      // natural "send 10,000 shillings" model); everything else uses the user's
+      // saved denomination preference.
+      this.currentCurrency = this.payoutCurrency ? this.payoutCurrency.code : (this.denominationCurrency || 'sats')
       // For fixed mode, prefill the visible input so users can read the
       // amount they're about to send. The `readonly` flag on the input
       // keeps it un-editable.
@@ -707,21 +785,46 @@ export default {
       this.$emit('cancel')
     },
 
-    onAmountChange() { /* reactive — kept for symmetry with focus/blur */ },
+    onAmountChange() {
+      // Sanitize as the user types so parseFloat can never silently truncate at
+      // a grouping separator (e.g. "2,500" → 2500, or "2500,000" → 2500 → a
+      // 1000x underpayment). Keep only digits and a single decimal point, and
+      // drop the fractional part entirely for integer units (sats, or a
+      // 0-decimal local currency like TZS).
+      let v = String(this.displayAmount || '').replace(/[^0-9.]/g, '')
+      const dot = v.indexOf('.')
+      const integerOnly = this.currentCurrency === 'sats' ||
+        (this.isLocalDenomination && this.payoutCurrency.decimals === 0)
+      if (dot !== -1) {
+        v = integerOnly
+          ? v.slice(0, dot)
+          : v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '')
+      }
+      if (v !== this.displayAmount) this.displayAmount = v
+    },
     onAmountFocus()  { this.isAmountFocused = true },
     onAmountBlur() {
       this.isAmountFocused = false
       // Light formatting on blur — same UX as PaymentModal.
       const n = parseFloat(this.displayAmount)
       if (!isFinite(n)) return
-      if (this.currentCurrency === 'sats') this.displayAmount = String(Math.floor(n))
+      if (this.isLocalDenomination) {
+        this.displayAmount = this.payoutCurrency.decimals > 0
+          ? n.toFixed(this.payoutCurrency.decimals)
+          : String(Math.floor(n))
+      }
+      else if (this.currentCurrency === 'sats') this.displayAmount = String(Math.floor(n))
       else if (this.currentCurrency === 'btc') this.displayAmount = n.toFixed(8)
       else this.displayAmount = n.toFixed(2)
     },
 
     toggleCurrency() {
       if (this.amountMode === 'fixed') return
-      const order = ['sats', this.fiatCurrencyCode.toLowerCase()]
+      // Fiat-payout addresses toggle between the recipient's currency and sats;
+      // everything else toggles between sats and the user's global fiat.
+      const order = this.payoutCurrency
+        ? [this.payoutCurrency.code, 'sats']
+        : ['sats', this.fiatCurrencyCode.toLowerCase()]
       const i = order.indexOf(this.currentCurrency)
       this.currentCurrency = order[(i + 1) % order.length]
       // Clear the input so the user re-enters in the new unit — converting
@@ -751,10 +854,21 @@ export default {
         this.$refs.slideRef?.reset()
         return
       }
-      this.$emit('confirm', {
+      const payload = {
         amountSats: this.amountInSats,
         comment: this.comment || ''
-      })
+      }
+      // When denominating in the recipient's currency, carry the exact local
+      // amount + code so the parent can request an Option-A (currency) invoice:
+      // the recipient then receives exactly this amount, provider fee on top.
+      // Round to the currency's decimals so the callback never receives an
+      // over-precise value (the input may not have blurred before slide-to-send).
+      if (this.isLocalDenomination) {
+        const decimals = this.payoutCurrency.decimals || 0
+        const amount = Number(parseFloat(this.displayAmount).toFixed(decimals))
+        payload.payout = { code: this.payoutCurrency.code, amount }
+      }
+      this.$emit('confirm', payload)
     },
 
     /**

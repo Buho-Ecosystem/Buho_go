@@ -1,14 +1,17 @@
 /**
- * phoneNumbers — Kenyan / Zambian mobile recognition + Lightning-address
- * construction tests.
+ * phoneNumbers — Kenyan / Zambian / Tanzanian mobile recognition + Lightning-
+ * address construction tests.
  *
  * Coverage focus:
- *   - international (+CC) and national (0...) recognition for both countries
+ *   - international (+CC) and national (0...) recognition for all three countries
  *   - operator detection from the published prefix tables
- *   - the 075-078 KE/ZM collision (ambiguous, both candidates, KE preselected)
+ *   - the overlapping national forms (ChapSmart is Vodacom-only, 74/75/76/79):
+ *     075/076 are valid in KE, ZM AND TZ (three-way); 074/079 in KE and TZ
+ *     (two-way); 077/078 in KE and ZM; only the +255 form is an unambiguous
+ *     Tanzania number
  *   - normalization of human punctuation, "+" and "00" markers
  *   - constructed Lightning Address shape per provider
- *   - rejection of foreign / unassigned / bare-NSN / junk inputs
+ *   - rejection of foreign / unassigned / omitted / bare-NSN / junk inputs
  *
  * Run directly with Node:
  *   node src/services/lnAddressServices/__tests__/phoneNumbers.spec.js
@@ -29,6 +32,7 @@ import { PAYOUT_COUNTRIES } from '../countries.js'
 
 const KE = PAYOUT_COUNTRIES.find((c) => c.code === 'KE')
 const ZM = PAYOUT_COUNTRIES.find((c) => c.code === 'ZM')
+const TZ = PAYOUT_COUNTRIES.find((c) => c.code === 'TZ')
 
 let passed = 0
 let failed = 0
@@ -68,12 +72,13 @@ test('KE international without "+" (254...) is still exact', () => {
   assert.equal(r.confidence, 'exact')
 })
 
-test('KE national (0712...): high confidence, single country', () => {
-  const r = recognizePhoneNumber('0712345678')
+test('KE national (0110...): high confidence, single country', () => {
+  // 011x (Safaricom) is Kenya-only: neither Zambia nor Tanzania has 1x mobile.
+  const r = recognizePhoneNumber('0110123456')
   assert.equal(r.country.code, 'KE')
   assert.equal(r.confidence, 'high')
   assert.equal(r.ambiguous, false)
-  assert.equal(r.lightningAddress, '254712345678@bitcoin.co.ke')
+  assert.equal(r.lightningAddress, '254110123456@bitcoin.co.ke')
 })
 
 test('KE 011x Safaricom block', () => {
@@ -84,8 +89,10 @@ test('KE 010x Airtel block', () => {
   assert.equal(recognizePhoneNumber('0100123456').operator, 'Airtel')
 })
 
-test('KE 070-074 / 079 are Kenya-only (no ZM collision)', () => {
-  for (const n of ['0700123456', '0741123456', '0799123456']) {
+test('KE 01x and 070-073 blocks are Kenya-only (no TZ/ZM overlap)', () => {
+  // 1x has no mobile in TZ/ZM. ChapSmart is Vodacom-only, and Vodacom does not
+  // hold 70/71/72/73, so those Kenyan blocks stay unambiguous Kenya.
+  for (const n of ['0100123456', '0110123456', '0700123456', '0710123456', '0720123456', '0730123456']) {
     const r = recognizePhoneNumber(n)
     assert.equal(r.country.code, 'KE', `${n} should be KE`)
     assert.equal(r.ambiguous, false, `${n} should be unambiguous`)
@@ -121,7 +128,7 @@ test('ZM national (0978...): high confidence, single country', () => {
   assert.equal(r.lightningAddress, '260978123456@bitzed.xyz')
 })
 
-test('ZM 09x and 05x are Zambia-only (Kenya has no 09/05 mobile)', () => {
+test('ZM 09x and 05x are Zambia-only (KE/TZ have no 09/05 mobile)', () => {
   assert.equal(recognizePhoneNumber('0961234567').country.code, 'ZM') // MTN
   assert.equal(recognizePhoneNumber('0951234567').country.code, 'ZM') // Zamtel
   assert.equal(recognizePhoneNumber('0981234567').country.code, 'ZM') // Beeline
@@ -136,39 +143,97 @@ test('ZM operator mapping (97 Airtel / 96 MTN / 95 Zamtel / 98 Beeline)', () => 
 })
 
 // ---------------------------------------------------------------------------
-// The 075-078 collision
+// Tanzania — international + national
 // ---------------------------------------------------------------------------
 
-test('ambiguous 077 (national): both candidates, KE preselected', () => {
-  const r = recognizePhoneNumber('0771234567')
+test('TZ international (+255): exact, Vodacom, builds ChapSmart (chapsmart.com) address', () => {
+  const r = recognizePhoneNumber('+255740034110') // the live smoke-test number
+  assert.equal(r.country.code, 'TZ')
+  assert.equal(r.confidence, 'exact')
+  assert.equal(r.ambiguous, false)
+  assert.equal(r.operator, 'Vodacom')
+  assert.equal(r.nsn, '740034110')
+  assert.equal(r.e164, '+255740034110')
+  assert.equal(r.display, '+255 740 034 110')
+  assert.equal(r.lightningAddress, '255740034110@chapsmart.com')
+  assert.equal(r.localPartVerified, true)
+})
+
+test('TZ is Vodacom-only: non-Vodacom TZ networks are NOT recognized (would dead-end)', () => {
+  // ChapSmart rejects non-Vodacom numbers, so we must not recognize them.
+  // 06x (Halotel/Yas/Airtel) and the Vodacom-absent 07x blocks (Yas 77, Airtel
+  // 78) are not valid Tanzanian destinations for us.
+  assert.equal(recognizePhoneNumber('+255611234567'), null) // Halotel 61
+  assert.equal(recognizePhoneNumber('+255651234567'), null) // Yas 65
+  assert.equal(recognizePhoneNumber('+255681234567'), null) // Airtel 68
+  assert.equal(recognizePhoneNumber('+255771234567'), null) // Yas 77
+  assert.equal(recognizePhoneNumber('+255781234567'), null) // Airtel 78
+})
+
+test('TZ operator mapping is Vodacom-only (74/75/76/79)', () => {
+  const op = (i) => recognizePhoneNumber(i).operator
+  assert.equal(op('+255740000000'), 'Vodacom')
+  assert.equal(op('+255750000000'), 'Vodacom')
+  assert.equal(op('+255760000000'), 'Vodacom')
+  assert.equal(op('+255790000000'), 'Vodacom')
+})
+
+// ---------------------------------------------------------------------------
+// Cross-country collisions on the bare national (0...) form
+// ---------------------------------------------------------------------------
+
+test('three-way ambiguous 075 (national): KE/ZM/TZ candidates, default preselected', () => {
+  // 75 is valid mobile in Kenya (Airtel 750-756), Zambia (Zamtel) AND Tanzania
+  // (Vodacom) — the only kind of triple collision left after Vodacom-only TZ.
+  const r = recognizePhoneNumber('0751234567')
   assert.equal(r.ambiguous, true)
   assert.equal(r.confidence, 'ambiguous')
   assert.ok(Array.isArray(r.candidates))
-  assert.equal(r.candidates.length, 2)
+  assert.equal(r.candidates.length, 3)
   // preselected entry matches the default and is the top-level result
   assert.equal(r.country.code, AMBIGUOUS_DEFAULT_CODE)
   assert.equal(r.candidates[0].country.code, AMBIGUOUS_DEFAULT_CODE)
   const codes = r.candidates.map((c) => c.country.code).sort()
-  assert.deepEqual(codes, ['KE', 'ZM'])
+  assert.deepEqual(codes, ['KE', 'TZ', 'ZM'])
   // each candidate carries its own provider address
   const ke = r.candidates.find((c) => c.country.code === 'KE')
   const zm = r.candidates.find((c) => c.country.code === 'ZM')
-  assert.equal(ke.lightningAddress, '254771234567@bitcoin.co.ke')
-  assert.equal(zm.lightningAddress, '260771234567@bitzed.xyz')
+  const tz = r.candidates.find((c) => c.country.code === 'TZ')
+  assert.equal(ke.lightningAddress, '254751234567@bitcoin.co.ke')
+  assert.equal(zm.lightningAddress, '260751234567@bitzed.xyz')
+  assert.equal(tz.lightningAddress, '255751234567@chapsmart.com')
 })
 
-test('all four colliding prefixes (075-078) are ambiguous as national', () => {
-  for (const p of ['075', '076', '077', '078']) {
-    const r = recognizePhoneNumber(`0${p.slice(1)}1234567`)
-    assert.equal(r.ambiguous, true, `0${p.slice(1)}... should be ambiguous`)
+test('075/076 are three-way (KE/ZM/TZ); 077/078 are two-way KE/ZM (77/78 are not Vodacom)', () => {
+  for (const p of ['75', '76']) {
+    const r = recognizePhoneNumber(`0${p}1234567`)
+    assert.equal(r.candidates.length, 3, `0${p}... should be three-way`)
+  }
+  for (const p of ['77', '78']) {
+    const r = recognizePhoneNumber(`0${p}1234567`)
+    assert.equal(r.ambiguous, true, `0${p}... should be ambiguous`)
+    const codes = r.candidates.map((c) => c.country.code).sort()
+    assert.deepEqual(codes, ['KE', 'ZM'], `0${p}... should be KE/ZM only`)
+  }
+})
+
+test('074/079 are two-way ambiguous KE/TZ (Vodacom; Zambia has no 74/79)', () => {
+  for (const n of ['0745123456', '0791234567']) {
+    const r = recognizePhoneNumber(n)
+    assert.equal(r.ambiguous, true, `${n} should be ambiguous`)
+    const codes = r.candidates.map((c) => c.country.code).sort()
+    assert.deepEqual(codes, ['KE', 'TZ'], `${n} should be KE/TZ`)
   }
 })
 
 test('a calling code resolves the collision exactly (no ambiguity)', () => {
-  assert.equal(recognizePhoneNumber('+254771234567').country.code, 'KE')
-  assert.equal(recognizePhoneNumber('+254771234567').ambiguous, false)
-  assert.equal(recognizePhoneNumber('+260771234567').country.code, 'ZM')
-  assert.equal(recognizePhoneNumber('+260771234567').ambiguous, false)
+  // 075 is valid mobile in all three countries; the calling code disambiguates.
+  assert.equal(recognizePhoneNumber('+254751234567').country.code, 'KE')
+  assert.equal(recognizePhoneNumber('+254751234567').ambiguous, false)
+  assert.equal(recognizePhoneNumber('+260751234567').country.code, 'ZM')
+  assert.equal(recognizePhoneNumber('+260751234567').ambiguous, false)
+  assert.equal(recognizePhoneNumber('+255751234567').country.code, 'TZ')
+  assert.equal(recognizePhoneNumber('+255751234567').ambiguous, false)
 })
 
 // ---------------------------------------------------------------------------
@@ -176,11 +241,11 @@ test('a calling code resolves the collision exactly (no ambiguity)', () => {
 // ---------------------------------------------------------------------------
 
 test('normalizes spaces, dashes, parens, dots', () => {
-  for (const n of ['+254 712 345 678', '0712-345-678', '(0712) 345.678', ' 0712345678 ']) {
+  for (const n of ['+254 110 123 456', '0110-123-456', '(0110) 123.456', ' 0110123456 ']) {
     const r = recognizePhoneNumber(n)
     assert.ok(r, `${n} should be recognized`)
     assert.equal(r.country.code, 'KE')
-    assert.equal(r.nsn, '712345678')
+    assert.equal(r.nsn, '110123456')
   }
 })
 
@@ -204,9 +269,15 @@ test('rejects foreign calling codes we do not serve', () => {
   assert.equal(recognizePhoneNumber('+447911123456'), null)
 })
 
-test('rejects unassigned KE/ZM ranges', () => {
-  assert.equal(recognizePhoneNumber('0109123456'), null) // KE 109 unassigned, no ZM 10
-  assert.equal(recognizePhoneNumber('0123456789'), null) // KE 123 unassigned, no ZM 12
+test('rejects unassigned / non-Vodacom ranges (KE, ZM, TZ)', () => {
+  assert.equal(recognizePhoneNumber('0109123456'), null) // KE 109 unassigned; no ZM/TZ 10
+  assert.equal(recognizePhoneNumber('0123456789'), null) // KE 123 unassigned; no ZM/TZ 12
+  // Tanzania is Vodacom-only: every 06x number is a non-Vodacom network and has
+  // no Kenyan/Zambian counterpart, so it is unrecognized rather than a dead-end.
+  assert.equal(recognizePhoneNumber('0611234567'), null) // TZ Halotel 61 (not Vodacom)
+  assert.equal(recognizePhoneNumber('0651234567'), null) // TZ Yas 65 (not Vodacom)
+  assert.equal(recognizePhoneNumber('0681234567'), null) // TZ Airtel 68 (not Vodacom)
+  assert.equal(recognizePhoneNumber('0601234567'), null) // TZ 60 reserved; no KE/ZM 60
 })
 
 test('rejects wrong-length numbers', () => {
@@ -232,17 +303,23 @@ test('matchOperator / isValidMobile direct', () => {
   assert.equal(matchOperator(KE, '712345678').name, 'Safaricom')
   assert.equal(matchOperator(KE, '770123456').name, 'Telkom')
   assert.equal(matchOperator(ZM, '978123456').name, 'Airtel')
+  assert.equal(matchOperator(TZ, '740034110').name, 'Vodacom')
+  assert.equal(matchOperator(TZ, '730000000'), null) // 73 (TTCL) not paid by ChapSmart
   assert.equal(matchOperator(KE, '999999999'), null)
   assert.equal(isValidMobile(ZM, '961234567'), true)
+  assert.equal(isValidMobile(TZ, '751234567'), true) // Vodacom 75
+  assert.equal(isValidMobile(TZ, '611234567'), false) // Halotel 61 (not Vodacom)
   assert.equal(isValidMobile(ZM, '111234567'), false)
 })
 
 test('formatInternational / formatE164 / buildLightningAddress', () => {
   assert.equal(formatInternational(KE, '712345678'), '+254 712 345 678')
   assert.equal(formatInternational(ZM, '978123456'), '+260 978 123 456')
+  assert.equal(formatInternational(TZ, '740034110'), '+255 740 034 110')
   assert.equal(formatE164(KE, '712345678'), '+254712345678')
   assert.equal(buildLightningAddress(KE, '712345678'), '254712345678@bitcoin.co.ke')
   assert.equal(buildLightningAddress(ZM, '978123456'), '260978123456@bitzed.xyz')
+  assert.equal(buildLightningAddress(TZ, '740034110'), '255740034110@chapsmart.com')
 })
 
 test('formatPhoneHandle: normalizes a known-country handle to international', () => {
@@ -251,6 +328,8 @@ test('formatPhoneHandle: normalizes a known-country handle to international', ()
   assert.equal(formatPhoneHandle('ZM', '260777491011'), '+260 777 491 011')
   assert.equal(formatPhoneHandle('ZM', '777491011'), '+260 777 491 011')
   assert.equal(formatPhoneHandle('KE', '0712345678'), '+254 712 345 678')
+  assert.equal(formatPhoneHandle('TZ', '0740034110'), '+255 740 034 110')
+  assert.equal(formatPhoneHandle('TZ', '255740034110'), '+255 740 034 110')
   // unknown country / non-phone / non-string -> returned unchanged
   assert.equal(formatPhoneHandle('XX', '0777491011'), '0777491011')
   assert.equal(formatPhoneHandle('ZM', 'not-a-number'), 'not-a-number')

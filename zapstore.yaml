@@ -1,13 +1,13 @@
 # Zapstore publish config (zsp schema) - https://zapstore.dev/docs/publish
 # Publish with:  SIGN_WITH=<nsec|bunker> zsp publish zapstore.yaml
-# The app id (mybuho.buhogo) and version (1.8.3) are read from the APK below.
+# The app id (mybuho.buhogo) and version (1.8.4) are read from the APK below.
 
 # Source code repository (shown in the app store)
 repository: https://github.com/Buho-Ecosystem/Buho_go
 
 # Where to fetch the APK. A local path lets us ship the local icon and
 # screenshots below. Bump this filename on each release.
-release_source: ./output/BuhoGO_v1_8_3.apk
+release_source: ./output/BuhoGO_v1_8_4.apk
 
 # ---------------------------------------------------------------------------
 # App metadata
@@ -24,6 +24,7 @@ description: |
   - Pay Lightning invoices, Lightning addresses, LNURL, and Spark addresses
   - Send to a Nostr profile or a NIP-05 name
   - Scan any QR, including LNbits and Bitcoin ATM withdraw codes
+  - Tap-toPay NFC 
   - Receive over Lightning, on-chain, and with Spark address QR codes
   - Discover Bitcoin-friendly places near you on the built-in map
   - Buy eSIMs and VPNs, and browse online and Nostr shops without leaving the app

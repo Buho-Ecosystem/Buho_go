@@ -82,6 +82,21 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       return metadata?.successAction || null
     },
 
+    // Get the LUD-21 verify URL stamped on a transaction, so Tx Details can
+    // re-poll to confirm fiat delivery. null when the send had none.
+    getVerifyUrlForTransaction: (state) => (txId) => {
+      const metadata = state.metadata[txId]
+      return metadata?.verifyUrl || null
+    },
+
+    // Get the cached LUD-21 delivery status for a transaction (receipt +
+    // recipient), stored once a poll confirmed delivery so later views need no
+    // re-poll. null until confirmed.
+    getDeliveryStatusForTransaction: (state) => (txId) => {
+      const metadata = state.metadata[txId]
+      return metadata?.deliveryStatus || null
+    },
+
     // Get all transactions that have a specific tag
     getTransactionsWithTag: (state) => (tag) => {
       return Object.keys(state.metadata).filter(txId => {
@@ -155,38 +170,50 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * triple within the TTL window — a rage-tap that submits twice
      * won't accidentally claim two unrelated outgoing txs.
      */
-    async enqueuePendingContactLink({ contactId, recipientAddress, amountSats, successAction = null }) {
+    async enqueuePendingContactLink({ contactId, recipientAddress, amountSats, successAction = null, verifyUrl = null }) {
       // Queue when there's anything to stamp once the tx surfaces: a recipient
-      // address (for live contact resolution) and/or a LUD-09 successAction
-      // (the recipient's post-payment message we want to keep on the tx).
-      if (!recipientAddress && !successAction) return
+      // address (for live contact resolution), a LUD-09 successAction (the
+      // recipient's post-payment message), and/or a LUD-21 verify URL (so Tx
+      // Details can re-confirm fiat delivery later).
+      if (!recipientAddress && !successAction && !verifyUrl) return
       const now = Date.now()
       const normalisedAddress = recipientAddress
         ? String(recipientAddress).toLowerCase().trim()
         : ''
       const amount = Number(amountSats) || 0
 
-      // Drop an equivalent entry already in the queue (double-submit). We never
-      // collapse a link that carries a successAction (neither an existing one
-      // nor the incoming one): those messages are per-payment — especially a
-      // one-time `aes` secret — and each must reach its own tx.
-      this.pendingContactLinks = this.pendingContactLinks.filter((link) => !(
-        !link.successAction &&
-        !successAction &&
-        link.contactId === contactId &&
-        link.recipientAddress === normalisedAddress &&
-        link.amountSats === amount
-      ))
-      // Also drop stale entries while we're here.
+      // Drop stale entries first.
       this.pendingContactLinks = this.pendingContactLinks.filter(
         (link) => now - (link.sentAt || 0) < PENDING_LINK_TTL_MS,
       )
+
+      // A link carrying a LUD-09 successAction or a LUD-21 verify URL is
+      // PER-PAYMENT (each send has its own message / receipt), so it must never
+      // be merged or collapsed — each has to reach its own tx.
+      const isPerPayment = !!successAction || !!verifyUrl
+      if (!isPerPayment) {
+        // A plain link (recipient address, maybe a contactId) is either a
+        // double-submit or a post-save "add the contactId" upgrade. Merge it
+        // into an existing link for the same recipient + amount rather than
+        // appending a duplicate: this upgrades the original link (keeping any
+        // successAction / verifyUrl it already carries) with the contactId
+        // instead of stranding it, and still collapses genuine double-submits.
+        const existing = this.pendingContactLinks.find(
+          (link) => link.recipientAddress === normalisedAddress && link.amountSats === amount,
+        )
+        if (existing) {
+          if (contactId && !existing.contactId) existing.contactId = contactId
+          await this.persistPendingLinks()
+          return
+        }
+      }
 
       this.pendingContactLinks.push({
         contactId: contactId || null,
         recipientAddress: normalisedAddress,
         amountSats: amount,
         successAction: successAction || null,
+        verifyUrl: verifyUrl || null,
         sentAt: now,
       })
       // Bound the queue: with a long TTL, links for sends that never
@@ -287,6 +314,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
           if (link.successAction) {
             await this.setSuccessActionForTransaction(pick.tx.id, link.successAction)
+          }
+          if (link.verifyUrl) {
+            await this.setVerifyUrlForTransaction(pick.tx.id, link.verifyUrl)
           }
           claimed.add(pick.tx.id)
           remaining = remaining.filter((l) => l !== link)
@@ -484,6 +514,44 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         return this.metadata[txId]
       } catch (error) {
         console.error('Error setting successAction for transaction:', error)
+        throw error
+      }
+    },
+
+    // Persist the LUD-21 verify URL on a transaction so Tx Details can re-poll
+    // for fiat delivery. Same on-device trust model as notes/successAction.
+    async setVerifyUrlForTransaction(txId, verifyUrl) {
+      try {
+        if (!txId) throw new Error('Transaction ID is required')
+        if (!verifyUrl) return this.metadata[txId] || null
+        if (!this.metadata[txId]) {
+          this.metadata[txId] = { contactId: null, customNote: '', tags: [], updatedAt: Date.now() }
+        }
+        this.metadata[txId].verifyUrl = verifyUrl
+        this.metadata[txId].updatedAt = Date.now()
+        await this.persistMetadata()
+        return this.metadata[txId]
+      } catch (error) {
+        console.error('Error setting verifyUrl for transaction:', error)
+        throw error
+      }
+    },
+
+    // Cache a confirmed LUD-21 delivery status (receipt + recipient) so later
+    // Tx Details views render instantly and offline without re-polling.
+    async setDeliveryStatusForTransaction(txId, deliveryStatus) {
+      try {
+        if (!txId) throw new Error('Transaction ID is required')
+        if (!deliveryStatus) return this.metadata[txId] || null
+        if (!this.metadata[txId]) {
+          this.metadata[txId] = { contactId: null, customNote: '', tags: [], updatedAt: Date.now() }
+        }
+        this.metadata[txId].deliveryStatus = deliveryStatus
+        this.metadata[txId].updatedAt = Date.now()
+        await this.persistMetadata()
+        return this.metadata[txId]
+      } catch (error) {
+        console.error('Error setting deliveryStatus for transaction:', error)
         throw error
       }
     },
