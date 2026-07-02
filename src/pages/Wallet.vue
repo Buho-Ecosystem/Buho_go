@@ -656,6 +656,8 @@
       :recipient="sendSuccessRecipient"
       :label="sendSuccessLabel"
       :show-save-contact="sendSuccessShowSaveContact"
+      :success-action="sendSuccessAction"
+      :delivery-status="sendDeliveryStatus"
       :auto-close-delay="5"
       @closed="onSendSuccessClosed"
       @save-contact-clicked="onSendSaveContactClicked"
@@ -754,6 +756,9 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
+import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
+import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
+import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
@@ -874,6 +879,11 @@ export default {
       // built by the corresponding `*SheetProps` computed below.
       showSendSheet: false,
       showWithdrawSheet: false,
+      // Set when a withdraw is initiated from the Receive modal's "Redeem"
+      // button, which closes the modal before the scan happens. Carried into
+      // the redeem sheet by onPaymentDetected (then cleared), so the amount
+      // the user already entered survives the modal handoff.
+      pendingWithdrawTargetSats: null,
       // Bitcoin on-chain runs through L1BitcoinWithdraw, which owns its
       // own bottom-sheet and bundles fee-priority selection + the
       // dust/balance checks the LN paths don't need.
@@ -890,6 +900,10 @@ export default {
       // (validatePaymentAmount, sendAmountSats) keep their fiat branch
       // available in case future callers feed in fiat values directly.
       sendDenomination: 'sats',
+      // LUD-21 currency extension: when the sender denominated in the
+      // recipient's local currency, the { code, amount } to request via Option A
+      // (recipient gets the exact local amount). null for ordinary sats sends.
+      sendPayout: null,
       refreshInterval: null,
       showLoadingScreen: true,
       currentDisplayMode: null, // set from store in created()
@@ -965,6 +979,11 @@ export default {
       sendSuccessRecipient: '',
       sendSuccessLabel: '',
       sendSuccessShowSaveContact: false,
+      // LUD-09 message from the recipient, shown on the send-success screen.
+      sendSuccessAction: null,
+      // LUD-21 delivery/verify status shown on the send-success screen — the
+      // live result of polling the provider's verify URL (e.g. M-Pesa delivery).
+      sendDeliveryStatus: null,
       // LUD-04 (LNURL-auth) — the dialog re-renders the same parsed
       // challenge across steps, so we hold it here rather than passing
       // through emit chains.
@@ -1194,7 +1213,14 @@ export default {
       if (!this.pendingPayment) return false;
       if (this.needsAmountInput) {
         const sats = this.sendAmountSats;
-        return sats > 0 && this.validatePaymentAmount(this.paymentAmount) === true;
+        if (sats <= 0) return false;
+        // Local-currency (LUD-21 #207) send: the sheet already validated the
+        // amount against the provider's own local min/max. `sats` here is a
+        // fee-less estimate, so re-checking it against the sat bounds would
+        // wrongly reject valid amounts (e.g. the provider's advertised minimum,
+        // whose estimate can floor just below minSats). Trust the sheet.
+        if (this.sendPayout) return true;
+        return this.validatePaymentAmount(this.paymentAmount) === true;
       }
       return true;
     },
@@ -1266,15 +1292,14 @@ export default {
         // wins, mirroring the Branta guard below.
         const lnService = matchLnAddressService(p.lightningAddress);
         if (lnService && !recipient.matchedContact) {
-          // Prefer the partner logo (Bitzed for Zambia) over the plain
-          // country flag; fall back to the flag where no logo exists (Kenya).
+          // Prefer the partner logo (Tando / Bitzed / ChapSmart) over the plain
+          // country flag; fall back to the flag if a provider has no logo.
           recipient.logoUrl = lnService.logo || lnService.flag;
           // Show the number in readable international form (+260 777 491 011)
           // rather than the raw handle (0777491011 / 260777491011).
           recipient.name = formatPhoneHandle(lnService.code, lnService.handle);
           recipient.lnService = {
             hint: this.$t(lnService.hint),
-            currency: lnService.currency,         // local payout currency (KES/ZMW)
           };
         }
 
@@ -1394,6 +1419,24 @@ export default {
         amount = { mode: 'free' };
       }
 
+      // ── Payout currency (LUD-21 currency extension #207) ──────
+      // When the provider advertises a local payout currency, hand it to the
+      // sheet so the sender can denominate in the recipient's currency (TZS/
+      // KES/ZMW). `multiplier` is millisats per 1 unit — the sheet derives the
+      // sat estimate from it, so we need no external rate for TZS.
+      let payoutCurrency = null;
+      const cur = p.currency;
+      if (cur && cur.code && Number(cur.multiplier) > 0) {
+        payoutCurrency = {
+          code: cur.code,
+          symbol: cur.symbol || cur.code,
+          decimals: Number.isInteger(cur.decimals) ? cur.decimals : 0,
+          minSendable: Number(cur.minSendable) || 0,
+          maxSendable: Number(cur.maxSendable) || 0,
+          multiplier: Number(cur.multiplier)
+        };
+      }
+
       // ── Fee estimate ──────────────────────────────────────────
       // Only Spark wallets expose pre-call fee data. NWC/LNbits omit the
       // object entirely so the sheet renders nothing — better than
@@ -1432,7 +1475,8 @@ export default {
           : null,
         zarAmount: p.zarAmount || null,
         ratesStale: !!(p.merchant && this.ratesStale),
-        feeEstimate
+        feeEstimate,
+        payoutCurrency
       };
     },
 
@@ -1479,7 +1523,17 @@ export default {
       if (p.isFixedAmount) {
         amount = { mode: 'fixed', fixedSats: p.fixedAmountSats };
       } else if (p.minSats && p.maxSats && p.minSats !== p.maxSats) {
-        amount = { mode: 'range', minSats: p.minSats, maxSats: p.maxSats };
+        const defaultAmount = (p.receiveAmount
+          && p.receiveAmount >= p.minSats
+          && p.receiveAmount <= p.maxSats)
+          ? p.receiveAmount
+          : null;
+        amount = {
+          mode: 'range',
+          minSats: p.minSats,
+          maxSats: p.maxSats,
+          ...(defaultAmount ? { defaultAmount } : {})
+        };
       } else {
         // Defensive — every spec-compliant withdraw QR carries a range
         // or a fixed amount, but if metadata is missing fall back to a
@@ -1670,6 +1724,17 @@ export default {
         this.updateSecondaryValue();
       },
       immediate: true
+    },
+
+    /**
+     * The Receive modal's "Redeem" button stashes the user's intended amount
+     * in `pendingWithdrawTargetSats` and opens this scanner so the redeem
+     * sheet can pre-fill it once the withdraw QR is scanned. If the scanner
+     * is dismissed without a scan, drop the stash so it can't pre-fill a
+     * later, unrelated withdraw.
+     */
+    showSendModal(open) {
+      if (!open) this.pendingWithdrawTargetSats = null;
     },
 
     /**
@@ -2065,6 +2130,19 @@ export default {
         this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
       }
 
+      // Persist the recipient's LUD-09 message onto the outgoing tx (rides the
+      // same deferred queue the main send flow uses). Gated on successAction so
+      // we don't alter contact-linking behaviour for ordinary contact pays.
+      const successActionAddress = contact?.address || contact?.lightningAddress || '';
+      if (payload?.successAction) {
+        this.transactionMetadataStore.enqueuePendingContactLink({
+          contactId: contact?.id || null,
+          recipientAddress: successActionAddress,
+          amountSats: amount,
+          successAction: payload.successAction,
+        }).catch((err) => console.warn('[wallet] could not queue successAction link:', err));
+      }
+
       // PaymentModal already resolved completed-or-throw before
       // emitting `payment-sent`, so we can assume COMPLETED here. If a
       // future PaymentModal change introduces pending semantics, the
@@ -2074,6 +2152,9 @@ export default {
         recipient,
         status: 'completed',
         showSaveContact: false,
+        // Forward any LUD-09 message PaymentModal surfaced from the pay-link
+        // callback (contact pay flow).
+        successAction: payload?.successAction || null,
       });
     },
 
@@ -3380,6 +3461,11 @@ export default {
     },
 
     handleScanWithdraw() {
+      // Carry whatever amount the user already set — a created invoice or the
+      // value typed on the keypad — into the redeem scan, mirroring the
+      // NFC-tap path. The modal closes here, so stash it for onPaymentDetected
+      // to read after the withdraw QR is scanned.
+      this.pendingWithdrawTargetSats = this.$refs.receiveModal?.intendedReceiveSats || null;
       this.showReceiveModal = false;
       this.$nextTick(() => {
         this.showSendModal = true;
@@ -4008,6 +4094,13 @@ export default {
       let resolved = true;   // assume we'll reach a confirm sheet / handoff
       if (fromField) { this.sendResolving = true; this.sendResolveError = ''; }
 
+      // Consume any amount stashed by the Receive modal's "Redeem" button
+      // (which closes the modal before this scan, so it can't be read live
+      // below). Cleared unconditionally so a stale value can never leak into
+      // an unrelated withdraw.
+      const deferredWithdrawTargetSats = this.pendingWithdrawTargetSats;
+      this.pendingWithdrawTargetSats = null;
+
       try {
         // Transform the payment data to match expected structure
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
@@ -4048,13 +4141,29 @@ export default {
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
             this.resetWithdrawState();
+
+            // Pre-fill the redeem sheet with the amount the user intended to
+            // receive, instead of opening at 0. Two sources feed this:
+            //   - live: the Receive modal is still open (NFC tap or paste while
+            //     viewing it) — read its current intended amount directly.
+            //   - deferred: the user tapped "Redeem", which closed the modal
+            //     before this scan — handleScanWithdraw stashed the amount.
+            // Either way, close the modal so the redeem sheet never stacks on
+            // top of it.
+            let receiveAmount = deferredWithdrawTargetSats;
+            if (this.showReceiveModal) {
+              receiveAmount = this.$refs.receiveModal?.intendedReceiveSats || null;
+              this.showReceiveModal = false;
+            }
+
             this.pendingPayment = {
               ...paymentData,
               type: 'lnurl_withdraw',
               lnurl: paymentData.data,
               ...lnurlInfo,
               amount: lnurlInfo.fixedAmountSats || 0,
-              description: lnurlInfo.defaultDescription
+              description: lnurlInfo.defaultDescription,
+              receiveAmount
             };
           } else {
             // LNURL-pay: existing flow
@@ -4413,14 +4522,22 @@ export default {
         // Route payment based on wallet type
         const walletType = this.walletStore.activeWalletType;
         if (walletType === 'spark') {
-          result = await this.sendSparkPayment(amount, comment);
+          result = await this.sendSparkPayment(amount, comment, this.sendPayout);
         } else if (walletType === 'lnbits') {
-          result = await this.sendLNBitsPayment(amount, comment);
+          result = await this.sendLNBitsPayment(amount, comment, this.sendPayout);
         } else {
           result = await this.sendNWCPayment(amount, comment);
         }
 
         console.log('Payment sent:', result);
+
+        // LUD-09: the recipient may have returned a successAction alongside the
+        // invoice (a post-payment message, link, or AES-encrypted secret).
+        // Resolve it now — decrypting the `aes` variant with this payment's
+        // preimage — into a display-ready, storage-friendly object. This never
+        // throws: a decrypt failure degrades to a flagged state and never
+        // blocks the success screen.
+        const successAction = await resolveSuccessAction(result?.successAction, result?.preimage);
 
         // Address-book context: do we know this recipient, and is the
         // recipient saveable at all? Computed up-front because both the
@@ -4433,6 +4550,20 @@ export default {
         const shouldOfferSave = !!(recipientAddress && !existingContact);
         const recipientLabel = this.getRecipientDisplayLabel(existingContact);
 
+        // Terminal status of the send (Spark may still be routing → 'pending').
+        const status = (result && typeof result === 'object' && result.status) || 'completed';
+        const isCompletedSend = status !== 'pending';
+
+        // LUD-21 fiat delivery: only meaningful for a recognized fiat-payout
+        // provider (ChapSmart/Tando/Bitzed) — an ordinary LNURL/LUD-21 endpoint
+        // returns a `verify` URL too, but has no fiat leg to confirm, so we must
+        // NOT drive the "delivery" UI for it. Also skip pending sends (nothing
+        // has settled to deliver yet). `result.verify` is already same-domain
+        // validated at the fetch boundary. The actual poll is owned by
+        // openSendSuccess so its lifecycle (start/abort) lives in one place.
+        const isPayoutProvider = !!recipientAddress && !!matchLnAddressService(recipientAddress);
+        const verifyUrl = (isCompletedSend && isPayoutProvider) ? (result?.verify || null) : null;
+
         // Queue a pending link by recipient address + amount + send
         // time. The next tx-list refresh drains the queue and stamps
         // the newly observed outgoing tx — wallet-agnostic, so it
@@ -4444,12 +4575,18 @@ export default {
         // and carry contactId only when we already have it. The address
         // is stamped durably on the tx so a contact added later still
         // resolves live against this payment.
-        if (recipientAddress) {
+        if (recipientAddress || successAction || verifyUrl) {
           try {
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: existingContact?.id || null,
               recipientAddress,
               amountSats: amount,
+              // Ride the same deferred queue to durably stamp the recipient's
+              // LUD-09 message onto the outgoing tx once it surfaces in history.
+              successAction,
+              // Persist the LUD-21 verify URL too, so Transaction Details can
+              // re-confirm delivery (receipt + recipient) when viewed later.
+              verifyUrl,
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link:', err);
@@ -4489,18 +4626,20 @@ export default {
         // used to flash the generic "Recipient" fallback. The Spark provider's
         // polling already resolved to a terminal status by now; a 60s timeout
         // without settling lands on PENDING with softer "still routing" copy.
-        const status = (result && typeof result === 'object' && result.status) || 'completed';
         this.openSendSuccess({
           amount,
           recipient: recipientLabel,
           status,
           showSaveContact: shouldOfferSave,
+          successAction,
+          verifyUrl,
         });
 
         this.showSendSheet = false;
         this.pendingPayment = null;
         this.paymentAmount = '';
         this.paymentComment = '';
+        this.sendPayout = null;
         this.estimatedFee = null;
         this.isEstimatingFee = false;
         this.sendDidSucceed = false;
@@ -4548,10 +4687,13 @@ export default {
      * fields that `confirmPayment` reads. On failure we reset the slide
      * thumb so the user can try again without dismissing the sheet.
      */
-    async onSendSheetConfirm({ amountSats, comment }) {
+    async onSendSheetConfirm({ amountSats, comment, payout = null }) {
       this.paymentAmount = String(amountSats);
       this.paymentComment = comment || '';
       this.sendDenomination = 'sats';
+      // Carry the LUD-21 local-currency request (if the sender denominated in
+      // the recipient's currency) so the invoice fetch uses Option A.
+      this.sendPayout = payout || null;
 
       await this.confirmPayment();
 
@@ -4571,6 +4713,7 @@ export default {
       this.pendingPayment = null;
       this.paymentAmount = '';
       this.paymentComment = '';
+      this.sendPayout = null;
       this.estimatedFee = null;
       this.isEstimatingFee = false;
     },
@@ -4604,7 +4747,7 @@ export default {
       this.paymentAmount = '';
     },
 
-    async sendSparkPayment(amount, comment) {
+    async sendSparkPayment(amount, comment, payout = null) {
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected();
 
@@ -4628,19 +4771,20 @@ export default {
 
       // Lightning address
       if (this.pendingPayment.lightningAddress) {
-        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '');
+        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '', payout);
       }
 
       // LNURL - decode and fetch invoice, then pay
       // Note: LNURL invoices already have amount encoded, so don't pass amountSats
       if (this.pendingPayment.lnurl) {
-        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
-        return await provider.payInvoice({
-          invoice,
+        const { pr, successAction, verify } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const result = await provider.payInvoice({
+          invoice: pr,
           preferSpark: true,
           maxFee: this.estimatedFee || undefined // Pass UI-displayed fee estimate
           // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
+        return { ...result, successAction, verify };
       }
 
       throw new Error('Unsupported payment type for Spark wallet');
@@ -4656,7 +4800,7 @@ export default {
       return await lightningService.sendPayment(this.pendingPayment, amount, comment);
     },
 
-    async sendLNBitsPayment(amount, comment) {
+    async sendLNBitsPayment(amount, comment, payout = null) {
       // Route through ensureLNBitsConnected so a stale `isConnected` flag
       // (e.g. cleared by a prior 401) self-heals before the send rather than
       // failing with "wallet is not connected" until app restart.
@@ -4671,18 +4815,21 @@ export default {
 
       // Lightning address - fetch invoice first then pay
       if (this.pendingPayment.lightningAddress) {
-        const invoice = await this.fetchLightningAddressInvoice(
+        const { pr, successAction, verify } = await this.fetchLightningAddressInvoice(
           this.pendingPayment.lightningAddress,
           amount,
-          comment
+          comment,
+          payout
         );
-        return await provider.payInvoice({ invoice });
+        const result = await provider.payInvoice({ invoice: pr });
+        return { ...result, successAction, verify };
       }
 
       // LNURL - fetch invoice then pay
       if (this.pendingPayment.lnurl) {
-        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
-        return await provider.payInvoice({ invoice });
+        const { pr, successAction, verify } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const result = await provider.payInvoice({ invoice: pr });
+        return { ...result, successAction, verify };
       }
 
       throw new Error('Unsupported payment type for LNbits wallet');
@@ -4758,14 +4905,41 @@ export default {
      * COMPLETED — promoting a contact off a payment that may yet
      * fail would be misleading.
      */
-    async openSendSuccess({ amount, recipient, status, showSaveContact }) {
+    async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null }) {
       const isCompleted = status !== 'pending';
+
+      // LUD-21 fiat-delivery poll. Owned here (one place) so every success
+      // screen — main send AND contact-pay — starts fresh: the token bump +
+      // abort below invalidate any poll still running from a previous send,
+      // which is what prevents a prior payment's "Delivered · …" status leaking
+      // onto this screen. Seeded only for a completed send with a validated,
+      // payout-provider verify URL; otherwise cleared.
+      this._stopDeliveryPoll();
+      if (isCompleted && verifyUrl) {
+        const token = this._deliveryToken;
+        const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        this._deliveryAbort = controller;
+        this.sendDeliveryStatus = { settled: false, delivered: false, done: false };
+        pollVerify(verifyUrl, (s) => {
+          if (this._deliveryToken === token) this.sendDeliveryStatus = { ...s, done: false };
+        }, { signal: controller?.signal }).then((final) => {
+          // `done` marks the poll terminal, so the UI can distinguish "still
+          // confirming" from "settled but not yet delivered" (M-Pesa lag).
+          if (this._deliveryToken === token) {
+            this.sendDeliveryStatus = { ...(final || { settled: false, delivered: false }), done: true };
+          }
+        });
+      }
+
       this.sendSuccessAmount = Number(amount) || 0;
       this.sendSuccessRecipient = recipient || '';
       this.sendSuccessLabel = isCompleted
         ? this.$t('Payment Sent')
         : this.$t('Still sending…');
       this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted;
+      // LUD-09 message from the recipient. Only surfaced once the payment has
+      // completed — a still-pending send has no settled message to trust yet.
+      this.sendSuccessAction = isCompleted ? (successAction || null) : null;
       this.sendSuccessFiat = '';
 
       // Show the success surface immediately — fiat is decorative and must
@@ -4800,11 +4974,15 @@ export default {
      */
     onSendSuccessClosed() {
       this.showSendSuccess = false;
+      // Stop any in-flight delivery poll (abort the request + ignore late
+      // results) and clear the status so the next send starts clean.
+      this._stopDeliveryPoll();
       this.sendSuccessAmount = 0;
       this.sendSuccessFiat = '';
       this.sendSuccessRecipient = '';
       this.sendSuccessLabel = '';
       this.sendSuccessShowSaveContact = false;
+      this.sendSuccessAction = null;
       // Reset any save payload that was pre-staged for the modal's
       // Save button. Users who wanted to save would have tapped it
       // already (see onSendSaveContactClicked).
@@ -4827,9 +5005,27 @@ export default {
     onSendSaveContactClicked() {
       this.showSendSuccess = false;
       this.sendSuccessShowSaveContact = false;
+      // This path closes the success screen without firing onSendSuccessClosed,
+      // so stop the delivery poll here too — otherwise it keeps running and its
+      // status would leak onto the NEXT success screen (e.g. a later contact-pay).
+      this._stopDeliveryPoll();
       // Reuse the existing save-contact dialog — same form, same
       // validation, same save handler.
       this.showSaveContactDialog = true;
+    },
+
+    /**
+     * Stop any in-flight LUD-21 delivery poll: bump the token so late results
+     * are ignored, abort the outstanding request, and clear the status. Safe to
+     * call repeatedly. openSendSuccess calls this before (re)seeding a poll.
+     */
+    _stopDeliveryPoll() {
+      this._deliveryToken = (this._deliveryToken || 0) + 1;
+      if (this._deliveryAbort) {
+        try { this._deliveryAbort.abort(); } catch { /* ignore */ }
+        this._deliveryAbort = null;
+      }
+      this.sendDeliveryStatus = null;
     },
 
     // Save recipient as contact
@@ -4906,7 +5102,7 @@ export default {
     },
 
     // Helper: Fetch invoice from LNURL
-    async fetchLNURLInvoice(lnurl, amountSats) {
+    async fetchLNURLInvoice(lnurl, amountSats, payout = null) {
       const url = this.decodeLNURL(lnurl);
 
       // Fetch LNURL endpoint
@@ -4916,23 +5112,32 @@ export default {
       const data = await response.json();
       if (data.status === 'ERROR') throw new Error(data.reason || 'LNURL error');
 
-      // Validate amount bounds
-      const minSats = Math.ceil((data.minSendable || 1000) / 1000);
-      const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
-      if (amountSats < minSats || amountSats > maxSats) {
-        throw new Error(`Amount must be between ${formatAmount(minSats, this.walletStore.useBip177Format)} and ${formatAmount(maxSats, this.walletStore.useBip177Format)}`);
+      // Standard sat sends are bounds-checked here; a currency (Option-A) send
+      // is bounded by the provider in its own units (validated in the sheet).
+      if (!(payout && payout.code && payout.amount > 0)) {
+        const minSats = Math.ceil((data.minSendable || 1000) / 1000);
+        const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
+        if (amountSats < minSats || amountSats > maxSats) {
+          throw new Error(`Amount must be between ${formatAmount(minSats, this.walletStore.useBip177Format)} and ${formatAmount(maxSats, this.walletStore.useBip177Format)}`);
+        }
       }
+      const callbackUrl = buildLnurlPayCallbackUrl({ callback: data.callback, amountSats, payout });
 
-      // Request invoice
-      const amountMs = amountSats * 1000;
-      const callbackUrl = `${data.callback}?amount=${amountMs}`;
       const invoiceResponse = await fetch(callbackUrl);
       if (!invoiceResponse.ok) throw new Error('Failed to get invoice');
 
       const invoiceData = await invoiceResponse.json();
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
 
-      return invoiceData.pr;
+      // Return the invoice together with any LUD-09 successAction (recipient's
+      // post-payment message) and LUD-21 `verify` URL the callback included.
+      // `verify` is validated same-domain against the callback (never a third
+      // party), mirroring the LUD-09 url guard. Callers thread them onward.
+      return {
+        pr: invoiceData.pr,
+        successAction: parseSuccessAction(invoiceData.successAction, data.callback),
+        verify: validateVerifyUrl(invoiceData.verify, data.callback),
+      };
     },
 
     /**
@@ -4988,7 +5193,11 @@ export default {
           isFixedAmount,
           fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
           commentAllowed: data.commentAllowed || 0,
-          description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null
+          description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null,
+          // LUD-21 currency extension (#207): the recipient's local payout
+          // currency (e.g. TZS for ChapSmart), so the sender can denominate in
+          // it. Absent on ordinary Lightning addresses. Kept verbatim.
+          currency: data.currency || null
         };
       } catch (error) {
         console.warn('Failed to fetch Lightning address info:', error.message);
@@ -5129,7 +5338,7 @@ export default {
      * @param {string} [comment] - Optional comment
      * @returns {Promise<string>} Lightning invoice (bolt11)
      */
-    async fetchLightningAddressInvoice(address, amountSats, comment) {
+    async fetchLightningAddressInvoice(address, amountSats, comment, payout = null) {
       const [username, domain] = address.split('@');
       if (!username || !domain) {
         throw new Error('Invalid Lightning address');
@@ -5148,20 +5357,22 @@ export default {
         throw new Error(data.reason || 'Lightning address error');
       }
 
-      // Validate amount bounds
-      const minSats = Math.ceil((data.minSendable || 1000) / 1000);
-      const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
-      if (amountSats < minSats || amountSats > maxSats) {
-        throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
+      // Standard sat sends are bounds-checked here; a currency (Option-A) send
+      // is bounded by the provider in its own units (validated in the sheet).
+      if (!(payout && payout.code && payout.amount > 0)) {
+        const minSats = Math.ceil((data.minSendable || 1000) / 1000);
+        const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
+        if (amountSats < minSats || amountSats > maxSats) {
+          throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
+        }
       }
-
-      // Build callback URL with amount (and comment if allowed)
-      const amountMsats = amountSats * 1000;
-      let callbackUrl = `${data.callback}${data.callback.includes('?') ? '&' : '?'}amount=${amountMsats}`;
-
-      if (comment && data.commentAllowed && comment.length <= data.commentAllowed) {
-        callbackUrl += `&comment=${encodeURIComponent(comment)}`;
-      }
+      const callbackUrl = buildLnurlPayCallbackUrl({
+        callback: data.callback,
+        amountSats,
+        payout,
+        comment,
+        commentAllowed: data.commentAllowed,
+      });
 
       // Request the invoice
       const invoiceResponse = await fetch(callbackUrl);
@@ -5174,7 +5385,14 @@ export default {
         throw new Error(invoiceData.reason || 'Invoice generation failed');
       }
 
-      return invoiceData.pr;
+      // Return the invoice together with any LUD-09 successAction (recipient's
+      // post-payment message) and LUD-21 `verify` URL, validated same-domain
+      // against the callback (never a third party). null when absent.
+      return {
+        pr: invoiceData.pr,
+        successAction: parseSuccessAction(invoiceData.successAction, data.callback),
+        verify: validateVerifyUrl(invoiceData.verify, data.callback),
+      };
     },
 
     /**

@@ -282,6 +282,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         throw new Error(invoiceData.reason || 'Invoice request failed')
       }
 
+      // LUD-09 note: any `successAction` on this response is intentionally
+      // ignored here. Auto-withdraw is a background sweep to the user's OWN
+      // configured payout address — there is no payer present to read a
+      // post-payment message and nothing meaningful to persist it against. The
+      // interactive paths (Wallet.vue / PaymentModal) are where successAction
+      // is captured, shown, and stored.
       const invoice = invoiceData.pr
       if (!invoice) throw new Error('No invoice returned')
 

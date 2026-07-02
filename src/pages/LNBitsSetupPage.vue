@@ -710,8 +710,10 @@ export default {
         // The dialog sanitises this further before using it.
         defaultUsername: wallet.name || '',
         // The dialog invokes this when the user clicks "Create address".
-        // Bound here so the provider instance stays in closure.
-        createAddress: (username) => provider.createLightningAddress({ username }),
+        // Bound here so the provider instance stays in closure. `options`
+        // carries an optional LUD-09 successText (success_text) for the link.
+        createAddress: (username, options = {}) =>
+          provider.createLightningAddress({ username, successText: options.successText }),
       };
       return true;
     },
