@@ -1,0 +1,118 @@
+PODS:
+  - Capacitor (8.3.1):
+    - CapacitorCordova
+  - CapacitorApp (8.1.0):
+    - Capacitor
+  - CapacitorCordova (8.3.1)
+  - CapacitorMlkitBarcodeScanning (8.0.1):
+    - Capacitor
+    - GoogleMLKit/BarcodeScanning (~> 8.0.0)
+  - CapacitorShare (8.0.1):
+    - Capacitor
+  - CapgoCapacitorNativeBiometric (7.1.13):
+    - Capacitor
+  - GoogleDataTransport (10.1.0):
+    - nanopb (~> 3.30910.0)
+    - PromisesObjC (~> 2.4)
+  - GoogleMLKit/BarcodeScanning (8.0.0):
+    - GoogleMLKit/MLKitCore
+    - MLKitBarcodeScanning (~> 7.0.0)
+  - GoogleMLKit/MLKitCore (8.0.0):
+    - MLKitCommon (~> 13.0.0)
+  - GoogleToolboxForMac/Defines (4.2.1)
+  - GoogleToolboxForMac/Logger (4.2.1):
+    - GoogleToolboxForMac/Defines (= 4.2.1)
+  - "GoogleToolboxForMac/NSData+zlib (4.2.1)":
+    - GoogleToolboxForMac/Defines (= 4.2.1)
+  - GoogleUtilities/Environment (8.1.1):
+    - GoogleUtilities/Privacy
+  - GoogleUtilities/Logger (8.1.1):
+    - GoogleUtilities/Environment
+    - GoogleUtilities/Privacy
+  - GoogleUtilities/Privacy (8.1.1)
+  - GoogleUtilities/UserDefaults (8.1.1):
+    - GoogleUtilities/Logger
+    - GoogleUtilities/Privacy
+  - GTMSessionFetcher/Core (3.5.0)
+  - MLImage (1.0.0-beta7)
+  - MLKitBarcodeScanning (7.0.0):
+    - MLKitCommon (~> 13.0)
+    - MLKitVision (~> 9.0)
+  - MLKitCommon (13.0.0):
+    - GoogleDataTransport (~> 10.0)
+    - GoogleToolboxForMac/Logger (< 5.0, >= 4.2.1)
+    - "GoogleToolboxForMac/NSData+zlib (< 5.0, >= 4.2.1)"
+    - GoogleUtilities/Logger (~> 8.0)
+    - GoogleUtilities/UserDefaults (~> 8.0)
+    - GTMSessionFetcher/Core (< 4.0, >= 3.3.2)
+  - MLKitVision (9.0.0):
+    - GoogleToolboxForMac/Logger (< 5.0, >= 4.2.1)
+    - "GoogleToolboxForMac/NSData+zlib (< 5.0, >= 4.2.1)"
+    - GTMSessionFetcher/Core (< 4.0, >= 3.3.2)
+    - MLImage (= 1.0.0-beta7)
+    - MLKitCommon (~> 13.0)
+  - nanopb (3.30910.0):
+    - nanopb/decode (= 3.30910.0)
+    - nanopb/encode (= 3.30910.0)
+  - nanopb/decode (3.30910.0)
+  - nanopb/encode (3.30910.0)
+  - PromisesObjC (2.4.1)
+
+DEPENDENCIES:
+  - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorMlkitBarcodeScanning (from `../../node_modules/@capacitor-mlkit/barcode-scanning`)"
+  - "CapacitorShare (from `../../node_modules/@capacitor/share`)"
+  - "CapgoCapacitorNativeBiometric (from `../../node_modules/@capgo/capacitor-native-biometric`)"
+
+SPEC REPOS:
+  trunk:
+    - GoogleDataTransport
+    - GoogleMLKit
+    - GoogleToolboxForMac
+    - GoogleUtilities
+    - GTMSessionFetcher
+    - MLImage
+    - MLKitBarcodeScanning
+    - MLKitCommon
+    - MLKitVision
+    - nanopb
+    - PromisesObjC
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../node_modules/@capacitor/app"
+  CapacitorCordova:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorMlkitBarcodeScanning:
+    :path: "../../node_modules/@capacitor-mlkit/barcode-scanning"
+  CapacitorShare:
+    :path: "../../node_modules/@capacitor/share"
+  CapgoCapacitorNativeBiometric:
+    :path: "../../node_modules/@capgo/capacitor-native-biometric"
+
+SPEC CHECKSUMS:
+  Capacitor: 46dbaa89c1d1cd121b9fc2dc839c1f39cc49e326
+  CapacitorApp: 449ffe26375e96f8aaaee625ac6e01e5c57c8650
+  CapacitorCordova: 9010447fe25e869705fcf525e5f490facde87608
+  CapacitorMlkitBarcodeScanning: d97b2398adb4a8686fce9b1c0c6f09623f1baae8
+  CapacitorShare: 0c58305114538568059bfc07111f22dcb9cb2a82
+  CapgoCapacitorNativeBiometric: c9a116d9516b3f52dd335aea6a0c5073be36fe5a
+  GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
+  GoogleMLKit: ddd51d7dff36ff28defa69afedd9cdce684fd857
+  GoogleToolboxForMac: d1a2cbf009c453f4d6ded37c105e2f67a32206d8
+  GoogleUtilities: 4f2618a4a1e762a1ee134a1e2323bba9843e06da
+  GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
+  MLImage: 2ab9c968e75f57911c16f4c9d9e8a8e9604a86a1
+  MLKitBarcodeScanning: 72c6437f13a900833b400136be53a8a5d86f42fa
+  MLKitCommon: 26b779f072a182c1603d4c88a101c350cac837b1
+  MLKitVision: fa8dea9012ac59497c79ddbe9ebf32051047ac4c
+  nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
+  PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
+
+PODFILE CHECKSUM: 06e69301cf2adda4214fa77a89a06fd08c84fdce
+
+COCOAPODS: 1.16.2
