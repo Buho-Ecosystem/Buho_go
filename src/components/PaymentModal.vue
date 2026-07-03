@@ -81,13 +81,18 @@ export default {
     isArkadeContact() { return this.contactAddressType === 'arkade' },
 
     /**
-     * Capability check — Spark and Bitcoin contacts can only be paid from a
-     * Spark wallet; an Arkade (ark1) contact can only be paid from an Arkade
-     * wallet; Lightning contacts work from any wallet type.
+     * Capability check — Spark contacts can only be paid from a Spark wallet;
+     * Bitcoin contacts from Spark (L1 withdraw) or Arkade (Ramps offboard);
+     * an Arkade (ark1) contact only from an Arkade wallet; Lightning contacts
+     * work from any wallet type. Mirrors SendModal's canPayContact.
      */
     canPayContact() {
-      if (this.isSparkContact || this.isBitcoinContact) {
+      if (this.isSparkContact) {
         return useWalletStore().isActiveWalletSpark
+      }
+      if (this.isBitcoinContact) {
+        const store = useWalletStore()
+        return store.isActiveWalletSpark || store.isActiveWalletArkade
       }
       if (this.isArkadeContact) {
         return useWalletStore().activeWalletType === 'arkade'
@@ -99,7 +104,7 @@ export default {
       if (this.canPayContact) return ''
       if (this.isArkadeContact) return this.$t('Switch to Arkade wallet to pay this contact')
       return this.isBitcoinContact
-        ? this.$t('Switch to your Spark wallet to send Bitcoin')
+        ? this.$t('Switch to a Spark or Arkade wallet to send Bitcoin')
         : this.$t('Switch to your Spark wallet to send to this address')
     },
 

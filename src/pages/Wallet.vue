@@ -2154,14 +2154,22 @@ export default {
     handlePayContact(contact) {
       this.showAddressBookQuick = false;
 
-      // Bitcoin contacts need L1 withdrawal flow
+      // Bitcoin contacts: Spark uses the L1 withdrawal sheet; Arkade
+      // offboards through the standard confirm sheet + Ramps (same routing
+      // as onPaymentDetected for a scanned/pasted bc1 address).
       if (contact.addressType === 'bitcoin') {
         const address = contact.address || contact.lightningAddress;
         this.pendingPayment = {
+          type: 'bitcoin_address',
+          data: address,
           bitcoinAddress: address,
           contactName: contact.name
         };
-        this.showBitcoinSheet = true;
+        if (this.walletStore.isActiveWalletArkade) {
+          this.showSendSheet = true;
+        } else {
+          this.showBitcoinSheet = true;
+        }
         return;
       }
 
@@ -2738,13 +2746,20 @@ export default {
         // Wait for wallet to be loaded
         this.$nextTick(() => {
           setTimeout(() => {
-            // Set up pending payment for Bitcoin withdrawal
+            // Set up pending payment for Bitcoin withdrawal. Arkade sends
+            // on-chain through the standard confirm sheet (Ramps offboard),
+            // not the Spark-only L1 sheet — same routing as onPaymentDetected.
             this.pendingPayment = {
               type: 'bitcoin_address',
+              data: query.address,
               bitcoinAddress: query.address,
               contactName: query.contactName || null
             };
-            this.showBitcoinSheet = true;
+            if (this.walletStore.isActiveWalletArkade) {
+              this.showSendSheet = true;
+            } else {
+              this.showBitcoinSheet = true;
+            }
 
             // Clear query params
             this.$router.replace({ query: {} });
