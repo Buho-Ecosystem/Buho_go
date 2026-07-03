@@ -1443,7 +1443,16 @@ export const useWalletStore = defineStore('wallet', {
           network: wallet.connectionData.network,
           arkServerUrl: wallet.connectionData.arkServerUrl,
           encryptedMnemonic: wallet.connectionData.encryptedMnemonic,
+          // One-time HD restore scan bookkeeping lives on the wallet's
+          // persisted metadata so it travels with the wallet (and dies with
+          // it), instead of a parallel storage domain.
+          restoreScanDone: !!wallet.metadata?.arkadeRestoreScanned,
         });
+
+        provider._onRestoreScanComplete = () => {
+          if (!wallet.metadata) wallet.metadata = {};
+          wallet.metadata.arkadeRestoreScanned = true;
+        };
 
         // Mirror background VTXO maintenance into reactive store state so the
         // UI can show a subtle indicator while a settlement is in flight.
@@ -2086,6 +2095,15 @@ export const useWalletStore = defineStore('wallet', {
 
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
+
+          // Keep the locked-screen/offline fallback in step with HD receive
+          // rotation: the SDK advances the current address after funds
+          // arrive, and metadata.arkadeAddress is what renders before the
+          // provider reconnects.
+          if (info?.arkadeAddress) {
+            if (!wallet.metadata) wallet.metadata = {};
+            wallet.metadata.arkadeAddress = info.arkadeAddress;
+          }
 
           // Reclaim swept/subdust VTXOs (renewal and boarding settlement are
           // handled by the SDK's own background settlement). Throttled inside

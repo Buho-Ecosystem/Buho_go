@@ -1363,7 +1363,9 @@ export default {
       } else if (p.bitcoinAddress) {
         const contact = this.addressBookStore.findContactByAddress(p.bitcoinAddress);
         recipient = this.recipientFromContact(contact, {
-          fallbackName: this.$t('Bitcoin address'),
+          // Contact-pay and deep-link entries carry the name even when the
+          // address isn't in the local book — show it over the generic label.
+          fallbackName: p.contactName || this.$t('Bitcoin address'),
           fallbackColor: '#F7931A',
           addressType: 'bitcoin',
           address: p.bitcoinAddress,
@@ -2154,22 +2156,16 @@ export default {
     handlePayContact(contact) {
       this.showAddressBookQuick = false;
 
-      // Bitcoin contacts: Spark uses the L1 withdrawal sheet; Arkade
-      // offboards through the standard confirm sheet + Ramps (same routing
-      // as onPaymentDetected for a scanned/pasted bc1 address).
+      // Bitcoin contacts go through the canonical dispatcher — it owns the
+      // Spark-L1-sheet vs Arkade-Ramps routing, the wallet-type guard, and
+      // the Branta/Nostr enrichment a scanned address gets.
       if (contact.addressType === 'bitcoin') {
         const address = contact.address || contact.lightningAddress;
-        this.pendingPayment = {
+        void this.onPaymentDetected({
           type: 'bitcoin_address',
           data: address,
-          bitcoinAddress: address,
           contactName: contact.name
-        };
-        if (this.walletStore.isActiveWalletArkade) {
-          this.showSendSheet = true;
-        } else {
-          this.showBitcoinSheet = true;
-        }
+        });
         return;
       }
 
@@ -2232,11 +2228,13 @@ export default {
       this.showContactPayment = false;
       this.selectedPayContact = null;
       const address = paymentData.address || paymentData.contact?.address;
-      this.pendingPayment = {
-        bitcoinAddress: address,
+      // Canonical dispatcher: Spark gets the L1 withdrawal sheet, Arkade the
+      // standard confirm sheet + Ramps offboard, others a friendly error.
+      void this.onPaymentDetected({
+        type: 'bitcoin_address',
+        data: address,
         contactName: paymentData.contact?.name
-      };
-      this.showBitcoinSheet = true;
+      });
     },
 
     /**
@@ -2746,20 +2744,13 @@ export default {
         // Wait for wallet to be loaded
         this.$nextTick(() => {
           setTimeout(() => {
-            // Set up pending payment for Bitcoin withdrawal. Arkade sends
-            // on-chain through the standard confirm sheet (Ramps offboard),
-            // not the Spark-only L1 sheet — same routing as onPaymentDetected.
-            this.pendingPayment = {
+            // Route through the canonical dispatcher: it owns the Spark
+            // L1-sheet vs Arkade Ramps-offboard decision and the guards.
+            void this.onPaymentDetected({
               type: 'bitcoin_address',
               data: query.address,
-              bitcoinAddress: query.address,
               contactName: query.contactName || null
-            };
-            if (this.walletStore.isActiveWalletArkade) {
-              this.showSendSheet = true;
-            } else {
-              this.showBitcoinSheet = true;
-            }
+            });
 
             // Clear query params
             this.$router.replace({ query: {} });

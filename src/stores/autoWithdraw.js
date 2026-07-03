@@ -157,6 +157,20 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           else if (config.payoutType === 'onchain') destination = config.bitcoinAddress
           else destination = config.lightningAddress
         } else if (walletType === WALLET_TYPES.ARKADE) {
+          // Arkade Lightning payouts ride a swap with its own min/max. Gate
+          // like the MIN_SEND_SATS check above: below the minimum, skip
+          // silently until the balance grows; above the maximum, sweep in
+          // maximum-sized chunks (the remainder goes on later triggers).
+          // Best-effort — when limits aren't known yet the attempt proceeds
+          // and the BELOW_MIN/ABOVE_MAX catch below backstops it.
+          if (config.payoutType !== 'arkade' && config.payoutType !== 'onchain') {
+            const provider = configKey.includes(':')
+              ? walletStore.providers[configKey]
+              : walletStore.getProvider(configKey)
+            const limits = await provider?.getLightningLimits?.('send').catch(() => null)
+            if (limits?.min && sendAmount < limits.min) return
+            if (limits?.max && sendAmount > limits.max) sendAmount = limits.max
+          }
           result = await this._executeArkadePayout(configKey, sendAmount, config, walletStore)
           if (config.payoutType === 'arkade') destination = config.arkadeAddress
           else destination = config.lightningAddress
@@ -193,12 +207,11 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       } catch (error) {
         console.error('[Auto-withdraw] Failed:', error.message)
 
-        // An Arkade Lightning payout below the Boltz swap minimum cannot
-        // succeed until the balance grows, so retrying on the fast failure
-        // cadence would just loop error toasts. Treat it like the
-        // MIN_SEND_SATS gate: skip silently on the normal cooldown — the
-        // next balance increase re-triggers naturally.
-        if (error?.code === 'ARKADE_SWAP_BELOW_MIN') return
+        // An Arkade Lightning payout outside the swap limits cannot succeed
+        // by retrying (below-min waits for the balance to grow; above-max is
+        // clamped by the pre-flight once limits are known). Treat both like
+        // the MIN_SEND_SATS gate: skip silently on the normal cooldown.
+        if (error?.code === 'ARKADE_SWAP_BELOW_MIN' || error?.code === 'ARKADE_SWAP_ABOVE_MAX') return
 
         // The cooldown was set to "now" before the attempt to dam the storm of
         // balance-refresh ticks. On failure, roll it back so the next tick can

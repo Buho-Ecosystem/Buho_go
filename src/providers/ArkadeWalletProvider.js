@@ -21,7 +21,8 @@
  *   - Wallet state lives in per-wallet IndexedDB repositories (public
  *     VTXO/contract/history cache only — no key material). A wallet restored
  *     from seed rebuilds that state with `wallet.restore()` (HD gap scan),
- *     run once per device via a localStorage marker.
+ *     run once in the background; the store persists the done-flag on the
+ *     wallet's metadata (`restoreScanDone` / `_onRestoreScanComplete`).
  *   - Balance is read from `WalletBalance.available` (settled + preconfirmed,
  *     both spendable); not-yet-spendable on-chain boarding UTXOs are surfaced
  *     as `pending`.
@@ -73,8 +74,6 @@ const BOLTZ_SWAP_DB = 'arkade-boltz-swap';
 const walletDbName = (walletId) => `buhoGO_arkade_${walletId}_v4`;
 /** The pre-0.4 storage-adapter database; deleted opportunistically. */
 const legacyDbName = (walletId) => `buhoGO_arkade_${walletId}`;
-/** localStorage marker: the one-time HD restore scan has completed here. */
-const restoreMarkerKey = (walletId) => `buhoGO_arkade_restored_v4_${walletId}`;
 
 /** Best-effort IndexedDB database deletion (never throws). */
 async function deleteDatabase(name) {
@@ -94,7 +93,6 @@ export class ArkadeWalletProvider extends WalletProvider {
 
     /** @type {import('@arkade-os/sdk').Wallet | null} */
     this.wallet = null;
-    this.arkadeAddress = null;
     this.network = walletData.network || ARKADE_DEFAULT_NETWORK;
     this.arkServerUrl = walletData.arkServerUrl || ARKADE_MAINNET_SERVER;
 
@@ -102,21 +100,32 @@ export class ArkadeWalletProvider extends WalletProvider {
     // lazily in connect(); ark1 + onchain keep working if this fails to init.
     /** @type {import('@arkade-os/boltz-swap').ArkadeSwaps | null} */
     this.lightningSwaps = null;
+    // The in-flight _initLightning() promise. disconnect() awaits it before
+    // disposing, so a rapid wallet switch can't strand a live SwapManager
+    // (WebSocket + timers) created after teardown already ran.
+    this._initLightningPromise = null;
+    // Resolved Boltz REST base for direction-specific limit lookups; null on
+    // networks where the package default applies (no receive pre-validation).
+    this._boltzApiUrl = null;
     // paymentHash -> { pendingSwap, claimed, preimage } for incoming LN swaps.
     this._reverseSwaps = new Map();
-    // Boltz swap limits, cached briefly so send/receive don't refetch per call.
-    this._limits = null;
-    this._limitsFetchedAt = 0;
+    // Boltz swap limits per direction, cached briefly so send/receive (and
+    // the auto-withdraw pre-flight) don't refetch per call.
+    this._sendLimits = null;
+    this._sendLimitsFetchedAt = 0;
+    this._receiveLimits = null;
+    this._receiveLimitsFetchedAt = 0;
     this._lastRecoveryCheck = 0;
-    // True while a swept-VTXO recovery settlement is in flight, so the UI can
-    // show a subtle "wallet maintenance" indicator. `_onMaintenance` is an
-    // optional callback the store wires up to mirror this into reactive state.
-    this.isMaintaining = false;
+    // Optional callback the store wires up to mirror "a recovery settlement
+    // is in flight" into reactive state (subtle wallet-maintenance indicator).
     this._onMaintenance = null;
     // Optional callback the store wires up to react to background swap
     // activity (auto-claimed receives, auto-refunded failures): refresh the
     // balance, tell the user. `(kind, swap, error?) => void`.
     this._onSwapActivity = null;
+    // Optional callback the store wires up to persist "the one-time HD
+    // restore scan finished" onto the wallet's metadata.
+    this._onRestoreScanComplete = null;
     this._swapUnsubscribers = [];
 
     // Stop handle for the notifyIncomingFunds subscription; tracked here so
@@ -158,9 +167,14 @@ export class ArkadeWalletProvider extends WalletProvider {
    * @param {string} [params.arkServerUrl]
    * @param {string} [params.storageKey] - IndexedDB db name for persistent
    *   state; omit for a throwaway in-memory wallet (probes).
+   * @param {boolean} [params.settlement=true] - When false, disables the
+   *   SDK's background settlement (boarding auto-settle, VTXO renewal,
+   *   signer migration). MUST be false for probe/throwaway wallets: a probe
+   *   with settlement enabled can submit real settlement transactions for a
+   *   funded seed it is about to discard.
    * @returns {Promise<import('@arkade-os/sdk').Wallet>}
    */
-  static async buildWallet({ mnemonic, network, arkServerUrl, storageKey }) {
+  static async buildWallet({ mnemonic, network, arkServerUrl, storageKey, settlement = true }) {
     const net = network || ARKADE_DEFAULT_NETWORK;
     const identity = arkadeIdentityFromMnemonic(mnemonic, {
       isMainnet: isMainnetNetwork(net),
@@ -187,6 +201,8 @@ export class ArkadeWalletProvider extends WalletProvider {
       indexerProvider: new RestIndexerProvider(serverUrl),
       onchainProvider: new EsploraProvider(esploraUrl),
       storage,
+      // undefined = SDK default (enabled); false = explicitly disabled.
+      settlementConfig: settlement ? undefined : false,
     });
   }
 
@@ -204,7 +220,11 @@ export class ArkadeWalletProvider extends WalletProvider {
    * @returns {Promise<{ hasActivity: boolean, balance: number, txCount: number }>}
    */
   static async probeActivity(mnemonic, { network, arkServerUrl } = {}) {
-    const wallet = await ArkadeWalletProvider.buildWallet({ mnemonic, network, arkServerUrl });
+    // settlement: false — a read-only probe must never auto-settle boarding
+    // UTXOs or renew VTXOs on a funded seed it is about to discard.
+    const wallet = await ArkadeWalletProvider.buildWallet({
+      mnemonic, network, arkServerUrl, settlement: false,
+    });
     try {
       await wallet.restore().catch((error) => {
         console.warn('[arkade] probe restore scan failed:', error?.message || error);
@@ -246,12 +266,12 @@ export class ArkadeWalletProvider extends WalletProvider {
         arkServerUrl: this.arkServerUrl,
         storageKey: walletDbName(this.walletId),
       });
-      await this._restoreOnceIfNeeded();
-      this.arkadeAddress = await this.wallet.getAddress();
       this.isConnected = true;
-      // Fire-and-forget: ark1 + balance are ready now; LN swaps warm up in the
-      // background and the method swallows its own errors (never rejects).
-      void this._initLightning();
+      // Everything below is background warm-up: the address and any cached
+      // balance are usable now, and none of these may fail the connect (the
+      // wallet must come up offline too).
+      this._initLightningPromise = this._initLightning();
+      void this._restoreScanIfNeeded();
       // If a previous send was interrupted mid-submit (app killed between
       // submit and finalize), finalize it now. No-ops (no server round trip)
       // when nothing was interrupted.
@@ -272,29 +292,29 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   /**
-   * One-time HD restore scan for this wallet on this device. Repopulates the
+   * One-time HD restore scan for this wallet on this device. Repopulates a
    * fresh per-wallet repository from the indexer: needed after a
-   * restore-from-phrase, and after the 0.3→0.4 storage-schema change (the old
-   * adapter cache is unreadable by the new repositories). Marked in
-   * localStorage so regular boots skip the scan; on completion the legacy
-   * pre-0.4 cache database is deleted.
+   * restore-from-phrase, and after the pre-0.4 storage-schema change (the old
+   * adapter cache is unreadable by the new repositories). The store passes
+   * `restoreScanDone` (persisted wallet metadata) so regular boots skip the
+   * scan, and persists the flag via `_onRestoreScanComplete` when the scan
+   * finishes. Best-effort and non-blocking: a failed scan (offline boot,
+   * indexer hiccup) leaves the flag unset so the next boot retries, while
+   * the wallet stays connected and usable from cached repository state.
    */
-  async _restoreOnceIfNeeded() {
-    let marker = null;
+  async _restoreScanIfNeeded() {
+    if (this.walletData?.restoreScanDone) return;
     try {
-      marker = localStorage.getItem(restoreMarkerKey(this.walletId));
-    } catch {
-      /* storage unavailable — run the scan, it is idempotent */
+      await this.wallet.restore();
+      this._onRestoreScanComplete?.();
+      // The pre-0.4 cache is unreadable by the new repositories; drop it.
+      void deleteDatabase(legacyDbName(this.walletId));
+      // Balance may have changed materially (fresh repo just got populated);
+      // nudge the store to repaint.
+      this._onSwapActivity?.('restore-scan');
+    } catch (error) {
+      console.warn('[arkade] restore scan failed (will retry next boot):', error?.message || error);
     }
-    if (marker) return;
-
-    await this.wallet.restore();
-    try {
-      localStorage.setItem(restoreMarkerKey(this.walletId), String(Date.now()));
-    } catch {
-      /* if the marker can't be written we just rescan next boot */
-    }
-    void deleteDatabase(legacyDbName(this.walletId));
   }
 
   /**
@@ -309,6 +329,7 @@ export class ArkadeWalletProvider extends WalletProvider {
       // generic Boltz which serves the same ARK<->BTC pairs with a working WS.
       // Non-mainnet keeps the package default (mutinynet/regtest are correct).
       const apiUrl = isMainnetNetwork(this.network) ? ARKADE_BOLTZ_API_URL : undefined;
+      this._boltzApiUrl = apiUrl || null;
       const swapProvider = new BoltzSwapProvider({ network: this.network, apiUrl });
       // create() is the SDK-recommended entry point. It auto-starts the
       // SwapManager (incoming swaps auto-claim, failed outgoing swaps
@@ -373,6 +394,13 @@ export class ArkadeWalletProvider extends WalletProvider {
       console.warn('[arkade] error stopping incoming-funds listener:', error);
     }
     this._stopIncoming = null;
+    // A rapid wallet switch can land here while _initLightning() is still
+    // mid-flight; wait for it to settle so the teardown below disposes the
+    // real SwapManager instead of a null that gets replaced moments later.
+    try {
+      await this._initLightningPromise;
+    } catch { /* init already logs its own failures */ }
+    this._initLightningPromise = null;
     for (const unsubscribe of this._swapUnsubscribers) {
       try { unsubscribe(); } catch { /* manager may already be gone */ }
     }
@@ -394,7 +422,6 @@ export class ArkadeWalletProvider extends WalletProvider {
       console.warn('[arkade] error disposing wallet:', error?.message || error);
     }
     this.wallet = null;
-    this.arkadeAddress = null;
     this.isConnected = false;
   }
 
@@ -495,8 +522,7 @@ export class ArkadeWalletProvider extends WalletProvider {
    */
   async getArkadeAddress() {
     this._ensureConnected();
-    this.arkadeAddress = await this.wallet.getAddress();
-    return this.arkadeAddress;
+    return this.wallet.getAddress();
   }
 
   /**
@@ -582,32 +608,65 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   /**
-   * Boltz swap limits, cached for 10 minutes. Best-effort: returns null when
-   * the fetch fails, in which case validation is skipped and Boltz's own
-   * rejection (mapped by _mapSwapError) is the backstop.
+   * Lightning swap limits for a direction, cached for 10 minutes.
+   *
+   * The two directions have independent Boltz limits: `'send'` (submarine,
+   * paying out over Lightning) comes from the package's `getLimits()`;
+   * `'receive'` (reverse swap, incoming Lightning) is not exposed by the
+   * package, so it is read from the same Boltz REST base the swap provider
+   * was pinned to. Best-effort: returns null when the fetch fails (or no
+   * pinned base exists), in which case pre-validation is skipped and Boltz's
+   * own rejection (mapped by _mapSwapError) is the backstop.
+   *
+   * Public because the auto-withdraw pre-flight also gates on it.
+   *
+   * @param {'send'|'receive'} [direction]
+   * @returns {Promise<{min: number, max: number}|null>}
    */
-  async _getSwapLimits() {
+  async getLightningLimits(direction = 'send') {
     const TTL_MS = 10 * 60 * 1000;
-    if (this._limits && Date.now() - this._limitsFetchedAt < TTL_MS) {
-      return this._limits;
+    if (!this.lightningSwaps) return null;
+    if (direction === 'receive') {
+      if (this._receiveLimits && Date.now() - this._receiveLimitsFetchedAt < TTL_MS) {
+        return this._receiveLimits;
+      }
+      if (!this._boltzApiUrl) return null;
+      try {
+        const res = await fetch(`${this._boltzApiUrl}/v2/swap/reverse`);
+        const pairs = await res.json();
+        const limits = pairs?.BTC?.ARK?.limits;
+        if (limits?.minimal != null) {
+          this._receiveLimits = { min: Number(limits.minimal), max: Number(limits.maximal) };
+          this._receiveLimitsFetchedAt = Date.now();
+        }
+      } catch (error) {
+        console.warn('[arkade] could not fetch receive swap limits:', error?.message || error);
+      }
+      return this._receiveLimits;
+    }
+    if (this._sendLimits && Date.now() - this._sendLimitsFetchedAt < TTL_MS) {
+      return this._sendLimits;
     }
     try {
-      this._limits = await this.lightningSwaps.getLimits();
-      this._limitsFetchedAt = Date.now();
+      this._sendLimits = await this.lightningSwaps.getLimits();
+      this._sendLimitsFetchedAt = Date.now();
     } catch (error) {
-      console.warn('[arkade] could not fetch swap limits:', error?.message || error);
+      console.warn('[arkade] could not fetch send swap limits:', error?.message || error);
     }
-    return this._limits;
+    return this._sendLimits;
   }
 
   /**
-   * Pre-flight a swap amount against Boltz's min/max so the user gets a
-   * friendly, amount-aware error before any swap is created.
+   * Pre-flight a swap amount against Boltz's min/max for the given direction
+   * so the user gets a friendly, amount-aware error before any swap is
+   * created.
+   * @param {number} amountSats
+   * @param {'send'|'receive'} direction
    */
-  async _validateSwapAmount(amountSats) {
+  async _validateSwapAmount(amountSats, direction) {
     const sats = Math.floor(Number(amountSats) || 0);
     if (sats <= 0) return;
-    const limits = await this._getSwapLimits();
+    const limits = await this.getLightningLimits(direction);
     if (!limits) return;
     if (limits.min && sats < limits.min) {
       const err = new Error(`Amount below the Lightning swap minimum (${limits.min} sats)`);
@@ -638,7 +697,7 @@ export class ArkadeWalletProvider extends WalletProvider {
     this._ensureConnected();
     this._ensureLightning();
     try {
-      await this._validateSwapAmount(amount);
+      await this._validateSwapAmount(amount, 'receive');
       const r = await this.lightningSwaps.createLightningInvoice({
         amount,
         description: description || undefined,
@@ -684,7 +743,7 @@ export class ArkadeWalletProvider extends WalletProvider {
       } catch {
         /* leave 0 if the invoice can't be decoded; Boltz validates anyway */
       }
-      await this._validateSwapAmount(invoiceSats);
+      await this._validateSwapAmount(invoiceSats, 'send');
       const r = await this.lightningSwaps.sendLightningPayment({ invoice });
       // Swap fee ≈ what left the wallet minus the invoice's own amount.
       let fee = 0;
@@ -785,12 +844,12 @@ export class ArkadeWalletProvider extends WalletProvider {
       const manager = await this.wallet.getVtxoManager();
       const rec = await manager.getRecoverableBalance();
       if (rec && Number(rec.recoverable) > 0) {
-        this._setMaintaining(true);
+        this._notifyMaintenance(true);
         try {
           await manager.recoverVtxos();
           out.recovered = true;
         } finally {
-          this._setMaintaining(false);
+          this._notifyMaintenance(false);
         }
       }
     } catch (error) {
@@ -799,8 +858,7 @@ export class ArkadeWalletProvider extends WalletProvider {
     return out;
   }
 
-  _setMaintaining(active) {
-    this.isMaintaining = active;
+  _notifyMaintenance(active) {
     try {
       this._onMaintenance?.(active);
     } catch (error) {
@@ -843,11 +901,6 @@ export class ArkadeWalletProvider extends WalletProvider {
     await deleteDatabase(legacyDbName(walletId));
     // Boltz pending-swap store (package-default name, single Arkade wallet).
     await deleteDatabase(BOLTZ_SWAP_DB);
-    try {
-      localStorage.removeItem(restoreMarkerKey(walletId));
-    } catch {
-      /* ignore */
-    }
   }
 }
 
