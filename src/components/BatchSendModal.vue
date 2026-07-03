@@ -929,7 +929,7 @@ function updateCustomAmount(contactId, value) {
 // }
 
 function getTypeLabel(type) {
-  const labels = { lightning: 'Lightning', spark: 'Spark', bitcoin: 'Bitcoin' }
+  const labels = { lightning: 'Lightning', spark: 'Spark', bitcoin: 'Bitcoin', arkade: 'Arkade' }
   return labels[type] || labels.lightning
 }
 
@@ -937,7 +937,8 @@ function getTypeColor(type) {
   const colors = {
     lightning: '#F7931A',  // Orange
     spark: '#000',         // Black
-    bitcoin: '#F7931A'     // Orange
+    bitcoin: '#F7931A',    // Orange
+    arkade: '#F14317'      // Arkade brand orange
   }
   return colors[type] || colors.lightning
 }

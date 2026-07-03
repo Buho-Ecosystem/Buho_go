@@ -1468,6 +1468,7 @@ export default {
   "Continue": "Weiter",
   "Transfer Now": "Jetzt umbuchen",
   "This transfer happens instantly via Lightning": "Diese Übertragung erfolgt sofort über Lightning",
+  "This transfer happens via Lightning and includes a small swap fee": "Diese Übertragung läuft über Lightning und enthält eine kleine Swap Gebühr",
   "Transfer Complete": "Umbuchung erfolgreich",
   "Done": "Fertig",
   "Back": "Zurück",

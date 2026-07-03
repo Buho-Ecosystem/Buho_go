@@ -193,6 +193,13 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       } catch (error) {
         console.error('[Auto-withdraw] Failed:', error.message)
 
+        // An Arkade Lightning payout below the Boltz swap minimum cannot
+        // succeed until the balance grows, so retrying on the fast failure
+        // cadence would just loop error toasts. Treat it like the
+        // MIN_SEND_SATS gate: skip silently on the normal cooldown — the
+        // next balance increase re-triggers naturally.
+        if (error?.code === 'ARKADE_SWAP_BELOW_MIN') return
+
         // The cooldown was set to "now" before the attempt to dam the storm of
         // balance-refresh ticks. On failure, roll it back so the next tick can
         // retry after FAILURE_RETRY_MS instead of waiting out the full 60s

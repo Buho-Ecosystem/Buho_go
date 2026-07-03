@@ -1425,6 +1425,7 @@ export default {
   "Continue": "Continue",
   "Transfer Now": "Transfer Now",
   "This transfer happens instantly via Lightning": "This transfer happens instantly via Lightning",
+  "This transfer happens via Lightning and includes a small swap fee": "This transfer happens via Lightning and includes a small swap fee",
   "Transfer Complete": "Transfer Complete",
   "Done": "Done",
   "Back": "Back",

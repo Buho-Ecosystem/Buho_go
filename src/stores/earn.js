@@ -375,7 +375,7 @@ export const useEarnStore = defineStore('earn', {
         if (!provider) throw new Error('Wallet not connected')
 
         const type = (wallet.type || 'nwc').toLowerCase()
-        if (type === 'spark' || type === 'lnbits') {
+        if (type === 'spark' || type === 'lnbits' || type === 'arkade') {
           const result = await provider.createInvoice({
             amount: amountSats,
             description: 'BuhoGO Learn & Earn reward',

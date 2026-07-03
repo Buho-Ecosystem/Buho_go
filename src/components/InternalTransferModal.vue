@@ -149,7 +149,7 @@
               <span>{{ state.toWallet?.name }}</span>
             </div>
           </div>
-          <p class="note">{{ $t('This transfer happens instantly via Lightning') }}</p>
+          <p class="note">{{ transferNote }}</p>
         </section>
 
         <!--
@@ -381,6 +381,15 @@ const isVisible = computed({
 const themeClass = computed(() => $q.dark.isActive ? 'theme-dark' : 'theme-light');
 const wallets = computed(() => store.getTransferableWallets());
 const sameWalletSelected = computed(() => state.fromWallet && state.toWallet && state.fromWallet.id === state.toWallet.id);
+
+// An Arkade leg rides a Lightning swap, so a small swap fee applies — say so
+// instead of promising a plain instant Lightning hop.
+const transferNote = computed(() => {
+  const arkadeLeg = state.fromWallet?.type === 'arkade' || state.toWallet?.type === 'arkade';
+  return arkadeLeg
+    ? t('This transfer happens via Lightning and includes a small swap fee')
+    : t('This transfer happens instantly via Lightning');
+});
 
 const canProceed = computed(() => {
   if (state.isTransferring) return false;
