@@ -908,6 +908,12 @@
           @click="confirmDeleteSparkWallet"
         />
         <SettingsRow
+          v-if="hasArkadeWallet"
+          destructive
+          :label="$t('Delete Arkade Wallet')"
+          @click="confirmDeleteArkadeWallet"
+        />
+        <SettingsRow
           v-if="hasNwcWallets"
           destructive
           :label="$t('Remove NWC Connections')"
@@ -4007,6 +4013,18 @@ export default {
             message: this.$t('Spark wallets deleted'),
           });
           this.showDangerConfirmDialog = false;
+        } else if (this.dangerConfirmAction === 'deleteArkadeWallet') {
+          // Single Arkade wallet by design; removeWallet disconnects it and
+          // deletes its local databases (cache + pending-swap store).
+          const arkade = this.wallets.find(w => w.type === 'arkade');
+          if (arkade) {
+            await this.removeWallet(arkade.id);
+          }
+          this.$q.notify({
+            type: 'positive',
+            message: this.$t('Arkade wallet deleted'),
+          });
+          this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'removeWallet') {
           await this.removeWallet(this.walletToRemove.id);
           this.$q.notify({
@@ -4558,6 +4576,18 @@ export default {
       this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';
+      this.showDangerConfirmDialog = true;
+    },
+
+    confirmDeleteArkadeWallet() {
+      if (!this.wallets.some(w => w.type === 'arkade')) return;
+
+      this.dangerConfirmTitle = this.$t('Delete Arkade Wallet');
+      this.dangerConfirmMessage = this.$t('This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.');
+      this.dangerConfirmPhrase = 'I understand';
+      this.dangerConfirmButtonText = this.$t('Delete');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'deleteArkadeWallet';
       this.showDangerConfirmDialog = true;
     },
 
