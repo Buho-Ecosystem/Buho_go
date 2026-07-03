@@ -1,31 +1,24 @@
 /**
- * Arkade (Ark L2) key material — the single source of truth for turning a
- * BIP-39 recovery phrase into the SDK identity BuhoGO signs Arkade
- * transactions with.
+ * Arkade key material — the single source of truth for turning a BIP-39
+ * recovery phrase into the SDK identity BuhoGO signs Arkade transactions
+ * with.
  *
- * The derivation MUST match the official Arkade wallet so a phrase backed up
- * in BuhoGO restores everywhere (and a phrase from the official wallet
- * restores here). Getting this wrong silently produces a *valid but empty*
- * wallet on a different key — i.e. funds the user can't see. So we mirror the
- * reference implementation byte-for-byte rather than inventing a path.
+ * The identity is the SDK's own `MnemonicIdentity.fromMnemonic(phrase,
+ * { isMainnet })` — the canonical, docs-recommended path. It is an HD
+ * identity over the BIP-86 (Taproot) account template
+ * `m/86'/${coinType}'/0'/0/*`, where `coinType` is 0 on mainnet and 1
+ * otherwise. Address index 0 of that template is byte-for-byte the key
+ * BuhoGO derived manually while it was pinned to SDK 0.3.x
+ * (`SingleKey.fromPrivateKey` of `m/86'/${coinType}'/0'/0/0`), so wallets
+ * created under the old derivation keep seeing their funds after the bump —
+ * the SDK's restore scan covers index 0 like any other index.
  *
- * Canonical derivation — from arkade-os/wallet `src/lib/mnemonic.ts` and the
- * SDK's `MnemonicIdentity.fromMnemonic` (added in SDK >= 0.4):
- *
- *   seed   = mnemonicToSeedSync(phrase)                  // BIP-39, no passphrase
- *   master = HDKey.fromMasterSeed(seed)                  // BIP-32
- *   node   = master.derive(`m/86'/${coinType}'/0'`)      // BIP-86 (Taproot) account 0
- *               .deriveChild(0)                           //   external chain
- *               .deriveChild(0)                           //   address index 0
- *   identity = SingleKey.fromPrivateKey(node.privateKey)  // raw 32-byte key
- *
- * `coinType` is 0 on mainnet (BIP-44 "Bitcoin") and 1 otherwise, exactly the
- * reference wallet's `isMainnet ? 0 : 1`. Ark is Taproot-based, hence BIP-86.
- *
- * The installed SDK (0.3.x) exposes only `SingleKey` (raw key); 0.4+ adds
- * `MnemonicIdentity.fromMnemonic` which wraps this same path. Keeping the
- * derivation here means a future SDK bump is a drop-in swap with identical
- * keys — no migration, no re-derivation, no lost funds.
+ * `deriveArkadePrivateKey` (the manual index-0 derivation) is kept ONLY as
+ * the reference the test suite checks `MnemonicIdentity` against: the parity
+ * assertion in arkadeKeys.spec.js is what guards fund continuity across SDK
+ * bumps. Getting derivation wrong silently produces a *valid but empty*
+ * wallet on a different key — i.e. funds the user can't see — so it stays
+ * locked by test, not by convention.
  *
  * Mirrors the BIP-32 derivation style already used by `identityCrypto.js`
  * (the Nostr identity), so the two seed-derived key paths read alike.
@@ -38,7 +31,7 @@ import {
 } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english';
 import { HDKey } from '@scure/bip32';
-import { SingleKey } from '@arkade-os/sdk';
+import { MnemonicIdentity } from '@arkade-os/sdk';
 
 /**
  * Mainnet Ark server (Arkade OS). Mainnet has been the SDK default since
@@ -101,10 +94,13 @@ export function isValidArkadeMnemonic(mnemonic) {
 }
 
 /**
- * Derive the raw 32-byte Arkade signing key from a recovery phrase.
+ * Reference derivation of the index-0 Arkade signing key. NOT used to build
+ * the live identity anymore — kept as the fixed point the test suite checks
+ * `MnemonicIdentity` against (fund continuity across SDK versions). See the
+ * file header.
  * @param {string} mnemonic
  * @param {{ isMainnet?: boolean }} [opts]
- * @returns {Uint8Array} 32-byte private key
+ * @returns {Uint8Array} 32-byte private key at m/86'/coinType'/0'/0/0
  */
 export function deriveArkadePrivateKey(mnemonic, { isMainnet = true } = {}) {
   const phrase = (mnemonic || '').trim().toLowerCase();
@@ -125,11 +121,15 @@ export function deriveArkadePrivateKey(mnemonic, { isMainnet = true } = {}) {
 }
 
 /**
- * Build the Arkade SDK identity (`SingleKey`) from a recovery phrase.
+ * Build the Arkade SDK identity from a recovery phrase.
  * @param {string} mnemonic
  * @param {{ isMainnet?: boolean }} [opts]
- * @returns {import('@arkade-os/sdk').SingleKey}
+ * @returns {import('@arkade-os/sdk').MnemonicIdentity}
  */
-export function arkadeIdentityFromMnemonic(mnemonic, opts) {
-  return SingleKey.fromPrivateKey(deriveArkadePrivateKey(mnemonic, opts));
+export function arkadeIdentityFromMnemonic(mnemonic, { isMainnet = true } = {}) {
+  const phrase = (mnemonic || '').trim().toLowerCase();
+  if (!validateMnemonic(phrase, wordlist)) {
+    throw new Error('Invalid recovery phrase');
+  }
+  return MnemonicIdentity.fromMnemonic(phrase, { isMainnet });
 }

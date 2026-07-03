@@ -5,7 +5,10 @@
  * mnemonic → key derivation MUST stay byte-identical to BIP-86 (Taproot)
  * `m/86'/coinType'/0'/0/0` — the path the official Arkade wallet uses. If this
  * ever drifts, BuhoGO-created seeds stop restoring elsewhere and funds appear
- * lost. This locks it against the published BIP-86 test vector.
+ * lost. This locks it against the published BIP-86 test vector, AND locks the
+ * SDK's `MnemonicIdentity` (the live identity since the 0.4.x bump) to the
+ * manual index-0 derivation BuhoGO used on SDK 0.3.x — the parity test that
+ * guarantees pre-bump wallets keep seeing their funds.
  *
  * Run directly with Node:
  *   node src/utils/__tests__/arkadeKeys.spec.js
@@ -53,6 +56,25 @@ await test('derives the published BIP-86 mainnet vector (m/86h/0h/0h/0/0)', asyn
     'cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115',
     'x-only pubkey must match the BIP-86 spec vector — derivation has drifted!'
   );
+});
+
+await test('MnemonicIdentity matches the legacy manual derivation (fund continuity)', async () => {
+  // The 0.3.x-era identity was SingleKey over m/86'/c'/0'/0/0. The 0.4.x
+  // identity is MnemonicIdentity (HD over m/86'/c'/0'/0/*), whose default
+  // pubkey must be that same index-0 key — for fresh randomness and on both
+  // networks, not just the fixed vector above.
+  const { schnorr } = await import('@noble/curves/secp256k1.js');
+  for (const isMainnet of [true, false]) {
+    const mnemonic = generateArkadeMnemonic();
+    const legacyXonly = toHex(schnorr.getPublicKey(deriveArkadePrivateKey(mnemonic, { isMainnet })));
+    const identity = arkadeIdentityFromMnemonic(mnemonic, { isMainnet });
+    const sdkXonly = toHex(await identity.xOnlyPublicKey());
+    assert.equal(
+      sdkXonly,
+      legacyXonly,
+      `MnemonicIdentity (isMainnet=${isMainnet}) diverged from the legacy index-0 key — pre-0.4 wallets would lose sight of funds!`
+    );
+  }
 });
 
 await test('derivation is deterministic', () => {

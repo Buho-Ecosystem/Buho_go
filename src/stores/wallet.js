@@ -1449,6 +1449,17 @@ export const useWalletStore = defineStore('wallet', {
         // UI can show a subtle indicator while a settlement is in flight.
         provider._onMaintenance = (active) => { this.arkadeMaintaining = active; };
 
+        // Background swap lifecycle (autonomous claims of incoming Lightning,
+        // auto-refunds of failed outgoing swaps) changes the balance without a
+        // user action — refresh so the UI reflects it promptly.
+        provider._onSwapActivity = (kind, swap, error) => {
+          if (kind === 'failed') {
+            console.warn('[arkade] swap failed, auto-refund handling engaged:',
+              swap?.id, error?.message || error);
+          }
+          this.refreshWalletData(walletId).catch(() => {});
+        };
+
         await provider.connect();
         this.providers[walletId] = provider;
         this.connectionStates[walletId] = {
@@ -2076,10 +2087,11 @@ export const useWalletStore = defineStore('wallet', {
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
 
-          // Keep VTXOs alive (renew near-expiry, reclaim recoverable). Throttled
-          // inside the provider, fire-and-forget so it never blocks the refresh.
+          // Reclaim swept/subdust VTXOs (renewal and boarding settlement are
+          // handled by the SDK's own background settlement). Throttled inside
+          // the provider, fire-and-forget so it never blocks the refresh.
           provider.checkLiveness?.().catch((e) =>
-            console.warn('[arkade] liveness pass failed:', e?.message || e)
+            console.warn('[arkade] recovery pass failed:', e?.message || e)
           );
         } else {
           // NWC wallet
