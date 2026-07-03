@@ -3216,8 +3216,12 @@ export default {
      */
     formatRelativeTime(timestamp) {
       if (!timestamp) return '';
-      const ts = typeof timestamp === 'number' ? timestamp : new Date(timestamp).getTime();
+      let ts = typeof timestamp === 'number' ? timestamp : new Date(timestamp).getTime();
       if (!Number.isFinite(ts)) return '';
+      // Providers speak unix SECONDS; Date math needs ms. Normalize by
+      // magnitude (seconds ≈ 1.7e9, ms ≈ 1.7e12; 1e11 separates them for
+      // decades) so a seconds timestamp doesn't render as January 1970.
+      if (ts > 0 && ts < 1e11) ts *= 1000;
       const diffMs = Date.now() - ts;
       if (diffMs < 0) return this.$t('just now');
       const minute = 60 * 1000;

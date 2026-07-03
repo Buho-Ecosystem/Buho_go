@@ -494,12 +494,19 @@ export class ArkadeWalletProvider extends WalletProvider {
         // separates them and stays correct for decades.)
         const raw = tx.createdAt ? Number(tx.createdAt) : 0;
         const timestamp = raw >= 1e11 ? Math.round(raw / 1000) : Math.round(raw);
+        // `settled` means "anchored on Bitcoin via a batch swap" — but an
+        // offchain Arkade transaction (arkTxid set) is final and spendable
+        // the moment it exists, so showing it as pending would tell a user
+        // their received (and spendable) money hasn't arrived. Only boarding
+        // deposits genuinely await something (the settlement that converts
+        // them into spendable balance).
+        const spendable = tx.settled || Boolean(key.arkTxid);
         return {
           id,
           type: tx.type === 'RECEIVED' ? 'incoming' : 'outgoing',
           amount: Number(tx.amount || 0),
           timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
-          status: tx.settled ? 'completed' : 'pending',
+          status: spendable ? 'completed' : 'pending',
           description: '',
         };
       });
@@ -654,6 +661,20 @@ export class ArkadeWalletProvider extends WalletProvider {
       console.warn('[arkade] could not fetch send swap limits:', error?.message || error);
     }
     return this._sendLimits;
+  }
+
+  /**
+   * Like getLightningLimits, but waits for the Lightning layer to finish its
+   * background init first — for callers that run right after connect() (the
+   * store mirrors these bounds into reactive state for the amount UIs).
+   * @param {'send'|'receive'} [direction]
+   * @returns {Promise<{min: number, max: number}|null>}
+   */
+  async getLightningLimitsWhenReady(direction = 'send') {
+    try {
+      await this._initLightningPromise;
+    } catch { /* init logs its own failures */ }
+    return this.getLightningLimits(direction);
   }
 
   /**

@@ -352,7 +352,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format']),
+    ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format', 'isActiveWalletArkade', 'arkadeLnSendLimits']),
 
     show: {
       get() { return this.modelValue },
@@ -461,17 +461,38 @@ export default {
     },
 
     // ───── Amount mode ─────
+
+    // Arkade pays Lightning through a swap with its own floor and ceiling.
+    // Surface those bounds in the amount entry itself so the user can never
+    // confirm an amount the swap layer would refuse a moment later. Null for
+    // every non-Arkade wallet, for non-Lightning destinations (ark1/bitcoin
+    // ride other rails), and for redeem (receive-direction) flows.
+    arkadeSwapBounds() {
+      if (!this.isActiveWalletArkade || this.isRedeem) return null
+      const t = this.recipientAddressType
+      if (t !== 'lightning' && t !== 'invoice' && t !== 'lnurl') return null
+      return this.arkadeLnSendLimits || null
+    },
     amountMode() {
-      return this.payment?.amount?.mode || 'free'
+      const mode = this.payment?.amount?.mode || 'free'
+      // A free-amount Lightning send on Arkade is still bounded by the swap;
+      // present it as a range so the hint and validation engage.
+      if (mode === 'free' && this.arkadeSwapBounds) return 'range'
+      return mode
     },
     fixedSats() {
       return this.payment?.amount?.fixedSats || 0
     },
     minSats() {
-      return this.payment?.amount?.minSats || 0
+      const base = this.payment?.amount?.minSats || 0
+      const swap = this.arkadeSwapBounds
+      return swap?.min ? Math.max(base, swap.min) : base
     },
     maxSats() {
-      return this.payment?.amount?.maxSats || 0
+      const base = this.payment?.amount?.maxSats || 0
+      const swap = this.arkadeSwapBounds
+      if (!swap?.max) return base
+      return base ? Math.min(base, swap.max) : swap.max
     },
 
     fiatCurrencyCode() {
@@ -517,6 +538,17 @@ export default {
     // registration vue-i18n skips placeholder substitution and the user
     // sees a literal "{n}" in the UI.
     amountInvalidReason() {
+      // A fixed-amount invoice outside the Arkade swap bounds can never be
+      // paid from this wallet, and the user can't edit the amount — say so
+      // up front instead of failing after the Send tap.
+      if (this.amountMode === 'fixed' && this.arkadeSwapBounds && this.fixedSats > 0) {
+        if (this.minSats && this.fixedSats < this.minSats) {
+          return this.$t('Minimum is {n} sats', { n: this.minSats.toLocaleString() })
+        }
+        if (this.maxSats && this.fixedSats > this.maxSats) {
+          return this.$t('Maximum is {n} sats', { n: this.maxSats.toLocaleString() })
+        }
+      }
       if (!this.displayAmount || this.amountMode === 'fixed') return ''
       // Local-currency mode: validate the entered LOCAL amount against the
       // provider's own min/max. Runs before the sats>0 check below so a
