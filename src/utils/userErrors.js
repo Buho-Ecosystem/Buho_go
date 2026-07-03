@@ -329,6 +329,10 @@ function translateErrorCode(error, t) {
       return t("That amount can't be sent over Lightning right now. Try a different amount, or use your Arkade address.");
     case 'ARKADE_SWAP_PreimageFetchError':
       return t('Your payment was sent. It will show in your balance in a moment.');
+    case 'ARKADE_SWAP_BELOW_MIN':
+      return t('That amount is too small for Lightning. The minimum is {min} sats.', { min: error.minSats || 0 });
+    case 'ARKADE_SWAP_ABOVE_MAX':
+      return t('That amount is too large for Lightning. The maximum is {max} sats.', { max: error.maxSats || 0 });
     case 'ARKADE_OFFBOARD_BELOW_MIN':
       return t('That amount is too small to send to a Bitcoin address. The minimum is {min} sats.', { min: error.minSats || 0 });
     case 'ARKADE_OFFBOARD_FAILED':

@@ -77,6 +77,8 @@ export default {
   "Couldn't reach Lightning. Check your connection and try again.": "Lightning war nicht erreichbar. Prüfe deine Verbindung und versuche es erneut.",
   "That amount can't be sent over Lightning right now. Try a different amount, or use your Arkade address.": "Dieser Betrag kann gerade nicht über Lightning gesendet werden. Versuche einen anderen Betrag oder nutze deine Arkade Adresse.",
   "Your payment was sent. It will show in your balance in a moment.": "Deine Zahlung wurde gesendet. Sie erscheint gleich in deinem Guthaben.",
+  "That amount is too small for Lightning. The minimum is {min} sats.": "Dieser Betrag ist zu klein für Lightning. Das Minimum sind {min} Sats.",
+  "That amount is too large for Lightning. The maximum is {max} sats.": "Dieser Betrag ist zu groß für Lightning. Das Maximum sind {max} Sats.",
   "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.": "Dieser Betrag ist zu klein, um an eine Bitcoin Adresse zu senden. Das Minimum sind {min} Sats.",
   "Sending to a Bitcoin address didn't go through. Please try again.": "Das Senden an eine Bitcoin Adresse hat nicht geklappt. Bitte versuche es erneut.",
   "Switch to a Spark or Arkade wallet to send Bitcoin": "Wechsle zu einem Spark oder Arkade Wallet, um Bitcoin zu senden",
