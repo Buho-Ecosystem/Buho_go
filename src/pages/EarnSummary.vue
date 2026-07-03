@@ -106,9 +106,14 @@
           class="claim-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           :loading="isClaiming"
-          :disable="earnStore.isOnCooldown"
+          :disable="earnStore.isOnCooldown || arkadeClaimBlocked"
           @click="claimSats"
         />
+        <!-- Arkade-only setups can't receive Lightning below the swap
+             minimum: say so before the tap, with the way out. -->
+        <div v-if="earnStore.canClaim && arkadeClaimBlocked" class="claim-hint" :class="$q.dark.isActive ? 'claim-hint-dark' : 'claim-hint-light'">
+          {{ $t('Your Arkade wallet can only receive Lightning payments of {min} sats or more, so this reward can\'t be claimed yet. Create a Spark wallet or connect LNbits or NWC to claim it, or keep earning until you reach {min} sats.', { min: arkadeClaimMin }) }}
+        </div>
       </div>
     </div>
 
@@ -193,6 +198,27 @@ export default {
       isClaiming: false,
       showPayoutInfo: false,
     }
+  },
+  computed: {
+    /**
+     * True when the reward cannot be claimed at all: the user's only wallet
+     * is Arkade (which receives Lightning through a swap with a minimum) and
+     * the claimable amount is below that minimum. With any other wallet
+     * connected the claim falls back to it automatically, so no warning.
+     */
+    arkadeClaimBlocked() {
+      const wallets = this.walletStore.wallets || []
+      const hasOtherWallet = wallets.some(w => (w.type || '').toLowerCase() !== 'arkade')
+      if (hasOtherWallet) return false
+      const active = wallets.find(w => w.id === this.walletStore.activeWalletId)
+      if ((active?.type || '').toLowerCase() !== 'arkade') return false
+      const min = this.walletStore.arkadeLnReceiveLimits?.min
+      if (!min) return false
+      return this.earnStore.claimableAmount < min
+    },
+    arkadeClaimMin() {
+      return this.walletStore.arkadeLnReceiveLimits?.min || 0
+    },
   },
   async created() {
     await this.earnStore.initialize()
@@ -566,6 +592,25 @@ export default {
   font-size: 16px;
   font-weight: 700;
   margin-top: 14px;
+}
+
+.claim-hint {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.claim-hint-light {
+  background: rgba(241, 67, 23, 0.08);
+  color: #7a3416;
+}
+
+.claim-hint-dark {
+  background: rgba(241, 67, 23, 0.16);
+  color: #f0b9a6;
 }
 
 .payout-ready {

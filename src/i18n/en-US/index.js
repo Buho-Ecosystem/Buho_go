@@ -78,7 +78,7 @@ export default {
   "That amount can't be sent over Lightning right now. Try a different amount, or use your Arkade address.": "That amount can't be sent over Lightning right now. Try a different amount, or use your Arkade address.",
   "Your payment was sent. It will show in your balance in a moment.": "Your payment was sent. It will show in your balance in a moment.",
   "That amount is too small for Lightning. The minimum is {min} sats.": "That amount is too small for Lightning. The minimum is {min} sats.",
-  "This reward is below the {min} sats minimum your Arkade wallet can receive over Lightning. Keep earning and claim once you reach {min} sats.": "This reward is below the {min} sats minimum your Arkade wallet can receive over Lightning. Keep earning and claim once you reach {min} sats.",
+  "Your Arkade wallet can only receive Lightning payments of {min} sats or more, so this reward can't be claimed yet. Create a Spark wallet or connect LNbits or NWC to claim it, or keep earning until you reach {min} sats.": "Your Arkade wallet can only receive Lightning payments of {min} sats or more, so this reward can't be claimed yet. Create a Spark wallet or connect LNbits or NWC to claim it, or keep earning until you reach {min} sats.",
   "{amount} sats claimed to {wallet}!": "{amount} sats claimed to {wallet}!",
   "That amount is too large for Lightning. The maximum is {max} sats.": "That amount is too large for Lightning. The maximum is {max} sats.",
   "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.": "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.",
