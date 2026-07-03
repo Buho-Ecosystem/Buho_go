@@ -4630,7 +4630,7 @@ export default {
         if (walletType === 'spark') {
           result = await this.sendSparkPayment(amount, comment, this.sendPayout);
         } else if (walletType === 'arkade') {
-          result = await this.sendArkadePayment(amount, comment);
+          result = await this.sendArkadePayment(amount, comment, this.sendPayout);
         } else if (walletType === 'lnbits') {
           result = await this.sendLNBitsPayment(amount, comment, this.sendPayout);
         } else {
@@ -4906,9 +4906,12 @@ export default {
      *   - ark1 → ark1            : transferToArkadeAddress (near-zero fee)
      *   - BOLT11 invoice         : Boltz submarine swap (payInvoice)
      *   - Lightning address/LNURL: resolve to bolt11, then swap
-     *   - on-chain bc1…          : Ramps offboard — phase-second
+     *   - on-chain bc1…          : Ramps offboard (collaborative exit)
+     * LUD-21 currency payouts and LUD-09 successActions ride the invoice
+     * fetch exactly like the LNbits path: the swap pays whatever bolt11 the
+     * provider returned, and the metadata is threaded onto the result.
      */
-    async sendArkadePayment(amount, comment) {
+    async sendArkadePayment(amount, comment, payout = null) {
       const provider = await this.walletStore.ensureArkadeConnected();
 
       // Native ark1 → ark1: instant, near-zero fee fast path.
@@ -4926,18 +4929,21 @@ export default {
 
       // Lightning address → fetch a bolt11 for the amount, then swap.
       if (this.pendingPayment.lightningAddress) {
-        const invoice = await this.fetchLightningAddressInvoice(
+        const { pr, successAction, verify } = await this.fetchLightningAddressInvoice(
           this.pendingPayment.lightningAddress,
           amount,
-          comment
+          comment,
+          payout
         );
-        return await provider.payInvoice({ invoice });
+        const result = await provider.payInvoice({ invoice: pr });
+        return { ...result, successAction, verify };
       }
 
       // LNURL-pay → fetch the encoded-amount invoice, then swap.
       if (this.pendingPayment.lnurl) {
-        const invoice = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount);
-        return await provider.payInvoice({ invoice });
+        const { pr, successAction, verify } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const result = await provider.payInvoice({ invoice: pr });
+        return { ...result, successAction, verify };
       }
 
       // On-chain (bc1…): collaborative exit (offboard) via Ramps.

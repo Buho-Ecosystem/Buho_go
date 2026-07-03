@@ -288,12 +288,14 @@ export default {
           return await provider.payInvoice({ invoice: address })
         }
         if (this.isLightningAddress(address)) {
-          const invoice = await this.fetchLightningAddressInvoice(address, amountSats, comment)
-          return await provider.payInvoice({ invoice })
+          const { pr, successAction } = await this.fetchLightningAddressInvoice(address, amountSats, comment)
+          const result = await provider.payInvoice({ invoice: pr })
+          return { ...result, successAction }
         }
         if (this.isLNURL(address)) {
-          const invoice = await this.fetchLNURLInvoice(address, amountSats)
-          return await provider.payInvoice({ invoice })
+          const { pr, successAction } = await this.fetchLNURLInvoice(address, amountSats)
+          const result = await provider.payInvoice({ invoice: pr })
+          return { ...result, successAction }
         }
         throw new Error('UNSUPPORTED_PAYMENT_TYPE')
       }
