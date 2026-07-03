@@ -331,6 +331,8 @@ function translateErrorCode(error, t) {
       return t('Your payment was sent. It will show in your balance in a moment.');
     case 'ARKADE_SWAP_BELOW_MIN':
       return t('That amount is too small for Lightning. The minimum is {min} sats.', { min: error.minSats || 0 });
+    case 'EARN_BELOW_WALLET_MIN':
+      return t('This reward is below the {min} sats minimum your Arkade wallet can receive over Lightning. Keep earning and claim once you reach {min} sats.', { min: error.minSats || 0 });
     case 'ARKADE_SWAP_ABOVE_MAX':
       return t('That amount is too large for Lightning. The maximum is {max} sats.', { max: error.maxSats || 0 });
     case 'ARKADE_OFFBOARD_BELOW_MIN':

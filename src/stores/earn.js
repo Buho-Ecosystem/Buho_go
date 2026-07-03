@@ -296,10 +296,12 @@ export const useEarnStore = defineStore('earn', {
         this.answerTimings = [] // Reset timings after successful claim
         this.persist()
 
-        return { amount: claimable, success: true }
+        return { amount: claimable, success: true, walletName: result.walletName || null }
       } catch (error) {
         console.error('[earn] Payout failed:', error.message)
-        return { amount: 0, success: false, error: 'payout_failed', message: error.message }
+        // Keep the original (coded) error so the UI can show the real,
+        // translated reason instead of a generic "payout_failed".
+        return { amount: 0, success: false, error: 'payout_failed', message: error.message, cause: error }
       }
     },
 
@@ -310,7 +312,7 @@ export const useEarnStore = defineStore('earn', {
      * wallet only if all its limits pass.
      */
     async _requestPayout(kind, amountSats) {
-      const invoice = await this._createUserInvoice(amountSats)
+      const { invoice, wallet, fallback } = await this._createUserInvoice(amountSats)
       if (!invoice) throw new Error('Failed to create invoice')
 
       const response = await fetch(`${EARN_API_URL}/api/claim`, {
@@ -331,7 +333,12 @@ export const useEarnStore = defineStore('earn', {
         // Non-JSON body (gateway error page); fall through to payout_failed.
       }
 
-      if (response.ok && data?.ok) return { success: true }
+      if (response.ok && data?.ok) {
+        // Tell the UI when the reward landed in a different wallet than the
+        // active one (Arkade below-minimum fallback), so the user isn't left
+        // wondering where their sats went.
+        return { success: true, walletName: fallback ? wallet?.name : null }
+      }
 
       const result = { success: false, error: data?.error || 'payout_failed' }
       if (data?.minutesLeft) result.minutesLeft = data.minutesLeft
@@ -355,44 +362,72 @@ export const useEarnStore = defineStore('earn', {
      * NWC exposes the WebLN `makeInvoice`, Spark/LNbits use `createInvoice`.
      */
     async _createUserInvoice(amountSats) {
+      const { useWalletStore } = await import('./wallet')
+      const walletStore = useWalletStore()
+
+      // Prefer the earn-selected wallet, but it is persisted across sessions
+      // and may have since been removed (or never set if storage was
+      // cleared). Fall back to the active wallet so the reward still lands in
+      // a wallet the user controls instead of failing the whole claim.
+      let walletId = this.selectedWalletId
+      let wallet = walletStore.wallets.find(w => w.id === walletId)
+      if (!wallet) {
+        walletId = walletStore.activeWalletId
+        wallet = walletStore.wallets.find(w => w.id === walletId)
+      }
+      if (!wallet) throw new Error('No wallet available to receive payout')
+
       try {
-        const { useWalletStore } = await import('./wallet')
-        const walletStore = useWalletStore()
-
-        // Prefer the earn-selected wallet, but it is persisted across sessions
-        // and may have since been removed (or never set if storage was
-        // cleared). Fall back to the active wallet so the reward still lands in
-        // a wallet the user controls instead of failing the whole claim.
-        let walletId = this.selectedWalletId
-        let wallet = walletStore.wallets.find(w => w.id === walletId)
-        if (!wallet) {
-          walletId = walletStore.activeWalletId
-          wallet = walletStore.wallets.find(w => w.id === walletId)
+        return { invoice: await this._invoiceFromWallet(walletStore, walletId, wallet, amountSats), wallet }
+      } catch (error) {
+        // An Arkade wallet receives Lightning through a swap with a minimum;
+        // a small reward physically can't ride that rail. The reward is still
+        // the user's — deliver it into another wallet of theirs when one
+        // exists, and only fail (with an exact, actionable message) when the
+        // Arkade wallet is all they have.
+        if (error?.code !== 'ARKADE_SWAP_BELOW_MIN') throw error
+        for (const candidate of walletStore.wallets) {
+          if (candidate.id === walletId) continue
+          if ((candidate.type || '').toLowerCase() === 'arkade') continue
+          try {
+            const invoice = await this._invoiceFromWallet(walletStore, candidate.id, candidate, amountSats)
+            console.info('[earn] reward below Arkade swap minimum; claiming to', candidate.name)
+            return { invoice, wallet: candidate, fallback: true }
+          } catch (fallbackError) {
+            console.warn('[earn] fallback wallet failed for claim:', candidate.name, fallbackError?.message || fallbackError)
+          }
         }
-        if (!wallet) throw new Error('No wallet available to receive payout')
+        const err = new Error(`Reward below the Arkade Lightning minimum (${error.minSats || 0} sats)`)
+        err.code = 'EARN_BELOW_WALLET_MIN'
+        err.minSats = error.minSats || 0
+        throw err
+      }
+    },
 
-        const provider = await walletStore.ensureWalletConnectedForTransfer(walletId)
-        if (!provider) throw new Error('Wallet not connected')
+    /**
+     * Create a Lightning invoice on one specific wallet. NWC exposes the
+     * WebLN `makeInvoice`; Spark/LNbits/Arkade use the provider contract's
+     * `createInvoice`. Throws with the provider's coded error on failure.
+     */
+    async _invoiceFromWallet(walletStore, walletId, wallet, amountSats) {
+      const provider = await walletStore.ensureWalletConnectedForTransfer(walletId)
+      if (!provider) throw new Error('Wallet not connected')
 
-        const type = (wallet.type || 'nwc').toLowerCase()
-        if (type === 'spark' || type === 'lnbits' || type === 'arkade') {
-          const result = await provider.createInvoice({
-            amount: amountSats,
-            description: 'BuhoGO Learn & Earn reward',
-          })
-          return result.paymentRequest || result.payment_request || result.bolt11 || result
-        }
-
-        // NWC wallets use the WebLN interface; makeInvoice expects sats.
-        const result = await provider.makeInvoice({
+      const type = (wallet.type || 'nwc').toLowerCase()
+      if (type === 'spark' || type === 'lnbits' || type === 'arkade') {
+        const result = await provider.createInvoice({
           amount: amountSats,
           description: 'BuhoGO Learn & Earn reward',
         })
-        return result.invoice || result.paymentRequest || result.bolt11
-      } catch (error) {
-        console.error('[earn] Create invoice failed:', error)
-        return null
+        return result.paymentRequest || result.payment_request || result.bolt11 || result
       }
+
+      // NWC wallets use the WebLN interface; makeInvoice expects sats.
+      const result = await provider.makeInvoice({
+        amount: amountSats,
+        description: 'BuhoGO Learn & Earn reward',
+      })
+      return result.invoice || result.paymentRequest || result.bolt11
     },
 
     /**
@@ -434,10 +469,12 @@ export const useEarnStore = defineStore('earn', {
         this.answerTimings = [] // reset timings after a successful claim, like claimPayout
         this.persist()
 
-        return { amount: totalPayout, bonus, totalPayout, totalEarned: this.totalEarned, success: true }
+        return { amount: totalPayout, bonus, totalPayout, totalEarned: this.totalEarned, success: true, walletName: result.walletName || null }
       } catch (error) {
         console.error('[earn] Bonus payout failed:', error.message)
-        return { amount: 0, success: false, error: 'payout_failed', message: error.message }
+        // Keep the original (coded) error so the UI can show the real,
+        // translated reason instead of a generic "payout_failed".
+        return { amount: 0, success: false, error: 'payout_failed', message: error.message, cause: error }
       }
     },
 

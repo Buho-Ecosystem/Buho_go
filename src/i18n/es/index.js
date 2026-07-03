@@ -78,6 +78,8 @@ export default {
   "That amount can't be sent over Lightning right now. Try a different amount, or use your Arkade address.": "Ese importe no se puede enviar por Lightning en este momento. Prueba con otro importe o usa tu dirección de Arkade.",
   "Your payment was sent. It will show in your balance in a moment.": "Tu pago se envió. Aparecerá en tu saldo en un momento.",
   "That amount is too small for Lightning. The minimum is {min} sats.": "Ese importe es demasiado pequeño para Lightning. El mínimo es de {min} sats.",
+  "This reward is below the {min} sats minimum your Arkade wallet can receive over Lightning. Keep earning and claim once you reach {min} sats.": "Esta recompensa es inferior al mínimo de {min} sats que tu cartera Arkade puede recibir por Lightning. Sigue aprendiendo y reclámala cuando llegues a {min} sats.",
+  "{amount} sats claimed to {wallet}!": "¡{amount} sats reclamados a {wallet}!",
   "That amount is too large for Lightning. The maximum is {max} sats.": "Ese importe es demasiado grande para Lightning. El máximo es de {max} sats.",
   "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.": "Ese importe es demasiado pequeño para enviar a una dirección de Bitcoin. El mínimo es de {min} sats.",
   "Sending to a Bitcoin address didn't go through. Please try again.": "El envío a una dirección de Bitcoin no se completó. Inténtalo de nuevo.",

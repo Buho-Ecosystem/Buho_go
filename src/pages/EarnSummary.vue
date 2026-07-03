@@ -209,7 +209,11 @@ export default {
         if (result.success) {
           this.$q.notify({
             type: 'positive',
-            message: this.$t('{amount} sats claimed!', { amount: result.amount }),
+            // When the reward was too small for the Arkade wallet's Lightning
+            // minimum it landed in another of the user's wallets — say which.
+            message: result.walletName
+              ? this.$t('{amount} sats claimed to {wallet}!', { amount: result.amount, wallet: result.walletName })
+              : this.$t('{amount} sats claimed!', { amount: result.amount }),
           })
         } else if (result.error === 'cooldown') {
           this.$q.notify({
@@ -233,14 +237,16 @@ export default {
           })
         } else {
           // No exception was raised; the store returned a structured
-          // failure code. Wrap the code so the technical pane still has
-          // something useful, but pass a curated reason so the dialog
-          // doesn't attribute our own synthesized string to a
+          // failure code. Prefer the original (coded) error when the store
+          // preserved one — its translated copy names the real reason (e.g.
+          // a reward below the Arkade Lightning minimum) — and fall back to
+          // wrapping the code so the technical pane still has something
+          // useful without attributing our own synthesized string to a
           // third-party payout service.
-          this.walletStore.showPaymentError(new Error(`claim failed: ${result.error || 'unknown'}`), {
+          this.walletStore.showPaymentError(result.cause || new Error(`claim failed: ${result.error || 'unknown'}`), {
             context: 'earn',
             route: 'Earn payout claim',
-            reason: this.$t('Claim failed. Try again later.'),
+            reason: result.cause ? undefined : this.$t('Claim failed. Try again later.'),
             t: this.$t.bind(this),
           })
         }
@@ -280,10 +286,10 @@ export default {
             message: this.$t('You have already received the maximum reward.'),
           })
         } else {
-          this.walletStore.showPaymentError(new Error(`bonus claim failed: ${result.error || 'unknown'}`), {
+          this.walletStore.showPaymentError(result.cause || new Error(`bonus claim failed: ${result.error || 'unknown'}`), {
             context: 'earn',
             route: 'Earn completion bonus',
-            reason: this.$t('Claim failed. Try again later.'),
+            reason: result.cause ? undefined : this.$t('Claim failed. Try again later.'),
             t: this.$t.bind(this),
           })
         }
