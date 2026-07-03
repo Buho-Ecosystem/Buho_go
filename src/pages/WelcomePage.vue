@@ -5,194 +5,200 @@
   />
 
   <q-page class="welcome-page">
-    <transition :name="transitionName" mode="out-in">
-      <!-- ═══════════════ Welcome view ═══════════════ -->
-      <div v-if="currentView === 'welcome'" key="welcome" class="bgo-screen">
-        <div class="bgo-top">
-          <div class="bgo-brand-row">
-            <span class="bgo-brand">BuhoGO</span>
-          </div>
+    <div class="bgo-screen">
+      <!-- ═══════════════ Cream editorial hero ═══════════════ -->
+      <div class="bgo-top">
+        <!-- Buho brand mark, embossed into the cream like a letterpress
+             watermark. Rises from the bottom and crops at the cream/dark seam. -->
+        <svg class="bgo-emblem" viewBox="0 0 30 32" fill="currentColor" aria-hidden="true">
+          <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"/>
+          <path d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"/>
+          <path d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"/>
+        </svg>
 
-          <div class="bgo-diag">
-            <div class="bgo-kicker">{{ $t('A new wallet') }}</div>
-            <h1 class="bgo-h1">
-              {{ $t('A fresh') }}<br>
-              {{ $t('Bitcoin') }}<br>
-              <em class="bgo-under">{{ $t('wallet.') }}</em>
-            </h1>
-            <p class="bgo-sub">{{ $t("A Bitcoin wallet that's yours. Ready in seconds - no sign-up needed.") }}</p>
-          </div>
-
-          <div class="bgo-object" aria-hidden="true">
-            <div class="obj">
-              <div class="seam"></div>
-              <div class="dot"></div>
-              <div class="mark">₿</div>
-              <div class="logo-stamp">
-                <svg viewBox="0 0 30 32" fill="currentColor">
-                  <path d="M0 13.44C0 6.02 6.02 0 13.44 0v18.56C13.44 25.98 7.42 32 0 32V13.44Z"/>
-                  <path d="M15.39 7.30C15.39 3.27 18.66 0 22.70 0c4.03 0 7.30 3.27 7.30 7.30v.42c0 4.03-3.27 7.30-7.30 7.30-4.03 0-7.30-3.27-7.30-7.30V7.30Z"/>
-                  <path d="M15.39 24.28C15.39 20.25 18.66 16.98 22.70 16.98c4.03 0 7.30 3.27 7.30 7.30v.42c0 4.03-3.27 7.30-7.30 7.30-4.03 0-7.30-3.27-7.30-7.30v-.42Z"/>
-                </svg>
-                Buho
-              </div>
-              <div class="serial">No. {{ serial }}</div>
-            </div>
-          </div>
+        <div class="bgo-brand-row">
+          <span class="bgo-brand">BuhoGO</span>
         </div>
 
-        <div class="bgo-bot">
-          <div class="bgo-section-label">{{ $t('Other options') }}</div>
-          <div class="bgo-rows">
-            <button class="bgo-rowitem" @click="goToArkadeSetup">
-              <span class="num">I.</span>
-              <span class="label">
-                <div class="t">{{ $t('Create an Arkade wallet') }}</div>
-                <div class="d">{{ $t('Instant, near zero fees') }}</div>
-              </span>
-              <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M1 1l5.5 5.5L1 12"/>
-              </svg>
-            </button>
-            <button class="bgo-rowitem" @click="goToRestore">
-              <span class="num">II.</span>
-              <span class="label">
-                <div class="t">{{ $t('Restore from backup') }}</div>
-                <div class="d">{{ $t('Use your recovery phrase') }}</div>
-              </span>
-              <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M1 1l5.5 5.5L1 12"/>
-              </svg>
-            </button>
-            <button class="bgo-rowitem" @click="openAdvanced">
-              <span class="num">III.</span>
-              <span class="label">
-                <div class="t">{{ $t('Advanced setup') }}</div>
-                <div class="d">NWC · LNbits</div>
-              </span>
-              <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M1 1l5.5 5.5L1 12"/>
-              </svg>
-            </button>
-          </div>
+        <div class="bgo-diag">
+          <div class="bgo-kicker">{{ $t('Welcome') }}</div>
+          <h1 class="bgo-h1">
+            {{ $t('A fresh') }}<br>
+            {{ $t('Bitcoin') }}<br>
+            <em class="bgo-under">{{ $t('wallet.') }}</em>
+          </h1>
+          <p class="bgo-sub">{{ $t('Yours in seconds. No sign-up, no account.') }}</p>
+        </div>
+      </div>
 
-          <div class="bgo-actions">
-            <q-btn
-              class="apple-cta full-width"
-              :label="$t('Create Wallet')"
-              @click="goToSparkSetup"
-              no-caps
-              unelevated
-            />
-            <div class="bgo-foot">
-              <span class="bgo-foot-trust">
-                <span class="bgo-icon-pair" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M13 2 3 14h8l-1 8 11-12h-8l1-8Z"/>
-                  </svg>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="9.5"/>
-                    <path d="M9.5 7.5h4.2a2.3 2.3 0 0 1 0 4.5H9.5m0 0h4.6a2.3 2.3 0 0 1 0 4.5H9.5m0-9v9m2-10.5v1.5m0 9v1.5" stroke-linecap="round"/>
-                  </svg>
-                </span>
-                {{ $t('Lightning & Bitcoin ready') }}
-              </span>
-              <button
-                class="bgo-lang"
-                type="button"
-                :aria-label="$t('Change language')"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <circle cx="12" cy="12" r="9"/>
-                  <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
-                </svg>
-                <span>{{ currentLocaleLabel }}</span>
-                <svg class="bgo-lang-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M6 9l6 6 6-6"/>
-                </svg>
-                <q-menu
-                  anchor="top end"
-                  self="bottom end"
-                  :offset="[0, 10]"
-                  class="bgo-lang-menu"
-                  transition-show="jump-up"
-                  transition-hide="jump-down"
+      <!-- ═══════════════ Dark action bar ═══════════════ -->
+      <div class="bgo-bot">
+        <q-btn
+          class="apple-cta full-width"
+          :label="$t('Create Wallet')"
+          @click="goToSparkSetup"
+          no-caps
+          unelevated
+        />
+
+        <button class="bgo-more" type="button" @click="showMoreSheet = true">
+          {{ $t('More ways to start') }}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <path d="M18 15l-6-6-6 6"/>
+          </svg>
+        </button>
+
+        <div class="bgo-foot">
+          <span class="bgo-foot-trust">
+            <span class="bgo-icon-pair" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M13 2 3 14h8l-1 8 11-12h-8l1-8Z"/>
+              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9.5"/>
+                <path d="M9.5 7.5h4.2a2.3 2.3 0 0 1 0 4.5H9.5m0 0h4.6a2.3 2.3 0 0 1 0 4.5H9.5m0-9v9m2-10.5v1.5m0 9v1.5" stroke-linecap="round"/>
+              </svg>
+            </span>
+            {{ $t('Lightning & Bitcoin ready') }}
+          </span>
+          <button
+            class="bgo-lang"
+            type="button"
+            :aria-label="$t('Change language')"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
+            </svg>
+            <span>{{ currentLocaleLabel }}</span>
+            <svg class="bgo-lang-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+            <q-menu
+              anchor="top end"
+              self="bottom end"
+              :offset="[0, 10]"
+              class="bgo-lang-menu"
+              transition-show="jump-up"
+              transition-hide="jump-down"
+            >
+              <q-list class="bgo-lang-list">
+                <q-item
+                  v-for="locale in supportedLocales"
+                  :key="locale.value"
+                  v-close-popup
+                  clickable
+                  :active="$i18n.locale === locale.value"
+                  class="bgo-lang-item"
+                  @click="changeLocale(locale.value)"
                 >
-                  <q-list class="bgo-lang-list">
-                    <q-item
-                      v-for="locale in supportedLocales"
-                      :key="locale.value"
-                      v-close-popup
-                      clickable
-                      :active="$i18n.locale === locale.value"
-                      class="bgo-lang-item"
-                      @click="changeLocale(locale.value)"
-                    >
-                      <q-item-section>{{ locale.label }}</q-item-section>
-                      <q-item-section side v-if="$i18n.locale === locale.value">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                          <path d="M20 6 9 17l-5-5"/>
-                        </svg>
-                      </q-item-section>
-                    </q-item>
-                  </q-list>
-                </q-menu>
-              </button>
-            </div>
-          </div>
+                  <q-item-section>{{ locale.label }}</q-item-section>
+                  <q-item-section side v-if="$i18n.locale === locale.value">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <path d="M20 6 9 17l-5-5"/>
+                    </svg>
+                  </q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </button>
         </div>
       </div>
+    </div>
 
-      <!-- ═══════════════ Advanced view ═══════════════ -->
-      <div v-else key="advanced" class="bgo-screen">
-        <div class="bgo-top">
-          <div class="bgo-brand-row">
-            <button class="bgo-back" @click="closeAdvanced">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path d="M15 18l-6-6 6-6"/>
-              </svg>
-              {{ $t('Back') }}
-            </button>
-          </div>
+    <!-- ═══════════════ "More ways to start" sheet ═══════════════ -->
+    <!--
+      One place for every non-default path. Replaces the old numbered
+      list AND the separate "Advanced" view: NWC and LNbits now live
+      under the "power users" divider here, so there's no second screen
+      to maintain.
+    -->
+    <q-dialog v-model="showMoreSheet" position="bottom" class="bgo-sheet-dialog">
+      <div class="bgo-sheet">
+        <div class="bgo-grab" aria-hidden="true"></div>
+        <div class="bgo-sheet-title">{{ $t('More ways to start') }}</div>
 
-          <div class="bgo-diag">
-            <div class="bgo-kicker">{{ $t('For power users') }}</div>
-            <h1 class="bgo-h1">
-              {{ $t('Bring') }} <em class="bgo-under">{{ $t('your own') }}</em><br>
-              {{ $t('wallet.') }}
-            </h1>
-            <p class="bgo-sub">{{ $t('Use an existing Lightning wallet. Your keys stay where they already live.') }}</p>
-          </div>
-        </div>
+        <button class="bgo-srow" type="button" @click="goToArkadeSetup">
+          <span class="bgo-tile bgo-tile-ark">
+            <svg viewBox="0 0 94 94" fill="#F14317" aria-hidden="true">
+              <rect x="46.55" y="23.28" width="11.64" height="11.64"/>
+              <rect x="34.92" y="23.28" width="11.64" height="11.64"/>
+              <rect x="58.19" y="34.92" width="11.64" height="11.64"/>
+              <rect width="11.64" height="11.64" transform="matrix(-1 0 0 1 34.92 34.92)"/>
+              <rect width="11.64" height="11.64" transform="matrix(-1 0 0 1 46.55 46.55)"/>
+              <rect width="11.64" height="11.64" transform="matrix(-1 0 0 1 58.19 46.55)"/>
+              <rect x="58.19" y="58.19" width="11.64" height="11.64"/>
+              <rect width="11.64" height="11.64" transform="matrix(-1 0 0 1 34.92 58.19)"/>
+              <path d="M58.19 23.28L69.83 34.92H58.19V23.28Z"/>
+              <path d="M34.92 23.28L23.28 34.92H34.92V23.28Z"/>
+            </svg>
+          </span>
+          <span class="bgo-st">
+            <span class="bgo-t">{{ $t('Create an Arkade wallet') }}</span>
+            <span class="bgo-d">{{ $t('Instant, near zero fees') }}</span>
+          </span>
+          <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M1 1l5.5 5.5L1 12"/>
+          </svg>
+        </button>
 
-        <div class="bgo-bot">
-          <div class="bgo-section-label">{{ $t('Connection method') }}</div>
-          <div class="bgo-rows">
-            <button class="bgo-rowitem" @click="goToNWCSetup">
-              <span class="num">I.</span>
-              <span class="label">
-                <div class="t">Nostr Wallet Connect</div>
-                <div class="d">{{ $t('Paste an NWC string') }}</div>
-              </span>
-              <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M1 1l5.5 5.5L1 12"/>
-              </svg>
-            </button>
-            <button class="bgo-rowitem" @click="goToLNBitsSetup">
-              <span class="num">II.</span>
-              <span class="label">
-                <div class="t">LNbits Wallet</div>
-                <div class="d">{{ $t('Connect via API endpoint') }}</div>
-              </span>
-              <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M1 1l5.5 5.5L1 12"/>
-              </svg>
-            </button>
-          </div>
+        <button class="bgo-srow" type="button" @click="goToRestore">
+          <span class="bgo-tile">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="6" r="1.7"/><circle cx="12" cy="6" r="1.7"/><circle cx="19" cy="6" r="1.7"/>
+              <circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/>
+              <circle cx="5" cy="18" r="1.7"/><circle cx="12" cy="18" r="1.7"/><circle cx="19" cy="18" r="1.7"/>
+            </svg>
+          </span>
+          <span class="bgo-st">
+            <span class="bgo-t">{{ $t('Restore from backup') }}</span>
+            <span class="bgo-d">{{ $t('Use your recovery phrase') }}</span>
+          </span>
+          <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M1 1l5.5 5.5L1 12"/>
+          </svg>
+        </button>
 
-        </div>
+        <div class="bgo-spower">{{ $t('For power users') }}</div>
+
+        <button class="bgo-srow" type="button" @click="goToNWCSetup">
+          <span class="bgo-tile bgo-tile-nwc">
+            <svg viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#bgo_nwc_grad)"/>
+              <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
+              <defs>
+                <linearGradient id="bgo_nwc_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#FFCA4A"/>
+                  <stop offset="1" stop-color="#F7931A"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </span>
+          <span class="bgo-st">
+            <span class="bgo-t">Nostr Wallet Connect</span>
+            <span class="bgo-d">{{ $t('Paste an NWC string') }}</span>
+          </span>
+          <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M1 1l5.5 5.5L1 12"/>
+          </svg>
+        </button>
+
+        <button class="bgo-srow" type="button" @click="goToLNBitsSetup">
+          <span class="bgo-tile bgo-tile-lnb">
+            <svg viewBox="-249 -49 1000 1000" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
+            </svg>
+          </span>
+          <span class="bgo-st">
+            <span class="bgo-t">LNbits Wallet</span>
+            <span class="bgo-d">{{ $t('Connect via API endpoint') }}</span>
+          </span>
+          <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M1 1l5.5 5.5L1 12"/>
+          </svg>
+        </button>
       </div>
-    </transition>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -213,18 +219,11 @@ export default {
     return {
       showLoadingScreen: true,
       loadingText: 'Initializing BuhoGO...',
-      currentView: 'welcome',
-      transitionName: 'bgo-slide-forward',
+      showMoreSheet: false,
       supportedLocales: SUPPORTED_LOCALES,
     }
   },
   computed: {
-    serial() {
-      const d = new Date()
-      const month = String(d.getMonth() + 1).padStart(2, '0')
-      const year = String(d.getFullYear()).slice(-2)
-      return `${month}\u00B7${year}`
-    },
     currentLocaleLabel() {
       return getLocaleLabel(this.$i18n.locale)
     }
@@ -259,19 +258,11 @@ export default {
         this.showLoadingScreen = false
       }
     },
-    openAdvanced() {
-      this.transitionName = 'bgo-slide-forward'
-      this.currentView = 'advanced'
-    },
-    closeAdvanced() {
-      this.transitionName = 'bgo-slide-back'
-      this.currentView = 'welcome'
-    },
     goToSparkSetup() { this.$router.push('/spark-setup') },
-    goToArkadeSetup() { this.$router.push('/arkade-setup') },
-    goToRestore() { this.$router.push('/restore') },
-    goToNWCSetup() { this.$router.push('/nwc-setup') },
-    goToLNBitsSetup() { this.$router.push('/lnbits-setup') },
+    goToArkadeSetup() { this.showMoreSheet = false; this.$router.push('/arkade-setup') },
+    goToRestore() { this.showMoreSheet = false; this.$router.push('/restore') },
+    goToNWCSetup() { this.showMoreSheet = false; this.$router.push('/nwc-setup') },
+    goToLNBitsSetup() { this.showMoreSheet = false; this.$router.push('/lnbits-setup') },
     changeLocale(code) {
       applyLocale(this.$i18n, code)
     },
@@ -297,17 +288,19 @@ export default {
   color: #F4F4F5;
 }
 
-/* ─── Cream editorial top ─── */
+/* ─── Cream editorial hero ─── */
 .bgo-top {
   position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding:
     calc(var(--safe-top, 0px) + 14px)
     26px
-    40px;
+    24px;
   background:
-    radial-gradient(120% 80% at 10% 10%, #EDE4CE 0%, #DBCFB1 55%, #C7B991 100%);
+    radial-gradient(125% 78% at 12% 8%, #EEE6D0 0%, #DCD0B2 54%, #C6B88F 100%);
   color: #1A1A1A;
-  flex-shrink: 0;
   overflow: hidden;
 }
 
@@ -318,15 +311,31 @@ export default {
   inset: 0;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.10  0 0 0 0 0.06  0 0 0 0.45 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.4'/></svg>");
   mix-blend-mode: multiply;
-  opacity: 0.38;
+  opacity: 0.34;
   pointer-events: none;
+}
+
+/* Embossed Buho brand mark, rising from the bottom of the hero */
+.bgo-emblem {
+  position: absolute;
+  left: 50%;
+  bottom: -30px;
+  transform: translateX(-50%);
+  width: 264px;
+  height: auto;
+  color: #7A6E52;
+  opacity: 0.16;
+  z-index: 1;
+  pointer-events: none;
+  filter:
+    drop-shadow(0 1.5px 0.5px rgba(255, 248, 232, 0.55))
+    drop-shadow(0 -1px 0.5px rgba(60, 48, 30, 0.25));
 }
 
 .bgo-brand-row {
   position: relative;
   z-index: 2;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   min-height: 22px;
 }
@@ -338,21 +347,6 @@ export default {
   letter-spacing: -0.01em;
   color: #1A1A1A;
 }
-.bgo-back {
-  all: unset;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: 'Fraunces', 'Manrope', serif;
-  font-weight: 500;
-  font-style: italic;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  color: #1A1A1A;
-  padding: 4px 8px 4px 0;
-}
-.bgo-back svg { opacity: 0.7 }
 
 .bgo-diag {
   position: relative;
@@ -382,8 +376,8 @@ export default {
 .bgo-h1 {
   font-family: 'Fraunces', 'Manrope', serif;
   font-weight: 400;
-  font-size: 44px;
-  line-height: 0.98;
+  font-size: 46px;
+  line-height: 0.97;
   letter-spacing: -0.035em;
   margin: 0;
   color: #0C0C0E;
@@ -394,8 +388,6 @@ export default {
   font-weight: 400;
   color: #2E2A22;
 }
-
-/* Professional editorial underline */
 .bgo-h1 .bgo-under {
   text-decoration: underline;
   text-decoration-color: #059573;
@@ -407,185 +399,25 @@ export default {
 .bgo-sub {
   font-size: 14px;
   color: #45433E;
-  max-width: 260px;
-  margin: 18px 0 0;
+  max-width: 250px;
+  margin: 17px 0 0;
   line-height: 1.55;
   letter-spacing: -0.005em;
 }
 
-/* ─── Tilted metallic object ─── */
-.bgo-object {
-  position: absolute;
-  right: -34px;
-  top: calc(var(--safe-top, 0px) + 70px);
-  width: 170px;
-  height: 170px;
-  transform: rotate(-9deg);
-  z-index: 1;
-  pointer-events: none;
-}
-.bgo-object .obj {
-  width: 100%;
-  height: 100%;
-  border-radius: 26px;
-  background: linear-gradient(135deg, #FCFBF7 0%, #E6E0D1 40%, #A9A393 100%);
-  box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, 0.85),
-    inset 0 -8px 18px rgba(70, 60, 40, 0.2),
-    0 30px 60px -12px rgba(50, 40, 20, 0.45),
-    0 6px 12px rgba(50, 40, 20, 0.15);
-  position: relative;
-}
-.bgo-object .seam {
-  position: absolute;
-  inset: 13px;
-  border-radius: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.07);
-}
-.bgo-object .mark {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-family: 'Fraunces', 'Manrope', serif;
-  font-weight: 500;
-  font-style: italic;
-  font-size: 56px;
-  color: #2A2620;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-  line-height: 1;
-}
-.bgo-object .dot {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #059573;
-  box-shadow: 0 0 0 3px rgba(5, 149, 115, 0.18);
-  animation: bgoPing 2.6s ease-out infinite;
-}
-@keyframes bgoPing {
-  0%   { box-shadow: 0 0 0 0 rgba(5, 149, 115, 0.45) }
-  70%  { box-shadow: 0 0 0 8px rgba(5, 149, 115, 0) }
-  100% { box-shadow: 0 0 0 0 rgba(5, 149, 115, 0) }
-}
-.bgo-object .logo-stamp {
-  position: absolute;
-  bottom: 13px;
-  left: 13px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-family: 'Fraunces', 'Manrope', serif;
-  font-style: italic;
-  font-weight: 500;
-  font-size: 9.5px;
-  color: #4A4238;
-  letter-spacing: 0.02em;
-  opacity: 0.75;
-}
-.bgo-object .logo-stamp svg { width: 10px; height: 11px; opacity: 0.8 }
-.bgo-object .serial {
-  position: absolute;
-  bottom: 13px;
-  right: 13px;
-  font-family: 'SF Mono', Menlo, monospace;
-  font-size: 8px;
-  color: #4A4238;
-  opacity: 0.55;
-  letter-spacing: 0.04em;
-}
-
-/* ─── Dark bottom ─── */
+/* ─── Dark action bar ─── */
 .bgo-bot {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   /* 48px floor clears a 3-button Android nav bar on devices where the
      WebView reports zero bottom inset. On gesture-nav devices and iOS
      the larger calc() with var(--safe-bottom) wins. */
   padding: 22px 24px max(48px, calc(var(--safe-bottom, 0px) + 20px));
-  background: radial-gradient(80% 60% at 50% 0%, #14161A 0%, #0A0B0C 80%);
+  background: radial-gradient(80% 70% at 50% 0%, #14161A 0%, #0A0B0C 82%);
   position: relative;
 }
 
-.bgo-section-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  color: #6B6B70;
-  text-transform: uppercase;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.bgo-section-label::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.bgo-rows {
-  display: flex;
-  flex-direction: column;
-}
-.bgo-rowitem {
-  all: unset;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  position: relative;
-  transition: padding-left 0.2s ease;
-}
-.bgo-rowitem:active { padding-left: 8px }
-.bgo-rowitem:last-child { border-bottom: none }
-.bgo-rowitem .num {
-  font-family: 'Fraunces', 'Manrope', serif;
-  font-style: italic;
-  font-weight: 500;
-  font-size: 13px;
-  color: #52525B;
-  width: 20px;
-  flex-shrink: 0;
-  letter-spacing: -0.01em;
-}
-.bgo-rowitem .label {
-  flex: 1;
-  min-width: 0;
-}
-.bgo-rowitem .t {
-  font-size: 15px;
-  font-weight: 500;
-  color: #F4F4F5;
-  letter-spacing: -0.01em;
-}
-.bgo-rowitem .d {
-  font-size: 12px;
-  color: #71717A;
-  margin-top: 2px;
-  letter-spacing: -0.005em;
-}
-.bgo-rowitem .chev {
-  color: #52525B;
-  flex-shrink: 0;
-}
-
-/* ─── CTA ─── */
-.bgo-actions {
-  margin-top: auto;
-  padding-top: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 .apple-cta {
   background: linear-gradient(180deg, #2E3034 0%, #181A1D 100%) !important;
   color: #F4F4F5 !important;
@@ -606,13 +438,40 @@ export default {
   font-weight: 600;
 }
 
+.bgo-more {
+  all: unset;
+  cursor: pointer;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 10px;
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #A1A1AA;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.bgo-more:hover,
+.bgo-more:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  color: #F4F4F5;
+}
+.bgo-more svg { width: 12px; height: 12px; opacity: 0.7; }
+
 /* ─── Foot signals + language switcher ─── */
 .bgo-foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-top: 12px;
+  margin-top: 14px;
   font-size: 11px;
   color: #71717A;
   letter-spacing: 0.01em;
@@ -667,38 +526,24 @@ export default {
   margin-left: -1px;
 }
 
-/* ─── Transitions ─── */
-.bgo-slide-forward-enter-active,
-.bgo-slide-forward-leave-active,
-.bgo-slide-back-enter-active,
-.bgo-slide-back-leave-active {
-  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
-}
-.bgo-slide-forward-enter-from { transform: translateX(28px); opacity: 0 }
-.bgo-slide-forward-leave-to   { transform: translateX(-18px); opacity: 0 }
-.bgo-slide-back-enter-from    { transform: translateX(-18px); opacity: 0 }
-.bgo-slide-back-leave-to      { transform: translateX(28px); opacity: 0 }
-
 /* ─── Small screens ─── */
 @media (max-height: 720px) {
-  .bgo-h1 { font-size: 38px }
+  .bgo-h1 { font-size: 40px }
   .bgo-diag { padding-top: 32px }
-  .bgo-object { width: 150px; height: 150px; right: -30px }
-  .bgo-object .mark { font-size: 50px }
+  .bgo-emblem { width: 220px }
 }
 @media (max-width: 360px) {
   .bgo-top { padding-left: 22px; padding-right: 22px }
   .bgo-bot { padding-left: 20px; padding-right: 20px }
-  .bgo-h1 { font-size: 38px }
-  .bgo-object { width: 140px; height: 140px }
-  .bgo-object .mark { font-size: 46px }
+  .bgo-h1 { font-size: 40px }
 }
 </style>
 
 <!--
-  q-menu is teleported to <body>, so scoped styles cannot reach it.
-  This second, non-scoped block styles ONLY the menu flagged with
-  `.bgo-lang-menu` (opened from the language switcher on WelcomePage).
+  q-menu and q-dialog teleport to <body>, so scoped styles cannot reach
+  them. This second, non-scoped block styles ONLY the elements flagged
+  with `.bgo-lang-menu` (the language switcher) and `.bgo-sheet-dialog`
+  (the "More ways to start" sheet), both opened from WelcomePage.
 -->
 <style>
 .bgo-lang-menu {
@@ -734,5 +579,123 @@ export default {
 }
 .bgo-lang-menu .bgo-lang-item.q-item--active .q-item__section--side {
   color: #15DE72;
+}
+
+/* ─── "More ways to start" bottom sheet ─── */
+.bgo-sheet-dialog .q-dialog__inner {
+  padding: 0;
+}
+.bgo-sheet-dialog .q-dialog__inner > .bgo-sheet {
+  width: 100%;
+  max-width: 480px;
+}
+.bgo-sheet {
+  position: relative;
+  border-radius: 30px 30px 0 0;
+  background: radial-gradient(140% 100% at 20% 0%, #F0E8D4 0%, #DED2B5 70%, #D1C39F 100%);
+  color: #1C1A16;
+  padding: 12px 24px max(30px, calc(var(--safe-bottom, 0px) + 18px));
+  overflow: hidden;
+  box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.45);
+}
+.bgo-sheet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.10  0 0 0 0 0.06  0 0 0 0.45 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.4'/></svg>");
+  mix-blend-mode: multiply;
+  opacity: 0.28;
+  pointer-events: none;
+}
+.bgo-grab {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  margin: 0 auto 16px;
+  position: relative;
+}
+.bgo-sheet-title {
+  position: relative;
+  font-family: 'Fraunces', 'Manrope', serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+  color: #1C1A16;
+}
+.bgo-srow {
+  all: unset;
+  cursor: pointer;
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.bgo-srow:last-of-type { border-bottom: none; }
+.bgo-srow:active { background: rgba(0, 0, 0, 0.03); }
+.bgo-srow .bgo-tile {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.07);
+  color: #2A2620;
+}
+.bgo-srow .bgo-tile svg { width: 18px; height: 18px; }
+.bgo-srow .bgo-tile-ark { background: rgba(241, 67, 23, 0.12); }
+.bgo-srow .bgo-tile-ark svg { width: 25px; height: 25px; }
+.bgo-srow .bgo-tile-nwc svg { width: 23px; height: 23px; }
+.bgo-srow .bgo-tile-lnb svg { width: 20px; height: 24px; }
+.bgo-srow .bgo-st {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+.bgo-srow .bgo-t {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #1C1A16;
+}
+.bgo-srow .bgo-d {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: #5A564F;
+  margin-top: 1px;
+}
+.bgo-srow .bgo-schev {
+  color: rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+.bgo-spower {
+  position: relative;
+  font-family: 'Manrope', sans-serif;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #6B6156;
+  margin: 14px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bgo-spower::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.1);
 }
 </style>
