@@ -35,10 +35,12 @@
 <script>
 import { useWalletStore } from '../stores/wallet'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
+import { parseSuccessAction, resolveSuccessAction } from '../utils/successAction.js'
 import {
   isLightningInvoice as isLightningInvoiceShared,
   isLnurl as isLnurlShared,
   isArkadeAddress as isArkadeAddressShared,
+  stripWrapperScheme,
 } from '../utils/addressUtils.js'
 import PaymentConfirmSheet from './PaymentConfirmSheet.vue'
 
@@ -179,16 +181,22 @@ export default {
       this.isSending = true
       try {
         const walletStore = useWalletStore()
+        let result
         if (this.isSparkContact) {
-          await this.sendSparkPayment(walletStore, amountSats)
+          result = await this.sendSparkPayment(walletStore, amountSats)
         } else {
-          await this.sendLightningPayment(amountSats, comment)
+          result = await this.sendLightningPayment(amountSats, comment)
         }
+
+        // LUD-09: resolve any successAction the recipient returned (decrypting
+        // the aes variant with the preimage) so the success screen can show it.
+        const successAction = await resolveSuccessAction(result?.successAction, result?.preimage)
 
         this.$emit('payment-sent', {
           contact: this.contact,
           amount: amountSats,
-          comment
+          comment,
+          successAction
         })
         this.closeModal()
       } catch (error) {
@@ -239,8 +247,9 @@ export default {
           return await provider.payLightningAddress(address, amountSats, comment || undefined)
         }
         if (this.isLNURL(address)) {
-          const invoice = await this.fetchLNURLInvoice(address, amountSats)
-          return await provider.payInvoice({ invoice })
+          const { pr, successAction } = await this.fetchLNURLInvoice(address, amountSats)
+          const result = await provider.payInvoice({ invoice: pr })
+          return { ...result, successAction }
         }
         throw new Error('UNSUPPORTED_PAYMENT_TYPE')
       }
@@ -255,12 +264,14 @@ export default {
           return await provider.payInvoice({ invoice: address })
         }
         if (this.isLightningAddress(address)) {
-          const invoice = await this.fetchLightningAddressInvoice(address, amountSats, comment)
-          return await provider.payInvoice({ invoice })
+          const { pr, successAction } = await this.fetchLightningAddressInvoice(address, amountSats, comment)
+          const result = await provider.payInvoice({ invoice: pr })
+          return { ...result, successAction }
         }
         if (this.isLNURL(address)) {
-          const invoice = await this.fetchLNURLInvoice(address, amountSats)
-          return await provider.payInvoice({ invoice })
+          const { pr, successAction } = await this.fetchLNURLInvoice(address, amountSats)
+          const result = await provider.payInvoice({ invoice: pr })
+          return { ...result, successAction }
         }
         throw new Error('UNSUPPORTED_PAYMENT_TYPE')
       }
@@ -328,7 +339,8 @@ export default {
 
       const invoiceData = await invoiceResponse.json()
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error')
-      return invoiceData.pr
+      // Carry the LUD-09 successAction (recipient's post-payment message) too.
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction, data.callback) }
     },
 
     async fetchLightningAddressInvoice(address, amountSats, comment) {
@@ -359,7 +371,8 @@ export default {
 
       const invoiceData = await invoiceResponse.json()
       if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice generation failed')
-      return invoiceData.pr
+      // Carry the LUD-09 successAction (recipient's post-payment message) too.
+      return { pr: invoiceData.pr, successAction: parseSuccessAction(invoiceData.successAction, data.callback) }
     },
 
     /**
@@ -369,7 +382,7 @@ export default {
      * a manual decode (the NWC + LNbits paths).
      */
     decodeLNURL(lnurl) {
-      const clean = lnurl.trim().replace(/^lightning:/i, '')
+      const clean = stripWrapperScheme(lnurl)
 
       const lud17Url = resolveLUD17URL(clean)
       if (lud17Url) return lud17Url

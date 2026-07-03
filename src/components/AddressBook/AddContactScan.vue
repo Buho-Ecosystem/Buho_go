@@ -96,6 +96,19 @@
         <span>{{ $t('Paste instead') }}</span>
       </button>
     </div>
+
+    <!-- Native MLKit scanner (iOS/Android). Continuous: keeps scanning until a
+         recognized identifier/address resolves (onDetect closes it) or the user
+         dismisses back to search. Teleports to <body>. -->
+    <ScannerOverlay
+      v-if="nativeScannerActive"
+      :active="nativeScannerActive"
+      :title="$t('Scan QR Code')"
+      :prompt="$t('Point your camera at a Nostr profile, or a Lightning, Spark, or Bitcoin address.')"
+      continuous
+      @scanned="onDetect"
+      @close="$emit('switch-to-search')"
+    />
   </div>
 </template>
 
@@ -103,6 +116,8 @@
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../../utils/qrScanner';
+import { isNativeScannerAvailable } from '../../utils/nativeScanner';
+import ScannerOverlay from '../ScannerOverlay.vue';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { mapActions } from 'pinia';
 import { classifyIdentifier, lookupIdentifier } from '../../utils/nostrLookup.js';
@@ -114,7 +129,7 @@ import NostrContactPreview from './NostrContactPreview.vue';
 export default {
   name: 'AddContactScan',
 
-  components: { Icon, NostrContactPreview },
+  components: { Icon, NostrContactPreview, ScannerOverlay },
 
   props: {
     /**
@@ -131,6 +146,7 @@ export default {
   data() {
     return {
       showCamera: false,
+      nativeScannerActive: false,
       cameraError: '',
       qrScanner: null,
       detected: false,
@@ -177,6 +193,13 @@ export default {
     async startCamera() {
       this.resetResult();
       this.cameraError = '';
+      // Native (iOS/Android): mount the MLKit ScannerOverlay. Web/PWA keeps the
+      // in-page qr-scanner video.
+      if (isNativeScannerAvailable()) {
+        this.detected = false;
+        this.nativeScannerActive = true;
+        return;
+      }
       try {
         const hasCamera = await QrScanner.hasCamera();
         if (!hasCamera) {
@@ -231,6 +254,7 @@ export default {
     },
 
     stopScanner() {
+      this.nativeScannerActive = false;
       if (this.qrScanner) {
         try {
           this.qrScanner.stop();

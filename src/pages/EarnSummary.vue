@@ -221,6 +221,16 @@ export default {
             type: 'warning',
             message: this.$t('Please take your time reading the lessons before claiming'),
           })
+        } else if (result.error === 'daily_budget' || result.error === 'ip_cap') {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('The daily reward budget is used up. Please try again tomorrow.'),
+          })
+        } else if (result.error === 'lifetime_cap') {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('You have already received the maximum reward.'),
+          })
         } else {
           // No exception was raised; the store returned a structured
           // failure code. Wrap the code so the technical pane still has
@@ -252,12 +262,22 @@ export default {
         if (result.success) {
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Bonus claimed! {amount} sats earned', { amount: result.bonus }),
+            message: this.$t('Bonus claimed! {amount} sats earned', { amount: result.totalPayout }),
           })
         } else if (result.error === 'cooldown') {
           this.$q.notify({
             type: 'warning',
             message: this.$t('Please wait {mins} minutes before claiming again', { mins: result.minutesLeft }),
+          })
+        } else if (result.error === 'daily_budget' || result.error === 'ip_cap') {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('The daily reward budget is used up. Please try again tomorrow.'),
+          })
+        } else if (result.error === 'lifetime_cap') {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('You have already received the maximum reward.'),
           })
         } else {
           this.walletStore.showPaymentError(new Error(`bonus claim failed: ${result.error || 'unknown'}`), {

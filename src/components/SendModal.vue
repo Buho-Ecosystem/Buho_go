@@ -204,15 +204,25 @@
                straight to Continue / auto-advance. -->
           <div v-else-if="phoneNeedsCountryChoice" class="country-choice">
             <div class="country-choice-label">{{ $t('Which country?') }}</div>
-            <div class="country-choice-row">
+            <div class="country-choice-list">
               <button
-                v-for="c in recognizedPhone.candidates"
+                v-for="c in orderedPhoneCandidates"
                 :key="c.country.code"
                 type="button"
                 class="country-choice-btn"
                 @click="selectPhoneCountry(c)"
               >
-                <span class="country-choice-name">{{ countryName(c.country.code) }}</span>
+                <img
+                  v-if="c.brandLogo"
+                  :src="c.brandLogo"
+                  class="country-choice-logo"
+                  alt=""
+                  aria-hidden="true"
+                />
+                <span class="country-choice-text">
+                  <span class="country-choice-name">{{ countryName(c.country.code) }}</span>
+                  <span v-if="c.operator" class="country-choice-op">{{ c.operator }}</span>
+                </span>
                 <span class="country-choice-number">{{ c.display }}</span>
               </button>
             </div>
@@ -235,16 +245,48 @@
       v-model="showQuickContacts"
       @pay-contact="onContactPicked"
     />
+
+    <!-- ─────────────  NATIVE SCANNER (iOS/Android)  ─────────────
+         MLKit live camera behind a transparent webview. Carries the same
+         Manual / Paste / Contacts tiles so they stay reachable mid-scan. -->
+    <ScannerOverlay
+      v-if="shouldNativeScan"
+      :active="shouldNativeScan"
+      :title="$t('Send')"
+      :prompt="$t('Point your camera at a QR code')"
+      continuous
+      @scanned="onQRDetect"
+      @close="closeModal"
+    >
+      <template #actions>
+        <div class="action-buttons scanner-tiles">
+          <button type="button" class="action-tile scanner-tile" @click="openManual">
+            <span class="scanner-tile-chip"><Icon icon="tabler:keyboard" width="20" height="20" /></span>
+            <span class="tile-label">{{ $t('Manual') }}</span>
+          </button>
+          <button type="button" class="action-tile scanner-tile" @click="pasteFromClipboard">
+            <span class="scanner-tile-chip"><Icon icon="tabler:clipboard" width="20" height="20" /></span>
+            <span class="tile-label">{{ $t('Paste') }}</span>
+          </button>
+          <button type="button" class="action-tile scanner-tile" @click="openContacts">
+            <span class="scanner-tile-chip"><Icon icon="tabler:address-book" width="20" height="20" /></span>
+            <span class="tile-label">{{ $t('Contacts') }}</span>
+          </button>
+        </div>
+      </template>
+    </ScannerOverlay>
   </q-dialog>
 </template>
 
 <script>
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
+import { isNativeScannerAvailable } from '../utils/nativeScanner';
+import ScannerOverlay from './ScannerOverlay.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
-import { parseBip21, selectBip21Destination } from '../utils/bip21';
+import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
 import {
   isSparkAddress,
   isArkadeAddress,
@@ -252,8 +294,10 @@ import {
   isLnurl,
   isBitcoinAddress,
   isLightningAddress,
+  stripWrapperScheme,
 } from '../utils/addressUtils';
-import { recognizePhoneNumber } from '../services/lnAddressServices';
+import { recognizePhoneNumber, matchLnAddressService } from '../services/lnAddressServices';
+import { getPreferredPayoutCountry, rememberPayoutCountry } from '../utils/payoutCountryPreference';
 import { classifyIdentifier, LOOKUP_ERROR } from '../utils/nostrLookup';
 import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
 import AddressBookQuickModal from './AddressBookQuickModal.vue';
@@ -261,7 +305,7 @@ import ProgressCta from './ProgressCta.vue';
 
 export default {
   name: 'SendModal',
-  components: { AddressBookQuickModal, ProgressCta },
+  components: { AddressBookQuickModal, ProgressCta, ScannerOverlay },
   props: {
     modelValue: {
       type: Boolean,
@@ -297,7 +341,15 @@ export default {
       showQuickContacts: false,
       manualInput: '',
       qrScanner: null,
-      videoElement: null
+      videoElement: null,
+      // True on iOS/Android where the native MLKit scanner replaces the web
+      // qr-scanner video. Drives the ScannerOverlay branch below.
+      isNativeScanner: isNativeScannerAvailable(),
+      // Sticky default for the ambiguous-country chooser: the payout country the
+      // user last picked, so a bare (no calling code) number that is valid in
+      // more than one country leads with their country. Ordering only — an
+      // ambiguous number always still requires an explicit tap.
+      preferredPayoutCountry: getPreferredPayoutCountry(),
     }
   },
   computed: {
@@ -307,6 +359,20 @@ export default {
     // error. One flag drives both the camera overlay and the manual CTA.
     ctaBusy() {
       return this.isProcessing || this.resolving;
+    },
+
+    // The native scanner runs only while the Send sheet is open, nothing is
+    // layered on top (manual / contacts sheet), and we're not mid-resolve.
+    // Toggling a sub-sheet flips this false, which unmounts ScannerOverlay and
+    // stops the camera; closing the sub-sheet flips it back and resumes — no
+    // explicit start/stop calls needed at the call sites.
+    shouldNativeScan() {
+      return this.isNativeScanner
+        && this.show
+        && !this.showManualDialog
+        && !this.showQuickContacts
+        && !this.ctaBusy
+        && !this.cameraError;
     },
 
     show: {
@@ -343,9 +409,11 @@ export default {
         if (parsed) return 'bip21';
       }
 
-      const cleaned = lower.startsWith('lightning:')
-        ? raw.substring(10).trim()
-        : raw;
+      // http(s) "fallback URL" with the LNURL in a `lightning=` query param
+      // (LNbits / Fossa ATMs) — surface it as LNURL while typing. Otherwise
+      // strip a wrapper URI scheme (`lightning:` / `lnurl:`) off the raw paste.
+      const lnFallback = extractLnFallbackParam(raw);
+      const cleaned = lnFallback ? lnFallback : stripWrapperScheme(raw);
 
       if (isSparkAddress(cleaned)) return 'spark';
       if (isArkadeAddress(cleaned)) return 'arkade';
@@ -420,6 +488,25 @@ export default {
       return this.detectedInputType === 'phone_number'
         && !!this.recognizedPhone
         && this.recognizedPhone.ambiguous === true;
+    },
+
+    // The ambiguous-country candidates, each enriched with its provider brand
+    // logo and ordered so the user's last-chosen country leads (see
+    // payoutCountryPreference). This is presentation only — selecting still
+    // requires an explicit tap; we never auto-pick a country for an ambiguous
+    // number because a wrong-country payout is irreversible.
+    orderedPhoneCandidates() {
+      const phone = this.recognizedPhone;
+      if (!phone || !Array.isArray(phone.candidates)) return [];
+      const preferred = this.preferredPayoutCountry;
+      const ordered = [
+        ...phone.candidates.filter((c) => c.country.code === preferred),
+        ...phone.candidates.filter((c) => c.country.code !== preferred),
+      ];
+      return ordered.map((c) => {
+        const brand = matchLnAddressService(c.lightningAddress);
+        return { ...c, brandLogo: (brand && (brand.logo || brand.flag)) || '' };
+      });
     }
   },
   watch: {
@@ -483,6 +570,10 @@ export default {
   methods: {
     async initializeCamera() {
       this.cameraError = null;
+      // Native (iOS/Android): the ScannerOverlay (driven by `shouldNativeScan`)
+      // owns the camera — nothing to start here. Web/PWA keeps the in-card
+      // qr-scanner video path below.
+      if (this.isNativeScanner) return;
       try {
         const hasCamera = await QrScanner.hasCamera();
         if (!hasCamera) {
@@ -738,11 +829,18 @@ export default {
         return { cleaned: destination ? destination.value : '', bip21 };
       }
 
-      if (trimmed.toLowerCase().startsWith('lightning:')) {
-        return { cleaned: trimmed.substring(10), bip21: null };
+      // http(s) "fallback URL" carrying the LNURL in a `lightning=` query param
+      // (LNbits / Fossa ATMs). Pull out the bare LNURL/invoice so the
+      // recognizers downstream can classify it.
+      const lnFallback = extractLnFallbackParam(trimmed);
+      if (lnFallback) {
+        return { cleaned: lnFallback, bip21: null };
       }
 
-      return { cleaned: trimmed, bip21: null };
+      // Otherwise unwrap a `lightning:` / `lnurl:` scheme down to the bare
+      // payload so the type classifier and the emitted value are both
+      // wrapper-free. No-op when no wrapper is present.
+      return { cleaned: stripWrapperScheme(trimmed), bip21: null };
     },
 
     determinePaymentType(data) {
@@ -904,13 +1002,16 @@ export default {
     },
 
     countryName(code) {
-      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia') }[code] || code;
+      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia'), TZ: this.$t('Tanzania') }[code] || code;
     },
 
     // Ambiguous-number chooser: emit the picked country's constructed address
     // directly, bypassing the default-country resolution in processPaymentData.
     selectPhoneCountry(candidate) {
       if (!candidate) return;
+      // Remember the choice so the chooser leads with this country next time.
+      this.preferredPayoutCountry = candidate.country.code;
+      rememberPayoutCountry(candidate.country.code);
       // Keep the sheet open with the loading CTA while the parent resolves the
       // constructed provider address; it closes us on success.
       this.isProcessing = true;
@@ -1224,6 +1325,52 @@ export default {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Scanner tiles (native ScannerOverlay actions slot)
+   These sit over the live camera, so each is a solid frosted pill
+   with a circular icon chip — legible against any scene, unlike the
+   in-card translucent tiles.
+   ───────────────────────────────────────────────────────────── */
+.scanner-tiles {
+  width: 100%;
+  gap: 12px;
+}
+
+.scanner-tiles .scanner-tile {
+  flex: 1 1 0;
+  min-width: 0;
+  height: auto;
+  gap: 8px;
+  padding: 14px 8px;
+  border-radius: 18px;
+  background: rgba(18, 18, 18, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.scanner-tiles .scanner-tile:active {
+  background: rgba(40, 40, 40, 0.72);
+}
+
+.scanner-tile-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.scanner-tiles .tile-label {
+  color: #fff;
+  font-size: 12.5px;
+}
+
+/* ─────────────────────────────────────────────────────────────
    Manual sheet (bottom)
    ───────────────────────────────────────────────────────────── */
 .manual-sheet-dialog :deep(.q-dialog__inner) {
@@ -1441,7 +1588,10 @@ export default {
   padding: 14px 20px 6px;
 }
 
-/* Ambiguous KE/ZM number chooser (075-078 prefixes valid in both). */
+/* Ambiguous-country chooser: a bare (no calling code) 07x number can be a valid
+   mobile in Kenya, Zambia AND Tanzania. We never guess (wrong country is
+   irreversible) — instead we show rich, one-tap rows (provider logo, country,
+   operator, international number) with the user's last-picked country first. */
 .country-choice { display: flex; flex-direction: column; gap: 8px; }
 .country-choice-label {
   font-size: 12.5px;
@@ -1449,24 +1599,41 @@ export default {
   color: var(--text-secondary);
   text-align: center;
 }
-.country-choice-row { display: flex; gap: 10px; }
+.country-choice-list { display: flex; flex-direction: column; gap: 8px; }
 .country-choice-btn {
-  flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 12px 8px;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-card);
   background: var(--bg-input);
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
+  text-align: left;
   transition: filter 0.15s ease, transform 0.08s ease;
 }
-.country-choice-btn:active { transform: scale(0.98); }
+.country-choice-btn:hover { filter: brightness(1.03); }
+.country-choice-btn:active { transform: scale(0.99); }
+.country-choice-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #fff;
+}
+.country-choice-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .country-choice-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
-.country-choice-number { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.country-choice-op { font-size: 11.5px; color: var(--text-secondary); }
+.country-choice-number {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 /* Primary CTA — gradient-green on dark, neutral-dark pill on cream.
    Same language as PaymentModal, AddressBookModal, etc. */

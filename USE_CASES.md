@@ -1,8 +1,8 @@
-# BuhoGO — Use Cases
+# BuhoGO Use Cases
 
 > Real scenarios. What to tap. Why it works.
 
-[← README](README.md) · [Guide](Guide.md)
+[← README](README.md) · [User Guide](Guide.md)
 
 ---
 
@@ -10,12 +10,16 @@
 
 | I want to…                      | Do this                                                |
 | ------------------------------- | ------------------------------------------------------ |
-| Pay a friend                    | **Send** → paste / scan address                        |
-| Get paid                        | **Receive** → share QR or Lightning address            |
+| Pay a friend                    | **Send** → paste or scan their address                 |
+| Pay someone on Nostr            | **Send** → paste their npub or `name@domain`           |
+| Send to a phone number          | **Send** → type the number (Kenya and Zambia)          |
+| Get paid                        | **Receive** → share your QR or Lightning address       |
 | Receive from an exchange        | **Receive → Bitcoin** → share `bc1p…`                  |
-| Withdraw to a hardware wallet   | **Send** → paste BTC address → choose fee              |
-| Pay 5 contributors at once      | **Address Book → Batch Send**                          |
-| Run a POS                       | **Settings → Kiosk Mode**                              |
+| Move to a hardware wallet       | **Send** → paste BTC address → choose fee              |
+| Pay several people at once      | **Address Book → Batch Send**                          |
+| Find a shop that takes Bitcoin  | **Map**                                                |
+| Learn Bitcoin and earn sats     | **Learn & Earn**                                       |
+| Run a point of sale             | **Settings → Kiosk Mode**                              |
 | Auto-sweep to cold storage      | **Settings → Auto-Transfer**                           |
 | Move funds between my wallets   | **Settings → Internal Transfer**                       |
 
@@ -24,33 +28,76 @@
 ## Everyday
 
 > [!TIP]
-> Both on Spark? Use the `spark1…` address — **zero fees, instant.**
+> Both on Spark? Use the `spark1…` address for zero fees, instantly.
 
 <details open>
 <summary><b>💸 Splitting a dinner bill</b></summary>
 
-Friend paid. They share their Lightning address (`alice@wallet.com`). You: **Send → paste → amount → swipe**. Done in seconds. No bank app, no IBAN.
+Your friend shares their Lightning address (`alice@wallet.com`). You tap **Send**, paste it, enter the amount, swipe. Done in seconds. No bank app, no IBAN. BuhoGO even shows their wallet's logo so you know it landed at the right place.
+
+</details>
+
+<details>
+<summary><b>📱 Sending to a phone number</b></summary>
+
+In Kenya or Zambia, just type the recipient's phone number into **Send**. BuhoGO recognises it and routes the payment through the local partner. No address to copy, no app the other person needs to install first.
+
+</details>
+
+<details>
+<summary><b>🟣 Paying someone on Nostr</b></summary>
+
+Got their npub or a `name@domain` handle from their profile? Paste it into **Send**. BuhoGO looks up where to pay and shows you who you are about to zap before you confirm.
 
 </details>
 
 <details>
 <summary><b>🎁 Tipping a creator</b></summary>
 
-Grab their Lightning address from their bio. Send $0.50 if you want — Lightning fees make micro-tips actually viable. Creator gets 100%.
+Grab their Lightning address from their bio. Send $0.50 if you like. Lightning fees make micro-tips actually viable, and the creator keeps 100%.
 
 </details>
 
 <details>
 <summary><b>🌍 Money from family abroad</b></summary>
 
-**Receive → Lightning** → send the QR via WhatsApp. Arrives in minutes regardless of country. No SWIFT, no 5-day wait, no FX cut.
+**Receive → Lightning**, then share the QR over WhatsApp. It arrives in minutes regardless of country. No SWIFT, no five-day wait, no foreign-exchange cut.
 
 </details>
 
 <details>
-<summary><b>👥 Paying multiple contributors</b></summary>
+<summary><b>👥 Paying multiple people</b></summary>
 
-Save them in **Address Book** once. Then **Batch Send → select all → enter amounts → execute**. One flow, progress per contact, retry on failure.
+Save them in the **Address Book** once. Then **Batch Send → select all → enter amounts → review → send**. One flow, progress for each person, retry if one fails.
+
+</details>
+
+---
+
+## Spend it in the real world
+
+<details open>
+<summary><b>🗺️ Finding a place that takes Bitcoin</b></summary>
+
+Open the **Map**. It shows cafes, shops, and services near you that accept Bitcoin. Search by name, filter by category, and pay straight from your wallet once you arrive.
+
+</details>
+
+<details>
+<summary><b>✈️ Paying while travelling</b></summary>
+
+Already loaded with sats? Scan the merchant's QR and pay. Same money in every country. No foreign-exchange surcharge, no declined-card surprises.
+
+</details>
+
+---
+
+## Learn Bitcoin and earn sats
+
+<details open>
+<summary><b>🎓 Learn & Earn</b></summary>
+
+Open **Learn & Earn** for a guided, bite-size course on Bitcoin and Lightning. Every question you answer correctly earns you one sat. Once you have built up enough, claim them straight into your wallet. It is the rare lesson that pays you back.
 
 </details>
 
@@ -61,21 +108,21 @@ Save them in **Address Book** once. Then **Batch Send → select all → enter a
 <details open>
 <summary><b>🏦 Withdrawing from an exchange</b></summary>
 
-**Receive → Bitcoin** → copy `bc1p…` → paste in exchange withdrawal. Wait for 3 confirmations (~30 min) → tap **Claim**. Funds become Lightning-spendable instantly. No channel management.
+**Receive → Bitcoin**, copy the `bc1p…` address, and paste it into the exchange withdrawal. Wait for 3 confirmations (around 30 minutes), then tap **Claim**. The funds become Lightning-spendable instantly. No channel management.
 
 </details>
 
 <details>
 <summary><b>🥶 Moving to cold storage</b></summary>
 
-**Send** → paste your hardware wallet's BTC address → pick fee speed → confirm.
+**Send**, paste your hardware wallet's BTC address, pick a fee speed, confirm.
 
 </details>
 
 <details>
 <summary><b>📥 Receiving a large on-chain payment</b></summary>
 
-Same flow as the exchange case. Sender pays from anywhere, you claim when confirmed, then it's Lightning-ready.
+Same flow as the exchange case. The sender pays from anywhere, you claim once it is confirmed, and then it is Lightning-ready.
 
 </details>
 
@@ -84,51 +131,51 @@ Same flow as the exchange case. Sender pays from anywhere, you claim when confir
 ## Business
 
 > [!IMPORTANT]
-> Run a POS? Combine **Kiosk Mode** + **Auto-Transfer**. Employees touch nothing sensitive; balances flow to your safe destination automatically.
+> Running a point of sale? Combine **Kiosk Mode** with **Auto-Transfer**. Employees touch nothing sensitive, and balances flow to your safe destination automatically.
 
 <details open>
-<summary><b>☕ Café POS terminal</b></summary>
+<summary><b>☕ Café point of sale</b></summary>
 
-**Settings → Kiosk Mode** → pick your Business wallet → set 4-digit PIN → configure tips. Employees see only the keypad. Customers scan & pay. No monthly fees, no chargebacks.
+**Settings → Kiosk Mode**, pick your Business wallet, set a 4-digit PIN, and configure tips. Employees see only the keypad. Customers scan and pay. No monthly fees, no chargebacks.
 
 </details>
 
 <details>
 <summary><b>🍹 Tips as a service worker</b></summary>
 
-Print the QR of your Spark address. Display at your station. Tips land directly in your wallet — no pool, no payroll wait.
+Print the QR of your Spark address and display it at your station. Tips land directly in your wallet. No pool, no payroll wait.
 
 </details>
 
 <details>
-<summary><b>🔁 Auto-forward POS to cold storage</b></summary>
+<summary><b>🔁 Auto-forward takings to cold storage</b></summary>
 
-**Settings → Auto-Transfer** → select POS wallet → threshold (e.g. 100k sats) → destination = your hardware wallet's BTC address → enable. Excess sweeps automatically.
+**Settings → Auto-Transfer**, select your point-of-sale wallet, set a threshold (say 100,000 sats), set the destination to your hardware wallet's BTC address, and enable it. Anything above the threshold sweeps automatically.
 
 </details>
 
 <details>
 <summary><b>💼 Freelance invoice</b></summary>
 
-**Receive** → invoice for the agreed amount → send to client. They pay, you keep 100%. No PayPal cut, no wire fees.
+**Receive**, create an invoice for the agreed amount, and send it to your client. They pay, you keep 100%. No PayPal cut, no wire fees.
 
 </details>
 
 ---
 
-## Travel
+## Travel and safety
 
-<details>
-<summary><b>✈️ Paying in another country</b></summary>
+<details open>
+<summary><b>✅ Knowing your payment is safe</b></summary>
 
-Already have BuhoGO loaded with sats? Scan merchant QR → pay. Same money, every country. No FX surcharge, no declined-card surprises.
+When a destination is **Branta verified**, BuhoGO shows a badge before you send, confirming the address really belongs to who you think. Combined with the wallet-logo recognition on the send screen, you get a clear "this is right" moment before you part with money.
 
 </details>
 
 <details>
-<summary><b>🆘 Lost your wallet abroad</b></summary>
+<summary><b>🆘 Lost your phone abroad</b></summary>
 
-Self-custody safety net: install BuhoGO on any device → restore with your 12 words → access funds. Find a Bitcoin ATM or P2P swap to get cash.
+Self-custody is the safety net. Install BuhoGO on any device, restore with your 12 words, and your funds are back. Find a Bitcoin ATM or a peer-to-peer swap to turn them into cash.
 
 </details>
 
@@ -139,14 +186,14 @@ Self-custody safety net: install BuhoGO on any device → restore with your 12 w
 <details>
 <summary><b>🤫 Donations off your bank statement</b></summary>
 
-Send via Lightning to the org's address. Doesn't appear on bank statements. No data brokers in the loop.
+Send over Lightning to the organisation's address. It does not show up on a bank statement, and there are no data brokers in the loop.
 
 </details>
 
 <details>
 <summary><b>🛒 Buying without surveillance ads</b></summary>
 
-Pay merchants who accept Bitcoin instead of card. No card-network tracking → no eerie recommendations next week.
+Pay merchants who accept Bitcoin instead of card. No card-network tracking, so no eerie recommendations the following week.
 
 </details>
 
@@ -156,13 +203,14 @@ Pay merchants who accept Bitcoin instead of card. No card-network tracking → n
 
 | You are…                        | Recommended path                                                    |
 | ------------------------------- | ------------------------------------------------------------------- |
-| **New to Bitcoin**              | Create Spark wallet → back up seed → receive $5 → send $1 to a friend |
-| **Already have a LN wallet**    | Connect via NWC → keep funds where they are, get a nicer interface  |
-| **Want max security**           | Spark wallet → seed on paper in 2 locations → biometric lock → Auto-Transfer to cold storage |
-| **Running a small business**    | Spark "Business" account → Kiosk Mode → Auto-Transfer to main wallet |
+| **New to Bitcoin**              | Create a Spark wallet, back up the seed, receive $5, send $1 to a friend |
+| **Already have a LN wallet**    | Connect via NWC, keep your funds where they are, enjoy a nicer interface |
+| **Want maximum security**       | Spark wallet, seed on paper in two locations, biometric lock, Auto-Transfer to cold storage |
+| **Running a small business**    | Spark "Business" account, Kiosk Mode, Auto-Transfer to your main wallet |
 
 ---
 
 ## Still stuck?
 
-[Guide](Guide.md) · [GitHub Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
+[User Guide](Guide.md) · [GitHub Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
+</content>

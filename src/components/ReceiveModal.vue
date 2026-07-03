@@ -822,6 +822,20 @@ export default {
         && !this.generatedInvoice
         && !this.showAmountInput;
     },
+    /**
+     * Public accessor — the sats amount the user currently intends to
+     * receive. The wallet reads this when a withdraw (a Bolt Card or an
+     * LNURL-withdraw voucher) is initiated from this modal, so the redeem
+     * sheet pre-fills the amount instead of opening at 0. A created
+     * specific-amount invoice wins; otherwise the value typed on the keypad.
+     * Returns 0 when neither applies (a default amountless invoice, or an
+     * untouched keypad), which the caller reads as "nothing to carry".
+     */
+    intendedReceiveSats() {
+      if (this.generatedInvoice?.amount > 0) return this.generatedInvoice.amount;
+      if (this.showAmountKeypadView && this.amountInSats > 0) return this.amountInSats;
+      return 0;
+    },
     paymentStatusClass() {
       switch (this.paymentStatus) {
         case PaymentStatus.CONFIRMED:
@@ -1744,6 +1758,13 @@ export default {
 
       this.isCreatingInvoice = true;
       try {
+        // LUD-09 note: `successAction` does not apply to a plain BOLT11 invoice.
+        // It is an LNURL-pay concept returned alongside the invoice from a
+        // pay-link callback. BuhoGO runs no HTTP server, so the only
+        // receiver-side successAction we can set is on an LNbits Lightning
+        // address at creation time (success_text/success_url) — see
+        // LNBitsWalletProvider.createLightningAddress. Spark/NWC addresses are
+        // served by their own infrastructure and cannot carry one.
         const invoiceParams = {
           amount: this.amountInSats,
           description: this.description || 'BuhoGO Payment',

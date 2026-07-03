@@ -17,7 +17,10 @@ import {
   searchHandle,
   requestPaidHandle,
   waitForActivation,
+  deriveNameSlug,
+  deriveBaseSlug,
 } from '../nip05.js';
+import { deriveMemorableSlug, ADJECTIVES, ANIMALS } from '../nip05Names.js';
 
 let passed = 0;
 let failed = 0;
@@ -303,6 +306,81 @@ await test('waitForActivation: respects an external AbortSignal', async () => {
     }),
     (err) => err.name === 'AbortError',
   );
+});
+
+// ---------------------------------------------------------------------------
+// deriveNameSlug — profile name → safe base, or '' when unusable
+// ---------------------------------------------------------------------------
+
+await test('deriveNameSlug: slugifies a normal name', () => {
+  assert.equal(deriveNameSlug({ name: 'Satoshi' }), 'satoshi');
+});
+
+await test('deriveNameSlug: strips non-alphanumerics and lowercases', () => {
+  assert.equal(deriveNameSlug({ name: 'Big Name!! 21' }), 'bigname21');
+});
+
+await test('deriveNameSlug: caps at 20 chars', () => {
+  assert.equal(deriveNameSlug({ name: 'a'.repeat(30) }), 'a'.repeat(20));
+});
+
+await test('deriveNameSlug: empty / sub-2-char input returns ""', () => {
+  assert.equal(deriveNameSlug({ name: '' }), '');
+  assert.equal(deriveNameSlug({ name: 'a' }), '');
+  assert.equal(deriveNameSlug({}), '');
+  assert.equal(deriveNameSlug(), '');
+});
+
+// ---------------------------------------------------------------------------
+// deriveMemorableSlug — deterministic {adjective}{animal} from npub
+// ---------------------------------------------------------------------------
+
+const SAMPLE_NPUB = 'npub1qqqsyqcyq5rqwzqfpg9scrgwpugpzysn';
+
+await test('deriveMemorableSlug: deterministic for the same npub', () => {
+  assert.equal(deriveMemorableSlug(SAMPLE_NPUB), deriveMemorableSlug(SAMPLE_NPUB));
+});
+
+await test('deriveMemorableSlug: built from a real adjective + animal', () => {
+  const slug = deriveMemorableSlug(SAMPLE_NPUB);
+  const match = ADJECTIVES.find((a) => slug.startsWith(a) && ANIMALS.includes(slug.slice(a.length)));
+  assert.ok(match, `"${slug}" should decompose into an adjective + animal`);
+});
+
+await test('deriveMemorableSlug: lowercase letters only, registerable length', () => {
+  const slug = deriveMemorableSlug(SAMPLE_NPUB);
+  assert.match(slug, /^[a-z]+$/);
+  assert.ok(slug.length >= 2 && slug.length <= 20, `unexpected length: ${slug.length}`);
+});
+
+await test('deriveMemorableSlug: different npubs generally differ', () => {
+  const a = deriveMemorableSlug('npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  const b = deriveMemorableSlug('npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  assert.notEqual(a, b);
+});
+
+await test('deriveMemorableSlug: empty npub falls back to "buho"', () => {
+  assert.equal(deriveMemorableSlug(''), 'buho');
+  assert.equal(deriveMemorableSlug(), 'buho');
+});
+
+// ---------------------------------------------------------------------------
+// deriveBaseSlug — name first, memorable fallback (always non-empty)
+// ---------------------------------------------------------------------------
+
+await test('deriveBaseSlug: prefers the profile name when usable', () => {
+  assert.equal(deriveBaseSlug({ name: 'Satoshi', npub: SAMPLE_NPUB }), 'satoshi');
+});
+
+await test('deriveBaseSlug: falls back to the memorable slug when no name', () => {
+  assert.equal(deriveBaseSlug({ npub: SAMPLE_NPUB }), deriveMemorableSlug(SAMPLE_NPUB));
+});
+
+await test('deriveBaseSlug: no longer emits a buho<npub> machine slug', () => {
+  // The old fallback was `buho` + 8 npub chars; the new one is word-based.
+  const slug = deriveBaseSlug({ npub: SAMPLE_NPUB });
+  assert.match(slug, /^[a-z]+$/);
+  assert.notEqual(slug, `buho${SAMPLE_NPUB.replace(/^npub1/, '').slice(0, 8)}`);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

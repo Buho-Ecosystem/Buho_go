@@ -31,7 +31,7 @@ export const ALBY_RATE_CURRENCIES = ['ZAR', 'KES', 'ZMW']
 // Currencies a user can pick as their global display currency. This list
 // also drives the send screen's sats <-> fiat toggle (it denominates in
 // whatever the user picks here).
-export const SELECTABLE_FIAT_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'ZAR', 'KES', 'ZMW']
+export const SELECTABLE_FIAT_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'ZAR', 'KES', 'ZMW']
 
 // Display symbol for a currency code, with a sensible fallback ("<CODE> ").
 export function fiatSymbol(code) {

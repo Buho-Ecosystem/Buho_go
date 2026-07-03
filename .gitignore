@@ -2,6 +2,10 @@
 .thumbs.db
 node_modules
 
+# Local build scripts
+/build-release.sh
+/build-signed-release.sh
+
 # LLM Stuff
 /.claude
 /Plans WIP

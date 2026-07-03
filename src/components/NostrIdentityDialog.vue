@@ -100,7 +100,6 @@
             unelevated
             no-caps
             class="nostr-primary-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="$t('Show private key')"
             :loading="isAuthenticating || isLoadingSecret"
             @click="onRevealRequested"
@@ -157,7 +156,6 @@
             unelevated
             no-caps
             class="nostr-primary-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="$t('Continue')"
             :loading="isAuthenticating || isLoadingSecret"
             @click="onConfirmAuth"
@@ -179,6 +177,16 @@
            so mainstream users see "private key" instead of crypto jargon. -->
       <template v-else-if="step === 'reveal'">
         <q-card-section class="nostr-step-body reveal-body">
+          <!-- Explains what this key is (the Nostr key behind the profile),
+               what it's for (signing in to other Nostr apps), and that the
+               recovery phrase already backs it up, so it isn't a second
+               thing to write down. -->
+          <p
+            class="reveal-lede"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+          >
+            {{ $t('This is the private key (nsec) for your profile on Nostr. Use it to sign in to other Nostr apps as the same profile. Your recovery phrase already backs it up.') }}
+          </p>
           <!--
             Single secret card. Tap-to-toggle reveals or hides the
             key. When revealed, an inline countdown chip on the card
@@ -300,7 +308,6 @@
             unelevated
             no-caps
             class="nostr-primary-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="$t('Done')"
             @click="close"
           />
@@ -462,7 +469,7 @@ export default {
 
     headerTitle() {
       if (this.step === 'authExplain') return this.$t('Verify it is you');
-      if (this.step === 'reveal') return this.$t('Your private key');
+      if (this.step === 'reveal') return this.$t('Nostr key');
       // WIP_PLAN: nostr-identity-recovery — rotation step header.
       // if (this.step === 'rotateConfirm') return this.$t('Start a new profile');
       return this.$t('Profile address');
@@ -919,24 +926,10 @@ export default {
   background: rgba(255, 255, 255, 0.06);
 }
 
-.nostr-callout--warn.nostr-callout-light {
-  background: #fffaf0;
-  border: 1px solid rgba(245, 158, 11, 0.28);
-}
-
-.nostr-callout--warn.nostr-callout-dark {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.28);
-}
-
 .nostr-callout-icon {
   flex: 0 0 auto;
-  color: #15DE72;
+  color: var(--text-secondary);
   margin-top: 1px;
-}
-
-.nostr-callout--warn .nostr-callout-icon {
-  color: #b06d00;
 }
 
 .nostr-callout-body {
@@ -963,13 +956,13 @@ export default {
 }
 
 .secret-warn-light {
-  background: rgba(245, 158, 11, 0.08);
-  color: #92400e;
+  background: rgba(26, 26, 28, 0.04);
+  color: var(--text-secondary);
 }
 
 .secret-warn-dark {
-  background: rgba(245, 158, 11, 0.10);
-  color: #fde68a;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
 }
 
 /*
@@ -1023,6 +1016,13 @@ export default {
   gap: 12px;
 }
 
+.reveal-lede {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 0;
+}
+
 /*
   Note: the previous `.phrase-countdown` standalone pill and the
   `.secret-actions` copy row were removed in the visual cleanup.
@@ -1053,13 +1053,13 @@ export default {
 }
 
 .secret-card-light {
-  background: #fffaf0;
-  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
 }
 
 .secret-card-dark {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: var(--bg-input);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .secret-card:active {
@@ -1067,12 +1067,16 @@ export default {
 }
 
 /*
-  When the auto-hide is about to fire (≤10s), thicken the border in
-  the warn colour to draw the eye to the soon-to-blur card without
-  introducing a separate animated banner.
+  When the auto-hide is about to fire (≤10s), thicken the border with a
+  calm neutral emphasis to draw the eye to the soon-to-blur card without
+  a separate animated banner or an alarming colour.
 */
-.secret-card--expiring {
-  border-color: rgba(239, 68, 68, 0.45);
+.secret-card-light.secret-card--expiring {
+  border-color: rgba(26, 26, 28, 0.28);
+}
+
+.secret-card-dark.secret-card--expiring {
+  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .secret-card-header {
@@ -1087,7 +1091,7 @@ export default {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #b06d00;
+  color: var(--text-muted);
 }
 
 /*
@@ -1180,7 +1184,7 @@ export default {
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #b06d00;
+  color: var(--text-secondary);
   pointer-events: none;
 }
 
@@ -1271,11 +1275,35 @@ body.body--dark .confirm-input :deep(.q-field--focused .q-field__control:after) 
   align-items: stretch;
 }
 
+/* Calm neutral primary — deliberately not the brand green, since this is a
+   sensitive backup area. Light mode is the standard dark pill on cream; dark
+   mode is a raised neutral fill that reads as a button on the near-black card
+   without shouting. */
 .nostr-primary-btn {
   width: 100%;
   height: 48px;
   border-radius: 24px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.005em;
+  background: var(--btn-neutral-bg);
+  color: var(--btn-neutral-fg);
+  transition: filter 0.18s ease, transform 0.12s ease;
+}
+
+body.body--dark .nostr-primary-btn {
+  background: var(--bg-input);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.nostr-primary-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.nostr-primary-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  filter: brightness(0.96);
 }
 
 .nostr-secondary-btn {

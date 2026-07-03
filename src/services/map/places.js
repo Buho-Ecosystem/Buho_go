@@ -19,6 +19,9 @@ export const SOURCE_LABEL = {
   btcmap: 'BTC Map',
   osm: 'OpenStreetMap',
   btcpay: 'BTCPay Directory',
+  blink: 'Blink',
+  bitcoinjungle: 'Bitcoin Jungle',
+  moneybadger: 'MoneyBadger',
 }
 
 // The social/contact platforms we surface (OSM `contact:<platform>` tags).
@@ -65,8 +68,10 @@ export function contactsFromTags(t) {
   return out
 }
 
-// Source priority for dedupe winner selection - earlier wins.
-const SOURCE_PRIORITY = ['btcmap', 'osm', 'btcpay']
+// Source priority for dedupe winner selection - earlier wins. BTC Map / OSM /
+// BTCPay stay highest (richest tags); the regional Lightning directories rank
+// below them so a place they share with a global source keeps the richer record.
+const SOURCE_PRIORITY = ['btcmap', 'osm', 'btcpay', 'bitcoinjungle', 'blink', 'moneybadger']
 
 const SOURCE_RANK = Object.fromEntries(SOURCE_PRIORITY.map((s, i) => [s, i]))
 

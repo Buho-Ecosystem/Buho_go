@@ -12,10 +12,12 @@
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { LightningAddress, Invoice } from '@getalby/lightning-tools';
 import { bech32 } from 'bech32';
+import { parseSuccessAction } from './successAction.js';
 import {
   isLightningAddress as isLightningAddressShared,
   isLightningInvoice as isLightningInvoiceShared,
   isLnurl as isLnurlShared,
+  stripWrapperScheme,
 } from './addressUtils';
 
 /**
@@ -218,7 +220,7 @@ export class LightningPaymentService {
    */
   async handleLNURL(lnurlInput) {
     try {
-      const cleanLnurl = lnurlInput.replace(/^lightning:/i, '');
+      const cleanLnurl = stripWrapperScheme(lnurlInput);
       const url = this.decodeLNURL(cleanLnurl);
 
       const response = await fetch(url);
@@ -360,19 +362,46 @@ export class LightningPaymentService {
 
     this.validateAmount(amount, paymentData);
 
-    const ln = new LightningAddress(paymentData.address);
-    await ln.fetch();
-
-    const invoiceParams = {
-      satoshi: amount,
-    };
-
-    if (comment && paymentData.commentAllowed > 0) {
-      invoiceParams.comment = comment.substring(0, paymentData.commentAllowed);
+    // Resolve the LNURL-pay callback. Reuse the one captured when the address
+    // was first parsed; fall back to a live lightning-tools fetch if absent.
+    let callback = paymentData.callback;
+    let commentAllowed = paymentData.commentAllowed || 0;
+    if (!callback) {
+      const ln = new LightningAddress(paymentData.address);
+      await ln.fetch();
+      callback = ln.lnurlpData?.callback;
+      commentAllowed = ln.lnurlpData?.commentAllowed || 0;
+      if (!callback) {
+        throw new Error('Failed to resolve Lightning address');
+      }
     }
 
-    const invoiceResponse = await ln.requestInvoice(invoiceParams);
-    return this.nwc.sendPayment(invoiceResponse.paymentRequest);
+    // Fetch the invoice ourselves rather than via lightning-tools'
+    // requestInvoice, whose return shape omits `successAction` entirely.
+    // Reading the raw callback response lets us keep the LUD-09 message,
+    // including the `aes` variant.
+    const url = new URL(callback);
+    url.searchParams.set('amount', String(amount * 1000));
+    if (comment && commentAllowed > 0) {
+      url.searchParams.set('comment', comment.substring(0, commentAllowed));
+    }
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(`LNURL callback failed: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    if (data.status === 'ERROR') {
+      throw new Error(data.reason || 'Lightning address payment request failed');
+    }
+    if (!data.pr) {
+      throw new Error('No payment request received from Lightning address');
+    }
+
+    const result = await this.nwc.sendPayment(data.pr);
+    // Preserve the recipient's LUD-09 post-payment message so the caller can
+    // surface it once the payment settles.
+    return { ...result, successAction: parseSuccessAction(data.successAction, callback) };
   }
 
   /**
@@ -418,7 +447,10 @@ export class LightningPaymentService {
       throw new Error('No payment request received from LNURL callback');
     }
 
-    return this.nwc.sendPayment(data.pr);
+    const result = await this.nwc.sendPayment(data.pr);
+    // Preserve the LUD-09 successAction (recipient's post-payment message) so
+    // the caller can show it once the payment settles.
+    return { ...result, successAction: parseSuccessAction(data.successAction, paymentData.callback) };
   }
 
   // ============================================================================
@@ -531,7 +563,7 @@ export class LightningPaymentService {
    * @throws {Error} If decoding fails
    */
   decodeLNURL(lnurl) {
-    const clean = lnurl.trim().replace(/^lightning:/i, '');
+    const clean = stripWrapperScheme(lnurl);
 
     // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
     const lud17Url = resolveLUD17URL(clean);

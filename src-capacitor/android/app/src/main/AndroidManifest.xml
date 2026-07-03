@@ -22,63 +22,63 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link: lightning: (BOLT11 invoices, lightning addresses) -->
+            <!-- Deep links: Lightning + LNURL URI schemes.
+                 Android matches <data android:scheme> case-sensitively for
+                 NFC- and app-originated intents (browser links get normalized,
+                 NFC tags do not), so every scheme is declared in both lower-
+                 and upper-case. Covers a bare bech32 LNURL wrapped as
+                 `lightning:` or `lnurl:`, plus the LUD-17 `lnurlp://` /
+                 `lnurlw://` (Bolt Card) forms. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lightning" />
+                <data android:scheme="LIGHTNING" />
+                <data android:scheme="lnurl" />
+                <data android:scheme="LNURL" />
+                <data android:scheme="lnurlp" />
+                <data android:scheme="LNURLP" />
+                <data android:scheme="lnurlw" />
+                <data android:scheme="LNURLW" />
             </intent-filter>
 
-            <!-- Deep link: bitcoin: (on-chain addresses) -->
+            <!-- Deep link: bitcoin: (BIP21 on-chain / unified QR). Uppercase
+                 BITCOIN: is common in QR codes (alphanumeric-mode density). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="bitcoin" />
+                <data android:scheme="BITCOIN" />
             </intent-filter>
 
-            <!-- Deep link: LUD-17 lnurlp:// (LNURL-pay) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="lnurlp" />
-            </intent-filter>
-
-            <!-- Deep link: LUD-17 lnurlw:// (LNURL-withdraw, Boltcards) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="lnurlw" />
-            </intent-filter>
-
-            <!-- NFC: Handle NDEF tags (Bolt Cards, LNURL tags, Lightning tags) -->
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="https" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="lnurlw" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="lnurlp" />
-            </intent-filter>
+            <!-- NFC: NDEF tags carrying a Lightning / LNURL URI record (Bolt
+                 Cards -> lnurlw://, LNURL tags, lightning: tags, or a plain
+                 https:// that resolves to an LNURL). Schemes are case-sensitive
+                 here too - see the deep-link note above. -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="lightning" />
+                <data android:scheme="LIGHTNING" />
+                <data android:scheme="lnurl" />
+                <data android:scheme="LNURL" />
+                <data android:scheme="lnurlp" />
+                <data android:scheme="LNURLP" />
+                <data android:scheme="lnurlw" />
+                <data android:scheme="LNURLW" />
+                <data android:scheme="https" />
+            </intent-filter>
+
+            <!-- NFC: NDEF tags written as a bare text/URI record with no usable
+                 scheme (a naked `LNURL1...` bech32 or a BOLT11). The MIME
+                 catch-all still routes them to us; nfc.js then classifies the
+                 payload via parsePaymentDestination. -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
             <!-- NFC: IsoDep tech dispatch — catches NTAG 424 DNA / Bolt Cards when
                  Android does not fire NDEF_DISCOVERED for T4T tags -->

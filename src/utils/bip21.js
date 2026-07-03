@@ -124,3 +124,58 @@ function looksLikeBolt11(value) {
   return lower.startsWith('lnbc') || lower.startsWith('lntb') ||
          lower.startsWith('lntbs') || lower.startsWith('lnbcrt');
 }
+
+/** Cheap shape check for a bech32 LNURL (`lnurl1…`). */
+function looksLikeLnurl(value) {
+  return String(value).toLowerCase().startsWith('lnurl1');
+}
+
+/**
+ * Extract a Lightning destination from an http(s) "fallback URL".
+ *
+ * LNbits / Fossa ATMs (and other LNURL deployments) don't encode a bare LNURL
+ * or a `lightning:` URI in their QR — they encode a regular web page URL with
+ * the LNURL carried in a `lightning` query parameter, e.g.
+ *
+ *   https://21mio.space/fossa/atm?lightning=LNURL1DP68GURN8...
+ *
+ * A phone camera opens the web page; wallets are expected to pull the
+ * `lightning` param and act on it. This is the standard LNURL "fallback URL"
+ * convention, supported by Phoenix, Breez, Wallet of Satoshi, etc.
+ *
+ * We only return the param when it looks like a usable Lightning destination
+ * (bech32 LNURL or a BOLT11 invoice) so a stray `?lightning=` on an unrelated
+ * web URL can't hijack the input. Param key and value matching are both
+ * case-insensitive — ATMs emit uppercase LNURL and the key casing varies.
+ *
+ * @param {unknown} input
+ * @returns {string|null} the bare LNURL / invoice, or null if none present
+ */
+export function extractLnFallbackParam(input) {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+
+  let url;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+
+  // Param keys are case-insensitive per the convention; URLSearchParams keys
+  // are case-sensitive, so scan for any `lightning` key ourselves.
+  let value = null;
+  for (const [key, val] of url.searchParams) {
+    if (key.toLowerCase() === 'lightning' && val) {
+      value = val.trim();
+      break;
+    }
+  }
+  if (!value) return null;
+
+  // Tolerate a nested `lightning:` wrapper inside the param value.
+  value = value.replace(/^lightning:/i, '').trim();
+
+  return looksLikeBolt11(value) || looksLikeLnurl(value) ? value : null;
+}

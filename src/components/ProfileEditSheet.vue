@@ -187,44 +187,42 @@
               @click.prevent.stop="lightningInfoOpen = !lightningInfoOpen"
             >
               <Icon icon="tabler:info-circle" width="14" height="14" />
-              <q-menu
-                v-model="lightningInfoOpen"
-                anchor="bottom left"
-                self="top left"
-                :offset="[0, 8]"
-                no-parent-event
-              >
-                <div
-                  class="info-tooltip"
-                  :class="$q.dark.isActive ? 'info-tooltip-dark' : 'info-tooltip-light'"
-                  role="tooltip"
-                >
-                  <div class="info-tooltip-head">
-                    <span class="info-tooltip-icon info-tooltip-icon--bolt">
-                      <Icon icon="tabler:bolt-filled" width="16" height="16" />
-                    </span>
-                    <span
-                      class="info-tooltip-title"
-                      :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-                    >
-                      {{ $t('Lightning address') }}
-                    </span>
-                  </div>
-                  <p
-                    class="info-tooltip-lede"
-                    :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-                  >
-                    {{ $t('Like email, but for Bitcoin.') }}
-                  </p>
-                  <p
-                    class="info-tooltip-body"
-                    :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-                  >
-                    {{ $t('Friends in any wallet can paste it in to pay you. No QR codes, no copying invoices.') }}
-                  </p>
-                </div>
-              </q-menu>
             </button>
+            <!-- Anchored to the full-width label row (its parent), not the
+                 mid-row icon, so the popover can't run past the screen's
+                 right edge; the width is also capped to the viewport in CSS. -->
+            <q-menu
+              v-model="lightningInfoOpen"
+              anchor="bottom left"
+              self="top left"
+              :offset="[0, 8]"
+              no-parent-event
+            >
+              <div
+                class="info-tooltip"
+                :class="$q.dark.isActive ? 'info-tooltip-dark' : 'info-tooltip-light'"
+                role="tooltip"
+              >
+                <p
+                  class="info-tooltip-lede"
+                  :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+                >
+                  <Icon
+                    class="info-tooltip-glyph"
+                    icon="tabler:bolt-filled"
+                    width="17"
+                    height="17"
+                  />
+                  <span>{{ $t('Like email, but for Bitcoin.') }}</span>
+                </p>
+                <p
+                  class="info-tooltip-body"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+                >
+                  {{ $t('Friends in any wallet can paste it in to pay you. No QR codes, no copying invoices.') }}
+                </p>
+              </div>
+            </q-menu>
           </span>
           <div
             class="field-input-wrap"
@@ -284,44 +282,39 @@
               @click.prevent.stop="identityInfoOpen = !identityInfoOpen"
             >
               <Icon icon="tabler:info-circle" width="14" height="14" />
-              <q-menu
-                v-model="identityInfoOpen"
-                anchor="bottom left"
-                self="top left"
-                :offset="[0, 8]"
-                no-parent-event
-              >
-                <div
-                  class="info-tooltip"
-                  :class="$q.dark.isActive ? 'info-tooltip-dark' : 'info-tooltip-light'"
-                  role="tooltip"
-                >
-                  <div class="info-tooltip-head">
-                    <span class="info-tooltip-icon info-tooltip-icon--check">
-                      <Icon icon="tabler:rosette-discount-check-filled" width="16" height="16" />
-                    </span>
-                    <span
-                      class="info-tooltip-title"
-                      :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-                    >
-                      {{ $t('Public identity') }}
-                    </span>
-                  </div>
-                  <p
-                    class="info-tooltip-lede"
-                    :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-                  >
-                    {{ $t('A name people can find and trust.') }}
-                  </p>
-                  <p
-                    class="info-tooltip-body"
-                    :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-                  >
-                    {{ $t('Friends look up your profile with it. On BuhoGO, anyone can pay you straight to your name.') }}
-                  </p>
-                </div>
-              </q-menu>
             </button>
+            <q-menu
+              v-model="identityInfoOpen"
+              anchor="bottom left"
+              self="top left"
+              :offset="[0, 8]"
+              no-parent-event
+            >
+              <div
+                class="info-tooltip"
+                :class="$q.dark.isActive ? 'info-tooltip-dark' : 'info-tooltip-light'"
+                role="tooltip"
+              >
+                <p
+                  class="info-tooltip-lede"
+                  :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+                >
+                  <Icon
+                    class="info-tooltip-glyph"
+                    icon="tabler:rosette-discount-check-filled"
+                    width="17"
+                    height="17"
+                  />
+                  <span>{{ $t('A name people can find and trust.') }}</span>
+                </p>
+                <p
+                  class="info-tooltip-body"
+                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+                >
+                  {{ $t('Friends look up your profile with it. On BuhoGO, anyone can pay you straight to your name.') }}
+                </p>
+              </div>
+            </q-menu>
           </div>
 
           <!-- Section card holds the owned handles as flat list rows so
@@ -1182,16 +1175,18 @@ body.body--dark .avatar-edit-badge {
    verified handle) so the tooltip reads as an explanation of THIS
    thing, not a generic info box. */
 
+/* Capped to the viewport (minus a comfortable margin) so the popover can
+   never run off the right edge regardless of where its anchor row sits. */
 .info-tooltip {
-  width: min(304px, calc(100vw - 32px));
-  padding: 14px 16px 16px;
+  width: min(304px, calc(100vw - 48px));
+  padding: 12px 14px 14px;
   border-radius: 14px;
   font-family: 'Manrope', sans-serif;
 }
 
 .info-tooltip-light {
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--bg-card);
+  color: var(--text-primary);
   box-shadow:
     0 1px 0 rgba(15, 23, 42, 0.04),
     0 16px 32px -12px rgba(15, 23, 42, 0.22),
@@ -1199,57 +1194,34 @@ body.body--dark .avatar-edit-badge {
 }
 
 .info-tooltip-dark {
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--bg-card);
+  color: var(--text-primary);
   box-shadow:
     0 16px 32px -12px rgba(0, 0, 0, 0.6),
     0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
-.info-tooltip-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 10px 0;
-}
-
-/* The little 28px tinted square that holds the concept icon. Background
-   alpha kept low so the chip is calm; the icon does the colour-coding. */
-.info-tooltip-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.info-tooltip-icon--bolt {
-  background: rgba(247, 147, 26, 0.14);
-  color: #f7931a;
-}
-
-.info-tooltip-icon--check {
-  background: rgba(21, 222, 114, 0.16);
-  color: #15a35b;
-}
-
-body.body--dark .info-tooltip-icon--check { color: #2bd17f; }
-
-.info-tooltip-title {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
+/* Headline: a small monochrome glyph + the one-line value prop. The glyph
+   is deliberately uncoloured — near-black on light, clean grey on dark — so
+   the hint reads as calm UI chrome rather than a status badge. */
 .info-tooltip-lede {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
+  font-weight: 700;
+  line-height: 1.35;
   letter-spacing: -0.005em;
   margin: 0 0 6px 0;
 }
+
+.info-tooltip-glyph {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.info-tooltip-light .info-tooltip-glyph { color: #0f172a; }
+.info-tooltip-dark .info-tooltip-glyph { color: #94a3b8; }
 
 .info-tooltip-body {
   font-size: 13px;

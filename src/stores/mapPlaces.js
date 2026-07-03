@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { fetchBtcMap } from '../services/map/btcmap.js'
 import { fetchOverpass } from '../services/map/overpass.js'
 import { fetchBtcPay } from '../services/map/btcpay.js'
+import { fetchBlink } from '../services/map/blink.js'
+import { fetchBitcoinJungle } from '../services/map/bitcoinjungle.js'
+import { fetchMoneyBadger } from '../services/map/moneybadger.js'
 import {
   mergePlaces,
   toFeatureCollection,
@@ -20,11 +23,26 @@ import { useMapFavoritesStore } from './mapFavorites.js'
 // the same session is instant without holding stale data across days.
 
 const CACHE_TTL_MS = 10 * 60 * 1000
-const CACHE_KEYS = { btcmap: 'btcmap-cache-v1', btcpay: 'btcpay-cache-v1' }
+const CACHE_KEYS = {
+  btcmap: 'btcmap-cache-v1',
+  btcpay: 'btcpay-cache-v1',
+  blink: 'blink-cache-v1',
+  bitcoinjungle: 'bitcoinjungle-cache-v1',
+  moneybadger: 'moneybadger-cache-v1',
+}
 
 // Max rows rendered in the list sheet. The map still shows every pin; the
 // list shows the nearest slice so the scroll container stays light.
 const LIST_CAP = 60
+
+// Sources that are NOT fetched on map open. They pull their dataset only the
+// first time the user switches them on (see toggleSource), so the initial map
+// stays light instead of eagerly downloading every regional directory.
+const LAZY_SOURCES = {
+  blink: fetchBlink,
+  bitcoinjungle: fetchBitcoinJungle,
+  moneybadger: fetchMoneyBadger,
+}
 
 function readCache(key) {
   try {
@@ -61,13 +79,19 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     btcmap: [],
     osm: [],
     btcpay: [],
+    blink: [],
+    bitcoinjungle: [],
+    moneybadger: [],
 
-    enabled: { btcmap: true, osm: true, btcpay: true },
+    // Only BTC Map loads on open. Every other source is opt-in and fetches its
+    // data lazily the first time the user switches it on (see toggleSource), so
+    // the initial map is a single, light dataset instead of six.
+    enabled: { btcmap: true, osm: false, btcpay: false, blink: false, bitcoinjungle: false, moneybadger: false },
     buckets: { food: true, retail: true, lodging: true, services: true, atm: true, fuel: true, leisure: true, other: true },
     favoritesOnly: false,
 
-    loading: { btcmap: false, osm: false, btcpay: false },
-    errors: { btcmap: null, osm: null, btcpay: null },
+    loading: { btcmap: false, osm: false, btcpay: false, blink: false, bitcoinjungle: false, moneybadger: false },
+    errors: { btcmap: null, osm: null, btcpay: null, blink: null, bitcoinjungle: null, moneybadger: null },
     lastViewportFetchAt: 0,
 
     // Set once geolocation resolves. Distance origin preference for the list.
@@ -78,6 +102,7 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     // than rendering the whole global set.
     viewportBbox: null, // { south, west, north, east } | null
     viewportCenter: null, // { lat, lon } | null
+    viewportZoom: 2, // last map zoom — lets a lazy OSM enable refetch the view
   }),
   getters: {
     merged(state) {
@@ -85,6 +110,9 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
       if (state.enabled.btcmap) lists.push(state.btcmap)
       if (state.enabled.osm) lists.push(state.osm)
       if (state.enabled.btcpay) lists.push(state.btcpay)
+      if (state.enabled.blink) lists.push(state.blink)
+      if (state.enabled.bitcoinjungle) lists.push(state.bitcoinjungle)
+      if (state.enabled.moneybadger) lists.push(state.moneybadger)
       let all = mergePlaces(...lists)
       all = all.filter((p) => state.buckets[bucketFor(p.category)])
       if (state.favoritesOnly) {
@@ -146,6 +174,9 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
         btcmap: state.btcmap.length,
         osm: state.osm.length,
         btcpay: state.btcpay.length,
+        blink: state.blink.length,
+        bitcoinjungle: state.bitcoinjungle.length,
+        moneybadger: state.moneybadger.length,
       }
     },
     isLoading(state) {
@@ -154,8 +185,32 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
   },
   actions: {
     async loadGlobal() {
-      // BTC Map + BTCPay are global, no bbox required. Run them in parallel.
-      await Promise.allSettled([this.loadBtcMap(), this.loadBtcPay()])
+      // BTC Map is the only source loaded on map open. Everything else is
+      // opt-in and fetches lazily the first time it's enabled (toggleSource).
+      await this.loadBtcMap()
+    },
+
+    // Generic loader for a global, cacheable source. Mirrors loadBtcMap/
+    // loadBtcPay but parameterized so the regional Lightning directories
+    // (Blink / Bitcoin Jungle / MoneyBadger) don't each need a bespoke action.
+    async loadCachedSource(name, fetchFn) {
+      if (this.loading[name]) return
+      this.loading[name] = true
+      this.errors[name] = null
+      try {
+        const cached = readCache(CACHE_KEYS[name])
+        if (cached) {
+          this[name] = cached
+        } else {
+          const list = await fetchFn()
+          this[name] = list
+          writeCache(CACHE_KEYS[name], list)
+        }
+      } catch (e) {
+        this.errors[name] = e.message || String(e)
+      } finally {
+        this.loading[name] = false
+      }
     },
 
     async loadBtcMap() {
@@ -199,6 +254,10 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
     },
 
     async loadViewport(bbox, zoom) {
+      // Remember the zoom so a lazy OSM enable can refetch the current view.
+      this.viewportZoom = zoom
+      // OSM/Overpass is opt-in: skip entirely unless the user enabled it.
+      if (!this.enabled.osm) return
       // Overpass is bbox-scoped; gate at a regional zoom so the world-wide view
       // doesn't blow up the query, but a country-level zoom already populates.
       if (!bbox || zoom < 4) return
@@ -235,6 +294,21 @@ export const useMapPlacesStore = defineStore('mapPlaces', {
 
     toggleSource(source) {
       this.enabled[source] = !this.enabled[source]
+      if (!this.enabled[source]) return // turning off just hides; merged drops it
+
+      // Switched ON: fetch this source's data if we don't already have it.
+      if (source === 'btcmap') {
+        if (this.btcmap.length === 0 && !this.loading.btcmap) void this.loadBtcMap()
+      } else if (source === 'btcpay') {
+        if (this.btcpay.length === 0 && !this.loading.btcpay) void this.loadBtcPay()
+      } else if (source === 'osm') {
+        // Viewport-scoped — (re)fetch for the current view.
+        void this.loadViewport(this.viewportBbox, this.viewportZoom)
+      } else if (LAZY_SOURCES[source] && this[source].length === 0 && !this.loading[source]) {
+        // Global regional directories cache after the first fetch, so a later
+        // off/on toggle is instant.
+        void this.loadCachedSource(source, LAZY_SOURCES[source])
+      }
     },
     toggleBucket(bucket) {
       this.buckets[bucket] = !this.buckets[bucket]
