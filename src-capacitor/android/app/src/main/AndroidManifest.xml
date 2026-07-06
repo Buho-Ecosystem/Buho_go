@@ -53,48 +53,17 @@
                 <data android:scheme="BITCOIN" />
             </intent-filter>
 
-            <!-- NFC: NDEF tags carrying a Lightning / LNURL URI record (Bolt
-                 Cards -> lnurlw://, LNURL tags, lightning: tags, or a plain
-                 https:// that resolves to an LNURL). Schemes are case-sensitive
-                 here too - see the deep-link note above. -->
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="lightning" />
-                <data android:scheme="LIGHTNING" />
-                <data android:scheme="lnurl" />
-                <data android:scheme="LNURL" />
-                <data android:scheme="lnurlp" />
-                <data android:scheme="LNURLP" />
-                <data android:scheme="lnurlw" />
-                <data android:scheme="LNURLW" />
-                <data android:scheme="https" />
-            </intent-filter>
-
-            <!-- NFC: NDEF tags written as a bare text/URI record with no usable
-                 scheme (a naked `LNURL1...` bech32 or a BOLT11). The MIME
-                 catch-all still routes them to us; nfc.js then classifies the
-                 payload via parsePaymentDestination. -->
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            <!-- NFC: IsoDep tech dispatch — catches NTAG 424 DNA / Bolt Cards when
-                 Android does not fire NDEF_DISCOVERED for T4T tags -->
-            <intent-filter>
-                <action android:name="android.nfc.action.TECH_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <meta-data
-                android:name="android.nfc.action.TECH_DISCOVERED"
-                android:resource="@xml/nfc_tech_filter" />
-
-            <!-- NFC: Fallback for any NFC tag (Tech dispatch) -->
-            <intent-filter>
-                <action android:name="android.nfc.action.TAG_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
+            <!-- NFC is deliberately NOT declared as an intent filter here.
+                 A payment app must never be cold-launched or woken by an
+                 arbitrary tag while it is closed (transit card, access badge,
+                 contactless bank card in the same pocket, random sticker) —
+                 that made BuhoGO "open itself" unprompted. Instead, NFC is
+                 read only while the app is in the foreground, via reader mode
+                 (NfcAdapter.enableReaderMode in MainActivity). This mirrors
+                 how wallet / banking apps behave: open the app, then tap.
+                 Bolt Card tap-to-pay keeps working through reader mode; the
+                 lightning:/bitcoin: VIEW filters above still handle tapped
+                 deep links (with the normal app chooser). -->
 
         </activity>
 
