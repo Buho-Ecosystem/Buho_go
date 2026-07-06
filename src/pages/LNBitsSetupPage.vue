@@ -47,139 +47,112 @@
           </div>
         </q-card-section>
 
-        <q-card-section class="q-pt-none">
-          <div class="lnbits-logo-container">
-            <div class="lnbits-logo-bg">
+        <q-card-section class="iform-body">
+          <div class="iform-eyebrow">{{ $t('Bring your own wallet') }}</div>
+
+          <div class="iform-head">
+            <div class="iform-tile">
               <!-- LNbits Lightning Bolt (official) -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="50" height="60" viewBox="0 0 502 902" fill="none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="24" viewBox="0 0 502 902" fill="none">
                 <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
               </svg>
             </div>
+            <div class="iform-titles">
+              <div class="iform-title">{{ $t('Connect LNbits') }}</div>
+              <div class="iform-sub">{{ $t('Enter your LNbits server details') }}</div>
+            </div>
           </div>
 
-          <div class="welcome-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Connect LNbits') }}
-          </div>
-
-          <div class="welcome-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Enter your LNbits server details') }}
-          </div>
-
-          <!-- Server URL Input -->
-          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Server URL') }}
-          </div>
-          <q-input
-            v-model="serverUrl"
-            :placeholder="$t('https://your.lnbits.server')"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            input-class="q-px-md"
-            borderless
-            dense
-            class="q-mb-md"
-          />
-
-          <!--
-            Wallet ID is intentionally *not* in this form.
-
-            LNbits server-side scopes each admin key to exactly one wallet,
-            so `GET /api/v1/wallet` with just the admin key reveals the
-            walletId. `LNBitsWalletProvider.validateCredentials` already
-            does this discovery, and `addLNBitsWallet` persists the
-            server-returned id into `connectionData.walletId`.
-
-            Asking the user for it would be redundant data entry — and
-            LNbits doesn't even issue a QR for it (only a copy button),
-            so it's the most friction-heavy field by far. We just skip it.
-          -->
-
-          <!-- Admin Key Input -->
-          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Admin Key') }}
-          </div>
-          <q-input
-            v-model="adminKey"
-            :placeholder="$t('Paste your admin key here')"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            input-class="q-px-md"
-            borderless
-            dense
-            class="q-mb-md"
-            :type="showAdminKey ? 'text' : 'password'"
-          >
-            <template v-slot:append>
-              <q-btn
-                flat
-                round
-                dense
-                @click="showAdminKey = !showAdminKey"
-                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-              >
-                <Icon :icon="showAdminKey ? 'tabler:eye-off' : 'tabler:eye'" width="16" height="16" />
-              </q-btn>
-            </template>
-          </q-input>
-
-          <!-- Error Message -->
-          <div v-if="errorMessage" class="error-message q-mb-md">
-            {{ errorMessage }}
-          </div>
-
-          <div class="button-row">
-            <q-btn
-              class="connect-btn-inline"
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-              :loading="isConnecting"
-              @click="validateAndConnect"
-              :disable="!serverUrl || !adminKey"
-              no-caps
-              unelevated
-            >
-              <span v-if="!isConnecting">{{ $t('Connect') }}</span>
-              <template v-slot:loading>
-                <q-spinner-dots class="q-mr-sm"/>
-                {{ $t('Connecting...') }}
-              </template>
-            </q-btn>
-
-            <q-btn
-              unelevated
-              class="scan-qr-btn-inline"
-              :class="$q.dark.isActive ? 'scan-qr-btn-inline-dark' : 'scan-qr-btn-inline-light'"
-              @click="openScanner"
-              no-caps
-            >
+          <div class="iform-secrow">
+            <span class="iform-seclabel">{{ $t('Server details') }}</span>
+            <button class="iform-scan" type="button" @click="openScanner">
               <!--
                 Inline SVG (Tabler "scan" outline) rather than the Iconify
                 <Icon> component: the network-loaded `tabler:qrcode-scan`
-                resolves to an empty SVG in this build (see DOM audit at
-                the time of the fix), and inlining keeps the button
-                icon-on-first-paint with no async dependency.
+                resolves to an empty SVG in this build, and inlining keeps
+                the action icon-on-first-paint with no async dependency.
               -->
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18" height="18" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round"
-                class="q-mr-sm scan-qr-btn-icon"
-                aria-hidden="true"
-              >
-                <path d="M4 7V6a2 2 0 0 1 2-2h2" />
-                <path d="M4 17v1a2 2 0 0 0 2 2h2" />
-                <path d="M16 4h2a2 2 0 0 1 2 2v1" />
-                <path d="M16 20h2a2 2 0 0 0 2-2v-1" />
-                <path d="M5 12h14" />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 7V6a2 2 0 0 1 2-2h2"/><path d="M4 17v1a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v1"/><path d="M16 20h2a2 2 0 0 0 2-2v-1"/><path d="M5 12h14"/>
               </svg>
-              <span>{{ $t('Scan') }}</span>
-            </q-btn>
+              {{ $t('Scan') }}
+            </button>
           </div>
 
-          <div class="help-text q-mt-md" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+          <div class="iform-group">
+            <div class="iform-row">
+              <div class="iform-label">{{ $t('Server URL') }}</div>
+              <q-input
+                v-model="serverUrl"
+                :placeholder="$t('https://your.lnbits.server')"
+                class="iform-input"
+                borderless
+                dense
+                hide-bottom-space
+              />
+            </div>
+
+            <!--
+              Wallet ID is intentionally *not* in this form. LNbits scopes each
+              admin key to exactly one wallet, so validateCredentials() discovers
+              the walletId via GET /api/v1/wallet and addLNBitsWallet persists the
+              server-returned id. Asking for it would be redundant, friction-heavy
+              data entry, and LNbits doesn't even issue a QR for it.
+            -->
+            <div class="iform-row">
+              <div class="iform-label">{{ $t('Admin Key') }}</div>
+              <q-input
+                v-model="adminKey"
+                :placeholder="$t('Paste your admin key here')"
+                class="iform-input"
+                borderless
+                dense
+                hide-bottom-space
+                :type="showAdminKey ? 'text' : 'password'"
+              >
+                <template v-slot:append>
+                  <q-btn
+                    flat
+                    round
+                    dense
+                    size="sm"
+                    @click="showAdminKey = !showAdminKey"
+                    :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+                  >
+                    <Icon :icon="showAdminKey ? 'tabler:eye-off' : 'tabler:eye'" width="16" height="16" />
+                  </q-btn>
+                </template>
+              </q-input>
+            </div>
+          </div>
+
+          <!-- Error Message -->
+          <div v-if="errorMessage" class="error-message q-mt-md">
+            {{ errorMessage }}
+          </div>
+
+          <div class="iform-hint">
             {{ $t('Find your admin key in LNbits under API Info') }}
           </div>
-          <div class="help-text q-mt-xs" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+          <div class="iform-hint">
             {{ $t('Or paste an LNDhub link and we will fill both fields') }}
           </div>
+
+          <q-btn
+            class="iform-connect full-width"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :loading="isConnecting"
+            @click="validateAndConnect"
+            :disable="!serverUrl || !adminKey"
+            no-caps
+            unelevated
+          >
+            <span v-if="!isConnecting">{{ $t('Connect') }}</span>
+            <template v-slot:loading>
+              <q-spinner-dots class="q-mr-sm"/>
+              {{ $t('Connecting...') }}
+            </template>
+          </q-btn>
         </q-card-section>
 
       </q-card>
@@ -1033,68 +1006,9 @@ export default {
   50% { background-position: 100% 50%; }
 }
 
-/* LNbits Logo */
-.lnbits-logo-container {
-  display: flex;
-  justify-content: center;
-  margin: 2rem 0 1.5rem;
-}
-
-.lnbits-logo-bg {
-  width: 100px;
-  height: 100px;
-  background: linear-gradient(135deg, #1a1a2e, #2d2d44);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(255, 31, 225, 0.3);
-  position: relative;
-  overflow: hidden;
-}
-
-.lnbits-logo-bg::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 31, 225, 0.1), transparent);
-  border-radius: 50%;
-}
-
-.lnbits-logo-bg svg {
-  z-index: 1;
-}
-
-/* Typography */
-.welcome-title {
-  text-align: center;
-  margin-bottom: 0.75rem;
-  font-size: 22px;
-  font-weight: 700;
-  font-family: 'Manrope', sans-serif;
-}
-
-.welcome-subtitle {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  font-size: 14px;
-  font-family: 'Manrope', sans-serif;
-}
-
+/* Scanner subtitle keeps its muted colour in dark mode */
 .view_title_dark {
   color: #B0B0B0;
-}
-
-/* Input Labels */
-.input-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
-  padding-left: 0.25rem;
 }
 
 /* Error Message */
@@ -1106,59 +1020,6 @@ export default {
   padding: 0.5rem;
   background: rgba(255, 75, 75, 0.1);
   border-radius: 8px;
-}
-
-/* Button Styling */
-.button-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.connect-btn-inline {
-  flex: 2;
-  height: 52px;
-  border-radius: 24px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-}
-
-/* Secondary "Scan" CTA — paired visually with the primary "Connect"
-   button beside it. Earlier revisions referenced .btn_light / .btn_dark
-   which weren't defined anywhere global, so the button rendered with
-   no background and a white-on-cream icon (invisible) in light mode.
-   Explicit styling here keeps the icon legible across themes. */
-.scan-qr-btn-inline {
-  flex: 1;
-  height: 52px;
-  border-radius: 20px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  min-width: 0;
-}
-.scan-qr-btn-inline-light {
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border-card);
-}
-.scan-qr-btn-inline-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8eaed;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-/* Force the QR icon to follow the button's text colour so it stays
-   visible regardless of Quasar's q-btn defaults or theme variant. */
-.scan-qr-btn-icon {
-  color: currentColor;
-}
-
-/* Help Text */
-.help-text {
-  text-align: center;
-  font-size: 12px;
-  font-family: 'Manrope', sans-serif;
 }
 
 /* Scanner Styles */
@@ -1440,35 +1301,6 @@ body.body--light .scan-progress-divider {
 
   .container {
     max-width: 100%;
-  }
-
-  .lnbits-logo-bg {
-    width: 80px;
-    height: 80px;
-  }
-
-  .lnbits-logo-bg svg {
-    width: 42px;
-    height: 50px;
-  }
-
-  .welcome-title {
-    font-size: 20px;
-  }
-
-  .welcome-subtitle {
-    font-size: 13px;
-    margin-bottom: 1.25rem;
-  }
-
-  .button-row {
-    gap: 0.5rem;
-  }
-
-  .connect-btn-inline,
-  .scan-qr-btn-inline {
-    height: 48px;
-    font-size: 13px;
   }
 
   .qr-scanner-container {

@@ -5,7 +5,12 @@ const routes = [
     children: [
       { path: '', component: () => import('pages/WelcomePage.vue') },
       { path: '/spark-setup', component: () => import('pages/SparkSetupPage.vue') },
-      { path: '/spark-restore', component: () => import('pages/SparkRestorePage.vue') },
+      { path: '/arkade-setup', component: () => import('pages/ArkadeSetupPage.vue') },
+      // Unified, wallet-type-aware restore. `/restore` lets the user pick;
+      // `/spark-restore` (Settings, kiosk) and `/arkade-restore` pin the type.
+      { path: '/restore', component: () => import('pages/RestorePage.vue') },
+      { path: '/spark-restore', component: () => import('pages/RestorePage.vue') },
+      { path: '/arkade-restore', component: () => import('pages/RestorePage.vue') },
       { path: '/spark-success', component: () => import('pages/SparkSuccessWizard.vue') },
       { path: '/nwc-setup', component: () => import('pages/NWCSetupPage.vue') },
       { path: '/lnbits-setup', component: () => import('pages/LNBitsSetupPage.vue') },

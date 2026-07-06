@@ -117,6 +117,7 @@
                       :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
                       alt="Spark"
                     />
+                    <ArkadeLogo v-else-if="detectedDisplayType === 'arkade'" variant="mark" :size="12" />
                     <Icon v-else :icon="detectedIcon" width="12" height="12" />
                     <span>{{ detectedLabel }}</span>
                   </div>
@@ -231,9 +232,11 @@ import {
   isBitcoinAddress,
   isLightningAddress,
   isLnurl,
+  isArkadeAddress,
 } from '../../utils/addressUtils.js'
 import AddContactSearch from './AddContactSearch.vue'
 import AddContactScan from './AddContactScan.vue'
+import ArkadeLogo from '../ArkadeLogo.vue'
 
 // Order matters: Spark addresses are checked before Bitcoin because some
 // Spark prefixes share a base58-ish look and we want them claimed first.
@@ -242,6 +245,7 @@ function detectType(address) {
   const v = address.trim()
   if (!v) return null
   if (isSparkAddress(v)) return 'spark'
+  if (isArkadeAddress(v)) return 'arkade'
   if (isBitcoinAddress(v)) return 'bitcoin'
   // LNURL static pay links — recognized as their own type for routing, but
   // surfaced as Lightning in the pill below (see detectedType/Label/Icon).
@@ -263,7 +267,7 @@ const TABS = [
 
 export default {
   name: 'AddressBookModal',
-  components: { AddContactSearch, AddContactScan },
+  components: { AddContactSearch, AddContactScan, ArkadeLogo },
   props: {
     modelValue: {
       type: Boolean,
@@ -333,6 +337,7 @@ export default {
       const labels = {
         lightning: this.$t('Lightning'),
         spark: this.$t('Spark'),
+        arkade: this.$t('Arkade'),
         bitcoin: this.$t('Bitcoin')
       }
       return labels[this.detectedDisplayType] || ''
@@ -728,6 +733,18 @@ export default {
   background: rgba(120, 120, 120, 0.12);
   color: var(--text-primary);
   box-shadow: inset 0 0 0 1px rgba(120, 120, 120, 0.25);
+}
+
+.detected-pill--arkade {
+  background: rgba(241, 67, 23, 0.12);
+  color: #C0360F;
+  box-shadow: inset 0 0 0 1px rgba(241, 67, 23, 0.24);
+}
+
+.body--dark .detected-pill--arkade,
+.q-dark .detected-pill--arkade {
+  color: #F14317;
+  box-shadow: inset 0 0 0 1px rgba(241, 67, 23, 0.34);
 }
 
 .detected-pill--bitcoin {

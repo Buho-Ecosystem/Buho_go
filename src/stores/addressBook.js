@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { verifyEvent, nip19 } from 'nostr-core'
 import {
   isSparkAddress,
+  isArkadeAddress,
   isBitcoinAddress,
   isLightningAddress,
   isLnurl,
@@ -20,6 +21,7 @@ import {
 export const ADDRESS_TYPES = {
   LIGHTNING: 'lightning',
   SPARK: 'spark',
+  ARKADE: 'arkade',
   BITCOIN: 'bitcoin',
   // LNURL static pay links (bech32 LNURL1… or LUD-17 lnurlp://…). Stored as
   // its own type for correct send routing, but presented as Lightning in the
@@ -354,6 +356,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         if (!this.isValidAddress(newEntry.address, newEntry.addressType)) {
           const errorMessages = {
             spark: 'Invalid Spark address format',
+            arkade: 'Invalid Arkade address format',
             bitcoin: 'Invalid Bitcoin address format',
             lightning: 'Invalid Lightning address format',
             lnurl: 'Invalid LNURL format'
@@ -423,6 +426,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           if (!this.isValidAddress(updatedEntry.address, addressType)) {
             const errorMessages = {
               spark: 'Invalid Spark address format',
+              arkade: 'Invalid Arkade address format',
               bitcoin: 'Invalid Bitcoin address format',
               lightning: 'Invalid Lightning address format',
               lnurl: 'Invalid LNURL format'
@@ -1189,6 +1193,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (type === 'spark') {
         return this.isValidSparkAddress(address)
       }
+      if (type === 'arkade') {
+        return this.isValidArkadeAddress(address)
+      }
       if (type === 'bitcoin') {
         return this.isValidBitcoinAddress(address)
       }
@@ -1208,6 +1215,10 @@ export const useAddressBookStore = defineStore('addressBook', {
       return isSparkAddress(address)
     },
 
+    isValidArkadeAddress(address) {
+      return isArkadeAddress(address)
+    },
+
     isValidBitcoinAddress(address) {
       return isBitcoinAddress(address)
     },
@@ -1217,6 +1228,7 @@ export const useAddressBookStore = defineStore('addressBook', {
     detectAddressType(address) {
       if (!address) return null
       if (isSparkAddress(address)) return 'spark'
+      if (isArkadeAddress(address)) return 'arkade'
       if (isBitcoinAddress(address)) return 'bitcoin'
       // LNURL before the lightning-address check: an LNURL has no `@`, so the
       // two never collide, but keeping it explicit guards future edits.

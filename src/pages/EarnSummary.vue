@@ -106,9 +106,14 @@
           class="claim-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           :loading="isClaiming"
-          :disable="earnStore.isOnCooldown"
+          :disable="earnStore.isOnCooldown || arkadeClaimBlocked"
           @click="claimSats"
         />
+        <!-- Arkade-only setups can't receive Lightning below the swap
+             minimum: say so before the tap, with the way out. -->
+        <div v-if="earnStore.canClaim && arkadeClaimBlocked" class="claim-hint" :class="$q.dark.isActive ? 'claim-hint-dark' : 'claim-hint-light'">
+          {{ $t('Your Arkade wallet can only receive Lightning payments of {min} sats or more, so this reward can\'t be claimed yet. Create a Spark wallet or connect LNbits or NWC to claim it, or keep earning until you reach {min} sats.', { min: arkadeClaimMin }) }}
+        </div>
       </div>
     </div>
 
@@ -194,6 +199,27 @@ export default {
       showPayoutInfo: false,
     }
   },
+  computed: {
+    /**
+     * True when the reward cannot be claimed at all: the user's only wallet
+     * is Arkade (which receives Lightning through a swap with a minimum) and
+     * the claimable amount is below that minimum. With any other wallet
+     * connected the claim falls back to it automatically, so no warning.
+     */
+    arkadeClaimBlocked() {
+      const wallets = this.walletStore.wallets || []
+      const hasOtherWallet = wallets.some(w => (w.type || '').toLowerCase() !== 'arkade')
+      if (hasOtherWallet) return false
+      const active = wallets.find(w => w.id === this.walletStore.activeWalletId)
+      if ((active?.type || '').toLowerCase() !== 'arkade') return false
+      const min = this.walletStore.arkadeLnReceiveLimits?.min
+      if (!min) return false
+      return this.earnStore.claimableAmount < min
+    },
+    arkadeClaimMin() {
+      return this.walletStore.arkadeLnReceiveLimits?.min || 0
+    },
+  },
   async created() {
     await this.earnStore.initialize()
   },
@@ -209,7 +235,11 @@ export default {
         if (result.success) {
           this.$q.notify({
             type: 'positive',
-            message: this.$t('{amount} sats claimed!', { amount: result.amount }),
+            // When the reward was too small for the Arkade wallet's Lightning
+            // minimum it landed in another of the user's wallets — say which.
+            message: result.walletName
+              ? this.$t('{amount} sats claimed to {wallet}!', { amount: result.amount, wallet: result.walletName })
+              : this.$t('{amount} sats claimed!', { amount: result.amount }),
           })
         } else if (result.error === 'cooldown') {
           this.$q.notify({
@@ -233,14 +263,16 @@ export default {
           })
         } else {
           // No exception was raised; the store returned a structured
-          // failure code. Wrap the code so the technical pane still has
-          // something useful, but pass a curated reason so the dialog
-          // doesn't attribute our own synthesized string to a
+          // failure code. Prefer the original (coded) error when the store
+          // preserved one — its translated copy names the real reason (e.g.
+          // a reward below the Arkade Lightning minimum) — and fall back to
+          // wrapping the code so the technical pane still has something
+          // useful without attributing our own synthesized string to a
           // third-party payout service.
-          this.walletStore.showPaymentError(new Error(`claim failed: ${result.error || 'unknown'}`), {
+          this.walletStore.showPaymentError(result.cause || new Error(`claim failed: ${result.error || 'unknown'}`), {
             context: 'earn',
             route: 'Earn payout claim',
-            reason: this.$t('Claim failed. Try again later.'),
+            reason: result.cause ? undefined : this.$t('Claim failed. Try again later.'),
             t: this.$t.bind(this),
           })
         }
@@ -280,10 +312,10 @@ export default {
             message: this.$t('You have already received the maximum reward.'),
           })
         } else {
-          this.walletStore.showPaymentError(new Error(`bonus claim failed: ${result.error || 'unknown'}`), {
+          this.walletStore.showPaymentError(result.cause || new Error(`bonus claim failed: ${result.error || 'unknown'}`), {
             context: 'earn',
             route: 'Earn completion bonus',
-            reason: this.$t('Claim failed. Try again later.'),
+            reason: result.cause ? undefined : this.$t('Claim failed. Try again later.'),
             t: this.$t.bind(this),
           })
         }
@@ -560,6 +592,25 @@ export default {
   font-size: 16px;
   font-weight: 700;
   margin-top: 14px;
+}
+
+.claim-hint {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.claim-hint-light {
+  background: rgba(241, 67, 23, 0.08);
+  color: #7a3416;
+}
+
+.claim-hint-dark {
+  background: rgba(241, 67, 23, 0.16);
+  color: #f0b9a6;
 }
 
 .payout-ready {

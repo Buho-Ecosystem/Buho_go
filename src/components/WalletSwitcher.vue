@@ -28,6 +28,8 @@
             <svg v-else-if="activeWallet?.type === 'lnbits'" width="18" height="18" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
             </svg>
+            <!-- Arkade brand mark -->
+            <ArkadeLogo v-else-if="activeWallet?.type === 'arkade'" variant="mark" :size="20" />
             <!-- Default wallet icon -->
             <Icon v-else icon="tabler:wallet" width="20" height="20" />
           </div>
@@ -117,6 +119,8 @@
                   <svg v-else-if="wallet.type === 'lnbits'" width="16" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
                   </svg>
+                  <!-- Arkade brand mark -->
+                  <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" :size="18" />
                   <!-- Default wallet icon -->
                   <Icon v-else icon="tabler:wallet" width="18" height="18" />
                 </div>
@@ -148,6 +152,8 @@
                     <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
                     </svg>
+                    <!-- Arkade mini logo (white on the orange badge) -->
+                    <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="white" :size="9" />
                     <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getTypeBadgeLabel(wallet.type) }}</span>
                   </div>
@@ -250,10 +256,11 @@ import {useWalletStore} from '../stores/wallet'
 import {mapState, mapActions} from 'pinia'
 import {formatAmount} from '../utils/amountFormatting.js'
 import HiddenAmount from './HiddenAmount.vue'
+import ArkadeLogo from './ArkadeLogo.vue'
 
 export default {
   name: 'WalletSwitcher',
-  components: { HiddenAmount },
+  components: { HiddenAmount, ArkadeLogo },
   emits: ['add-wallet', 'manage-wallets'],
   data() {
     return {
@@ -288,8 +295,8 @@ export default {
     },
 
     groupedWallets() {
-      const typeOrder = ['spark', 'nwc', 'lnbits']
-      const typeLabels = { spark: 'Spark', nwc: 'NWC', lnbits: 'LNbits' }
+      const typeOrder = ['spark', 'arkade', 'nwc', 'lnbits']
+      const typeLabels = { spark: 'Spark', arkade: 'Arkade', nwc: 'NWC', lnbits: 'LNbits' }
       const groups = {}
 
       for (const wallet of this.sortedWallets) {
@@ -371,6 +378,7 @@ export default {
     getTypeBadgeClass(type) {
       switch (type) {
         case 'spark': return 'type-spark'
+        case 'arkade': return 'type-arkade'
         case 'lnbits': return 'type-lnbits'
         case 'nwc':
         default: return 'type-nwc'
@@ -380,6 +388,7 @@ export default {
     getTypeBadgeLabel(type) {
       switch (type) {
         case 'spark': return 'Spark'
+        case 'arkade': return 'Arkade'
         case 'lnbits': return 'LNbits'
         case 'nwc':
         default: return 'NWC'
@@ -764,6 +773,10 @@ export default {
 
 .type-spark {
   background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
+}
+
+.type-arkade {
+  background: linear-gradient(135deg, #F14317, #C0360F);
 }
 
 .type-nwc {

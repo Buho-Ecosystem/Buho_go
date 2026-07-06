@@ -41,6 +41,13 @@ const GRPC_CONTENT_TYPE_RE = /^application\/grpc(\+|-web)/i
 const SPARK_HOST_RE = /(^|\.)(lightspark\.com|flashnet\.xyz)$/i
 const SPARK_EXTRA_HOSTS = new Set(['spark-operator.breez.technology'])
 
+// Arkade (Ark L2) talks to the Ark server over REST + SSE. The Arkade
+// reference wallet is a browser PWA, so `arkade.computer` is CORS-enabled —
+// routing it through the un-patched fetch on native reproduces that working
+// web behavior and sidesteps the CapacitorHttp bridge's text round-trip /
+// streaming quirks. Subdomains (indexer, etc.) are covered too.
+const ARKADE_HOST_RE = /(^|\.)arkade\.computer$/i
+
 function requestHostname(resource) {
   try {
     const url =
@@ -73,7 +80,7 @@ export default boot(() => {
     // All Spark / Lightspark hosts (SSP GraphQL auth + operators). The bridge
     // breaks the SSP auth handshake; route these like the web build does.
     const host = requestHostname(resource)
-    if (host && (SPARK_HOST_RE.test(host) || SPARK_EXTRA_HOSTS.has(host))) {
+    if (host && (SPARK_HOST_RE.test(host) || SPARK_EXTRA_HOSTS.has(host) || ARKADE_HOST_RE.test(host))) {
       return nativeFetch.call(this, resource, options)
     }
 

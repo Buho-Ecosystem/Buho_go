@@ -72,6 +72,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         lightningAddress: config.lightningAddress ?? '',
         bitcoinAddress: config.bitcoinAddress ?? '',
         sparkAddress: config.sparkAddress ?? '',
+        arkadeAddress: config.arkadeAddress ?? '',
         feeSpeed: config.feeSpeed ?? 'medium',
         lastTriggeredAt: config.lastTriggeredAt ?? null
       }
@@ -155,6 +156,24 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           if (config.payoutType === 'spark') destination = config.sparkAddress
           else if (config.payoutType === 'onchain') destination = config.bitcoinAddress
           else destination = config.lightningAddress
+        } else if (walletType === WALLET_TYPES.ARKADE) {
+          // Arkade Lightning payouts ride a swap with its own min/max. Gate
+          // like the MIN_SEND_SATS check above: below the minimum, skip
+          // silently until the balance grows; above the maximum, sweep in
+          // maximum-sized chunks (the remainder goes on later triggers).
+          // Best-effort — when limits aren't known yet the attempt proceeds
+          // and the BELOW_MIN/ABOVE_MAX catch below backstops it.
+          if (config.payoutType !== 'arkade' && config.payoutType !== 'onchain') {
+            const provider = configKey.includes(':')
+              ? walletStore.providers[configKey]
+              : walletStore.getProvider(configKey)
+            const limits = await provider?.getLightningLimits?.('send').catch(() => null)
+            if (limits?.min && sendAmount < limits.min) return
+            if (limits?.max && sendAmount > limits.max) sendAmount = limits.max
+          }
+          result = await this._executeArkadePayout(configKey, sendAmount, config, walletStore)
+          if (config.payoutType === 'arkade') destination = config.arkadeAddress
+          else destination = config.lightningAddress
         } else {
           result = await this._executeLightningPayout(configKey, sendAmount, config, walletStore, walletType)
           destination = config.lightningAddress
@@ -187,6 +206,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         }
       } catch (error) {
         console.error('[Auto-withdraw] Failed:', error.message)
+
+        // An Arkade Lightning payout outside the swap limits cannot succeed
+        // by retrying (below-min waits for the balance to grow; above-max is
+        // clamped by the pre-flight once limits are known). Treat both like
+        // the MIN_SEND_SATS gate: skip silently on the normal cooldown.
+        if (error?.code === 'ARKADE_SWAP_BELOW_MIN' || error?.code === 'ARKADE_SWAP_ABOVE_MAX') return
 
         // The cooldown was set to "now" before the attempt to dam the storm of
         // balance-refresh ticks. On failure, roll it back so the next tick can
@@ -256,7 +281,38 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
     },
 
     /**
-     * Execute lightning address payout from NWC or LNBits wallet
+     * Execute payout from an Arkade wallet.
+     *   - 'arkade'   → native ark1 transfer (instant, near-zero fee)
+     *   - 'lightning'→ resolve the LN address and pay via a Boltz swap
+     *   - 'onchain'  → Ramps offboard (phase-second, not yet available)
+     */
+    async _executeArkadePayout(configKey, sendAmount, config, walletStore) {
+      if (config.payoutType === 'arkade') {
+        const provider = configKey.includes(':')
+          ? walletStore.providers[configKey]
+          : walletStore.getProvider(configKey)
+        if (!provider) throw new Error('Wallet provider not available')
+        if (!config.arkadeAddress) throw new Error('No Arkade address configured')
+
+        const result = await provider.transferToArkadeAddress({
+          arkadeAddress: config.arkadeAddress,
+          amount: sendAmount,
+        })
+        return { id: result.id, status: result.status }
+      }
+
+      if (config.payoutType === 'onchain') {
+        const err = new Error('On-chain auto-withdraw from Arkade is coming soon')
+        err.code = 'ARKADE_ONCHAIN_SOON'
+        throw err
+      }
+
+      // Lightning (default): reuse the shared LN-address → invoice resolver.
+      return this._executeLightningPayout(configKey, sendAmount, config, walletStore, WALLET_TYPES.ARKADE)
+    },
+
+    /**
+     * Execute lightning address payout from NWC, LNBits or Arkade wallet
      */
     async _executeLightningPayout(walletId, sendAmount, config, walletStore, walletType) {
       if (!config.lightningAddress) throw new Error('No Lightning address configured')
@@ -299,6 +355,10 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const provider = await walletStore.ensureLNBitsConnected(walletId)
         const result = await provider.payInvoice({ invoice })
         return { id: result.payment_hash || result.id || null, status: 'completed' }
+      } else if (walletType === WALLET_TYPES.ARKADE) {
+        const provider = await walletStore.ensureArkadeConnected(walletId)
+        const result = await provider.payInvoice({ invoice })
+        return { id: result.txid || null, status: 'completed' }
       } else {
         // Self-heal a dropped NWC connection (e.g. after an app resume or a
         // relay disconnect) rather than failing the transfer outright — mirrors

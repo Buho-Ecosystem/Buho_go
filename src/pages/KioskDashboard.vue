@@ -324,7 +324,7 @@ export default defineComponent({
             if (status.isPaid) {
               try {
                 const b = await provider.getBalance()
-                store.balances[store.kioskWalletId] = b
+                store.balances[store.kioskWalletId] = Number(b?.balance ?? b ?? 0)
               } catch (_) { /* balance refresh is best-effort */ }
               clearPolling()
               showSuccess()
@@ -343,13 +343,17 @@ export default defineComponent({
         return
       }
 
-      // Non-Spark or no invoice id: legacy balance-diff polling.
-      const ib = store.balances[store.kioskWalletId] || 0
+      // Non-Spark or no invoice id: legacy balance-diff polling. Provider
+      // getBalance() returns an object { balance, ... } for Spark/LNbits/Arkade
+      // (scalar for some NWC), so normalize to a number before comparing/storing
+      // — `{...} > number` is always false and would never detect the payment.
+      const ib = Number(store.balances[store.kioskWalletId] ?? 0)
       pollTimer = setInterval(async () => {
         try {
           const p = store.providers[store.kioskWalletId]; if (!p) return
-          const b = await p.getBalance()
-          if (b > ib) { store.balances[store.kioskWalletId] = b; clearPolling(); showSuccess() }
+          const res = await p.getBalance()
+          const bal = Number(res?.balance ?? res ?? 0)
+          if (bal > ib) { store.balances[store.kioskWalletId] = bal; clearPolling(); showSuccess() }
         } catch (e) {}
       }, 2000)
     }
