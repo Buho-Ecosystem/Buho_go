@@ -28,7 +28,7 @@
 ## Everyday
 
 > [!TIP]
-> Both on Spark? Use the `spark1…` address for zero fees, instantly.
+> Both on Spark? Use the `spark1…` address for zero fees, instantly. Both on Arkade? The same holds for `ark1…`: instant and near-zero fee.
 
 <details open>
 <summary><b>💸 Splitting a dinner bill</b></summary>
@@ -103,7 +103,10 @@ Open **Learn & Earn** for a guided, bite-size course on Bitcoin and Lightning. E
 
 ---
 
-## On-chain (Spark only)
+## On-chain (Spark and Arkade)
+
+> [!NOTE]
+> The walkthroughs below use **Spark**, where an on-chain deposit is claimed after 3 confirmations. **Arkade** also does on-chain, through **boarding** (receive) and **Ramps offboard** (send to a `bc1…` address), from the same self-custodial wallet.
 
 <details open>
 <summary><b>🏦 Withdrawing from an exchange</b></summary>
@@ -204,6 +207,7 @@ Pay merchants who accept Bitcoin instead of card. No card-network tracking, so n
 | You are…                        | Recommended path                                                    |
 | ------------------------------- | ------------------------------------------------------------------- |
 | **New to Bitcoin**              | Create a Spark wallet, back up the seed, receive $5, send $1 to a friend |
+| **Want an instant Bitcoin L2**  | Create an Arkade wallet, back up the seed, send `ark1` → `ark1` for near-zero fees |
 | **Already have a LN wallet**    | Connect via NWC, keep your funds where they are, enjoy a nicer interface |
 | **Want maximum security**       | Spark wallet, seed on paper in two locations, biometric lock, Auto-Transfer to cold storage |
 | **Running a small business**    | Spark "Business" account, Kiosk Mode, Auto-Transfer to your main wallet |

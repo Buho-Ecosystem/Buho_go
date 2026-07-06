@@ -23,7 +23,7 @@
 Component → Pinia store → WalletProvider → SDK / REST API
 ```
 
-Every wallet operation routes through a **provider**, so components stay wallet-agnostic. Send and receive UI never knows whether it is talking to Spark, NWC, or LNBits.
+Every wallet operation routes through a **provider**, so components stay wallet-agnostic. Send and receive UI never knows whether it is talking to Spark, Arkade, NWC, or LNBits.
 
 ---
 
@@ -34,7 +34,7 @@ src/
 ├── boot/         # axios, i18n, deep-links, kiosk guard, safe-area, nfc, theme, cloud-backup
 ├── components/   # Send/Receive sheets, PaymentConfirmSheet, Batch send, Kiosk PIN pad, map/*, L1 UI
 ├── pages/        # Wallet, Settings, KioskDashboard, MapPage, Earn* (Learn & Earn), setup pages
-├── providers/    # WalletProvider (base) + Spark/NWC/LNBits + WalletFactory
+├── providers/    # WalletProvider (base) + Spark/Arkade/NWC/LNBits + WalletFactory
 ├── services/     # walletBrands, nostrRecipient, nip05, map/* data sources, lnAddressServices
 ├── stores/       # wallet, addressBook, autoWithdraw, mapPlaces, earn, bitcoinPreferences, identity…
 ├── utils/        # address, amount, branta, biometric, lightning, nostr*, map*, fiatRates…
@@ -48,13 +48,13 @@ src/
 ## Wallet Provider pattern
 
 > [!NOTE]
-> A **4th backend, Arkade (Ark L2)**, is in progress on [PR #177](https://github.com/Buho-Ecosystem/Buho_go/pull/177) (branch `ark`). It is feature-complete in code and needs real-device mainnet testing. If you want to help ship it, read **[ARK_ME.md](ARK_ME.md)**.
+> BuhoGO ships **four backends**: Spark, **Arkade (Ark L2)**, NWC, and LNBits. Arkade is the newest and the most involved; its provider, key derivation, swaps, and liveness loop are documented in **[ARK_ME.md](ARK_ME.md)**. Reviews and PRs on it are welcome.
 
 All providers implement the same interface (`src/providers/WalletProvider.js`):
 
 ```js
 class WalletProvider {
-  getType()                                       // 'spark' | 'nwc' | 'lnbits'
+  getType()                                       // 'spark' | 'arkade' | 'nwc' | 'lnbits'
   connect() / disconnect()
   getBalance()                                    // { balance, pending, tokenBalances }
   createInvoice({ amount, description, expiry })
@@ -84,6 +84,35 @@ await provider.payLightningAddress('a@b.com', 5000)
 ```
 
 Each seed yields **Business** (account 1) and **Personal** (account 0). Derivation: `m/8797555'/account'/keyType'`.
+
+</details>
+
+<details>
+<summary><b>ArkadeWalletProvider</b></summary>
+
+Ark L2 (VTXOs). Self-custodial and mnemonic-based like Spark, but a **single** wallet per install (no Business/Personal pair).
+
+```js
+const p = new ArkadeWalletProvider(walletId, { encryptedMnemonic, arkServerUrl })
+await p.connect()
+await p.transferToArkadeAddress({ arkadeAddress: 'ark1…', amount: 10000 }) // instant, near-zero fee
+await p.offboardToBitcoin({ bitcoinAddress: 'bc1…', amount: 20000 })       // on-chain send (Ramps)
+await p.payInvoice({ invoice: 'lnbc…' })                                    // Lightning via Boltz swap
+```
+
+| Method | Purpose |
+| --- | --- |
+| `getArkadeAddress()` | The wallet's `ark1…` address |
+| `transferToArkadeAddress({ arkadeAddress, amount })` | Instant ark1 → ark1 fast path |
+| `getBoardingAddress()` | On-chain receive (boarding) |
+| `offboardToBitcoin({ bitcoinAddress, amount })` | On-chain send (Ramps offboard) |
+| `createInvoice` / `payInvoice` / `lookupInvoice` | Lightning over Boltz swaps |
+| `startIncomingFundsListener(cb)` | Reverse-swap and incoming-funds events |
+| `checkLiveness({ force })` | VTXO renew / recover loop |
+
+- **Identity:** the SDK's `MnemonicIdentity.fromMnemonic`, BIP-86 Taproot `m/86'/{0|1}'/0'/0/*` (`src/utils/arkadeKeys.js`).
+- **Lightning** rides `@arkade-os/boltz-swap`: reverse swaps auto-claim, submarine swaps auto-refund, both survive a restart.
+- Endpoints, the Boltz notes, and the full surface live in **[ARK_ME.md](ARK_ME.md)**.
 
 </details>
 
@@ -129,9 +158,10 @@ import { createWalletProvider, parsePaymentDestination } from '@/providers/Walle
 const provider = createWalletProvider(walletId, walletData)
 parsePaymentDestination('lnbc10u1…')  // { type: 'bolt11', invoice, amount }
 parsePaymentDestination('spark1qw3…') // { type: 'spark_address', address }
+parsePaymentDestination('ark1qw3…')   // { type: 'arkade_address', address }
 ```
 
-Spark address prefixes: `spark1` (mainnet) · `sparkt1` / `sparkrt1` / `sparks1` (testnet/regtest/signet) · legacy `sp1` / `tsp1` / `sprt1`.
+Spark address prefixes: `spark1` (mainnet) · `sparkt1` / `sparkrt1` / `sparks1` (testnet/regtest/signet) · legacy `sp1` / `tsp1` / `sprt1`. Arkade uses `ark1` (mainnet), matched by `isArkadeAddress`.
 
 ---
 
@@ -407,5 +437,5 @@ Capacitor config: `src-capacitor/capacitor.config.json`. Intent filters for `lig
 
 [Vue 3](https://vuejs.org/) · [Quasar](https://quasar.dev/) · [Pinia](https://pinia.vuejs.org/) · [Spark SDK](https://github.com/buildonspark/spark-sdk) · [Alby SDK](https://github.com/getAlby/js-sdk) · [nostr-core](https://nostr-core.netlify.app/) · [Arkade docs](https://docs.arkadeos.com/) · [NIP-47](https://github.com/nostr-protocol/nips/blob/master/47.md) · [LNBits API](https://demo.lnbits.com/docs) · [Capacitor](https://capacitorjs.com/docs)
 
-> Working on the Arkade backend? See **[ARK_ME.md](ARK_ME.md)** for its testing state and open tasks.
+> Working on the Arkade backend? See **[ARK_ME.md](ARK_ME.md)** for the provider, key derivation, swaps, liveness loop, and endpoints in depth.
 </content>
