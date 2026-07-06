@@ -1,13 +1,11 @@
 package org.capacitor.quasar.app;
 
-import android.nfc.FormatException;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
 import android.nfc.tech.IsoDep;
 import android.nfc.tech.Ndef;
-import android.os.Parcelable;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -18,7 +16,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Locale;
 
 /**
  * NfcPlugin — Custom Capacitor plugin for NFC tag reading.
@@ -35,51 +32,26 @@ import java.util.Locale;
 public class NfcPlugin extends Plugin {
 
     /**
-     * Called by MainActivity when an NFC intent arrives (onNewIntent / onResume).
-     * Parses NDEF records and emits the result to JavaScript listeners.
+     * Called by MainActivity's reader-mode callback (onTagDiscovered) when a
+     * tag enters the field while the app is in the foreground. Reads the NDEF
+     * payload — via the standard Ndef tech, or the raw T4T/IsoDep path for
+     * NTAG 424 DNA Bolt Cards — and emits the result to JavaScript listeners.
+     *
+     * Runs on the NFC reader binder thread, never the UI thread, which is
+     * where the blocking tag IO belongs.
      */
-    public void handleNfcIntent(android.content.Intent intent) {
-        if (intent == null) return;
-        String action = intent.getAction();
+    public void handleTag(Tag tag) {
+        if (tag == null) return;
 
-        if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)
-                || NfcAdapter.ACTION_TAG_DISCOVERED.equals(action)
-                || NfcAdapter.ACTION_TECH_DISCOVERED.equals(action)) {
-
-            Parcelable[] rawMessages = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
-
-            if (rawMessages == null || rawMessages.length == 0) {
-                // NTAG 424 DNA (Bolt Card) is an ISO-DEP / T4T tag. Android does not always
-                // deliver EXTRA_NDEF_MESSAGES for these tags — fall back to reading the NDEF
-                // file directly via the Ndef or IsoDep technology classes.
-                Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
-                String fallback = tryReadNdefFromTag(tag);
-                if (fallback != null && !fallback.isEmpty()) {
-                    JSObject result = new JSObject();
-                    result.put("raw", fallback);
-                    notifyListeners("nfcTag", result);
-                } else {
-                    JSObject err = new JSObject();
-                    err.put("message", "NFC tag found but contains no NDEF data");
-                    notifyListeners("nfcError", err);
-                }
-                return;
-            }
-
-            // Process first NDEF message, first record
-            NdefMessage ndefMessage = (NdefMessage) rawMessages[0];
-            NdefRecord[] records = ndefMessage.getRecords();
-
-            if (records == null || records.length == 0) {
-                return;
-            }
-
-            String parsed = parseNdefRecord(records[0]);
-            if (parsed != null && !parsed.isEmpty()) {
-                JSObject result = new JSObject();
-                result.put("raw", parsed);
-                notifyListeners("nfcTag", result);
-            }
+        String raw = tryReadNdefFromTag(tag);
+        if (raw != null && !raw.isEmpty()) {
+            JSObject result = new JSObject();
+            result.put("raw", raw);
+            notifyListeners("nfcTag", result);
+        } else {
+            JSObject err = new JSObject();
+            err.put("message", "NFC tag found but contains no NDEF data");
+            notifyListeners("nfcError", err);
         }
     }
 
@@ -169,15 +141,15 @@ public class NfcPlugin extends Plugin {
         return new String(payload, textStart, payload.length - textStart, charset).trim();
     }
 
-    // ─── Bolt Card / NTAG 424 DNA fallback reading ───────────────────────────
+    // ─── Tag reading (standard NDEF + Bolt Card / NTAG 424 DNA) ───────────────
 
     /**
-     * Called when Android did not deliver EXTRA_NDEF_MESSAGES (e.g. NTAG 424 DNA /
-     * Bolt Cards dispatched via TAG_DISCOVERED or TECH_DISCOVERED).
+     * Reads the NDEF payload from a Tag delivered by reader mode.
      *
      * Tries two approaches in order:
-     *  1. Android Ndef technology class  — works when the tag supports T4T NDEF
-     *     and the NFC stack can negotiate it at runtime.
+     *  1. Android Ndef technology class  — present on standard NDEF tags
+     *     (NTAG 21x stickers etc.) because the platform NDEF check runs
+     *     during reader-mode discovery.
      *  2. Raw IsoDep APDU sequence       — T4T NDEF read per ISO 7816-4 / NFC
      *     Forum T4T spec; required when Ndef.get() returns null (some Android
      *     versions / OEM NFC stacks fail to surface NTAG 424 DNA as Ndef).

@@ -779,6 +779,7 @@ export default {
   "Get the BuhoGO Android app": "Consigue la app BuhoGO para Android",
   "Screen-capture protection runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to keep your screen private.": "La protección contra capturas se ejecuta en el dispositivo y solo está disponible en la app BuhoGO para Android. Instálala desde Google Play para mantener tu pantalla privada.",
   "Biometric app lock runs on the device and is only available in the BuhoGO Android app. Install it from Google Play to unlock the app with your fingerprint or face.": "El bloqueo biométrico de la app se ejecuta en el dispositivo y solo está disponible en la app BuhoGO para Android. Instálala desde Google Play para desbloquear la app con huella o rostro.",
+  "Learn & Earn is only available in the BuhoGO Android app. Install it from Google Play to complete lessons and earn sats.": "Aprende y Gana solo está disponible en la app BuhoGO para Android. Instálala desde Google Play para completar las lecciones y ganar sats.",
   "Open Google Play": "Abrir Google Play",
   "Legacy (e.g. 1,234 sats)": "Legacy (ej. 1.234 sats)",
   "Amount format changed to BIP-177 (₿)": "Formato cambiado a BIP-177 (₿)",

@@ -3237,6 +3237,14 @@ export default {
     if (this.$route.query.section === 'wallets') {
       this.$nextTick(() => { this.showWalletsDialog = true; });
     }
+
+    // Native-only redirect. A direct web navigation to /learn* is bounced
+    // here by the router guard (see router/routes.js) with ?getApp=learn.
+    // Open the shared Get-the-App dialog so the user learns that Learn &
+    // Earn is app-only, matching the card-tap path in onFeatureSelect.
+    if (this.$route.query.getApp === 'learn') {
+      this.$nextTick(() => this.promptForLearnEarnApp());
+    }
   },
 
   beforeUnmount() {
@@ -3627,6 +3635,15 @@ export default {
     onFeatureSelect(id) {
       switch (id) {
         case 'bitcoin-lessons':
+          if (!this.isNativeApp) {
+            // Learn & Earn pays out real sats. On the web build there is
+            // no way to stop a user from spinning up fresh wallets to farm
+            // rewards, so the whole feature is native-only. Surface that
+            // honestly with the same Get-the-App prompt as biometrics /
+            // screen privacy instead of routing into the earn flow.
+            this.promptForLearnEarnApp();
+            return;
+          }
           this.$router.push('/learn');
           return;
         case 'auto-transfer':
@@ -3821,6 +3838,17 @@ export default {
     promptForApp(message) {
       this.getAppDialogMessage = message;
       this.showGetAppDialog = true;
+    },
+
+    /**
+     * Open the shared Get-the-App dialog for Learn & Earn. Single source
+     * of the app-only message so the card-tap gate (onFeatureSelect) and
+     * the router-guard redirect landing (mounted) stay in sync.
+     */
+    promptForLearnEarnApp() {
+      this.promptForApp(
+        this.$t('Learn & Earn is only available in the BuhoGO Android app. Install it from Google Play to complete lessons and earn sats.')
+      );
     },
 
     /**

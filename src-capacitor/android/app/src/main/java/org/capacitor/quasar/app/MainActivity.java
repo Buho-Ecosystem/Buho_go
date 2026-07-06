@@ -1,32 +1,56 @@
 package org.capacitor.quasar.app;
 
-import android.app.PendingIntent;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.nfc.NfcAdapter;
-import android.os.Build;
+import android.nfc.Tag;
 import android.os.Bundle;
+import android.util.Log;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.PluginHandle;
 
-public class MainActivity extends BridgeActivity {
+/**
+ * MainActivity — hosts the Capacitor WebView and BuhoGO's native plugins.
+ *
+ * NFC design (payment-app standard):
+ *   BuhoGO reads NFC only while it is in the foreground, using reader mode.
+ *   It deliberately declares NO NFC intent filters in the manifest, so a tag
+ *   can never cold-launch or wake the app while it is closed. This mirrors how
+ *   wallet / banking apps behave: you open the app, then tap. It stops the app
+ *   from opening itself when the phone brushes an unrelated tag (transit card,
+ *   access badge, contactless bank card, random sticker).
+ *
+ *   Reader mode (enableReaderMode) turns the device into a pure reader while
+ *   the activity is visible: tags are delivered straight to onTagDiscovered
+ *   with priority over every other installed wallet and without the system
+ *   chooser. The platform NDEF check stays enabled — it is what surfaces the
+ *   Ndef technology on standard tags (NTAG 21x stickers); NfcPlugin falls
+ *   back to a raw IsoDep read for NTAG 424 DNA Bolt Cards where that check
+ *   is unreliable. The system tap sound is kept on purpose: it is the
+ *   familiar "tag registered" feedback and the app plays no sound of its own.
+ */
+public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCallback {
+
+    private static final String NFC_LOG_TAG = "BuhoNfc";
+
+    // NFC-A/B/F/V covers every NDEF-capable tag family in the wild
+    // (NTAG 21x, NTAG 424 DNA Bolt Cards, FeliCa, ICODE). Do NOT add
+    // FLAG_READER_SKIP_NDEF_CHECK: skipping the check would strip the Ndef
+    // technology from discovered tags, and Type 2 stickers (NTAG 21x) have
+    // no IsoDep fallback — they would become unreadable.
+    private static final int READER_FLAGS =
+              NfcAdapter.FLAG_READER_NFC_A
+            | NfcAdapter.FLAG_READER_NFC_B
+            | NfcAdapter.FLAG_READER_NFC_F
+            | NfcAdapter.FLAG_READER_NFC_V;
 
     private NfcAdapter nfcAdapter;
-    private PendingIntent nfcPendingIntent;
-    private IntentFilter[] nfcIntentFilters;
 
     /**
-     * Register Capacitor plugins and prepare foreground NFC dispatch.
-     * Foreground dispatch lets this activity claim exclusive tag
-     * priority over any other installed wallet while it is in the
-     * foreground, bypassing the Android app chooser entirely.
-     *
-     * Screen-privacy flag is applied BEFORE super.onCreate() so the
-     * window has FLAG_SECURE set before the first frame is rendered.
-     * Reads the persisted preference straight from SharedPreferences
-     * (owned by SecureScreenPlugin) — synchronous and safe to call
-     * here, no JS / WebView dependency. Fail-secure on first launch:
-     * default is ON until the user explicitly opts out.
+     * Register plugins and apply the screen-privacy flag before the first
+     * frame. FLAG_SECURE is read straight from SharedPreferences (owned by
+     * SecureScreenPlugin) so it is set before super.onCreate() renders —
+     * fail-secure on first launch (default ON until the user opts out).
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -40,45 +64,12 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
-        if (nfcAdapter == null) return;
-
-        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            ? PendingIntent.FLAG_MUTABLE : 0;
-
-        nfcPendingIntent = PendingIntent.getActivity(
-            this, 0,
-            new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            flags
-        );
-
-        // Cover every action dispatchNfcIntent() routes. Without
-        // TAG_DISCOVERED and TECH_DISCOVERED in the filter, non-NDEF
-        // tags fall back to the manifest path where the chooser can
-        // reappear if another wallet declares the same filters.
-        try {
-            IntentFilter ndef = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
-            ndef.addDataType("*/*");
-            IntentFilter tag = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
-            IntentFilter tech = new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED);
-            nfcIntentFilters = new IntentFilter[]{ ndef, tag, tech };
-        } catch (IntentFilter.MalformedMimeTypeException e) {
-            // "*/*" is well-formed so this branch is unreachable in
-            // practice. If it ever fired we'd rather disable foreground
-            // dispatch entirely than register a null filter array,
-            // which would silently intercept every tag the device
-            // sees while the activity is in the foreground.
-            nfcAdapter = null;
-        }
     }
 
     /**
-     * Re-enable foreground dispatch and process any tag intent the
-     * activity was launched with (cold start via tag scan).
-     *
-     * Also re-applies FLAG_SECURE from the persisted preference. Some
-     * Android lifecycle paths (multi-window, configuration changes,
-     * certain OEM skins on resume) can clear or reset window flags,
-     * so we re-state our intent on every resume.
+     * Enable reader mode while visible, and re-apply FLAG_SECURE. Some Android
+     * lifecycle paths (multi-window, configuration changes, certain OEM skins)
+     * can clear window flags on resume, so we re-state the intent every time.
      */
     @Override
     public void onResume() {
@@ -90,51 +81,55 @@ public class MainActivity extends BridgeActivity {
         );
 
         if (nfcAdapter != null && nfcAdapter.isEnabled()) {
-            nfcAdapter.enableForegroundDispatch(this, nfcPendingIntent, nfcIntentFilters, null);
+            nfcAdapter.enableReaderMode(this, this, READER_FLAGS, null);
         }
-        dispatchNfcIntent(getIntent());
     }
 
     /**
-     * Release foreground dispatch so the rest of the system regains
-     * its normal NFC routing while the activity is not visible.
+     * Release reader mode when the activity leaves the foreground so the rest
+     * of the system regains its normal NFC routing.
      */
     @Override
     public void onPause() {
         super.onPause();
         if (nfcAdapter != null) {
-            nfcAdapter.disableForegroundDispatch(this);
+            nfcAdapter.disableReaderMode(this);
         }
     }
 
     /**
-     * Receive tag and deep-link intents delivered while the activity
-     * is already running. setIntent() keeps getIntent() in sync with
-     * the most recent delivery so Capacitor and any later readers see
-     * the same value; dispatchNfcIntent() then routes NFC actions and
-     * consumes the intent so onResume cannot replay them.
+     * Keep getIntent() in sync for deep links delivered while running. NFC no
+     * longer arrives as an intent (reader mode delivers it via
+     * onTagDiscovered), so this only serves Capacitor's appUrlOpen handling;
+     * super.onNewIntent() lets the bridge process lightning: / bitcoin: links.
      */
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        dispatchNfcIntent(intent);
     }
 
-    private void dispatchNfcIntent(Intent intent) {
-        if (intent == null) return;
-        String action = intent.getAction();
-        if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)
-            || NfcAdapter.ACTION_TAG_DISCOVERED.equals(action)
-            || NfcAdapter.ACTION_TECH_DISCOVERED.equals(action)) {
-            NfcPlugin plugin = (NfcPlugin) getBridge().getPlugin("Nfc").getInstance();
+    /**
+     * Reader-mode callback. Runs on a dedicated NFC binder thread (never the
+     * UI thread), which is exactly where the blocking tag IO belongs. Guarded:
+     * an uncaught exception on a binder thread would crash the whole app.
+     */
+    @Override
+    public void onTagDiscovered(Tag tag) {
+        try {
+            NfcPlugin plugin = resolveNfcPlugin();
             if (plugin != null) {
-                plugin.handleNfcIntent(intent);
+                plugin.handleTag(tag);
             }
-            // Consume the intent so a subsequent onResume cycle cannot
-            // re-dispatch the same tag (e.g. user backgrounds and
-            // returns after a Boltcard scan would otherwise replay it).
-            setIntent(new Intent());
+        } catch (Exception e) {
+            Log.e(NFC_LOG_TAG, "Unhandled error while reading NFC tag", e);
         }
+    }
+
+    private NfcPlugin resolveNfcPlugin() {
+        if (getBridge() == null) return null;
+        PluginHandle handle = getBridge().getPlugin("Nfc");
+        if (handle == null) return null;
+        return (NfcPlugin) handle.getInstance();
     }
 }

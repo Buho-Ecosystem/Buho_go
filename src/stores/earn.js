@@ -14,6 +14,7 @@
  */
 
 import { defineStore } from 'pinia'
+import { Capacitor } from '@capacitor/core'
 import { i18n } from '../boot/i18n'
 import quizEnUS from '../data/earn-quizzes.en-US.json'
 import quizDe from '../data/earn-quizzes.de.json'
@@ -312,6 +313,16 @@ export const useEarnStore = defineStore('earn', {
      * wallet only if all its limits pass.
      */
     async _requestPayout(kind, amountSats) {
+      // Learn & Earn is native-only. The router guard (router/routes.js) keeps
+      // the earn flow off the web build entirely, but this is the money exit —
+      // the single call that actually moves sats — so we lock it here too.
+      // That closes the tampering a route guard can't: faking pendingSats in
+      // localStorage or invoking a payout straight from the console. Web builds
+      // simply cannot drain the reward wallet.
+      if (!Capacitor.isNativePlatform()) {
+        throw new Error('Learn & Earn payouts are only available in the native app')
+      }
+
       const { invoice, wallet, fallback } = await this._createUserInvoice(amountSats)
       if (!invoice) throw new Error('Failed to create invoice')
 
