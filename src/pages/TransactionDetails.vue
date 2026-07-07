@@ -1360,18 +1360,27 @@ export default {
   font-family: 'Manrope', sans-serif;
   overflow-x: hidden;
   max-width: 100vw;
+  /* The header owns the top safe-area inset (see .page-header), so the
+     global .q-page top padding is cancelled here. */
+  padding-top: 0;
 }
 
 /* ===== Header ===== */
+/* The header owns the top inset: its background fills the area under the
+   status bar and the title sits just beneath it. The sticky offset must
+   stay 0: overflow-x:hidden on this page (and on html/body) turns those
+   elements into scroll containers, so a non-zero `top` doesn't pin the
+   header to the viewport — it displaces it downward over the hero card
+   even before any scrolling (the Android "gap above the title" bug). */
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: calc(1rem + var(--safe-top, 0px)) 1rem 1rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
   position: sticky;
-  top: var(--safe-top, 0px);
+  top: 0;
   z-index: 100;
 }
 
