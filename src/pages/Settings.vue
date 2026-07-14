@@ -2280,10 +2280,7 @@ export default {
       showCurrencyDialog: false,
       showLanguageDialog: false,
       showMissingLanguageDialog: false,
-      // TODO: fill in once the Nostr community link is ready. Empty
-      // means the Nostr channel button shows a "Soon" badge instead
-      // of opening a link.
-      nostrCommunityUrl: '',
+      nostrCommunityUrl: 'https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/85016a489c551428a50c339c75b6931a?n=BuhoGO&a=Public+discussion%2C+support%2C+and+updates+for+the+Buho+GO+Wallet%3A+a+native+wallet+interface+for+Spark%2C+Ark%2C+LNbits%2C+Nostr+Wallet+Connect%2C+and+&p=https%3A%2F%2Fblossom.primal.net%2Fd816ffbd78b10591710a1be9deca91700fe278e50250a07f0b1e421f0db03748',
       showNotificationsDialog: false,
       showSecurityDialog: false,
       showMempoolDialog: false,
