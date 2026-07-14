@@ -31,42 +31,14 @@
       </div>
 
       <div class="share-body">
-        <div
-          class="profile-card"
-          :class="$q.dark.isActive ? 'profile-card-dark' : 'profile-card-light'"
-        >
-          <div class="profile-card-avatar">
-            <img
-              v-if="avatarUrl"
-              :src="avatarUrl"
-              :alt="$t('Profile picture')"
-              class="profile-card-avatar-img"
-              @error="onAvatarError"
-            />
-            <Icon
-              v-else
-              icon="tabler:user"
-              width="28"
-              height="28"
-              class="profile-card-avatar-glyph"
-              aria-hidden="true"
-            />
-          </div>
-
-          <div class="profile-card-meta">
-            <div
-              class="profile-card-name"
-              :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-            >
-              {{ profileName }}
-            </div>
-            <div
-              class="profile-card-subline"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-            >
-              {{ $t('Share your public profile') }}
-            </div>
-          </div>
+        <!-- "Scan to add me" — the single most important line on this
+             sheet: it's the one thing that tells a first-time user what
+             this QR actually DOES (adds them as a contact), not just
+             that it exists. TikTok/Snapchat-style: the profile picture
+             sits cut into the center of the code itself, so the code
+             visually reads as "this person's code" at a glance. -->
+        <div class="qr-heading" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+          {{ $t('Scan to add me') }}
         </div>
 
         <div class="qr-block">
@@ -88,23 +60,51 @@
               <div v-else class="qr-placeholder">
                 <q-spinner size="24px" color="grey-7" />
               </div>
+
+              <!-- Avatar cut into the QR's center. Safe at this size
+                   (~20% of the code, well under the ~25-30% a
+                   high-error-correction QR can lose and still scan —
+                   see errorCorrectionLevel: 'H' in qrOptions below)
+                   and center occlusion avoids the three corner finder
+                   patterns scanners rely on most. -->
+              <div
+                v-if="nip21ProfileUri"
+                class="qr-avatar-overlay"
+                :style="{ width: avatarOverlaySize + 'px', height: avatarOverlaySize + 'px' }"
+              >
+                <img
+                  v-if="avatarUrl"
+                  :src="avatarUrl"
+                  :alt="$t('Profile picture')"
+                  class="qr-avatar-img"
+                  @error="onAvatarError"
+                />
+                <div v-else class="qr-avatar-fallback">
+                  <img
+                    src="/buho_logo.svg"
+                    alt=""
+                    width="60%"
+                    height="60%"
+                    aria-hidden="true"
+                  />
+                </div>
+              </div>
             </div>
           </button>
+
+          <div
+            class="qr-name"
+            :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+          >
+            {{ profileName }}
+          </div>
 
           <div
             v-if="nip21ProfileUri"
             class="qr-caption"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ copied ? $t('Copied') : $t('Tap to copy. Scan to add this profile.') }}
-          </div>
-
-          <div
-            v-if="nip21ProfileUri"
-            class="qr-hint"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-          >
-            {{ $t('Friends can scan this to add you to their address book and pay you.') }}
+            {{ copied ? $t('Copied') : $t('Scan this to add me as a contact and pay me') }}
           </div>
         </div>
 
@@ -190,12 +190,26 @@ export default {
       return `https://njump.me/${this.npub}`;
     },
 
+    qrSize() {
+      return this.$q.screen.width <= 380 ? 184 : 208;
+    },
+
     qrOptions() {
-      const size = this.$q.screen.width <= 380 ? 184 : 208;
       return {
-        ...getQrOptionsWithSize(size),
+        ...getQrOptionsWithSize(this.qrSize),
         margin: 2,
+        // High error correction (~30% recoverable) is required once a
+        // logo sits on top of the code — without this the avatar
+        // overlay below could make the QR unreadable.
+        errorCorrectionLevel: 'H',
       };
+    },
+
+    // ~20% of the code's width, comfortably under what level-H error
+    // correction can lose and still decode, with margin for real-world
+    // scan conditions (camera glare, small screens).
+    avatarOverlaySize() {
+      return Math.round(this.qrSize * 0.2);
     },
   },
 
@@ -317,73 +331,12 @@ export default {
   padding: 4px 16px 20px;
 }
 
-.profile-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid transparent;
-}
-
-.profile-card-light {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.68)),
-    radial-gradient(circle at top left, rgba(21, 222, 114, 0.10), transparent 55%);
-  border-color: rgba(15, 23, 42, 0.06);
-}
-
-.profile-card-dark {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03)),
-    radial-gradient(circle at top left, rgba(21, 222, 114, 0.12), transparent 55%);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-.profile-card-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #15DE72 0%, #0fb35e 100%);
-  color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
-}
-
-.profile-card-avatar-img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-}
-
-.profile-card-avatar-glyph {
-  color: #ffffff;
-}
-
-.profile-card-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.profile-card-name {
+.qr-heading {
   font-family: 'Manrope', sans-serif;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  line-height: 1.2;
-}
-
-.profile-card-subline {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  line-height: 1.35;
+  text-align: center;
 }
 
 .qr-block {
@@ -422,6 +375,7 @@ export default {
 }
 
 .qr-stage {
+  position: relative;
   width: fit-content;
   max-width: 100%;
   border-radius: 16px;
@@ -449,20 +403,61 @@ export default {
   justify-content: center;
 }
 
-.qr-caption {
+/* Avatar cut into the QR's center — see the template comment for why
+   this stays scannable (errorCorrectionLevel: 'H' + ~20% sizing). The
+   white ring (padding + white background) gives the decoder a clean
+   boundary instead of the avatar touching QR modules directly. */
+.qr-avatar-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #ffffff;
+  padding: 3px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18);
+}
+
+.qr-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+}
+
+/* White rather than the old green gradient: the logo mark is itself
+   multi-tone green, and a saturated green backing washed it out. */
+.qr-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-name {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
-  line-height: 1.4;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   text-align: center;
 }
 
-.qr-hint {
-  max-width: 300px;
+.qr-caption {
   font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
   text-align: center;
+  max-width: 280px;
 }
 
 .sheet-actions {
@@ -521,10 +516,6 @@ export default {
   .share-body {
     padding-left: 14px;
     padding-right: 14px;
-  }
-
-  .profile-card {
-    padding: 12px 14px;
   }
 
   .qr-card {

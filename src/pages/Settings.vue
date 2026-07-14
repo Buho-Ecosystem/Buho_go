@@ -842,17 +842,19 @@
         />
       </SettingsSection>
 
-      <!-- App Version — opens the source repo in a new tab. Kept
-           as the final element so users always know which build
-           they're on without having to dig. -->
-      <a
-        href="https://github.com/Buho-Ecosystem/Buho_go"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="app-version"
-      >
-        BuhoGO v{{ appVersion }}
-      </a>
+      <!-- ─────────────── ABOUT ───────────────
+           Single entry point into its own page (mission, source,
+           community, downloads, version) rather than an inline
+           section — keeps this already-long page shorter and gives
+           About room to breathe on its own screen. -->
+      <SettingsSection>
+        <SettingsRow
+          icon="tabler:info-circle"
+          :label="$t('About BuhoGO')"
+          :caption="'BuhoGO v' + appVersion"
+          @click="$router.push('/about')"
+        />
+      </SettingsSection>
 
     </div>
 
@@ -4271,7 +4273,7 @@ export default {
     },
 
     openTelegramCommunity() {
-      window.open('https://telegram.me/+cpmyopRYnKRlOTRi', '_blank')
+      window.open('https://telegram.me/+cpmyopRYnKRlOTRi', '_blank', 'noopener,noreferrer')
       this.showMissingLanguageDialog = false
     },
 
@@ -4284,7 +4286,7 @@ export default {
         })
         return
       }
-      window.open(this.nostrCommunityUrl, '_blank')
+      window.open(this.nostrCommunityUrl, '_blank', 'noopener,noreferrer')
       this.showMissingLanguageDialog = false
     },
 
@@ -5320,25 +5322,6 @@ export default {
   cursor: default;
 }
 
-/* App Version */
-.app-version {
-  display: block;
-  text-align: center;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  padding: 2rem 1rem 1rem;
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-
-.app-version {
-  color: var(--text-muted);
-}
-
-.app-version:hover {
-  color: var(--color-green, #15DE72) !important;
-}
-
 .card-icon {
   width: 40px;
   height: 40px;
@@ -5680,8 +5663,9 @@ export default {
 }
 
 /* Three equal-weight contact channels — email, Telegram, Nostr.
-   Solid brand-colored tiles read as one recognizable row rather
-   than three separate buttons competing for attention. */
+   Soft brand-tinted circles rather than solid-fill tiles, matching
+   the app's existing "quiet tint" language (wallet-hint, seed-callout,
+   quick-chip.active) instead of a loud row of saturated brand colors. */
 .channel-row {
   width: 100%;
   display: flex;
@@ -5709,7 +5693,6 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
   transition: transform 0.12s ease, filter 0.15s ease;
 }
 
@@ -5718,11 +5701,13 @@ export default {
 }
 
 .channel-icon--email {
-  background: var(--gradient-green, #15DE72);
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
 }
 
 .channel-icon--telegram {
-  background: #26A5E4;
+  background: rgba(38, 165, 228, 0.14);
+  color: #26A5E4;
 }
 
 /* The Nostr PNG already carries its own purple fill and mark, so the

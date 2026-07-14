@@ -123,7 +123,7 @@
                 {{ $t('Remove avatar') }}
               </q-item-label>
               <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-                {{ $t('Go back to the silhouette') }}
+                {{ $t('Go back to the BuhoGO logo') }}
               </q-item-label>
             </q-item-section>
           </q-item>
@@ -277,8 +277,9 @@ export default {
 
     /**
      * Synchronously clear the avatar URL and emit so the parent
-     * can re-open the edit sheet with the silhouette pre-rendered.
-     * The store action persists immediately, same as upload.
+     * can re-open the edit sheet with the BuhoGO logo fallback
+     * pre-rendered. The store action persists immediately, same
+     * as upload.
      */
     removeAvatar() {
       this.profile.setField('picture', '');

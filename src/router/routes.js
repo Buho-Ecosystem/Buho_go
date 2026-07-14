@@ -41,6 +41,7 @@ const routes = [
       // with or without a query (`?section=backup`, `?section=wallets`,
       // `?getApp=learn` all still land here as before).
       { path: '/settings', component: () => import('pages/Settings.vue') },
+      { path: '/about', component: () => import('pages/AboutPage.vue') },
       { path: '/spend', component: () => import('pages/SpendPage.vue') },
       { path: '/identity', component: () => import('pages/ProfilePage.vue') },
       // Legacy alias - anything that still links to /profile (e.g. an

@@ -13,96 +13,23 @@
         <span :class="$q.dark.isActive ? 'sheet-handle-bar-dark' : 'sheet-handle-bar-light'"></span>
       </div>
 
-      <!-- Identity header inside the sheet — same visual anchor as the
-           strip on the Profile page so users understand "this is the
-           same thing, expanded". -->
+      <!-- Sheet header. Now purely a title + short subtitle - backup
+           status moved to its own tile on the Profile page directly
+           (a quiet dot, not a banner), so this sheet no longer needs
+           to duplicate that status here. Kept to a title only, matching
+           the lean-utility-sheet pattern the rest of the app uses. -->
       <q-card-section class="sheet-header">
-        <div
-          class="sheet-avatar"
-          :class="[
-            $q.dark.isActive ? 'sheet-avatar-dark' : 'sheet-avatar-light',
-            { 'sheet-avatar--warn': identity.bootstrapped && !identity.backupConfirmed },
-          ]"
-          aria-hidden="true"
-        >
-          <!-- Show the user's actual profile picture when one is set;
-               fall back to the silhouette glyph for fresh identities
-               and after a load failure. Same `avatarBroken` pattern
-               the page hero uses, so a broken URL isn't retried on
-               every re-render. -->
-          <img
-            v-if="visibleAvatarUrl"
-            :src="visibleAvatarUrl"
-            alt=""
-            class="sheet-avatar-img"
-            @error="onAvatarLoadError"
-          />
-          <Icon
-            v-else
-            icon="tabler:user"
-            width="22"
-            height="22"
-          />
+        <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+          {{ $t('Advanced') }}
         </div>
-        <div class="sheet-meta">
-          <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-            {{ $t('Your profile') }}
-          </div>
-          <div class="sheet-status">
-            <template v-if="!identity.bootstrapped">
-              <Icon icon="tabler:sparkles" width="13" height="13" class="sheet-status-icon" />
-              <span :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                {{ $t('Not set up yet') }}
-              </span>
-            </template>
-            <template v-else>
-              <Icon
-                :icon="identity.backupConfirmed ? 'tabler:shield-check' : 'tabler:shield-exclamation'"
-                width="13"
-                height="13"
-                :class="['sheet-status-icon', identity.backupConfirmed ? 'is-ok' : 'is-warn']"
-              />
-              <span :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ identity.backupConfirmed ? $t('Recovery phrase backed up') : $t('Recovery phrase not backed up yet') }}
-              </span>
-            </template>
-          </div>
+        <div class="sheet-status" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+          {{ $t('Restore a profile, sign in elsewhere, or start over.') }}
         </div>
       </q-card-section>
 
       <!-- Primary actions list. Identity-card rows from the old page
            are gathered here so the main Profile screen can stay calm. -->
       <q-list class="sheet-list">
-        <!--
-          Recovery phrase row.
-          For fresh installs the same row creates the phrase on first
-          tap (ProfilePage.openIdentitySeedDialog → ensureIdentity).
-          Once an identity exists, the row reveals + verifies it.
-        -->
-        <q-item
-          clickable
-          v-ripple
-          @click="emitView"
-        >
-          <q-item-section side>
-            <Icon icon="tabler:key" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-          <q-item-section>
-            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ identity.bootstrapped ? $t('Recovery phrase') : $t('Set up your profile') }}
-            </q-item-label>
-            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
-              {{ identity.bootstrapped
-                  ? $t('Your 12-word backup. Anyone with these words can sign in as you.')
-                  : $t('Create your 12-word backup so you never lose your profile.') }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-          </q-item-section>
-        </q-item>
-        <q-separator :class="$q.dark.isActive ? 'separator-dark' : 'separator-light'"/>
-
         <!-- Restore an existing profile from its 12-word backup. -->
         <q-item clickable v-ripple @click="emitRestore">
           <q-item-section side>
@@ -183,7 +110,6 @@
 <script>
 import { Icon } from '@iconify/vue';
 import { useIdentityStore } from '../stores/identity';
-import { useProfileStore } from '../stores/profile';
 
 export default {
   name: 'IdentityManageSheet',
@@ -194,24 +120,11 @@ export default {
     modelValue: { type: Boolean, required: true },
   },
 
-  emits: ['update:modelValue', 'view-seed', 'restore', 'regenerate', 'view-nostr'],
+  emits: ['update:modelValue', 'restore', 'regenerate', 'view-nostr'],
 
   setup() {
     const identity = useIdentityStore();
-    const profile = useProfileStore();
-    return { identity, profile };
-  },
-
-  data() {
-    return {
-      /**
-       * Sticky flag for a failed avatar load — same pattern the
-       * page hero uses. Once an `<img>` 404s in this session we
-       * silently fall back to the silhouette glyph instead of
-       * retrying the broken URL on every re-render.
-       */
-      avatarBroken: false,
-    };
+    return { identity };
   },
 
   computed: {
@@ -219,47 +132,15 @@ export default {
       get() { return this.modelValue; },
       set(v) { this.$emit('update:modelValue', v); },
     },
-
-    /**
-     * Resolved avatar URL for the sheet header. Reads
-     * `profileStore.picture` (the source of truth) and respects
-     * the runtime `avatarBroken` flag so a failing URL falls back
-     * to the silhouette without a retry loop.
-     */
-    visibleAvatarUrl() {
-      if (!this.profile.picture) return '';
-      if (this.avatarBroken) return '';
-      return this.profile.picture;
-    },
-  },
-
-  watch: {
-    'profile.picture'() {
-      // Avatar URL changed (likely a fresh upload) → reset the
-      // failure flag so the new URL gets a fresh fetch attempt.
-      this.avatarBroken = false;
-    },
   },
 
   methods: {
-    onAvatarLoadError() {
-      this.avatarBroken = true;
-    },
-
-
     /**
      * Close the sheet *before* emitting the action. The parent then
-     * opens its own dialog (seed phrase view, restore, regenerate) on
-     * the now-empty surface — feels like a continuous flow rather than
-     * a dialog stacked on a sheet.
+     * opens its own dialog (restore, regenerate) on the now-empty
+     * surface — feels like a continuous flow rather than a dialog
+     * stacked on a sheet.
      */
-    emitView() {
-      this.open = false;
-      // `nextTick` gives the sheet a moment to begin its leave animation
-      // so the seed-phrase dialog doesn't pop on top of it. The 180ms
-      // matches Quasar's default dialog transition.
-      setTimeout(() => this.$emit('view-seed'), 180);
-    },
     emitRestore() {
       this.open = false;
       setTimeout(() => this.$emit('restore'), 180);
@@ -311,58 +192,10 @@ export default {
 }
 
 /* Header: mirrors the identity strip from the Profile page so the
-   sheet feels like a natural extension of the strip the user just
-   tapped. Same avatar treatment + same status semantics. */
+   sheet is a lean utility list now, not a mini profile view. */
 
 .sheet-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
   padding: 6px 20px 16px;
-}
-
-.sheet-avatar {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  /* Clip the inner <img> to the circle. The warn ring (when set)
-     uses an outer box-shadow so it sits OUTSIDE this clip. */
-  overflow: hidden;
-}
-
-.sheet-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.sheet-avatar-light {
-  background: var(--btn-neutral-bg, #0f172a);
-  color: var(--btn-neutral-fg, #ffffff);
-}
-
-.sheet-avatar-dark {
-  background: rgba(21, 222, 114, 0.14);
-  color: #15DE72;
-  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
-}
-
-.sheet-avatar--warn {
-  box-shadow: 0 0 0 2px #f59e0b;
-}
-
-.sheet-meta {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .sheet-title {
@@ -374,24 +207,10 @@ export default {
 }
 
 .sheet-status {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   margin-top: 3px;
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
-}
-
-.sheet-status-icon {
-  flex: 0 0 auto;
-}
-
-.sheet-status-icon.is-ok {
-  color: #0f9c54;
-}
-
-.sheet-status-icon.is-warn {
-  color: #b06d00;
+  line-height: 1.4;
 }
 
 /* Action list */

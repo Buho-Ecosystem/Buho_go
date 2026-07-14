@@ -4,40 +4,13 @@
          peers reached via the floating SettingsHubNav, not a push
          stack, so there is no back chevron here - the Home icon
          inside SettingsHubHeader is the one universal way out, back
-         to the wallet. The kebab still opens IdentityManageSheet,
-         which owns the lower-frequency actions (seed phrase, restore,
-         regenerate, public-profile details). -->
-    <SettingsHubHeader :title="$t('Identity')">
-      <template #actions>
-        <q-btn
-          flat
-          round
-          dense
-          class="manage-btn"
-          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-          :aria-label="$t('Manage your BuhoGO identity')"
-          @click="showManageSheet = true"
-        >
-          <!-- Kebab/more affordance. Deliberately NOT a gear: the
-               global Settings page already owns that glyph; using
-               it here too would muddy the meaning. The dots match
-               the modern "more options for this surface" convention. -->
-          <Icon icon="tabler:dots-vertical" width="18" height="18" />
-        </q-btn>
-      </template>
-    </SettingsHubHeader>
+         to the wallet. No kebab menu: the lower-frequency actions it
+         used to gate (backup, restore, Nostr key, regenerate) are now
+         directly on the page as the "Backup" / "Advanced" tiles below,
+         so there's nothing left for a hidden menu to own. -->
+    <SettingsHubHeader :title="$t('Identity')" />
 
     <div class="profile-content">
-      <!-- Identity-backup nudge (and any future Identity-tab warning).
-           Sits above the hero so it's the first thing seen when a
-           backup is outstanding, same slot Settings' own attention
-           strip occupies relative to its profile card. -->
-      <SettingsAttentionStrip
-        :warnings="attentionWarnings"
-        @action="onAttentionAction"
-        @dismiss="onAttentionDismiss"
-      />
-
       <!-- Profile header. State variations, all driven by
            identity.bootstrapped + profile.isEmpty:
              1. !bootstrapped       → silent (the avatar slot reserves the layout
@@ -67,8 +40,13 @@
           <!-- Identity row — avatar left, name + @handle right. Each
                side stays its own tappable region so a miss-tap on the
                name still lands in the editor (same as before), and a
-               miss-tap on the avatar still opens the avatar picker. -->
-          <div class="hero-identity">
+               miss-tap on the avatar still opens the avatar picker.
+               Empty profile gets its own centred, stacked composition
+               instead: there's no name/handle/address content to sit
+               beside the avatar yet, so the asymmetric layout just
+               reads as lopsided. Centring it reads as one deliberate
+               invitation instead of a profile card missing its data. -->
+          <div class="hero-identity" :class="{ 'hero-identity--empty': profile.isEmpty }">
             <button
               type="button"
               class="hero-avatar-btn"
@@ -87,11 +65,12 @@
                     class="hero-avatar-img"
                     @error="onAvatarLoadError"
                   />
-                  <Icon
+                  <img
                     v-else
-                    icon="tabler:user"
-                    width="36"
-                    height="36"
+                    src="/buho_logo.svg"
+                    alt=""
+                    width="42"
+                    height="42"
                     class="hero-avatar-glyph"
                     aria-hidden="true"
                   />
@@ -269,9 +248,16 @@
 
       <!-- Sites the user has signed in to. Has three states:
            – Bootstrapped + sites: list each one, "+" in the header.
-           – Bootstrapped + empty:  a friendly placeholder + clear CTA.
-           – Not bootstrapped:      no section at all (strip carries it). -->
-      <template v-if="identity.bootstrapped">
+           – Bootstrapped + empty:  a friendly placeholder + clear CTA -
+             but only once the profile itself is set up. On a brand-new
+             identity this section would otherwise stack a second empty
+             "sign in to your first site" prompt right under the hero's
+             own "set up your profile" prompt, which reads as clutter
+             for a page that has nothing on it yet. A user who somehow
+             already has connected sites (rare, but possible before
+             naming their profile) always sees them regardless.
+           – Not bootstrapped:      no section at all (hero carries it). -->
+      <template v-if="identity.bootstrapped && (connectedSites.length > 0 || !profile.isEmpty)">
         <div class="sites-section-header">
           <!--
             Section title + inline help icon. The help icon opens the
@@ -338,21 +324,40 @@
         </div>
       </template>
 
-      <!-- Empty state: bootstrapped identity but no linked sites yet.
-           Compact, single CTA. Sits in the same slot the sites list
-           would occupy, so the page never feels half-built. -->
-      <template v-if="identity.bootstrapped && connectedSites.length === 0">
+      <!-- Empty state: bootstrapped identity but no linked sites yet,
+           AND the profile itself is already set up (see the header
+           template above for why). Compact, single CTA. Sits in the
+           same slot the sites list would occupy, so the page never
+           feels half-built. -->
+      <template v-if="identity.bootstrapped && connectedSites.length === 0 && !profile.isEmpty">
         <div
           class="sites-empty"
           :class="$q.dark.isActive ? 'sites-empty-dark' : 'sites-empty-light'"
         >
-          <div
-            class="sites-empty-icon"
-            :class="$q.dark.isActive ? 'sites-empty-icon-dark' : 'sites-empty-icon-light'"
+          <!-- Small illustration standing in for the plain icon-in-circle
+               this used to be: a "site" card with a verified badge, so
+               the empty state reads as inviting rather than a generic
+               placeholder glyph. Built from a handful of primitive
+               shapes, not an imported asset. -->
+          <svg
+            class="sites-empty-illustration"
+            viewBox="0 0 120 100"
+            width="112"
+            height="94"
+            fill="none"
             aria-hidden="true"
           >
-            <Icon icon="tabler:link" width="22" height="22" />
-          </div>
+            <g transform="rotate(-6 50 45)">
+              <rect x="14" y="18" width="72" height="54" rx="12" class="sites-illo-card" />
+              <rect x="30" y="36" width="36" height="5" rx="2.5" class="sites-illo-line" />
+              <rect x="30" y="48" width="24" height="5" rx="2.5" class="sites-illo-line-soft" />
+              <rect x="30" y="58" width="30" height="5" rx="2.5" class="sites-illo-line-soft" />
+            </g>
+            <circle cx="88" cy="68" r="19" class="sites-illo-badge" />
+            <path d="M80 68l5.5 5.5L96 62" class="sites-illo-check" />
+            <circle cx="20" cy="16" r="3" class="sites-illo-dot" />
+            <circle cx="104" cy="24" r="2.5" class="sites-illo-dot" />
+          </svg>
           <div class="sites-empty-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
             {{ $t('Sign in to your first site') }}
           </div>
@@ -384,6 +389,19 @@
             <Icon icon="tabler:plus" width="15" height="15" />
             <span>{{ $t('Sign in to a site') }}</span>
           </button>
+        </div>
+      </template>
+
+      <!-- Backup / Advanced tiles. Replaces the old kebab menu as the
+           entry point for the lower-frequency identity actions.
+           Reuses SettingsFeatureCards (already used for Auto-Transfer /
+           Kiosk Mode on the Settings tab) rather than a bespoke grid, so
+           this reads as the same "things you do" pattern as the rest of
+           the app. Only bootstrapped once an identity exists - there is
+           nothing to back up or manage before then. -->
+      <template v-if="identity.bootstrapped">
+        <div class="identity-action-cards">
+          <SettingsFeatureCards :features="identityActionCards" @select="onIdentityActionSelect" />
         </div>
       </template>
 
@@ -420,12 +438,12 @@
 
     </div>
 
-    <!-- Identity manage bottom sheet (View / Restore / Generate new).
-         Opened by tapping the gear icon in the page header. Keeps these
-         lower-frequency actions one tap away from the everyday flows. -->
+    <!-- "Advanced" sheet (Restore / Nostr key / Start a new profile).
+         Opened from the Advanced tile below the sites section. Backup
+         has its own direct tile now, so this sheet only owns the
+         genuinely lower-frequency actions. -->
     <IdentityManageSheet
       v-model="showManageSheet"
-      @view-seed="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
       @restore="showIdentityRestoreDialog = true"
       @regenerate="openRegenerateDialog"
       @view-nostr="openNostrIdentityDialog"
@@ -527,6 +545,15 @@
       @restored="onIdentityRestored"
     />
 
+    <!-- "We found contacts on Nostr, add them?" — shown once, right
+         after identity restore, only when peekNostrContacts() finds
+         something new. See onIdentityRestored() below. -->
+    <ContactRestorePromptDialog
+      v-model="showContactRestorePrompt"
+      :loading="contactRestoreLoading"
+      @confirm="onConfirmContactRestore"
+    />
+
     <!-- Regenerate identity confirmation. Mirrors the typed-phrase gate
          the Settings danger-zone uses for wallet removal so the visual
          language is consistent. Inlined here (rather than borrowed from
@@ -594,7 +621,7 @@
 <script>
 import { Icon } from '@iconify/vue';
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
-import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue';
+import SettingsFeatureCards from '../components/settings/SettingsFeatureCards.vue';
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import IdentitySeedPhraseDialog from '../components/IdentitySeedPhraseDialog.vue';
 import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
@@ -610,11 +637,11 @@ import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteExamplesSheet from '../components/SiteExamplesSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
+import ContactRestorePromptDialog from '../components/ContactRestorePromptDialog.vue';
 import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
-import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings';
 
 // The typed confirmation phrase. Matched verbatim to the wallet-removal
 // flow ("I understand") so users build the same muscle memory across
@@ -627,7 +654,7 @@ export default {
   components: {
     Icon,
     SettingsHubHeader,
-    SettingsAttentionStrip,
+    SettingsFeatureCards,
     SettingsHubNav,
     IdentitySeedPhraseDialog,
     IdentityRestoreDialog,
@@ -643,6 +670,7 @@ export default {
     SiteExamplesSheet,
     SiteFavicon,
     ConnectedSiteSheet,
+    ContactRestorePromptDialog,
   },
 
   setup() {
@@ -658,6 +686,11 @@ export default {
       showIdentitySeedDialog: false,
       identitySeedDialogMode: 'backup',
       showIdentityRestoreDialog: false,
+
+      // "Add your contacts back?" prompt, shown after identity restore
+      // when peekNostrContacts() finds something new.
+      showContactRestorePrompt: false,
+      contactRestoreLoading: false,
 
       // Identity manage bottom sheet (View / Restore / Generate new).
       showManageSheet: false,
@@ -716,36 +749,35 @@ export default {
       // user gets a confirmation without a toast.
       nip05Copied: false,
       lud16Copied: false,
-
-      // Identity-backup attention card dismissals. Shared storage key
-      // with Settings' own attention strip (utils/attentionWarnings.js)
-      // so a dismissal recorded from either hub tab sticks everywhere.
-      dismissedWarnings: loadDismissedWarnings(),
     };
   },
 
   computed: {
     /**
-     * Computed warning list driving the SettingsAttentionStrip above
-     * the profile hero. Mirrors the identity-backup card that used to
-     * live in Settings' own attention strip; that copy is gone now
-     * that Identity is its own hub tab, so this is the one remaining
-     * source for it. Each warning's `id` is the contract with
-     * `onAttentionAction(id)`.
+     * The two action tiles below the sites section: Backup and
+     * Advanced. Replaces both the old attention-strip banner (backup)
+     * and the kebab menu (everything else) with one calm, always-
+     * visible row - discoverable without being a nag. Backup's `warn`
+     * flag drives a quiet static dot (see SettingsFeatureCards), the
+     * same amber signal as the dot on the avatar itself.
      */
-    attentionWarnings() {
-      const warnings = [];
-      if (this.identity.bootstrapped && !this.identity.backupConfirmed) {
-        warnings.push({
-          id: 'identity-backup',
-          variant: 'warning',
-          icon: 'tabler:user-shield',
-          title: this.$t('Back up your identity'),
-          description: this.$t('Without a backup your profile and sites can\'t be restored.'),
-          ctaLabel: this.$t('Back up'),
-        });
-      }
-      return warnings.filter((w) => !this.dismissedWarnings.includes(w.id));
+    identityActionCards() {
+      const needsBackup = this.identity.bootstrapped && !this.identity.backupConfirmed;
+      return [
+        {
+          id: 'backup',
+          icon: 'tabler:shield-lock',
+          label: this.$t('Backup'),
+          meta: needsBackup ? this.$t('Not backed up') : this.$t('Backed up'),
+          warn: needsBackup,
+        },
+        {
+          id: 'advanced',
+          icon: 'tabler:adjustments-horizontal',
+          label: this.$t('Advanced'),
+          meta: this.$t('Nostr key, restore'),
+        },
+      ];
     },
 
     /** Live contact count for the Address Book row's caption. */
@@ -1018,16 +1050,17 @@ export default {
 
     async onIdentityRestored() {
       // The restore dialog already fired its own "Identity restored"
-      // notify. Recovery rides on top of that: pull the user's
-      // public profile (kind:0) AND the private NIP-51 address book
-      // so "your name, avatar, and people came back too" — the
-      // whole point of having those things on relays in the first
-      // place.
+      // notify. Profile recovery rides on top of that automatically —
+      // pull the user's public profile (kind:0) so "your name and
+      // avatar came back too". Address-book recovery is different: it
+      // only peeks for now (read-only, no local writes, no publish)
+      // and asks before merging anything in — see
+      // ContactRestorePromptDialog / onConfirmContactRestore below.
       //
-      // Both fetches run in parallel and are fire-and-forget. We
-      // don't block the restore dialog's close on a relay round-
-      // trip, and a failure on either side never undoes the
-      // successful identity restore.
+      // Both run in parallel and are fire-and-forget. We don't block
+      // the restore dialog's close on a relay round-trip, and a
+      // failure on either side never undoes the successful identity
+      // restore.
       const addressBook = useAddressBookStore();
       const identity = useIdentityStore();
       const profile = this.profile;
@@ -1040,9 +1073,9 @@ export default {
       // previous identity's name and avatar.
       profile.reset();
 
-      const [profileResult, addressBookResult] = await Promise.allSettled([
+      const [profileResult, peekResult] = await Promise.allSettled([
         profile.recoverFromNostr({ identityStore: identity }),
-        addressBook.recoverFromNostr({ identityStore: identity }),
+        addressBook.peekNostrContacts({ identityStore: identity }),
       ]);
 
       if (profileResult.status === 'rejected') {
@@ -1065,15 +1098,44 @@ export default {
         // and shouldn't earn a toast.
       }
 
-      if (addressBookResult.status === 'rejected') {
-        // Non-fatal. The user can retry from Address Book → kebab →
-        // "Restore contacts from Nostr".
-        console.warn('[profile] address-book recovery after restore failed:', addressBookResult.reason);
-      } else {
-        const result = addressBookResult.value;
+      if (peekResult.status === 'rejected') {
+        // Defensive only — peekNostrContacts() catches its own errors
+        // internally and always resolves (never rejects), so this
+        // branch should be unreachable. Logged in case that contract
+        // ever changes.
+        console.warn('[profile] contact peek after restore failed:', peekResult.reason);
+        return;
+      }
+      const peek = peekResult.value;
+      if (!peek || !peek.ok) {
+        // Non-fatal, and deliberately silent rather than a broken
+        // dialog — the user can still restore contacts any time from
+        // Address Book → kebab → "Restore contacts from Nostr".
+        console.warn('[profile] contact peek after restore failed:', peek && peek.reason);
+        return;
+      }
+      if (peek.hasNew) {
+        this.showContactRestorePrompt = true;
+      }
+    },
+
+    /**
+     * User tapped "Add contacts" on ContactRestorePromptDialog. Runs the
+     * real recoverFromNostr() merge (unchanged, same one the Address
+     * Book kebab menu uses) and reports its actual result — this is
+     * the only point in the flow that shows a contact count, because
+     * it's the only point where the count is authoritative.
+     */
+    async onConfirmContactRestore() {
+      const addressBook = useAddressBookStore();
+      const identity = useIdentityStore();
+
+      this.contactRestoreLoading = true;
+      try {
+        const result = await addressBook.recoverFromNostr({ identityStore: identity });
         if (result && result.ok && result.hadRemote && result.restored > 0) {
-          const caption = result.unpayable > 0
-            ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
+          const caption = result.identityOnly > 0
+            ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
             : undefined;
           this.$q.notify({
             type: 'positive',
@@ -1081,7 +1143,25 @@ export default {
             caption,
             timeout: 4500,
           });
+        } else if (!result || !result.ok) {
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t("Couldn't restore contacts"),
+            caption: this.$t('Check your connection and try again.'),
+            timeout: 4000,
+          });
         }
+      } catch (err) {
+        console.warn('[profile] contact restore after prompt failed:', err);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t("Couldn't restore contacts"),
+          caption: this.$t('Check your connection and try again.'),
+          timeout: 4000,
+        });
+      } finally {
+        this.contactRestoreLoading = false;
+        this.showContactRestorePrompt = false;
       }
     },
 
@@ -1177,25 +1257,16 @@ export default {
     },
 
     /**
-     * Routes the attention-strip CTA tap to the right surface. Only
-     * one warning lives here today (identity-backup) but the switch
-     * keeps the shape consistent with Settings' own handler.
+     * Routes a tap on either action tile. Backup reuses the exact
+     * same dialog trigger the tile's own dot mirrors; Advanced opens
+     * the trimmed IdentityManageSheet (restore / Nostr key / reset).
      */
-    onAttentionAction(id) {
-      if (id === 'identity-backup') {
-        // Same dialog this page already opens from the kebab menu's
-        // "Recovery phrase" row (IdentityManageSheet's `view-seed`
-        // emit, wired above) - reuse that exact trigger rather than
-        // building a second entry point into the same dialog.
-        this.openIdentitySeedDialog('backup');
+    onIdentityActionSelect(id) {
+      if (id === 'backup') {
+        this.openIdentitySeedDialog(this.identity.backupConfirmed ? 'view' : 'backup');
+      } else if (id === 'advanced') {
+        this.showManageSheet = true;
       }
-    },
-
-    // Dismiss an attention card (swipe / X). Persisted so it stays gone.
-    onAttentionDismiss(id) {
-      if (this.dismissedWarnings.includes(id)) return;
-      this.dismissedWarnings = [...this.dismissedWarnings, id];
-      saveDismissedWarnings(this.dismissedWarnings);
     },
   },
 };
@@ -1219,10 +1290,6 @@ export default {
   overflow-x: hidden;
   max-width: 100vw;
   padding-top: 0;
-}
-
-.manage-btn {
-  width: 40px;
 }
 
 .profile-content {
@@ -1290,12 +1357,17 @@ export default {
   );
 }
 
+/* Dark mode deliberately does NOT repeat the green wash: a green-tinted
+   band is the first thing painted on this page, and stacked against
+   this app's other green accents (bottom nav, CTAs) it read as more
+   green than the page needed. A quiet neutral lift keeps the same
+   "header zone" depth without the tint. */
 .hero-banner-dark {
   background: linear-gradient(
     135deg,
-    rgba(21, 222, 114, 0.20) 0%,
-    rgba(21, 222, 114, 0.08) 60%,
-    rgba(21, 222, 114, 0.14) 100%
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.02) 60%,
+    rgba(255, 255, 255, 0.05) 100%
   );
 }
 
@@ -1316,6 +1388,37 @@ export default {
   align-items: flex-start;
   gap: 16px;
   margin-top: -32px;
+}
+
+/* Empty-profile variant: one centred column (avatar, then headline +
+   subline) instead of the populated layout's side-by-side row, since
+   there's no name/handle content yet to sit beside the avatar. */
+.hero-identity--empty {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.hero-identity--empty .hero-avatar-wrap {
+  width: 96px;
+  height: 96px;
+}
+
+.hero-identity--empty .hero-avatar {
+  width: 96px;
+  height: 96px;
+}
+
+.hero-identity--empty .hero-meta-btn {
+  align-items: center;
+  padding-top: 4px;
+  text-align: center;
+}
+
+.hero-identity--empty .hero-name,
+.hero-identity--empty .hero-handle {
+  text-align: center;
 }
 
 /* ---------- Hero avatar ----------
@@ -1394,8 +1497,11 @@ export default {
   -webkit-user-drag: none;
 }
 
+/* BuhoGO's own mark, shown full-strength (not dimmed like a generic
+   placeholder icon would be) - it's a deliberate brand fallback, not
+   a muted "nothing here yet" state. */
 .hero-avatar-glyph {
-  opacity: 0.7;
+  object-fit: contain;
 }
 
 /* Camera badge — neutral monochrome on both themes. The avatar
@@ -1792,6 +1898,15 @@ button.hero-pill:focus-visible {
   margin-left: 4px;
 }
 
+/* Backup / Advanced tiles wrapper. SettingsFeatureCards only carries
+   its own bottom margin (correct for Settings.vue, where a section
+   label sits right above it) - here it follows the sites section
+   directly, so this page adds the matching top rhythm itself rather
+   than changing the shared component's spacing for every caller. */
+.identity-action-cards {
+  margin-top: 1.5rem;
+}
+
 /* Header row for the Sites section: label on the left, "+" button on
    the right, both vertically aligned on the same baseline. The button
    is small and quiet so it sits comfortably without competing with
@@ -1916,24 +2031,54 @@ button.hero-pill:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.sites-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
+.sites-empty-illustration {
+  margin-bottom: 2px;
 }
 
-.sites-empty-icon-light {
-  background: rgba(15, 23, 42, 0.06);
-  color: #475569;
+.sites-illo-card {
+  fill: rgba(15, 23, 42, 0.045);
+  stroke: rgba(15, 23, 42, 0.08);
+  stroke-width: 1;
 }
 
-.sites-empty-icon-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
+.sites-illo-line {
+  fill: rgba(15, 23, 42, 0.18);
+}
+
+.sites-illo-line-soft {
+  fill: rgba(15, 23, 42, 0.09);
+}
+
+.sites-illo-badge {
+  fill: #15DE72;
+}
+
+.sites-illo-check {
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sites-illo-dot {
+  fill: rgba(15, 23, 42, 0.14);
+}
+
+body.body--dark .sites-illo-card {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(255, 255, 255, 0.09);
+}
+
+body.body--dark .sites-illo-line {
+  fill: rgba(255, 255, 255, 0.22);
+}
+
+body.body--dark .sites-illo-line-soft {
+  fill: rgba(255, 255, 255, 0.10);
+}
+
+body.body--dark .sites-illo-dot {
+  fill: rgba(255, 255, 255, 0.16);
 }
 
 .sites-empty-title {
