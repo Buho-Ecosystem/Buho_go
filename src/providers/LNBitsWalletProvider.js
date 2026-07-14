@@ -297,12 +297,21 @@ export class LNBitsWalletProvider extends WalletProvider {
 
       return response.map(tx => ({
         id: tx.payment_hash || tx.checking_id,
+        paymentHash: tx.payment_hash || null,
         type: tx.amount > 0 ? 'receive' : 'send',
         amount: Math.floor(Math.abs(tx.amount) / 1000), // Convert msats to sats
         timestamp: this._parseTimestamp(tx.time || tx.created_at),
+        // LNbits' /payments list only ever gives us one timestamp per
+        // record — there's no separate "settled at" — so created_at
+        // mirrors the same value rather than inventing a second one.
+        created_at: this._parseTimestamp(tx.created_at || tx.time),
         description: tx.memo || '',
         status: this._parsePaymentStatus(tx.status, tx.pending),
         fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,
+        bolt11: tx.bolt11 || tx.payment_request || null,
+        preimage: tx.preimage || null,
+        expiry: tx.expiry ?? null,
+        tag: tx.tag || null,
         extra: tx.extra || null
       }));
     } catch (error) {

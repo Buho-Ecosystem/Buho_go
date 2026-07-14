@@ -1840,7 +1840,15 @@ export default {
           });
 
           await nwc.enable();
-          invoice = await nwc.makeInvoice(invoiceParams);
+          // @getalby/sdk's NostrWebLNProvider.makeInvoice only reads
+          // `defaultMemo` for the invoice description — passing our
+          // `description` key (as used by every other provider's
+          // createInvoice) is silently ignored, which is why NWC invoices
+          // came back with an empty d-tag despite the user typing a note.
+          invoice = await nwc.makeInvoice({
+            amount: invoiceParams.amount,
+            defaultMemo: invoiceParams.description,
+          });
         }
 
         const paymentRequest = invoice.paymentRequest || invoice.payment_request;

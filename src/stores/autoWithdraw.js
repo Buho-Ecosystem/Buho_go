@@ -186,8 +186,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           const note = `Automatic transfer \u00b7 ${sendAmount.toLocaleString()} sats sent to ${this._truncateDestination(destination)}${feeLabel}`
 
           try {
-            await metaStore.addTagToTransaction(result.id, 'auto-withdraw')
-            await metaStore.setNoteForTransaction(result.id, note)
+            // baseWalletId is the wallet actually being withdrawn FROM (a
+            // pocket/sub-account configKey like 'walletId:2' resolves to its
+            // parent wallet id above) — the tag/note must land on that
+            // wallet's record, not a composite pocket key.
+            await metaStore.addTagToTransaction(result.id, baseWalletId, 'auto-withdraw')
+            await metaStore.setNoteForTransaction(result.id, baseWalletId, note)
           } catch {
             // Non-critical — tagging failure doesn't affect the transfer
           }

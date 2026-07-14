@@ -165,6 +165,7 @@
 import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWalletStore } from 'stores/wallet'
+import { useTransactionMetadataStore } from 'stores/transactionMetadata'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
 
@@ -175,6 +176,7 @@ export default defineComponent({
   setup() {
     const router = useRouter()
     const store = useWalletStore()
+    const metadataStore = useTransactionMetadataStore()
     const { proxy } = getCurrentInstance()
     const t = (key) => proxy.$t(key)
 
@@ -186,6 +188,13 @@ export default defineComponent({
     const selectedTipPercent = ref(0)
     const useRoundUp = ref(false)
     const baseAmountSats = ref(0)
+    // Curated point-of-sale breakdown for the CURRENT invoice, captured at
+    // invoice-creation time (see captureSaleBreakdown). A plain object, not
+    // derived from the live refs above, because parking or resetting the
+    // register clears those before the payment settles — showSuccess()
+    // reads this snapshot instead so the sale details it stamps are never
+    // zeroed out from under it.
+    const saleBreakdownSnapshot = ref(null)
     const tipInteractive = ref(false)
     const invoiceData = ref(null)
     const qrDataUrl = ref('')
@@ -290,6 +299,7 @@ export default defineComponent({
         const result = await provider.createInvoice({ amount: finalAmountSats.value, description: 'Kiosk Payment' })
         invoiceData.value = result
         qrDataUrl.value = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
+        captureSaleBreakdown()
         state.value = 'payment'; startPolling()
       } catch (err) {
         console.error('[kiosk] charge error:', err)
@@ -365,7 +375,7 @@ export default defineComponent({
         sparkVisHandler = null
       }
     }
-    function cancelPayment() { clearPolling(); parkedInvoice.value = null; state.value = 'input' }
+    function cancelPayment() { clearPolling(); parkedInvoice.value = null; saleBreakdownSnapshot.value = null; state.value = 'input' }
 
     function parkInvoice() {
       parkedInvoice.value = {
@@ -373,7 +383,11 @@ export default defineComponent({
         qrDataUrl: qrDataUrl.value,
         finalAmountSats: finalAmountSats.value,
         baseAmountSats: baseAmountSats.value,
-        accumulatedItems: [...accumulatedItems.value]
+        accumulatedItems: [...accumulatedItems.value],
+        // Carried through park/resume as its own copy so a SECOND charge
+        // started while this one sits parked can't clobber the snapshot
+        // this invoice will need once resumed and paid.
+        saleBreakdown: saleBreakdownSnapshot.value
       }
       clearPolling()
       rawInput.value = '0'
@@ -383,6 +397,7 @@ export default defineComponent({
       useRoundUp.value = false
       invoiceData.value = null
       qrDataUrl.value = ''
+      saleBreakdownSnapshot.value = null
       state.value = 'input'
     }
 
@@ -392,11 +407,60 @@ export default defineComponent({
       qrDataUrl.value = parkedInvoice.value.qrDataUrl
       baseAmountSats.value = parkedInvoice.value.baseAmountSats
       accumulatedItems.value = parkedInvoice.value.accumulatedItems
+      saleBreakdownSnapshot.value = parkedInvoice.value.saleBreakdown || null
       parkedInvoice.value = null
       state.value = 'payment'
       startPolling()
     }
+
+    /**
+     * Snapshot the sale breakdown right after the invoice for THIS charge
+     * is created: baseAmountSats/selectedTipPercent/useRoundUp/
+     * accumulatedItems are all settled by this point (nothing between here
+     * and a paid invoice mutates them except a park or a reset, both of
+     * which now carry/clear this same snapshot). Never fabricated — a
+     * non-positive total (shouldn't happen; the charge button is disabled
+     * below that) leaves the snapshot cleared rather than stamping zeros.
+     *
+     * `discountSats` is always 0: the POS has no discount control yet, but
+     * the field is reserved so Tx Details can render a Discount row the
+     * day one exists without another metadata shape change.
+     */
+    function captureSaleBreakdown() {
+      const total = finalAmountSats.value
+      if (!(total > 0)) { saleBreakdownSnapshot.value = null; return }
+      const hasPercentTip = !useRoundUp.value && selectedTipPercent.value > 0
+      saleBreakdownSnapshot.value = {
+        baseSats: baseAmountSats.value,
+        tipSats: total - baseAmountSats.value,
+        tipPercent: hasPercentTip ? selectedTipPercent.value : null,
+        roundUp: useRoundUp.value,
+        discountSats: 0,
+        itemCount: accumulatedItems.value.length,
+        totalSats: total
+      }
+    }
+
     function showSuccess() {
+      // Stamp the sale onto the incoming tx once it surfaces in history.
+      // Best-effort and non-blocking: the kiosk boots on its own path, so
+      // the metadata store lazy-initializes itself, and a metadata failure
+      // must never stall or break the success screen.
+      try {
+        metadataStore.enqueuePendingContactLink({
+          label: t('Kiosk sale'),
+          source: 'kiosk',
+          direction: 'incoming',
+          amountSats: finalAmountSats.value,
+          // The kiosk's destination wallet — the one whose tx list will
+          // actually show the sale once it surfaces.
+          walletId: store.kioskWalletId || null,
+          // The curated subtotal/tip/round-up/total captured at invoice
+          // creation (see captureSaleBreakdown) — null when there was
+          // nothing meaningful to attach.
+          saleBreakdown: saleBreakdownSnapshot.value,
+        }).catch(() => {})
+      } catch (_) { /* non-critical */ }
       state.value = 'success'
       clearTimeout(successTimer)
       successTimer = setTimeout(resetToInput, 7000)
@@ -411,6 +475,7 @@ export default defineComponent({
       useRoundUp.value = false
       invoiceData.value = null
       qrDataUrl.value = ''
+      saleBreakdownSnapshot.value = null
       state.value = 'input'
     }
     function formatSats(sats) { return new Intl.NumberFormat().format(sats) }

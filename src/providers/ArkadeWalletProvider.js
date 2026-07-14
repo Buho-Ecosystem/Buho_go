@@ -543,6 +543,9 @@ export class ArkadeWalletProvider extends WalletProvider {
   async transferToArkadeAddress({ arkadeAddress, amount }) {
     this._ensureConnected();
     const txid = await this.wallet.send({ address: arkadeAddress, amount: Math.floor(Number(amount)) });
+    // An ark-to-ark send can strand its change below dust, same as a Lightning
+    // send. See _recoverChangeAfterSend.
+    this._recoverChangeAfterSend();
     return { id: txid, status: 'completed' };
   }
 
@@ -770,6 +773,7 @@ export class ArkadeWalletProvider extends WalletProvider {
       let fee = 0;
       const paid = Number(r.amount || 0);
       if (invoiceSats > 0 && paid > 0) fee = Math.max(0, paid - invoiceSats);
+      this._recoverChangeAfterSend();
       return {
         preimage: r.preimage || null,
         txid: r.txid || null,
@@ -852,6 +856,29 @@ export class ArkadeWalletProvider extends WalletProvider {
    * @param {{ force?: boolean }} [opts]
    * @returns {Promise<{ recovered: boolean }>}
    */
+  /**
+   * A send is the one event that reliably strands funds: paying 351 out of a
+   * 498 sat wallet leaves a 147 sat change VTXO, and per the SDK's balance
+   * contract a change output below the dust threshold is NOT counted in
+   * `available` (spendable = settled + preconfirmed) but in `recoverable`
+   * ("subdust or expired virtual outputs"). The wallet then reads as 0 even
+   * though the funds are still ours, until the next recovery pass reclaims
+   * them into spendable VTXOs.
+   *
+   * checkLiveness() runs on every balance refresh but is throttled to six
+   * hours, so on its own it can leave the balance looking empty for most of a
+   * day. Forcing one pass right after a send closes that window at exactly
+   * the moment subdust can appear, without turning the periodic refresh into
+   * a settlement storm.
+   *
+   * Fire and forget: the send already succeeded, and recovery is maintenance.
+   */
+  _recoverChangeAfterSend() {
+    this.checkLiveness({ force: true }).catch((error) => {
+      console.warn('[arkade] post-send recovery pass failed:', error?.message || error);
+    });
+  }
+
   async checkLiveness({ force = false } = {}) {
     const out = { recovered: false };
     if (!this.wallet || !this.isConnected) return out;

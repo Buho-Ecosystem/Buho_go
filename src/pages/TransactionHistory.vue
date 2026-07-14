@@ -422,29 +422,16 @@
           :key="group.date"
           class="tx-group"
         >
-          <!-- Group Header: date + count on left, chevron on right.
-               Net amount intentionally removed — it was visually dense
-               and repeats on the summary stats card when filters apply. -->
-          <button
+          <!-- Day header: a plain section label (Today / Yesterday / date).
+               Not collapsible — the day anchor is orientation, not chrome,
+               and rows must stay scannable without extra taps. -->
+          <div
             v-if="!group.isFlat"
-            type="button"
             class="tx-group-header"
             :class="$q.dark.isActive ? 'tx-group-header-dark' : 'tx-group-header-light'"
-            @click="toggleGroup(group.date)"
           >
             <span class="tx-group-date">{{ group.dateLabel }}</span>
-            <span class="tx-group-meta">
-              <span class="tx-group-count">
-                {{ group.transactions.length }}
-                {{ group.transactions.length === 1 ? $t('item') : $t('items') }}
-              </span>
-              <Icon
-                :icon="group.expanded ? 'tabler:chevron-up' : 'tabler:chevron-down'"
-                width="16" height="16"
-                class="tx-group-chevron"
-              />
-            </span>
-          </button>
+          </div>
 
           <!-- Group transactions -->
           <q-slide-transition>
@@ -467,6 +454,14 @@
                       v-if="getContactForTransaction(tx)"
                       class="tx-row-avatar"
                       :entry="getContactForTransaction(tx)"
+                      :initial-length="2"
+                    />
+                    <ContactAvatar
+                      v-else-if="getTxAvatarPicture(tx)"
+                      class="tx-row-avatar"
+                      :picture="getTxAvatarPicture(tx)"
+                      :entry="{ address: getTxCounterparty(tx) }"
+                      :name="getTxTitle(tx)"
                       :initial-length="2"
                     />
                     <span
@@ -501,6 +496,17 @@
                       >
                         {{ $t('On-chain') }}
                       </span>
+                      <!-- Source chip — same visual as the L1 badge, marking
+                           rows written by an auxiliary payment path (internal
+                           transfer, batch send, kiosk sale). At most one chip
+                           per row; on-chain wins when both would apply. -->
+                      <span
+                        v-else-if="getTxSourceChip(tx)"
+                        class="tx-l1-badge"
+                        :class="$q.dark.isActive ? 'tx-l1-badge-dark' : 'tx-l1-badge-light'"
+                      >
+                        {{ getTxSourceChip(tx) }}
+                      </span>
                     </span>
                     <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
                       {{ getTxSubtitle(tx) }}
@@ -521,7 +527,13 @@
                     '').
                   -->
                   <span class="tx-row-amount-col">
-                    <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                    <span
+                      class="tx-row-amount"
+                      :class="[
+                        $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
+                        { 'tx-row-amount-in': tx.type === 'incoming' && tx.status === 'completed' }
+                      ]"
+                    >
                       <HiddenAmount>{{ getFormattedAmount(tx) }}</HiddenAmount>
                     </span>
                     <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
@@ -673,8 +685,29 @@ import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../uti
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
+import { normalizeTx } from '../services/txNormalizer.js';
 import { formatRelativeTime, formatShortTime, formatHumanDateTime } from '../utils/timeFormatting';
 import { groupMicropayments } from '../composables/useTransactionGrouping';
+import { matchLnAddressService } from '../services/lnAddressServices';
+
+// Chip text per metadata source (i18n message keys, resolved through $t at
+// render time). Lookup map on purpose: later passes stamp more sources
+// (e.g. 'nostr', 'phone') and only need a new entry here, no logic change.
+const TX_SOURCE_CHIP_KEYS = {
+  'internal-transfer': 'Transfer',
+  batch: 'Batch',
+  kiosk: 'Kiosk',
+  nostr: 'Nostr',
+  phone: 'Phone',
+};
+
+// Row icon override per metadata source. Sources without an entry keep the
+// default direction arrows (batch intentionally has none — the recipient
+// avatar or arrow already tells the story).
+const TX_SOURCE_ICONS = {
+  'internal-transfer': 'tabler:arrows-exchange',
+  kiosk: 'tabler:building-store',
+};
 
 export default {
   name: 'TransactionHistoryPage',
@@ -739,6 +772,19 @@ export default {
   CLAIMED_TX_STORAGE_LIMIT: 100,
   CLAIM_MATCH_TIME_WINDOW_SECONDS: 300,
   computed: {
+    /**
+     * The wallet this page is rendering. TransactionHistory always shows
+     * exactly one wallet's list (this.walletState.activeWalletId,
+     * refreshed at the top of loadTransactions), so every metadata
+     * read/write here is scoped to it. This is what stops a note/tag/
+     * contact written from this page leaking onto another wallet's
+     * transaction that happens to share the same provider-assigned id
+     * (see transactionMetadata.js).
+     */
+    historyWalletId() {
+      return this.walletState?.activeWalletId || null;
+    },
+
     filteredTransactions() {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -774,78 +820,79 @@ export default {
         }];
       }
 
-      // Apply micropayment grouping first
+      // Collapse bursts of payments with the same counterparty (a stream of
+      // tips, a shop's rapid-fire sales) into one expandable row.
+      //
+      // minGroupSize is 4, not 2: the grouper no longer requires the payments
+      // to be strictly adjacent, so a low threshold would fold two ordinary
+      // payments that merely share a counterparty into a group and HIDE
+      // detail the user expects to see. Clutter starts with a burst, and a
+      // burst is more than a pair.
       const groupedWithMicropayments = groupMicropayments(this.filteredTransactions, {
         timeWindowSeconds: 3600,
         descriptionSimilarity: 0.75,
-        minGroupSize: 2,
+        minGroupSize: 4,
         enabled: true
       });
 
-      if (this.activeFilter === 'all') {
-        const groups = {};
+      // Time sections anchor rows: a bare "02:16" on a row from three days
+      // ago reads as today's. Day sections for the short-range filters;
+      // the unbounded "All" view sections by month instead, so years of
+      // history stay scannable without hundreds of day headers.
+      const byMonth = this.activeFilter === 'all';
+      const groups = {};
 
-        groupedWithMicropayments.forEach(tx => {
-          // Use endTime for groups, settled_at for regular transactions
-          const timestamp = tx.isGroup ? tx.endTime : tx.settled_at;
-          const date = new Date(timestamp * 1000);
-          const groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      groupedWithMicropayments.forEach(tx => {
+        // Use endTime for groups, settled_at for regular transactions
+        const timestamp = tx.isGroup ? tx.endTime : tx.settled_at;
+        const date = new Date(timestamp * 1000);
+        const groupKey = byMonth
+          ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+          : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-          if (!groups[groupKey]) {
-            groups[groupKey] = {
-              date: groupKey,
-              dateLabel: date.toLocaleDateString('en-US', {year: 'numeric', month: 'long'}),
-              transactions: [],
-              netAmount: 0,
-              expanded: this.expandedGroups.has(groupKey)
-            };
-          }
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            date: groupKey,
+            dateLabel: byMonth ? this.formatMonthLabel(date) : this.formatDayLabel(date),
+            transactions: [],
+            netAmount: 0,
+            expanded: true
+          };
+        }
 
-          groups[groupKey].transactions.push(tx);
+        groups[groupKey].transactions.push(tx);
 
-          // Calculate net amount
-          if (tx.isGroup) {
-            groups[groupKey].netAmount += tx.transactionType === 'incoming' ? tx.totalAmount : -tx.totalAmount;
-          } else {
-            groups[groupKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
-          }
-        });
+        // Calculate net amount
+        if (tx.isGroup) {
+          groups[groupKey].netAmount += tx.transactionType === 'incoming' ? tx.totalAmount : -tx.totalAmount;
+        } else {
+          groups[groupKey].netAmount += tx.type === 'incoming' ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+        }
+      });
 
-        return Object.values(groups)
-          .sort((a, b) => b.date.localeCompare(a.date))
-          .map(group => ({
-            ...group,
-            transactions: group.transactions.sort((a, b) => {
-              const aTime = a.isGroup ? a.endTime : a.settled_at;
-              const bTime = b.isGroup ? b.endTime : b.settled_at;
-              return bTime - aTime;
-            })
-          }));
-      }
-
-      return [{
-        date: 'flat',
-        dateLabel: '',
-        transactions: groupedWithMicropayments.sort((a, b) => {
-          const aTime = a.isGroup ? a.endTime : a.settled_at;
-          const bTime = b.isGroup ? b.endTime : b.settled_at;
-          return bTime - aTime;
-        }),
-        netAmount: this.netAmount,
-        expanded: true,
-        isFlat: true
-      }];
+      return Object.values(groups)
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(group => ({
+          ...group,
+          transactions: group.transactions.sort((a, b) => {
+            const aTime = a.isGroup ? a.endTime : a.settled_at;
+            const bTime = b.isGroup ? b.endTime : b.settled_at;
+            return bTime - aTime;
+          })
+        }));
     },
 
+    // Stats chips count settled money only — pending invoices (which may
+    // never be paid) and expired ones must not inflate the totals.
     totalReceived() {
       return this.filteredTransactions
-        .filter(tx => tx.type === 'incoming')
+        .filter(tx => tx.type === 'incoming' && tx.status === 'completed')
         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
     },
 
     totalSent() {
       return this.filteredTransactions
-        .filter(tx => tx.type === 'outgoing')
+        .filter(tx => tx.type === 'outgoing' && tx.status === 'completed')
         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
     },
 
@@ -882,7 +929,13 @@ export default {
     this.addressBookStore = useAddressBookStore();
     this.metadataStore = useTransactionMetadataStore();
 
-    // Initialize stores
+    // Initialize stores. The wallet store is included because this page can
+    // be entered directly (a shared link, a reload, a cold app start on this
+    // route) without ever passing through the wallet page that normally
+    // hydrates it. initialize() is idempotent and returns immediately when
+    // another caller already ran it, so the normal in-app navigation path
+    // pays nothing for this.
+    await this.walletStore.initialize();
     await this.addressBookStore.initialize();
     await this.metadataStore.initialize();
 
@@ -924,7 +977,7 @@ export default {
         // Single source of truth: the store getter resolves an explicit
         // contactId, then a manual removal, then the durable recipient
         // address live against the address book.
-        return this.metadataStore.getContactForTransaction(tx.id);
+        return this.metadataStore.getContactForTransaction(tx.id, this.historyWalletId);
       } catch (error) {
         console.error('Error getting contact for transaction:', error);
         return null;
@@ -942,7 +995,7 @@ export default {
       try {
         const members = Array.isArray(group.transactions) ? group.transactions : [];
         for (const inner of members) {
-          const contact = this.metadataStore.getContactForTransaction(inner.id);
+          const contact = this.metadataStore.getContactForTransaction(inner.id, this.historyWalletId);
           if (contact) return contact;
         }
         if (group.recipient && this.addressBookStore) {
@@ -957,7 +1010,7 @@ export default {
     getTagsForTransaction(tx) {
       if (!tx || !tx.id || !this.metadataStore) return [];
       try {
-        return this.metadataStore.getTagsForTransaction(tx.id) || [];
+        return this.metadataStore.getTagsForTransaction(tx.id, this.historyWalletId) || [];
       } catch (error) {
         console.error('Error getting tags for transaction:', error);
         return [];
@@ -981,22 +1034,125 @@ export default {
     // ------------------------------------------------------------------
 
     /**
+     * The counterparty we sent to, when known. Stamped as durable
+     * metadata at send time (recipientAddress survives even when no
+     * contact exists yet). Outgoing only: on receives the only address
+     * on the record is our own (the lnurlp address that was paid),
+     * which is not a counterparty.
+     */
+    getTxCounterparty(tx) {
+      if (!tx || tx.type !== 'outgoing' || !tx.id || !this.metadataStore) return '';
+      try {
+        const meta = this.metadataStore.getMetadataForTransaction(tx.id, this.historyWalletId);
+        return meta?.recipientAddress || '';
+      } catch (error) {
+        return '';
+      }
+    },
+
+    /**
+     * The human message riding on a transaction: the payer's LUD-12
+     * comment when there is one, else the invoice memo. Returns '' when
+     * neither exists — never invents text.
+     */
+    getTxMessage(tx) {
+      if (!tx) return '';
+      const comment = String(tx.comment || '').trim();
+      if (comment) return comment;
+      if (this.shouldShowDescription(tx)) {
+        return String(tx.description || tx.memo || '').trim();
+      }
+      return '';
+    },
+
+    /**
+     * The metadata label stamped on a transaction by an auxiliary send
+     * path (internal transfer, batch, kiosk). '' when unset.
+     */
+    getTxMetadataLabel(tx) {
+      if (!tx || !tx.id || !this.metadataStore) return '';
+      try {
+        return this.metadataStore.getLabelForTransaction(tx.id, this.historyWalletId) || '';
+      } catch (error) {
+        return '';
+      }
+    },
+
+    /**
+     * The machine-readable metadata source of a transaction
+     * ('internal-transfer' | 'batch' | 'kiosk' | ...). '' when unset.
+     */
+    getTxMetadataSource(tx) {
+      if (!tx || !tx.id || !this.metadataStore) return '';
+      try {
+        return this.metadataStore.getSourceForTransaction(tx.id, this.historyWalletId) || '';
+      } catch (error) {
+        return '';
+      }
+    },
+
+    /**
+     * Translated chip text for the row's metadata source, or '' when the
+     * tx has none (or an unknown one — future-proof against new enums).
+     */
+    getTxSourceChip(tx) {
+      const key = TX_SOURCE_CHIP_KEYS[this.getTxMetadataSource(tx)];
+      return key ? this.$t(key) : '';
+    },
+
+    /**
+     * The row avatar picture when there's no assigned contact but we still
+     * know who this was: a resolved Nostr counterparty's profile picture
+     * (stamped at send time for bare npub/nprofile/NIP-05 sends), or, for
+     * the phone-number payout rail, the provider's bundled logo. null when
+     * neither applies — the row then falls back to the plain direction icon.
+     * The row also passes `:entry="{ address }"` alongside this so
+     * ContactAvatar's own bundled provider-logo lookup can resolve the
+     * phone-rail case — its explicit `picture` URL gate only accepts
+     * https/data URLs, not a bundled asset path.
+     */
+    getTxAvatarPicture(tx) {
+      if (!tx || !tx.id || !this.metadataStore) return null;
+      try {
+        const avatar = this.metadataStore.getCounterpartyAvatarForTransaction(tx.id, this.historyWalletId);
+        if (avatar?.picture) return avatar.picture;
+        if (this.metadataStore.getSourceForTransaction(tx.id, this.historyWalletId) === 'phone') {
+          const address = this.getTxCounterparty(tx);
+          if (address) {
+            const svc = matchLnAddressService(address);
+            return svc?.logo || svc?.flag || null;
+          }
+        }
+        return null;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    /**
      * The identity line for a transaction row.
-     * Priority: pending status → contact name → auto-withdraw note
-     * → user description → fallback to the type label.
+     * Priority: pending/expired status → contact name → metadata label
+     * (internal transfer / batch / kiosk) → auto-withdraw note
+     * → recipient address (sends) → user description → fallback to
+     * the type label.
      */
     getTxTitle(tx) {
       if (!tx) return '';
       if (tx.status === 'pending') {
         return tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending...');
       }
+      if (tx.status === 'expired') return this.$t('Invoice expired');
       const contact = this.getContactForTransaction(tx);
       if (contact) return contact.name;
+      const label = this.getTxMetadataLabel(tx);
+      if (label) return label;
       if (this.isAutoWithdraw(tx)) {
         const note = this.getAutoWithdrawNote(tx);
         if (note) return note;
         return this.$t('Auto-Transfer');
       }
+      const counterparty = this.getTxCounterparty(tx);
+      if (counterparty) return counterparty;
       if (this.shouldShowDescription(tx)) {
         return tx.description || tx.memo;
       }
@@ -1008,13 +1164,52 @@ export default {
     },
 
     /**
-     * The secondary caption — the time HH:MM. Group headers already
-     * carry the date, so repeating it on every row is noise.
+     * The secondary caption: the transaction's message in quotes,
+     * separated from the time HH:MM. When the title already shows the
+     * description (no contact/recipient available), only a distinct
+     * LUD-12 comment earns the quote slot — the same text must never
+     * appear twice in one row.
      */
     getTxSubtitle(tx) {
       if (!tx) return '';
-      if (tx.status === 'pending') return this.formatShortTime(tx.settled_at);
-      return this.formatShortTime(tx.settled_at);
+      const time = this.formatShortTime(tx.settled_at);
+      if (tx.status === 'pending') return time;
+
+      // A kiosk sale that took a tip says so at a glance, in place of the
+      // usual quoted comment/memo slot — a kiosk invoice never has one
+      // anyway (its description is the generic "Kiosk Payment").
+      const tipNote = this.getKioskTipSubtitle(tx);
+      if (tipNote) return `${tipNote} · ${time}`;
+
+      const comment = String(tx.comment || '').trim();
+      const titleShowsDescription = !this.getContactForTransaction(tx)
+        && !this.isAutoWithdraw(tx)
+        && !this.getTxCounterparty(tx)
+        && this.shouldShowDescription(tx);
+      const message = titleShowsDescription ? comment : this.getTxMessage(tx);
+
+      return message ? `“${message}” · ${time}` : time;
+    },
+
+    /**
+     * "Tip 10%" when the sale took a percentage tip, or "Tip ₿ 12" (the
+     * plain amount) when the uplift came from round-up instead. '' for
+     * every non-kiosk transaction, or a kiosk sale with no tip at all —
+     * both fall through to the normal comment/memo subtitle above.
+     */
+    getKioskTipSubtitle(tx) {
+      if (!tx || !tx.id || !this.metadataStore) return '';
+      if (this.getTxMetadataSource(tx) !== 'kiosk') return '';
+      try {
+        const breakdown = this.metadataStore.getSaleBreakdownForTransaction(tx.id, this.historyWalletId);
+        if (!breakdown || !(Number(breakdown.tipSats) > 0)) return '';
+        const amount = breakdown.tipPercent != null
+          ? `${breakdown.tipPercent}%`
+          : this.formatAmount(breakdown.tipSats);
+        return `${this.$t('Tip')} ${amount}`;
+      } catch (error) {
+        return '';
+      }
     },
 
     /**
@@ -1035,8 +1230,11 @@ export default {
       if (!tx) return 'tabler:dots';
       if (this.isPendingInvoice(tx)) return 'tabler:clock';
       if (tx.status === 'pending') return 'tabler:clock';
+      if (tx.status === 'expired') return 'tabler:clock-x';
       if (this.isAutoWithdraw(tx)) return 'tabler:send';
       if (this.isBitcoinTransaction(tx)) return 'tabler:currency-bitcoin';
+      const sourceIcon = TX_SOURCE_ICONS[this.getTxMetadataSource(tx)];
+      if (sourceIcon) return sourceIcon;
       if (tx.senderNpub) return 'tabler:bolt';
       return tx.type === 'incoming' ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right';
     },
@@ -1059,6 +1257,31 @@ export default {
         console.error('Error formatting short time:', error);
         return '';
       }
+    },
+
+    /**
+     * Section label for the "All" view's month groups: a localized
+     * "July 2026".
+     */
+    formatMonthLabel(date) {
+      const locale = this.$i18n?.locale || 'en-US';
+      return date.toLocaleDateString(locale, { year: 'numeric', month: 'long' });
+    },
+
+    /**
+     * Section label for a day group: Today / Yesterday / a localized
+     * date ("Jul 11", with the year appended once it differs).
+     */
+    formatDayLabel(date) {
+      const now = new Date();
+      const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / 86400000);
+      if (dayDiff === 0) return this.$t('Today');
+      if (dayDiff === 1) return this.$t('Yesterday');
+      const locale = this.$i18n?.locale || 'en-US';
+      const opts = { month: 'short', day: 'numeric' };
+      if (date.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+      return date.toLocaleDateString(locale, opts);
     },
 
     formatHumanDateTime(timestamp) {
@@ -1084,9 +1307,23 @@ export default {
       if (!group) return 'unknown';
 
       try {
-        let recipient = group.recipient || '';
+        // 1. A contact already resolved for any member transaction names
+        // the whole group, same as the row avatar right above it.
+        const contact = this.getContactForGroup(group);
+        if (contact?.name) {
+          return contact.name;
+        }
 
-        // If it's a hash or too long, use description instead
+        // 2. group.recipient is extractRecipient()'s pick, which now
+        // prefers the stable counterpartyKey stamped in normalizeForList.
+        // A Lightning address is immediately recognisable, so show it
+        // as-is instead of falling through to the description.
+        if (group.recipient && group.recipient.includes('@')) {
+          return group.recipient;
+        }
+
+        // 3. If it's a hash or too long, use description instead
+        let recipient = group.recipient || '';
         if (!recipient || recipient.length > 20 || recipient.startsWith('lnbc')) {
           recipient = group.description || 'unknown';
         }
@@ -1115,7 +1352,7 @@ export default {
       // predict. Reliable for every wallet rail because we match on
       // amount + recent timestamp, not on a derived id.
       try {
-        await this.metadataStore.consumePendingContactLinks(this.transactions);
+        await this.metadataStore.consumePendingContactLinks(this.transactions, this.historyWalletId);
       } catch (err) {
         console.warn('[txHistory] pending-contact-link drain failed:', err);
       }
@@ -1126,7 +1363,7 @@ export default {
       for (const tx of this.transactions) {
         try {
           // Skip if already assigned
-          const existingMetadata = this.metadataStore.getMetadataForTransaction(tx.id);
+          const existingMetadata = this.metadataStore.getMetadataForTransaction(tx.id, this.historyWalletId);
           if (existingMetadata?.contactId) {
             continue;
           }
@@ -1166,7 +1403,7 @@ export default {
 
           // If we found a match, auto-assign it
           if (matchedContact) {
-            await this.metadataStore.setContactForTransaction(tx.id, matchedContact.id);
+            await this.metadataStore.setContactForTransaction(tx.id, this.historyWalletId, matchedContact.id);
             assignedCount++;
             console.log(`Auto-assigned contact "${matchedContact.name}" to transaction ${tx.id}`);
           }
@@ -1304,6 +1541,50 @@ export default {
       return new Promise(resolve => setTimeout(resolve, ms));
     },
 
+    /**
+     * Stable counterparty key for the micropayment grouper (see
+     * useTransactionGrouping's extractRecipient, which prefers this over
+     * its own per-payment heuristics). Outgoing: the recipient address
+     * stamped as metadata at send time. Incoming: the canonical
+     * `tx.lnaddress` - the Lightning address that was PAID, i.e. OUR OWN
+     * receiving address, not the payer's identity. Grouping incoming
+     * payments by "landed on the same address of ours" is exactly the
+     * streaming-burst signal we want; it does not claim the payers are
+     * the same person. null when neither is known - never invented.
+     */
+    getCounterpartyKeyForGrouping(tx) {
+      if (!tx) return null;
+      try {
+        let key = null;
+        if (tx.type === 'outgoing' && tx.id && this.metadataStore) {
+          key = this.metadataStore.getMetadataForTransaction(tx.id, this.historyWalletId)?.recipientAddress || null;
+        } else if (tx.type === 'incoming') {
+          key = tx.lnaddress || null;
+        }
+        return key ? String(key).toLowerCase().trim() : null;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    /**
+     * One canonical mapping for every provider's raw tx (see
+     * services/txNormalizer.js). Merges the stored fiat-at-settlement
+     * snapshot for providers that don't report one, and queues a stamp
+     * for genuinely fresh settlements so the rate is captured while it
+     * still matches the settlement moment.
+     */
+    normalizeForList(rawTx, walletType) {
+      const stored = this.metadataStore?.getFiatAtSettlementForTransaction(rawTx?.id, this.historyWalletId) || null;
+      const tx = normalizeTx(rawTx, { walletType, fiatAtSettlement: stored });
+      if (this.metadataStore && !tx.fiatAtSettlement) {
+        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        this.metadataStore.stampFreshTransactions([tx], this.historyWalletId, currency).catch(() => {});
+      }
+      tx.counterpartyKey = this.getCounterpartyKeyForGrouping(tx);
+      return tx;
+    },
+
     async loadSparkTransactionsBatch() {
       // Check if Spark wallet needs PIN unlock
       if (this.walletStore.needsPinEntry) {
@@ -1338,18 +1619,7 @@ export default {
       }
 
       // Normalize and append to transactions array
-      const normalizedTransactions = sparkTransactions.map(tx => ({
-        id: tx.id,
-        type: tx.type === 'receive' ? 'incoming' : 'outgoing',
-        amount: tx.amount || 0,
-        description: tx.description || '',
-        memo: tx.description || '',
-        settled_at: tx.timestamp || null,
-        fee: tx.fee || 0,
-        status: tx.status || 'completed',
-        sparkTransfer: tx.sparkTransfer || false,
-        rawType: tx.rawType || null
-      }));
+      const normalizedTransactions = sparkTransactions.map(tx => this.normalizeForList(tx, 'spark'));
 
       this.transactions.push(...normalizedTransactions);
       this.currentOffset += this.batchSize;
@@ -1394,15 +1664,12 @@ export default {
       // internally (see `mapNip47TransactionToTransaction` in the
       // SDK source). Values arrive in sats — no further unit
       // conversion needed here.
-      const normalizedTransactions = transactionsResponse.transactions.map(tx => ({
+      const normalizedTransactions = transactionsResponse.transactions.map(tx => this.normalizeForList({
         ...tx,
         id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
-        type: tx.type || (tx.amount > 0 ? 'incoming' : 'outgoing'),
-        description: tx.description || tx.memo || '',
-        settled_at: tx.settled_at || tx.created_at || null,
         fee: tx.fee || tx.fees_paid || 0,
         payment_request: tx.payment_request || tx.invoice || null
-      }));
+      }, 'nwc'));
 
       console.log(`NWC batch loaded: ${normalizedTransactions.length} transactions`);
 
@@ -1445,16 +1712,7 @@ export default {
       }
 
       // Normalize and append to transactions array
-      const normalizedTransactions = lnbitsTransactions.map(tx => ({
-        id: tx.id,
-        type: tx.type === 'receive' ? 'incoming' : 'outgoing',
-        amount: tx.amount || 0,
-        description: tx.description || '',
-        memo: tx.description || '',
-        settled_at: tx.timestamp || null,
-        fee: tx.fee || 0,
-        status: tx.status || 'completed'
-      }));
+      const normalizedTransactions = lnbitsTransactions.map(tx => this.normalizeForList(tx, 'lnbits'));
 
       console.log(`LNbits batch loaded: ${normalizedTransactions.length} transactions`);
 
@@ -1502,16 +1760,7 @@ export default {
         return;
       }
 
-      const normalizedTransactions = arkadeTransactions.map(tx => ({
-        id: tx.id,
-        type: tx.type === 'incoming' ? 'incoming' : 'outgoing',
-        amount: tx.amount || 0,
-        description: tx.description || '',
-        memo: tx.description || '',
-        settled_at: tx.timestamp || null,
-        fee: tx.fee || 0,
-        status: tx.status || 'completed'
-      }));
+      const normalizedTransactions = arkadeTransactions.map(tx => this.normalizeForList(tx, 'arkade'));
 
       console.log(`Arkade batch loaded: ${normalizedTransactions.length} transactions`);
       this.transactions.push(...normalizedTransactions);
@@ -1667,7 +1916,7 @@ export default {
     getAutoWithdrawNote(tx) {
       if (!tx?.id || !this.metadataStore) return null;
       try {
-        return this.metadataStore.getNoteForTransaction(tx.id) || null;
+        return this.metadataStore.getNoteForTransaction(tx.id, this.historyWalletId) || null;
       } catch { return null; }
     },
 
@@ -1801,6 +2050,12 @@ export default {
      * @returns {number} non-negative sats
      */
     getDisplayAmountSats(tx) {
+      // The normalizer computed the recipient amount with the correct
+      // per-provider fee semantics (Spark's amount includes the fee,
+      // LNbits/NWC exclude it) — trust it when present.
+      if (Number.isFinite(Number(tx?.recipientSats))) {
+        return Math.abs(Number(tx.recipientSats));
+      }
       const gross = Math.abs(Number(tx?.amount) || 0);
       const fee = Number(tx?.fee) || 0;
       if (tx?.type === 'outgoing' && fee > 0) {
@@ -1831,7 +2086,10 @@ export default {
      * @returns {string}  e.g. "(₿ 4 fee)" / "(4 sats fee)", or "".
      */
     getFeeBadge(tx) {
-      const fee = Number(tx?.fee) || 0;
+      // feeSats is null (not 0) when the provider genuinely doesn't
+      // report a fee (Arkade) — suppress the badge rather than claim
+      // a free payment.
+      const fee = Number(tx?.feeSats ?? tx?.fee) || 0;
       if (tx?.type !== 'outgoing' || fee <= 0) return '';
       const feeAmount = formatAmountUtil(fee, this.walletStore.useBip177Format);
       return `(${feeAmount} ${this.$t('fee')})`;
@@ -1935,7 +2193,10 @@ export default {
     },
 
     viewTransaction(tx) {
-      this.$router.push(`/transaction/${tx.id}`);
+      // Carry the owning wallet so the details page resolves the tx
+      // against THIS wallet instead of whatever is active by then.
+      const walletId = this.walletState.activeWalletId || '';
+      this.$router.push(`/transaction/${tx.id}?wallet=${encodeURIComponent(walletId)}`);
     },
 
     // ==========================================
@@ -2509,7 +2770,6 @@ export default {
   border: none;
   background: transparent;
   font-family: 'Manrope', sans-serif;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   font-size: 13px;
   font-weight: 600;
@@ -2774,6 +3034,12 @@ export default {
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Incoming amounts are semantic success signals (money arrived), so
+   they keep the raw green in both themes; outgoing stays neutral. */
+.tx-row-amount.tx-row-amount-in {
+  color: var(--color-green, #15DE72);
 }
 
 /* ── Confirmation dots (pending Bitcoin deposits) ────────────── */
