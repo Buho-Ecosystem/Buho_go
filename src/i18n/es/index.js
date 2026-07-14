@@ -331,6 +331,14 @@ export default {
   "Custom server": "Servidor personalizado",
   "Now using": "Ahora usando",
   "Language updated": "Idioma actualizado",
+  "Miss a language?": "¿Falta tu idioma?",
+  "Reach us any way below. We'll do our best to add it, or you can translate it yourself and get a shoutout as an open source contributor.": "Contáctanos por cualquiera de estas vías. Haremos lo posible por añadirlo, o tradúcelo tú mismo y te mencionaremos como colaborador de código abierto.",
+  "Email us": "Escríbenos",
+  "Language request": "Solicitud de idioma",
+  "Hi BuhoGO team, I would love to see BuhoGO in:": "Hola equipo de BuhoGO, me encantaría ver BuhoGO en:",
+  "Email": "Correo",
+  "Soon": "Pronto",
+  "Nostr community coming soon": "Comunidad de Nostr, muy pronto",
   "Exchange rate source updated": "Fuente del tipo de cambio actualizada",
   "PIN saved": "PIN guardado",
   "NWC connections removed": "Conexiones NWC eliminadas",
@@ -513,7 +521,7 @@ export default {
   "Complete Backup": "Completar copia de seguridad",
   "Store your recovery phrase safely offline.": "Guarda tu frase de recuperación de forma segura y sin conexión.",
   "Your recovery phrase": "Tu frase de recuperación",
-  "These 12 words are the only way to restore this wallet if you lose access to your device. Anyone who sees them can move your money.": "Estas 12 palabras son la única forma de restaurar esta cartera si pierdes el acceso a tu dispositivo. Cualquiera que las vea puede mover tu dinero.",
+  "Anyone who sees these words can take your money.": "Cualquiera que vea estas palabras puede quitarte tu dinero.",
   "Write these words down and store them safely. Never share them with anyone.": "Anota estas palabras y guárdalas en un lugar seguro. Nunca las compartas con nadie.",
   "Hidden again. Tap Show words to reveal.": "Ocultas de nuevo. Toca Mostrar palabras para revelarlas.",
   // Identity / Lightning address
@@ -573,6 +581,9 @@ export default {
   "items": "elementos",
   // Misc
   "Learn & Earn navigation": "Navegación de Aprende y Gana",
+  "Settings navigation": "Navegación de ajustes",
+  "Home": "Inicio",
+  "Spend": "Gastar",
   "Hide address": "Ocultar dirección",
   "kiosk.connecting": "Conectando...",
   // Already in en-US (es catch-up)
@@ -2070,7 +2081,7 @@ export default {
 
   // ----- Seed-phrase reveal dialog -----
   "Keep it offline": "Guárdala sin conexión",
-  "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.": "Escríbela en papel. No le hagas foto. No la guardes en notas en la nube ni en un gestor de contraseñas que no controles tú.",
+  "Write it on paper. Never screenshot or save it online.": "Escríbela en papel. No le hagas captura ni la guardes en línea.",
   "I'm ready": "Estoy listo",
   "Tap Show words to reveal.": "Toca Mostrar palabras para verlas.",
   "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.": "Nunca escribas esta frase en un sitio web. Nunca la compartas en chats, fotos ni notas en la nube.",
@@ -2186,7 +2197,7 @@ export default {
   "Payment failed. Try again or pay externally.": "Pago fallido. Inténtalo de nuevo o paga externamente.",
   "Still waiting for the payment. The name will activate as soon as it settles.": "Todavía esperando el pago. El nombre se activará en cuanto se confirme.",
   "Your recovery phrase": "Tu frase de recuperación",
-  "These 12 words back up your profile and every site you sign in to. Without them you cannot move to a new phone. Anyone who sees them can take over your profile.": "Estas 12 palabras respaldan tu perfil y cada sitio en el que inicies sesión. Sin ellas, no puedes pasar a un nuevo teléfono. Cualquiera que las vea puede apoderarse de tu perfil.",
+  "Anyone who sees these words can take over your profile.": "Cualquiera que vea estas palabras puede apoderarse de tu perfil.",
   "Back up your profile": "Hacer copia de tu perfil",
   "View recovery phrase": "Ver frase de recuperación",
   "Verify it is you to reveal your recovery phrase": "Verifica que eres tú para revelar tu frase de recuperación",

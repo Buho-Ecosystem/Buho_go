@@ -14,9 +14,9 @@ export const LOCALE_STORAGE_KEY = 'buhoGO_language'
 export const DEFAULT_LOCALE = 'en-US'
 
 export const SUPPORTED_LOCALES = Object.freeze([
-  { value: 'en-US', label: 'English' },
-  { value: 'de',    label: 'Deutsch' },
-  { value: 'es',    label: 'Español' },
+  { value: 'en-US', label: 'English', flag: '🇺🇸' },
+  { value: 'de',    label: 'Deutsch', flag: '🇩🇪' },
+  { value: 'es',    label: 'Español', flag: '🇪🇸' },
 ])
 
 function isSupported(code) {

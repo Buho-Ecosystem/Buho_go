@@ -39,14 +39,8 @@
             class="context-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Your recovery phrase') }}
+            {{ $t('Anyone who sees these words can take over your profile.') }}
           </h2>
-          <p
-            class="context-lede"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-          >
-            {{ $t('These 12 words back up your profile and every site you sign in to. Without them you cannot move to a new phone. Anyone who sees them can take over your profile.') }}
-          </p>
 
           <div
             class="seed-callout"
@@ -58,7 +52,7 @@
             <div class="seed-callout-body">
               <div class="seed-callout-heading">{{ $t('Keep it offline') }}</div>
               <div class="seed-callout-text">
-                {{ $t("Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.") }}
+                {{ $t('Write it on paper. Never screenshot or save it online.') }}
               </div>
             </div>
           </div>

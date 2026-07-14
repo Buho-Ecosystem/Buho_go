@@ -33,8 +33,29 @@ export const ALBY_RATE_CURRENCIES = ['ZAR', 'KES', 'ZMW']
 // whatever the user picks here).
 export const SELECTABLE_FIAT_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'ZAR', 'KES', 'ZMW']
 
+// ISO 4217 code -> flag emoji, for the currency picker's left-hand badge.
+export const FIAT_FLAGS = {
+  USD: '🇺🇸',
+  EUR: '🇪🇺',
+  GBP: '🇬🇧',
+  CAD: '🇨🇦',
+  CHF: '🇨🇭',
+  AUD: '🇦🇺',
+  JPY: '🇯🇵',
+  ZAR: '🇿🇦',
+  KES: '🇰🇪',
+  ZMW: '🇿🇲',
+}
+
 // Display symbol for a currency code, with a sensible fallback ("<CODE> ").
 export function fiatSymbol(code) {
   const c = (code || '').toUpperCase()
   return FIAT_SYMBOLS[c] || c + ' '
+}
+
+// Flag emoji for a currency code, with a neutral fallback for anything
+// not in FIAT_FLAGS (e.g. a future addition made only to FIAT_SYMBOLS).
+export function fiatFlag(code) {
+  const c = (code || '').toUpperCase()
+  return FIAT_FLAGS[c] || '💱'
 }

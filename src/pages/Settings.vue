@@ -1,55 +1,18 @@
 <template>
   <q-page class="settings-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <!-- Header -->
-    <div class="settings-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
-      <q-btn
-        flat
-        round
-        dense
-        @click="$router.back()"
-        class="back-btn"
-        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-      >
-        <Icon icon="tabler:chevron-left" width="18" height="18" />
-      </q-btn>
-      <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-        {{ $t('Settings') }}
-      </div>
-      <!-- Profile lives here now (moved off the wallet header). `margin-left:auto`
-           pushes it to the far-right edge (the header row packs left otherwise).
-           Same plain-icon treatment as the back button so it reads as a peer. -->
-      <q-btn
-        flat
-        round
-        dense
-        style="margin-left: auto"
-        @click="$router.push('/profile')"
-        class="back-btn"
-        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-        aria-label="Profile"
-      >
-        <Icon icon="tabler:user" width="18" height="18" />
-      </q-btn>
-    </div>
+    <SettingsHubHeader :title="$t('Settings')" />
 
     <!-- Settings Content -->
     <div class="settings-content">
 
       <!--
-        Top-of-page surface: profile card → attention strip → quick
-        toggles. These three pieces are the "always-on" affordances
-        that turn Settings from a flat scrollable list into something
-        a mainstream user can scan, act on, and live in. They sit
-        above every section so even a user who never scrolls past
-        the first fold still gets the high-value entry points
-        (identity, warnings, frequent toggles).
+        Top-of-page surface: attention strip → quick toggles. These
+        pieces are the "always-on" affordances that turn Settings from
+        a flat scrollable list into something a mainstream user can
+        scan, act on, and live in. They sit above every section so even
+        a user who never scrolls past the first fold still gets the
+        high-value entry points (warnings, frequent toggles).
       -->
-      <!-- Shown only once the profile is set up (has a name/picture). While
-           it's empty we keep this section hidden so a fresh Settings stays
-           clean: setup is still reachable from the header profile icon, and
-           the backup nudge is carried by the attention strip below. -->
-      <SettingsProfileCard v-if="!profileStore.isEmpty" />
-
       <SettingsAttentionStrip
         :warnings="attentionWarnings"
         @action="onAttentionAction"
@@ -297,54 +260,6 @@
         :features="featureCards"
         @select="onFeatureSelect"
       />
-
-      <!--
-        Bitcoin Map hero card — full-width, spans both feature-grid columns,
-        sits directly below the 2×2 grid. The map is a spend-side hook ("where
-        can I use my Bitcoin"), so it earns a prominent, distinct surface
-        rather than a fourth small grid tile.
-      -->
-      <button type="button" class="map-hero-card" @click="$router.push('/map')">
-        <span class="hero-watermark--map" aria-hidden="true"></span>
-        <span class="map-hero-icon">
-          <Icon icon="tabler:map-2" width="26" height="26" />
-        </span>
-        <span class="map-hero-text">
-          <span class="map-hero-title">{{ $t('Bitcoin Map') }}</span>
-          <span class="map-hero-sub">{{ $t('Find shops that accept Bitcoin near you') }}</span>
-        </span>
-      </button>
-
-      <!--
-        eSIM & VPN shop hero card — the second spend-side hook, paired with
-        the Bitcoin Map above. Buy mobile data or a private connection and pay
-        straight from the wallet balance. Shares the map hero layout + icon
-        styling; a SIM icon makes the eSIM offer instantly recognisable.
-      -->
-      <button type="button" class="map-hero-card shop-hero-card" @click="$router.push('/shop')">
-        <span class="map-hero-icon">
-          <Icon icon="tabler:device-sim" width="26" height="26" />
-        </span>
-        <span class="map-hero-text">
-          <span class="map-hero-title">{{ $t('eSIM & VPN') }}</span>
-          <span class="map-hero-sub">{{ $t('Mobile data and a private connection, paid in bitcoin') }}</span>
-        </span>
-      </button>
-
-      <!--
-        Online shops hero card — the online counterpart to the Bitcoin Map.
-        Same map-hero layout; a storefront icon marks it. Discover web shops
-        that accept Bitcoin.
-      -->
-      <button type="button" class="map-hero-card online-hero-card" @click="$router.push('/online-shops')">
-        <span class="map-hero-icon">
-          <Icon icon="tabler:building-store" width="26" height="26" />
-        </span>
-        <span class="map-hero-text">
-          <span class="map-hero-title">{{ $t('Spend online') }}</span>
-          <span class="map-hero-sub">{{ $t('Shops worldwide that accept Bitcoin') }}</span>
-        </span>
-      </button>
 
       <!--
         Reusable lightning-address dialog. Always mounted (gated by its
@@ -1083,63 +998,12 @@
       </q-card>
     </q-dialog>
 
-    <!--
-      Get-the-App dialog. Shown only on web / PWA when the user
-      tries to enable a feature that only exists in the native
-      Android build. Currently used by the Screen Privacy toggle;
-      can be reused for any future native-only feature gated this
-      way.
-    -->
-    <q-dialog
-      v-model="showGetAppDialog"
-      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
-    >
-      <q-card
-        class="get-app-card"
-        :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-      >
-        <q-card-section class="get-app-header">
-          <div class="get-app-icon-wrapper">
-            <Icon
-              icon="tabler:device-mobile-down"
-              width="32"
-              height="32"
-              class="get-app-icon"
-            />
-          </div>
-          <div class="get-app-title">{{ $t('Get the BuhoGO Android app') }}</div>
-          <div
-            class="get-app-message"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-          >
-            {{ getAppDialogMessage }}
-          </div>
-        </q-card-section>
-
-        <q-card-actions class="get-app-actions">
-          <q-btn
-            flat
-            no-caps
-            :label="$t('Cancel')"
-            v-close-popup
-            class="cancel-btn"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
-          <q-btn
-            unelevated
-            no-caps
-            :label="$t('Open Google Play')"
-            class="get-app-cta-btn"
-            @click="openPlayStore"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
 
     <!-- Language Dialog -->
     <q-dialog v-model="showLanguageDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
+      <q-card class="picker-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header picker-dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Language Settings') }}
           </div>
@@ -1156,7 +1020,7 @@
           </q-btn>
         </q-card-section>
 
-        <q-card-section class="dialog-content">
+        <q-card-section class="picker-dialog-content">
           <div class="language-list">
             <div
               v-for="language in localeOptions"
@@ -1169,12 +1033,15 @@
               }"
               @click="setLanguage(language.value)"
             >
-              <div class="language-info">
-                <div class="language-name" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-                  {{ language.label }}
-                </div>
-                <div class="language-code" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                  {{ language.value }}
+              <div class="picker-row-main">
+                <span class="flag-badge">{{ language.flag }}</span>
+                <div class="language-info">
+                  <div class="language-name" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                    {{ language.label }}
+                  </div>
+                  <div class="language-code" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                    {{ language.value }}
+                  </div>
                 </div>
               </div>
               <Icon
@@ -1184,14 +1051,70 @@
               />
             </div>
           </div>
+
+          <!-- Low-friction escape hatch for a language we don't have yet:
+               one line, no form, opens the explainer popup below. -->
+          <button
+            type="button"
+            class="missing-lang-link"
+            :class="$q.dark.isActive ? 'missing-lang-link-dark' : 'missing-lang-link-light'"
+            @click="showMissingLanguageDialog = true"
+          >
+            <Icon icon="tabler:mail" width="15" height="15" />
+            <span>{{ $t('Miss a language?') }}</span>
+          </button>
         </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Missing-language request — sleek single-purpose popup. Explains we
+         read every request, invites the user to translate it themselves,
+         then offers three equal-weight channels to reach out. No form,
+         no friction. -->
+    <q-dialog v-model="showMissingLanguageDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="lang-request-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="lang-request-header">
+          <div class="lang-request-icon-wrapper">
+            <Icon icon="tabler:language" width="30" height="30" class="lang-request-icon" />
+          </div>
+          <div class="lang-request-title">{{ $t('Miss a language?') }}</div>
+          <div class="lang-request-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t("Reach us any way below. We'll do our best to add it, or you can translate it yourself and get a shoutout as an open source contributor.") }}
+          </div>
+        </q-card-section>
+
+        <q-card-actions class="lang-request-actions">
+          <div class="channel-row">
+            <button type="button" class="channel-btn" @click="requestMissingLanguage">
+              <span class="channel-icon channel-icon--email">
+                <Icon icon="tabler:mail" width="22" height="22" />
+              </span>
+              <span class="channel-label">{{ $t('Email') }}</span>
+            </button>
+
+            <button type="button" class="channel-btn" @click="openTelegramCommunity">
+              <span class="channel-icon channel-icon--telegram">
+                <Icon icon="tabler:brand-telegram" width="22" height="22" />
+              </span>
+              <span class="channel-label">Telegram</span>
+            </button>
+
+            <button type="button" class="channel-btn" @click="openNostrCommunity">
+              <span class="channel-icon channel-icon--nostr">
+                <img src="/nostr/nostr.png" alt="Nostr" class="channel-icon-img" />
+                <span v-if="!nostrCommunityUrl" class="channel-soon-badge">{{ $t('Soon') }}</span>
+              </span>
+              <span class="channel-label">Nostr</span>
+            </button>
+          </div>
+        </q-card-actions>
       </q-card>
     </q-dialog>
 
     <!-- Currency Dialog -->
     <q-dialog v-model="showCurrencyDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
+      <q-card class="picker-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="dialog-header picker-dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Currency Settings') }}
           </div>
@@ -1208,7 +1131,7 @@
           </q-btn>
         </q-card-section>
 
-        <q-card-section class="dialog-content">
+        <q-card-section class="picker-dialog-content">
           <div class="currency-list">
             <div
               v-for="currency in selectableFiatCurrencies()"
@@ -1221,12 +1144,15 @@
               }"
               @click="setPreferredCurrency(currency)"
             >
-              <div class="currency-info">
-                <div class="currency-code" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-                  {{ currency }}
-                </div>
-                <div class="currency-rate" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                  {{ getCurrencySymbol(currency) }}1 = {{ formatSats(exchangeRates[currency.toLowerCase()]) }}
+              <div class="picker-row-main">
+                <span class="flag-badge">{{ getCurrencyFlag(currency) }}</span>
+                <div class="currency-info">
+                  <div class="currency-code" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                    {{ currency }}
+                  </div>
+                  <div class="currency-rate" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                    {{ getCurrencySymbol(currency) }}1 = {{ formatSats(exchangeRates[currency.toLowerCase()]) }}
+                  </div>
                 </div>
               </div>
               <Icon
@@ -1927,13 +1853,6 @@
       @verified="onSeedPhraseVerified"
     />
 
-    <!-- Identity seed-phrase backup, opened from the identity attention card -->
-    <IdentitySeedPhraseDialog
-      v-model="showIdentitySeedDialog"
-      :mode="identitySeedDialogMode"
-      @verified="onIdentitySeedVerified"
-    />
-
     <!-- App Lock enable: explain what happens before the native prompt -->
     <BiometricEnableDialog
       v-model="showBiometricEnableDialog"
@@ -2274,6 +2193,8 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <SettingsHubNav />
   </q-page>
 </template>
 
@@ -2283,12 +2204,10 @@ import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
 import {useProfileStore} from '../stores/profile'
-import {useAddressBookStore} from '../stores/addressBook'
-import {useEarnStore} from '../stores/earn'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
-import { SELECTABLE_FIAT_CURRENCIES, fiatSymbol } from '../utils/fiatCurrencies.js'
+import { SELECTABLE_FIAT_CURRENCIES, fiatSymbol, fiatFlag } from '../utils/fiatCurrencies.js'
 import {shareContent} from '../utils/share.js'
 import { toggleThemeWithSweep } from '../utils/themeTransition.js'
 import { isBiometricAvailable } from '../utils/biometric.js'
@@ -2296,19 +2215,21 @@ import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
+import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
-import IdentitySeedPhraseDialog from '../components/IdentitySeedPhraseDialog.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import GetAppDialog from '../components/GetAppDialog.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
-import SettingsProfileCard from '../components/settings/SettingsProfileCard.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
 import SettingsQuickToggles from '../components/settings/SettingsQuickToggles.vue'
 import SettingsFeatureCards from '../components/settings/SettingsFeatureCards.vue'
+import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue'
+import SettingsHubNav from '../components/settings/SettingsHubNav.vue'
 import HiddenAmount from '../components/HiddenAmount.vue'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // Alternative lightweight verification (type 3 random words). Kept out
@@ -2327,34 +2248,23 @@ const MEMPOOL_DEFAULT_URL = 'https://mempool.space/api/v1';
 const MEMPOOL_BLOCKTRAINER_URL = 'https://mempool.blocktrainer.de/api/v1';
 const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 
-// Persisted ids of attention cards the user dismissed (swipe / X).
-const DISMISSED_WARNINGS_KEY = 'buhoGO_dismissed_attention_v1';
-function loadDismissedWarnings() {
-  try {
-    const raw = localStorage.getItem(DISMISSED_WARNINGS_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
 export default {
   name: 'SettingsPage',
   components: {
     VueQrcode,
     ArkadeLogo,
     SparkSeedPhraseDialog,
-    IdentitySeedPhraseDialog,
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
+    GetAppDialog,
     SettingsSection,
     SettingsRow,
-    SettingsProfileCard,
     SettingsAttentionStrip,
     SettingsQuickToggles,
     SettingsFeatureCards,
+    SettingsHubHeader,
+    SettingsHubNav,
     HiddenAmount,
     // MnemonicDisplay and MnemonicOrderVerify are used inside
     // SparkSeedPhraseDialog; they are not needed at this level.
@@ -2367,6 +2277,11 @@ export default {
       showAddWalletDialog: false,
       showCurrencyDialog: false,
       showLanguageDialog: false,
+      showMissingLanguageDialog: false,
+      // TODO: fill in once the Nostr community link is ready. Empty
+      // means the Nostr channel button shows a "Soon" badge instead
+      // of opening a link.
+      nostrCommunityUrl: '',
       showNotificationsDialog: false,
       showSecurityDialog: false,
       showMempoolDialog: false,
@@ -2473,11 +2388,6 @@ export default {
       // Enable-flow explanation dialog state
       showBiometricEnableDialog: false,
       pendingBiometryType: 'none',
-
-      // Identity seed-phrase dialog (backup / view), opened from the
-      // identity attention card without leaving Settings.
-      showIdentitySeedDialog: false,
-      identitySeedDialogMode: 'backup',
 
       // Attention cards the user has dismissed (swipe / X). Persisted so a
       // dismissed reminder doesn't nag again; the quiet "Backup needed" chip
@@ -2640,39 +2550,6 @@ export default {
     },
 
     /**
-     * Address-book contact count for the Tools section row. Reads
-     * from the store directly so it stays live if the user adds /
-     * removes a contact via another surface while Settings is open.
-     */
-    addressBookCount() {
-      return useAddressBookStore().entries.length;
-    },
-
-    /**
-     * Smart meta string for the Bitcoin Lessons feature card. Three
-     * states pulled from the earn store, ordered most-magnetic first:
-     *
-     *   1. Claimable sats waiting       → "Claim {n} sats!" (call-to-action)
-     *   2. Earned but below threshold   → "{n} sats earned" (progress)
-     *   3. Brand new user               → "Earn real sats" (cold lead-in)
-     *
-     * The Bitcoin Lessons card is one of the strongest noob hooks
-     * in the app, so its meta line is doing real work — it should
-     * always nudge the user toward the next action.
-     */
-    bitcoinLessonsMeta() {
-      const earn = useEarnStore();
-      if (earn.claimableAmount > 0) {
-        return this.$t('Claim {n} sats!', { n: earn.claimableAmount });
-      }
-      if (earn.totalEarned > 0) {
-        return this.$t('{n} sats earned', { n: earn.totalEarned });
-      }
-      return this.$t('Earn real sats');
-    },
-
-
-    /**
      * The auto-add-incoming-Bitcoin setting only applies to Spark
      * wallets (the only wallet type that produces static deposit
      * addresses). Hide the section for everyone else so we don't
@@ -2816,61 +2693,19 @@ export default {
         });
       }
 
-      // 2. Identity backup outstanding. Separate from the wallet seed —
-      //    same words for a different recovery, surfaced as its own
-      //    card so the user doesn't conflate them.
-      if (this.identityStore.bootstrapped && !this.identityStore.backupConfirmed) {
-        warnings.push({
-          id: 'identity-backup',
-          variant: 'warning',
-          icon: 'tabler:user-shield',
-          title: this.$t('Back up your identity'),
-          description: this.$t('Without a backup your profile and sites can\'t be restored.'),
-          ctaLabel: this.$t('Back up'),
-        });
-      }
-
       // Drop anything the user has swiped / X-ed away.
       return warnings.filter((w) => !this.dismissedWarnings.includes(w.id));
     },
 
     /**
-     * Feature cards row — the three value features that were
-     * previously buried as plain rows inside other sections:
-     * Auto-Transfer, Address Book, Kiosk Mode. Promoted to a
-     * compact card row above the sections so they read as
-     * features rather than config. Meta strings carry live
-     * context (active rule count, contact count, kiosk status)
-     * so the card is informative before a tap.
+     * Feature cards row — Auto-Transfer and Kiosk Mode. Meta strings
+     * carry live context (active rule count, kiosk status) so the
+     * card is informative before a tap. Earn Sats and Address Book
+     * moved to the Spend tab.
      */
     featureCards() {
       const kioskOn = !!this.walletStore.kioskEnabled;
-      const earn = useEarnStore();
-      const hasClaimable = earn.claimableAmount > 0;
       return [
-        /*
-          Order is meaningful: top-left is the most magnetic for a
-          first-time visitor (earn sats), top-right is the most-used
-          (contacts), then merchant + power-user features below.
-        */
-        {
-          id: 'bitcoin-lessons',
-          icon: 'tabler:trophy',
-          label: this.$t('Earn Sats'),
-          meta: this.bitcoinLessonsMeta,
-          // Pulses green when there are sats waiting to be claimed —
-          // turns the card into a soft CTA without being naggy.
-          active: hasClaimable,
-        },
-        {
-          id: 'address-book',
-          icon: 'tabler:address-book',
-          label: this.$t('Address Book'),
-          meta: this.addressBookCount > 0
-            ? `${this.addressBookCount} ${this.addressBookCount === 1 ? this.$t('contact') : this.$t('contacts')}`
-            : this.$t('No contacts yet'),
-          active: false,
-        },
         {
           id: 'auto-transfer',
           icon: 'tabler:send',
@@ -3634,23 +3469,8 @@ export default {
      */
     onFeatureSelect(id) {
       switch (id) {
-        case 'bitcoin-lessons':
-          if (!this.isNativeApp) {
-            // Learn & Earn pays out real sats. On the web build there is
-            // no way to stop a user from spinning up fresh wallets to farm
-            // rewards, so the whole feature is native-only. Surface that
-            // honestly with the same Get-the-App prompt as biometrics /
-            // screen privacy instead of routing into the earn flow.
-            this.promptForLearnEarnApp();
-            return;
-          }
-          this.$router.push('/learn');
-          return;
         case 'auto-transfer':
           this.showAutoTransferDialog = true;
-          return;
-        case 'address-book':
-          this.$router.push('/address-book');
           return;
         case 'kiosk':
           this.handleKioskToggle(!this.walletStore.kioskEnabled);
@@ -3669,32 +3489,14 @@ export default {
         case 'wallet-seed-backup':
           this.openSeedPhraseDialog('backup');
           return;
-        case 'identity-backup':
-          this.openIdentitySeedDialog('backup');
-          return;
       }
     },
-
-    // Open the identity seed-phrase backup dialog inline (same flow the
-    // profile page uses) instead of routing the user away to /profile.
-    async openIdentitySeedDialog(mode) {
-      await this.identityStore.ensureIdentity();
-      this.identitySeedDialogMode = mode;
-      this.showIdentitySeedDialog = true;
-    },
-
-    // Store flips backupConfirmed on verify; the attention card drops itself.
-    onIdentitySeedVerified() {},
 
     // Dismiss an attention card (swipe / X). Persisted so it stays gone.
     onAttentionDismiss(id) {
       if (this.dismissedWarnings.includes(id)) return;
       this.dismissedWarnings = [...this.dismissedWarnings, id];
-      try {
-        localStorage.setItem(DISMISSED_WARNINGS_KEY, JSON.stringify(this.dismissedWarnings));
-      } catch {
-        // Best-effort persistence; the in-memory dismissal still holds.
-      }
+      saveDismissedWarnings(this.dismissedWarnings);
     },
 
     setPreferredCurrency(currency) {
@@ -3727,6 +3529,10 @@ export default {
 
     getCurrencySymbol(currency) {
       return fiatSymbol(currency)
+    },
+
+    getCurrencyFlag(currency) {
+      return fiatFlag(currency)
     },
 
     formatBalance(balance) {
@@ -3849,24 +3655,6 @@ export default {
       this.promptForApp(
         this.$t('Learn & Earn is only available in the BuhoGO Android app. Install it from Google Play to complete lessons and earn sats.')
       );
-    },
-
-    /**
-     * Open the BuhoGO Android Play Store listing in a new tab.
-     * Called from the Get-the-App dialog. Closes the dialog after
-     * triggering navigation so a user returning to the tab sees
-     * the Settings screen, not a stale modal.
-     *
-     * App ID matches `appId` in src-capacitor/capacitor.config.json
-     * and the badge link in README.md — single canonical URL.
-     */
-    openPlayStore() {
-      window.open(
-        'https://play.google.com/store/apps/details?id=mybuho.buhogo',
-        '_blank',
-        'noopener,noreferrer'
-      );
-      this.showGetAppDialog = false;
     },
 
     /**
@@ -4471,6 +4259,35 @@ export default {
       })
     },
 
+    /**
+     * Hands off to the system mail client with a prefilled subject/body,
+     * same pattern as openInWallet()'s lightning: URL below.
+     */
+    requestMissingLanguage() {
+      const subject = encodeURIComponent(this.$t('Language request'))
+      const body = encodeURIComponent(`${this.$t('Hi BuhoGO team, I would love to see BuhoGO in:')}\n\n`)
+      window.location.href = `mailto:contact@mybuho.de?subject=${subject}&body=${body}`
+      this.showMissingLanguageDialog = false
+    },
+
+    openTelegramCommunity() {
+      window.open('https://telegram.me/+cpmyopRYnKRlOTRi', '_blank')
+      this.showMissingLanguageDialog = false
+    },
+
+    openNostrCommunity() {
+      if (!this.nostrCommunityUrl) {
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('Nostr community coming soon'),
+          timeout: 2500,
+        })
+        return
+      }
+      window.open(this.nostrCommunityUrl, '_blank')
+      this.showMissingLanguageDialog = false
+    },
+
     loadLanguagePreference() {
       // Boot already restores the saved locale on app start; this keeps
       // Settings in sync if it mounts before the user-driven change.
@@ -4778,6 +4595,9 @@ export default {
   font-family: 'Manrope', sans-serif;
   overflow-x: hidden;
   max-width: 100vw;
+  /* SettingsHubHeader is sticky and adds its own safe-top padding;
+     cancel the global .q-page safe-top inset so it isn't doubled. */
+  padding-top: 0;
 }
 
 .bg-dark {
@@ -4875,7 +4695,9 @@ export default {
 /* Content */
 .settings-content {
   flex: 1;
-  padding: 1rem 1rem 2rem;
+  /* Bottom padding clears the floating SettingsHubNav pill so the last
+     section is never hidden underneath it. */
+  padding: 1rem 1rem calc(96px + var(--safe-bottom, 0px));
 }
 
 /* Section Labels */
@@ -5466,70 +5288,6 @@ export default {
   opacity: 0.4;
 }
 
-/* ──────────────────────────────────────────────────────────────────────
-   Get-the-App dialog (web/PWA → native Android prompt).
-   Visually mirrors the danger-confirm-card layout but uses the
-   brand-green palette since this is an informational nudge, not a
-   destructive confirmation.
-   ────────────────────────────────────────────────────────────────────── */
-
-.get-app-card {
-  width: 100%;
-  max-width: 340px;
-  border-radius: 16px;
-}
-
-.get-app-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 1.5rem 1.5rem 1rem;
-}
-
-.get-app-icon-wrapper {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(21, 222, 114, 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1rem;
-}
-
-.get-app-icon {
-  color: #15DE72;
-}
-
-.get-app-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-}
-
-.get-app-message {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.get-app-actions {
-  padding: 0.5rem 1.5rem 1.5rem;
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.get-app-cta-btn {
-  font-family: 'Manrope', sans-serif;
-  font-weight: 600;
-  border-radius: 10px;
-  background: #15DE72 !important;
-  color: #0E1F17 !important;
-}
-
 /* Spark Address Actions */
 .spark-address-actions {
   display: flex;
@@ -5771,6 +5529,238 @@ export default {
 
 .dialog-content {
   padding: 1.5rem;
+}
+
+/* ----------------------------------------------------------------
+   Picker dialog — scrollable shell shared by Currency and Language
+   (same proven pattern as .wallets-dialog-card below): capped
+   height, header stays put, list scrolls internally. Fixes the
+   picker running off-screen on short devices instead of overflowing
+   past the viewport edge.
+---------------------------------------------------------------- */
+.picker-dialog-card {
+  width: 100%;
+  max-width: min(420px, 92vw);
+  max-height: 82vh;
+  border-radius: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.picker-dialog-header {
+  flex-shrink: 0;
+}
+
+.picker-dialog-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.5rem 1.25rem 1.25rem;
+  min-height: 0;
+  scrollbar-width: none;
+}
+
+.picker-dialog-content::-webkit-scrollbar {
+  display: none;
+}
+
+/* Tighter rows so more options are visible per scroll. */
+.picker-dialog-content .currency-item,
+.picker-dialog-content .language-item {
+  padding: 10px 12px;
+}
+
+.picker-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.flag-badge {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: var(--bg-input);
+  flex-shrink: 0;
+}
+
+/* "Miss a language?" escape hatch — one quiet line under the list,
+   not a button, so it doesn't compete with the actual choices. */
+.missing-lang-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.missing-lang-link-dark {
+  color: var(--text-muted, #9CA3AF);
+}
+.missing-lang-link-dark:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.missing-lang-link-light {
+  color: var(--text-secondary);
+}
+.missing-lang-link-light:hover {
+  background: rgba(40, 34, 20, 0.06);
+  color: var(--text-primary);
+}
+
+/* ----------------------------------------------------------------
+   Missing-language request popup — compact, friendly confirm-style
+   card (same shell shape as .danger-confirm-card, brand-green
+   instead of alarm-red since this is an invitation, not a warning).
+---------------------------------------------------------------- */
+.lang-request-card {
+  width: 100%;
+  max-width: 340px;
+  border-radius: 20px;
+}
+
+.lang-request-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.75rem 1.5rem 0.5rem;
+}
+
+.lang-request-icon-wrapper {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(21, 222, 114, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.lang-request-icon {
+  color: #15DE72;
+}
+
+.lang-request-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.lang-request-message {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.lang-request-actions {
+  padding: 0.5rem 1.5rem 1.75rem;
+}
+
+/* Three equal-weight contact channels — email, Telegram, Nostr.
+   Solid brand-colored tiles read as one recognizable row rather
+   than three separate buttons competing for attention. */
+.channel-row {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+}
+
+.channel-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.channel-icon {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: transform 0.12s ease, filter 0.15s ease;
+}
+
+.channel-btn:active .channel-icon {
+  transform: scale(0.93);
+}
+
+.channel-icon--email {
+  background: var(--gradient-green, #15DE72);
+}
+
+.channel-icon--telegram {
+  background: #26A5E4;
+}
+
+/* The Nostr PNG already carries its own purple fill and mark, so the
+   tile just frames it at the same footprint as the other two — no
+   extra background or icon color needed. */
+.channel-icon--nostr {
+  background: transparent;
+}
+
+.channel-icon-img {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  object-fit: cover;
+  display: block;
+}
+
+.channel-soon-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  box-shadow: inset 0 0 0 1px var(--border-card);
+  color: var(--text-secondary);
+  font-family: 'Manrope', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.channel-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 /* ----------------------------------------------------------------
@@ -6413,7 +6403,7 @@ export default {
 /* Responsive Design */
 @media (max-width: 480px) {
   .settings-content {
-    padding: 0.75rem;
+    padding: 0.75rem 0.75rem calc(96px + var(--safe-bottom, 0px));
   }
 
   .section-card {
@@ -6428,10 +6418,6 @@ export default {
   .dialog-header,
   .dialog-content {
     padding: 1rem;
-  }
-
-  .currency-item {
-    padding: 0.75rem;
   }
 
   .wallet-card {
@@ -6480,6 +6466,10 @@ export default {
   /* Wallets Dialog Mobile */
   .wallets-dialog-card {
     max-height: 90vh;
+  }
+
+  .picker-dialog-card {
+    max-height: 88vh;
   }
 
   .add-wallet-btn {
@@ -8253,124 +8243,6 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
   width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   color: var(--text-muted);
-}
-
-/* Bitcoin Map hero card — full-width, below the feature grid. A single
-   prominent surface (the map is a spend-side hook), so it gets a stronger
-   icon tile + a clear "open" affordance and roomier spacing than a grid row. */
-.map-hero-card {
-  all: unset;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  /* The feature grid above contributes 22px (its margin-bottom); the bottom
-     margin here gives the hero clear breathing room before the next settings
-     section instead of being glued to its label. */
-  margin: 6px 0 28px;
-  padding: 18px 20px 18px 18px; /* +2px right so the title clears the motif */
-  border-radius: var(--radius-md, 16px);
-  background-color: var(--bg-card);
-  /* Soft corner depth wash, anchored to the same corner the motif bleeds from
-     and stopped before the text column. */
-  background-image: radial-gradient(120% 90% at 100% 0%, rgba(26, 26, 28, 0.04) 0%, transparent 60%);
-  border: 1px solid var(--border-card);
-  /* One layer of depth: a top sheen + a warm bottom seat. */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(40, 34, 20, 0.03);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform 0.16s ease, border-color 0.18s ease, box-shadow 0.16s ease;
-  /* Clip the corner watermark to the rounded card. */
-  position: relative;
-  overflow: hidden;
-}
-body.body--dark .map-hero-card {
-  background-image: radial-gradient(120% 90% at 100% 0%, rgba(255, 255, 255, 0.06) 0%, transparent 60%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.40);
-}
-/* The chevron is gone, so the press state carries the tappable affordance:
-   the card seats into the page (collapses its lift). */
-.map-hero-card:active {
-  transform: scale(0.985);
-  border-color: var(--map-accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0), inset 0 -1px 0 rgba(40, 34, 20, 0.05);
-}
-body.body--dark .map-hero-card:active {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), inset 0 -1px 0 rgba(0, 0, 0, 0.50);
-}
-.map-hero-icon {
-  flex-shrink: 0;
-  width: 52px;
-  height: 52px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 15px;
-  color: var(--map-cta-fg);
-  background: var(--map-accent);
-}
-.map-hero-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  text-align: left;
-}
-.map-hero-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 16.5px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-}
-.map-hero-sub {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--text-muted);
-  line-height: 1.3;
-}
-/* Shop hero: paired tightly under the map hero. Its icon shares the map hero
-   styling exactly (var(--map-accent)); identity comes from the SIM icon plus
-   the globe watermark, not a different colour. */
-.shop-hero-card {
-  margin-top: -18px;
-}
-/* Online shops hero, tightly stacked under the eSIM card. */
-.online-hero-card {
-  margin-top: -18px;
-}
-
-/* Lift the card content above the watermark. */
-.map-hero-icon,
-.map-hero-text {
-  position: relative;
-  z-index: 1;
-}
-
-/* Map card: a REAL OpenFreeMap street map (positron / dark, baked as a static
-   image with Bitcoin-orange pins) fills the card, anchored right and dissolved
-   toward the left so the title + subtitle stay on clean background. Held behind
-   the content (z-index) and non-interactive; the card radius clips it. */
-.hero-watermark--map {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  user-select: none;
-  background-image: url('/maps/btc-map-light.jpg');
-  background-size: cover;
-  background-position: center right;
-  opacity: 0.5;
-  -webkit-mask-image: linear-gradient(to left, #000 30%, transparent 80%);
-  mask-image: linear-gradient(to left, #000 30%, transparent 80%);
-}
-body.body--dark .hero-watermark--map {
-  background-image: url('/maps/btc-map-dark.jpg');
-  opacity: 0.62;
 }
 
 </style>

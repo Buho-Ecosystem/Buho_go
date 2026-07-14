@@ -33,8 +33,22 @@ const routes = [
       { path: '/nwc-setup', component: () => import('pages/NWCSetupPage.vue') },
       { path: '/lnbits-setup', component: () => import('pages/LNBitsSetupPage.vue') },
       { path: '/wallet', component: () => import('pages/Wallet.vue') },
+      // Settings / Identity / Spend hub - three sibling tabs, each its own
+      // route. Entry points target the tab they mean: the wallet toolbar's
+      // profile icon opens `/identity`, Map's back-fallback opens `/spend`.
+      // Nothing lands on the hub without naming a tab, so the Settings route
+      // needs no default-tab redirect - it always shows the Settings tab,
+      // with or without a query (`?section=backup`, `?section=wallets`,
+      // `?getApp=learn` all still land here as before).
       { path: '/settings', component: () => import('pages/Settings.vue') },
-      { path: '/profile', component: () => import('pages/ProfilePage.vue') },
+      { path: '/spend', component: () => import('pages/SpendPage.vue') },
+      { path: '/identity', component: () => import('pages/ProfilePage.vue') },
+      // Legacy alias - anything that still links to /profile (e.g. an
+      // older deep link) lands on the same page under its new tab name.
+      // Query params are preserved (a redirect string alone would drop
+      // them) since IdentityAuthDialog's LUD-04 sign-in flow can land
+      // here with its own query.
+      { path: '/profile', redirect: (to) => ({ path: '/identity', query: to.query }) },
       { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },

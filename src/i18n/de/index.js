@@ -331,6 +331,14 @@ export default {
   "Custom server": "Eigener Server",
   "Now using": "Jetzt aktiv",
   "Language updated": "Sprache aktualisiert",
+  "Miss a language?": "Deine Sprache fehlt?",
+  "Reach us any way below. We'll do our best to add it, or you can translate it yourself and get a shoutout as an open source contributor.": "Nutze einen der Wege unten, wir kümmern uns darum. Oder übersetze es selbst und bekomm eine Erwähnung im Open-Source-Projekt.",
+  "Email us": "E-Mail schreiben",
+  "Language request": "Sprachanfrage",
+  "Hi BuhoGO team, I would love to see BuhoGO in:": "Hallo BuhoGO-Team, ich wünsche mir BuhoGO in dieser Sprache:",
+  "Email": "E-Mail",
+  "Soon": "Bald",
+  "Nostr community coming soon": "Nostr-Community kommt bald",
   "Exchange rate source updated": "Wechselkursquelle aktualisiert",
   "PIN saved": "PIN gespeichert",
   "NWC connections removed": "NWC-Verbindungen entfernt",
@@ -512,8 +520,7 @@ export default {
   "Backup verified": "Backup bestätigt",
   "Complete Backup": "Backup abschließen",
   "Store your recovery phrase safely offline.": "Bewahre deine Seed-Phrase sicher und offline auf.",
-  "Your recovery phrase": "Deine Seed-Phrase",
-  "These 12 words are the only way to restore this wallet if you lose access to your device. Anyone who sees them can move your money.": "Diese 12 Wörter sind der einzige Weg, dieses Wallet wiederherzustellen, falls du den Zugriff auf dein Gerät verlierst. Jeder, der sie sieht, kann dein Geld bewegen.",
+  "Anyone who sees these words can take your money.": "Wer diese Wörter sieht, kann dein Geld nehmen.",
   "Write these words down and store them safely. Never share them with anyone.": "Schreib diese Wörter auf und bewahre sie sicher auf. Teile sie niemals mit jemandem.",
   "Hidden again. Tap Show words to reveal.": "Wieder verborgen. Tippe auf Wörter anzeigen, um sie aufzudecken.",
   // Identity / Lightning address
@@ -573,6 +580,9 @@ export default {
   "items": "Positionen",
   // Misc
   "Learn & Earn navigation": "Navigation für Lernen & Verdienen",
+  "Settings navigation": "Einstellungen-Navigation",
+  "Home": "Home",
+  "Spend": "Ausgeben",
   "Hide address": "Adresse ausblenden",
   "kiosk.connecting": "Verbinde...",
   // Already in en-US (de catch-up)
@@ -2071,7 +2081,7 @@ export default {
 
   // ----- Seed-phrase reveal dialog -----
   "Keep it offline": "Bewahre sie offline auf",
-  "Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.": "Schreibe sie auf Papier. Mach kein Foto davon. Speichere sie nicht in Cloud-Notizen oder einem Passwort-Manager, den du nicht selbst kontrollierst.",
+  "Write it on paper. Never screenshot or save it online.": "Schreibe sie auf Papier. Mach keinen Screenshot und speichere sie nicht online.",
   "I'm ready": "Ich bin bereit",
   "Tap Show words to reveal.": "Tippe auf Wörter anzeigen, um sie zu sehen.",
   "Never type this phrase into a website. Never share it in chat, photos, or cloud notes.": "Tippe diese Wörter nie auf einer Website ein. Teile sie nie im Chat, auf Fotos oder in Cloud-Notizen.",
@@ -2188,7 +2198,7 @@ export default {
   "Payment failed. Try again or pay externally.": "Zahlung fehlgeschlagen. Bitte erneut versuchen oder extern bezahlen.",
   "Still waiting for the payment. The name will activate as soon as it settles.": "Warte weiterhin auf die Zahlung. Der Name wird aktiviert, sobald sie eingegangen ist.",
   "Your recovery phrase": "Deine Wiederherstellungsphrase",
-  "These 12 words back up your profile and every site you sign in to. Without them you cannot move to a new phone. Anyone who sees them can take over your profile.": "Diese 12 Wörter sichern dein Profil und alle Seiten, bei denen du angemeldet bist. Ohne sie kannst du nicht auf ein neues Handy wechseln. Wer sie sieht, kann dein Profil übernehmen.",
+  "Anyone who sees these words can take over your profile.": "Wer diese Wörter sieht, kann dein Profil übernehmen.",
   "Back up your profile": "Profil sichern",
   "View recovery phrase": "Wiederherstellungsphrase anzeigen",
   "Verify it is you to reveal your recovery phrase": "Bestätige, dass du es bist, um deine Wiederherstellungsphrase anzuzeigen",

@@ -104,7 +104,7 @@ const listTruncated = computed(
 
 function goBack() {
   if (window.history.length > 1) router.back()
-  else router.push('/settings')
+  else router.push('/spend')
 }
 
 function onMapReady() {

@@ -39,30 +39,39 @@
       </transition>
 
       <q-space/>
-      <!-- Header icon row. Address Book (least personal) then Settings.
-           Profile now lives in the top-right of the Settings page. -->
+      <!-- Header icon row: Address Book, Bitcoin Map, then the hub (profile).
+           All three share one box + icon size so they read as a set. The icons
+           sit at 21px with a thinner stroke - big enough to recognise at a
+           glance, still sharp rather than chunky. -->
       <q-btn
         flat
-        round
-        class="float-right q-mr-sm"
-        :class="$q.dark.isActive ? 'dark-mode-btn-dark' : 'dark-mode-btn-light'"
+        dense
+        class="float-right q-mr-xs"
+        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="showAddressBookQuick = true"
-        padding="sm sm"
-        style="border-radius: 12px"
         aria-label="Address Book"
       >
-        <Icon icon="tabler:address-book" width="18" height="18" />
+        <Icon icon="tabler:address-book" width="21" height="21" class="header-icon" />
       </q-btn>
       <q-btn
         flat
-        round
+        dense
+        class="float-right q-mr-xs"
+        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
+        @click="$router.push('/map')"
+        aria-label="Bitcoin Map"
+      >
+        <Icon icon="tabler:map" width="21" height="21" class="header-icon" />
+      </q-btn>
+      <q-btn
+        flat
         dense
         class="float-right"
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
-        @click="$router.push('/settings')"
-        aria-label="Settings"
+        @click="$router.push('/identity')"
+        aria-label="Profile and settings"
       >
-        <Icon icon="tabler:settings" width="18" height="18" />
+        <Icon icon="tabler:user-circle" width="21" height="21" class="header-icon" />
       </q-btn>
     </q-toolbar>
 
@@ -5977,11 +5986,18 @@ export default {
   }
 }
 
+/* Toolbar icons: Tabler ships them at stroke-width 2, which reads as chunky
+   once the glyph is scaled up. A CSS stroke-width overrides the SVG's own
+   attribute, so the icons stay large but keep a fine, crisp line. */
+.header-icon {
+  stroke-width: 1.6;
+}
+
 .modern-menu-btn-dark,
 .modern-menu-btn-light {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;

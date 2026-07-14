@@ -1,44 +1,43 @@
 <template>
   <q-page class="profile-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <!-- Header. Back · centred title · gear (manage). The gear opens
-         the IdentityManageSheet, which still owns the lower-frequency
-         actions (seed phrase, restore, regenerate, public-profile-
-         details). It used to be the only way into those — now the
-         profile header below owns the everyday actions and the gear
-         is a deliberate, one-tap step away. -->
-    <div class="page-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
-      <q-btn
-        flat
-        round
-        dense
-        @click="$router.back()"
-        class="back-btn"
-        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-        aria-label="Back"
-      >
-        <Icon icon="tabler:chevron-left" width="18" height="18" />
-      </q-btn>
-      <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-        {{ $t('Profile') }}
-      </div>
-      <q-btn
-        flat
-        round
-        dense
-        class="manage-btn"
-        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-        :aria-label="$t('Manage your BuhoGO identity')"
-        @click="showManageSheet = true"
-      >
-        <!-- Kebab/more affordance. Deliberately NOT a gear: the
-             global Settings page already owns that glyph; using
-             it here too would muddy the meaning. The dots match
-             the modern "more options for this surface" convention. -->
-        <Icon icon="tabler:dots-vertical" width="18" height="18" />
-      </q-btn>
-    </div>
+    <!-- Header. The three hub tabs (Settings / Identity / Spend) are
+         peers reached via the floating SettingsHubNav, not a push
+         stack, so there is no back chevron here - the Home icon
+         inside SettingsHubHeader is the one universal way out, back
+         to the wallet. The kebab still opens IdentityManageSheet,
+         which owns the lower-frequency actions (seed phrase, restore,
+         regenerate, public-profile details). -->
+    <SettingsHubHeader :title="$t('Identity')">
+      <template #actions>
+        <q-btn
+          flat
+          round
+          dense
+          class="manage-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          :aria-label="$t('Manage your BuhoGO identity')"
+          @click="showManageSheet = true"
+        >
+          <!-- Kebab/more affordance. Deliberately NOT a gear: the
+               global Settings page already owns that glyph; using
+               it here too would muddy the meaning. The dots match
+               the modern "more options for this surface" convention. -->
+          <Icon icon="tabler:dots-vertical" width="18" height="18" />
+        </q-btn>
+      </template>
+    </SettingsHubHeader>
 
     <div class="profile-content">
+      <!-- Identity-backup nudge (and any future Identity-tab warning).
+           Sits above the hero so it's the first thing seen when a
+           backup is outstanding, same slot Settings' own attention
+           strip occupies relative to its profile card. -->
+      <SettingsAttentionStrip
+        :warnings="attentionWarnings"
+        @action="onAttentionAction"
+        @dismiss="onAttentionDismiss"
+      />
+
       <!-- Profile header. State variations, all driven by
            identity.bootstrapped + profile.isEmpty:
              1. !bootstrapped       → silent (the avatar slot reserves the layout
@@ -388,6 +387,37 @@
         </div>
       </template>
 
+      <!-- Address Book entry point. Independent of identity bootstrap
+           (contacts persist locally regardless), so unlike the Sites
+           section above it always renders. Same settings-card row
+           treatment as that section. -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Address Book') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item clickable v-ripple @click="$router.push('/address-book')">
+          <q-item-section side>
+            <Icon
+              icon="tabler:address-book"
+              width="24"
+              height="24"
+              :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"
+            />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Address Book') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ addressBookCount > 0 ? `${addressBookCount} ${addressBookCount === 1 ? $t('contact') : $t('contacts')}` : $t('No contacts yet') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+      </div>
+
     </div>
 
     <!-- Identity manage bottom sheet (View / Restore / Generate new).
@@ -553,11 +583,19 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Floating Settings/Identity/Spend hub nav. Mounted last so it's
+         the topmost element in source order, above every sheet/dialog
+         mounted earlier on this page. -->
+    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
+import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
+import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue';
+import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import IdentitySeedPhraseDialog from '../components/IdentitySeedPhraseDialog.vue';
 import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
 import IdentityManageSheet from '../components/IdentityManageSheet.vue';
@@ -576,6 +614,7 @@ import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
+import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings';
 
 // The typed confirmation phrase. Matched verbatim to the wallet-removal
 // flow ("I understand") so users build the same muscle memory across
@@ -587,6 +626,9 @@ export default {
 
   components: {
     Icon,
+    SettingsHubHeader,
+    SettingsAttentionStrip,
+    SettingsHubNav,
     IdentitySeedPhraseDialog,
     IdentityRestoreDialog,
     IdentityManageSheet,
@@ -674,10 +716,43 @@ export default {
       // user gets a confirmation without a toast.
       nip05Copied: false,
       lud16Copied: false,
+
+      // Identity-backup attention card dismissals. Shared storage key
+      // with Settings' own attention strip (utils/attentionWarnings.js)
+      // so a dismissal recorded from either hub tab sticks everywhere.
+      dismissedWarnings: loadDismissedWarnings(),
     };
   },
 
   computed: {
+    /**
+     * Computed warning list driving the SettingsAttentionStrip above
+     * the profile hero. Mirrors the identity-backup card that used to
+     * live in Settings' own attention strip; that copy is gone now
+     * that Identity is its own hub tab, so this is the one remaining
+     * source for it. Each warning's `id` is the contract with
+     * `onAttentionAction(id)`.
+     */
+    attentionWarnings() {
+      const warnings = [];
+      if (this.identity.bootstrapped && !this.identity.backupConfirmed) {
+        warnings.push({
+          id: 'identity-backup',
+          variant: 'warning',
+          icon: 'tabler:user-shield',
+          title: this.$t('Back up your identity'),
+          description: this.$t('Without a backup your profile and sites can\'t be restored.'),
+          ctaLabel: this.$t('Back up'),
+        });
+      }
+      return warnings.filter((w) => !this.dismissedWarnings.includes(w.id));
+    },
+
+    /** Live contact count for the Address Book row's caption. */
+    addressBookCount() {
+      return useAddressBookStore().entries.length;
+    },
+
     connectedSites() {
       return this.identity.connectedSitesSorted;
     },
@@ -1100,17 +1175,41 @@ export default {
         this.isRegenerating = false;
       }
     },
+
+    /**
+     * Routes the attention-strip CTA tap to the right surface. Only
+     * one warning lives here today (identity-backup) but the switch
+     * keeps the shape consistent with Settings' own handler.
+     */
+    onAttentionAction(id) {
+      if (id === 'identity-backup') {
+        // Same dialog this page already opens from the kebab menu's
+        // "Recovery phrase" row (IdentityManageSheet's `view-seed`
+        // emit, wired above) - reuse that exact trigger rather than
+        // building a second entry point into the same dialog.
+        this.openIdentitySeedDialog('backup');
+      }
+    },
+
+    // Dismiss an attention card (swipe / X). Persisted so it stays gone.
+    onAttentionDismiss(id) {
+      if (this.dismissedWarnings.includes(id)) return;
+      this.dismissedWarnings = [...this.dismissedWarnings, id];
+      saveDismissedWarnings(this.dismissedWarnings);
+    },
   },
 };
 </script>
 
 <style scoped>
 /* ---------- Page chrome ----------
-   Mirrors Settings.vue: plain flex-column page so the Danger Zone can
-   push itself to the natural bottom via `margin-top: auto`. The global
-   `.q-page` rule in app.css already adds `padding-top: var(--safe-top)`
-   so we don't double-pad the status-bar area on Android. Bottom padding
-   uses `env(safe-area-inset-bottom)` to clear the gesture/nav bar. */
+   SettingsHubHeader is sticky and adds its own safe-top inset, so
+   `.profile-page` cancels the global `.q-page { padding-top: var(--safe-top) }`
+   rule below to avoid double-padding the status-bar area on Android.
+   `.profile-content`'s bottom padding uses `var(--safe-bottom, 0px)`
+   (not raw `env(...)`, which under-reports on Android's WebView - the
+   runtime patch in src/boot/safe-area.js corrects the CSS var instead)
+   and adds enough clearance for the floating SettingsHubNav pill. */
 
 .profile-page {
   min-height: 100vh;
@@ -1119,29 +1218,7 @@ export default {
   font-family: 'Manrope', sans-serif;
   overflow-x: hidden;
   max-width: 100vw;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-card);
-  gap: 1rem;
-}
-
-.header-light,
-.header-dark {
-  /* Inherit the page background — the bottom border alone separates
-     the bar from the scrolling content. */
-  background: transparent;
-}
-
-.header-title {
-  flex: 1 1 auto;
-  text-align: center;
-  font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
+  padding-top: 0;
 }
 
 .manage-btn {
@@ -1153,7 +1230,7 @@ export default {
   display: flex;
   flex-direction: column;
   padding: 0 16px;
-  padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(96px + var(--safe-bottom, 0px));
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
