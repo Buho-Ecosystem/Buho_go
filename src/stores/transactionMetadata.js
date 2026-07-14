@@ -277,6 +277,20 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     },
 
     /**
+     * Get the Branta merchant verification stamped on a transaction at
+     * send time ({ name, logoUrl, logoLightUrl, verifyUrl }), scoped to
+     * `walletId`. null when the destination wasn't Branta-verified (or
+     * verification was off) at send time.
+     * @param {string} txId
+     * @param {string} [walletId]
+     * @returns {object|null}
+     */
+    getMerchantVerificationForTransaction: (state) => (txId, walletId) => {
+      const metadata = _resolveMetadata(state, txId, walletId)
+      return metadata?.merchantVerification || null
+    },
+
+    /**
      * Get the curated point-of-sale breakdown stamped on a transaction by
      * the kiosk sale path ({ baseSats, tipSats, tipPercent, roundUp,
      * discountSats, itemCount, totalSats }), scoped to `walletId`. null
@@ -396,6 +410,13 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * picture instead of a generic icon. Per-payment like label/source (see
      * below) — never merged into an existing link.
      *
+     * `merchantVerification` ({ name, logoUrl, logoLightUrl, verifyUrl })
+     * carries the Branta-verified merchant identity behind the send (see
+     * runBrantaVerification/lookupBrantaVerification in Wallet.vue), so Tx
+     * Details can show "you paid a verified merchant" on the receipt, not
+     * only on the confirm screen before sending. Per-payment like
+     * counterpartyAvatar above — never merged into an existing link.
+     *
      * `saleBreakdown` (subtotal/tip/round-up/discount/item-count/total)
      * carries the curated point-of-sale breakdown a kiosk sale captured at
      * invoice-creation time (see KioskDashboard.vue's saleBreakdownSnapshot
@@ -422,6 +443,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       label = null,
       source = null,
       counterpartyAvatar = null,
+      merchantVerification = null,
       saleBreakdown = null,
       direction = 'outgoing',
       walletId = null,
@@ -436,7 +458,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // recipient's post-payment message), a LUD-21 verify URL (so Tx Details
       // can re-confirm fiat delivery later), a label/source (batch, internal
       // transfer, kiosk), and/or a kiosk saleBreakdown.
-      if (!recipientAddress && !successAction && !verifyUrl && !label && !source && !saleBreakdown) return
+      if (!recipientAddress && !successAction && !verifyUrl && !label && !source && !merchantVerification && !saleBreakdown) return
       const now = Date.now()
       const normalisedAddress = recipientAddress
         ? String(recipientAddress).toLowerCase().trim()
@@ -451,13 +473,13 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       )
 
       // A link carrying a LUD-09 successAction, a LUD-21 verify URL, a
-      // label/source, a counterpartyAvatar, or a saleBreakdown is
-      // PER-PAYMENT (each send has its own message / receipt / annotation /
-      // resolved identity / POS breakdown), so it must never be merged or
-      // collapsed — each has to reach its own tx. This matters especially
-      // for batch/kiosk, where two unrelated payments can easily share the
-      // same recipient + amount.
-      const isPerPayment = !!successAction || !!verifyUrl || !!label || !!source || !!counterpartyAvatar || !!saleBreakdown
+      // label/source, a counterpartyAvatar, a merchantVerification, or a
+      // saleBreakdown is PER-PAYMENT (each send has its own message /
+      // receipt / annotation / resolved identity / verified merchant / POS
+      // breakdown), so it must never be merged or collapsed — each has to
+      // reach its own tx. This matters especially for batch/kiosk, where
+      // two unrelated payments can easily share the same recipient + amount.
+      const isPerPayment = !!successAction || !!verifyUrl || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown
       if (!isPerPayment) {
         // A plain link (recipient address, maybe a contactId) is either a
         // double-submit or a post-save "add the contactId" upgrade. Merge it
@@ -489,6 +511,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         label: label || null,
         source: source || null,
         counterpartyAvatar: counterpartyAvatar || null,
+        merchantVerification: merchantVerification || null,
         saleBreakdown: saleBreakdown || null,
         direction: normalisedDirection,
         walletId: normalisedWalletId,
@@ -669,6 +692,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
           if (link.counterpartyAvatar) {
             await this.setCounterpartyAvatarForTransaction(pick.tx.id, walletId, link.counterpartyAvatar)
+          }
+          if (link.merchantVerification) {
+            await this.setMerchantVerificationForTransaction(pick.tx.id, walletId, link.merchantVerification)
           }
           if (link.saleBreakdown) {
             await this.setSaleBreakdownForTransaction(pick.tx.id, walletId, link.saleBreakdown)
@@ -925,6 +951,46 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         return this.metadata[key]
       } catch (error) {
         console.error('Error setting counterpartyAvatar for transaction:', error)
+        return null
+      }
+    },
+
+    /**
+     * Stamp the Branta merchant verification resolved at send time
+     * ({ name, logoUrl, logoLightUrl, verifyUrl }), scoped to `walletId`.
+     * Lets Tx Details show "you paid a verified merchant" on the receipt,
+     * not only on the confirm screen before sending. Same never-overwrite
+     * pattern as setCounterpartyAvatarForTransaction — the first stamp
+     * wins. Requires a walletId — a missing one warns and no-ops.
+     *
+     * @param {string} txId
+     * @param {string} walletId
+     * @param {object} verification
+     * @returns {Promise<object|null>}
+     */
+    async setMerchantVerificationForTransaction(txId, walletId, verification) {
+      try {
+        if (!txId || !verification) return null
+        if (!walletId) {
+          console.warn('[txMetadata] setMerchantVerificationForTransaction: missing walletId, skipping write', { txId })
+          return null
+        }
+        const key = _key(txId, walletId)
+        if (!this.metadata[key]) {
+          this.metadata[key] = {
+            contactId: null,
+            customNote: '',
+            tags: [],
+            updatedAt: Date.now(),
+          }
+        }
+        if (this.metadata[key].merchantVerification) return this.metadata[key]
+        this.metadata[key].merchantVerification = verification
+        this.metadata[key].updatedAt = Date.now()
+        await this.persistMetadata()
+        return this.metadata[key]
+      } catch (error) {
+        console.error('Error setting merchantVerification for transaction:', error)
         return null
       }
     },

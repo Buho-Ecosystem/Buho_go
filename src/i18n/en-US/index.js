@@ -2348,6 +2348,7 @@ export default {
   "Close filters": "Close filters",
   "Close search": "Close search",
   "Verified by Branta": "Verified by Branta",
+  "Verified merchant": "Verified merchant",
   "You are about to pay a Kenyan phone number": "You are about to pay a Kenyan phone number",
   "You are about to pay a Zambian phone number": "You are about to pay a Zambian phone number",
   "You are about to pay a Tanzanian phone number": "You are about to pay a Tanzanian phone number",

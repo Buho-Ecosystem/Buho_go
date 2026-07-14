@@ -4831,7 +4831,17 @@ export default {
         );
         const paymentSource = isPayoutProvider ? 'phone' : (isNostrSend ? 'nostr' : null);
 
-        if (recipientAddress || successAction || verifyUrl || paymentSource) {
+        // A Branta-verified destination (see runBrantaVerification) carries
+        // the merchant's real name/logo/verify link, resolved async while
+        // the confirm sheet was open. Only the fields Tx Details actually
+        // renders are kept — the longer `description` lives on the sheet,
+        // not the receipt.
+        const bv = this.pendingPayment?.brantaVerification;
+        const merchantVerification = bv
+          ? { name: bv.name || '', logoUrl: bv.logoUrl || '', logoLightUrl: bv.logoLightUrl || '', verifyUrl: bv.verifyUrl || '' }
+          : null;
+
+        if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification) {
           try {
             // A resolved Nostr send carries the person's avatar + display
             // name so the tx row/hero show who was actually paid instead of
@@ -4860,6 +4870,9 @@ export default {
               // Nostr sends only — the person's name (title) and avatar.
               label: nostrLabel,
               counterpartyAvatar,
+              // Branta-verified sends only — carries the receipt-ready
+              // merchant identity through to Tx Details.
+              merchantVerification,
               // The wallet this send went out on, so the link is only ever
               // drained by that wallet's own tx-list refresh.
               walletId: this.activeWallet?.id || null,

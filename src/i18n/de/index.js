@@ -2330,6 +2330,7 @@ export default {
   "Close filters": "Filter schließen",
   "Close search": "Suche schließen",
   "Verified by Branta": "Von Branta verifiziert",
+  "Verified merchant": "Verifizierter Händler",
   "You are about to pay a Kenyan phone number": "Du zahlst gleich an eine kenianische Telefonnummer",
   "You are about to pay a Zambian phone number": "Du zahlst gleich an eine sambische Telefonnummer",
   "You are about to pay a Tanzanian phone number": "Du zahlst gleich an eine tansanische Telefonnummer",

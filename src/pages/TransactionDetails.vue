@@ -121,6 +121,21 @@
             <div class="tx-row-value">{{ getCounterpartyAddress() }}</div>
           </div>
 
+          <!-- Branta merchant verification, carried over from the confirm
+               sheet's badge — same trust signal, now on the receipt. -->
+          <div
+            v-if="merchantVerification"
+            class="tx-row"
+            :class="{ 'tx-row-clickable': merchantVerification.verifyUrl }"
+            @click="openMerchantVerifyUrl"
+          >
+            <div class="tx-row-label">{{ $t('Verified by Branta') }}</div>
+            <div class="tx-row-value tx-row-value-verified">
+              <Icon icon="tabler:rosette-discount-check-filled" width="14" height="14" class="verified-row-icon" />
+              <span>{{ merchantVerification.name || $t('Verified merchant') }}</span>
+            </div>
+          </div>
+
           <!-- How this payment was made, when an auxiliary path stamped a
                source (internal transfer, batch send, kiosk sale). -->
           <div v-if="txTypeRowText" class="tx-row">
@@ -781,6 +796,20 @@ export default {
       if (!this.transaction || !this.metadataStore) return null;
       if (this.transaction.type !== 'outgoing') return null;
       return this.metadataStore.getSuccessActionForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /**
+     * Branta merchant verification stamped on this outgoing send (see
+     * runBrantaVerification in Wallet.vue) — the receipt-side counterpart
+     * to the BrantaVerifiedBadge already shown on the confirm sheet
+     * before sending. Outgoing only, same reasoning as
+     * currentSuccessAction above (verification is only ever stamped by
+     * the send path).
+     */
+    merchantVerification() {
+      if (!this.transaction || !this.metadataStore) return null;
+      if (this.transaction.type !== 'outgoing') return null;
+      return this.metadataStore.getMerchantVerificationForTransaction(this.transaction.id, this.metadataWalletId);
     },
 
     filteredContacts() {
@@ -1520,6 +1549,13 @@ export default {
       if (url) openInAppBrowser(url);
     },
 
+    // Open Branta's verification page for this merchant. Mirrors
+    // BrantaVerifiedBadge.open() — a record with no verifyUrl (name/logo
+    // only) makes the row a static seal, not a link.
+    openMerchantVerifyUrl() {
+      if (this.merchantVerification?.verifyUrl) openInAppBrowser(this.merchantVerification.verifyUrl);
+    },
+
     // LUD-21: show the fiat-delivery confirmation for this tx. Prefer a cached
     // status; otherwise do a single re-check of the stored verify URL (already
     // validated same-domain at send time). Best-effort — never blocks the view.
@@ -2122,6 +2158,24 @@ export default {
   color: var(--text-muted);
   opacity: 0.7;
   flex-shrink: 0;
+}
+
+.tx-row-value-verified {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Monochrome, matching BrantaVerifiedBadge's seal exactly — a trust
+   signal, not a CTA, so no brand color here either. */
+.verified-row-icon {
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+body.body--dark .verified-row-icon {
+  color: #C7CCD4;
 }
 
 /* Sale breakdown's closing Total row — bolder value, same emphasis

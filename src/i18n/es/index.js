@@ -2329,6 +2329,7 @@ export default {
   "Close filters": "Cerrar filtros",
   "Close search": "Cerrar búsqueda",
   "Verified by Branta": "Verificado por Branta",
+  "Verified merchant": "Comercio verificado",
   "You are about to pay a Kenyan phone number": "Estás a punto de pagar a un número de teléfono de Kenia",
   "You are about to pay a Zambian phone number": "Estás a punto de pagar a un número de teléfono de Zambia",
   "You are about to pay a Tanzanian phone number": "Estás a punto de pagar a un número de teléfono de Tanzania",
