@@ -998,7 +998,17 @@ export class SparkWalletProvider extends WalletProvider {
         // Determine if this is a Spark-to-Spark transfer (zero fee) vs Lightning
         sparkTransfer: this._isSparkTransfer(transfer),
         // Keep original transfer data for debugging
-        rawType: transfer.type || transfer.transferDirection
+        rawType: transfer.type || transfer.transferDirection,
+        // Lightning payment identifiers. Per the SDK's discriminated
+        // `userRequest` union: a receive's `invoice` (type `Invoice`) carries
+        // `paymentHash` + `encodedInvoice` directly; a send has no `.invoice`
+        // wrapper but exposes `encodedInvoice` at the top level instead.
+        // `paymentPreimage` is present on both. Null-safe throughout — Spark-
+        // to-Spark transfers and on-chain requests (coop exit / static
+        // deposit) carry no Lightning fields at all.
+        paymentHash: transfer.userRequest?.invoice?.paymentHash || null,
+        preimage: transfer.userRequest?.paymentPreimage || null,
+        bolt11: transfer.userRequest?.invoice?.encodedInvoice || transfer.userRequest?.encodedInvoice || null
       }));
     } catch (error) {
       this.setError(error);

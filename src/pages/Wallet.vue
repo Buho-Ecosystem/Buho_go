@@ -225,6 +225,21 @@
             </div>
           </transition>
         </div>
+
+        <!--
+          Funds the wallet holds but cannot spend yet. Without this line a
+          send that leaves change below the dust threshold makes the balance
+          read as empty, and the remainder looks lost until a recovery pass
+          reclaims it. Only rendered when there is something to explain.
+        -->
+        <div
+          v-if="unspendableSats > 0 && !walletStore.balanceHidden"
+          class="balance-unspendable"
+          :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'"
+        >
+          <Icon icon="tabler:progress-check" width="13" height="13" />
+          <span>{{ unspendableLabel }}</span>
+        </div>
       </div>
 
       <!--
@@ -273,6 +288,13 @@
             v-if="lastTxContact"
             class="last-tx-avatar"
             :entry="lastTxContact"
+          />
+          <ContactAvatar
+            v-else-if="lastTxAvatarPicture"
+            class="last-tx-avatar"
+            :picture="lastTxAvatarPicture"
+            :entry="{ address: lastTxAvatarAddress }"
+            :name="lastTxTitle"
           />
           <span
             v-else
@@ -792,6 +814,7 @@ import PinEntryDialog from '../components/PinEntryDialog.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useAddressBookStore} from '../stores/addressBook';
 import {useTransactionMetadataStore} from '../stores/transactionMetadata';
+import {normalizeTx} from '../services/txNormalizer.js';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
 import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
@@ -1029,6 +1052,23 @@ export default {
     },
 
     /**
+     * Funds the active wallet holds but cannot spend right now: boarding
+     * deposits still confirming, plus change that landed below the dust
+     * threshold and needs a recovery pass before it is spendable again.
+     * Zero for every backend that reports no such split.
+     */
+    unspendableSats() {
+      const details = this.walletStore.balanceDetails?.[this.activeWallet?.id];
+      if (!details) return 0;
+      return Math.max(0, Number(details.pending || 0) + Number(details.recoverable || 0));
+    },
+
+    unspendableLabel() {
+      const amount = formatAmount(this.unspendableSats, this.walletStore.useBip177Format);
+      return `${amount} ${this.$t('becoming available')}`;
+    },
+
+    /**
      * Whether the last transaction represents an incoming payment.
      * Handles the provider's direct types ('receive' / 'send') and the
      * legacy 'incoming' / 'outgoing' shape that the rest of the app
@@ -1066,9 +1106,52 @@ export default {
         // then manual removal, then the durable recipient address. This
         // is why the home-screen preview now matches the list instead of
         // only reacting to an explicit contactId.
-        return this.transactionMetadataStore.getContactForTransaction(tx.id) || null;
+        return this.transactionMetadataStore.getContactForTransaction(tx.id, this.activeWallet?.id) || null;
       } catch {
         return null;
+      }
+    },
+
+    /**
+     * Picture URL for the last-tx preview when there's no linked contact
+     * but we still know who this was: a resolved Nostr counterparty's
+     * profile picture (stamped at send time), or, for the phone-number
+     * payout rail, the provider's bundled logo. null when neither applies
+     * — the preview then falls back to the plain direction icon.
+     */
+    lastTxAvatarPicture() {
+      const tx = this.lastTransaction;
+      if (!tx || !tx.id || !this.transactionMetadataStore) return null;
+      try {
+        const avatar = this.transactionMetadataStore.getCounterpartyAvatarForTransaction(tx.id, this.activeWallet?.id);
+        if (avatar?.picture) return avatar.picture;
+        if (this.transactionMetadataStore.getSourceForTransaction(tx.id, this.activeWallet?.id) === 'phone') {
+          const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id, this.activeWallet?.id);
+          if (meta?.recipientAddress) {
+            const svc = matchLnAddressService(meta.recipientAddress);
+            return svc?.logo || svc?.flag || null;
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * The stamped recipient address backing lastTxAvatarPicture, carried
+     * alongside it as ContactAvatar's `entry.address` — its own bundled
+     * provider-logo lookup, not the explicit `picture` URL gate (which
+     * only accepts https/data URLs and would reject a bundled asset path).
+     */
+    lastTxAvatarAddress() {
+      const tx = this.lastTransaction;
+      if (!tx || !tx.id || !this.transactionMetadataStore) return '';
+      try {
+        const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id, this.activeWallet?.id);
+        return meta?.recipientAddress || '';
+      } catch {
+        return '';
       }
     },
 
@@ -1076,6 +1159,12 @@ export default {
       // Prefer the linked contact's name so the home-screen preview
       // reads as "DrShift" instead of the generic direction label.
       if (this.lastTxContact?.name) return this.lastTxContact.name;
+      // Next best identity: the recipient address stamped at send time.
+      const tx = this.lastTransaction;
+      if (tx?.type === 'outgoing' && tx.id && this.transactionMetadataStore) {
+        const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id, this.activeWallet?.id);
+        if (meta?.recipientAddress) return meta.recipientAddress;
+      }
       return this.lastTxIsIncoming
         ? this.$t('Payment Received')
         : this.$t('Payment Sent');
@@ -1090,7 +1179,12 @@ export default {
         this.lastTransaction.settled_at ??
         this.lastTransaction.createdTime ??
         null;
-      return this.formatRelativeTime(ts);
+      const time = this.formatRelativeTime(ts);
+      // Same message rule as the history list: the payer's comment wins,
+      // else the invoice memo — quoted, so it reads as human text.
+      const tx = this.lastTransaction;
+      const message = String(tx?.comment || tx?.description || tx?.memo || '').trim();
+      return message ? `“${message}” · ${time}` : time;
     },
 
     /**
@@ -1107,6 +1201,10 @@ export default {
      */
     lastTxDisplayAmountSats() {
       if (!this.lastTransaction) return 0;
+      // The normalizer computed the recipient amount with the correct
+      // per-provider fee semantics — trust it when present.
+      const recipient = Number(this.lastTransaction.recipientSats);
+      if (Number.isFinite(recipient)) return Math.abs(recipient);
       const gross = Math.abs(Number(this.lastTransaction.amount) || 0);
       const fee = Number(this.lastTransaction.fee) || 0;
       if (!this.lastTxIsIncoming && fee > 0) {
@@ -1140,7 +1238,9 @@ export default {
       // prefix) so the fee can't be misread as positive income on
       // a small surface. Matches TransactionHistory's badge shape
       // for consistency.
-      const fee = Number(this.lastTransaction.fee) || 0;
+      // feeSats is null (not 0) when the provider doesn't report a fee
+      // (Arkade) — suppress the note rather than claim a free payment.
+      const fee = Number(this.lastTransaction.feeSats ?? this.lastTransaction.fee) || 0;
       if (!this.lastTxIsIncoming && fee > 0) {
         const feeFormatted = formatAmount(fee, this.walletStore.useBip177Format);
         return `${fiatPart} (${feeFormatted} ${this.$t('fee')})`;
@@ -2203,6 +2303,7 @@ export default {
           recipientAddress: successActionAddress,
           amountSats: amount,
           successAction: payload.successAction,
+          walletId: this.activeWallet?.id || null,
         }).catch((err) => console.warn('[wallet] could not queue successAction link:', err));
       }
 
@@ -3174,15 +3275,32 @@ export default {
         // not yet be the freshest row, or the user may have multiple
         // sends in flight.
         const result = await provider.getTransactions({ limit: 10, offset: 0 });
-        const txs = Array.isArray(result) ? result : (result?.transactions || []);
+        const rawTxs = Array.isArray(result) ? result : (result?.transactions || []);
+
+        // One canonical shape for every provider (see services/txNormalizer.js),
+        // merging any stored price-at-settlement snapshot.
+        const walletType = this.activeWallet?.type || null;
+        const txs = rawTxs.map((raw) => normalizeTx(raw, {
+          walletType,
+          fiatAtSettlement: this.transactionMetadataStore.getFiatAtSettlementForTransaction(raw?.id, walletId),
+        }));
 
         // Drain the queued contact links before we publish the new
         // lastTransaction, so the home-screen preview reads the
         // freshly-stamped metadata on the same paint.
         try {
-          await this.transactionMetadataStore.consumePendingContactLinks(txs);
+          await this.transactionMetadataStore.consumePendingContactLinks(txs, walletId);
         } catch (err) {
           console.warn('[wallet] pending-contact-link drain failed:', err);
+        }
+
+        // Capture the BTC rate for just-settled txs while it still
+        // reflects the settlement moment (no-op for older rows).
+        try {
+          const currency = this.walletState.preferredFiatCurrency || 'USD';
+          await this.transactionMetadataStore.stampFreshTransactions(txs, walletId, currency);
+        } catch (err) {
+          console.warn('[wallet] fiat-at-settlement stamp failed:', err);
         }
 
         this.lastTransaction = txs.length > 0 ? txs[0] : null;
@@ -4693,8 +4811,32 @@ export default {
         // and carry contactId only when we already have it. The address
         // is stamped durably on the tx so a contact added later still
         // resolves live against this payment.
-        if (recipientAddress || successAction || verifyUrl) {
+        // Payment-rail source for the history UI's chip/type row. A fiat
+        // payout provider is the phone-number rail; a send that resolved a
+        // Nostr identity (bare npub/nprofile/NIP-05, or an npub-handle
+        // address) is the Nostr rail. Plain Lightning sends carry none.
+        const isNostrSend = !!(
+          this.pendingPayment?.nostrPubkey ||
+          this.pendingPayment?.nostrNpub ||
+          npubFromLightningAddress(this.pendingPayment?.lightningAddress)?.pubkey
+        );
+        const paymentSource = isPayoutProvider ? 'phone' : (isNostrSend ? 'nostr' : null);
+
+        if (recipientAddress || successAction || verifyUrl || paymentSource) {
           try {
+            // A resolved Nostr send carries the person's avatar + display
+            // name so the tx row/hero show who was actually paid instead of
+            // a raw address. Both null for every other rail.
+            let counterpartyAvatar = null;
+            let nostrLabel = null;
+            if (isNostrSend) {
+              const npub = this.pendingPayment?.nostrNpub
+                || npubFromLightningAddress(this.pendingPayment?.lightningAddress)?.npub
+                || null;
+              const picture = sanitizeImageUrl(this.pendingPayment?.nostrProfile?.picture) || null;
+              counterpartyAvatar = { kind: 'nostr', npub, picture };
+              nostrLabel = profileDisplayName(this.pendingPayment?.nostrProfile) || shortenNpub(npub) || null;
+            }
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: existingContact?.id || null,
               recipientAddress,
@@ -4705,6 +4847,13 @@ export default {
               // Persist the LUD-21 verify URL too, so Transaction Details can
               // re-confirm delivery (receipt + recipient) when viewed later.
               verifyUrl,
+              source: paymentSource,
+              // Nostr sends only — the person's name (title) and avatar.
+              label: nostrLabel,
+              counterpartyAvatar,
+              // The wallet this send went out on, so the link is only ever
+              // drained by that wallet's own tx-list refresh.
+              walletId: this.activeWallet?.id || null,
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link:', err);
@@ -5240,6 +5389,11 @@ export default {
               contactId: newContact.id,
               recipientAddress: this.saveContactData.address,
               amountSats: this.saveContactData.amountSats,
+              // Same active-wallet assumption as the rest of this page: the
+              // send this dialog follows happened on the wallet active right
+              // now (the post-send "save as contact" dialog is shown before
+              // any wallet switch in the normal flow).
+              walletId: this.activeWallet?.id || null,
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link for new contact:', err);
@@ -6129,6 +6283,19 @@ export default {
 .balance-secondary {
   font-size: 1rem;
   font-weight: 500;
+}
+
+/* Quiet, factual line under the balance: funds that exist but cannot be
+   spent yet. Muted on purpose, it explains rather than alarms. */
+.balance-unspendable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  opacity: 0.72;
 }
 
 .balance-secondary-dark {

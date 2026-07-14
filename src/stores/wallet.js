@@ -14,6 +14,7 @@ import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { useTransactionMetadataStore } from './transactionMetadata';
 import { getUserFriendlyErrorMessage } from '../utils/userErrors';
 import * as deviceCrypto from '../utils/deviceCrypto';
 import { buildPaymentError, getUserFriendlyError } from '../utils/userErrors';
@@ -58,6 +59,13 @@ export const useWalletStore = defineStore('wallet', {
 
     // Wallet data (keyed by wallet ID)
     balances: {},
+    // Funds the wallet holds but cannot spend yet, keyed by wallet ID:
+    // { pending, recoverable }. Arkade is the only backend that reports a
+    // split today (boarding UTXOs awaiting confirmation, and subdust or
+    // swept VTXOs awaiting a recovery pass). We keep it because `balances`
+    // alone is the SPENDABLE figure: without this, a send that leaves
+    // subdust change makes the wallet read as empty and the funds look lost.
+    balanceDetails: {},
     walletInfos: {},
 
     // User preferences
@@ -2112,6 +2120,11 @@ export const useWalletStore = defineStore('wallet', {
           ]);
 
           this.balances[walletId] = balanceResult.balance;
+          // Keep the unspendable remainder visible (see balanceDetails).
+          this.balanceDetails[walletId] = {
+            pending: Number(balanceResult.pending || 0),
+            recoverable: Number(balanceResult.recoverable || 0),
+          };
           this.walletInfos[walletId] = info;
 
           // Keep the locked-screen/offline fallback in step with HD receive
@@ -2290,8 +2303,14 @@ export const useWalletStore = defineStore('wallet', {
      * @returns {Promise<Object>} Connected provider
      * @throws {Error} If wallet cannot be connected
      */
-    async ensureSparkConnected() {
-      const wallet = this.activeWallet;
+    async ensureSparkConnected(walletId = null) {
+      // Default: the active wallet. A caller holding a specific wallet id
+      // (e.g. a transaction deep link that outlives a wallet switch) may
+      // target that Spark wallet directly - the rest of this method is
+      // already account-aware via wallet.id.
+      const wallet = walletId
+        ? this.wallets.find(w => w.id === walletId && w.type === WALLET_TYPES.SPARK)
+        : this.activeWallet;
       if (!wallet || wallet.type !== WALLET_TYPES.SPARK) {
         throw new Error('No active Spark wallet');
       }
@@ -2708,6 +2727,38 @@ export const useWalletStore = defineStore('wallet', {
       // wallet doesn't linger and degrade the active one's session.
       if (fromType === 'spark' && toType === 'spark') {
         await this.connectAllSparkWallets();
+      }
+
+      // Stamp both sides of the transfer once the tx ids surface. The
+      // pending-link queue is the same mechanism the main send flow uses
+      // to attach a recipient — here there's no address, only a plain
+      // label identifying it as an internal transfer, for both the
+      // outgoing (debit) and incoming (credit) tx.
+      //
+      // This is the exact case that motivated wallet-scoping the metadata
+      // store: both legs of an internal transfer can share a payment hash
+      // (hence the same provider-assigned tx id) when both wallets live in
+      // this app, so each link MUST carry the wallet whose list will show
+      // it — the outgoing (debit) link carries fromWalletId, the incoming
+      // (credit) link carries toWalletId — or the two legs could stamp (or
+      // race to consume) each other's record.
+      try {
+        const transactionMetadataStore = useTransactionMetadataStore();
+        await transactionMetadataStore.enqueuePendingContactLink({
+          label: `Transfer to ${toWallet.name}`,
+          source: 'internal-transfer',
+          amountSats,
+          walletId: fromWalletId,
+        });
+        await transactionMetadataStore.enqueuePendingContactLink({
+          label: `Transfer from ${fromWallet.name}`,
+          source: 'internal-transfer',
+          direction: 'incoming',
+          amountSats,
+          walletId: toWalletId,
+        });
+      } catch (err) {
+        console.warn('[wallet] could not queue transfer metadata link:', err);
       }
 
       return {

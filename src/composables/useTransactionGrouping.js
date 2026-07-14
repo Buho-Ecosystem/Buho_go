@@ -26,45 +26,49 @@ export function groupMicropayments(transactions, options = {}) {
     return transactions
   }
 
-  // Sort transactions by time (oldest first) for sequential grouping
+  // Sort transactions by time (oldest first) so clusters grow forward in time
   const sorted = [...transactions].sort((a, b) => a.settled_at - b.settled_at)
 
-  const result = []
-  let currentGroup = []
-  let lastTransaction = null
+  // Time-window clustering. A strictly-adjacent run breaks the moment a
+  // single unrelated transaction (a send by the user, someone else's zap,
+  // the outgoing leg of a self-payment) lands in the middle of a burst.
+  // Here every transaction is matched against ALL open clusters, so an
+  // interloper simply fails to match and starts its own cluster, leaving
+  // the burst's cluster intact.
+  const clusters = []
 
   for (const tx of sorted) {
-    // Check if this transaction should be added to current group
-    if (
-      lastTransaction &&
-      currentGroup.length > 0 &&
-      currentGroup.length < config.maxGroupSize &&
-      shouldGroupTransactions(lastTransaction, tx, config)
-    ) {
-      // Add to current group
-      currentGroup.push(tx)
+    const cluster = clusters.find(c => {
+      // Same direction as the cluster (both incoming or both outgoing).
+      if (tx.type !== c.direction) return false
+      if (c.transactions.length >= config.maxGroupSize) return false
+
+      // Rolling window measured from the cluster's LAST member, so a
+      // long steady stream keeps extending the cluster instead of being
+      // capped by the gap between the burst's first and last payment.
+      const lastMember = c.transactions[c.transactions.length - 1]
+      const timeDiff = Math.abs(tx.settled_at - lastMember.settled_at)
+      if (timeDiff > config.timeWindowSeconds) return false
+
+      return shouldGroupTransactions(lastMember, tx, config)
+    })
+
+    if (cluster) {
+      cluster.transactions.push(tx)
     } else {
-      // Finalize previous group if it meets minimum size
-      if (currentGroup.length >= config.minGroupSize) {
-        result.push(createTransactionGroup(currentGroup))
-      } else {
-        // Add standalone transactions
-        currentGroup.forEach(t => result.push(t))
-      }
-
-      // Start new potential group
-      currentGroup = [tx]
+      clusters.push({ direction: tx.type, transactions: [tx] })
     }
-
-    lastTransaction = tx
   }
 
-  // Handle final group
-  if (currentGroup.length >= config.minGroupSize) {
-    result.push(createTransactionGroup(currentGroup))
-  } else {
-    currentGroup.forEach(t => result.push(t))
-  }
+  // Emit clusters that reach the minimum as groups; the rest stay standalone.
+  const result = []
+  clusters.forEach(cluster => {
+    if (cluster.transactions.length >= config.minGroupSize) {
+      result.push(createTransactionGroup(cluster.transactions))
+    } else {
+      cluster.transactions.forEach(t => result.push(t))
+    }
+  })
 
   // Sort result by time (newest first) for display
   return result.sort((a, b) => {
@@ -90,6 +94,21 @@ export function shouldGroupTransactions(tx1, tx2, options) {
   // Check time proximity
   const timeDiff = Math.abs(tx2.settled_at - tx1.settled_at)
   if (timeDiff > options.timeWindowSeconds) return false
+
+  // When BOTH sides carry a stable counterparty identity (counterpartyKey
+  // or a Nostr npub - never the payment_request/payment_hash fallbacks,
+  // which are unique per payment), let that identity decide outright.
+  // Equal means the same burst. Different means two known, different
+  // counterparties, which must never share a group even if their
+  // descriptions happen to match (e.g. two strangers who both left the
+  // default "BuhoGO Payment" memo). Only when one or both sides have no
+  // stable identity do we fall through to the description-based checks
+  // below, unchanged from before this guard existed.
+  const stable1 = extractStableCounterparty(tx1)
+  const stable2 = extractStableCounterparty(tx2)
+  if (stable1 && stable2) {
+    return stable1 === stable2
+  }
 
   // Check recipient similarity
   const recipient1 = extractRecipient(tx1)
@@ -188,6 +207,15 @@ export function levenshteinDistance(str1, str2) {
 export function extractRecipient(transaction) {
   if (!transaction) return ''
 
+  // 0. A stable counterparty key (stamped by the caller, e.g.
+  // TransactionHistory's normalizeForList) takes precedence over every
+  // heuristic below: unlike payment_request/payment_hash, it is the same
+  // value across repeated payments to/from the same counterparty, which
+  // is exactly what grouping needs.
+  if (typeof transaction.counterpartyKey === 'string' && transaction.counterpartyKey.trim()) {
+    return transaction.counterpartyKey.trim()
+  }
+
   // Try to extract from various fields
   // 1. Check for Nostr npub (zaps)
   if (transaction.senderNpub) {
@@ -212,6 +240,38 @@ export function extractRecipient(transaction) {
 
   // 4. Fallback to description
   return (transaction.description || transaction.memo || '').trim()
+}
+
+/**
+ * A counterparty identity that is stable across payments - the same
+ * value for every payment to/from the same counterparty - so two
+ * transactions carrying one can safely be compared for equality.
+ * Unlike extractRecipient()'s payment_request/payment_hash/description
+ * fallbacks, this NEVER returns a value that is only unique per payment;
+ * it returns null rather than guess. Used by shouldGroupTransactions to
+ * decide outright when two known counterparties differ, instead of
+ * letting a shared generic description (e.g. the default "BuhoGO
+ * Payment" memo) merge them into the same group.
+ * @param {Object} transaction - Transaction object
+ * @returns {string|null} Stable counterparty identity, or null if unknown
+ */
+export function extractStableCounterparty(transaction) {
+  if (!transaction) return null
+
+  if (typeof transaction.counterpartyKey === 'string' && transaction.counterpartyKey.trim()) {
+    return transaction.counterpartyKey.trim()
+  }
+
+  if (transaction.senderNpub) {
+    return transaction.senderNpub
+  }
+
+  if (transaction.description) {
+    const npubMatch = transaction.description.match(/npub1[a-zA-Z0-9]{58}/)
+    if (npubMatch) return npubMatch[0]
+  }
+
+  return null
 }
 
 /**

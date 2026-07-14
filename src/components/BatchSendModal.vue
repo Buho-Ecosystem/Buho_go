@@ -615,6 +615,7 @@ import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
+import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import { stripWrapperScheme } from '../utils/addressUtils'
 import { bech32 } from 'bech32'
@@ -638,6 +639,7 @@ const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 const walletStore = useWalletStore()
 const addressBookStore = useAddressBookStore()
+const transactionMetadataStore = useTransactionMetadataStore()
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -1405,6 +1407,22 @@ async function startBatch() {
       // Update last used on success
       if (result.status === 'success') {
         await addressBookStore.updateLastUsed(result.contact.id)
+
+        // Queue a pending metadata link so the tx, once it surfaces in
+        // history, is stamped with the contact/address and marked as a
+        // batch send. Best-effort — a metadata failure must never fail
+        // a payment that already went out.
+        try {
+          await transactionMetadataStore.enqueuePendingContactLink({
+            contactId: result.contact.id || null,
+            recipientAddress: address,
+            amountSats: result.amount,
+            source: 'batch',
+            walletId: walletStore.activeWalletId || null,
+          })
+        } catch (metaError) {
+          console.warn('Batch send metadata link failed:', metaError)
+        }
       }
     } catch (error) {
       console.error('Batch send payment failed:', error)
