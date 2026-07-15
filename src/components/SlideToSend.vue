@@ -18,15 +18,18 @@
       { 'slide-track--completed': completed, 'slide-track--disabled': disabled || loading }
     ]"
   >
-    <div class="slide-fill" :style="{ width: progressPct + '%' }"></div>
+    <div
+      class="slide-fill"
+      :class="{ 'slide-fill--completed': completed }"
+      :style="{ width: fillPx + 'px' }"
+    ></div>
 
-    <div class="slide-label" :class="{ 'slide-label--fade': progressPct > 30 }">
+    <div class="slide-label" :class="{ 'slide-label--fade': progressPct > 20 }">
       <template v-if="loading">
         <q-spinner-dots size="22px" />
       </template>
       <template v-else>
         <span>{{ label }}</span>
-        <Icon icon="tabler:chevrons-right" width="16" height="16" class="slide-label-chev" />
       </template>
     </div>
 
@@ -78,9 +81,14 @@ let rafSnap = 0;
 const THUMB_WIDTH = 56;
 const TRACK_INSET = 4; // matches CSS padding on each side
 
+// Fill through the thumb's far edge, not merely to its left edge. That makes
+// the active track read as a direct continuation of the slider handle.
+const fillPx = computed(() => THUMB_WIDTH + thumbPx.value);
+
 const progressPct = computed(() => {
-  if (!maxX) return 0;
-  return Math.min(100, (thumbPx.value / maxX) * 100);
+  if (!trackEl.value) return 0;
+  if (completed.value) return 100;
+  return Math.min(100, ((TRACK_INSET + fillPx.value) / trackEl.value.clientWidth) * 100);
 });
 
 function computeMaxX() {
@@ -173,18 +181,23 @@ onBeforeUnmount(() => {
 
 .slide-fill {
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  left: 4px;
+  top: 4px;
+  bottom: 4px;
   border-radius: var(--radius-pill);
   z-index: 0;
-  background: linear-gradient(90deg, #059573 0%, #15DE72 60%, #78D53C 100%);
+  background: linear-gradient(90deg, #1D4ED8 0%, #3B82F6 100%);
   /* No transition: the thumb sets width directly via the same drag tick,
      and any easing here makes the fill feel laggy behind the thumb. */
 }
 
-.slide-track--completed .slide-fill {
-  background: linear-gradient(90deg, #059573 0%, #15DE72 100%);
+.slide-light .slide-fill { background: #1A1A1C; }
+
+/* The drag fill stays inset so it tracks the thumb cleanly. Once the gesture
+   completes, let it reach the pill edge so the confirmation feels finished. */
+.slide-fill--completed {
+  inset: 0;
+  width: auto !important;
 }
 
 .slide-label {
@@ -203,14 +216,9 @@ onBeforeUnmount(() => {
   transition: opacity 0.18s ease;
 }
 
-.slide-dark .slide-label { color: #B0B0B0; }
-.slide-light .slide-label { color: #5F5B52; }
-
-.slide-label--fade { opacity: 0.35; }
-
-.slide-label-chev {
-  opacity: 0.55;
-}
+.slide-dark .slide-label { color: #E2E8F0; }
+.slide-light .slide-label { color: #3C3A35; }
+.slide-label--fade { opacity: 0; }
 
 .slide-thumb {
   position: relative;
