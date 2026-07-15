@@ -2297,29 +2297,19 @@ export default {
       const amount = Number(payload?.amount) || 0;
       this.selectedPayContact = null;
 
-      // Refresh balance for active wallet
+      // Refresh the balance and recent-transaction preview. PaymentModal has
+      // already persisted the contact link, so loadLastTransaction can stamp
+      // it before this screen renders the outgoing row.
       if (this.walletStore.activeWalletId) {
         this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
-      }
-
-      // Persist the recipient's LUD-09 message onto the outgoing tx (rides the
-      // same deferred queue the main send flow uses). Gated on successAction so
-      // we don't alter contact-linking behaviour for ordinary contact pays.
-      const successActionAddress = contact?.address || contact?.lightningAddress || '';
-      if (payload?.successAction) {
-        this.transactionMetadataStore.enqueuePendingContactLink({
-          contactId: contact?.id || null,
-          recipientAddress: successActionAddress,
-          amountSats: amount,
-          successAction: payload.successAction,
-          walletId: this.activeWallet?.id || null,
-        }).catch((err) => console.warn('[wallet] could not queue successAction link:', err));
+        this.loadLastTransaction();
       }
 
       // PaymentModal already resolved completed-or-throw before
-      // emitting `payment-sent`, so we can assume COMPLETED here. If a
-      // future PaymentModal change introduces pending semantics, the
-      // openSendSuccess helper accepts the status and adapts.
+      // emitting `payment-sent` and queued its contact metadata, so we can
+      // assume COMPLETED here. If a future PaymentModal change introduces
+      // pending semantics, the openSendSuccess helper accepts the status and
+      // adapts.
       this.openSendSuccess({
         amount,
         recipient,

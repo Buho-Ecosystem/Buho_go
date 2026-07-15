@@ -34,6 +34,7 @@
 
 <script>
 import { useWalletStore } from '../stores/wallet'
+import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import { parseSuccessAction, resolveSuccessAction } from '../utils/successAction.js'
 import {
@@ -171,7 +172,7 @@ export default {
      * through the wallet-aware send methods below.
      */
     async handleConfirm({ amountSats, comment }) {
-      if (!this.contact || !amountSats) return
+      if (!this.contact || !amountSats || this.isSending) return
 
       if (this.isBitcoinContact) {
         this.$emit('bitcoin-payment-requested', {
@@ -196,6 +197,27 @@ export default {
         // LUD-09: resolve any successAction the recipient returned (decrypting
         // the aes variant with the preimage) so the success screen can show it.
         const successAction = await resolveSuccessAction(result?.successAction, result?.preimage)
+
+        // The provider result does not consistently include the transaction id,
+        // so queue the contact link now and stamp it when the wallet refresh
+        // surfaces the outgoing transaction. This is the shared contact-send
+        // path for both the address book and Wallet's quick-contact sheet.
+        try {
+          await useTransactionMetadataStore().enqueuePendingContactLink({
+            contactId: this.contact.id || null,
+            recipientAddress: this.contactAddress,
+            amountSats,
+            successAction,
+            // Do not collapse two valid sends of the same amount to the
+            // same contact before their provider transactions surface.
+            perPayment: true,
+            walletId: walletStore.activeWalletId || null,
+          })
+        } catch (err) {
+          // The payment itself succeeded. Keep its success path intact even
+          // if local metadata persistence is unavailable.
+          console.warn('[paymentModal] could not queue contact link:', err)
+        }
 
         this.$emit('payment-sent', {
           contact: this.contact,

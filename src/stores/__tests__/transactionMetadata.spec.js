@@ -243,6 +243,65 @@ await test('a pending link queued for wallet A is not consumed by wallet B, and 
   );
 });
 
+await test('a contact payment link resolves the saved contact after its outgoing transaction appears', async () => {
+  const store = freshStore();
+  const addressBook = useAddressBookStore();
+  const contact = await addressBook.addEntry({
+    name: 'Alice',
+    address: 'alice@example.test',
+    addressType: 'lightning',
+    color: '#d946ef',
+  });
+
+  await store.enqueuePendingContactLink({
+    contactId: contact.id,
+    recipientAddress: contact.address,
+    amountSats: 500,
+    walletId: 'wallet-a',
+  });
+
+  const matched = await store.consumePendingContactLinks(
+    [makeTx('contact-payment-tx', { amount: -500 })],
+    'wallet-a',
+  );
+
+  assert.equal(matched, 1);
+  assert.equal(
+    store.getContactForTransaction('contact-payment-tx', 'wallet-a')?.id,
+    contact.id,
+  );
+});
+
+await test('two same-amount contact payments each retain their contact link', async () => {
+  const store = freshStore();
+  const addressBook = useAddressBookStore();
+  const contact = await addressBook.addEntry({
+    name: 'Alice',
+    address: 'alice@example.test',
+    addressType: 'lightning',
+  });
+
+  const link = {
+    contactId: contact.id,
+    recipientAddress: contact.address,
+    amountSats: 500,
+    perPayment: true,
+    walletId: 'wallet-a',
+  };
+  await store.enqueuePendingContactLink(link);
+  await store.enqueuePendingContactLink(link);
+  assert.equal(store.pendingContactLinks.length, 2);
+
+  const matched = await store.consumePendingContactLinks([
+    makeTx('contact-payment-tx-1', { amount: -500 }),
+    makeTx('contact-payment-tx-2', { amount: -500 }),
+  ], 'wallet-a');
+
+  assert.equal(matched, 2);
+  assert.equal(store.getContactForTransaction('contact-payment-tx-1', 'wallet-a')?.id, contact.id);
+  assert.equal(store.getContactForTransaction('contact-payment-tx-2', 'wallet-a')?.id, contact.id);
+});
+
 await test('a legacy pending link with no walletId still matches any wallet (nothing already queued is stranded)', async () => {
   const store = freshStore();
   // A link queued before wallet-scoping existed carries no walletId field

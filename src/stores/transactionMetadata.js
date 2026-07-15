@@ -392,9 +392,10 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * matter what. That durable address is what later lets a contact
      * added/edited after the fact resolve live (see getContactForTransaction).
      *
-     * Idempotent for the same (contactId, recipientAddress, amountSats,
-     * walletId) combination within the TTL window — a rage-tap that
-     * submits twice won't accidentally claim two unrelated outgoing txs.
+     * Ordinary links are idempotent for the same (contactId,
+     * recipientAddress, amountSats, walletId) combination within the TTL
+     * window — a rage-tap won't accidentally claim two unrelated outgoing
+     * txs. Per-payment links deliberately opt out of that de-duplication.
      *
      * `label` (free display text, e.g. "Transfer to Business") and `source`
      * (machine-readable enum: 'internal-transfer' | 'batch' | 'kiosk') let
@@ -425,6 +426,10 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * instead of recomputing one here). Per-payment like label/source/
      * counterpartyAvatar above — never merged into an existing link.
      *
+     * `perPayment` opts an otherwise plain address/contact link out of
+     * de-duplication. Interactive contact sends use it because two valid
+     * sends can have the same recipient and amount.
+     *
      * `walletId` is the wallet whose transaction list will show the tx once
      * it surfaces — consumePendingContactLinks(transactions, walletId) only
      * drains a link whose walletId matches (or that carries none at all, a
@@ -445,6 +450,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       counterpartyAvatar = null,
       merchantVerification = null,
       saleBreakdown = null,
+      perPayment = false,
       direction = 'outgoing',
       walletId = null,
     }) {
@@ -472,14 +478,14 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         (link) => now - (link.sentAt || 0) < PENDING_LINK_TTL_MS,
       )
 
-      // A link carrying a LUD-09 successAction, a LUD-21 verify URL, a
-      // label/source, a counterpartyAvatar, a merchantVerification, or a
-      // saleBreakdown is PER-PAYMENT (each send has its own message /
-      // receipt / annotation / resolved identity / verified merchant / POS
-      // breakdown), so it must never be merged or collapsed — each has to
-      // reach its own tx. This matters especially for batch/kiosk, where
-      // two unrelated payments can easily share the same recipient + amount.
-      const isPerPayment = !!successAction || !!verifyUrl || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown
+      // A link carrying a LUD-09 successAction, a LUD-21 verify URL, an
+      // explicit per-payment flag, a label/source, a counterpartyAvatar, a
+      // merchantVerification, or a saleBreakdown is PER-PAYMENT (each send
+      // has its own message, receipt, annotation, resolved identity, verified
+      // merchant, or POS breakdown), so it must never be merged or collapsed.
+      // This matters especially for batch/kiosk, where two unrelated payments
+      // can easily share the same recipient + amount.
+      const isPerPayment = !!perPayment || !!successAction || !!verifyUrl || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown
       if (!isPerPayment) {
         // A plain link (recipient address, maybe a contactId) is either a
         // double-submit or a post-save "add the contactId" upgrade. Merge it
@@ -513,6 +519,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         counterpartyAvatar: counterpartyAvatar || null,
         merchantVerification: merchantVerification || null,
         saleBreakdown: saleBreakdown || null,
+        perPayment: !!perPayment,
         direction: normalisedDirection,
         walletId: normalisedWalletId,
         sentAt: now,
