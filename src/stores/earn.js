@@ -19,6 +19,7 @@ import { i18n } from '../boot/i18n'
 import quizEnUS from '../data/earn-quizzes.en-US.json'
 import quizDe from '../data/earn-quizzes.de.json'
 import quizEs from '../data/earn-quizzes.es.json'
+import { findEarnPayoutWallet } from '../utils/earnWallets'
 
 // Locale-keyed quiz content. Structure (IDs, illustrations, ordering) is
 // identical across files; only user-facing strings differ. Resolved each
@@ -297,7 +298,7 @@ export const useEarnStore = defineStore('earn', {
         this.answerTimings = [] // Reset timings after successful claim
         this.persist()
 
-        return { amount: claimable, success: true, walletName: result.walletName || null }
+        return { amount: claimable, success: true }
       } catch (error) {
         console.error('[earn] Payout failed:', error.message)
         // Keep the original (coded) error so the UI can show the real,
@@ -323,7 +324,7 @@ export const useEarnStore = defineStore('earn', {
         throw new Error('Learn & Earn payouts are only available in the native app')
       }
 
-      const { invoice, wallet, fallback } = await this._createUserInvoice(amountSats)
+      const { invoice } = await this._createUserInvoice(amountSats)
       if (!invoice) throw new Error('Failed to create invoice')
 
       const response = await fetch(`${EARN_API_URL}/api/claim`, {
@@ -345,10 +346,7 @@ export const useEarnStore = defineStore('earn', {
       }
 
       if (response.ok && data?.ok) {
-        // Tell the UI when the reward landed in a different wallet than the
-        // active one (Arkade below-minimum fallback), so the user isn't left
-        // wondering where their sats went.
-        return { success: true, walletName: fallback ? wallet?.name : null }
+        return { success: true }
       }
 
       const result = { success: false, error: data?.error || 'payout_failed' }
@@ -376,56 +374,32 @@ export const useEarnStore = defineStore('earn', {
       const { useWalletStore } = await import('./wallet')
       const walletStore = useWalletStore()
 
-      // Prefer the earn-selected wallet, but it is persisted across sessions
-      // and may have since been removed (or never set if storage was
-      // cleared). Fall back to the active wallet so the reward still lands in
-      // a wallet the user controls instead of failing the whole claim.
-      let walletId = this.selectedWalletId
-      let wallet = walletStore.wallets.find(w => w.id === walletId)
+      // The selected id is persisted, so it may point to a deleted wallet or
+      // a formerly permitted Arkade wallet. Do not substitute another wallet:
+      // a payout destination is a user decision, not a best-effort fallback.
+      const wallet = findEarnPayoutWallet(walletStore.wallets, this.selectedWalletId)
       if (!wallet) {
-        walletId = walletStore.activeWalletId
-        wallet = walletStore.wallets.find(w => w.id === walletId)
-      }
-      if (!wallet) throw new Error('No wallet available to receive payout')
-
-      try {
-        return { invoice: await this._invoiceFromWallet(walletStore, walletId, wallet, amountSats), wallet }
-      } catch (error) {
-        // An Arkade wallet receives Lightning through a swap with a minimum;
-        // a small reward physically can't ride that rail. The reward is still
-        // the user's — deliver it into another wallet of theirs when one
-        // exists, and only fail (with an exact, actionable message) when the
-        // Arkade wallet is all they have.
-        if (error?.code !== 'ARKADE_SWAP_BELOW_MIN') throw error
-        for (const candidate of walletStore.wallets) {
-          if (candidate.id === walletId) continue
-          if ((candidate.type || '').toLowerCase() === 'arkade') continue
-          try {
-            const invoice = await this._invoiceFromWallet(walletStore, candidate.id, candidate, amountSats)
-            console.info('[earn] reward below Arkade swap minimum; claiming to', candidate.name)
-            return { invoice, wallet: candidate, fallback: true }
-          } catch (fallbackError) {
-            console.warn('[earn] fallback wallet failed for claim:', candidate.name, fallbackError?.message || fallbackError)
-          }
-        }
-        const err = new Error(`Reward below the Arkade Lightning minimum (${error.minSats || 0} sats)`)
-        err.code = 'EARN_BELOW_WALLET_MIN'
-        err.minSats = error.minSats || 0
+        const err = new Error('Choose a Spark, LNbits, or NWC wallet for Learn & Earn rewards.')
+        err.code = 'EARN_PAYOUT_WALLET_REQUIRED'
         throw err
+      }
+
+      return {
+        invoice: await this._invoiceFromWallet(walletStore, wallet.id, wallet, amountSats),
+        wallet,
       }
     },
 
     /**
-     * Create a Lightning invoice on one specific wallet. NWC exposes the
-     * WebLN `makeInvoice`; Spark/LNbits/Arkade use the provider contract's
-     * `createInvoice`. Throws with the provider's coded error on failure.
+     * Create a Lightning invoice on one supported wallet. NWC exposes the
+     * WebLN `makeInvoice`; Spark and LNbits use `createInvoice`.
      */
     async _invoiceFromWallet(walletStore, walletId, wallet, amountSats) {
       const provider = await walletStore.ensureWalletConnectedForTransfer(walletId)
       if (!provider) throw new Error('Wallet not connected')
 
       const type = (wallet.type || 'nwc').toLowerCase()
-      if (type === 'spark' || type === 'lnbits' || type === 'arkade') {
+      if (type === 'spark' || type === 'lnbits') {
         const result = await provider.createInvoice({
           amount: amountSats,
           description: 'BuhoGO Learn & Earn reward',
@@ -480,7 +454,7 @@ export const useEarnStore = defineStore('earn', {
         this.answerTimings = [] // reset timings after a successful claim, like claimPayout
         this.persist()
 
-        return { amount: totalPayout, bonus, totalPayout, totalEarned: this.totalEarned, success: true, walletName: result.walletName || null }
+        return { amount: totalPayout, bonus, totalPayout, totalEarned: this.totalEarned, success: true }
       } catch (error) {
         console.error('[earn] Bonus payout failed:', error.message)
         // Keep the original (coded) error so the UI can show the real,

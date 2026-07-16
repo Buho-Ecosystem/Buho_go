@@ -3,10 +3,55 @@
 
     <!-- Header -->
     <div class="summary-header">
+      <div aria-hidden="true" />
       <div class="summary-header-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
         {{ $t('Summary') }}
       </div>
+      <q-btn flat round dense class="payout-wallet-btn" @click="showPayoutWalletPicker = true">
+        <Icon icon="tabler:wallet" width="20" height="20" />
+        <q-tooltip>{{ $t('Change payout wallet') }}</q-tooltip>
+      </q-btn>
     </div>
+
+    <q-dialog v-model="showPayoutWalletPicker" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="payout-wallet-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="payout-wallet-heading">
+          <img src="/Learn and Earn/money-income.svg" class="payout-wallet-illustration" alt="" />
+          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+            {{ $t('Where should your rewards go?') }}
+          </div>
+        </q-card-section>
+        <q-card-section class="q-pt-none">
+          <q-list>
+            <q-item
+              v-for="wallet in payoutWallets"
+              :key="wallet.id"
+              clickable
+              v-ripple
+              class="wallet-pick-item"
+              @click="selectPayoutWallet(wallet.id)"
+            >
+              <q-item-section avatar>
+                <Icon icon="tabler:wallet" width="20" height="20" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                  {{ wallet.name }}
+                </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <Icon v-if="selectedPayoutWallet?.id === wallet.id" icon="tabler:circle-check" width="20" height="20" style="color: #92E3A9;" />
+              </q-item-section>
+            </q-item>
+            <q-item v-if="!payoutWallets.length" class="wallet-picker-empty">
+              <q-item-section>
+                {{ $t('Add a Spark, LNbits, or NWC wallet to receive Learn & Earn rewards.') }}
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
 
     <!-- Hero illustration -->
     <div class="summary-hero">
@@ -106,13 +151,11 @@
           class="claim-btn"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           :loading="isClaiming"
-          :disable="earnStore.isOnCooldown || arkadeClaimBlocked"
+          :disable="earnStore.isOnCooldown || !selectedPayoutWallet"
           @click="claimSats"
         />
-        <!-- Arkade-only setups can't receive Lightning below the swap
-             minimum: say so before the tap, with the way out. -->
-        <div v-if="earnStore.canClaim && arkadeClaimBlocked" class="claim-hint" :class="$q.dark.isActive ? 'claim-hint-dark' : 'claim-hint-light'">
-          {{ $t('Your Arkade wallet can only receive Lightning payments of {min} sats or more, so this reward can\'t be claimed yet. Create a Spark wallet or connect LNbits or NWC to claim it, or keep earning until you reach {min} sats.', { min: arkadeClaimMin }) }}
+        <div v-if="earnStore.canClaim && !selectedPayoutWallet" class="payout-wallet-hint" :class="$q.dark.isActive ? 'payout-wallet-hint-dark' : 'payout-wallet-hint-light'">
+          {{ $t('Choose a payout wallet to claim your sats.') }}
         </div>
       </div>
     </div>
@@ -183,6 +226,7 @@
 <script>
 import { useEarnStore } from '../stores/earn'
 import { useWalletStore } from '../stores/wallet'
+import { findEarnPayoutWallet, getEarnPayoutWallets } from '../utils/earnWallets'
 import EarnBottomNav from '../components/EarnBottomNav.vue'
 
 export default {
@@ -197,27 +241,15 @@ export default {
     return {
       isClaiming: false,
       showPayoutInfo: false,
+      showPayoutWalletPicker: false,
     }
   },
   computed: {
-    /**
-     * True when the reward cannot be claimed at all: the user's only wallet
-     * is Arkade (which receives Lightning through a swap with a minimum) and
-     * the claimable amount is below that minimum. With any other wallet
-     * connected the claim falls back to it automatically, so no warning.
-     */
-    arkadeClaimBlocked() {
-      const wallets = this.walletStore.wallets || []
-      const hasOtherWallet = wallets.some(w => (w.type || '').toLowerCase() !== 'arkade')
-      if (hasOtherWallet) return false
-      const active = wallets.find(w => w.id === this.walletStore.activeWalletId)
-      if ((active?.type || '').toLowerCase() !== 'arkade') return false
-      const min = this.walletStore.arkadeLnReceiveLimits?.min
-      if (!min) return false
-      return this.earnStore.claimableAmount < min
+    payoutWallets() {
+      return getEarnPayoutWallets(this.walletStore.wallets)
     },
-    arkadeClaimMin() {
-      return this.walletStore.arkadeLnReceiveLimits?.min || 0
+    selectedPayoutWallet() {
+      return findEarnPayoutWallet(this.walletStore.wallets, this.earnStore.selectedWalletId)
     },
   },
   async created() {
@@ -228,6 +260,12 @@ export default {
       return this.earnStore.groupProgress(groupId)
     },
 
+    selectPayoutWallet(walletId) {
+      if (!this.payoutWallets.some((wallet) => wallet.id === walletId)) return
+      this.earnStore.setSelectedWallet(walletId)
+      this.showPayoutWalletPicker = false
+    },
+
     async claimSats() {
       this.isClaiming = true
       try {
@@ -235,11 +273,7 @@ export default {
         if (result.success) {
           this.$q.notify({
             type: 'positive',
-            // When the reward was too small for the Arkade wallet's Lightning
-            // minimum it landed in another of the user's wallets — say which.
-            message: result.walletName
-              ? this.$t('{amount} sats claimed to {wallet}!', { amount: result.amount, wallet: result.walletName })
-              : this.$t('{amount} sats claimed!', { amount: result.amount }),
+            message: this.$t('{amount} sats claimed!', { amount: result.amount }),
           })
         } else if (result.error === 'cooldown') {
           this.$q.notify({
@@ -262,13 +296,9 @@ export default {
             message: this.$t('You have already received the maximum reward.'),
           })
         } else {
-          // No exception was raised; the store returned a structured
-          // failure code. Prefer the original (coded) error when the store
-          // preserved one — its translated copy names the real reason (e.g.
-          // a reward below the Arkade Lightning minimum) — and fall back to
-          // wrapping the code so the technical pane still has something
-          // useful without attributing our own synthesized string to a
-          // third-party payout service.
+          // No exception was raised; the store returned a structured failure.
+          // Prefer the original coded error when available, otherwise provide
+          // a concise local fallback without attributing it to the payout API.
           this.walletStore.showPaymentError(result.cause || new Error(`claim failed: ${result.error || 'unknown'}`), {
             context: 'earn',
             route: 'Earn payout claim',
@@ -349,15 +379,18 @@ export default {
 
 /* Header */
 .summary-header {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
   padding: 16px 20px;
   padding-top: calc(var(--safe-top, 0px) + 16px);
-  text-align: center;
 }
 
 .summary-header-title {
   font-family: 'Manrope', sans-serif;
   font-size: 20px;
   font-weight: 800;
+  text-align: center;
 }
 
 /* Hero */
@@ -594,7 +627,7 @@ export default {
   margin-top: 14px;
 }
 
-.claim-hint {
+.payout-wallet-hint {
   margin-top: 10px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -603,14 +636,14 @@ export default {
   line-height: 1.5;
 }
 
-.claim-hint-light {
-  background: rgba(241, 67, 23, 0.08);
-  color: #7a3416;
+.payout-wallet-hint-light {
+  background: rgba(5, 149, 115, 0.08);
+  color: #065f46;
 }
 
-.claim-hint-dark {
-  background: rgba(241, 67, 23, 0.16);
-  color: #f0b9a6;
+.payout-wallet-hint-dark {
+  background: rgba(146, 227, 169, 0.12);
+  color: #c8f7d4;
 }
 
 .payout-ready {
@@ -623,6 +656,42 @@ export default {
   color: var(--text-muted);
   margin-left: 4px;
   vertical-align: middle;
+}
+
+.payout-wallet-btn {
+  justify-self: end;
+  color: var(--text-muted);
+}
+
+.payout-wallet-card {
+  width: min(340px, calc(100vw - 32px));
+  border-radius: 16px !important;
+}
+
+.payout-wallet-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.payout-wallet-illustration {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.wallet-pick-item {
+  border-radius: 8px;
+}
+
+.wallet-picker-empty {
+  min-height: 76px;
+  color: var(--text-muted);
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
 }
 
 /* Info dialog */

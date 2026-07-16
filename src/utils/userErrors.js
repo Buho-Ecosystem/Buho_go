@@ -344,8 +344,6 @@ function translateErrorCode(error, t) {
       return t('Your payment was sent. It will show in your balance in a moment.');
     case 'ARKADE_SWAP_BELOW_MIN':
       return t('That amount is too small for Lightning. The minimum is {min} sats.', { min: error.minSats || 0 });
-    case 'EARN_BELOW_WALLET_MIN':
-      return t('Your Arkade wallet can only receive Lightning payments of {min} sats or more, so this reward can\'t be claimed yet. Create a Spark wallet or connect LNbits or NWC to claim it, or keep earning until you reach {min} sats.', { min: error.minSats || 0 });
     case 'ARKADE_SWAP_ABOVE_MAX':
       return t('That amount is too large for Lightning. The maximum is {max} sats.', { max: error.maxSats || 0 });
     case 'ARKADE_OFFBOARD_BELOW_MIN':

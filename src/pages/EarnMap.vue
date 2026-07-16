@@ -109,7 +109,7 @@
         <q-card-section class="q-pt-none">
           <q-list>
             <q-item
-              v-for="wallet in walletStore.wallets"
+              v-for="wallet in payoutWallets"
               :key="wallet.id"
               clickable
               v-ripple
@@ -128,6 +128,11 @@
                 <Icon v-if="earnStore.selectedWalletId === wallet.id" icon="tabler:circle-check" width="20" height="20" style="color: #92E3A9;" />
               </q-item-section>
             </q-item>
+            <q-item v-if="!payoutWallets.length" class="wallet-picker-empty">
+              <q-item-section>
+                {{ $t('Add a Spark, LNbits, or NWC wallet to receive Learn & Earn rewards.') }}
+              </q-item-section>
+            </q-item>
           </q-list>
         </q-card-section>
       </q-card>
@@ -138,6 +143,7 @@
 <script>
 import { useEarnStore } from '../stores/earn'
 import { useWalletStore } from '../stores/wallet'
+import { findEarnPayoutWallet, getEarnPayoutWallets } from '../utils/earnWallets'
 import EarnBottomNav from '../components/EarnBottomNav.vue'
 
 export default {
@@ -155,6 +161,12 @@ export default {
     }
   },
   computed: {
+    payoutWallets() {
+      return getEarnPayoutWallets(this.walletStore.wallets)
+    },
+    selectedPayoutWallet() {
+      return findEarnPayoutWallet(this.walletStore.wallets, this.earnStore.selectedWalletId)
+    },
     /**
      * Flatten all chapters from all groups into a single list, top-to-bottom.
      * Each chapter gets a reference to its parent group for unlock checking.
@@ -195,7 +207,10 @@ export default {
         return
       }
 
-      if (!this.earnStore.selectedWalletId) {
+      if (!this.selectedPayoutWallet) {
+        // Clear stale selections (including Arkade from older app versions)
+        // before showing the same supported-wallet list used by Summary.
+        if (this.earnStore.selectedWalletId) this.earnStore.setSelectedWallet(null)
         this.pendingChapterId = chapter.id
         this.showWalletPicker = true
         return
@@ -205,6 +220,7 @@ export default {
     },
 
     selectWallet(walletId) {
+      if (!this.payoutWallets.some((wallet) => wallet.id === walletId)) return
       this.earnStore.setSelectedWallet(walletId)
       this.showWalletPicker = false
       if (this.pendingChapterId) {
@@ -432,6 +448,14 @@ export default {
 /* Wallet picker */
 .wallet-picker-card { min-width: 300px; border-radius: 20px !important; }
 .wallet-pick-item { border-radius: 12px; }
+.wallet-picker-empty {
+  min-height: 76px;
+  color: var(--text-muted);
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+}
 
 /* Locked label */
 </style>
