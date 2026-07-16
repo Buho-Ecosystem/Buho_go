@@ -15,9 +15,14 @@ import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKe
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
-import { getUserFriendlyErrorMessage } from '../utils/userErrors';
+import {
+  buildPaymentError,
+  getUnsupportedBolt12OfferCopy,
+  getUserFriendlyError,
+  getUserFriendlyErrorMessage,
+} from '../utils/userErrors';
 import * as deviceCrypto from '../utils/deviceCrypto';
-import { buildPaymentError, getUserFriendlyError } from '../utils/userErrors';
+import { i18n } from '../boot/i18n';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
   isScreenPrivacyEnabled as nativeIsScreenPrivacyEnabled,
@@ -571,6 +576,27 @@ export const useWalletStore = defineStore('wallet', {
         reasonAttribution: built.reasonAttribution,
         technical: built.technical,
       };
+    },
+
+    /**
+     * Explain a recognized BOLT12 offer consistently wherever it entered the
+     * app (Send, NFC, or an Android deep link). No provider call is made for
+     * this path, so the copy must not imply that a payment failed in flight.
+     *
+     * @param {{route?: string, t?: Function}} [ctx]
+     */
+    showUnsupportedBolt12Offer(ctx = {}) {
+      const t = typeof ctx.t === 'function'
+        ? ctx.t
+        : i18n.global.t.bind(i18n.global);
+      const copy = getUnsupportedBolt12OfferCopy(t);
+      this.showPaymentError(new Error('BOLT12 offer detected'), {
+        context: 'payment',
+        title: copy.title,
+        reason: copy.reason,
+        route: ctx.route || 'BOLT12 offer',
+        t,
+      });
     },
 
     /**

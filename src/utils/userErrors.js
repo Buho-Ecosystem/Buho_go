@@ -23,6 +23,19 @@
 const REASON_MAX_LENGTH = 280;
 
 /**
+ * Mainstream-first copy for a BOLT12 offer. The technical term appears in the
+ * explanation, not the headline, so the same dialog works for people who have
+ * never encountered Lightning request formats before.
+ */
+export function getUnsupportedBolt12OfferCopy($t = null) {
+  const t = typeof $t === 'function' ? $t : ((value) => value);
+  return {
+    title: t("This payment request isn't supported yet"),
+    reason: t('This is a specific type of Lightning payment request. BuhoGO cannot pay BOLT12 offers yet, so no money was sent. Ask the recipient for a Lightning invoice or Lightning address instead.'),
+  };
+}
+
+/**
  * Build a structured payment-error descriptor.
  *
  * The `reasonSource` discriminates how `reason` was produced so the UI

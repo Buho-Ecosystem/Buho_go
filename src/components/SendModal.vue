@@ -290,6 +290,7 @@ import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../u
 import {
   isSparkAddress,
   isArkadeAddress,
+  isBolt12Offer,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
@@ -417,6 +418,7 @@ export default {
 
       if (isSparkAddress(cleaned)) return 'spark';
       if (isArkadeAddress(cleaned)) return 'arkade';
+      if (isBolt12Offer(cleaned)) return 'bolt12_offer';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
       // Bare Nostr key: `npub1…` / `nprofile1…` (optionally `nostr:`-prefixed).
       // Unambiguous — nothing else looks like this — so we resolve it to the
@@ -439,6 +441,7 @@ export default {
     detectedInputLabel() {
       const labels = {
         spark: this.$t('Spark'),
+        bolt12_offer: this.$t('BOLT12 offer'),
         lightning_invoice: this.$t('Lightning Invoice'),
         lightning_address: this.$t('Lightning Address'),
         lnurl: this.$t('LNURL'),
@@ -452,6 +455,7 @@ export default {
 
     detectedInputIcon() {
       const icons = {
+        bolt12_offer: 'tabler:bolt',
         lightning_invoice: 'tabler:bolt',
         lightning_address: 'tabler:bolt',
         lnurl: 'tabler:link',
@@ -849,6 +853,7 @@ export default {
 
       if (isSparkAddress(cleaned)) return 'spark_address';
       if (isArkadeAddress(cleaned)) return 'arkade_address';
+      if (isBolt12Offer(cleaned)) return 'bolt12_offer';
       if (isLightningInvoice(cleaned)) return 'lightning_invoice';
       if (isLightningAddress(cleaned)) return 'lightning_address';
       if (isLnurl(cleaned)) return 'lnurl';

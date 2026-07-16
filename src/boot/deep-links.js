@@ -67,13 +67,13 @@ function parseDeepLinkURI(url) {
   const input = url.trim()
   const parsed = parsePaymentDestination(input)
 
-  if (!parsed || !parsed.valid || parsed.type === 'unknown') {
+  if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
     return null
   }
 
   // Map to the { data, type } shape that Wallet.vue's onPaymentDetected expects
   // (same shape as SendModal's payment-detected emit)
-  const data = parsed.invoice || parsed.address || parsed.lnurl || input
+  const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || input
 
   return { data, type: parsed.type }
 }
@@ -101,6 +101,14 @@ function handleDeepLink(url, router, walletStore) {
       message: 'Unsupported link format',
       timeout: 3000
     })
+    return
+  }
+
+  // An offer is recognized even though BuhoGO cannot pay it yet. Explain it
+  // immediately instead of treating the Android intent as an unknown link or
+  // requiring a configured wallet for a payment we will not attempt.
+  if (paymentData.type === 'bolt12_offer') {
+    walletStore.showUnsupportedBolt12Offer({ route: 'Android deep link' })
     return
   }
 

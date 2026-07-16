@@ -13,9 +13,11 @@
  */
 
 import { strict as assert } from 'node:assert';
+import { bech32m } from 'bech32';
 import {
   isSparkAddress,
   isArkadeAddress,
+  isBolt12Offer,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
@@ -85,6 +87,17 @@ test('isArkadeAddress: ark1 / tark1, case-insensitive, no cross-type collisions'
 test('isLightningInvoice / isLnurl: tolerate lightning: wrapper', () => {
   assert.equal(isLightningInvoice('lightning:lnbc10n1pjxyz'), true);
   assert.equal(isLnurl('lightning:lnurl1dp68'), true);
+});
+
+const VALID_BOLT12_OFFER = bech32m.encode('lno', [1, 2, 3, 4, 5, 6], 4096);
+
+test('isBolt12Offer: requires a valid Bech32m offer, including its checksum', () => {
+  assert.equal(isBolt12Offer(VALID_BOLT12_OFFER), true);
+  assert.equal(isBolt12Offer(`LIGHTNING:${VALID_BOLT12_OFFER.toUpperCase()}`), true);
+  assert.equal(isBolt12Offer(`${VALID_BOLT12_OFFER.slice(0, -1)}q`), false);
+  assert.equal(isBolt12Offer(`lNo${VALID_BOLT12_OFFER.slice(3)}`), false);
+  assert.equal(isBolt12Offer('lnbc10n1pjxyz'), false);
+  assert.equal(isBolt12Offer('lno1incomplete'), false);
 });
 
 test('isLnurl: tolerates the lnurl: wrapper in any case (field regression)', () => {

@@ -4323,6 +4323,18 @@ export default {
 
       try {
         // Transform the payment data to match expected structure
+        if (paymentData.type === 'bolt12_offer' && paymentData.data) {
+          // This is a recognized payment request, but none of our wallet
+          // providers can request and pay the BOLT12 invoice behind an offer.
+          // Stop before opening confirmation or calling a provider: no payment
+          // has been attempted, and the user needs a clear next step.
+          this.walletStore.showUnsupportedBolt12Offer({
+            route: 'BOLT12 offer',
+            t: this.$t.bind(this),
+          });
+          return;
+        }
+
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
           // Parse the invoice to get the amount
           const parsedInvoice = this.parseInvoiceManually(paymentData.data);

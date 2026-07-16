@@ -14,6 +14,7 @@ import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../u
 import {
   isSparkAddress,
   isArkadeAddress,
+  isBolt12Offer,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
@@ -189,6 +190,18 @@ export function parsePaymentDestination(input) {
       address: cleaned,
       isZeroFee: true,
       valid: true,
+    });
+  }
+
+  // BOLT12 offers need an onion-message invoice request before a BOLT11
+  // payment can be made. BuhoGO has no provider capability for that yet, so
+  // preserve the recognition and let the UI show its dedicated explanation.
+  if (isBolt12Offer(cleaned)) {
+    return withBip21({
+      type: 'bolt12_offer',
+      offer: cleaned,
+      valid: false,
+      unsupported: true,
     });
   }
 

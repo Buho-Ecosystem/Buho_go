@@ -12,6 +12,8 @@
  *                      `spark1`, `sparkrt1`, `sparkt1`, `sparks1`, `sparkl1` (bech32m)
  *   - BOLT11 invoice — `lnbc` (mainnet), `lntb` (testnet), `lntbs` (signet),
  *                      `lnbcrt` (regtest)
+ *   - BOLT12 offer   — `lno1…` (recognized so unsupported offers receive a
+ *                      clear explanation instead of a generic payment error)
  *   - LNURL          — bech32 `lnurl1…` and LUD-17 URI schemes
  *                      (`lnurlp://`, `lnurlw://`, `lnurlc://`, `keyauth://`)
  *   - Bitcoin on-chain — mainnet `bc1…` / `1…` / `3…`,
@@ -24,6 +26,7 @@
  */
 
 import { extractLnFallbackParam } from './bip21.js';
+import { BOLT12_OFFER_HRP as BOLT12_OFFER_HRP_VALUE, isValidBolt12Offer } from './bolt12.js';
 
 // ----------------------------------------------------------------------------
 // Constants — exported so other modules can reuse them without re-typing
@@ -56,6 +59,9 @@ export const LIGHTNING_INVOICE_HRPS = Object.freeze([
   'lntbs',   // signet
   'lnbcrt',  // regtest
 ]);
+
+/** BOLT12 offers use the Bech32m HRP `lno`. @readonly */
+export const BOLT12_OFFER_HRP = BOLT12_OFFER_HRP_VALUE;
 
 /** @readonly */
 export const LNURL_PREFIXES = Object.freeze([
@@ -162,6 +168,19 @@ export function isLightningInvoice(invoice) {
   const lower = stripWrapperScheme(invoice).toLowerCase();
   if (!lower) return false;
   return LIGHTNING_INVOICE_HRPS.some(hrp => lower.startsWith(hrp));
+}
+
+/**
+ * True if the input looks like a BOLT12 offer. BOLT12 offers are not payable
+ * by BuhoGO yet, but recognizing them at every entry point lets the UI explain
+ * that safely before it tries to create a payment.
+ *
+ * Accepts the common `lightning:` wrapper used by QR codes and deep links.
+ * @param {unknown} offer
+ * @returns {boolean}
+ */
+export function isBolt12Offer(offer) {
+  return isValidBolt12Offer(stripWrapperScheme(offer));
 }
 
 /**

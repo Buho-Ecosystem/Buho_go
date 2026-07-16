@@ -1,4 +1,9 @@
 export default {
+  // ─── BOLT12 offer recognition ───
+  "BOLT12 offer": "Oferta BOLT12",
+  "This payment request isn't supported yet": "Esta solicitud de pago aún no es compatible",
+  "This is a specific type of Lightning payment request. BuhoGO cannot pay BOLT12 offers yet, so no money was sent. Ask the recipient for a Lightning invoice or Lightning address instead.": "Este es un tipo específico de solicitud de pago Lightning. BuhoGO aún no puede pagar ofertas BOLT12, por lo que no se envió dinero. Pide al destinatario una factura Lightning o una dirección Lightning.",
+
   // ─── Arkade (Ark L2) onboarding, restore & success ───
   "Create an Arkade wallet": "Crear una cartera Arkade",
   "Instant, near zero fees": "Al instante, casi sin comisiones",

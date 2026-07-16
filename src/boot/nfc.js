@@ -62,7 +62,7 @@ export default boot(async ({ router }) => {
       parsed = { type: 'lnurl', lnurl: raw, valid: true }
     }
 
-    if (!parsed || !parsed.valid || parsed.type === 'unknown') {
+    if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
       Notify.create({
         type: 'warning',
         icon: 'nfc',
@@ -70,6 +70,14 @@ export default boot(async ({ router }) => {
         caption: 'Tag does not contain a Lightning payment',
         timeout: 3000
       })
+      return
+    }
+
+    // A BOLT12 offer is a valid payment request that BuhoGO cannot pay yet.
+    // Surface the same global explanation as QR/paste instead of calling it
+    // an unreadable NFC tag or asking the user to configure a wallet.
+    if (parsed.type === 'bolt12_offer') {
+      walletStore.showUnsupportedBolt12Offer({ route: 'NFC tag' })
       return
     }
 
@@ -87,7 +95,7 @@ export default boot(async ({ router }) => {
 
     // Map to { data, type } shape that Wallet.vue's onPaymentDetected expects
     const paymentData = {
-      data: parsed.invoice || parsed.address || parsed.lnurl || raw,
+      data: parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || raw,
       type: parsed.type
     }
 
