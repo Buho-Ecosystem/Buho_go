@@ -12,22 +12,25 @@ import com.getcapacitor.PluginHandle;
 /**
  * MainActivity — hosts the Capacitor WebView and BuhoGO's native plugins.
  *
- * NFC design (payment-app standard):
- *   BuhoGO reads NFC only while it is in the foreground, using reader mode.
- *   It deliberately declares NO NFC intent filters in the manifest, so a tag
- *   can never cold-launch or wake the app while it is closed. This mirrors how
- *   wallet / banking apps behave: you open the app, then tap. It stops the app
- *   from opening itself when the phone brushes an unrelated tag (transit card,
- *   access badge, contactless bank card, random sticker).
+ * NFC design (two complementary paths):
  *
- *   Reader mode (enableReaderMode) turns the device into a pure reader while
- *   the activity is visible: tags are delivered straight to onTagDiscovered
- *   with priority over every other installed wallet and without the system
- *   chooser. The platform NDEF check stays enabled — it is what surfaces the
- *   Ndef technology on standard tags (NTAG 21x stickers); NfcPlugin falls
- *   back to a raw IsoDep read for NTAG 424 DNA Bolt Cards where that check
- *   is unreliable. The system tap sound is kept on purpose: it is the
- *   familiar "tag registered" feedback and the app plays no sound of its own.
+ *   Foreground — reader mode, owned by this activity. While visible,
+ *   enableReaderMode turns the device into a pure reader: tags are delivered
+ *   straight to onTagDiscovered with priority over every other installed
+ *   wallet and without the system chooser. The platform NDEF check stays
+ *   enabled — it is what surfaces the Ndef technology on standard tags
+ *   (NTAG 21x stickers); NfcPayloadReader falls back to a raw IsoDep read
+ *   for NTAG 424 DNA Bolt Cards where that check is unreliable. The system
+ *   tap sound is kept on purpose: it is the familiar "tag registered"
+ *   feedback and the app plays no sound of its own.
+ *
+ *   Closed / backgrounded — system NDEF dispatch, owned exclusively by
+ *   NfcDispatchActivity (see its javadoc). MainActivity itself declares no
+ *   NFC intent filters and never receives NFC intents: it stays the plain
+ *   launcher / deep-link activity, which keeps Capacitor's launch-URL
+ *   handling and the future Android 17 NFC dispatch permission out of each
+ *   other's way. Scans captured there reach JavaScript through the pull
+ *   handshake in NfcPlugin.consumePendingScan().
  */
 public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCallback {
 
@@ -98,10 +101,11 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
     }
 
     /**
-     * Keep getIntent() in sync for deep links delivered while running. NFC no
-     * longer arrives as an intent (reader mode delivers it via
-     * onTagDiscovered), so this only serves Capacitor's appUrlOpen handling;
-     * super.onNewIntent() lets the bridge process lightning: / bitcoin: links.
+     * Keep getIntent() in sync for deep links delivered while running. NFC
+     * never arrives here as an intent (foreground taps come through reader
+     * mode, system dispatch goes to NfcDispatchActivity), so this only serves
+     * Capacitor's appUrlOpen handling; super.onNewIntent() lets the bridge
+     * process lightning: / bitcoin: links.
      */
     @Override
     protected void onNewIntent(Intent intent) {
@@ -117,6 +121,11 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
     @Override
     public void onTagDiscovered(Tag tag) {
         try {
+            if (NfcScanBuffer.consumeReaderHandoffGuard()) {
+                Log.i(NFC_LOG_TAG, "Suppressed duplicate reader callback during NFC dispatch handoff");
+                return;
+            }
+
             NfcPlugin plugin = resolveNfcPlugin();
             if (plugin != null) {
                 plugin.handleTag(tag);

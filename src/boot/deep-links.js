@@ -3,6 +3,8 @@ import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { parsePaymentDestination } from '../providers/WalletFactory'
+import { triggerWalletStoreHydration } from '../utils/walletHydration'
+import { redactPaymentInput } from '../utils/logRedaction'
 
 /**
  * Deep link handler for Android intent filters.
@@ -23,39 +25,6 @@ import { parsePaymentDestination } from '../providers/WalletFactory'
 
 // Track last handled URL to prevent duplicate processing on Activity resume
 let lastHandledUrl = null
-
-function hasPersistedWalletConfig() {
-  try {
-    const saved = localStorage.getItem('buhoGO_wallet_store')
-    if (!saved) return false
-
-    const parsed = JSON.parse(saved)
-    return Array.isArray(parsed.wallets) && parsed.wallets.length > 0
-  } catch {
-    return false
-  }
-}
-
-/**
- * Trigger wallet-store hydration synchronously.
- *
- * walletStore.initialize() is an async function, but its synchronous prefix
- * (localStorage read + migration + $patch) runs to completion before the
- * first `await`. That prefix is all we need to read activeWallet and
- * kiosk state correctly; the connect/network tail continues in the
- * background and cannot starve us here.
- *
- * Idempotent: dedupes via the store's isInitialized / _initializePromise
- * guards, so this is safe alongside Wallet.vue's own initialize() call.
- */
-function triggerStoreHydration(walletStore) {
-  if (walletStore.isInitialized) return
-  if (!hasPersistedWalletConfig()) return
-
-  walletStore.initialize().catch((err) => {
-    console.warn('[deep-links] Wallet store init failed:', err?.message || err)
-  })
-}
 
 /**
  * Parse a deep link URI into the payment data shape expected by Wallet.vue's onPaymentDetected.
@@ -82,11 +51,13 @@ function handleDeepLink(url, router, walletStore) {
   if (!url || url === lastHandledUrl) return
   lastHandledUrl = url
 
-  console.log('[deep-links] Received:', url)
+  // Scheme + length only: deep links carry invoices, LNURLs and one-time
+  // card-authentication parameters that must never reach logcat.
+  console.log('[deep-links] Received:', redactPaymentInput(url))
 
   // Hydrate before any state-dependent check below. The kiosk guard and
   // activeWallet guard both read store state that is null until hydration runs.
-  triggerStoreHydration(walletStore)
+  triggerWalletStoreHydration(walletStore)
 
   // Block deep links while kiosk mode is locked
   if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
