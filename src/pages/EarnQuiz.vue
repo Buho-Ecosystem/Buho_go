@@ -180,7 +180,6 @@ export default {
   },
   methods: {
     openAnswerSheet() {
-      this.earnStore.startQuestionTimer()
       this.shuffleAnswers()
       this.lastTapped = null
       this.disabledAnswers = []

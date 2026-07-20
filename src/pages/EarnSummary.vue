@@ -16,7 +16,7 @@
     <q-dialog v-model="showPayoutWalletPicker" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="payout-wallet-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="payout-wallet-heading">
-          <img src="/Learn and Earn/money-income.svg" class="payout-wallet-illustration" alt="" />
+          <img src="/Learn and Earn/Question_pictures/money-income.svg" class="payout-wallet-illustration" alt="" aria-hidden="true" />
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Where should your rewards go?') }}
           </div>
@@ -112,7 +112,7 @@
             <div class="info-item">
               <div class="info-item-icon"><Icon icon="tabler:coin" width="18" height="18" /></div>
               <div class="info-item-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('You can claim every 25 sats') }}
+                {{ $t('You can claim once you reach 25 sats') }}
               </div>
             </div>
             <div class="info-item">
@@ -133,14 +133,14 @@
             {{ earnStore.pendingSats }} {{ $t('sats') }}
           </span>
           <span v-if="!earnStore.canClaim" class="payout-progress-hint">
-            {{ 25 - (earnStore.pendingSats % 25) }} {{ $t('more to go') }}
+            {{ earnStore.payoutThreshold - earnStore.pendingSats }} {{ $t('more to go') }}
           </span>
           <span v-else class="payout-progress-hint payout-ready">
             {{ earnStore.claimableAmount }} {{ $t('sats ready to claim') }}
           </span>
         </div>
         <div class="payout-bar">
-          <div class="payout-bar-fill" :style="{ width: Math.min((earnStore.pendingSats % 25) / 25 * 100, 100) + '%' }" />
+          <div class="payout-bar-fill" :style="{ width: Math.min(earnStore.pendingSats / earnStore.payoutThreshold * 100, 100) + '%' }" />
         </div>
         <q-btn
           v-if="earnStore.canClaim"
@@ -280,11 +280,6 @@ export default {
             type: 'warning',
             message: this.$t('Please wait {mins} minutes before claiming again', { mins: result.minutesLeft }),
           })
-        } else if (result.error === 'suspicious_timing') {
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t('Please take your time reading the lessons before claiming'),
-          })
         } else if (result.error === 'daily_budget' || result.error === 'ip_cap') {
           this.$q.notify({
             type: 'warning',
@@ -327,6 +322,10 @@ export default {
             message: this.$t('Bonus claimed! {amount} sats earned', { amount: result.totalPayout }),
           })
         } else if (result.error === 'cooldown') {
+          // The bonus is cooldown-exempt on both sides, so this only fires if
+          // the app is running against a payout service that predates that
+          // rule. Kept so the skew window explains itself instead of falling
+          // through to the generic failure dialog.
           this.$q.notify({
             type: 'warning',
             message: this.$t('Please wait {mins} minutes before claiming again', { mins: result.minutesLeft }),

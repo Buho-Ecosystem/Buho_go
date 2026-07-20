@@ -93,10 +93,16 @@
               >
                 {{ heroHeadline }}
               </div>
+              <!-- A handle is a single token, so it truncates on one line
+                   (`.hero-handle`). The empty-state subline is a sentence
+                   and has to wrap instead (`.hero-subline`) — sharing the
+                   nowrap class made it run off the card. -->
               <div
                 v-if="heroHandle || heroSubline"
-                class="hero-handle"
-                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+                :class="[
+                  heroHandle ? 'hero-handle' : 'hero-subline',
+                  $q.dark.isActive ? 'text-grey-4' : 'text-grey-6'
+                ]"
               >
                 {{ heroHandle || heroSubline }}
               </div>
@@ -1410,14 +1416,21 @@ export default {
   height: 96px;
 }
 
+/* `align-items: center` on the column makes this button size to its
+   content rather than stretch, so without an explicit width it grows
+   to the intrinsic width of its longest line and escapes the card.
+   Pinning it to the row width is what lets the text wrap/clip. */
 .hero-identity--empty .hero-meta-btn {
   align-items: center;
+  align-self: stretch;
+  width: 100%;
   padding-top: 4px;
   text-align: center;
 }
 
 .hero-identity--empty .hero-name,
-.hero-identity--empty .hero-handle {
+.hero-identity--empty .hero-handle,
+.hero-identity--empty .hero-subline {
   text-align: center;
 }
 

@@ -9,6 +9,7 @@ node_modules
 # LLM Stuff
 /.claude
 /TX_METADATA_RESEARCH.md
+screenshots
 /RELEASE_NOTES_v*.md
 /STANDARD_RELEASE_NOTES_PROMPT.md
 /Plans WIP

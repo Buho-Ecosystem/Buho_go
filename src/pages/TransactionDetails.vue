@@ -78,8 +78,15 @@
                fiat value, status pill. The counterparty row in the table
                below carries the "who", so the type label isn't repeated here. -->
           <div class="hero-content">
+            <!-- A Learn & Earn reward carries the BuhoGO mark, but only when
+                 the user hasn't assigned a counterparty of their own. Plain
+                 <img>: ContactAvatar's picture prop only accepts https/data
+                 URLs, not a root-relative asset path. -->
+            <span v-if="isEarnReward && !heroAvatar" class="hero-avatar hero-avatar-earn">
+              <img :src="earnBrandLogo" class="hero-earn-logo" alt="" aria-hidden="true" />
+            </span>
             <ContactAvatar
-              v-if="heroAvatar"
+              v-else-if="heroAvatar"
               class="hero-avatar"
               :entry="heroAvatar.entry"
               :picture="heroAvatar.picture"
@@ -165,7 +172,9 @@
             <div class="tx-row-value">{{ $t('Bitcoin L1 (on-chain)') }}</div>
           </div>
 
-          <div v-if="getTransactionDescription()" class="tx-row">
+          <!-- A reward's description is the untranslated brand memo, which
+               the Type row above already states in the user's language. -->
+          <div v-if="getTransactionDescription() && !isEarnReward" class="tx-row">
             <div class="tx-row-label">{{ $t('Description') }}</div>
             <div class="tx-row-value">{{ getTransactionDescription() }}</div>
           </div>
@@ -650,6 +659,7 @@ import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { pollVerify } from '../utils/lnurlVerify.js';
 import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 
 // "Type" row text per metadata source (i18n message keys, resolved through
 // $t at render time). Lookup map on purpose: later passes stamp more sources
@@ -877,10 +887,35 @@ export default {
      * so a newer stamp never renders a raw identifier).
      */
     txTypeRowText() {
+      // A reward has no metadata source stamped on it (it is an incoming
+      // payment the app never sent), so name it from its own branding.
+      if (this.earnRewardLabel) return this.earnRewardLabel;
       if (!this.transaction?.id || !this.metadataStore) return '';
       const source = this.metadataStore.getSourceForTransaction(this.transaction.id, this.metadataWalletId);
       const key = TX_SOURCE_TYPE_KEYS[source];
       return key ? this.$t(key) : '';
+    },
+
+    /** BuhoGO mark shown on Learn & Earn reward transactions. */
+    earnBrandLogo() {
+      return EARN_BRAND.logo;
+    },
+
+    /**
+     * Localised label for a Learn & Earn reward, '' when this tx is not one.
+     * The invoice memo stays untranslated so it keeps matching after a
+     * language change; what the user reads is resolved here.
+     */
+    earnRewardLabel() {
+      const kind = earnRewardKind(this.transaction);
+      if (!kind) return '';
+      return kind === 'bonus'
+        ? this.$t('Learn & Earn bonus')
+        : this.$t('Learn & Earn reward');
+    },
+
+    isEarnReward() {
+      return this.earnRewardLabel !== '';
     },
 
     /**
@@ -1899,6 +1934,25 @@ export default {
   color: #ffffff;
   font-family: 'Manrope', sans-serif;
   margin-bottom: 10px;
+}
+
+/* Learn & Earn reward hero. The BuhoGO mark is a full-bleed square tile
+   carrying its own dark backdrop, so it fills the circle rather than sitting
+   on a tinted one. */
+.hero-avatar-earn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.hero-earn-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 /* In the hero, an outgoing payment is a normal event, not a warning — the

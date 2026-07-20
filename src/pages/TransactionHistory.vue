@@ -456,6 +456,19 @@
                       :entry="getContactForTransaction(tx)"
                       :initial-length="2"
                     />
+                    <!--
+                      A Learn & Earn reward has no counterparty address for
+                      the avatar chain below to resolve, so it carries the
+                      BuhoGO mark. It sits after the contact branch because
+                      nothing auto-stamps a contact on an incoming payment:
+                      one being there means the user assigned it, and that
+                      outranks our branding. Plain <img> rather than
+                      ContactAvatar because that component's picture prop
+                      only accepts https/data URLs, not an asset path.
+                    -->
+                    <span v-else-if="isEarnRewardTx(tx)" class="tx-row-icon tx-row-icon-earn">
+                      <img :src="earnBrandLogo" class="tx-row-earn-logo" alt="" aria-hidden="true" />
+                    </span>
                     <ContactAvatar
                       v-else-if="getTxAvatarPicture(tx)"
                       class="tx-row-avatar"
@@ -689,6 +702,7 @@ import { normalizeTx } from '../services/txNormalizer.js';
 import { formatRelativeTime, formatShortTime, formatHumanDateTime } from '../utils/timeFormatting';
 import { groupMicropayments } from '../composables/useTransactionGrouping';
 import { matchLnAddressService } from '../services/lnAddressServices';
+import { EARN_BRAND, isEarnRewardTx, earnRewardKind } from '../services/earnBrand';
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
@@ -772,6 +786,11 @@ export default {
   CLAIMED_TX_STORAGE_LIMIT: 100,
   CLAIM_MATCH_TIME_WINDOW_SECONDS: 300,
   computed: {
+    /** BuhoGO mark shown on Learn & Earn reward rows. */
+    earnBrandLogo() {
+      return EARN_BRAND.logo;
+    },
+
     /**
      * The wallet this page is rendering. TransactionHistory always shows
      * exactly one wallet's list (this.walletState.activeWalletId,
@@ -958,6 +977,27 @@ export default {
     }
   },
   methods: {
+    /**
+     * A Learn & Earn reward, recognised by the stable memo the earn store
+     * bakes into every reward invoice (see services/earnBrand.js).
+     */
+    isEarnRewardTx(tx) {
+      return isEarnRewardTx(tx);
+    },
+
+    /**
+     * Localised row title for a reward, or '' when the tx is not one. The
+     * invoice memo itself stays untranslated so it keeps matching after a
+     * language change; the label the user reads is resolved here instead.
+     */
+    getEarnRewardTitle(tx) {
+      const kind = earnRewardKind(tx);
+      if (!kind) return '';
+      return kind === 'bonus'
+        ? this.$t('Learn & Earn bonus')
+        : this.$t('Learn & Earn reward');
+    },
+
     async initializeTransactionHistory() {
       try {
         await this.loadTransactions();
@@ -1146,6 +1186,10 @@ export default {
       if (contact) return contact.name;
       const label = this.getTxMetadataLabel(tx);
       if (label) return label;
+      // Below anything the user assigned, but above the description fallback:
+      // otherwise the row leaks the raw, untranslated invoice memo.
+      const earnTitle = this.getEarnRewardTitle(tx);
+      if (earnTitle) return earnTitle;
       if (this.isAutoWithdraw(tx)) {
         const note = this.getAutoWithdrawNote(tx);
         if (note) return note;
@@ -1182,6 +1226,13 @@ export default {
       if (tipNote) return `${tipNote} · ${time}`;
 
       const comment = String(tx.comment || '').trim();
+
+      // The title already carries the localised reward label, so the raw
+      // (untranslated) invoice memo must never be echoed underneath it.
+      if (this.isEarnRewardTx(tx)) {
+        return comment ? `“${comment}” · ${time}` : time;
+      }
+
       const titleShowsDescription = !this.getContactForTransaction(tx)
         && !this.isAutoWithdraw(tx)
         && !this.getTxCounterparty(tx)
@@ -2928,6 +2979,23 @@ export default {
 }
 .tx-row-icon-dark.tx-row-icon-bitcoin {
   background: rgba(247, 147, 26, 0.16);
+}
+
+/* Learn & Earn reward — the BuhoGO mark stands in for the counterparty
+   avatar the row otherwise has no way to resolve. The asset is a full-bleed
+   square tile carrying its own dark backdrop, so it fills the circle rather
+   than sitting on one of the tinted backgrounds above. */
+.tx-row-icon-earn {
+  overflow: hidden;
+  background: transparent;
+}
+
+.tx-row-earn-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 /* L1 badge — small pill next to the title for on-chain transactions */
