@@ -35,7 +35,7 @@
     "@quasar/extras": "^1.16.4",
     "@scure/bip32": "^2.2.0",
     "@scure/bip39": "^1.2.1",
-    "axios": "1.15.2",
+    "axios": "1.18.0",
     "bech32": "^2.0.0",
     "maplibre-gl": "^5.24.0",
     "nostr-core": "^0.8.0",
