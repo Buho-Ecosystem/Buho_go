@@ -51,22 +51,5 @@
 	<string>BuhoGO uses Face ID to lock the app and to confirm sensitive actions like revealing your recovery phrase.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>BuhoGO can read QR codes from saved screenshots so you can pay or sign in from images you have already received.</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>mybuho.buhogo.oauth</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<!--
-				  Reverse-DNS form of the iOS OAuth client ID issued by Google
-				  Cloud Console. Replace `XXXXX-YYYYY` with the prefix from your
-				  client ID (the part before `.apps.googleusercontent.com`).
-				  Must match VITE_GOOGLE_OAUTH_IOS_REDIRECT_URI's scheme.
-				-->
-				<string>com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID-PREFIX</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>

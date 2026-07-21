@@ -245,6 +245,20 @@
           :caption="`${wallets.length} ${wallets.length === 1 ? $t('wallet') : $t('wallets')}`"
           @click="showWalletsDialog = true"
         />
+
+        <!--
+          Encrypted cloud backup (Android only — Drive via the native
+          plugin). Complements the seed-phrase rows above: the phrase is
+          still THE backup a user should verify; this puts an encrypted
+          copy of all wallet secrets where a lost phone can't take it.
+        -->
+        <SettingsRow
+          v-if="cloudBackupAvailable"
+          icon="tabler:cloud-lock"
+          :label="$t('Google Drive backup')"
+          :caption="$t('Encrypted backup of your wallets')"
+          @click="showCloudBackupSheet = true"
+        />
       </SettingsSection>
 
       <!--
@@ -1855,6 +1869,9 @@
       @verified="onSeedPhraseVerified"
     />
 
+    <!-- Encrypted Google Drive backup (Android only) -->
+    <CloudBackupSheet v-model="showCloudBackupSheet" />
+
     <!-- App Lock enable: explain what happens before the native prompt -->
     <BiometricEnableDialog
       v-model="showBiometricEnableDialog"
@@ -2221,6 +2238,7 @@ import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attention
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
+import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
@@ -2256,6 +2274,7 @@ export default {
     VueQrcode,
     ArkadeLogo,
     SparkSeedPhraseDialog,
+    CloudBackupSheet,
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
@@ -2340,6 +2359,8 @@ export default {
 
       // Unified seed-phrase dialog (view + backup flows)
       showSeedPhraseDialog: false,
+      // Encrypted Google Drive backup sheet (Android only)
+      showCloudBackupSheet: false,
       seedPhraseMode: 'view', // 'view' | 'backup'
 
       // Spark reconnect dialog
@@ -2523,6 +2544,15 @@ export default {
      */
     isNativeApp() {
       return Capacitor.isNativePlatform();
+    },
+
+    /**
+     * Cloud backup is Android-only today (Google Drive via the native
+     * plugin). The row is hidden elsewhere rather than shown disabled:
+     * web builds must not advertise a backup they cannot perform.
+     */
+    cloudBackupAvailable() {
+      return Capacitor.getPlatform() === 'android';
     },
 
     bitcoinPrefsStore() {

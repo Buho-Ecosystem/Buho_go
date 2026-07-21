@@ -1,64 +1,64 @@
 /**
  * Cloud Backup Store
  *
- * Coordinates between the local wallet/identity stores and Google Drive.
- * Holds no secrets in state — the seed phrase only exists as a local
- * variable for the duration of a backup or restore call, mirroring the
- * pattern used in the identity store.
+ * Coordinates between the local wallet/identity stores and the platform
+ * cloud storage (Google Drive appDataFolder on Android). Holds no secrets
+ * in state — seed phrases and connection keys exist only as local variables
+ * for the duration of a backup or restore call, mirroring the pattern used
+ * in the identity store.
  *
- * Payload format inside the encrypted envelope (version 1):
- *   {
- *     v: 1,
- *     spark: {                       // present iff a Spark wallet exists
- *       mnemonic: string,
- *       network: 'MAINNET' | 'TESTNET',
- *     },
- *     identity: {                    // present iff an identity exists
- *       mnemonic: string,
- *     },
- *   }
+ * Auth model: there is no OAuth client config in the JS layer at all. The
+ * native plugin owns sign-in; this store discovers the signed-in state by
+ * probing the file listing (services/cloudStorage.getRemoteBackupInfo),
+ * which rejects with "auth-required" when a sign-in is needed. Nothing
+ * token-shaped is ever persisted by the app.
+ *
+ * Payload format inside the encrypted envelope:
+ *
+ *   version 2 (current):
+ *     {
+ *       v: 2,
+ *       spark:    { mnemonic, network },                    // iff present
+ *       arkade:   { mnemonic, arkServerUrl, network },      // iff present
+ *       nwc:      [{ name, nwcUrl }, ...],                  // iff present
+ *       lnbits:   [{ name, serverUrl, adminKey }, ...],     // iff present
+ *       identity: { mnemonic },                             // iff present
+ *     }
+ *
+ *   version 1 (accepted on restore): { v: 1, spark?, identity? } — the
+ *   same shapes, before connected-wallet coverage was added.
+ *
+ * Restore is strictly additive: it fills whatever is missing on this
+ * device and never overwrites an existing wallet or identity. Restoring
+ * on top of a freshly-generated wallet the user meant to keep must not
+ * destroy it — to replace, wipe first.
  *
  * The envelope itself (salt, IV, KDF params, ciphertext) is handled by
- * utils/backupCrypto. The Drive transport (upload/list/download/delete)
- * is handled by utils/googleDrive. This store is the seam between them
- * and the rest of the app.
+ * utils/backupCrypto. Transport is services/cloudStorage. This store is
+ * the seam between them and the rest of the app.
  */
 
 import { defineStore } from 'pinia';
 import { encryptBackup, decryptBackup } from '../utils/backupCrypto.js';
-import { encryptString, decryptString } from '../utils/deviceCrypto.js';
 import {
-  configureGoogleAuth,
-  signIn as oauthSignIn,
-  signOut as oauthSignOut,
-  isSignedIn as oauthIsSignedIn,
-  signedInEmail as oauthSignedInEmail,
-} from '../utils/googleOAuth.js';
-import {
+  isAvailable as cloudIsAvailable,
+  signIn as cloudSignIn,
+  signOut as cloudSignOut,
   uploadBackup,
-  listBackups,
   downloadBackup,
+  getRemoteBackupInfo,
   deleteBackup,
-} from '../utils/googleDrive.js';
-import {
-  getCloudBackupConfig,
-  isCloudBackupConfigured,
-} from '../utils/cloudBackupConfig.js';
+} from '../services/cloudStorage.js';
+import { WALLET_TYPES } from '../providers/WalletFactory';
 import { useWalletStore } from './wallet.js';
 import { useIdentityStore } from './identity.js';
 
-const STATE_KEY_LAST_BACKUP = 'buhoGO_cloud_backup_meta_v1';
-const STATE_KEY_AUTO = 'buhoGO_cloud_backup_auto_v1';
-const PAYLOAD_VERSION = 1;
-
-// Minimum gap between automatic backups when the app moves to the
-// foreground. Manual backups always run regardless. 24 h matches the spec's
-// "app backgrounded → backup if >24 hours since last".
-const AUTO_BACKUP_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const META_KEY = 'buhoGO_cloud_backup_meta_v1';
+const PAYLOAD_VERSION = 2;
 
 function readMeta() {
   try {
-    const raw = localStorage.getItem(STATE_KEY_LAST_BACKUP);
+    const raw = localStorage.getItem(META_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -67,330 +67,86 @@ function readMeta() {
 
 function writeMeta(meta) {
   if (!meta) {
-    localStorage.removeItem(STATE_KEY_LAST_BACKUP);
+    localStorage.removeItem(META_KEY);
     return;
   }
-  localStorage.setItem(STATE_KEY_LAST_BACKUP, JSON.stringify(meta));
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
 }
 
-/**
- * Threat model for the cached passphrase:
- *
- *   - We encrypt the passphrase with the same device key that already
- *     protects the on-disk encrypted mnemonic. This means a Drive-account
- *     compromise on its own *cannot* recover the seed — the attacker would
- *     also need the device's localStorage to read the passphrase, and the
- *     device's localStorage to read the encrypted mnemonic envelope it
- *     would also need to unlock with the same key.
- *
- *   - A device-level compromise gets the attacker the seed regardless of
- *     cloud backup; caching the passphrase doesn't change that calculus.
- *
- *   - The user can opt out at any time via the auto-backup toggle, which
- *     immediately removes both the cached passphrase and the persisted
- *     opt-in flag.
- */
-async function readAuto() {
-  try {
-    const raw = localStorage.getItem(STATE_KEY_AUTO);
-    if (!raw) return null;
-    const meta = JSON.parse(raw);
-    if (!meta?.envelope) return null;
-    const passphrase = await decryptString(meta.envelope);
-    return { passphrase, enabledAt: meta.enabledAt || null };
-  } catch (err) {
-    // Decryption failure can happen if the device key was rotated/cleared
-    // (full wipe). Drop the stale state rather than throwing on every
-    // call into the store.
-    console.warn('[cloudBackup] failed to read cached passphrase:', err);
-    localStorage.removeItem(STATE_KEY_AUTO);
-    return null;
-  }
-}
-
-async function writeAuto(passphrase) {
-  if (!passphrase) {
-    localStorage.removeItem(STATE_KEY_AUTO);
-    return;
-  }
-  const envelope = await encryptString(passphrase);
-  localStorage.setItem(STATE_KEY_AUTO, JSON.stringify({
-    envelope,
-    enabledAt: new Date().toISOString(),
-  }));
+/** True when a rejection means "the user must (re-)sign in", not "broken". */
+function isAuthRequired(err) {
+  const msg = err?.message || String(err || '');
+  return /auth-required|not-signed-in/i.test(msg);
 }
 
 export const useCloudBackupStore = defineStore('cloudBackup', {
   state: () => ({
-    /** True once OAuth client config is wired up (idempotent). */
-    initialized: false,
-    /** Email of the signed-in Google account, or null. */
-    signedInEmail: null,
-    /** True if a refresh token (or unexpired access token) is on disk. */
+    /** null = not probed yet; then boolean. */
+    available: null,
+    /** Why the platform reports unavailable (e.g. 'platform-not-supported'). */
+    unavailableReason: null,
+    /** True once a Drive call has succeeded this session. */
     signedIn: false,
-    /** True while the OAuth consent flow is in progress. */
-    isAuthing: false,
-    /** True while a backup upload is in flight. */
-    isBackingUp: false,
-    /** True while a restore (download + decrypt + import) is in flight. */
-    isRestoring: false,
-    /** Cached list of remote backups for the Settings UI. */
-    backups: [],
-    /** True while we're refreshing the backups list. */
-    isListing: false,
-    /** ISO timestamp of the most recent successful backup, if any. */
+    /** Email of the signed-in Google account (from the last sign-in). */
+    signedInEmail: null,
+    /** Remote file metadata { modifiedAt, size } or null when none/unknown. */
+    remoteBackup: null,
+    /** ISO timestamp of the last successful backup from this device. */
     lastBackupAt: null,
-    /** Drive file ID of the most recent backup we created. */
-    lastBackupId: null,
-    /**
-     * True iff the user has opted into automatic backups. Auto-backup
-     * requires a cached passphrase (encrypted with the device key); turning
-     * the toggle off clears it. The state is persisted to localStorage so
-     * a reload doesn't surprise the user with a different behaviour.
-     */
-    autoBackupEnabled: false,
-    /** Last error from any cloud op, for UI surfacing. */
+    isAuthing: false,
+    isBackingUp: false,
+    isRestoring: false,
+    isListing: false,
+    /** Last error message from any cloud op, for UI surfacing. */
     lastError: null,
   }),
 
   getters: {
-    /** True iff the build was compiled with OAuth client IDs configured. */
-    isConfigured: () => isCloudBackupConfigured(),
+    hasRemoteBackup: (state) => Boolean(state.remoteBackup),
+
+    /** Best-known time of the newest backup: remote truth beats local memory. */
+    newestBackupAt: (state) => state.remoteBackup?.modifiedAt || state.lastBackupAt,
 
     /** True iff there is at least one local secret eligible for backup. */
     hasBackupableSecret() {
       const wallet = useWalletStore();
       const identity = useIdentityStore();
-      return Boolean(wallet.hasAnySparkWallet || identity.bootstrapped);
+      return Boolean(wallet.wallets.length > 0 || identity.bootstrapped);
     },
   },
 
   actions: {
-    /**
-     * Wire up OAuth config and load any persisted state. Safe to call
-     * multiple times — subsequent calls are a no-op. Should be called once
-     * at app boot (e.g. from a Quasar boot file or the Settings page on
-     * mount), before any other action here.
-     */
-    async init() {
-      if (this.initialized) return;
-      this.initialized = true;
-
+    /** Load persisted metadata. Idempotent and cheap; call before anything else. */
+    init() {
       const meta = readMeta();
       if (meta) {
         this.lastBackupAt = meta.lastBackupAt || null;
-        this.lastBackupId = meta.lastBackupId || null;
-      }
-
-      if (!isCloudBackupConfigured()) {
-        // Without OAuth credentials we can still render a "not available"
-        // state in Settings; we just can't sign in. Don't throw here.
-        return;
-      }
-
-      const cfg = getCloudBackupConfig();
-      configureGoogleAuth(cfg);
-
-      // Resolve cached sign-in state for the UI without forcing a network
-      // round-trip. The auth helper returns true if a refresh token is on
-      // disk; the next Drive call will validate it.
-      this.signedIn = await oauthIsSignedIn();
-      this.signedInEmail = await oauthSignedInEmail();
-
-      const auto = await readAuto();
-      this.autoBackupEnabled = Boolean(auto?.passphrase);
-    },
-
-    async signIn() {
-      if (!this.isConfigured) {
-        throw new Error('Cloud backup is not configured in this build.');
-      }
-      this.isAuthing = true;
-      this.lastError = null;
-      try {
-        const { email } = await oauthSignIn();
-        this.signedIn = true;
-        this.signedInEmail = email;
-      } catch (err) {
-        this.lastError = err?.message || String(err);
-        throw err;
-      } finally {
-        this.isAuthing = false;
+        this.signedInEmail = meta.signedInEmail || null;
       }
     },
 
-    async signOut() {
-      try {
-        await oauthSignOut();
-      } finally {
-        this.signedIn = false;
-        this.signedInEmail = null;
-        this.backups = [];
-        // Auto-backup without an account is meaningless and would leak
-        // the cached passphrase past the user's apparent "I'm done" gesture.
-        await writeAuto(null);
-        this.autoBackupEnabled = false;
-      }
+    /** Probe platform availability. @returns {Promise<boolean>} */
+    async checkAvailability() {
+      const res = await cloudIsAvailable();
+      this.available = Boolean(res?.available);
+      this.unavailableReason = res?.reason || null;
+      return this.available;
     },
 
     /**
-     * Enable automatic backups going forward. Stores the passphrase
-     * encrypted with the device key so subsequent triggers can run without
-     * prompting the user. The caller must have just successfully completed
-     * a backup with this same passphrase (i.e. we know the passphrase is
-     * the one matching the live encrypted file on Drive).
-     *
-     * @param {string} passphrase
-     */
-    async enableAutoBackup(passphrase) {
-      if (typeof passphrase !== 'string' || passphrase.length === 0) {
-        throw new Error('Cannot enable auto-backup without a passphrase');
-      }
-      await writeAuto(passphrase);
-      this.autoBackupEnabled = true;
-    },
-
-    async disableAutoBackup() {
-      await writeAuto(null);
-      this.autoBackupEnabled = false;
-    },
-
-    /**
-     * Run a silent backup if the user has opted in AND there's something
-     * eligible to back up AND we're past the minimum interval. Errors are
-     * logged but never thrown — auto-backup is a best-effort background
-     * operation and must not interfere with whatever flow triggered it
-     * (e.g. mnemonic verification UX would otherwise stall on a Drive
-     * outage).
-     *
-     * @param {object} [opts]
-     * @param {boolean} [opts.bypassInterval]  Skip the >24 h gate. Used
-     *                                          when the trigger is a
-     *                                          one-shot event (wallet
-     *                                          created, mnemonic verified)
-     *                                          rather than a periodic check.
-     */
-    async runAutoBackupIfDue(opts = {}) {
-      if (!this.autoBackupEnabled) return false;
-      if (!this.signedIn) return false;
-      if (!this.hasBackupableSecret) return false;
-      if (this.isBackingUp || this.isRestoring) return false;
-
-      if (!opts.bypassInterval && this.lastBackupAt) {
-        const last = Date.parse(this.lastBackupAt);
-        if (Number.isFinite(last) && Date.now() - last < AUTO_BACKUP_MIN_INTERVAL_MS) {
-          return false;
-        }
-      }
-
-      const auto = await readAuto();
-      if (!auto?.passphrase) {
-        // The toggle says "on" but the cached envelope is gone (device
-        // wipe, manual localStorage edit). Flip the flag back so the UI
-        // doesn't keep advertising auto-backup is on.
-        this.autoBackupEnabled = false;
-        return false;
-      }
-
-      try {
-        await this.backup(auto.passphrase, { silent: true });
-        return true;
-      } catch (err) {
-        console.warn('[cloudBackup] auto-backup failed:', err);
-        return false;
-      }
-    },
-
-    /**
-     * Build the plaintext payload from the live stores. The mnemonic
-     * strings exist only inside this function — they are passed straight
-     * into encryptBackup() and dropped, never assigned to store state.
-     */
-    async _gatherPayload() {
-      const wallet = useWalletStore();
-      const identity = useIdentityStore();
-
-      const payload = { v: PAYLOAD_VERSION };
-
-      if (wallet.hasAnySparkWallet) {
-        const sparkMnemonic = await wallet.getSparkMnemonic();
-        const network =
-          wallet.activeWallet?.connectionData?.network ||
-          wallet.sparkWallet?.connectionData?.network ||
-          'MAINNET';
-        payload.spark = { mnemonic: sparkMnemonic, network };
-      }
-
-      if (identity.bootstrapped) {
-        const identityMnemonic = await identity.getMnemonic();
-        payload.identity = { mnemonic: identityMnemonic };
-      }
-
-      if (!payload.spark && !payload.identity) {
-        const err = new Error('Nothing to back up yet');
-        err.code = 'NOTHING_TO_BACKUP';
-        throw err;
-      }
-      return payload;
-    },
-
-    /**
-     * Encrypt the local wallet + identity seeds under `passphrase` and
-     * upload the resulting envelope to Google Drive.
-     *
-     * @param {string} passphrase
-     * @param {object} [opts]
-     * @param {string} [opts.hint]  Optional cleartext hint stored alongside
-     *                              the envelope.
-     */
-    async backup(passphrase, opts = {}) {
-      if (!this.signedIn) {
-        throw new Error('Sign in to Google before backing up.');
-      }
-      this.isBackingUp = true;
-      this.lastError = null;
-      try {
-        const payload = await this._gatherPayload();
-        const envelope = await encryptBackup(payload, passphrase, {
-          hint: opts.hint || '',
-        });
-        const file = await uploadBackup(envelope);
-
-        const meta = {
-          lastBackupAt: envelope.createdAt,
-          lastBackupId: file.id,
-        };
-        writeMeta(meta);
-        this.lastBackupAt = meta.lastBackupAt;
-        this.lastBackupId = meta.lastBackupId;
-
-        // Refresh the list so the Settings UI shows the new entry.
-        await this.refresh();
-        return file;
-      } catch (err) {
-        this.lastError = err?.message || String(err);
-        throw err;
-      } finally {
-        this.isBackingUp = false;
-      }
-    },
-
-    /**
-     * Fetch the list of backups in the user's Drive.
+     * Probe the remote state. Doubles as the signed-in check: a successful
+     * listing proves the grant works, an "auth-required" rejection means
+     * the user has to sign in (again). Any other failure is surfaced.
      */
     async refresh() {
-      if (!this.signedIn) {
-        this.backups = [];
-        return;
-      }
       this.isListing = true;
       try {
-        this.backups = await listBackups();
+        this.remoteBackup = await getRemoteBackupInfo();
+        this.signedIn = true;
       } catch (err) {
-        if (err?.message === 'NOT_SIGNED_IN') {
+        this.remoteBackup = null;
+        if (isAuthRequired(err)) {
           this.signedIn = false;
-          this.signedInEmail = null;
-          this.backups = [];
           return;
         }
         this.lastError = err?.message || String(err);
@@ -401,58 +157,163 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
     },
 
     /**
-     * Download a backup file, decrypt it, and import the contained seeds
-     * into the wallet and identity stores. Caller is responsible for
-     * confirming the user wants to overwrite any existing wallet — this
-     * action does NOT prompt.
-     *
-     * @param {string} fileId
-     * @param {string} passphrase
-     * @returns {Promise<{ restoredSpark: boolean, restoredIdentity: boolean }>}
+     * Run the native Google sign-in (account chooser + Drive consent).
+     * Throws an Error whose `.reason` carries the raw native code so the
+     * UI can map it to an actionable message (SHA-1 misconfig, network,
+     * scope declined, cancelled).
      */
-    async restore(fileId, passphrase) {
+    async signIn() {
+      this.isAuthing = true;
+      this.lastError = null;
+      try {
+        const res = await cloudSignIn();
+        if (!res?.ok) {
+          const err = new Error(res?.reason || 'sign-in-failed');
+          err.reason = res?.reason || 'sign-in-failed';
+          throw err;
+        }
+        this.signedIn = true;
+        this.signedInEmail = res.account || null;
+        writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: this.signedInEmail });
+        await this.refresh();
+      } catch (err) {
+        this.lastError = err?.message || String(err);
+        throw err;
+      } finally {
+        this.isAuthing = false;
+      }
+    },
+
+    /** Revoke the Drive grant and forget the account. */
+    async signOut() {
+      try {
+        await cloudSignOut();
+      } finally {
+        this.signedIn = false;
+        this.signedInEmail = null;
+        this.remoteBackup = null;
+        writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: null });
+      }
+    },
+
+    /**
+     * Build the plaintext payload from the live stores. Secret strings
+     * exist only inside this function — they are passed straight into
+     * encryptBackup() and dropped, never assigned to store state.
+     */
+    async _gatherPayload() {
+      const wallet = useWalletStore();
+      const identity = useIdentityStore();
+
+      const payload = { v: PAYLOAD_VERSION };
+
+      if (wallet.hasAnySparkWallet) {
+        payload.spark = {
+          mnemonic: await wallet.getSparkMnemonic(),
+          network: wallet.sparkWallet?.connectionData?.network || 'MAINNET',
+        };
+      }
+
+      if (wallet.hasArkadeWallet) {
+        const ark = wallet.arkadeWallet;
+        payload.arkade = {
+          mnemonic: await wallet.getArkadeMnemonic(),
+          arkServerUrl: ark?.connectionData?.arkServerUrl || null,
+          network: ark?.connectionData?.network || null,
+        };
+      }
+
+      const nwc = wallet.wallets
+        .filter((w) => w.type === WALLET_TYPES.NWC && w.nwcUrl)
+        .map((w) => ({ name: w.name || '', nwcUrl: w.nwcUrl }));
+      if (nwc.length) payload.nwc = nwc;
+
+      const lnbits = wallet.wallets
+        .filter(
+          (w) =>
+            w.type === WALLET_TYPES.LNBITS &&
+            w.connectionData?.serverUrl &&
+            w.connectionData?.adminKey
+        )
+        .map((w) => ({
+          name: w.name || '',
+          serverUrl: w.connectionData.serverUrl,
+          adminKey: w.connectionData.adminKey,
+        }));
+      if (lnbits.length) payload.lnbits = lnbits;
+
+      if (identity.bootstrapped) {
+        payload.identity = { mnemonic: await identity.getMnemonic() };
+      }
+
+      if (Object.keys(payload).length === 1) {
+        const err = new Error('Nothing to back up yet');
+        err.code = 'NOTHING_TO_BACKUP';
+        throw err;
+      }
+      return payload;
+    },
+
+    /**
+     * Encrypt every local wallet secret + the identity seed under
+     * `passphrase` and upload the envelope, overwriting the previous one.
+     *
+     * @param {string} passphrase
+     * @param {object} [opts]
+     * @param {string} [opts.hint]  Optional cleartext hint stored in the
+     *                              envelope.
+     */
+    async backup(passphrase, opts = {}) {
+      this.isBackingUp = true;
+      this.lastError = null;
+      try {
+        const payload = await this._gatherPayload();
+        const envelope = await encryptBackup(payload, passphrase, {
+          hint: opts.hint || '',
+        });
+        await uploadBackup(JSON.stringify(envelope));
+
+        this.lastBackupAt = envelope.createdAt;
+        writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: this.signedInEmail });
+        await this.refresh();
+      } catch (err) {
+        if (isAuthRequired(err)) this.signedIn = false;
+        this.lastError = err?.message || String(err);
+        throw err;
+      } finally {
+        this.isBackingUp = false;
+      }
+    },
+
+    /**
+     * Download the backup, decrypt it, and additively apply it: anything
+     * in the payload that is missing on this device is recreated, anything
+     * already present is left untouched.
+     *
+     * @param {string} passphrase
+     * @returns {Promise<{ restored: string[], skipped: string[], failed: Array<{label: string, reason: string}> }>}
+     *          Labels are payload-kind names ('spark', 'arkade', wallet
+     *          display names for nwc/lnbits, 'identity') for UI summary.
+     */
+    async restore(passphrase) {
       this.isRestoring = true;
       this.lastError = null;
       try {
-        const envelope = await downloadBackup(fileId);
-        const payload = await decryptBackup(envelope, passphrase);
-
-        if (!payload || payload.v !== PAYLOAD_VERSION) {
-          throw new Error('Unsupported backup payload version');
+        const envelopeJson = await downloadBackup();
+        if (!envelopeJson) {
+          const err = new Error('No backup found in this Google account');
+          err.code = 'NO_BACKUP_FOUND';
+          throw err;
         }
-
-        const identity = useIdentityStore();
-        const wallet = useWalletStore();
-
-        let restoredIdentity = false;
-        let restoredSpark = false;
-
-        if (payload.identity?.mnemonic) {
-          await identity.importMnemonic(payload.identity.mnemonic, true);
-          restoredIdentity = true;
+        const payload = await decryptBackup(envelopeJson, passphrase);
+        if (!payload || ![1, 2].includes(payload.v)) {
+          const err = new Error(`Unsupported backup payload version: ${payload?.v}`);
+          err.code = 'UNSUPPORTED_PAYLOAD';
+          throw err;
         }
-
-        if (payload.spark?.mnemonic && !wallet.hasAnySparkWallet) {
-          // Only restore Spark if there isn't already one locally. The
-          // user has to wipe first to overwrite — protects against a
-          // restore on top of a freshly-generated wallet they meant to
-          // use rather than discard.
-          await wallet.addSparkWallet({
-            mnemonic: payload.spark.mnemonic,
-            network: payload.spark.network || 'MAINNET',
-            isRestore: true,
-          });
-          restoredSpark = true;
-        }
-
-        // Drop locals before returning — the GC will eventually clean them
-        // anyway, but explicit assignment to null narrows the window.
-        // eslint-disable-next-line no-unused-vars
-        let _drop = null;
-        _drop = payload;
-
-        return { restoredSpark, restoredIdentity };
+        return await this._applyPayload(payload);
       } catch (err) {
+        if (isAuthRequired(err)) this.signedIn = false;
         this.lastError = err?.message || String(err);
         throw err;
       } finally {
@@ -460,13 +321,133 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       }
     },
 
-    async deleteRemote(fileId) {
-      await deleteBackup(fileId);
-      if (this.lastBackupId === fileId) {
-        this.lastBackupId = null;
-        writeMeta({ lastBackupAt: this.lastBackupAt, lastBackupId: null });
+    /**
+     * Apply a decrypted payload to the local stores, additively. Each item
+     * is independent: one wallet failing to connect (dead relay, LNbits
+     * server offline) must not abort the seeds that already restored.
+     */
+    async _applyPayload(payload) {
+      const wallet = useWalletStore();
+      const identity = useIdentityStore();
+
+      const restored = [];
+      const skipped = [];
+      const failed = [];
+
+      // Identity first: cheap, offline, and the Nostr key other features
+      // hang off. Never replace an existing identity — a restore must not
+      // silently swap the user's Nostr key out from under them.
+      if (payload.identity?.mnemonic) {
+        if (identity.bootstrapped) {
+          skipped.push('identity');
+        } else {
+          try {
+            await identity.importMnemonic(payload.identity.mnemonic, true);
+            restored.push('identity');
+          } catch (err) {
+            failed.push({ label: 'identity', reason: err?.message || String(err) });
+          }
+        }
       }
-      await this.refresh();
+
+      // Seed-based wallets next. addSparkWallet(isRestore) probes the
+      // legacy account-0 derivation itself, so restored pre-v1.6.0 funds
+      // stay reachable.
+      if (payload.spark?.mnemonic) {
+        if (wallet.hasAnySparkWallet) {
+          skipped.push('spark');
+        } else {
+          try {
+            await wallet.addSparkWallet({
+              mnemonic: payload.spark.mnemonic,
+              network: payload.spark.network || 'MAINNET',
+              isRestore: true,
+            });
+            restored.push('spark');
+          } catch (err) {
+            failed.push({ label: 'spark', reason: err?.message || String(err) });
+          }
+        }
+      }
+
+      if (payload.arkade?.mnemonic) {
+        if (wallet.hasArkadeWallet) {
+          skipped.push('arkade');
+        } else {
+          try {
+            await wallet.addArkadeWallet({
+              mnemonic: payload.arkade.mnemonic,
+              arkServerUrl: payload.arkade.arkServerUrl || undefined,
+              network: payload.arkade.network || undefined,
+              isRestore: true,
+            });
+            restored.push('arkade');
+          } catch (err) {
+            failed.push({ label: 'arkade', reason: err?.message || String(err) });
+          }
+        }
+      }
+
+      // Connected wallets last: they hit the network (NWC relays retry for
+      // up to ~20 s each) and are the most likely to fail transiently.
+      for (const entry of payload.nwc || []) {
+        if (!entry?.nwcUrl) continue;
+        const label = entry.name || 'NWC wallet';
+        if (wallet.wallets.some((w) => w.nwcUrl === entry.nwcUrl)) {
+          skipped.push(label);
+          continue;
+        }
+        try {
+          await wallet.addWallet({ name: entry.name || undefined, nwcUrl: entry.nwcUrl });
+          restored.push(label);
+        } catch (err) {
+          failed.push({ label, reason: err?.message || String(err) });
+        }
+      }
+
+      for (const entry of payload.lnbits || []) {
+        if (!entry?.serverUrl || !entry?.adminKey) continue;
+        const label = entry.name || 'LNbits wallet';
+        const exists = wallet.wallets.some(
+          (w) =>
+            w.type === WALLET_TYPES.LNBITS &&
+            w.connectionData?.serverUrl === entry.serverUrl &&
+            w.connectionData?.adminKey === entry.adminKey
+        );
+        if (exists) {
+          skipped.push(label);
+          continue;
+        }
+        try {
+          await wallet.addLNBitsWallet({
+            name: entry.name || undefined,
+            serverUrl: entry.serverUrl,
+            adminKey: entry.adminKey,
+          });
+          restored.push(label);
+        } catch (err) {
+          // The store's own duplicate check throws "already connected" for
+          // a same-server wallet added under a different admin key copy.
+          if (/already connected/i.test(err?.message || '')) {
+            skipped.push(label);
+          } else {
+            failed.push({ label, reason: err?.message || String(err) });
+          }
+        }
+      }
+
+      return { restored, skipped, failed };
+    },
+
+    /** Delete the remote backup file. */
+    async deleteRemote() {
+      const res = await deleteBackup();
+      if (res && res.ok === false) {
+        throw new Error(res.reason || 'delete-failed');
+      }
+      this.remoteBackup = null;
+      this.lastBackupAt = null;
+      writeMeta({ lastBackupAt: null, signedInEmail: this.signedInEmail });
     },
   },
 });
