@@ -42,6 +42,21 @@ export default defineComponent({
     let isPrompting = false
     let lastPromptEnd = 0
 
+    // The wallet store hydrates lazily (the first page that needs it calls
+    // initialize()), while this component mounts before any route component
+    // exists. On a cold start store.biometricsEnabled therefore still holds
+    // its default `false` here, and the lock would never engage. Same race
+    // as the kiosk boot guard: fall back to the persisted snapshot.
+    function appLockEnabled () {
+      if (store.biometricsEnabled) return true
+      if (store.isInitialized) return false
+      try {
+        const saved = localStorage.getItem('buhoGO_wallet_store')
+        if (saved) return JSON.parse(saved).biometricsEnabled === true
+      } catch (e) { /* unreadable persisted state: treat as disabled */ }
+      return false
+    }
+
     async function promptUnlock () {
       if (isPrompting) return
       isPrompting = true
@@ -69,7 +84,7 @@ export default defineComponent({
       const { App: CapApp } = await import('@capacitor/app')
 
       // Prompt biometric on cold start if enabled
-      if (store.biometricsEnabled) {
+      if (appLockEnabled()) {
         locked.value = true
         setTimeout(() => promptUnlock(), 300)
       }
@@ -78,7 +93,7 @@ export default defineComponent({
       // The biometric dialog itself causes a brief inactive->active cycle;
       // suppress it with isPrompting flag + 1.5s cooldown after last prompt.
       stateListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
-        if (!store.biometricsEnabled) return
+        if (!appLockEnabled()) return
 
         // Sync dark mode state for the lock overlay
         isDark.value = $q.dark.isActive
