@@ -392,6 +392,18 @@
       :resolve-error="sendResolveError"
       @update:resolve-error="sendResolveError = $event"
       @payment-detected="onPaymentDetected"
+      @open-batch-send="showBatchSend = true"
+    />
+
+    <!-- Redeem scanner — the Receive modal's "Redeem" button opens the
+         scan surface directly (never a screen titled "Send"). Headline-free
+         per design direction; the bottom prompt carries the redeem context.
+         The decoded code routes through the canonical dispatcher, which
+         lands LNURL-withdraw on the redeem sheet. -->
+    <QrScanSheet
+      v-model="showRedeemScanner"
+      :prompt="$t('Scan the withdraw QR code')"
+      @scanned="onRedeemScanned"
     />
 
     <!-- One-time PIN Migration Dialog (for existing users updating from PIN to device key) -->
@@ -601,14 +613,6 @@
       @batch-completed="handleBatchCompleted"
     />
 
-    <!-- Contact Payment Modal -->
-    <PaymentModal
-      v-model="showContactPayment"
-      :contact="selectedPayContact"
-      @payment-sent="handleContactPaymentSent"
-      @bitcoin-payment-requested="handleBitcoinPaymentFromContact"
-    />
-
     <!-- Shared confirmation sheet — used for both send (Lightning Address /
          LNURL-Pay / invoice / Spark) and redeem (LNURL-Withdraw) flows.
          Same component, different verb. Bitcoin on-chain still uses the
@@ -621,9 +625,26 @@
       :wallet-hint="paymentSheetWalletHint"
       :is-sending="isSendingPayment"
       :is-complete="sendDidSucceed"
+      :commit-gate="sendSheetCommitGate"
+      @amount-changed="sendSheetAmountSats = $event"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
-    />
+    >
+      <!-- Spark on-chain rides the shared sheet with the L1 fee machinery
+           in the extras slot: balance + Use all, per-speed SDK fee quote,
+           and the breakdown. The panel's gate blocks the slide until a
+           quote is selected and the total fits the balance. -->
+      <template v-if="isSparkL1Payment" #extras>
+        <OnchainFeePanel
+          :amount-sats="sendSheetAmountSats"
+          :address="l1DestinationAddress"
+          :available-balance="walletState.balance"
+          :disabled="isSendingPayment"
+          @update:fee="l1Fee = $event"
+          @use-max="$refs.sendSheetRef?.setAmountSats($event)"
+        />
+      </template>
+    </PaymentConfirmSheet>
 
     <PaymentConfirmSheet
       ref="withdrawSheetRef"
@@ -634,20 +655,6 @@
       :status-message="withdrawSheetStatus"
       @confirm="onWithdrawSheetConfirm"
       @cancel="onWithdrawSheetCancel"
-    />
-
-    <!-- Bitcoin on-chain — self-managing bottom sheet with its own
-         priority-fee selector, custom rate input, and slide-to-send.
-         Lives alongside the LN sheets so all three confirm UIs share
-         the same surface language. -->
-    <L1BitcoinWithdraw
-      v-if="pendingPayment?.bitcoinAddress"
-      v-model="showBitcoinSheet"
-      :destination-address="pendingPayment.bitcoinAddress"
-      :available-balance="walletState.balance"
-      :verification="pendingPayment?.brantaVerification || null"
-      @withdrawal-submitted="handleBitcoinWithdrawalSubmitted"
-      @withdrawal-error="handleBitcoinWithdrawalError"
     />
 
     <!-- LNURL-Withdraw Success Screen -->
@@ -805,6 +812,7 @@ import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.j
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
+import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
 import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
@@ -826,11 +834,14 @@ import {useTransactionMetadataStore} from '../stores/transactionMetadata';
 import {normalizeTx} from '../services/txNormalizer.js';
 import ReceiveModal from '../components/ReceiveModal.vue';
 import SendModal from '../components/SendModal.vue';
-import L1BitcoinWithdraw from '../components/L1BitcoinWithdraw.vue';
+import QrScanSheet from '../components/QrScanSheet.vue';
+import {parsePaymentDestination} from '../providers/WalletFactory';
+import OnchainFeePanel from '../components/OnchainFeePanel.vue';
+import {describeL1WithdrawError} from '../utils/l1WithdrawErrors.js';
+import {parseBip21} from '../utils/bip21.js';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import ArkadeLogo from '../components/ArkadeLogo.vue';
-import PaymentModal from '../components/PaymentModal.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
@@ -854,11 +865,11 @@ export default {
   components: {
     ReceiveModal,
     SendModal,
+    QrScanSheet,
     ArkadeLogo,
-    L1BitcoinWithdraw,
+    OnchainFeePanel,
     InternalTransferModal,
     AddressBookQuickModal,
-    PaymentModal,
     PaymentConfirmSheet,
     BatchSendModal,
     PaymentConfirmation,
@@ -917,6 +928,7 @@ export default {
 
       showReceiveModal: false,
       showSendModal: false,
+      showRedeemScanner: false,
       // Drives the Send sheet's loading CTA + inline error while we fetch and
       // validate a destination it emitted (before the confirm sheet opens).
       sendResolving: false,
@@ -932,10 +944,11 @@ export default {
       // the redeem sheet by onPaymentDetected (then cleared), so the amount
       // the user already entered survives the modal handoff.
       pendingWithdrawTargetSats: null,
-      // Bitcoin on-chain runs through L1BitcoinWithdraw, which owns its
-      // own bottom-sheet and bundles fee-priority selection + the
-      // dust/balance checks the LN paths don't need.
-      showBitcoinSheet: false,
+      // Spark on-chain state: the sheet's live amount (drives the fee
+      // panel's per-amount quote) and the panel's selected quote (the
+      // commit gate + the withdrawToL1 parameters).
+      sendSheetAmountSats: 0,
+      l1Fee: null,
       pendingPayment: null,
       merchantCountdown: 0,
       merchantCountdownTimer: null,
@@ -989,8 +1002,6 @@ export default {
       // Batch Send Modal
       showBatchSend: false,
       // Contact Payment Modal
-      showContactPayment: false,
-      selectedPayContact: null,
       // LNURL-Withdraw state
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
@@ -1456,16 +1467,21 @@ export default {
       } else if (p.sparkAddress) {
         const contact = this.addressBookStore.findContactByAddress(p.sparkAddress);
         recipient = this.recipientFromContact(contact, {
-          fallbackName: this.$t('Spark address'),
-          fallbackColor: '#6B7280',
+          // Payment-language unification: an anonymous destination is just
+          // "Bitcoin payment" with the ₿ identity — the rail never leaks.
+          // The full string stays one tap away under "Show details".
+          fallbackName: this.$t('Bitcoin payment'),
+          fallbackColor: '#F7931A',
+          fallbackInitial: '₿',
           addressType: 'spark',
           address: p.sparkAddress,
         });
       } else if (p.arkadeAddress) {
         const contact = this.addressBookStore.findContactByAddress(p.arkadeAddress);
         recipient = this.recipientFromContact(contact, {
-          fallbackName: this.$t('Arkade address'),
-          fallbackColor: '#F14317',
+          fallbackName: this.$t('Bitcoin payment'),
+          fallbackColor: '#F7931A',
+          fallbackInitial: '₿',
           addressType: 'arkade',
           address: p.arkadeAddress,
         });
@@ -1474,8 +1490,9 @@ export default {
         recipient = this.recipientFromContact(contact, {
           // Contact-pay and deep-link entries carry the name even when the
           // address isn't in the local book — show it over the generic label.
-          fallbackName: p.contactName || this.$t('Bitcoin address'),
+          fallbackName: p.contactName || this.$t('Bitcoin payment'),
           fallbackColor: '#F7931A',
+          fallbackInitial: p.contactName ? undefined : '₿',
           addressType: 'bitcoin',
           address: p.bitcoinAddress,
         });
@@ -1493,8 +1510,6 @@ export default {
           recipient = {
             name: walletBrand.handle || walletBrand.brand.name,
             color: '#3B82F6',
-            // It is a Lightning Address under the hood, so label it as one:
-            // the indicator then reads "Lightning payment", not "LNURL payment".
             addressType: 'lightning',
             logoUrl: walletBrand.brand.logo,
             logoContain: walletBrand.brand.logoContain === true,
@@ -1504,18 +1519,22 @@ export default {
           };
         } else {
           recipient = {
-            name: this.$t('LNURL payment'),
-            color: '#3B82F6',
+            name: this.$t('Bitcoin payment'),
+            color: '#F7931A',
+            initial: '₿',
             addressType: 'lnurl',
             address: typeof p.data === 'string' ? p.data : ''
           };
         }
       } else {
-        // BOLT11 invoice or unknown — show description as the "name" if
-        // we have it, otherwise fall back to a generic label.
+        // BOLT11 invoice or unknown — the unified "Bitcoin payment"
+        // identity with the ₿ mark, never a stray letter. The memo (when
+        // the invoice carries one) shows exactly once, in the payment-
+        // indicator row below the hero; the raw BOLT11 stays one tap away.
         recipient = {
-          name: p.description || this.$t('Lightning invoice'),
-          color: '#F59E0B',
+          name: this.$t('Bitcoin payment'),
+          color: '#F7931A',
+          initial: '₿',
           addressType: 'invoice',
           // The raw destination for invoices is the BOLT11 itself, surfaced
           // (folded) under the payment indicator for manual verification.
@@ -1594,8 +1613,8 @@ export default {
       let feeEstimate = null;
       if (this.walletStore.isActiveWalletSpark) {
         if (p.sparkAddress) {
-          // Spark-to-Spark transfers are free.
-          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free (Spark transfer)') };
+          // Instant internal transfer — free. Named by outcome, not rail.
+          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
         } else if (this.isEstimatingFee) {
           feeEstimate = { sats: null, isEstimating: true };
         } else if (this.estimatedFee !== null && this.estimatedFee !== undefined) {
@@ -1603,22 +1622,25 @@ export default {
         }
       } else if (this.walletStore.isActiveWalletArkade) {
         if (p.arkadeAddress) {
-          // ark1 → ark1 is instant and effectively free.
-          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free (Arkade transfer)') };
+          // Instant internal transfer — free. Named by outcome, not rail.
+          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
         } else if (p.bitcoinAddress) {
           // On-chain offboard pays a Bitcoin network fee, deducted from the
           // amount. Plain-language note (no pre-call number is exposed).
           feeEstimate = { sats: null, isEstimating: false, label: this.$t('Includes a network fee') };
         } else {
-          // Lightning over Arkade carries a small fee, deducted automatically
-          // (no pre-call estimate). Surface a plain-language note, not a number.
-          feeEstimate = { sats: null, isEstimating: false, label: this.$t('Includes a small Lightning fee') };
+          // The swap layer charges a small fee, deducted automatically (no
+          // pre-call estimate). Plain-language note, no rail name, no number.
+          feeEstimate = { sats: null, isEstimating: false, label: this.$t('Includes a small network fee') };
         }
       }
 
       return {
         recipient,
         amount,
+        // On-chain sends always take the deliberate slide gesture — every
+        // L1 transaction is irreversible, regardless of amount.
+        forceSlide: !!p.bitcoinAddress,
         // Description precedence is deliberate: the invoice / LNURL memo
         // (what the user is actually paying for) wins; Branta's
         // platform-level description is only a fallback when no memo exists.
@@ -1643,25 +1665,49 @@ export default {
       };
     },
 
-    paymentSheetWalletCanPay() {
+    // The pending payment's rail, in the vocabulary walletCapabilities
+    // accepts — from the payload key when present, the payment type
+    // otherwise. One derivation feeds both the gate and the hint.
+    pendingDestinationType() {
       const p = this.pendingPayment;
-      if (!p) return true;
-      if (p.sparkAddress || p.type === 'spark_address') {
-        return this.walletStore.isActiveWalletSpark;
-      }
-      if (p.arkadeAddress || p.type === 'arkade_address') {
-        return this.walletStore.isActiveWalletArkade;
-      }
-      return true;
+      if (!p) return 'lightning';
+      if (p.sparkAddress) return 'spark';
+      if (p.arkadeAddress) return 'arkade';
+      if (p.bitcoinAddress) return 'bitcoin';
+      return p.type || 'lightning';
+    },
+
+    paymentSheetWalletCanPay() {
+      if (!this.pendingPayment) return true;
+      return canWalletPay(this.walletStore.activeWalletType, this.pendingDestinationType);
+    },
+
+    // Spark on-chain send: mounts the L1 fee panel in the sheet's extras
+    // slot and reroutes confirm to the withdrawal executor.
+    isSparkL1Payment() {
+      return this.walletStore.isActiveWalletSpark && !!this.pendingPayment?.bitcoinAddress;
+    },
+
+    // Bare on-chain destination for the fee quote + withdrawal. The send
+    // pipeline already unwraps BIP21 before building the payload; this
+    // re-parse is a cheap defensive net for any future path that doesn't.
+    l1DestinationAddress() {
+      const raw = (this.pendingPayment?.bitcoinAddress || '').trim();
+      const bip21 = parseBip21(raw);
+      return bip21 ? bip21.address : raw;
+    },
+
+    // Extra commit condition for the sheet: Spark on-chain must hold a
+    // settled, affordable fee quote before the slide can complete. Every
+    // other payment leaves the gate open.
+    sendSheetCommitGate() {
+      if (!this.isSparkL1Payment) return true;
+      return !!(this.l1Fee?.ready && !this.l1Fee.insufficient);
     },
 
     paymentSheetWalletHint() {
       if (this.paymentSheetWalletCanPay) return '';
-      const p = this.pendingPayment;
-      if (p?.arkadeAddress || p?.type === 'arkade_address') {
-        return this.$t('Switch to your Arkade wallet to pay this address');
-      }
-      return this.$t('Switch to your Spark wallet to pay this address');
+      return walletSwitchHint(this.pendingDestinationType, this.$t.bind(this));
     },
 
     /**
@@ -1849,9 +1895,12 @@ export default {
     // NFC capability for the "NFC ready" badge. Fire-and-forget — never blocks
     // the wallet load, and stays false on web/PWA (no NFC there).
     isNfcAvailable().then((ok) => { this.nfcReady = ok; }).catch(() => {});
-    this.initializeWallet();
-    // Check for Bitcoin withdrawal from contacts
-    this.handleBitcoinWithdrawalFromQuery();
+    // Keep the init promise so cross-page payment handoffs (route query)
+    // can dispatch exactly when the wallet layer is ready instead of
+    // guessing with a fixed delay.
+    this._walletInitPromise = this.initializeWallet();
+    // Check for a payment handed over from the Address Book page
+    this.handlePaymentFromQuery();
     // Check if existing Spark wallets need one-time PIN migration
     this.$watch(() => this.walletStore.needsPinMigration, (needs) => {
       if (needs) this.showMigrationDialog = true;
@@ -1867,7 +1916,13 @@ export default {
       (paymentData) => {
         if (!paymentData) return;
         this.walletStore.pendingDeepLink = null;
-        this.onPaymentDetected(paymentData);
+        // Dispatch once wallet initialization settles — a cold-start intent
+        // can arrive before providers are connected, and the NWC/LNbits
+        // resolution paths need the active wallet in place. Same readiness
+        // gate the route-query handoff uses.
+        Promise.resolve(this._walletInitPromise)
+          .catch(() => {})
+          .then(() => this.onPaymentDetected(paymentData));
       },
       { immediate: true }
     );
@@ -1898,12 +1953,14 @@ export default {
 
     /**
      * The Receive modal's "Redeem" button stashes the user's intended amount
-     * in `pendingWithdrawTargetSats` and opens this scanner so the redeem
-     * sheet can pre-fill it once the withdraw QR is scanned. If the scanner
-     * is dismissed without a scan, drop the stash so it can't pre-fill a
-     * later, unrelated withdraw.
+     * in `pendingWithdrawTargetSats` and opens the redeem scanner so the
+     * redeem sheet can pre-fill it once the withdraw QR is scanned. If the
+     * scanner is dismissed without a scan, drop the stash so it can't
+     * pre-fill a later, unrelated withdraw. (Ordering is safe on a real
+     * scan: the scanned-emit chain reads and clears the stash synchronously
+     * in onPaymentDetected before this queued watcher runs.)
      */
-    showSendModal(open) {
+    showRedeemScanner(open) {
       if (!open) this.pendingWithdrawTargetSats = null;
     },
 
@@ -1959,19 +2016,6 @@ export default {
       }
     },
 
-    /**
-     * Bitcoin sheet cleanup. L1BitcoinWithdraw self-manages its own
-     * dialog and only clears `pendingPayment` on a successful send (via
-     * handleBitcoinWithdrawalComplete). When the user closes the sheet
-     * without sending, this watcher catches the v-model going false and
-     * drops the stale `pendingPayment` so it can't leak into the next
-     * flow the user opens.
-     */
-    showBitcoinSheet(open) {
-      if (!open && this.pendingPayment?.bitcoinAddress) {
-        this.pendingPayment = null;
-      }
-    },
 
     /**
      * Re-estimate fees whenever the payment payload or the entered amount
@@ -2203,6 +2247,9 @@ export default {
         return {
           name: fallback.fallbackName,
           color: fallback.fallbackColor,
+          // Anonymous rail destinations carry the ₿ glyph instead of a
+          // letter initial — one Bitcoin identity across every send.
+          ...(fallback.fallbackInitial ? { initial: fallback.fallbackInitial } : {}),
           addressType: fallback.addressType,
           address: fallback.address,
           matchedContact: false,
@@ -2260,80 +2307,49 @@ export default {
     },
 
     /**
-     * Handle pay contact from AddressBookQuickModal
+     * One entry point for "pay this saved contact" from every surface
+     * outside the Send sheet (wallet-home quick modal, Address Book page
+     * via route query). Applies the shared capability gate, then hands
+     * the address to the canonical dispatcher — the same pipeline the
+     * scanner and Send sheet feed — so a contact payment gets everything
+     * a scanned address gets: real LNURL metadata (amount bounds,
+     * commentAllowed, LUD-21 payout currency), Branta verification,
+     * wallet/Nostr branding, and fee estimates.
      */
-    handlePayContact(contact) {
-      this.showAddressBookQuick = false;
-
-      // Bitcoin contacts go through the canonical dispatcher — it owns the
-      // Spark-L1-sheet vs Arkade-Ramps routing, the wallet-type guard, and
-      // the Branta/Nostr enrichment a scanned address gets.
-      if (contact.addressType === 'bitcoin') {
-        const address = contact.address || contact.lightningAddress;
-        void this.onPaymentDetected({
-          type: 'bitcoin_address',
-          data: address,
-          contactName: contact.name
+    payContactDestination({ address, addressType, name }) {
+      if (!address) return;
+      if (!canWalletPay(this.walletStore.activeWalletType, addressType)) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Cannot pay this contact'),
+          caption: walletSwitchHint(addressType, this.$t.bind(this)),
+          timeout: 3500,
         });
         return;
       }
-
-      // Lightning and Spark contacts use PaymentModal
-      this.selectedPayContact = contact;
-      this.showContactPayment = true;
-    },
-
-    /**
-     * Handle successful contact payment.
-     *
-     * Funnels into the same success modal the free-amount send path
-     * uses, so the two routes feel like one. `showSaveContact` is
-     * always false here — by definition the recipient is already a
-     * saved contact (the user picked them from the address book).
-     */
-    handleContactPaymentSent(payload) {
-      const contact = this.selectedPayContact;
-      const recipient = contact?.name || '';
-      const amount = Number(payload?.amount) || 0;
-      this.selectedPayContact = null;
-
-      // Refresh the balance and recent-transaction preview. PaymentModal has
-      // already persisted the contact link, so loadLastTransaction can stamp
-      // it before this screen renders the outgoing row.
-      if (this.walletStore.activeWalletId) {
-        this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
-        this.loadLastTransaction();
-      }
-
-      // PaymentModal already resolved completed-or-throw before
-      // emitting `payment-sent` and queued its contact metadata, so we can
-      // assume COMPLETED here. If a future PaymentModal change introduces
-      // pending semantics, the openSendSuccess helper accepts the status and
-      // adapts.
-      this.openSendSuccess({
-        amount,
-        recipient,
-        status: 'completed',
-        showSaveContact: false,
-        // Forward any LUD-09 message PaymentModal surfaced from the pay-link
-        // callback (contact pay flow).
-        successAction: payload?.successAction || null,
+      const typeMap = {
+        spark: 'spark_address',
+        arkade: 'arkade_address',
+        bitcoin: 'bitcoin_address',
+        lightning: 'lightning_address',
+        lnurl: 'lnurl',
+      };
+      void this.onPaymentDetected({
+        type: typeMap[addressType] || 'lightning_address',
+        data: address,
+        contactName: name || null,
       });
     },
 
     /**
-     * Handle Bitcoin payment request from contact modal
+     * Handle pay contact from AddressBookQuickModal
      */
-    handleBitcoinPaymentFromContact(paymentData) {
-      this.showContactPayment = false;
-      this.selectedPayContact = null;
-      const address = paymentData.address || paymentData.contact?.address;
-      // Canonical dispatcher: Spark gets the L1 withdrawal sheet, Arkade the
-      // standard confirm sheet + Ramps offboard, others a friendly error.
-      void this.onPaymentDetected({
-        type: 'bitcoin_address',
-        data: address,
-        contactName: paymentData.contact?.name
+    handlePayContact(contact) {
+      this.showAddressBookQuick = false;
+      this.payContactDestination({
+        address: this.addressBookStore.getEntryAddress(contact),
+        addressType: this.addressBookStore.getEntryAddressType(contact),
+        name: contact.name,
       });
     },
 
@@ -2756,12 +2772,63 @@ export default {
      * is bound to `pendingPayment`, which we clear in step 1 — moving
      * the polling onto the sheet would race the unmount.
      */
-    handleBitcoinWithdrawalSubmitted({ requestId }) {
-      this.showBitcoinSheet = false;
-      this.pendingPayment = null;
-      this.updateWalletBalance();
+    /**
+     * Spark on-chain executor, run from the shared confirm sheet. The
+     * amount comes from the sheet, the speed/quote from the fee panel
+     * (l1Fee — the commit gate guarantees it's settled before the slide
+     * can complete; the guard here is the belt-and-braces backstop).
+     *
+     * On submit-accepted this deliberately does NOT show the instant-
+     * payment success screen: an on-chain withdrawal is a request the
+     * SSP still has to broadcast, so the honest surface is the
+     * submitted-toast + background monitor (mempool link when it lands).
+     */
+    async executeSparkL1Withdrawal(amountSats) {
+      const fee = this.l1Fee;
+      if (!fee?.ready || fee.insufficient) {
+        this.$refs.sendSheetRef?.resetSlide();
+        return;
+      }
 
-      this._monitorL1Withdrawal(requestId);
+      this.isSendingPayment = true;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        if (!provider?.withdrawToL1) throw new Error('Withdrawal not supported');
+
+        const result = await provider.withdrawToL1({
+          amountSats,
+          destinationAddress: this.l1DestinationAddress,
+          speed: fee.speed,
+          feeQuoteId: fee.feeQuoteId,
+          feeAmountSats: fee.totalFeeSats,
+          deductFeeFromWithdrawalAmount: false
+        });
+
+        // Same post-submit lifecycle as before the fold: close the sheet,
+        // clear the payment, poll in the background with toasts. Polling
+        // lives here (not on the sheet) because clearing pendingPayment
+        // tears the sheet down.
+        this.showSendSheet = false;
+        this.pendingPayment = null;
+        this.l1Fee = null;
+        this.sendSheetAmountSats = 0;
+        this.updateWalletBalance();
+        this._monitorL1Withdrawal(result.requestId);
+      } catch (error) {
+        console.error('Withdrawal failed:', error);
+        const msg = describeL1WithdrawError(error, this.$t.bind(this));
+        this.walletStore.showPaymentError(error, {
+          context: 'withdraw',
+          route: 'L1 withdrawal',
+          amountSats,
+          title: msg.title,
+          reason: msg.description,
+          t: this.$t.bind(this),
+        });
+        this.$refs.sendSheetRef?.resetSlide();
+      } finally {
+        this.isSendingPayment = false;
+      }
     },
 
     /**
@@ -2828,35 +2895,33 @@ export default {
     },
 
     /**
-     * Handle Bitcoin withdrawal error
+     * Handle a payment handed over via route query (Address Book page →
+     * wallet). `pay_contact` carries any contact rail; the legacy
+     * `bitcoin_withdrawal` action is still accepted so nothing that
+     * linked against it breaks.
      */
-    handleBitcoinWithdrawalError(error) {
-      // Error notification is already shown by the component
-      console.error('Bitcoin withdrawal error:', error);
-    },
-
-    /**
-     * Handle Bitcoin withdrawal request from query params (from contacts)
-     */
-    handleBitcoinWithdrawalFromQuery() {
+    handlePaymentFromQuery() {
       const query = this.$route.query;
-      if (query.action === 'bitcoin_withdrawal' && query.address) {
-        // Wait for wallet to be loaded
-        this.$nextTick(() => {
-          setTimeout(() => {
-            // Route through the canonical dispatcher: it owns the Spark
-            // L1-sheet vs Arkade Ramps-offboard decision and the guards.
-            void this.onPaymentDetected({
-              type: 'bitcoin_address',
-              data: query.address,
-              contactName: query.contactName || null
-            });
+      const isPayContact = query.action === 'pay_contact' && query.address;
+      const isLegacyBitcoin = query.action === 'bitcoin_withdrawal' && query.address;
+      if (!isPayContact && !isLegacyBitcoin) return;
 
-            // Clear query params
-            this.$router.replace({ query: {} });
-          }, 500);
+      // Dispatch once wallet initialization settles (success or failure —
+      // a failed init still gets the proper payment-error surface), then
+      // route through the shared contact entry point (capability gate +
+      // canonical dispatcher).
+      Promise.resolve(this._walletInitPromise)
+        .catch(() => {})
+        .then(() => {
+          this.payContactDestination({
+            address: query.address,
+            addressType: isLegacyBitcoin ? 'bitcoin' : (query.addressType || 'lightning'),
+            name: query.contactName || null,
+          });
+
+          // Clear query params
+          this.$router.replace({ query: {} });
         });
-      }
     },
 
     async switchSparkTab(walletId) {
@@ -3646,7 +3711,11 @@ export default {
           }
         }
 
-        let description = 'Lightning Payment';
+        // No memo extraction here (that needs a full bolt11 decoder) — and
+        // no placeholder either: an empty description lets the confirm
+        // sheet show its "Show details" reveal instead of printing the
+        // rail name as if it were content.
+        const description = '';
         const now = Math.floor(Date.now() / 1000);
         const expiry = now + 3600;
 
@@ -3660,7 +3729,7 @@ export default {
         console.error('Error parsing invoice manually:', error);
         return {
           amount: 0,
-          description: 'Lightning Payment',
+          description: '',
           expiry: Math.floor(Date.now() / 1000) + 3600,
           invoice: invoice
         };
@@ -3681,8 +3750,34 @@ export default {
       this.pendingWithdrawTargetSats = this.$refs.receiveModal?.intendedReceiveSats || null;
       this.showReceiveModal = false;
       this.$nextTick(() => {
-        this.showSendModal = true;
+        this.showRedeemScanner = true;
       });
+    },
+
+    /**
+     * Redeem scan → canonical dispatcher. The scanner is redeem-flavored
+     * chrome only; classification is the same parsePaymentDestination the
+     * deep-link path uses, so every form a withdraw QR takes (bare lnurl1,
+     * lightning:/lnurlw: wrappers, ATM fallback URLs) resolves identically.
+     * A non-withdraw code still routes correctly — someone who scans an
+     * invoice here gets the pay flow, not a dead end.
+     */
+    onRedeemScanned(value) {
+      const parsed = parsePaymentDestination(value);
+      if (!parsed || parsed.type === 'unknown' || (!parsed.valid && parsed.type !== 'bolt12_offer')) {
+        // Nothing will consume the stashed receive amount — drop it so it
+        // can never leak into a later, unrelated withdraw.
+        this.pendingWithdrawTargetSats = null;
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t("We don't recognize this code"),
+          caption: this.$t("It doesn't look like a payment request"),
+          timeout: 4000,
+        });
+        return;
+      }
+      const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || value;
+      void this.onPaymentDetected({ data, type: parsed.type });
     },
 
     // ========================================================================
@@ -4559,18 +4654,12 @@ export default {
         this.runNostrRecipientEnrichment(this.pendingPayment);
 
         // Dispatch by payload shape:
-        //   - Bitcoin on-chain → L1BitcoinWithdraw (own sheet)
-        //   - LNURL-Withdraw   → PaymentConfirmSheet, verb='redeem'
-        //   - Everything else  → PaymentConfirmSheet, verb='send'
-        if (this.pendingPayment?.bitcoinAddress) {
-          // Arkade offboards on-chain through the standard confirm sheet +
-          // Ramps; the Spark-specific L1 withdraw sheet only applies to Spark.
-          if (this.walletStore.isActiveWalletArkade) {
-            this.showSendSheet = true;
-          } else {
-            this.showBitcoinSheet = true;
-          }
-        } else if (this.pendingPayment?.type === 'lnurl_withdraw') {
+        //   - LNURL-Withdraw  → PaymentConfirmSheet, verb='redeem'
+        //   - Everything else → PaymentConfirmSheet, verb='send'
+        //     (on-chain included: Spark mounts the L1 fee panel in the
+        //     sheet's extras slot, Arkade offboards via Ramps — one
+        //     confirm surface regardless of backend)
+        if (this.pendingPayment?.type === 'lnurl_withdraw') {
           this.showWithdrawSheet = true;
         } else {
           this.showSendSheet = true;
@@ -4980,6 +5069,13 @@ export default {
      * thumb so the user can try again without dismissing the sheet.
      */
     async onSendSheetConfirm({ amountSats, comment, payout = null }) {
+      // Spark on-chain rides its own submit lifecycle (withdrawal request
+      // + background monitor), not the instant-payment pipeline.
+      if (this.isSparkL1Payment) {
+        await this.executeSparkL1Withdrawal(amountSats);
+        return;
+      }
+
       this.paymentAmount = String(amountSats);
       this.paymentComment = comment || '';
       this.sendDenomination = 'sats';
@@ -5008,6 +5104,10 @@ export default {
       this.sendPayout = null;
       this.estimatedFee = null;
       this.isEstimatingFee = false;
+      // On-chain state must not leak into the next open: a stale quote
+      // would gate (or worse, price) a different payment.
+      this.l1Fee = null;
+      this.sendSheetAmountSats = 0;
     },
 
     /**

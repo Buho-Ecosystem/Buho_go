@@ -86,7 +86,7 @@
       <AddressBookList
         @add-contact="showAddModal"
         @edit-contact="showEditModal"
-        @pay-contact="showPaymentModal"
+        @pay-contact="payContact"
       />
     </div>
 
@@ -96,14 +96,6 @@
       :entry="selectedEntry"
       @saved="handleEntrySaved"
       @open-existing="handleOpenExisting"
-    />
-
-    <!-- Payment Modal -->
-    <PaymentModal
-      v-model="showPayment"
-      :contact="selectedContact"
-      @payment-sent="handlePaymentSent"
-      @bitcoin-payment-requested="handleBitcoinPaymentRequested"
     />
 
     <!-- Batch Send Modal -->
@@ -133,7 +125,6 @@ const AUTO_SYNC_DEBOUNCE_MS = 1500
 
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
-import PaymentModal from '../components/PaymentModal.vue'
 import BatchSendModal from '../components/BatchSendModal.vue'
 
 export default {
@@ -141,15 +132,12 @@ export default {
   components: {
     AddressBookList,
     AddressBookModal,
-    PaymentModal,
     BatchSendModal
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
-      showPayment: false,
-      selectedContact: null,
       showBatchSend: false,
       _autoSyncTimer: null,
     }
@@ -300,7 +288,7 @@ export default {
       this.showModal = true
     },
 
-    showPaymentModal(contact) {
+    payContact(contact) {
       // Kick off a silent profile re-sync before we even decide the
       // routing — fire-and-forget so it never blocks the tap. The
       // refresh updates the avatar / lud16 in place; if it errors,
@@ -325,15 +313,11 @@ export default {
         return
       }
 
-      // Bitcoin contacts need the L1 withdrawal flow - navigate directly to Wallet
-      if (contact.addressType === 'bitcoin') {
-        this.navigateToBitcoinWithdrawal(contact)
-        return
-      }
-
-      // Lightning and Spark contacts use PaymentModal
-      this.selectedContact = contact
-      this.showPayment = true
+      // Hand the contact to the wallet page — its dispatcher is the one
+      // send pipeline (LNURL metadata, Branta, branding, fee estimates,
+      // capability gate), so a contact paid from here behaves exactly
+      // like one paid from the Send sheet.
+      this.navigateToWalletPayment(contact)
     },
 
     /**
@@ -357,13 +341,14 @@ export default {
       })
     },
 
-    navigateToBitcoinWithdrawal(contact) {
+    navigateToWalletPayment(contact) {
       const address = contact.address || contact.lightningAddress
       this.$router.push({
         path: '/wallet',
         query: {
-          action: 'bitcoin_withdrawal',
+          action: 'pay_contact',
           address: address,
+          addressType: contact.addressType || 'lightning',
           contactName: contact.name
         }
       })
@@ -382,25 +367,7 @@ export default {
      */
     handleOpenExisting(entry) {
       if (!entry) return
-      this.showPaymentModal(entry)
-    },
-
-    handlePaymentSent() {
-      this.selectedContact = null
-      this.$q.notify({
-        type: 'positive',
-        message: this.$t('Sent'),
-
-      })
-    },
-
-    handleBitcoinPaymentRequested(paymentData) {
-      // Fallback handler if PaymentModal is opened with a Bitcoin contact
-      this.selectedContact = null
-      this.navigateToBitcoinWithdrawal({
-        name: paymentData.contact?.name,
-        address: paymentData.address
-      })
+      this.payContact(entry)
     },
 
     handleBatchCompleted(results) {
