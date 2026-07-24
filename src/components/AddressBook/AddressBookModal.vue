@@ -276,6 +276,17 @@ export default {
     entry: {
       type: Object,
       default: null
+    },
+    /**
+     * Which add-mode tab to land on when the sheet opens. Defaults to
+     * 'manual' (see the tab-order comment above) — callers that want a
+     * more specific entry point, e.g. the Identity page's header scan
+     * button jumping straight to the camera, pass 'scan' or 'search'.
+     * Ignored while editing (there is no tab bar in edit mode).
+     */
+    initialTab: {
+      type: String,
+      default: 'manual'
     }
   },
   emits: ['update:modelValue', 'saved', 'open-existing'],
@@ -363,11 +374,12 @@ export default {
     show(newVal) {
       if (newVal) {
         this.initializeForm()
-        // Both editing and add mode land on the manual "Enter" form: it
-        // works for everyone (Lightning/Spark/Bitcoin address) without
-        // assuming Nostr fluency, and resetting here keeps the next open
-        // from being biased by where the previous one finished.
-        this.activeTab = 'manual'
+        // Add mode lands on `initialTab` (defaults to the manual "Enter"
+        // form, which works for everyone without assuming Nostr fluency).
+        // Editing always lands on manual regardless of `initialTab` since
+        // there is no tab bar in that mode. Resetting here keeps the next
+        // open from being biased by where the previous one finished.
+        this.activeTab = this.isEditing ? 'manual' : this.initialTab
         this.$nextTick(() => {
           this.$refs.nameInput?.focus()
         })
