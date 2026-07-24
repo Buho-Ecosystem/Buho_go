@@ -61,8 +61,8 @@
             :aria-selected="selected === 'lud16'"
             @click="selected = 'lud16'"
           >
-            <Icon icon="tabler:bolt-filled" width="14" height="14" class="switcher-icon switcher-icon--bolt" />
-            <span>{{ $t('Lightning') }}</span>
+            <Icon icon="tabler:cash-banknote" width="14" height="14" class="switcher-icon switcher-icon--cash" />
+            <span>{{ $t('Money') }}</span>
           </button>
         </div>
 
@@ -411,7 +411,11 @@ export default {
 }
 
 .switcher-icon--check { color: #15a35b; }
-.switcher-icon--bolt  { color: #f7931a; }
+/* .switcher-icon--cash intentionally carries no colour override — it
+   inherits the segment's own text colour (grey when inactive, ink/
+   white when active) instead of a brand accent. This tab is the
+   generic "send money here" address, not a lightning-specific
+   concept, so it shouldn't compete with the verified-check green. */
 
 /* ---------- QR stage ---------- */
 
