@@ -227,6 +227,13 @@
             />
           </div>
 
+          <!-- Flow-specific extras (e.g. the on-chain fee panel: balance
+               row, speed cards, fee breakdown). Slot content renders
+               inside the stage so it inherits the sheet's rhythm; when
+               present it owns fee display, so the generic footnote below
+               stays out of the way. -->
+          <slot name="extras" />
+
           <!-- Fee row: surfaced when the parent supplies an estimate or a
                static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
@@ -239,12 +246,16 @@
             </span>
           </div>
 
-          <!-- Commit control. Idle: slide-to-confirm above the threshold, a tap
-               button below it. Once committed (either way) it morphs into the
-               filling ProgressCta — trickle while in flight, then 100% + check
-               on success — bridging cleanly into the confirmation screen with
-               no separate confirm step and no blank in between. -->
-          <div class="cta-row confirm-cta">
+        </div>
+
+        <!-- Commit control — pinned OUTSIDE the scroll region so the commit
+             affordance (and its footnote) is always on screen, whatever the
+             middle band holds. Idle: slide-to-confirm above the threshold, a
+             tap button below it. Once committed (either way) it morphs into
+             the filling ProgressCta — trickle while in flight, then 100% +
+             check on success — bridging cleanly into the confirmation screen
+             with no separate confirm step and no blank in between. -->
+        <div class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -278,10 +289,9 @@
             <div v-if="isSending && statusMessage" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
-            <div v-else-if="!isSending && !isComplete && !feeRowVisible && verb === 'send'" class="fee-footnote">
+            <div v-else-if="!isSending && !isComplete && !feeRowVisible && !hasExtras && verb === 'send'" class="fee-footnote">
               {{ $t('Network fees apply') }}
             </div>
-          </div>
         </div>
     </q-card>
   </q-dialog>
@@ -337,9 +347,17 @@ export default {
      * LNURL-Withdraw ("Generating invoice…" → "Awaiting confirmation…")
      * where a bare spinner would hide what's actually happening.
      */
-    statusMessage: { type: String, default: '' }
+    statusMessage: { type: String, default: '' },
+    /**
+     * Extra parent-owned commit condition, ANDed into the standard gates
+     * (wallet capability + amount validity). Used by flows whose slot
+     * content must settle before committing — e.g. the on-chain fee
+     * panel: no confirmed fee quote, no send. Defaults open so ordinary
+     * payments never need to pass it.
+     */
+    commitGate: { type: Boolean, default: true }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed'],
   data() {
     return {
       showAddress: false,
@@ -422,19 +440,15 @@ export default {
     },
 
     // Label for the payment-indicator row: the human description when the
-    // invoice / LNURL carried one, otherwise a payment-type fallback so the
-    // row (and the address-reveal it hosts) is always present.
+    // invoice / LNURL carried one (real content), otherwise a plain
+    // "Show details" so the row reads as what it is — the reveal for the
+    // raw destination string. Never the rail name: the payment-language
+    // unification says only "Bitcoin payment" on send, and the hero
+    // identity already carries that, so repeating it here would be the
+    // old shown-twice bug in new clothes.
     paymentLabel() {
       if (this.payment?.description) return this.payment.description
-      const labels = {
-        lightning: this.$t('Lightning payment'),
-        invoice: this.$t('Lightning payment'),
-        spark: this.$t('Spark payment'),
-        arkade: this.$t('Arkade payment'),
-        bitcoin: this.$t('Bitcoin payment'),
-        lnurl: this.$t('LNURL payment'),
-      }
-      return labels[this.recipientAddressType] || this.$t('Payment')
+      return this.$t('Show details')
     },
 
     // LUD-21 / currency-extension (#207) payout currency, present when the
@@ -583,7 +597,7 @@ export default {
     },
 
     canSubmit() {
-      return this.walletCanPay && this.isAmountAcceptable
+      return this.walletCanPay && this.isAmountAcceptable && this.commitGate
     },
 
     rangeHintText() {
@@ -675,8 +689,17 @@ export default {
     },
 
     requiresSlide() {
-      // Tap button up to the threshold; slide-to-confirm above it.
-      return this.amountInSats > SLIDE_THRESHOLD_SATS
+      // Tap button up to the threshold; slide-to-confirm above it. Flows
+      // can force the deliberate gesture regardless of amount (on-chain
+      // sends: every transaction is irreversible, so always slide).
+      return !!this.payment?.forceSlide || this.amountInSats > SLIDE_THRESHOLD_SATS
+    },
+
+    // True when the parent filled the `extras` slot (e.g. the on-chain
+    // fee panel). Slot content owns its own fee display then, so the
+    // generic "Network fees apply" footnote stays out of the way.
+    hasExtras() {
+      return !!this.$slots.extras
     },
 
     fiatEquivalent() {
@@ -779,6 +802,14 @@ export default {
     // after the sheet opened) gets a fresh chance to load.
     recipientLogo() {
       this.logoFailed = false
+    },
+    /**
+     * Live amount signal for parents whose slot content depends on the
+     * entered amount (the on-chain fee panel quotes per amount). Emits
+     * the normalized sat value on every change, any denomination.
+     */
+    amountInSats(sats) {
+      this.$emit('amount-changed', sats)
     }
   },
   methods: {
@@ -870,6 +901,18 @@ export default {
       this.displayAmount = String(q.value)
     },
 
+    /**
+     * Public (called via ref): set the amount from outside, in sats.
+     * Used by slot content that owns a "Use all" affordance (on-chain
+     * fee panel) — switches the denomination to sats so the written
+     * value means exactly what the caller computed.
+     */
+    setAmountSats(sats) {
+      if (this.amountMode === 'fixed') return
+      this.currentCurrency = 'sats'
+      this.displayAmount = String(Math.max(0, Math.floor(sats)))
+    },
+
     isQuickActive(q) {
       return parseFloat(this.displayAmount) === q.value
     },
@@ -883,7 +926,7 @@ export default {
     },
 
     emitConfirm() {
-      if (!this.walletCanPay || !this.isAmountAcceptable) {
+      if (!this.canSubmit) {
         this.$refs.slideRef?.reset()
         return
       }
@@ -920,7 +963,7 @@ export default {
 .sheet-card {
   width: 100%;
   max-width: 520px;
-  max-height: 92vh;
+  max-height: min(94vh, calc(100vh - var(--safe-top, 0px) - 8px));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--bg-card);
   display: flex;
@@ -971,13 +1014,26 @@ export default {
   justify-content: flex-end;
 }
 
-/* ─── Stages ─── */
+/* ─── Stages ───
+   The stage is the ONLY scroll region, and with the compressed rhythm
+   below it should never actually scroll in the normal states — the
+   overflow is a safety net for extreme content (long memos, the
+   on-chain panel on very short viewports), never the design. The
+   commit control lives outside it, always on screen. */
 .stage {
   display: flex;
   flex-direction: column;
-  padding: 8px 20px 12px;
-  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 6px 20px 8px;
+  gap: 12px;
   overflow-y: auto;
+}
+
+@supports (height: 1dvh) {
+  .sheet-card {
+    max-height: min(94dvh, calc(100dvh - var(--safe-top, 0px) - 8px));
+  }
 }
 /* ─── Recipient ───
    Borderless, airy hero (Apple/Blitz-elegant): the recipient reads as
@@ -1171,8 +1227,8 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 0 4px;
-  gap: 10px;
+  padding: 2px 0 0;
+  gap: 8px;
 }
 .amount-stage--locked .amount-input { color: var(--text-primary); cursor: default; }
 
@@ -1319,7 +1375,17 @@ export default {
 
 /* ─── CTA ─── */
 .cta-row { margin-top: 6px; }
-.confirm-cta { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Pinned commit footer — sibling of the scroll region, so it never
+   leaves the screen. Carries the stage's horizontal padding itself. */
+.confirm-cta {
+  margin-top: 0;
+  padding: 10px 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
 
 .primary-cta {
   width: 100%;
@@ -1363,8 +1429,9 @@ export default {
 }
 
 @media (max-width: 480px) {
-  .stage { padding: 8px 16px 10px; gap: 12px; }
-  .recipient { padding: 2px 0 4px; }
+  .stage { padding: 6px 16px 8px; gap: 11px; }
+  .confirm-cta { padding: 10px 16px 0; }
+  .recipient { padding: 2px 0 2px; }
   .recipient-avatar { width: 44px; height: 44px; min-width: 44px; font-size: 18px; }
   .amount-input { font-size: 40px; }
   .primary-cta { height: 50px; font-size: 14.5px; }

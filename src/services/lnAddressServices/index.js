@@ -51,6 +51,7 @@ export function matchLnAddressService(lightningAddress) {
 // have a single import surface for the lnAddressServices package.
 export {
   recognizePhoneNumber,
+  recognizePhoneNumberForCountry,
   buildLightningAddress,
   formatInternational,
   formatE164,
@@ -59,3 +60,19 @@ export {
   isValidMobile,
   AMBIGUOUS_DEFAULT_CODE,
 } from './phoneNumbers'
+
+/**
+ * The payout countries as ready-to-render selector options (Mobile Money
+ * country picker): code + calling code + branded flag/logo URLs. Pure
+ * registry data — adding a country in ./countries.js surfaces it here
+ * with no UI changes.
+ */
+export function payoutCountryOptions() {
+  return PAYOUT_COUNTRIES.map((country) => ({
+    code: country.code,
+    callingCode: country.callingCode,
+    currency: country.currency,
+    flag: assetUrl(country.flagFile),
+    logo: assetUrl(country.logoFile),
+  }))
+}

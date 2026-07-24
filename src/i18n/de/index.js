@@ -2383,5 +2383,25 @@ export default {
   "LNbits connection scanned": "LNbits-Verbindung gescannt",
   "This LNDhub link is not from an LNbits server": "Dieser LNDhub-Link stammt nicht von einem LNbits-Server",
   "That looks like an invoice (read-only) key": "Das sieht nach einem Invoice-Schlüssel (nur Lesen) aus",
-  "You can receive but not send": "Du kannst empfangen, aber nicht senden"
+  "You can receive but not send": "Du kannst empfangen, aber nicht senden",
+
+  // ── Send-Sheet (Eingabe-zuerst) ──
+  "Enter a name, invoice, or address": "Name, Rechnung oder Adresse eingeben",
+  "Enter a mobile number": "Mobilnummer eingeben",
+  "Type the number, or pick the country first": "Nummer eintippen oder zuerst das Land wählen",
+  "Mobile Money": "Mobile Money",
+  "Pay to borderless mobile money": "Grenzenlos an Mobile Money zahlen",
+  "Pay several people at once": "Mehrere Personen auf einmal bezahlen",
+  "Send to a contact": "An einen Kontakt senden",
+  "No matches": "Keine Treffer",
+  "Keep typing, or paste an invoice or address": "Weitertippen oder eine Rechnung bzw. Adresse einfügen",
+  "People you save appear here for one-tap sending": "Gespeicherte Kontakte erscheinen hier zum Senden mit einem Tipp",
+  "We don't recognize this code": "Diesen Code erkennen wir nicht",
+  "It doesn't look like a payment request": "Das sieht nicht nach einer Zahlungsanforderung aus",
+  "Scan the withdraw QR code": "Scanne den Auszahlungs-QR-Code",
+
+  // ── Zahlungssprache vereinheitlicht (nur "Bitcoin-Zahlung") ──
+  "Show details": "Details anzeigen",
+  "Free · instant": "Gratis · sofort",
+  "Includes a small network fee": "Enthält eine kleine Netzwerkgebühr"
 }
