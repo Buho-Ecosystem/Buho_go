@@ -2403,6 +2403,7 @@ export default {
   "We don't recognize this code": "Diesen Code erkennen wir nicht",
   "It doesn't look like a payment request": "Das sieht nicht nach einer Zahlungsanforderung aus",
   "Scan the withdraw QR code": "Scanne den Auszahlungs-QR-Code",
+  "This zapper hasn't published a profile yet": "Dieser Zapper hat noch kein Profil veröffentlicht",
 
   // ── Zahlungssprache vereinheitlicht (nur "Bitcoin-Zahlung") ──
   "Show details": "Details anzeigen",
