@@ -4,15 +4,11 @@
     :class="$q.dark.isActive ? 'contact-card-dark' : 'contact-card-light'"
     @click="$emit('pay', entry)"
   >
-    <!-- Avatar — real picture for nostr-sourced contacts, colored
-         initial otherwise. The change-color emit still fires on the
-         circle either way; for nostr contacts it's a no-op-friendly
-         click target (color picker just won't show a visible ring
-         under the photo). -->
+    <!-- Avatar — real picture for nostr-sourced contacts, the
+         app-wide monoline silhouette otherwise. -->
     <ContactAvatar
       class="contact-avatar"
       :entry="entry"
-      @click.stop="$emit('change-color', entry)"
     />
 
     <!-- Entry Details -->
@@ -142,7 +138,7 @@ export default {
       required: true
     }
   },
-  emits: ['edit', 'delete', 'change-color', 'pay', 'toggle-favorite', 'copy-address'],
+  emits: ['edit', 'delete', 'pay', 'toggle-favorite', 'copy-address'],
   computed: {
     addressType() {
       return this.entry.addressType || 'lightning'

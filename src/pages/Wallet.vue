@@ -2263,6 +2263,10 @@ export default {
         name: contact.name || fallback.fallbackName,
         color: contact.color || fallback.fallbackColor,
         logoUrl: safeLogoUrl,
+        // Matched contact without a picture: the sheet renders the monoline
+        // silhouette (same mark ContactAvatar shows everywhere else) — the
+        // colored-initial circles are retired.
+        silhouette: !safeLogoUrl,
         addressType: fallback.addressType,
         address: fallback.address,
         matchedContact: true,

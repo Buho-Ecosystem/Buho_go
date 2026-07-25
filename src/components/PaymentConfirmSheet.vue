@@ -56,10 +56,13 @@
           <section class="recipient">
             <div
               class="recipient-avatar"
-              :class="{ 'has-logo': showRecipientLogo }"
+              :class="{
+                'has-logo': showRecipientLogo,
+                'recipient-avatar--silhouette': isSilhouetteRecipient
+              }"
               :style="showRecipientLogo
                 ? (recipientLogoBg ? { background: recipientLogoBg } : null)
-                : { background: recipientColor }"
+                : (isSilhouetteRecipient ? null : { background: recipientColor })"
             >
               <img
                 v-if="showRecipientLogo"
@@ -69,6 +72,17 @@
                 :class="{ 'recipient-logo--contain': recipientLogoContain }"
                 @error="logoFailed = true"
               />
+              <!-- Picture-less contact: the app-wide filled-bust
+                   silhouette, never a colored initial. -->
+              <svg
+                v-else-if="isSilhouetteRecipient"
+                class="recipient-glyph"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M12 12.3a4.05 4.05 0 1 0 0-8.1 4.05 4.05 0 0 0 0 8.1Zm0 2.2c-4.3 0-7.6 2.6-8.1 6.3h16.2c-.5-3.7-3.8-6.3-8.1-6.3Z" />
+              </svg>
               <span v-else>{{ recipientInitial }}</span>
             </div>
             <div class="recipient-meta">
@@ -422,6 +436,12 @@ export default {
     // payment, so the badge simply never renders in the common case.
     recipientVerification() {
       return this.payment?.recipient?.verification || null
+    },
+
+    // Picture-less matched contact → the app-wide silhouette mark. A
+    // loaded logo (photo / brand / Branta) always wins over it.
+    isSilhouetteRecipient() {
+      return !!this.payment?.recipient?.silhouette && !this.showRecipientLogo
     },
 
     // Fiat-payout service context (Tando, Bitzed, …), attached by the
@@ -1061,6 +1081,30 @@ export default {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
   overflow: hidden;
+}
+
+/* Silhouette hero — same blue-on-pale-blue treatment as ContactAvatar
+   (the reference wallet's look, copied 1:1), so the confirm sheet and
+   every list agree. */
+.recipient-avatar--silhouette {
+  background: #EAEFF7;
+  color: #3B82F6;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+.body--dark .recipient-avatar--silhouette {
+  background: #23272E;
+  color: #5B8DEF;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.recipient-glyph {
+  /* Filled marks read smaller than strokes — 52% matches the
+     reference wallet's bust-to-disc ratio. */
+  width: 52%;
+  height: 52%;
+  display: block;
 }
 .recipient-avatar.has-logo { background: #fff; box-shadow: inset 0 0 0 1px var(--border-card); }
 .recipient-logo { width: 100%; height: 100%; object-fit: cover; }
