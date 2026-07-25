@@ -290,27 +290,35 @@
           @click="openTransactionHistory"
           :aria-label="$t('Open transaction history')"
         >
-          <!-- Contact-linked preview: render the contact's avatar
-               (real Nostr picture when present) so the home-screen
-               row looks like a person, not a generic direction icon. -->
-          <ContactAvatar
-            v-if="lastTxContact"
-            class="last-tx-avatar"
-            :entry="lastTxContact"
-          />
-          <ContactAvatar
-            v-else-if="lastTxAvatarPicture"
-            class="last-tx-avatar"
-            :picture="lastTxAvatarPicture"
-            :entry="{ address: lastTxAvatarAddress }"
-            :name="lastTxTitle"
-          />
-          <span
-            v-else
-            class="last-tx-icon"
-            :class="$q.dark.isActive ? 'last-tx-icon-dark' : 'last-tx-icon-light'"
-          >
-            <Icon :icon="lastTxIcon" width="18" height="18" />
+          <!-- Avatar-first preview, same anatomy as the history list:
+               contact photo / counterparty picture (incl. a zapper's
+               relay profile) / silhouette, with the movement-type badge
+               riding the corner. -->
+          <span class="last-tx-avatar-wrap">
+            <ContactAvatar
+              v-if="lastTxContact"
+              class="last-tx-avatar"
+              :entry="lastTxContact"
+            />
+            <ContactAvatar
+              v-else-if="lastTxAvatarPicture"
+              class="last-tx-avatar"
+              :picture="lastTxAvatarPicture"
+              :entry="{ address: lastTxAvatarAddress }"
+              :name="lastTxTitle"
+            />
+            <ContactAvatar
+              v-else
+              class="last-tx-avatar"
+              :entry="{ address: lastTxAvatarAddress }"
+            />
+            <span
+              v-if="lastTxBadge"
+              class="last-tx-type-badge"
+              :class="lastTxBadge.cls"
+            >
+              <Icon :icon="lastTxBadge.icon" width="9" height="9" />
+            </span>
           </span>
           <span class="last-tx-info">
             <span class="last-tx-title" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
@@ -813,6 +821,8 @@ import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
+import {zapInfoFromTx} from '../utils/zaps.js';
+import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
 import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
@@ -1110,6 +1120,42 @@ export default {
     },
 
     /**
+     * NIP-57 zap info for the previewed transaction. The home preview
+     * keeps the provider's raw direction vocabulary ('receive' /
+     * 'incoming' / sign-of-amount), so normalize just the type before
+     * asking the shared recognizer.
+     */
+    lastTxZap() {
+      const tx = this.lastTransaction;
+      if (!tx || !this.lastTxIsIncoming) return null;
+      return zapInfoFromTx({
+        type: 'incoming',
+        description: tx.description || tx.memo || '',
+      });
+    },
+
+    /**
+     * Movement-type badge for the preview — the same vocabulary as the
+     * transaction list (received / sent / POS / batch / transfer / zap),
+     * so the home row and the history read identically.
+     */
+    lastTxBadge() {
+      const tx = this.lastTransaction;
+      if (!tx) return null;
+      if ((tx.status ?? 'completed') !== 'completed') return null;
+      if (this.lastTxZap) return { icon: 'tabler:bolt', cls: 'tx-badge-zap' };
+      try {
+        const source = this.transactionMetadataStore?.getSourceForTransaction(tx.id, this.activeWallet?.id);
+        if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
+        if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
+        if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      } catch { /* metadata store not ready — direction still applies */ }
+      return this.lastTxIsIncoming
+        ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
+        : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };
+    },
+
+    /**
      * Address-book contact linked to the most recent transaction, if
      * any. Drives the preview widget's avatar + title so the user
      * sees "DrShift  ←  picture" instead of the generic
@@ -1145,6 +1191,12 @@ export default {
       try {
         const avatar = this.transactionMetadataStore.getCounterpartyAvatarForTransaction(tx.id, this.activeWallet?.id);
         if (avatar?.picture) return avatar.picture;
+        // Zap: the zapper's relay profile picture, reactive through the
+        // shared cache — the preview upgrades in place when it lands.
+        if (this.lastTxZap) {
+          const picture = zapperPicture(this.lastTxZap);
+          if (picture) return picture;
+        }
         if (this.transactionMetadataStore.getSourceForTransaction(tx.id, this.activeWallet?.id) === 'phone') {
           const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id, this.activeWallet?.id);
           if (meta?.recipientAddress) {
@@ -1179,6 +1231,11 @@ export default {
       // Prefer the linked contact's name so the home-screen preview
       // reads as "DrShift" instead of the generic direction label.
       if (this.lastTxContact?.name) return this.lastTxContact.name;
+      // A zap is about WHO zapped — resolved profile name, shortened
+      // npub until the relays answer. Same rule as the history list.
+      if (this.lastTxZap) {
+        return zapperDisplayName(this.lastTxZap) || this.$t('Zap received');
+      }
       // Next best identity: the recipient address stamped at send time.
       const tx = this.lastTransaction;
       if (tx?.type === 'outgoing' && tx.id && this.transactionMetadataStore) {
@@ -1200,10 +1257,13 @@ export default {
         this.lastTransaction.createdTime ??
         null;
       const time = this.formatRelativeTime(ts);
-      // Same message rule as the history list: the payer's comment wins,
-      // else the invoice memo — quoted, so it reads as human text.
+      // Same message rule as the history list: for a zap, the zapper's
+      // note (the raw kind-9734 JSON must never leak as text); otherwise
+      // the payer's comment, else the invoice memo — quoted human text.
       const tx = this.lastTransaction;
-      const message = String(tx?.comment || tx?.description || tx?.memo || '').trim();
+      const message = this.lastTxZap
+        ? (this.lastTxZap.note || '')
+        : String(tx?.comment || tx?.description || tx?.memo || '').trim();
       return message ? `“${message}” · ${time}` : time;
     },
 
@@ -6564,12 +6624,40 @@ export default {
 /* Inherit-class slot for the ContactAvatar substitution — matches the
    icon's footprint so the row's rhythm stays identical whether the
    preview shows a contact picture or the generic arrow. */
+.last-tx-avatar-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
 .last-tx-avatar {
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
   font-size: 14px;
 }
+
+/* Movement-type badge — same vocabulary and colors as the history
+   list, so the home preview reads identically. */
+.last-tx-type-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--bg-card);
+}
+
+.tx-badge-in { background: #10B981; }
+.tx-badge-out { background: #EF4444; }
+.tx-badge-pos { background: #3B82F6; }
+.tx-badge-aux { background: #64748B; }
+.tx-badge-zap { background: #8B5CF6; }
 
 .last-tx-info {
   flex: 1 1 auto;

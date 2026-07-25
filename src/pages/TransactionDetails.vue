@@ -82,20 +82,34 @@
                  the user hasn't assigned a counterparty of their own. Plain
                  <img>: ContactAvatar's picture prop only accepts https/data
                  URLs, not a root-relative asset path. -->
-            <span v-if="isEarnReward && !heroAvatar" class="hero-avatar hero-avatar-earn">
-              <img :src="earnBrandLogo" class="hero-earn-logo" alt="" aria-hidden="true" />
+            <span class="hero-avatar-wrap">
+              <span v-if="isEarnReward && !heroAvatar" class="hero-avatar hero-avatar-earn">
+                <img :src="earnBrandLogo" class="hero-earn-logo" alt="" aria-hidden="true" />
+              </span>
+              <ContactAvatar
+                v-else-if="heroAvatar"
+                class="hero-avatar"
+                :entry="heroAvatar.entry"
+                :picture="heroAvatar.picture"
+                :name="heroAvatar.name"
+                :initial-length="2"
+              />
+              <!-- No known identity: the app-wide silhouette — the same
+                   avatar-first anatomy as the transaction list, with the
+                   movement-type badge carrying direction. -->
+              <ContactAvatar
+                v-else
+                class="hero-avatar"
+                :entry="{ address: getCounterpartyAddress() }"
+              />
+              <span
+                v-if="heroBadge"
+                class="hero-type-badge"
+                :class="heroBadge.cls"
+              >
+                <Icon :icon="heroBadge.icon" width="12" height="12" />
+              </span>
             </span>
-            <ContactAvatar
-              v-else-if="heroAvatar"
-              class="hero-avatar"
-              :entry="heroAvatar.entry"
-              :picture="heroAvatar.picture"
-              :name="heroAvatar.name"
-              :initial-length="2"
-            />
-            <div v-else class="direction-circle hero-direction-circle" :class="getDirectionCircleClass()">
-              <Icon :icon="getTransactionIcon()" width="26" height="26"/>
-            </div>
 
             <div class="hero-amount" :class="getAmountClass()">
               {{ getFormattedAmount() }}
@@ -813,12 +827,40 @@ export default {
       const name = this.assignedContact?.name || address || '';
       const avatar = this.metadataStore.getCounterpartyAvatarForTransaction(this.transaction.id, this.metadataWalletId);
       if (avatar?.picture) return { picture: avatar.picture, name, entry: { address } };
+      // Zap: the zapper's relay profile picture (loaded by the zapper
+      // section below) — the receipt shows the same face the list does.
+      if (this.zapInfo && this.nostrProfile?.picture) {
+        return { picture: this.nostrProfile.picture, name: this.zapperName, entry: {} };
+      }
       if (this.metadataStore.getSourceForTransaction(this.transaction.id, this.metadataWalletId) === 'phone' && address) {
         const svc = matchLnAddressService(address);
         const logo = svc?.logo || svc?.flag || null;
         if (logo) return { picture: logo, name, entry: { address } };
       }
       return null;
+    },
+
+    /**
+     * Movement-type badge for the hero — identical vocabulary to the
+     * transaction list (received / sent / POS / batch / transfer / zap),
+     * so the receipt and the row that opened it agree. The status chip
+     * below the amount carries pending/expired; the badge only ever
+     * names the movement.
+     */
+    heroBadge() {
+      if (!this.transaction) return null;
+      if (this.zapInfo || this.transaction.senderNpub) {
+        return { icon: 'tabler:bolt', cls: 'tx-badge-zap' };
+      }
+      try {
+        const source = this.metadataStore?.getSourceForTransaction(this.transaction.id, this.metadataWalletId);
+        if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
+        if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
+        if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      } catch { /* metadata store not ready — direction still applies */ }
+      return this.transaction.type === 'incoming'
+        ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
+        : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };
     },
 
     currentTags() {
@@ -1373,17 +1415,6 @@ export default {
       return this.transaction.type === 'incoming' ? 'tx-status-received' : 'tx-status-sent';
     },
 
-    getDirectionCircleClass() {
-      if (this.isBitcoinTransaction()) return 'direction-circle-bitcoin';
-      if (this.transaction.senderNpub) return 'direction-circle-green';
-      return this.transaction.type === 'incoming' ? 'direction-circle-green' : 'direction-circle-red';
-    },
-
-    getTransactionIcon() {
-      if (this.isBitcoinTransaction()) return 'tabler:currency-bitcoin';
-      if (this.transaction.senderNpub) return 'tabler:bolt';
-      return this.transaction.type === 'incoming' ? 'tabler:arrow-down' : 'tabler:arrow-up';
-    },
 
     /**
      * Check if transaction is a Bitcoin L1 deposit/withdrawal
@@ -1986,6 +2017,38 @@ export default {
 
 /* Same footprint as .hero-direction-circle, for the ContactAvatar variant
    shown when the hero knows who the payment was with. */
+.hero-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-bottom: 10px;
+}
+
+.hero-avatar-wrap .hero-avatar {
+  margin-bottom: 0;
+}
+
+/* Movement-type badge on the hero — same vocabulary and colors as the
+   transaction list, so the receipt and the row agree at a glance. */
+.hero-type-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 0 0 2.5px var(--bg-card);
+}
+
+.tx-badge-in { background: #10B981; }
+.tx-badge-out { background: #EF4444; }
+.tx-badge-pos { background: #3B82F6; }
+.tx-badge-aux { background: #64748B; }
+.tx-badge-zap { background: #8B5CF6; }
+
 .hero-avatar {
   width: 56px;
   height: 56px;
