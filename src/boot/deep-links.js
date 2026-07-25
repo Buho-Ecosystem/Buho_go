@@ -3,6 +3,7 @@ import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { parsePaymentDestination } from '../providers/WalletFactory'
+import { classifyIdentifier } from '../utils/nostrLookup'
 import { triggerWalletStoreHydration } from '../utils/walletHydration'
 import { redactPaymentInput } from '../utils/logRedaction'
 
@@ -34,6 +35,16 @@ function parseDeepLinkURI(url) {
   if (!url || typeof url !== 'string') return null
 
   const input = url.trim()
+
+  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) — the profile-
+  // share QR and Nostr clients hand these over. Not a payment shape, so
+  // parsePaymentDestination can't classify them; Wallet.onPaymentDetected
+  // resolves the profile to its Lightning target and re-dispatches.
+  const nostrKind = classifyIdentifier(input)
+  if (nostrKind === 'npub' || nostrKind === 'nprofile') {
+    return { data: input, type: 'nostr_identifier' }
+  }
+
   const parsed = parsePaymentDestination(input)
 
   if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
