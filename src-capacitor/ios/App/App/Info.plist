@@ -68,12 +68,18 @@
 			</array>
 		</dict>
 		<!--
-		  Payment + identity deep links. The iOS system camera (and other
-		  apps) can only hand a scanned lightning:/bitcoin:/lnurl*/nostr:
-		  URI to BuhoGO when the scheme is claimed here — this mirrors the
-		  intent filters AndroidManifest.xml has carried all along. The
-		  Capacitor App plugin fires appUrlOpen for these; boot/deep-links
-		  buffers them into the wallet store on every native platform.
+		  Payment deep links. The iOS system camera (and other apps) can
+		  only hand a scanned lightning:/bitcoin:/lnurl* URI to BuhoGO
+		  when the scheme is claimed here — this mirrors the intent
+		  filters AndroidManifest.xml has carried all along. The Capacitor
+		  App plugin fires appUrlOpen for these; boot/deep-links buffers
+		  them into the wallet store on every native platform.
+
+		  `nostr:` is deliberately NOT claimed on iOS: custom schemes have
+		  no app picker here — one claimant silently wins — and a nostr:
+		  profile QR should open the user's social client, not hijack it
+		  into a wallet. Android keeps its nostr filter because Android
+		  shows a real chooser. In-app scanners handle nostr: regardless.
 		-->
 		<dict>
 			<key>CFBundleURLName</key>
@@ -85,7 +91,6 @@
 				<string>lnurl</string>
 				<string>lnurlp</string>
 				<string>lnurlw</string>
-				<string>nostr</string>
 			</array>
 		</dict>
 	</array>
