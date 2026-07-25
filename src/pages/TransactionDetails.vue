@@ -355,36 +355,45 @@
         </div>
       </div>
 
-      <!-- Nostr Profile Section -->
-      <div
-        v-if="transaction.senderNpub && nostrProfile"
-        class="profile-section"
-        @click="viewNostrProfile"
-      >
+      <!-- Zapper Section — who zapped, what they said, and the harvest
+           action: a zap is a contact introducing themselves with money.
+           Identity is real or absent (profile from relays, silhouette
+           until then) — never fabricated. -->
+      <div v-if="transaction.senderNpub" class="profile-section">
         <div class="profile-card">
-          <div class="profile-avatar">
-            <q-avatar size="48px">
-              <img
-                v-if="nostrProfile.picture"
-                :src="nostrProfile.picture"
-                :alt="nostrProfile.displayName || nostrProfile.name"
-              />
-              <Icon v-else icon="tabler:user" width="24" height="24" />
-            </q-avatar>
+          <div class="profile-avatar" @click="viewNostrProfile">
+            <ContactAvatar
+              class="zapper-avatar"
+              :picture="nostrProfile?.picture || ''"
+              :entry="{}"
+            />
           </div>
-          <div class="profile-info">
-            <div class="profile-name">
-              {{ nostrProfile.displayName || nostrProfile.name }}
-            </div>
+          <div class="profile-info" @click="viewNostrProfile">
+            <div class="profile-name">{{ zapperName }}</div>
             <div class="profile-meta">
               <Icon icon="tabler:bolt" class="zap-icon q-mr-xs" />
               {{ $t('Zap Transaction') }}
             </div>
-            <div class="profile-about" v-if="nostrProfile.about">
+            <div class="profile-about" v-if="zapInfo?.note">
+              “{{ zapInfo.note }}”
+            </div>
+            <div class="profile-about" v-else-if="nostrProfile?.about">
               {{ nostrProfile.about }}
             </div>
           </div>
-          <Icon icon="tabler:external-link" class="external-icon" />
+          <q-btn
+            v-if="!zapperSaved"
+            flat
+            dense
+            no-caps
+            class="zapper-save-btn"
+            :loading="savingZapper"
+            @click.stop="saveZapperAsContact"
+          >
+            <Icon icon="tabler:user-plus" width="15" height="15" class="q-mr-xs" />
+            {{ $t('Save') }}
+          </q-btn>
+          <Icon v-else icon="tabler:user-check" class="external-icon" />
         </div>
       </div>
 
@@ -659,6 +668,8 @@ import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { pollVerify } from '../utils/lnurlVerify.js';
 import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import { zapInfoFromTx } from '../utils/zaps';
+import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 
 // "Type" row text per metadata source (i18n message keys, resolved through
@@ -681,6 +692,9 @@ export default {
       showDeveloperMode: false,
       transaction: null,
       nostrProfile: null,
+      // NIP-57 zap info for this tx (utils/zaps), null for non-zaps.
+      zapInfo: null,
+      savingZapper: false,
       walletState: {},
       walletStore: null,
       addressBookStore: null,
@@ -727,6 +741,10 @@ export default {
     this.loadFiatRates();
   },
 
+  beforeUnmount() {
+    if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
+  },
+
   watch: {
     'fiatRates': {
       handler() {
@@ -737,6 +755,25 @@ export default {
   },
 
   computed: {
+    // Zapper display name — profile name when the relays answered, a
+    // shortened npub until then. Honest, never invented.
+    zapperName() {
+      const name = (this.nostrProfile?.displayName || this.nostrProfile?.name || '').trim();
+      if (name) return name;
+      const npub = this.transaction?.senderNpub || '';
+      return npub ? `${npub.slice(0, 9)}…${npub.slice(-4)}` : '';
+    },
+
+    // Already in the book? Then the harvest button yields to a quiet check.
+    zapperSaved() {
+      if (!this.zapInfo?.pubkey || !this.addressBookStore) return false;
+      try {
+        return !!this.addressBookStore.findContactByPubkey(this.zapInfo.pubkey);
+      } catch {
+        return false;
+      }
+    },
+
     /**
      * The wallet that owns this transaction: the ?wallet= route param
      * when present (see getRouteWallet, which fetchTransactionFromWallet
@@ -1083,9 +1120,16 @@ export default {
           await this.fetchTransactionFromWallet(txId);
         }
 
-        // Load nostr profile if it's a zap
-        if (this.transaction && this.transaction.senderNpub) {
-          await this.loadNostrProfile(this.transaction.senderNpub);
+        // Zap recognition + zapper profile. The list may have stamped
+        // senderNpub already; a deep link lands here cold, so re-derive
+        // from the description either way (NIP-57 kind-9734 parse, with
+        // the legacy bare-npub fallback inside zapInfoFromTx).
+        if (this.transaction) {
+          this.zapInfo = zapInfoFromTx(this.transaction);
+          if (this.zapInfo?.npub && !this.transaction.senderNpub) {
+            this.transaction.senderNpub = this.zapInfo.npub;
+          }
+          if (this.zapInfo) this.loadZapperProfile();
         }
 
       } catch (error) {
@@ -1143,10 +1187,6 @@ export default {
           await this.fetchNWCTransaction(txId);
         }
 
-        // Process zap info if applicable
-        if (this.transaction && this.isZapTransaction(this.transaction)) {
-          this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);
-        }
       } catch (error) {
         console.error('Error fetching transaction from wallet:', error);
       }
@@ -1253,39 +1293,60 @@ export default {
       }
     },
 
-    isZapTransaction(tx) {
-      return tx.description && (
-        tx.description.toLowerCase().includes('zap') ||
-        tx.description.includes('⚡') ||
-        tx.type === 'incoming' && tx.description.match(/npub1[a-zA-Z0-9]{58}/)
-      );
+    /**
+     * Real zapper profile via the shared reactive cache (relays through
+     * zapperProfiles) — polled briefly because the cache fills async.
+     * Nothing is fabricated: no profile means the section renders the
+     * shortened npub and the silhouette, same honesty as the tx list.
+     */
+    loadZapperProfile() {
+      const read = () => {
+        const profile = zapperProfile(this.zapInfo);
+        if (profile) this.nostrProfile = profile;
+        return !!profile;
+      };
+      if (read()) return;
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts += 1;
+        if (read() || attempts >= 10) clearInterval(timer);
+      }, 800);
+      this._zapProfileTimer = timer;
     },
 
-    extractNpubFromZap(tx) {
-      const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
-      return npubMatch ? npubMatch[0] : null;
-    },
-
-    async loadNostrProfile(npub) {
+    /**
+     * Harvest a zapper into the address book — the zap already told us
+     * who they are (pubkey) and the profile fetch supplies lud16 +
+     * name/avatar. Uses the same store path as Add contact → Search,
+     * so dedupe and Nostr metadata handling stay identical.
+     */
+    async saveZapperAsContact() {
+      if (!this.zapInfo?.pubkey || !this.zapInfo?.npub) return;
+      this.savingZapper = true;
       try {
-        const cachedProfiles = localStorage.getItem('buhoGO_nostr_profiles');
-        if (cachedProfiles) {
-          const profiles = JSON.parse(cachedProfiles);
-          this.nostrProfile = profiles[npub];
+        // The address book verifies the raw kind-0 event itself
+        // (kind / author / signature) — hand it the original, cached
+        // from the list's fetch or freshly pulled here.
+        const event = await zapperProfileEvent(this.zapInfo);
+        if (!event) {
+          this.$q.notify({
+            type: 'info',
+            message: this.$t("This zapper hasn't published a profile yet"),
+          });
+          return;
         }
-
-        if (!this.nostrProfile) {
-          this.nostrProfile = {
-            name: npub.substring(0, 12) + '...',
-            displayName: 'Nostr User',
-            picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${npub}`,
-            about: 'Lightning Network enthusiast',
-            nip05: '',
-            lud16: `${npub.substring(0, 8)}@getalby.com`
-          };
-        }
+        await this.addressBookStore.addNostrContact({
+          pubkey: this.zapInfo.pubkey,
+          npub: this.zapInfo.npub,
+          event,
+          allowWithoutLightningAddress: true,
+        });
+        this.$q.notify({ type: 'positive', message: this.$t('Contact added') });
       } catch (error) {
-        console.error('Error loading nostr profile:', error);
+        // Most common: already saved — surface the store's message as-is.
+        this.$q.notify({ type: 'info', message: error?.message || this.$t("Couldn't save contact") });
+      } finally {
+        this.savingZapper = false;
       }
     },
 
@@ -2024,6 +2085,23 @@ export default {
 .profile-section {
   padding: 1rem;
   cursor: pointer;
+}
+
+.zapper-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.zapper-save-btn {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-input);
 }
 
 .profile-card {

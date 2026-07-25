@@ -2402,6 +2402,7 @@ export default {
   "We don't recognize this code": "No reconocemos este código",
   "It doesn't look like a payment request": "No parece una solicitud de pago",
   "Scan the withdraw QR code": "Escanea el código QR de retiro",
+  "This zapper hasn't published a profile yet": "Este zapper aún no ha publicado un perfil",
 
   // ── Lenguaje de pago unificado (solo "Pago Bitcoin") ──
   "Show details": "Mostrar detalles",
