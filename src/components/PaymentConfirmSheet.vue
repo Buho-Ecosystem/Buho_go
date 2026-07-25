@@ -70,6 +70,9 @@
                 :alt="recipientName"
                 class="recipient-logo"
                 :class="{ 'recipient-logo--contain': recipientLogoContain }"
+                :style="recipientLogoContain && recipientLogoInset
+                  ? { padding: recipientLogoInset }
+                  : null"
                 @error="logoFailed = true"
               />
               <!-- Picture-less contact: the app-wide filled-bust
@@ -407,11 +410,17 @@ export default {
     showRecipientLogo() {
       return !!this.recipientLogo && !this.logoFailed
     },
-    // Branta-delivered merchant logos look best contained with ~golden-ratio
-    // breathing room rather than cropped edge-to-edge. Payout flags / wallet
-    // logos stay full-bleed; the parent sets this flag only for merchant logos.
+    // Art without its own background plate (merchant marks from Branta, a
+    // wordmark, a bare wallet logomark) is fitted whole inside the circle
+    // rather than cropped edge-to-edge. App-icon art stays full-bleed.
     recipientLogoContain() {
       return this.payment?.recipient?.logoContain === true
+    },
+    // Optional per-logo override of the contain padding, for art whose
+    // silhouette is known to clear the circle at a tighter inset (see
+    // walletBrands). Empty -> the conservative default in the stylesheet.
+    recipientLogoInset() {
+      return this.payment?.recipient?.logoInset || ''
     },
     // Optional avatar backdrop for a logo that needs one (e.g. ZBD's white
     // wordmark, which would vanish on the default white circle). Empty -> the
@@ -1108,9 +1117,12 @@ export default {
 }
 .recipient-avatar.has-logo { background: #fff; box-shadow: inset 0 0 0 1px var(--border-card); }
 .recipient-logo { width: 100%; height: 100%; object-fit: cover; }
-/* Merchant logos: contained with golden-ratio breathing room (logo ≈ 0.62 of
-   the avatar) so the delivered brand mark sits cleanly rather than cropped. */
-.recipient-logo--contain { object-fit: contain; padding: 9px; }
+/* Plate-less art (merchant marks, wordmarks, bare wallet logomarks): fitted
+   whole rather than cropped. The inset is a percentage so it holds at every
+   avatar size, and defaults deep enough (logo ≈ 0.62 of the avatar) that even
+   a full-bleed square keeps its corners inside the circle. A logo whose
+   silhouette is known can override it per brand via `logoInset`. */
+.recipient-logo--contain { object-fit: contain; padding: 19%; }
 
 .recipient-meta { flex: 1; min-width: 0; }
 

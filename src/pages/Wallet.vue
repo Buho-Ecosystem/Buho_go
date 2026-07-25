@@ -1519,6 +1519,7 @@ export default {
             // read far friendlier than a raw address.
             recipient.logoUrl = walletBrand.brand.logo;
             recipient.logoContain = walletBrand.brand.logoContain === true;
+            recipient.logoInset = walletBrand.brand.logoInset || '';
             recipient.logoBg = walletBrand.brand.logoBg || '';
             recipient.name = walletBrand.handle || walletBrand.brand.name;
             recipient.walletBrand = walletBrand.brand.name;
@@ -1573,6 +1574,7 @@ export default {
             addressType: 'lightning',
             logoUrl: walletBrand.brand.logo,
             logoContain: walletBrand.brand.logoContain === true,
+            logoInset: walletBrand.brand.logoInset || '',
             logoBg: walletBrand.brand.logoBg || '',
             walletBrand: walletBrand.brand.name,
             address: walletBrand.address || (typeof p.data === 'string' ? p.data : '')
@@ -1619,7 +1621,12 @@ export default {
           if (verifiedLogo) {
             recipient.logoUrl = verifiedLogo;
             // Branta-delivered brand marks render best contained (not cropped).
+            // Any avatar styling tuned for the wallet logo we're replacing
+            // (inset, backdrop) goes with it — the merchant art is unknown, so
+            // it falls back to the safe default inset on the white plate.
             recipient.logoContain = true;
+            recipient.logoInset = '';
+            recipient.logoBg = '';
           }
         }
         recipient.verification = { verifyUrl: bv.verifyUrl };
@@ -2216,6 +2223,7 @@ export default {
         addressType: 'lightning',
         logoUrl: picture || (brand ? brand.logo : '/nostr/nostr.png'),
         logoContain: usingBrandLogo && brand.logoContain === true,
+        logoInset: usingBrandLogo ? (brand.logoInset || '') : '',
         logoBg: usingBrandLogo ? (brand.logoBg || '') : '',
         walletBrand: brand ? brand.name : '',
         address,
