@@ -53,6 +53,18 @@
                 <data android:scheme="BITCOIN" />
             </intent-filter>
 
+            <!-- Deep link: nostr: (NIP-21). The profile-share QR encodes
+                 nostr:npub…, so scanning it with the system camera must
+                 offer BuhoGO — the deep-link handler resolves the profile
+                 to its Lightning address and opens the pay flow. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nostr" />
+                <data android:scheme="NOSTR" />
+            </intent-filter>
+
             <!-- MainActivity itself deliberately declares NO NFC intent
                  filters: it is the launcher / deep-link activity, and NFC
                  system dispatch is owned exclusively by NfcDispatchActivity

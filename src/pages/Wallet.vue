@@ -4494,6 +4494,30 @@ export default {
           return;
         }
 
+        if (paymentData.type === 'nostr_identifier' && paymentData.data) {
+          // System-camera / deep-link entry for a Nostr identity
+          // (nostr:npub… from the profile-share QR, or another client).
+          // Resolve the profile to its Lightning target and re-dispatch —
+          // the same rails the Send sheet uses for a typed npub, carrying
+          // the person's identity onto the confirm sheet.
+          const target = await this.resolveNostrTarget(paymentData.data);
+          if (!target?.address) {
+            resolved = false;
+            this.failSendResolution(this.$t("We couldn't resolve this Nostr profile"), fromField);
+            return;
+          }
+          delegated = true; // the recursive call owns resolving / close / error
+          return this.onPaymentDetected({
+            ...paymentData,
+            type: target.kind, // 'lightning_address' | 'lnurl'
+            data: target.address,
+            _nostrResolved: true,
+            nostrPubkey: target.pubkey,
+            nostrNpub: target.npub,
+            nostrProfile: target.profile,
+          });
+        }
+
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
           // Parse the invoice to get the amount
           const parsedInvoice = this.parseInvoiceManually(paymentData.data);
