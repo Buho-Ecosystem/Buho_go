@@ -727,6 +727,7 @@ import { matchLnAddressService } from '../services/lnAddressServices';
 import { EARN_BRAND, isEarnRewardTx, earnRewardKind } from '../services/earnBrand';
 import { zapInfoFromTx } from '../utils/zaps';
 import { zapperDisplayName, zapperPicture } from '../services/zapperProfiles';
+import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
@@ -764,7 +765,6 @@ export default {
       walletStore: null,
       addressBookStore: null,
       metadataStore: null,
-      nostrProfiles: {},
       expandedGroups: new Set(),
       expandedMicropaymentGroups: new Set(),
       showLoadingScreen: true,
@@ -1025,7 +1025,6 @@ export default {
     async initializeTransactionHistory() {
       try {
         await this.loadTransactions();
-        this.loadNostrProfiles();
         this.showLoadingScreen = false;
       } catch (error) {
         console.error('Error initializing transaction history:', error);
@@ -1330,7 +1329,7 @@ export default {
     getTxBadge(tx) {
       if (!tx || tx.status !== 'completed') return null;
       if (this.getTxZap(tx)) {
-        return { icon: 'tabler:bolt', cls: 'tx-badge-zap' };
+        return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
       }
       const source = this.getTxMetadataSource(tx);
       if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
@@ -1564,7 +1563,7 @@ export default {
 
         this.transactions.sort((a, b) => b.settled_at - a.settled_at);
 
-        await this.processZapTransactions();
+        this.processZapTransactions();
 
         // Auto-assign contacts from address book
         await this.autoAssignContacts();
@@ -1647,7 +1646,7 @@ export default {
 
           // Sort and process new transactions
           this.transactions.sort((a, b) => b.settled_at - a.settled_at);
-          await this.processZapTransactions();
+          this.processZapTransactions();
           await this.autoAssignContacts();
 
           batchCount++;
@@ -1966,14 +1965,16 @@ export default {
       }
     },
 
-    async processZapTransactions() {
+    /**
+     * Tag zap rows with the sender's npub. Identity itself (name,
+     * picture) is resolved by services/zapperProfiles from real relay
+     * data at render time, so nothing is fetched or invented here.
+     */
+    processZapTransactions() {
       for (const tx of this.transactions) {
         if (this.isZapTransaction(tx)) {
           const npub = this.extractNpubFromZap(tx);
-          if (npub) {
-            tx.senderNpub = npub;
-            await this.fetchNostrProfile(npub);
-          }
+          if (npub) tx.senderNpub = npub;
         }
       }
     },
@@ -1989,51 +1990,6 @@ export default {
     extractNpubFromZap(tx) {
       const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
       return npubMatch ? npubMatch[0] : null;
-    },
-
-    async fetchNostrProfile(npub) {
-      if (this.nostrProfiles[npub]) return;
-
-      try {
-        const profile = {
-          name: npub.substring(0, 12) + '...',
-          displayName: this.generateDisplayName(),
-          picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${npub}`,
-          about: 'Lightning Network enthusiast',
-          nip05: '',
-          lud16: `${npub.substring(0, 8)}@getalby.com`
-        };
-
-        this.nostrProfiles[npub] = profile;
-        this.saveNostrProfiles();
-      } catch (error) {
-        console.error('Error fetching nostr profile:', error);
-      }
-    },
-
-    generateDisplayName() {
-      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry'];
-      return names[Math.floor(Math.random() * names.length)];
-    },
-
-    loadNostrProfiles() {
-      const saved = localStorage.getItem('buhoGO_nostr_profiles');
-      if (saved) {
-        try {
-          this.nostrProfiles = JSON.parse(saved);
-        } catch (error) {
-          console.error('Error loading nostr profiles:', error);
-        }
-      }
-    },
-
-    saveNostrProfiles() {
-      localStorage.setItem('buhoGO_nostr_profiles', JSON.stringify(this.nostrProfiles));
-    },
-
-    getSenderDisplayName(npub) {
-      const profile = this.nostrProfiles[npub];
-      return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
     },
 
     toggleGroup(dateKey) {
@@ -2073,9 +2029,6 @@ export default {
       // Check for Bitcoin (L1) transactions
       if (this.isBitcoinTransaction(tx)) {
         return tx.type === 'incoming' ? this.$t('Bitcoin Deposit') : this.$t('Bitcoin Withdrawal');
-      }
-      if (tx.senderNpub && this.nostrProfiles[tx.senderNpub]) {
-        return this.$t('Received');
       }
       return tx.type === 'incoming' ? this.$t('Received') : this.$t('Sent');
     },
@@ -3042,7 +2995,18 @@ export default {
 .tx-badge-out { background: #EF4444; }
 .tx-badge-pos { background: #3B82F6; }
 .tx-badge-aux { background: #64748B; }
-.tx-badge-zap { background: #8B5CF6; }
+.tx-badge-zap { background: #662482; }
+
+/* The zap badge carries the Nostr ostrich head, a filled silhouette
+   rather than a stroked glyph like the other five badges. Filled art
+   needs more room to stay legible: below ~12px the eye and crest
+   collapse into a white smudge. Sized here instead of on the <Icon>
+   so the tabler glyphs keep their own tuned 10px. CSS wins over the
+   width/height presentation attributes Iconify writes. */
+.tx-badge-zap :deep(svg) {
+  width: 12px;
+  height: 12px;
+}
 
 .tx-row-avatar {
   width: 36px;

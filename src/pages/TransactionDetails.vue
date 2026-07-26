@@ -372,8 +372,13 @@
       <!-- Zapper Section — who zapped, what they said, and the harvest
            action: a zap is a contact introducing themselves with money.
            Identity is real or absent (profile from relays, silhouette
-           until then) — never fabricated. -->
-      <div v-if="transaction.senderNpub" class="profile-section">
+           until then) — never fabricated.
+
+           Verified zaps only. Without a valid signature on the zap
+           request the sender is an unproven claim, so there is nobody to
+           name, quote or save; the row keeps its nostr badge and this
+           section simply does not exist. See utils/zaps. -->
+      <div v-if="zapInfo?.verified" class="profile-section">
         <div class="profile-card">
           <div class="profile-avatar" @click="viewNostrProfile">
             <ContactAvatar
@@ -684,6 +689,7 @@ import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import { zapInfoFromTx } from '../utils/zaps';
 import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
+import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 
 // "Type" row text per metadata source (i18n message keys, resolved through
@@ -850,7 +856,7 @@ export default {
     heroBadge() {
       if (!this.transaction) return null;
       if (this.zapInfo || this.transaction.senderNpub) {
-        return { icon: 'tabler:bolt', cls: 'tx-badge-zap' };
+        return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
       }
       try {
         const source = this.metadataStore?.getSourceForTransaction(this.transaction.id, this.metadataWalletId);
@@ -1363,6 +1369,10 @@ export default {
      * so dedupe and Nostr metadata handling stay identical.
      */
     async saveZapperAsContact() {
+      // `verified` is what earns a zapper a name; saving one as a contact
+      // is that attribution made permanent, so it needs the same proof.
+      // The button is already hidden without it — this is the backstop.
+      if (!this.zapInfo?.verified) return;
       if (!this.zapInfo?.pubkey || !this.zapInfo?.npub) return;
       this.savingZapper = true;
       try {
@@ -2047,7 +2057,15 @@ export default {
 .tx-badge-out { background: #EF4444; }
 .tx-badge-pos { background: #3B82F6; }
 .tx-badge-aux { background: #64748B; }
-.tx-badge-zap { background: #8B5CF6; }
+.tx-badge-zap { background: #662482; }
+
+/* Nostr ostrich head, sized up for the same reason as in the history
+   list: it is filled art, not a stroked glyph, so it needs roughly
+   three quarters of the disc to stay readable. This disc is 20px. */
+.tx-badge-zap :deep(svg) {
+  width: 15px;
+  height: 15px;
+}
 
 .hero-avatar {
   width: 56px;

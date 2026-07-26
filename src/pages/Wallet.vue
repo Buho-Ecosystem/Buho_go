@@ -823,6 +823,7 @@ import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
 import {zapInfoFromTx} from '../utils/zaps.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
+import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
 import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
@@ -1143,7 +1144,7 @@ export default {
       const tx = this.lastTransaction;
       if (!tx) return null;
       if ((tx.status ?? 'completed') !== 'completed') return null;
-      if (this.lastTxZap) return { icon: 'tabler:bolt', cls: 'tx-badge-zap' };
+      if (this.lastTxZap) return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
       try {
         const source = this.transactionMetadataStore?.getSourceForTransaction(tx.id, this.activeWallet?.id);
         if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
@@ -3157,7 +3158,6 @@ export default {
 
         await this.loadFiatRates();
         await this.loadLastTransaction();
-        await this.loadNostrProfiles();
 
         this.startPeriodicRefresh();
 
@@ -3500,17 +3500,6 @@ export default {
         return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       } catch {
         return '';
-      }
-    },
-
-    loadNostrProfiles() {
-      const saved = localStorage.getItem('buhoGO_nostr_profiles');
-      if (saved) {
-        try {
-          this.nostrProfiles = JSON.parse(saved);
-        } catch (error) {
-          console.error('Error loading nostr profiles:', error);
-        }
       }
     },
 
@@ -6689,7 +6678,16 @@ export default {
 .tx-badge-out { background: #EF4444; }
 .tx-badge-pos { background: #3B82F6; }
 .tx-badge-aux { background: #64748B; }
-.tx-badge-zap { background: #8B5CF6; }
+.tx-badge-zap { background: #662482; }
+
+/* Nostr ostrich head, sized up for the same reason as in the history
+   list: it is filled art, not a stroked glyph. This disc is the
+   smallest of the three at 15px, so 12px is the floor that still
+   reads; the mark very nearly fills it. */
+.tx-badge-zap :deep(svg) {
+  width: 12px;
+  height: 12px;
+}
 
 .last-tx-info {
   flex: 1 1 auto;
