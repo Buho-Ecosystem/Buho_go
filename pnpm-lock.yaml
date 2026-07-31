@@ -102,8 +102,8 @@ importers:
         specifier: ^1.5.4
         version: 1.5.4
       quasar:
-        specifier: ^2.16.0
-        version: 2.19.3
+        specifier: ^2.23.3
+        version: 2.23.3
       register-service-worker:
         specifier: ^1.7.2
         version: 1.7.2
@@ -128,7 +128,7 @@ importers:
         version: 1.59.1
       '@quasar/app-vite':
         specifier: ^2.0.0
-        version: 2.6.0(@quasar/extras@1.18.0)(@types/node@25.6.0)(bare-buffer@3.6.0)(pinia@3.0.4(vue@3.5.32))(quasar@2.19.3)(rolldown@1.0.0-rc.15)(rollup@2.80.0)(sass@1.99.0)(terser@5.46.1)(vue-router@4.6.4(vue@3.5.32))(vue@3.5.32)(workbox-build@7.4.0)
+        version: 2.6.0(@quasar/extras@1.18.0)(@types/node@25.6.0)(bare-buffer@3.6.0)(pinia@3.0.4(vue@3.5.32))(quasar@2.23.3)(rolldown@1.0.0-rc.15)(rollup@2.80.0)(sass@1.99.0)(terser@5.46.1)(vue-router@4.6.4(vue@3.5.32))(vue@3.5.32)(workbox-build@7.4.0)
       autoprefixer:
         specifier: ^10.4.2
         version: 10.5.0(postcss@8.5.15)
@@ -3422,8 +3422,8 @@ packages:
     resolution: {integrity: sha512-V/yCWTTF7VJ9hIh18Ugr2zhJMP01MY7c5kh4J870L7imm6/DIzBsNLTXzMwUA3yZ5b/KBqLx8Kp3uRvd7xSe3Q==}
     engines: {node: '>=0.6'}
 
-  quasar@2.19.3:
-    resolution: {integrity: sha512-z9uEiZfpkkwUGedgVfARRoF7h30qWSZwUfUTLOo/jXCiGL5KYQt5N39XpKVOW0Y7lGF9kSAZuFHvYoPZoMUpfg==}
+  quasar@2.23.3:
+    resolution: {integrity: sha512-C1t4V6KlLVAYUrm59cDqLvtylg0HDoxvItfgxG1AZm9esAOfgJqGqPN/zY1gmpjtMVVN+ANrEz+uaLqqGDp7lg==}
     engines: {node: '>= 10.18.1', npm: '>= 6.13.4', yarn: '>= 1.21.1'}
 
   quickselect@3.0.0:
@@ -5716,11 +5716,11 @@ snapshots:
 
   '@protobufjs/utf8@1.1.0': {}
 
-  '@quasar/app-vite@2.6.0(@quasar/extras@1.18.0)(@types/node@25.6.0)(bare-buffer@3.6.0)(pinia@3.0.4(vue@3.5.32))(quasar@2.19.3)(rolldown@1.0.0-rc.15)(rollup@2.80.0)(sass@1.99.0)(terser@5.46.1)(vue-router@4.6.4(vue@3.5.32))(vue@3.5.32)(workbox-build@7.4.0)':
+  '@quasar/app-vite@2.6.0(@quasar/extras@1.18.0)(@types/node@25.6.0)(bare-buffer@3.6.0)(pinia@3.0.4(vue@3.5.32))(quasar@2.23.3)(rolldown@1.0.0-rc.15)(rollup@2.80.0)(sass@1.99.0)(terser@5.46.1)(vue-router@4.6.4(vue@3.5.32))(vue@3.5.32)(workbox-build@7.4.0)':
     dependencies:
       '@quasar/render-ssr-error': 1.0.4
       '@quasar/ssl-certificate': 2.0.0
-      '@quasar/vite-plugin': 1.11.0(@vitejs/plugin-vue@6.0.6(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32))(quasar@2.19.3)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32)
+      '@quasar/vite-plugin': 1.11.0(@vitejs/plugin-vue@6.0.6(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32))(quasar@2.23.3)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32)
       '@types/chrome': 0.1.40
       '@types/compression': 1.8.1
       '@types/cordova': 11.0.3
@@ -5747,7 +5747,7 @@ snapshots:
       minimist: 1.2.8
       mlly: 1.8.2
       open: 11.0.0
-      quasar: 2.19.3
+      quasar: 2.23.3
       rollup-plugin-visualizer: 7.0.1(rolldown@1.0.0-rc.15)(rollup@2.80.0)
       sass-embedded: 1.99.0
       semver: 7.7.4
@@ -5791,10 +5791,10 @@ snapshots:
       fs-extra: 11.3.4
       selfsigned: 5.5.0
 
-  '@quasar/vite-plugin@1.11.0(@vitejs/plugin-vue@6.0.6(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32))(quasar@2.19.3)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32)':
+  '@quasar/vite-plugin@1.11.0(@vitejs/plugin-vue@6.0.6(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32))(quasar@2.23.3)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32)':
     dependencies:
       '@vitejs/plugin-vue': 6.0.6(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1))(vue@3.5.32)
-      quasar: 2.19.3
+      quasar: 2.23.3
       vite: 8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(sass-embedded@1.99.0)(sass@1.99.0)(terser@5.46.1)
       vue: 3.5.32
 
@@ -7835,7 +7835,7 @@ snapshots:
     dependencies:
       side-channel: 1.1.0
 
-  quasar@2.19.3: {}
+  quasar@2.23.3: {}
 
   quickselect@3.0.0: {}
 
