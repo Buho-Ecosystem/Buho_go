@@ -30,18 +30,19 @@ BuhoGO is a Bitcoin and Lightning wallet that gets out of your way.
 
 No one holds your money but you.
 
-## Three ways to hold your sats
+## Four ways to hold your sats
 
-One app, three kinds of wallet. Use as many as you like, side by side.
+One app, four kinds of wallet. Use as many as you like, side by side.
 
 | Wallet | Who holds the keys | Great for |
 | --- | --- | --- |
 | **Spark** | You (self-custody) | Newcomers who want true ownership plus on-chain Bitcoin |
+| **Arkade** | You (self-custody) | Instant, near-zero-fee Bitcoin on the Ark L2, plus Lightning and on-chain |
 | **NWC** | Your existing wallet (Alby, Primal, and others) | Keeping the Lightning wallet you already love |
 | **LNBits** | Your own server | Power users running their own node |
 
 > [!TIP]
-> Spark is the easiest place to start. It gives you on-chain Bitcoin deposits and withdrawals, plus instant, zero-fee transfers to other Spark users, with no channel management to think about.
+> Spark is the easiest place to start. It gives you on-chain Bitcoin deposits and withdrawals, plus instant, zero-fee transfers to other Spark users, with no channel management to think about. Prefer the Ark protocol? **Arkade** is fully self-custodial too, with instant `ark1` transfers, Lightning, and on-chain in one wallet. See [ARK_ME.md](ARK_ME.md) for how it works.
 
 Not sure which to pick? The [User Guide](Guide.md) compares them in plain language.
 
@@ -52,8 +53,9 @@ Not sure which to pick? The [User Guide](Guide.md) compares them in plain langua
 </div>
 
 - Lightning invoices, Lightning addresses, LNURL pay and withdraw
-- On-chain Bitcoin, send and receive (Spark)
+- On-chain Bitcoin, send and receive (Spark and Arkade)
 - Instant, zero-fee Spark to Spark transfers
+- Instant, near-zero-fee Arkade (Ark L2) `ark1` transfers
 - Send to a **Nostr** profile, by npub or NIP-05 name
 - Send to a **phone number** in Kenya and Zambia
 - BuhoGO recognises who you are paying (Blink, Primal, Phoenix, Strike, and more) and shows their logo, so you can double check before you send
@@ -114,6 +116,7 @@ Want to build it yourself or run your own copy? The [Developer Guide](Developer.
 | [**User Guide**](Guide.md) | Set up a wallet, send, receive, run a kiosk |
 | [**Use Cases**](USE_CASES.md) | Follow real "I want to do X" walkthroughs |
 | [**Developer Guide**](Developer.md) | Understand the architecture and build the app |
+| [**Arkade wallet**](ARK_ME.md) | Understand the Arkade (Ark L2) backend in depth |
 | [**Contributing**](CONTRIBUTING.md) | Help out, from fixing a typo to shipping a feature |
 
 ## License

@@ -107,6 +107,31 @@
           <strong>{{ previewAddress }}</strong>
         </div>
 
+        <!--
+          Optional LUD-09 success message (success_text). The LNbits LNURLp
+          extension serves this address's callback and returns whatever we set
+          here as the post-payment message every payer sees. It is static
+          (set once now), because BuhoGO runs no server of its own — Spark and
+          NWC addresses can't carry one at all.
+        -->
+        <q-input
+          v-model="successText"
+          :placeholder="$t('Thank-you message (optional)')"
+          borderless
+          dense
+          maxlength="144"
+          class="ln-addr-input ln-addr-success"
+          input-class="ln-addr-input-inner"
+          hide-bottom-space
+        >
+          <template #prepend>
+            <Icon icon="tabler:message-2" width="16" height="16" class="ln-addr-success-icon" />
+          </template>
+        </q-input>
+        <div class="ln-addr-success-hint">
+          {{ $t('Shown to anyone who pays this address, right after they pay.') }}
+        </div>
+
         <div v-if="createError" class="ln-addr-error">
           {{ createError }}
         </div>
@@ -170,7 +195,9 @@ export default {
     defaultUsername: { type: String, default: '' },
 
     // Async callback that creates the address on the server.
-    // Signature: (username: string) => Promise<{ address: string, id?: string, username?: string }>
+    // Signature: (username: string, options?: { successText?: string })
+    //   => Promise<{ address: string, id?: string, username?: string }>
+    // `options.successText` is an optional LUD-09 success message (success_text).
     createAddress: { type: Function, required: true },
   },
 
@@ -190,6 +217,8 @@ export default {
       createError: '',
       // Spinner while the createAddress promise is pending
       busy: false,
+      // Optional LUD-09 thank-you message (success_text) for the new pay link.
+      successText: '',
     };
   },
 
@@ -227,6 +256,7 @@ export default {
       this.inputError = '';
       this.createError = '';
       this.busy = false;
+      this.successText = '';
     },
 
     newUsername() {
@@ -285,7 +315,9 @@ export default {
       this.createError = '';
       try {
         const username = this.newUsername.trim().toLowerCase();
-        const result = await this.createAddress(username);
+        const result = await this.createAddress(username, {
+          successText: this.successText.trim(),
+        });
         if (!result || !result.address) {
           throw new Error(this.$t('Something went wrong. Please try again.'));
         }
@@ -442,6 +474,22 @@ export default {
 .ln-addr-preview strong {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* Optional success-message field (LUD-09 success_text) */
+.ln-addr-success {
+  margin-top: 0.625rem;
+}
+
+.ln-addr-success-icon {
+  color: var(--text-muted);
+}
+
+.ln-addr-success-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+  line-height: 1.4;
 }
 
 .ln-addr-error {

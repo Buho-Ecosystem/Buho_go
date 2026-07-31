@@ -56,10 +56,13 @@
           <section class="recipient">
             <div
               class="recipient-avatar"
-              :class="{ 'has-logo': showRecipientLogo }"
+              :class="{
+                'has-logo': showRecipientLogo,
+                'recipient-avatar--silhouette': isSilhouetteRecipient
+              }"
               :style="showRecipientLogo
                 ? (recipientLogoBg ? { background: recipientLogoBg } : null)
-                : { background: recipientColor }"
+                : (isSilhouetteRecipient ? null : { background: recipientColor })"
             >
               <img
                 v-if="showRecipientLogo"
@@ -67,8 +70,22 @@
                 :alt="recipientName"
                 class="recipient-logo"
                 :class="{ 'recipient-logo--contain': recipientLogoContain }"
+                :style="recipientLogoContain && recipientLogoInset
+                  ? { padding: recipientLogoInset }
+                  : null"
                 @error="logoFailed = true"
               />
+              <!-- Picture-less contact: the app-wide filled-bust
+                   silhouette, never a colored initial. -->
+              <svg
+                v-else-if="isSilhouetteRecipient"
+                class="recipient-glyph"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M12 12.3a4.05 4.05 0 1 0 0-8.1 4.05 4.05 0 0 0 0 8.1Zm0 2.2c-4.3 0-7.6 2.6-8.1 6.3h16.2c-.5-3.7-3.8-6.3-8.1-6.3Z" />
+              </svg>
               <span v-else>{{ recipientInitial }}</span>
             </div>
             <div class="recipient-meta">
@@ -227,6 +244,13 @@
             />
           </div>
 
+          <!-- Flow-specific extras (e.g. the on-chain fee panel: balance
+               row, speed cards, fee breakdown). Slot content renders
+               inside the stage so it inherits the sheet's rhythm; when
+               present it owns fee display, so the generic footnote below
+               stays out of the way. -->
+          <slot name="extras" />
+
           <!-- Fee row: surfaced when the parent supplies an estimate or a
                static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
@@ -239,12 +263,16 @@
             </span>
           </div>
 
-          <!-- Commit control. Idle: slide-to-confirm above the threshold, a tap
-               button below it. Once committed (either way) it morphs into the
-               filling ProgressCta — trickle while in flight, then 100% + check
-               on success — bridging cleanly into the confirmation screen with
-               no separate confirm step and no blank in between. -->
-          <div class="cta-row confirm-cta">
+        </div>
+
+        <!-- Commit control — pinned OUTSIDE the scroll region so the commit
+             affordance (and its footnote) is always on screen, whatever the
+             middle band holds. Idle: slide-to-confirm above the threshold, a
+             tap button below it. Once committed (either way) it morphs into
+             the filling ProgressCta — trickle while in flight, then 100% +
+             check on success — bridging cleanly into the confirmation screen
+             with no separate confirm step and no blank in between. -->
+        <div class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -278,10 +306,9 @@
             <div v-if="isSending && statusMessage" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
-            <div v-else-if="!isSending && !isComplete && !feeRowVisible && verb === 'send'" class="fee-footnote">
+            <div v-else-if="!isSending && !isComplete && !feeRowVisible && !hasExtras && verb === 'send'" class="fee-footnote">
               {{ $t('Network fees apply') }}
             </div>
-          </div>
         </div>
     </q-card>
   </q-dialog>
@@ -337,9 +364,17 @@ export default {
      * LNURL-Withdraw ("Generating invoice…" → "Awaiting confirmation…")
      * where a bare spinner would hide what's actually happening.
      */
-    statusMessage: { type: String, default: '' }
+    statusMessage: { type: String, default: '' },
+    /**
+     * Extra parent-owned commit condition, ANDed into the standard gates
+     * (wallet capability + amount validity). Used by flows whose slot
+     * content must settle before committing — e.g. the on-chain fee
+     * panel: no confirmed fee quote, no send. Defaults open so ordinary
+     * payments never need to pass it.
+     */
+    commitGate: { type: Boolean, default: true }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed'],
   data() {
     return {
       showAddress: false,
@@ -352,7 +387,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format']),
+    ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format', 'isActiveWalletArkade', 'arkadeLnSendLimits']),
 
     show: {
       get() { return this.modelValue },
@@ -375,11 +410,17 @@ export default {
     showRecipientLogo() {
       return !!this.recipientLogo && !this.logoFailed
     },
-    // Branta-delivered merchant logos look best contained with ~golden-ratio
-    // breathing room rather than cropped edge-to-edge. Payout flags / wallet
-    // logos stay full-bleed; the parent sets this flag only for merchant logos.
+    // Art without its own background plate (merchant marks from Branta, a
+    // wordmark, a bare wallet logomark) is fitted whole inside the circle
+    // rather than cropped edge-to-edge. App-icon art stays full-bleed.
     recipientLogoContain() {
       return this.payment?.recipient?.logoContain === true
+    },
+    // Optional per-logo override of the contain padding, for art whose
+    // silhouette is known to clear the circle at a tighter inset (see
+    // walletBrands). Empty -> the conservative default in the stylesheet.
+    recipientLogoInset() {
+      return this.payment?.recipient?.logoInset || ''
     },
     // Optional avatar backdrop for a logo that needs one (e.g. ZBD's white
     // wordmark, which would vanish on the default white circle). Empty -> the
@@ -406,6 +447,12 @@ export default {
       return this.payment?.recipient?.verification || null
     },
 
+    // Picture-less matched contact → the app-wide silhouette mark. A
+    // loaded logo (photo / brand / Branta) always wins over it.
+    isSilhouetteRecipient() {
+      return !!this.payment?.recipient?.silhouette && !this.showRecipientLogo
+    },
+
     // Fiat-payout service context (Tando, Bitzed, …), attached by the
     // parent adapter when the destination is a recognized phone-payout
     // Lightning Address. Absent on every normal payment, so the hint
@@ -422,32 +469,73 @@ export default {
     },
 
     // Label for the payment-indicator row: the human description when the
-    // invoice / LNURL carried one, otherwise a payment-type fallback so the
-    // row (and the address-reveal it hosts) is always present.
+    // invoice / LNURL carried one (real content), otherwise a plain
+    // "Show details" so the row reads as what it is — the reveal for the
+    // raw destination string. Never the rail name: the payment-language
+    // unification says only "Bitcoin payment" on send, and the hero
+    // identity already carries that, so repeating it here would be the
+    // old shown-twice bug in new clothes.
     paymentLabel() {
       if (this.payment?.description) return this.payment.description
-      const labels = {
-        lightning: this.$t('Lightning payment'),
-        invoice: this.$t('Lightning payment'),
-        spark: this.$t('Spark payment'),
-        bitcoin: this.$t('Bitcoin payment'),
-        lnurl: this.$t('LNURL payment'),
-      }
-      return labels[this.recipientAddressType] || this.$t('Payment')
+      return this.$t('Show details')
+    },
+
+    // LUD-21 / currency-extension (#207) payout currency, present when the
+    // provider returns one (fiat-payout addresses: ChapSmart TZS, Tando KES,
+    // Bitzed ZMW). Shape: { code, symbol, decimals, minSendable, maxSendable,
+    // multiplier }, where multiplier is millisats per 1 unit of the currency.
+    // Lets the sender denominate in the recipient's currency with the sat cost
+    // derived from the callback's own multiplier — no external rate needed.
+    payoutCurrency() {
+      return this.payment?.payoutCurrency || null
+    },
+    // True while the amount is being entered in the recipient's local currency.
+    isLocalDenomination() {
+      return !!this.payoutCurrency && this.currentCurrency === this.payoutCurrency.code
+    },
+    // Single source of truth for how the amount is denominated, so every
+    // consumer switches on one value instead of re-deriving from currentCurrency
+    // (which now also holds a payout code like 'TZS', not just sats/btc/fiat).
+    denominationMode() {
+      if (this.isLocalDenomination) return 'local'
+      if (this.currentCurrency === 'sats') return 'sats'
+      if (this.currentCurrency === 'btc') return 'btc'
+      return 'fiat'
     },
 
     // ───── Amount mode ─────
+
+    // Arkade pays Lightning through a swap with its own floor and ceiling.
+    // Surface those bounds in the amount entry itself so the user can never
+    // confirm an amount the swap layer would refuse a moment later. Null for
+    // every non-Arkade wallet, for non-Lightning destinations (ark1/bitcoin
+    // ride other rails), and for redeem (receive-direction) flows.
+    arkadeSwapBounds() {
+      if (!this.isActiveWalletArkade || this.isRedeem) return null
+      const t = this.recipientAddressType
+      if (t !== 'lightning' && t !== 'invoice' && t !== 'lnurl') return null
+      return this.arkadeLnSendLimits || null
+    },
     amountMode() {
-      return this.payment?.amount?.mode || 'free'
+      const mode = this.payment?.amount?.mode || 'free'
+      // A free-amount Lightning send on Arkade is still bounded by the swap;
+      // present it as a range so the hint and validation engage.
+      if (mode === 'free' && this.arkadeSwapBounds) return 'range'
+      return mode
     },
     fixedSats() {
       return this.payment?.amount?.fixedSats || 0
     },
     minSats() {
-      return this.payment?.amount?.minSats || 0
+      const base = this.payment?.amount?.minSats || 0
+      const swap = this.arkadeSwapBounds
+      return swap?.min ? Math.max(base, swap.min) : base
     },
     maxSats() {
-      return this.payment?.amount?.maxSats || 0
+      const base = this.payment?.amount?.maxSats || 0
+      const swap = this.arkadeSwapBounds
+      if (!swap?.max) return base
+      return base ? Math.min(base, swap.max) : swap.max
     },
 
     fiatCurrencyCode() {
@@ -457,6 +545,7 @@ export default {
       return FIAT_SYMBOLS[this.fiatCurrencyCode] || (this.fiatCurrencyCode + ' ')
     },
     unitPillLabel() {
+      if (this.isLocalDenomination) return this.payoutCurrency.code
       if (this.currentCurrency === 'sats') return 'sats'
       if (this.currentCurrency === 'btc') return 'BTC'
       return this.fiatCurrencyCode
@@ -467,6 +556,12 @@ export default {
       if (this.amountMode === 'fixed') return this.fixedSats
       const n = parseFloat(this.displayAmount)
       if (!isFinite(n) || n <= 0) return 0
+      // Local payout currency: sats = localAmount × (millisats-per-unit) / 1000.
+      // This is an estimate for the recipient amount; the provider fee is added
+      // on top and reflected in the real invoice we fetch at send time.
+      if (this.isLocalDenomination) {
+        return Math.floor((n * this.payoutCurrency.multiplier) / 1000)
+      }
       if (this.currentCurrency === 'sats') return Math.floor(n)
       if (this.currentCurrency === 'btc')  return Math.floor(n * 100000000)
       const rate = this.fiatRates[this.fiatCurrencyCode]
@@ -475,6 +570,7 @@ export default {
     },
 
     amountPlaceholder() {
+      if (this.isLocalDenomination) return this.payoutCurrency.decimals > 0 ? '0.00' : '0'
       if (this.currentCurrency === 'sats') return '0'
       if (this.currentCurrency === 'btc')  return '0.00000000'
       return '0.00'
@@ -485,7 +581,34 @@ export default {
     // registration vue-i18n skips placeholder substitution and the user
     // sees a literal "{n}" in the UI.
     amountInvalidReason() {
+      // A fixed-amount invoice outside the Arkade swap bounds can never be
+      // paid from this wallet, and the user can't edit the amount — say so
+      // up front instead of failing after the Send tap.
+      if (this.amountMode === 'fixed' && this.arkadeSwapBounds && this.fixedSats > 0) {
+        if (this.minSats && this.fixedSats < this.minSats) {
+          return this.$t('Minimum is {n} sats', { n: this.minSats.toLocaleString() })
+        }
+        if (this.maxSats && this.fixedSats > this.maxSats) {
+          return this.$t('Maximum is {n} sats', { n: this.maxSats.toLocaleString() })
+        }
+      }
       if (!this.displayAmount || this.amountMode === 'fixed') return ''
+      // Local-currency mode: validate the entered LOCAL amount against the
+      // provider's own min/max. Runs before the sats>0 check below so a
+      // sub-1-sat entry still gets a clear "minimum" message instead of a
+      // silently-disabled button. The sat estimate excludes the provider fee,
+      // so the sat bounds don't line up and must not be used here.
+      if (this.isLocalDenomination) {
+        const n = parseFloat(this.displayAmount)
+        if (!isFinite(n) || n <= 0) return ''
+        const { minSendable, maxSendable, multiplier, code } = this.payoutCurrency
+        // Smallest local amount worth at least 1 sat — guards the case where a
+        // provider omits its local minimum (avoids a silent 0-sat dead-end).
+        const effectiveMin = minSendable || Math.max(1, Math.ceil(1000 / multiplier))
+        if (n < effectiveMin) return this.$t('Minimum is {n} {code}', { n: effectiveMin.toLocaleString(), code })
+        if (maxSendable && n > maxSendable) return this.$t('Maximum is {n} {code}', { n: maxSendable.toLocaleString(), code })
+        return ''
+      }
       const sats = this.amountInSats
       if (sats <= 0) return ''
       if (this.amountMode === 'range') {
@@ -503,11 +626,20 @@ export default {
     },
 
     canSubmit() {
-      return this.walletCanPay && this.isAmountAcceptable
+      return this.walletCanPay && this.isAmountAcceptable && this.commitGate
     },
 
     rangeHintText() {
       if (this.amountMode !== 'range') return ''
+      if (this.isLocalDenomination) {
+        const { minSendable, maxSendable, code } = this.payoutCurrency
+        // Only show the bounds we actually have — never "Min 0 · Max 0".
+        if (!minSendable && !maxSendable) return ''
+        const parts = []
+        if (minSendable) parts.push(`${this.$t('Min')} ${minSendable.toLocaleString()}`)
+        if (maxSendable) parts.push(`${this.$t('Max')} ${maxSendable.toLocaleString()}`)
+        return `${parts.join(' · ')} ${code}`
+      }
       return `${this.$t('Min')} ${this.minSats.toLocaleString()} · ${this.$t('Max')} ${this.maxSats.toLocaleString()} sats`
     },
 
@@ -564,6 +696,10 @@ export default {
     // amount that would fail validation.
     quickAmounts() {
       if (this.amountMode === 'fixed') return []
+      // No preset chips in local-currency mode: sat/fiat presets are meaningless
+      // in the recipient's currency, and inventing round local amounts would be
+      // a guess. The user types the amount directly.
+      if (this.isLocalDenomination) return []
       const baseSats = [1000, 5000, 10000, 21000]
       if (this.currentCurrency === 'sats') {
         const chips = baseSats.map(v => ({ value: v, label: this.formatChipLabel(v, 'sats') }))
@@ -582,13 +718,29 @@ export default {
     },
 
     requiresSlide() {
-      // Tap button up to the threshold; slide-to-confirm above it.
-      return this.amountInSats > SLIDE_THRESHOLD_SATS
+      // Tap button up to the threshold; slide-to-confirm above it. Flows
+      // can force the deliberate gesture regardless of amount (on-chain
+      // sends: every transaction is irreversible, so always slide).
+      return !!this.payment?.forceSlide || this.amountInSats > SLIDE_THRESHOLD_SATS
+    },
+
+    // True when the parent filled the `extras` slot (e.g. the on-chain
+    // fee panel). Slot content owns its own fee display then, so the
+    // generic "Network fees apply" footnote stays out of the way.
+    hasExtras() {
+      return !!this.$slots.extras
     },
 
     fiatEquivalent() {
       const sats = this.amountInSats
-      if (!sats || !this.fiatRates) return ''
+      if (!sats) return ''
+      // Denominating in the recipient's currency → the shadow shows the sat
+      // estimate for the amount (the recipient still receives the exact local
+      // amount; the fee is added on top in the real invoice).
+      if (this.isLocalDenomination) {
+        return `≈ ${formatAmount(sats, this.useBip177Format)}`
+      }
+      if (!this.fiatRates) return ''
       try {
         const currency = this.fiatCurrencyCode
         if (this.currentCurrency === currency.toLowerCase()) {
@@ -606,9 +758,17 @@ export default {
     formattedConfirmAmount() {
       const sats = this.amountInSats
       if (!sats) return ''
-      // Always render the confirm-stage hero in sats-or-fiat-friendly form,
-      // not BTC, since confirm is about reading at a glance.
-      if (this.currentCurrency === 'sats' || this.currentCurrency === 'btc') {
+      // Local-currency mode: the commit label MUST read in the recipient's
+      // currency (e.g. "10,000 TZS"), never the sender's global fiat symbol.
+      if (this.denominationMode === 'local') {
+        const n = parseFloat(this.displayAmount)
+        if (!isFinite(n) || n <= 0) return `${sats.toLocaleString()} sats`
+        const decimals = this.payoutCurrency.decimals || 0
+        const local = n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+        return `${local} ${this.payoutCurrency.code}`
+      }
+      // Render sats/btc as sats (confirm is about reading at a glance).
+      if (this.denominationMode === 'sats' || this.denominationMode === 'btc') {
         return `${sats.toLocaleString()} sats`
       }
       const n = parseFloat(this.displayAmount)
@@ -671,6 +831,14 @@ export default {
     // after the sheet opened) gets a fresh chance to load.
     recipientLogo() {
       this.logoFailed = false
+    },
+    /**
+     * Live amount signal for parents whose slot content depends on the
+     * entered amount (the on-chain fee panel quotes per amount). Emits
+     * the normalized sat value on every change, any denomination.
+     */
+    amountInSats(sats) {
+      this.$emit('amount-changed', sats)
     }
   },
   methods: {
@@ -687,12 +855,18 @@ export default {
       this.showAddress = false
       this.comment = ''
       this.logoFailed = false
-      this.currentCurrency = (this.denominationCurrency || 'sats')
+      // Fiat-payout addresses default to the recipient's own currency (the
+      // natural "send 10,000 shillings" model); everything else uses the user's
+      // saved denomination preference.
+      this.currentCurrency = this.payoutCurrency ? this.payoutCurrency.code : (this.denominationCurrency || 'sats')
       // For fixed mode, prefill the visible input so users can read the
       // amount they're about to send. The `readonly` flag on the input
       // keeps it un-editable.
       if (this.amountMode === 'fixed') {
         this.displayAmount = String(this.fixedSats)
+        this.currentCurrency = 'sats'
+      } else if (this.payment?.amount?.defaultAmount) {
+        this.displayAmount = String(this.payment.amount.defaultAmount)
         this.currentCurrency = 'sats'
       } else {
         this.displayAmount = ''
@@ -704,21 +878,46 @@ export default {
       this.$emit('cancel')
     },
 
-    onAmountChange() { /* reactive — kept for symmetry with focus/blur */ },
+    onAmountChange() {
+      // Sanitize as the user types so parseFloat can never silently truncate at
+      // a grouping separator (e.g. "2,500" → 2500, or "2500,000" → 2500 → a
+      // 1000x underpayment). Keep only digits and a single decimal point, and
+      // drop the fractional part entirely for integer units (sats, or a
+      // 0-decimal local currency like TZS).
+      let v = String(this.displayAmount || '').replace(/[^0-9.]/g, '')
+      const dot = v.indexOf('.')
+      const integerOnly = this.currentCurrency === 'sats' ||
+        (this.isLocalDenomination && this.payoutCurrency.decimals === 0)
+      if (dot !== -1) {
+        v = integerOnly
+          ? v.slice(0, dot)
+          : v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '')
+      }
+      if (v !== this.displayAmount) this.displayAmount = v
+    },
     onAmountFocus()  { this.isAmountFocused = true },
     onAmountBlur() {
       this.isAmountFocused = false
       // Light formatting on blur — same UX as PaymentModal.
       const n = parseFloat(this.displayAmount)
       if (!isFinite(n)) return
-      if (this.currentCurrency === 'sats') this.displayAmount = String(Math.floor(n))
+      if (this.isLocalDenomination) {
+        this.displayAmount = this.payoutCurrency.decimals > 0
+          ? n.toFixed(this.payoutCurrency.decimals)
+          : String(Math.floor(n))
+      }
+      else if (this.currentCurrency === 'sats') this.displayAmount = String(Math.floor(n))
       else if (this.currentCurrency === 'btc') this.displayAmount = n.toFixed(8)
       else this.displayAmount = n.toFixed(2)
     },
 
     toggleCurrency() {
       if (this.amountMode === 'fixed') return
-      const order = ['sats', this.fiatCurrencyCode.toLowerCase()]
+      // Fiat-payout addresses toggle between the recipient's currency and sats;
+      // everything else toggles between sats and the user's global fiat.
+      const order = this.payoutCurrency
+        ? [this.payoutCurrency.code, 'sats']
+        : ['sats', this.fiatCurrencyCode.toLowerCase()]
       const i = order.indexOf(this.currentCurrency)
       this.currentCurrency = order[(i + 1) % order.length]
       // Clear the input so the user re-enters in the new unit — converting
@@ -729,6 +928,18 @@ export default {
     pickQuickAmount(q) {
       if (this.amountMode === 'fixed') return
       this.displayAmount = String(q.value)
+    },
+
+    /**
+     * Public (called via ref): set the amount from outside, in sats.
+     * Used by slot content that owns a "Use all" affordance (on-chain
+     * fee panel) — switches the denomination to sats so the written
+     * value means exactly what the caller computed.
+     */
+    setAmountSats(sats) {
+      if (this.amountMode === 'fixed') return
+      this.currentCurrency = 'sats'
+      this.displayAmount = String(Math.max(0, Math.floor(sats)))
     },
 
     isQuickActive(q) {
@@ -744,14 +955,25 @@ export default {
     },
 
     emitConfirm() {
-      if (!this.walletCanPay || !this.isAmountAcceptable) {
+      if (!this.canSubmit) {
         this.$refs.slideRef?.reset()
         return
       }
-      this.$emit('confirm', {
+      const payload = {
         amountSats: this.amountInSats,
         comment: this.comment || ''
-      })
+      }
+      // When denominating in the recipient's currency, carry the exact local
+      // amount + code so the parent can request an Option-A (currency) invoice:
+      // the recipient then receives exactly this amount, provider fee on top.
+      // Round to the currency's decimals so the callback never receives an
+      // over-precise value (the input may not have blurred before slide-to-send).
+      if (this.isLocalDenomination) {
+        const decimals = this.payoutCurrency.decimals || 0
+        const amount = Number(parseFloat(this.displayAmount).toFixed(decimals))
+        payload.payout = { code: this.payoutCurrency.code, amount }
+      }
+      this.$emit('confirm', payload)
     },
 
     /**
@@ -770,7 +992,7 @@ export default {
 .sheet-card {
   width: 100%;
   max-width: 520px;
-  max-height: 92vh;
+  max-height: min(94vh, calc(100vh - var(--safe-top, 0px) - 8px));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--bg-card);
   display: flex;
@@ -821,13 +1043,26 @@ export default {
   justify-content: flex-end;
 }
 
-/* ─── Stages ─── */
+/* ─── Stages ───
+   The stage is the ONLY scroll region, and with the compressed rhythm
+   below it should never actually scroll in the normal states — the
+   overflow is a safety net for extreme content (long memos, the
+   on-chain panel on very short viewports), never the design. The
+   commit control lives outside it, always on screen. */
 .stage {
   display: flex;
   flex-direction: column;
-  padding: 8px 20px 12px;
-  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 6px 20px 8px;
+  gap: 12px;
   overflow-y: auto;
+}
+
+@supports (height: 1dvh) {
+  .sheet-card {
+    max-height: min(94dvh, calc(100dvh - var(--safe-top, 0px) - 8px));
+  }
 }
 /* ─── Recipient ───
    Borderless, airy hero (Apple/Blitz-elegant): the recipient reads as
@@ -856,11 +1091,38 @@ export default {
   flex-shrink: 0;
   overflow: hidden;
 }
+
+/* Silhouette hero — same blue-on-pale-blue treatment as ContactAvatar
+   (the reference wallet's look, copied 1:1), so the confirm sheet and
+   every list agree. */
+.recipient-avatar--silhouette {
+  background: #EAEFF7;
+  color: #3B82F6;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+.body--dark .recipient-avatar--silhouette {
+  background: #23272E;
+  color: #5B8DEF;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.recipient-glyph {
+  /* Filled marks read smaller than strokes — 52% matches the
+     reference wallet's bust-to-disc ratio. */
+  width: 52%;
+  height: 52%;
+  display: block;
+}
 .recipient-avatar.has-logo { background: #fff; box-shadow: inset 0 0 0 1px var(--border-card); }
 .recipient-logo { width: 100%; height: 100%; object-fit: cover; }
-/* Merchant logos: contained with golden-ratio breathing room (logo ≈ 0.62 of
-   the avatar) so the delivered brand mark sits cleanly rather than cropped. */
-.recipient-logo--contain { object-fit: contain; padding: 9px; }
+/* Plate-less art (merchant marks, wordmarks, bare wallet logomarks): fitted
+   whole rather than cropped. The inset is a percentage so it holds at every
+   avatar size, and defaults deep enough (logo ≈ 0.62 of the avatar) that even
+   a full-bleed square keeps its corners inside the circle. A logo whose
+   silhouette is known can override it per brand via `logoInset`. */
+.recipient-logo--contain { object-fit: contain; padding: 19%; }
 
 .recipient-meta { flex: 1; min-width: 0; }
 
@@ -1021,8 +1283,8 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 0 4px;
-  gap: 10px;
+  padding: 2px 0 0;
+  gap: 8px;
 }
 .amount-stage--locked .amount-input { color: var(--text-primary); cursor: default; }
 
@@ -1169,7 +1431,17 @@ export default {
 
 /* ─── CTA ─── */
 .cta-row { margin-top: 6px; }
-.confirm-cta { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Pinned commit footer — sibling of the scroll region, so it never
+   leaves the screen. Carries the stage's horizontal padding itself. */
+.confirm-cta {
+  margin-top: 0;
+  padding: 10px 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
 
 .primary-cta {
   width: 100%;
@@ -1213,8 +1485,9 @@ export default {
 }
 
 @media (max-width: 480px) {
-  .stage { padding: 8px 16px 10px; gap: 12px; }
-  .recipient { padding: 2px 0 4px; }
+  .stage { padding: 6px 16px 8px; gap: 11px; }
+  .confirm-cta { padding: 10px 16px 0; }
+  .recipient { padding: 2px 0 2px; }
   .recipient-avatar { width: 44px; height: 44px; min-width: 44px; font-size: 18px; }
   .amount-input { font-size: 40px; }
   .primary-cta { height: 50px; font-size: 14.5px; }

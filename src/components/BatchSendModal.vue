@@ -615,6 +615,7 @@ import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
+import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import { stripWrapperScheme } from '../utils/addressUtils'
 import { bech32 } from 'bech32'
@@ -638,6 +639,7 @@ const { proxy } = getCurrentInstance()
 const t = (key, params) => proxy.$t(key, params)
 const walletStore = useWalletStore()
 const addressBookStore = useAddressBookStore()
+const transactionMetadataStore = useTransactionMetadataStore()
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -645,7 +647,7 @@ const addressBookStore = useAddressBookStore()
 const totalSteps = 5
 const FEE_BUFFER_PERCENT = 0.01 // 1% reserved for fees
 const DEFAULT_AVATAR_COLOR = '#3B82F6'
-const WALLET_TYPES = { SPARK: 'spark', LNBITS: 'lnbits', NWC: 'nwc' }
+const WALLET_TYPES = { SPARK: 'spark', ARKADE: 'arkade', LNBITS: 'lnbits', NWC: 'nwc' }
 
 // ─────────────────────────────────────────────────────────────
 // State
@@ -678,6 +680,7 @@ const themeClass = computed(() => $q.dark.isActive ? 'theme-dark' : 'theme-light
 // Computed - Wallet & Currency
 // ─────────────────────────────────────────────────────────────
 const isSparkWallet = computed(() => walletStore.isActiveWalletSpark)
+const isArkadeWallet = computed(() => walletStore.isActiveWalletArkade)
 const walletBalance = computed(() => walletStore.balances[walletStore.activeWalletId] || 0)
 
 // Currency settings from wallet store
@@ -802,8 +805,8 @@ const estimatedFees = computed(() => {
   for (const contact of selectedContacts.value) {
     const type = contact.addressType || 'lightning'
     const contactAmount = getContactAmount(contact)
-    if (type === 'spark') {
-      fees += 0 // Zero fee
+    if (type === 'spark' || type === 'arkade') {
+      fees += 0 // Zero fee (native ark1 / sp1 transfer)
     } else if (type === 'lightning' || type === 'lnurl') {
       fees += Math.ceil(contactAmount * 0.01) // ~1% (LNURL pays over Lightning)
     } else if (type === 'bitcoin') {
@@ -928,7 +931,7 @@ function updateCustomAmount(contactId, value) {
 // }
 
 function getTypeLabel(type) {
-  const labels = { lightning: 'Lightning', spark: 'Spark', bitcoin: 'Bitcoin' }
+  const labels = { lightning: 'Lightning', spark: 'Spark', bitcoin: 'Bitcoin', arkade: 'Arkade' }
   return labels[type] || labels.lightning
 }
 
@@ -936,7 +939,8 @@ function getTypeColor(type) {
   const colors = {
     lightning: '#F7931A',  // Orange
     spark: '#000',         // Black
-    bitcoin: '#F7931A'     // Orange
+    bitcoin: '#F7931A',    // Orange
+    arkade: '#F14317'      // Arkade brand orange
   }
   return colors[type] || colors.lightning
 }
@@ -962,6 +966,10 @@ function canSelectContact(contact) {
   }
   // Bitcoin and Spark contacts only available with Spark wallet
   if ((contact.addressType === 'bitcoin' || contact.addressType === 'spark') && !isSparkWallet.value) {
+    return false
+  }
+  // ark1 contacts only payable with an Arkade wallet
+  if (contact.addressType === 'arkade' && !isArkadeWallet.value) {
     return false
   }
   return true
@@ -1312,6 +1320,16 @@ async function startBatch() {
           result.status = 'success'
         }
       }
+      // Handle Arkade address type (only works with Arkade wallet)
+      else if (addressType === 'arkade') {
+        if (walletType !== WALLET_TYPES.ARKADE) {
+          result.status = 'skipped'
+          result.error = t('Requires Arkade')
+        } else {
+          await provider.transferToArkadeAddress({ arkadeAddress: address, amount: result.amount })
+          result.status = 'success'
+        }
+      }
       // Handle Lightning address type
       else if (addressType === 'lightning') {
         if (walletType === WALLET_TYPES.SPARK) {
@@ -1326,6 +1344,12 @@ async function startBatch() {
           const lnbitsProvider = await walletStore.ensureLNBitsConnected()
           const invoice = await fetchLightningAddressInvoice(address, result.amount)
           await lnbitsProvider.payInvoice({ invoice })
+          result.status = 'success'
+        } else if (walletType === WALLET_TYPES.ARKADE) {
+          // Arkade pays the LN address via a Boltz submarine swap.
+          const arkadeProvider = await walletStore.ensureArkadeConnected()
+          const invoice = await fetchLightningAddressInvoice(address, result.amount)
+          await arkadeProvider.payInvoice({ invoice })
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.NWC) {
           // NWC: create service and pay
@@ -1383,6 +1407,22 @@ async function startBatch() {
       // Update last used on success
       if (result.status === 'success') {
         await addressBookStore.updateLastUsed(result.contact.id)
+
+        // Queue a pending metadata link so the tx, once it surfaces in
+        // history, is stamped with the contact/address and marked as a
+        // batch send. Best-effort — a metadata failure must never fail
+        // a payment that already went out.
+        try {
+          await transactionMetadataStore.enqueuePendingContactLink({
+            contactId: result.contact.id || null,
+            recipientAddress: address,
+            amountSats: result.amount,
+            source: 'batch',
+            walletId: walletStore.activeWalletId || null,
+          })
+        } catch (metaError) {
+          console.warn('Batch send metadata link failed:', metaError)
+        }
       }
     } catch (error) {
       console.error('Batch send payment failed:', error)

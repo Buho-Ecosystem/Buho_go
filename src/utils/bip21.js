@@ -14,6 +14,8 @@
  * Values are URL-decoded; `+` is treated as a space for form-encoded labels.
  */
 
+import { isValidBolt12Offer } from './bolt12.js';
+
 const SCHEME = 'bitcoin:';
 
 /**
@@ -94,11 +96,15 @@ export function parseBip21(input) {
  *   - LN settles instantly and is free of on-chain fees.
  *   - NWC wallets cannot pay on-chain at all; routing them to LN always works.
  *
- * Falls back to the on-chain address if no `lightning=` is provided.
+ * Falls back to a BOLT12 offer when no BOLT11 `lightning=` invoice is present,
+ * then to the on-chain address. The offer is deliberately returned as its own
+ * kind so callers can explain that BuhoGO does not pay offers yet; routing to
+ * the on-chain fallback would risk sending to the wrong destination.
  * Returns `null` if the URI carries no usable destination.
  *
  * @param {ReturnType<typeof parseBip21>} parsed
  * @returns {({ kind: 'lightning_invoice', value: string, bip21: object })
+ *         | ({ kind: 'bolt12_offer',      value: string, bip21: object })
  *         | ({ kind: 'bitcoin_address',   value: string, bip21: object })
  *         | null}
  */
@@ -106,6 +112,9 @@ export function selectBip21Destination(parsed) {
   if (!parsed) return null;
   if (parsed.lightning && looksLikeBolt11(parsed.lightning)) {
     return { kind: 'lightning_invoice', value: parsed.lightning, bip21: parsed };
+  }
+  if (parsed.lno && isValidBolt12Offer(parsed.lno)) {
+    return { kind: 'bolt12_offer', value: parsed.lno, bip21: parsed };
   }
   if (parsed.address) {
     return { kind: 'bitcoin_address', value: parsed.address, bip21: parsed };

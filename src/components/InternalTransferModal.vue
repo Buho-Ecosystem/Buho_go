@@ -149,7 +149,7 @@
               <span>{{ state.toWallet?.name }}</span>
             </div>
           </div>
-          <p class="note">{{ $t('This transfer happens instantly via Lightning') }}</p>
+          <p class="note">{{ transferNote }}</p>
         </section>
 
         <!--
@@ -255,6 +255,7 @@ import { useQuasar } from 'quasar';
 import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
 import SuccessCheckmark from './SuccessCheckmark.vue';
+import ArkadeLogo from './ArkadeLogo.vue';
 
 // vue-i18n is configured in legacy mode (see src/boot/i18n.js), so
 // useI18n() throws "Not available in legacy mode". Reach $t through the
@@ -303,8 +304,10 @@ const WalletAvatar = {
           fill: '#FF1FE1'
         })
       ]),
+      // Arkade brand mark — forced orange (sits on an always-dark avatar circle)
+      props.type === 'arkade' && h(ArkadeLogo, { variant: 'mark', color: 'orange', size: 20 }),
       // Default wallet icon
-      !['spark', 'nwc', 'lnbits'].includes(props.type) && h('svg', { width: '18', height: '18', viewBox: '0 0 24 24', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
+      !['spark', 'nwc', 'lnbits', 'arkade'].includes(props.type) && h('svg', { width: '18', height: '18', viewBox: '0 0 24 24', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
         h('path', {
           d: 'M19 7h-1V6a3 3 0 0 0-3-3H5a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-8a3 3 0 0 0-3-3zm-4 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2z',
           fill: 'white'
@@ -378,6 +381,15 @@ const isVisible = computed({
 const themeClass = computed(() => $q.dark.isActive ? 'theme-dark' : 'theme-light');
 const wallets = computed(() => store.getTransferableWallets());
 const sameWalletSelected = computed(() => state.fromWallet && state.toWallet && state.fromWallet.id === state.toWallet.id);
+
+// An Arkade leg rides a Lightning swap, so a small swap fee applies — say so
+// instead of promising a plain instant Lightning hop.
+const transferNote = computed(() => {
+  const arkadeLeg = state.fromWallet?.type === 'arkade' || state.toWallet?.type === 'arkade';
+  return arkadeLeg
+    ? t('This transfer happens via Lightning and includes a small swap fee')
+    : t('This transfer happens instantly via Lightning');
+});
 
 const canProceed = computed(() => {
   if (state.isTransferring) return false;

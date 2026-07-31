@@ -69,6 +69,33 @@ export function addNfcListener(callback) {
 }
 
 /**
+ * One-shot pull of a scan captured natively while the WebView was not ready.
+ *
+ * NfcDispatchActivity buffers tags that reach BuhoGO through Android's NFC
+ * system dispatch (app closed or backgrounded); this drains that buffer.
+ * Consuming clears it, so each scan is delivered at most once. Call it at boot
+ * (cold start) and on every app resume (warm start via the NFC picker).
+ *
+ * @returns {Promise<{ raw: string, source: string, id: string } | null>}
+ */
+export async function consumePendingNfcScan() {
+  if (!Capacitor.isNativePlatform()) return null
+  try {
+    const result = await NfcPlugin.consumePendingScan()
+    if (result?.found && result.raw) {
+      return {
+        raw: String(result.raw).trim(),
+        source: result.source || 'system_dispatch',
+        id: result.id || null
+      }
+    }
+  } catch (e) {
+    console.warn('[nfc] Could not check for a pending NFC scan:', e)
+  }
+  return null
+}
+
+/**
  * Register a listener for NFC errors (tag found but unreadable/unsupported).
  * Returns an unsubscribe function.
  */

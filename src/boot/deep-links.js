@@ -3,6 +3,9 @@ import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { parsePaymentDestination } from '../providers/WalletFactory'
+import { classifyIdentifier } from '../utils/nostrLookup'
+import { triggerWalletStoreHydration } from '../utils/walletHydration'
+import { redactPaymentInput } from '../utils/logRedaction'
 
 /**
  * Deep link handler for Android intent filters.
@@ -24,39 +27,6 @@ import { parsePaymentDestination } from '../providers/WalletFactory'
 // Track last handled URL to prevent duplicate processing on Activity resume
 let lastHandledUrl = null
 
-function hasPersistedWalletConfig() {
-  try {
-    const saved = localStorage.getItem('buhoGO_wallet_store')
-    if (!saved) return false
-
-    const parsed = JSON.parse(saved)
-    return Array.isArray(parsed.wallets) && parsed.wallets.length > 0
-  } catch {
-    return false
-  }
-}
-
-/**
- * Trigger wallet-store hydration synchronously.
- *
- * walletStore.initialize() is an async function, but its synchronous prefix
- * (localStorage read + migration + $patch) runs to completion before the
- * first `await`. That prefix is all we need to read activeWallet and
- * kiosk state correctly; the connect/network tail continues in the
- * background and cannot starve us here.
- *
- * Idempotent: dedupes via the store's isInitialized / _initializePromise
- * guards, so this is safe alongside Wallet.vue's own initialize() call.
- */
-function triggerStoreHydration(walletStore) {
-  if (walletStore.isInitialized) return
-  if (!hasPersistedWalletConfig()) return
-
-  walletStore.initialize().catch((err) => {
-    console.warn('[deep-links] Wallet store init failed:', err?.message || err)
-  })
-}
-
 /**
  * Parse a deep link URI into the payment data shape expected by Wallet.vue's onPaymentDetected.
  * Returns null if the URI is not a recognized payment type.
@@ -65,15 +35,25 @@ function parseDeepLinkURI(url) {
   if (!url || typeof url !== 'string') return null
 
   const input = url.trim()
+
+  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) — the profile-
+  // share QR and Nostr clients hand these over. Not a payment shape, so
+  // parsePaymentDestination can't classify them; Wallet.onPaymentDetected
+  // resolves the profile to its Lightning target and re-dispatches.
+  const nostrKind = classifyIdentifier(input)
+  if (nostrKind === 'npub' || nostrKind === 'nprofile') {
+    return { data: input, type: 'nostr_identifier' }
+  }
+
   const parsed = parsePaymentDestination(input)
 
-  if (!parsed || !parsed.valid || parsed.type === 'unknown') {
+  if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
     return null
   }
 
   // Map to the { data, type } shape that Wallet.vue's onPaymentDetected expects
   // (same shape as SendModal's payment-detected emit)
-  const data = parsed.invoice || parsed.address || parsed.lnurl || input
+  const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || input
 
   return { data, type: parsed.type }
 }
@@ -82,11 +62,13 @@ function handleDeepLink(url, router, walletStore) {
   if (!url || url === lastHandledUrl) return
   lastHandledUrl = url
 
-  console.log('[deep-links] Received:', url)
+  // Scheme + length only: deep links carry invoices, LNURLs and one-time
+  // card-authentication parameters that must never reach logcat.
+  console.log('[deep-links] Received:', redactPaymentInput(url))
 
   // Hydrate before any state-dependent check below. The kiosk guard and
   // activeWallet guard both read store state that is null until hydration runs.
-  triggerStoreHydration(walletStore)
+  triggerWalletStoreHydration(walletStore)
 
   // Block deep links while kiosk mode is locked
   if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
@@ -101,6 +83,14 @@ function handleDeepLink(url, router, walletStore) {
       message: 'Unsupported link format',
       timeout: 3000
     })
+    return
+  }
+
+  // An offer is recognized even though BuhoGO cannot pay it yet. Explain it
+  // immediately instead of treating the Android intent as an unknown link or
+  // requiring a configured wallet for a payment we will not attempt.
+  if (paymentData.type === 'bolt12_offer') {
+    walletStore.showUnsupportedBolt12Offer({ route: 'Android deep link' })
     return
   }
 

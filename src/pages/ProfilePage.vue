@@ -1,42 +1,28 @@
 <template>
   <q-page class="profile-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <!-- Header. Back · centred title · gear (manage). The gear opens
-         the IdentityManageSheet, which still owns the lower-frequency
-         actions (seed phrase, restore, regenerate, public-profile-
-         details). It used to be the only way into those — now the
-         profile header below owns the everyday actions and the gear
-         is a deliberate, one-tap step away. -->
-    <div class="page-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
-      <q-btn
-        flat
-        round
-        dense
-        @click="$router.back()"
-        class="back-btn"
-        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-        aria-label="Back"
-      >
-        <Icon icon="tabler:chevron-left" width="18" height="18" />
-      </q-btn>
-      <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-        {{ $t('Profile') }}
-      </div>
-      <q-btn
-        flat
-        round
-        dense
-        class="manage-btn"
-        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-        :aria-label="$t('Manage your BuhoGO identity')"
-        @click="showManageSheet = true"
-      >
-        <!-- Kebab/more affordance. Deliberately NOT a gear: the
-             global Settings page already owns that glyph; using
-             it here too would muddy the meaning. The dots match
-             the modern "more options for this surface" convention. -->
-        <Icon icon="tabler:dots-vertical" width="18" height="18" />
-      </q-btn>
-    </div>
+    <!-- Header. The three hub tabs (Settings / Identity / Spend) are
+         peers reached via the floating SettingsHubNav, not a push
+         stack, so there is no back chevron here - the Home icon
+         inside SettingsHubHeader is the one universal way out, back
+         to the wallet. No kebab menu: the lower-frequency actions it
+         used to gate (backup, restore, Nostr key, regenerate) are now
+         directly on the page as the "Backup" / "Advanced" tiles below,
+         so there's nothing left for a hidden menu to own. -->
+    <SettingsHubHeader :title="$t('Identity')">
+      <template #actions>
+        <q-btn
+          flat
+          round
+          dense
+          class="back-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          :aria-label="$t('Scan a contact')"
+          @click="showScanContactModal = true"
+        >
+          <Icon icon="tabler:scan" width="20" height="20" />
+        </q-btn>
+      </template>
+    </SettingsHubHeader>
 
     <div class="profile-content">
       <!-- Profile header. State variations, all driven by
@@ -68,8 +54,13 @@
           <!-- Identity row — avatar left, name + @handle right. Each
                side stays its own tappable region so a miss-tap on the
                name still lands in the editor (same as before), and a
-               miss-tap on the avatar still opens the avatar picker. -->
-          <div class="hero-identity">
+               miss-tap on the avatar still opens the avatar picker.
+               Empty profile gets its own centred, stacked composition
+               instead: there's no name/handle/address content to sit
+               beside the avatar yet, so the asymmetric layout just
+               reads as lopsided. Centring it reads as one deliberate
+               invitation instead of a profile card missing its data. -->
+          <div class="hero-identity" :class="{ 'hero-identity--empty': profile.isEmpty }">
             <button
               type="button"
               class="hero-avatar-btn"
@@ -88,11 +79,12 @@
                     class="hero-avatar-img"
                     @error="onAvatarLoadError"
                   />
-                  <Icon
+                  <img
                     v-else
-                    icon="tabler:user"
-                    width="36"
-                    height="36"
+                    src="/buho_logo.svg"
+                    alt=""
+                    width="42"
+                    height="42"
                     class="hero-avatar-glyph"
                     aria-hidden="true"
                   />
@@ -103,109 +95,85 @@
               </div>
             </button>
 
-            <button
-              type="button"
-              class="hero-meta-btn"
-              :aria-label="$t('Edit profile')"
-              @click="openProfileEditor"
-            >
-              <div
-                class="hero-name"
-                :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+            <div class="hero-meta">
+              <button
+                type="button"
+                class="hero-name-btn"
+                :aria-label="$t('Edit profile')"
+                @click="openProfileEditor"
               >
-                {{ heroHeadline }}
-              </div>
-              <div
-                v-if="heroHandle || heroSubline"
-                class="hero-handle"
-                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-              >
-                {{ heroHandle || heroSubline }}
-              </div>
-            </button>
-          </div>
+                <span
+                  class="hero-name"
+                  :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+                >
+                  {{ heroHeadline }}
+                </span>
+              </button>
 
-        <!-- Addresses card — the "share me" surface. Up to two tap-to-
-             copy rows: the verified NIP-05 (always present once boot
-             registers the free handle) and the Lightning address (only
-             when the user has published one). Replaces the previous
-             standalone NIP-05 chip + grey lud16 subline so both
-             addresses get the same affordance and read as one zone
-             instead of two disparate elements. -->
-        <div
-          v-if="identity.bootstrapped && hasAnyAddress"
-          class="hero-addresses"
-          :class="$q.dark.isActive ? 'hero-addresses-dark' : 'hero-addresses-light'"
-        >
-          <!-- Each row has TWO trailing affordances: a small QR button
-               that opens the ShareAddressSheet pre-selected to this
-               address, and the existing copy-on-tap on the row body.
-               The QR button has its own click target with stopPropagation
-               so it never bubbles into "copy" mode by accident. -->
-          <div
-            v-if="displayNip05"
-            class="hero-address-row-wrap"
-          >
-            <button
-              type="button"
-              class="hero-address-row"
-              :aria-label="$t('Copy your NIP-05 address')"
-              @click="copyNip05"
-            >
-              <span class="hero-address-icon hero-address-icon--check" aria-hidden="true">
-                <Icon icon="tabler:rosette-discount-check-filled" width="16" height="16" />
-              </span>
-              <span class="hero-address-text">{{ displayNip05 }}</span>
-              <Icon
-                :icon="nip05Copied ? 'tabler:check' : 'tabler:copy'"
-                width="14"
-                height="14"
-                class="hero-address-copy"
-              />
-            </button>
-            <button
-              type="button"
-              class="hero-address-qr-btn"
-              :class="$q.dark.isActive ? 'hero-address-qr-btn-dark' : 'hero-address-qr-btn-light'"
-              :aria-label="$t('Show QR code')"
-              @click.stop="openShareSheet('nip05')"
-            >
-              <Icon icon="tabler:qrcode" width="14" height="14" />
-            </button>
-          </div>
+              <!-- A handle is a single token, so it truncates on one line
+                   (`.hero-handle`). The empty-state subline is a sentence
+                   and has to wrap instead (`.hero-subline`) — sharing the
+                   nowrap class made it run off the card. The copy / buy-
+                   custom / QR actions used to live in their own boxed
+                   "addresses card" below the hero — that read as two
+                   clumsy, oversized components repeating the same handle.
+                   They now sit right next to the @handle they act on
+                   instead, and only show once there's actually a NIP-05
+                   to act on. The Lightning address no longer gets its own
+                   row at all; when one is set it still surfaces inside
+                   the QR sheet's own switcher. -->
+              <div v-if="heroHandle || heroSubline" class="hero-handle-row">
+                <button
+                  type="button"
+                  class="hero-handle-btn"
+                  :aria-label="$t('Edit profile')"
+                  @click="openProfileEditor"
+                >
+                  <span
+                    :class="[
+                      heroHandle ? 'hero-handle' : 'hero-subline',
+                      $q.dark.isActive ? 'text-grey-4' : 'text-grey-6'
+                    ]"
+                  >
+                    {{ heroHandle || heroSubline }}
+                  </span>
+                </button>
 
-          <div
-            v-if="displayLud16"
-            class="hero-address-row-wrap"
-          >
-            <button
-              type="button"
-              class="hero-address-row"
-              :aria-label="$t('Copy your Lightning address')"
-              @click="copyLud16"
-            >
-              <span class="hero-address-icon hero-address-icon--bolt" aria-hidden="true">
-                <Icon icon="tabler:bolt-filled" width="16" height="16" />
-              </span>
-              <span class="hero-address-text">{{ displayLud16 }}</span>
-              <Icon
-                :icon="lud16Copied ? 'tabler:check' : 'tabler:copy'"
-                width="14"
-                height="14"
-                class="hero-address-copy"
-              />
-            </button>
-            <button
-              type="button"
-              class="hero-address-qr-btn"
-              :class="$q.dark.isActive ? 'hero-address-qr-btn-dark' : 'hero-address-qr-btn-light'"
-              :aria-label="$t('Show QR code')"
-              @click.stop="openShareSheet('lud16')"
-            >
-              <Icon icon="tabler:qrcode" width="14" height="14" />
-            </button>
+                <span
+                  v-if="!profile.isEmpty && displayNip05"
+                  class="hero-handle-actions"
+                >
+                  <button
+                    type="button"
+                    class="hero-handle-action-btn"
+                    :class="$q.dark.isActive ? 'hero-handle-action-btn-dark' : 'hero-handle-action-btn-light'"
+                    :aria-label="$t('Copy your NIP-05 address')"
+                    @click.stop="copyNip05"
+                  >
+                    <Icon :icon="nip05Copied ? 'tabler:check' : 'tabler:copy'" width="13" height="13" />
+                  </button>
+                  <button
+                    type="button"
+                    class="hero-handle-action-btn"
+                    :class="$q.dark.isActive ? 'hero-handle-action-btn-dark' : 'hero-handle-action-btn-light'"
+                    :aria-label="$t('Buy a custom name')"
+                    @click.stop="showNip05Marketplace = true"
+                  >
+                    <Icon icon="tabler:diamond" width="13" height="13" />
+                  </button>
+                  <button
+                    type="button"
+                    class="hero-handle-action-btn"
+                    :class="$q.dark.isActive ? 'hero-handle-action-btn-dark' : 'hero-handle-action-btn-light'"
+                    :aria-label="$t('Show QR code')"
+                    @click.stop="openShareSheet('nip05')"
+                  >
+                    <Icon icon="tabler:qrcode" width="13" height="13" />
+                  </button>
+                </span>
+              </div>
+            </div>
           </div>
-        </div>
 
         <!--
           Status pills (backup-state + publish-state) were removed in
@@ -270,9 +238,16 @@
 
       <!-- Sites the user has signed in to. Has three states:
            – Bootstrapped + sites: list each one, "+" in the header.
-           – Bootstrapped + empty:  a friendly placeholder + clear CTA.
-           – Not bootstrapped:      no section at all (strip carries it). -->
-      <template v-if="identity.bootstrapped">
+           – Bootstrapped + empty:  a friendly placeholder + clear CTA -
+             but only once the profile itself is set up. On a brand-new
+             identity this section would otherwise stack a second empty
+             "sign in to your first site" prompt right under the hero's
+             own "set up your profile" prompt, which reads as clutter
+             for a page that has nothing on it yet. A user who somehow
+             already has connected sites (rare, but possible before
+             naming their profile) always sees them regardless.
+           – Not bootstrapped:      no section at all (hero carries it). -->
+      <template v-if="identity.bootstrapped && (connectedSites.length > 0 || !profile.isEmpty)">
         <div class="sites-section-header">
           <!--
             Section title + inline help icon. The help icon opens the
@@ -339,21 +314,40 @@
         </div>
       </template>
 
-      <!-- Empty state: bootstrapped identity but no linked sites yet.
-           Compact, single CTA. Sits in the same slot the sites list
-           would occupy, so the page never feels half-built. -->
-      <template v-if="identity.bootstrapped && connectedSites.length === 0">
+      <!-- Empty state: bootstrapped identity but no linked sites yet,
+           AND the profile itself is already set up (see the header
+           template above for why). Compact, single CTA. Sits in the
+           same slot the sites list would occupy, so the page never
+           feels half-built. -->
+      <template v-if="identity.bootstrapped && connectedSites.length === 0 && !profile.isEmpty">
         <div
           class="sites-empty"
           :class="$q.dark.isActive ? 'sites-empty-dark' : 'sites-empty-light'"
         >
-          <div
-            class="sites-empty-icon"
-            :class="$q.dark.isActive ? 'sites-empty-icon-dark' : 'sites-empty-icon-light'"
+          <!-- Small illustration standing in for the plain icon-in-circle
+               this used to be: a "site" card with a verified badge, so
+               the empty state reads as inviting rather than a generic
+               placeholder glyph. Built from a handful of primitive
+               shapes, not an imported asset. -->
+          <svg
+            class="sites-empty-illustration"
+            viewBox="0 0 120 100"
+            width="112"
+            height="94"
+            fill="none"
             aria-hidden="true"
           >
-            <Icon icon="tabler:link" width="22" height="22" />
-          </div>
+            <g transform="rotate(-6 50 45)">
+              <rect x="14" y="18" width="72" height="54" rx="12" class="sites-illo-card" />
+              <rect x="30" y="36" width="36" height="5" rx="2.5" class="sites-illo-line" />
+              <rect x="30" y="48" width="24" height="5" rx="2.5" class="sites-illo-line-soft" />
+              <rect x="30" y="58" width="30" height="5" rx="2.5" class="sites-illo-line-soft" />
+            </g>
+            <circle cx="88" cy="68" r="19" class="sites-illo-badge" />
+            <path d="M80 68l5.5 5.5L96 62" class="sites-illo-check" />
+            <circle cx="20" cy="16" r="3" class="sites-illo-dot" />
+            <circle cx="104" cy="24" r="2.5" class="sites-illo-dot" />
+          </svg>
           <div class="sites-empty-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
             {{ $t('Sign in to your first site') }}
           </div>
@@ -388,14 +382,62 @@
         </div>
       </template>
 
+      <!-- Backup / Advanced tiles. Replaces the old kebab menu as the
+           entry point for the lower-frequency identity actions.
+           Reuses SettingsFeatureCards (already used for Auto-Transfer /
+           Kiosk Mode on the Settings tab) rather than a bespoke grid, so
+           this reads as the same "things you do" pattern as the rest of
+           the app. Only bootstrapped once an identity exists - there is
+           nothing to back up or manage before then. -->
+      <template v-if="identity.bootstrapped">
+        <div class="identity-action-cards">
+          <SettingsFeatureCards
+            :features="identityActionCards"
+            icon-tone="neutral"
+            @select="onIdentityActionSelect"
+          />
+        </div>
+      </template>
+
+      <!-- Address Book entry point. Independent of identity bootstrap
+           (contacts persist locally regardless), so unlike the Sites
+           section above it always renders. Same settings-card row
+           treatment as that section. -->
+      <div class="section-label" :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'">
+        {{ $t('Address Book') }}
+      </div>
+      <div class="settings-card" :class="$q.dark.isActive ? 'card-dark' : 'card-light'">
+        <q-item clickable v-ripple @click="$router.push('/address-book')">
+          <q-item-section side>
+            <Icon
+              icon="tabler:address-book"
+              width="24"
+              height="24"
+              :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'"
+            />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ $t('Address Book') }}
+            </q-item-label>
+            <q-item-label caption :class="$q.dark.isActive ? 'item-caption-dark' : 'item-caption-light'">
+              {{ addressBookCount > 0 ? `${addressBookCount} ${addressBookCount === 1 ? $t('contact') : $t('contacts')}` : $t('No contacts yet') }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <Icon icon="tabler:chevron-right" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
+          </q-item-section>
+        </q-item>
+      </div>
+
     </div>
 
-    <!-- Identity manage bottom sheet (View / Restore / Generate new).
-         Opened by tapping the gear icon in the page header. Keeps these
-         lower-frequency actions one tap away from the everyday flows. -->
+    <!-- "Advanced" sheet (Restore / Nostr key / Start a new profile).
+         Opened from the Advanced tile below the sites section. Backup
+         has its own direct tile now, so this sheet only owns the
+         genuinely lower-frequency actions. -->
     <IdentityManageSheet
       v-model="showManageSheet"
-      @view-seed="openIdentitySeedDialog(identity.backupConfirmed ? 'view' : 'backup')"
       @restore="showIdentityRestoreDialog = true"
       @regenerate="openRegenerateDialog"
       @view-nostr="openNostrIdentityDialog"
@@ -433,6 +475,15 @@
       :nip05="displayNip05"
       :lud16="displayLud16"
       :npub="identity.nostrNpub || ''"
+    />
+
+    <!-- Buy-a-custom-name shortcut, opened from the diamond badge on
+         the NIP-05 row. Same sheet ProfileEditSheet uses; on purchase
+         the identity store has already promoted the new handle to
+         active, so we only need to mirror it into the profile field. -->
+    <Nip05MarketplaceSheet
+      v-model="showNip05Marketplace"
+      @purchased="onNip05Purchased"
     />
 
     <!-- First-open intro carousel. Triggered from `created()` once per
@@ -497,6 +548,24 @@
       @restored="onIdentityRestored"
     />
 
+    <!-- "We found contacts on Nostr, add them?" — shown once, right
+         after identity restore, only when peekNostrContacts() finds
+         something new. See onIdentityRestored() below. -->
+    <ContactRestorePromptDialog
+      v-model="showContactRestorePrompt"
+      :loading="contactRestoreLoading"
+      @confirm="onConfirmContactRestore"
+    />
+
+    <!-- Header scan button's target — the same Add Contact sheet Address
+         Book's "+" opens, just landed on its Scan tab instead of Enter. -->
+    <AddressBookModal
+      v-model="showScanContactModal"
+      initial-tab="scan"
+      @saved="onScanContactSaved"
+      @open-existing="onScanContactOpenExisting"
+    />
+
     <!-- Regenerate identity confirmation. Mirrors the typed-phrase gate
          the Settings danger-zone uses for wallet removal so the visual
          language is consistent. Inlined here (rather than borrowed from
@@ -553,11 +622,19 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Floating Settings/Identity/Spend hub nav. Mounted last so it's
+         the topmost element in source order, above every sheet/dialog
+         mounted earlier on this page. -->
+    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
+import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
+import SettingsFeatureCards from '../components/settings/SettingsFeatureCards.vue';
+import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import IdentitySeedPhraseDialog from '../components/IdentitySeedPhraseDialog.vue';
 import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
 import IdentityManageSheet from '../components/IdentityManageSheet.vue';
@@ -566,12 +643,15 @@ import NostrIdentityDialog from '../components/NostrIdentityDialog.vue';
 import ProfileEditSheet from '../components/ProfileEditSheet.vue';
 import ProfileAvatarPickerSheet from '../components/ProfileAvatarPickerSheet.vue';
 import ProfileShareSheet from '../components/ProfileShareSheet.vue';
+import Nip05MarketplaceSheet from '../components/Nip05MarketplaceSheet.vue';
 import ShareAddressSheet from '../components/ShareAddressSheet.vue';
 import ProfileIntroDialog from '../components/ProfileIntroDialog.vue';
 import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteExamplesSheet from '../components/SiteExamplesSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
+import ContactRestorePromptDialog from '../components/ContactRestorePromptDialog.vue';
+import AddressBookModal from '../components/AddressBook/AddressBookModal.vue';
 import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
 import { useAddressBookStore } from '../stores/addressBook';
@@ -587,6 +667,9 @@ export default {
 
   components: {
     Icon,
+    SettingsHubHeader,
+    SettingsFeatureCards,
+    SettingsHubNav,
     IdentitySeedPhraseDialog,
     IdentityRestoreDialog,
     IdentityManageSheet,
@@ -596,11 +679,14 @@ export default {
     ProfileAvatarPickerSheet,
     ProfileShareSheet,
     ShareAddressSheet,
+    Nip05MarketplaceSheet,
     ProfileIntroDialog,
     AddSiteSheet,
     SiteExamplesSheet,
     SiteFavicon,
     ConnectedSiteSheet,
+    ContactRestorePromptDialog,
+    AddressBookModal,
   },
 
   setup() {
@@ -617,6 +703,17 @@ export default {
       identitySeedDialogMode: 'backup',
       showIdentityRestoreDialog: false,
 
+      // "Add your contacts back?" prompt, shown after identity restore
+      // when peekNostrContacts() finds something new.
+      showContactRestorePrompt: false,
+      contactRestoreLoading: false,
+
+      // Header scan button — opens the same Add Contact sheet Address
+      // Book uses, landed directly on its Scan tab. A second, more
+      // present entry point into the exact same flow; Address Book's
+      // own "+" → Scan tab still works unchanged.
+      showScanContactModal: false,
+
       // Identity manage bottom sheet (View / Restore / Generate new).
       showManageSheet: false,
 
@@ -632,6 +729,11 @@ export default {
       showShareAddressSheet: false,
       shareAddressInitial: 'nip05',
       showProfileAvatarPicker: false,
+
+      // "Buy a custom name" marketplace sheet, opened directly from the
+      // small badge next to the NIP-05 row — a shortcut into the same
+      // sheet ProfileEditSheet uses, without a trip through the editor.
+      showNip05Marketplace: false,
 
       // First-open intro carousel. Shown exactly once per identity;
       // gated by `identity.profileIntroSeenAt` and resolved in
@@ -669,15 +771,46 @@ export default {
       // Nostr identity dialog (view npub, reveal nsec, rotate key).
       showNostrIdentityDialog: false,
 
-      // Transient "copied" affordances for the two address rows. Each
-      // chip swaps its icon to a check for ~1.4s after a tap so the
-      // user gets a confirmation without a toast.
+      // Transient "copied" affordance for the NIP-05 action row. Swaps
+      // the icon to a check for ~1.4s after a tap so the user gets a
+      // confirmation without a toast.
       nip05Copied: false,
-      lud16Copied: false,
     };
   },
 
   computed: {
+    /**
+     * The two action tiles below the sites section: Backup and
+     * Advanced. Replaces both the old attention-strip banner (backup)
+     * and the kebab menu (everything else) with one calm, always-
+     * visible row - discoverable without being a nag. Backup's `warn`
+     * flag drives a quiet static dot (see SettingsFeatureCards), the
+     * same amber signal as the dot on the avatar itself.
+     */
+    identityActionCards() {
+      const needsBackup = this.identity.bootstrapped && !this.identity.backupConfirmed;
+      return [
+        {
+          id: 'backup',
+          icon: 'tabler:shield-lock',
+          label: this.$t('Backup'),
+          meta: needsBackup ? this.$t('Not backed up') : this.$t('Backed up'),
+          warn: needsBackup,
+        },
+        {
+          id: 'advanced',
+          icon: 'tabler:adjustments-horizontal',
+          label: this.$t('Advanced'),
+          meta: this.$t('Nostr key, restore'),
+        },
+      ];
+    },
+
+    /** Live contact count for the Address Book row's caption. */
+    addressBookCount() {
+      return useAddressBookStore().entries.length;
+    },
+
     connectedSites() {
       return this.identity.connectedSitesSorted;
     },
@@ -847,9 +980,21 @@ export default {
       await this._copyAddress(this.displayNip05, 'nip05Copied');
     },
 
-    /** Copy the Lightning address to the clipboard, with a brief check tick. */
-    async copyLud16() {
-      await this._copyAddress(this.displayLud16, 'lud16Copied');
+    /**
+     * The marketplace sheet has already added the new handle and
+     * promoted it to active via the identity store. Mirror that into
+     * the profile field and publish right away — unlike the same flow
+     * inside ProfileEditSheet, there's no follow-up "Save" gesture on
+     * this page, so the purchase has to be the thing that broadcasts it.
+     */
+    async onNip05Purchased() {
+      const address = this.identity.nip05Address;
+      if (!address) return;
+      this.profile.setField('nip05', address);
+      const result = await this.profile.publish();
+      if (result && result.ok) {
+        this.$q.notify({ type: 'positive', message: this.$t('Profile saved'), timeout: 2500 });
+      }
     },
 
     /**
@@ -943,16 +1088,17 @@ export default {
 
     async onIdentityRestored() {
       // The restore dialog already fired its own "Identity restored"
-      // notify. Recovery rides on top of that: pull the user's
-      // public profile (kind:0) AND the private NIP-51 address book
-      // so "your name, avatar, and people came back too" — the
-      // whole point of having those things on relays in the first
-      // place.
+      // notify. Profile recovery rides on top of that automatically —
+      // pull the user's public profile (kind:0) so "your name and
+      // avatar came back too". Address-book recovery is different: it
+      // only peeks for now (read-only, no local writes, no publish)
+      // and asks before merging anything in — see
+      // ContactRestorePromptDialog / onConfirmContactRestore below.
       //
-      // Both fetches run in parallel and are fire-and-forget. We
-      // don't block the restore dialog's close on a relay round-
-      // trip, and a failure on either side never undoes the
-      // successful identity restore.
+      // Both run in parallel and are fire-and-forget. We don't block
+      // the restore dialog's close on a relay round-trip, and a
+      // failure on either side never undoes the successful identity
+      // restore.
       const addressBook = useAddressBookStore();
       const identity = useIdentityStore();
       const profile = this.profile;
@@ -965,9 +1111,9 @@ export default {
       // previous identity's name and avatar.
       profile.reset();
 
-      const [profileResult, addressBookResult] = await Promise.allSettled([
+      const [profileResult, peekResult] = await Promise.allSettled([
         profile.recoverFromNostr({ identityStore: identity }),
-        addressBook.recoverFromNostr({ identityStore: identity }),
+        addressBook.peekNostrContacts({ identityStore: identity }),
       ]);
 
       if (profileResult.status === 'rejected') {
@@ -990,15 +1136,44 @@ export default {
         // and shouldn't earn a toast.
       }
 
-      if (addressBookResult.status === 'rejected') {
-        // Non-fatal. The user can retry from Address Book → kebab →
-        // "Restore contacts from Nostr".
-        console.warn('[profile] address-book recovery after restore failed:', addressBookResult.reason);
-      } else {
-        const result = addressBookResult.value;
+      if (peekResult.status === 'rejected') {
+        // Defensive only — peekNostrContacts() catches its own errors
+        // internally and always resolves (never rejects), so this
+        // branch should be unreachable. Logged in case that contract
+        // ever changes.
+        console.warn('[profile] contact peek after restore failed:', peekResult.reason);
+        return;
+      }
+      const peek = peekResult.value;
+      if (!peek || !peek.ok) {
+        // Non-fatal, and deliberately silent rather than a broken
+        // dialog — the user can still restore contacts any time from
+        // Address Book → kebab → "Restore contacts from Nostr".
+        console.warn('[profile] contact peek after restore failed:', peek && peek.reason);
+        return;
+      }
+      if (peek.hasNew) {
+        this.showContactRestorePrompt = true;
+      }
+    },
+
+    /**
+     * User tapped "Add contacts" on ContactRestorePromptDialog. Runs the
+     * real recoverFromNostr() merge (unchanged, same one the Address
+     * Book kebab menu uses) and reports its actual result — this is
+     * the only point in the flow that shows a contact count, because
+     * it's the only point where the count is authoritative.
+     */
+    async onConfirmContactRestore() {
+      const addressBook = useAddressBookStore();
+      const identity = useIdentityStore();
+
+      this.contactRestoreLoading = true;
+      try {
+        const result = await addressBook.recoverFromNostr({ identityStore: identity });
         if (result && result.ok && result.hadRemote && result.restored > 0) {
-          const caption = result.unpayable > 0
-            ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
+          const caption = result.identityOnly > 0
+            ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
             : undefined;
           this.$q.notify({
             type: 'positive',
@@ -1006,8 +1181,56 @@ export default {
             caption,
             timeout: 4500,
           });
+        } else if (!result || !result.ok) {
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t("Couldn't restore contacts"),
+            caption: this.$t('Check your connection and try again.'),
+            timeout: 4000,
+          });
         }
+      } catch (err) {
+        console.warn('[profile] contact restore after prompt failed:', err);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t("Couldn't restore contacts"),
+          caption: this.$t('Check your connection and try again.'),
+          timeout: 4000,
+        });
+      } finally {
+        this.contactRestoreLoading = false;
+        this.showContactRestorePrompt = false;
       }
+    },
+
+    /** Header scan button saved a new contact — the sheet already closed itself. */
+    onScanContactSaved() {
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Contact added'),
+        timeout: 2500,
+      });
+    },
+
+    /**
+     * The scanned profile was already in the address book. Mirrors
+     * Address Book's own handling of the same event: the most useful
+     * next action for someone you're already scanning in person is to
+     * pay them, so hand off to the wallet's payment flow.
+     */
+    onScanContactOpenExisting(entry) {
+      if (!entry) return;
+      const address = entry.address || entry.lightningAddress;
+      if (!address) return;
+      this.$router.push({
+        path: '/wallet',
+        query: {
+          action: 'pay_contact',
+          address,
+          addressType: entry.addressType || 'lightning',
+          contactName: entry.name,
+        },
+      });
     },
 
     openSiteSheet(domain) {
@@ -1100,17 +1323,32 @@ export default {
         this.isRegenerating = false;
       }
     },
+
+    /**
+     * Routes a tap on either action tile. Backup reuses the exact
+     * same dialog trigger the tile's own dot mirrors; Advanced opens
+     * the trimmed IdentityManageSheet (restore / Nostr key / reset).
+     */
+    onIdentityActionSelect(id) {
+      if (id === 'backup') {
+        this.openIdentitySeedDialog(this.identity.backupConfirmed ? 'view' : 'backup');
+      } else if (id === 'advanced') {
+        this.showManageSheet = true;
+      }
+    },
   },
 };
 </script>
 
 <style scoped>
 /* ---------- Page chrome ----------
-   Mirrors Settings.vue: plain flex-column page so the Danger Zone can
-   push itself to the natural bottom via `margin-top: auto`. The global
-   `.q-page` rule in app.css already adds `padding-top: var(--safe-top)`
-   so we don't double-pad the status-bar area on Android. Bottom padding
-   uses `env(safe-area-inset-bottom)` to clear the gesture/nav bar. */
+   SettingsHubHeader is sticky and adds its own safe-top inset, so
+   `.profile-page` cancels the global `.q-page { padding-top: var(--safe-top) }`
+   rule below to avoid double-padding the status-bar area on Android.
+   `.profile-content`'s bottom padding uses `var(--safe-bottom, 0px)`
+   (not raw `env(...)`, which under-reports on Android's WebView - the
+   runtime patch in src/boot/safe-area.js corrects the CSS var instead)
+   and adds enough clearance for the floating SettingsHubNav pill. */
 
 .profile-page {
   min-height: 100vh;
@@ -1119,33 +1357,7 @@ export default {
   font-family: 'Manrope', sans-serif;
   overflow-x: hidden;
   max-width: 100vw;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-card);
-  gap: 1rem;
-}
-
-.header-light,
-.header-dark {
-  /* Inherit the page background — the bottom border alone separates
-     the bar from the scrolling content. */
-  background: transparent;
-}
-
-.header-title {
-  flex: 1 1 auto;
-  text-align: center;
-  font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.manage-btn {
-  width: 40px;
+  padding-top: 0;
 }
 
 .profile-content {
@@ -1153,7 +1365,7 @@ export default {
   display: flex;
   flex-direction: column;
   padding: 0 16px;
-  padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(96px + var(--safe-bottom, 0px));
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
@@ -1194,10 +1406,14 @@ export default {
     0 10px 28px -14px rgba(0, 0, 0, 0.6);
 }
 
-/* Soft brand-green banner band along the top of the card. Calm enough
-   on the cream page to feel like part of the design language, present
+/* Soft neutral banner band along the top of the card. Calm enough on
+   the cream page to feel like part of the design language, present
    enough to give the card a real "header zone." The avatar below
-   overlaps it for Twitter/Bluesky-style depth. */
+   overlaps it for Twitter/Bluesky-style depth. Kept as the one
+   deliberate brand-green accent on the page — the rest of the page's
+   colour work (feature cards, illustrations, links below) leans on
+   black/grey instead so this banner stays the single green moment
+   rather than one of many. */
 .hero-banner {
   height: 72px;
   width: 100%;
@@ -1213,12 +1429,17 @@ export default {
   );
 }
 
+/* Dark mode deliberately does NOT repeat the green wash: a green-tinted
+   band is the first thing painted on this page, and stacked against
+   this app's other green accents (bottom nav, CTAs) it read as more
+   green than the page needed. A quiet neutral lift keeps the same
+   "header zone" depth without the tint. */
 .hero-banner-dark {
   background: linear-gradient(
     135deg,
-    rgba(21, 222, 114, 0.20) 0%,
-    rgba(21, 222, 114, 0.08) 60%,
-    rgba(21, 222, 114, 0.14) 100%
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.02) 60%,
+    rgba(255, 255, 255, 0.05) 100%
   );
 }
 
@@ -1239,6 +1460,47 @@ export default {
   align-items: flex-start;
   gap: 16px;
   margin-top: -32px;
+}
+
+/* Empty-profile variant: one centred column (avatar, then headline +
+   subline) instead of the populated layout's side-by-side row, since
+   there's no name/handle content yet to sit beside the avatar. */
+.hero-identity--empty {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.hero-identity--empty .hero-avatar-wrap {
+  width: 96px;
+  height: 96px;
+}
+
+.hero-identity--empty .hero-avatar {
+  width: 96px;
+  height: 96px;
+}
+
+/* `align-items: center` on the column makes this button size to its
+   content rather than stretch, so without an explicit width it grows
+   to the intrinsic width of its longest line and escapes the card.
+   Pinning it to the row width is what lets the text wrap/clip. */
+.hero-identity--empty .hero-meta {
+  align-items: center;
+  align-self: stretch;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.hero-identity--empty .hero-handle-row {
+  justify-content: center;
+}
+
+.hero-identity--empty .hero-name,
+.hero-identity--empty .hero-handle,
+.hero-identity--empty .hero-subline {
+  text-align: center;
 }
 
 /* ---------- Hero avatar ----------
@@ -1317,8 +1579,11 @@ export default {
   -webkit-user-drag: none;
 }
 
+/* BuhoGO's own mark, shown full-strength (not dimmed like a generic
+   placeholder icon would be) - it's a deliberate brand fallback, not
+   a muted "nothing here yet" state. */
 .hero-avatar-glyph {
-  opacity: 0.7;
+  object-fit: contain;
 }
 
 /* Camera badge — neutral monochrome on both themes. The avatar
@@ -1347,32 +1612,97 @@ body.body--dark .hero-avatar-edit-badge {
 }
 
 /* ---------- Name + handle (right of avatar) ----------
-   The whole block is one tap target so a miss-tap still opens the
-   editor. Sits in the identity row to the right of the avatar; the
-   `padding-top` pushes the name baseline down so it sits roughly
-   level with the avatar's vertical centre (the avatar is offset up
-   by 32px into the banner; we offset the text down to compensate). */
-.hero-meta-btn {
-  background: transparent;
-  border: 0;
-  padding: 36px 0 0;
-  margin: 0;
-  cursor: pointer;
+   `.hero-meta` is the column; the `padding-top` pushes its baseline
+   down so it sits roughly level with the avatar's vertical centre
+   (the avatar is offset up by 32px into the banner; we offset the
+   text down to compensate). Name and handle are now two separate
+   buttons rather than one shared tap target — the handle row also
+   has to host the copy/buy-custom/QR action buttons, and a `<button>`
+   can't nest another `<button>` inside it. Both still open the same
+   editor on tap. */
+.hero-meta {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  padding: 36px 0 0;
   gap: 2px;
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hero-name-btn,
+.hero-handle-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: block;
+  width: 100%;
   min-width: 0;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
 
-.hero-meta-btn:focus-visible {
+.hero-name-btn:focus-visible,
+.hero-handle-btn:focus-visible {
   outline: 2px solid #15DE72;
   outline-offset: 4px;
   border-radius: 10px;
 }
+
+/* Handle text + its action buttons on one row. The handle button
+   shrinks to its content (rather than growing to fill the row) so the
+   actions cluster sits right next to the text instead of drifting to
+   the far edge of the card. `flex-wrap` is the small-screen escape
+   hatch: if the handle text is long enough that text + icons can't
+   share one line, the actions cluster drops to its own line directly
+   under the handle instead of colliding with it or getting squeezed
+   into an unreadable sliver. */
+.hero-handle-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.hero-handle-row > .hero-handle-btn {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Copy / buy-custom-name / QR — used to live inside a separate boxed
+   "addresses card" below the hero, each its own big row repeating the
+   handle text. Same three actions, now compact icon buttons riding
+   right alongside the @handle they act on. */
+.hero-handle-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.hero-handle-action-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, transform 0.08s ease;
+}
+
+.hero-handle-action-btn-light { color: #64748b; }
+.hero-handle-action-btn-dark  { color: #94a3b8; }
+
+.hero-handle-action-btn-light:hover { background: rgba(15, 23, 42, 0.06); }
+.hero-handle-action-btn-dark:hover  { background: rgba(255, 255, 255, 0.06); }
+
+.hero-handle-action-btn:active { transform: scale(0.94); }
 
 .hero-name {
   font-family: 'Manrope', sans-serif;
@@ -1410,134 +1740,6 @@ body.body--dark .hero-avatar-edit-badge {
   word-break: break-word;
   text-align: left;
 }
-
-/* ---------- NIP-05 handle chip ----------
-   Calm, tappable pill under the name. The check reads as "verified
-   handle"; the trailing copy glyph hints it's tappable. */
-/* ---------- Hero addresses card ----------
-   One unified surface that holds the user's shareable addresses (NIP-05
-   above, Lightning below). Replaces the previous standalone chip + the
-   grey plain-text lud16 subline: same number of elements as before, but
-   they read as a single "share me" zone instead of three disparate ones.
-
-   Each row is its own button so the chrome stays keyboard- and screen-
-   reader-accessible. Concept icons (rosette-check + lightning bolt)
-   carry the type distinction without us needing labels. */
-.hero-addresses {
-  /* Full width inside the body padding now that the hero composition
-     is asymmetric — the addresses card spans the entire body width
-     for a confident "this is what people see" surface. */
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  border-radius: 14px;
-  overflow: hidden;
-}
-
-.hero-addresses-light { background: rgba(15, 23, 42, 0.04); }
-.hero-addresses-dark  { background: rgba(255, 255, 255, 0.04); }
-
-/* Wrapper that pairs the row (long, copy-on-tap) with the trailing QR
-   button. Two distinct buttons rather than one combined: the row body
-   stays its own copy target, the QR icon has its own click without
-   stealing from the row. */
-.hero-address-row-wrap {
-  display: flex;
-  align-items: stretch;
-  width: 100%;
-}
-
-/* Hairline divider between consecutive rows. Painted as an inset
-   shadow so it never adds layout height and disappears cleanly when
-   only one row is rendered. */
-.hero-addresses-light .hero-address-row-wrap + .hero-address-row-wrap {
-  box-shadow: inset 0 1px 0 0 rgba(15, 23, 42, 0.06);
-}
-.hero-addresses-dark .hero-address-row-wrap + .hero-address-row-wrap {
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
-}
-
-.hero-address-qr-btn {
-  all: unset;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 38px;
-  margin-right: 8px;
-  border-radius: 10px;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, transform 0.08s ease;
-}
-
-.hero-address-qr-btn-light { color: #334155; }
-.hero-address-qr-btn-dark  { color: #cbd5e1; }
-
-.hero-address-qr-btn-light:hover { background: rgba(15, 23, 42, 0.05); }
-.hero-address-qr-btn-dark:hover  { background: rgba(255, 255, 255, 0.05); }
-
-.hero-address-qr-btn:active { transform: scale(0.96); }
-
-.hero-address-row {
-  all: unset;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, transform 0.08s ease;
-}
-
-.hero-addresses-light .hero-address-row { color: #334155; }
-.hero-addresses-dark  .hero-address-row { color: #cbd5e1; }
-
-.hero-addresses-light .hero-address-row:hover { background: rgba(15, 23, 42, 0.03); }
-.hero-addresses-dark  .hero-address-row:hover { background: rgba(255, 255, 255, 0.03); }
-
-.hero-address-row:active { transform: scale(0.998); }
-
-/* The body of the row stretches to fill the wrapper; the QR button
-   keeps its own width. Without this the row would shrink to its
-   content and the QR icon would sit oddly to the right of empty
-   space when the address text is short. */
-.hero-address-row-wrap > .hero-address-row { flex: 1 1 auto; min-width: 0; }
-
-.hero-address-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-}
-
-.hero-address-icon--check {
-  color: #15a35b;
-  background: rgba(21, 222, 114, 0.14);
-}
-
-.hero-address-icon--bolt {
-  color: #f7931a;
-  background: rgba(247, 147, 26, 0.14);
-}
-
-.hero-address-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-.hero-address-copy { flex-shrink: 0; opacity: 0.55; }
 
 /* ---------- Hero status pills ----------
    Tappable rounded chips. Tone classes are semantic only (is-ok /
@@ -1613,6 +1815,11 @@ button.hero-pill:focus-visible {
   width: 100%;
   max-width: 360px;
   margin-top: 6px;
+  /* `max-width` caps the row on wide screens so a 2-up button pair
+     doesn't stretch edge-to-edge; `align-self: center` is what
+     actually centres that capped-width row inside the card instead
+     of letting it sit flush left with a bare gap on the right. */
+  align-self: center;
   /* Reserve vertical space so the layout never jumps during the
      sub-100ms passive-bootstrap window when the buttons aren't
      rendered yet. */
@@ -1713,6 +1920,15 @@ button.hero-pill:focus-visible {
   text-transform: none;
   font-size: 12px;
   margin-left: 4px;
+}
+
+/* Backup / Advanced tiles wrapper. SettingsFeatureCards only carries
+   its own bottom margin (correct for Settings.vue, where a section
+   label sits right above it) - here it follows the sites section
+   directly, so this page adds the matching top rhythm itself rather
+   than changing the shared component's spacing for every caller. */
+.identity-action-cards {
+  margin-top: 1.5rem;
 }
 
 /* Header row for the Sites section: label on the left, "+" button on
@@ -1839,24 +2055,63 @@ button.hero-pill:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.sites-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
+.sites-empty-illustration {
+  margin-bottom: 2px;
 }
 
-.sites-empty-icon-light {
-  background: rgba(15, 23, 42, 0.06);
-  color: #475569;
+.sites-illo-card {
+  fill: rgba(15, 23, 42, 0.045);
+  stroke: rgba(15, 23, 42, 0.08);
+  stroke-width: 1;
 }
 
-.sites-empty-icon-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
+.sites-illo-line {
+  fill: rgba(15, 23, 42, 0.18);
+}
+
+.sites-illo-line-soft {
+  fill: rgba(15, 23, 42, 0.09);
+}
+
+.sites-illo-badge {
+  fill: #15DE72;
+}
+
+/* Light mode leans on black/grey elsewhere on this page now (feature
+   cards, links below); this decorative badge follows suit. Dark mode
+   keeps the green — it doesn't carry the same green hero banner this
+   badge would otherwise be competing with. */
+body.body--light .sites-illo-badge {
+  fill: #0f172a;
+  fill-opacity: 0.72;
+}
+
+.sites-illo-check {
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sites-illo-dot {
+  fill: rgba(15, 23, 42, 0.14);
+}
+
+body.body--dark .sites-illo-card {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(255, 255, 255, 0.09);
+}
+
+body.body--dark .sites-illo-line {
+  fill: rgba(255, 255, 255, 0.22);
+}
+
+body.body--dark .sites-illo-line-soft {
+  fill: rgba(255, 255, 255, 0.10);
+}
+
+body.body--dark .sites-illo-dot {
+  fill: rgba(255, 255, 255, 0.16);
 }
 
 .sites-empty-title {
@@ -1897,7 +2152,7 @@ button.hero-pill:focus-visible {
 }
 
 .sites-empty-link-light {
-  color: #059573;
+  color: #334155;
 }
 
 .sites-empty-link-dark {

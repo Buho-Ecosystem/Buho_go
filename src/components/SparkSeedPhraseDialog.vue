@@ -33,11 +33,8 @@
             aria-hidden="true"
           />
           <h2 class="context-heading" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Your recovery phrase') }}
+            {{ $t('Anyone who sees these words can take your money.') }}
           </h2>
-          <p class="context-lede" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('These 12 words are the only way to restore this wallet if you lose access to your device. Anyone who sees them can move your money.') }}
-          </p>
 
           <div class="seed-callout" :class="$q.dark.isActive ? 'seed-callout-dark' : 'seed-callout-light'">
             <div class="seed-callout-icon">
@@ -46,7 +43,7 @@
             <div class="seed-callout-body">
               <div class="seed-callout-heading">{{ $t('Keep it offline') }}</div>
               <div class="seed-callout-text">
-                {{ $t("Write it on paper. Don't photograph it. Don't save it in cloud notes or a password manager you don't control.") }}
+                {{ $t('Write it on paper. Never screenshot or save it online.') }}
               </div>
             </div>
           </div>
@@ -466,7 +463,7 @@ export default {
     async loadMnemonicAndReveal() {
       this.isLoadingMnemonic = true;
       try {
-        const mnemonic = await this.walletStore.getSparkMnemonic(this.walletId || undefined);
+        const mnemonic = await this.walletStore.getMnemonicForWallet(this.walletId || undefined);
         // Dialog may have been closed while waiting for decryption. Wipe
         // what we just produced and bail — never stash a mnemonic in a
         // component the user isn't looking at.

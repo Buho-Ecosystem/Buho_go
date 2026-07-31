@@ -26,10 +26,20 @@
  *
  * Adding a wallet: drop a SQUARE logo under /public/Social_Wallet_logos and add
  * one row to WALLET_BRANDS keyed by its Lightning Address domain (lowercase).
- * The avatar renders it object-fit:cover in a circle, so square art is required
- * — a wordmark gets cropped. For the rare brand that only ships a wordmark, set
- * `logoContain: true` (letterbox it whole) and, if it's a light/white logo,
- * `logoBg: '#hex'` (its dark brand backdrop) so it doesn't vanish on white.
+ * The avatar renders it object-fit:cover in a circle, which only works for art
+ * that carries its own full-bleed background plate (an app icon): the crop then
+ * removes background, never artwork. Two kinds of art need the other treatment,
+ * `logoContain: true`, which fits the whole mark inside the circle instead:
+ *
+ *   - a wordmark (ZBD) — cropping it edge-to-edge leaves unreadable letters;
+ *     pair it with `logoBg: '#hex'` (its dark brand backdrop) if it's white.
+ *   - a plate-less logomark that runs to the edge of its own canvas (Alby,
+ *     Wallet of Satoshi) — the circle would slice the mark itself.
+ *
+ * Contained art defaults to a conservative inset that keeps even a full-bleed
+ * square inside the circle. When a mark's silhouette is known to stay clear of
+ * its canvas corners it can sit larger: `logoInset: '<css length>'` overrides
+ * that padding, so the brand reads at avatar scale instead of floating small.
  */
 
 const SOCIAL = '/Social_Wallet_logos'
@@ -37,10 +47,16 @@ const CASHU_LOGO = '/cashu/cashuu.png'
 
 // domain (lowercased) -> { name, logo }. Frozen so the table is read-only.
 export const WALLET_BRANDS = Object.freeze({
-  'walletofsatoshi.com': { name: 'Wallet of Satoshi', logo: `${SOCIAL}/walletofsatoshi-icon.svg` },
+  // Outlined gold frame around the bolt, drawn flush to its viewBox: cropped
+  // edge-to-edge the frame loses all four corners and reads as stray arcs.
+  // Contained, the rounded square clears the circle at an 11% inset.
+  'walletofsatoshi.com': { name: 'Wallet of Satoshi', logo: `${SOCIAL}/walletofsatoshi-icon.svg`, logoContain: true, logoInset: '11%' },
   'phoenixwallet.me':    { name: 'Phoenix',           logo: `${SOCIAL}/phoenix.png` },
   'blink.sv':            { name: 'Blink',             logo: `${SOCIAL}/blink.svg` },
-  'getalby.com':         { name: 'Alby',              logo: `${SOCIAL}/alby-go.png` },
+  // Bare mark on transparency (3% canvas margin): the ring sits tangent to the
+  // avatar rim and the lower-left tail is cut off. Its tail reaches into the
+  // canvas corner, so it needs a slightly deeper inset than the frame above.
+  'getalby.com':         { name: 'Alby',              logo: `${SOCIAL}/alby-go.png`, logoContain: true, logoInset: '14%' },
   'primal.net':          { name: 'Primal',            logo: `${SOCIAL}/primal.png` },
   // ZBD ships a white wordmark (no square glyph), so it needs its dark brand
   // backdrop + contain to read inside the circular avatar instead of being

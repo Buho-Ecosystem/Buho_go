@@ -38,7 +38,7 @@
         />
       </div>
 
-      <q-scroll-area class="entries-scroll" style="height: calc(100vh - 280px);">
+      <q-scroll-area class="entries-scroll">
         <!-- Favorites Section -->
         <div v-if="filteredFavorites.length > 0">
           <div class="section-header">
@@ -53,7 +53,6 @@
               :entry="entry"
               @edit="editEntry"
               @delete="confirmDeleteEntry"
-              @change-color="changeEntryColor"
               @pay="payContact"
               @toggle-favorite="toggleFavorite"
               @copy-address="copyAddress"
@@ -75,7 +74,6 @@
               :entry="entry"
               @edit="editEntry"
               @delete="confirmDeleteEntry"
-              @change-color="changeEntryColor"
               @pay="payContact"
               @toggle-favorite="toggleFavorite"
               @copy-address="copyAddress"
@@ -86,35 +84,34 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="searchQuery && entries.length > 0" class="empty-search"
-         :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
-      <Icon icon="tabler:search" :style="{ fontSize: '3rem', color: $q.dark.isActive ? '#B0B0B0' : '#D1D5DB' }" />
-      <div class="empty-title" :class="$q.dark.isActive ? 'empty_title_dark' : 'empty_title_light'">
+    <div v-else-if="searchQuery && entries.length > 0" class="empty-search empty-state-surface">
+      <Icon icon="tabler:search" class="empty-search-icon" />
+      <div class="empty-title">
         {{ $t('No contacts found') }}
       </div>
-      <div class="empty-subtitle" :class="$q.dark.isActive ? 'empty_subtitle_dark' : 'empty_subtitle_light'">
+      <div class="empty-subtitle">
         {{ $t('Try adjusting your search terms') }}
       </div>
       <q-btn
         flat
         :label="$t('Clear Search')"
         @click="clearSearch"
-        :class="$q.dark.isActive ? 'btn_dark' : 'btn_light'"
+        class="clear-search-btn"
         no-caps
       />
     </div>
 
-    <div v-else class="empty-state full-height" :class="$q.dark.isActive ? 'empty_state_dark' : 'empty_state_light'">
+    <div v-else class="empty-state full-height empty-state-surface">
       <img
         src="/Onboarding wizard spark/storyset-online-friends-bro.svg"
         class="empty-illustration-img"
         alt=""
         aria-hidden="true"
       />
-      <div class="empty-title" :class="$q.dark.isActive ? 'empty_title_dark' : 'empty_title_light'">
+      <div class="empty-title">
         {{ $t('No contacts yet') }}
       </div>
-      <div class="empty-subtitle" :class="$q.dark.isActive ? 'empty_subtitle_dark' : 'empty_subtitle_light'">
+      <div class="empty-subtitle">
         {{ $t('Save people you pay often for quick access') }}
       </div>
       <q-btn
@@ -128,33 +125,6 @@
       </q-btn>
     </div>
 
-    <!-- Color Picker Dialog -->
-    <q-dialog v-model="showColorPicker">
-      <q-card class="color-picker-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section>
-          <div class="color-picker-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Choose Color for {name}', { name: selectedEntry?.name || '' }) }}
-          </div>
-        </q-card-section>
-
-        <q-card-section class="color-grid">
-          <div
-            v-for="color in colorPalette"
-            :key="color"
-            class="color-option"
-            :class="{ 'selected': selectedEntry?.color === color }"
-            :style="{ backgroundColor: color }"
-            @click="updateEntryColor(color)"
-          >
-            <Icon
-              v-if="selectedEntry?.color === color"
-              icon="tabler:check"
-              class="color-check"
-            />
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
 
     <!-- Delete Confirmation Dialog -->
     <q-dialog v-model="showDeleteDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
@@ -237,7 +207,6 @@ export default {
   emits: ['add-contact', 'edit-contact', 'pay-contact'],
   data() {
     return {
-      showColorPicker: false,
       selectedEntry: null,
       showDeleteDialog: false,
       entryToDelete: null,
@@ -248,8 +217,7 @@ export default {
     ...mapState(useAddressBookStore, [
       'entries',
       'filteredEntries',
-      'searchQuery',
-      'colorPalette'
+      'searchQuery'
     ]),
 
     filteredFavorites() {
@@ -325,32 +293,6 @@ export default {
       }
     },
 
-    changeEntryColor(entry) {
-      this.selectedEntry = entry
-      this.showColorPicker = true
-    },
-
-    async updateEntryColor(color) {
-      if (!this.selectedEntry) return
-
-      try {
-        await this.updateEntry(this.selectedEntry.id, { color })
-        this.showColorPicker = false
-        this.selectedEntry = null
-
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Color updated'),
-
-        })
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t update color'),
-
-        })
-      }
-    },
 
     showClearAllDialog() {
       this.showClearAllConfirmDialog = true
@@ -382,14 +324,17 @@ export default {
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .search-section {
   padding: 1rem;
+  flex: 0 0 auto;
 }
 
 .entries-container {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -399,6 +344,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 1rem;
+  flex: 0 0 auto;
 }
 
 .entries-header-dark {
@@ -446,7 +392,8 @@ export default {
 }
 
 .entries-scroll {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .entries-list {
@@ -478,7 +425,9 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
-/* Empty States */
+/* Empty States — single CSS-variable-driven classes replace the old
+   dark/light pairs (the dark variant hardcoded #0C0C0C/#F6F6F6/#B0B0B0
+   instead of using theme tokens). */
 .empty-state,
 .empty-search {
   display: flex;
@@ -490,11 +439,7 @@ export default {
   padding: 2rem;
 }
 
-.empty_state_dark {
-  background: #0C0C0C;
-}
-
-.empty_state_light {
+.empty-state-surface {
   background: var(--bg-primary);
 }
 
@@ -507,24 +452,21 @@ export default {
   pointer-events: none;
 }
 
-.empty_title_dark {
+.empty-search-icon {
+  font-size: 3rem;
+  color: var(--text-muted);
+}
+
+.empty-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #F6F6F6;
+  color: var(--text-primary);
   margin-bottom: 0.5rem;
   font-family: 'Manrope', sans-serif;
 }
 
-.empty_title_light {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #212121;
-  margin-bottom: 0.5rem;
-  font-family: 'Manrope', sans-serif;
-}
-
-.empty_subtitle_dark {
-  color: #B0B0B0;
+.empty-subtitle {
+  color: var(--text-secondary);
   font-size: 0.875rem;
   margin-bottom: 1.5rem;
   font-family: 'Manrope', sans-serif;
@@ -532,31 +474,12 @@ export default {
   line-height: 1.4;
 }
 
-.empty_subtitle_light {
-  color: #6B7280;
-  font-size: 0.875rem;
-  margin-bottom: 1.5rem;
-  font-family: 'Manrope', sans-serif;
-  max-width: 280px;
-  line-height: 1.4;
-}
-
-/* Secondary Buttons */
-.btn_dark {
+/* Secondary Button — "Clear Search" */
+.clear-search-btn {
   border-radius: 20px !important;
-  border: 1px solid #2A382A !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  color: #FFF !important;
-  font-family: 'Manrope', sans-serif !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-}
-
-.btn_light {
-  border-radius: 20px !important;
-  border: 1px solid #E8E8E8 !important;
-  background: #F6F6F6 !important;
-  color: #212121 !important;
+  border: 1px solid var(--border-card) !important;
+  background: var(--bg-input) !important;
+  color: var(--text-primary) !important;
   font-family: 'Manrope', sans-serif !important;
   font-size: 14px !important;
   font-weight: 500 !important;
@@ -616,25 +539,13 @@ export default {
     max-width: 140px;
   }
 
-  .empty_title_dark,
-  .empty_title_light {
+  .empty-title {
     font-size: 1.125rem;
   }
 
-  .empty_subtitle_dark,
-  .empty_subtitle_light {
+  .empty-subtitle {
     font-size: 0.8125rem;
     max-width: 240px;
-  }
-
-  .color-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
-  }
-
-  .color-option {
-    width: 40px;
-    height: 40px;
   }
 
   .section-header {
@@ -642,53 +553,6 @@ export default {
   }
 }
 
-/* Color Picker */
-.color-picker-card {
-  width: 100%;
-  max-width: 320px;
-  border-radius: 16px;
-}
-
-.color-picker-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 16px;
-  text-align: center;
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  padding: 1rem;
-}
-
-.color-option {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.color-option:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.color-option.selected {
-  transform: scale(1.1);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
-}
-
-.color-check {
-  color: white;
-  font-size: 20px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
 
 /* Delete / Clear-All Confirmation Dialog
    Surface language: rounded card (--radius-xl), layered shadow, generous

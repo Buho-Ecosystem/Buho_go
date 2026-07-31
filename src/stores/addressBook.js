@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { verifyEvent, nip19 } from 'nostr-core'
 import {
   isSparkAddress,
+  isArkadeAddress,
   isBitcoinAddress,
   isLightningAddress,
   isLnurl,
@@ -20,6 +21,7 @@ import {
 export const ADDRESS_TYPES = {
   LIGHTNING: 'lightning',
   SPARK: 'spark',
+  ARKADE: 'arkade',
   BITCOIN: 'bitcoin',
   // LNURL static pay links (bech32 LNURL1… or LUD-17 lnurlp://…). Stored as
   // its own type for correct send routing, but presented as Lightning in the
@@ -354,6 +356,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         if (!this.isValidAddress(newEntry.address, newEntry.addressType)) {
           const errorMessages = {
             spark: 'Invalid Spark address format',
+            arkade: 'Invalid Arkade address format',
             bitcoin: 'Invalid Bitcoin address format',
             lightning: 'Invalid Lightning address format',
             lnurl: 'Invalid LNURL format'
@@ -423,6 +426,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           if (!this.isValidAddress(updatedEntry.address, addressType)) {
             const errorMessages = {
               spark: 'Invalid Spark address format',
+              arkade: 'Invalid Arkade address format',
               bitcoin: 'Invalid Bitcoin address format',
               lightning: 'Invalid Lightning address format',
               lnurl: 'Invalid LNURL format'
@@ -1129,6 +1133,49 @@ export const useAddressBookStore = defineStore('addressBook', {
       }
     },
 
+    /**
+     * Read-only check for whether the user's Nostr backup has contacts
+     * not yet in the local address book — no local writes, no relay
+     * publish, safe to call speculatively. Used to ask "add your
+     * contacts back?" before committing to the real `recoverFromNostr()`
+     * merge.
+     *
+     * Deliberately returns a boolean, not a count: a live pubkey found
+     * here can still fail to resolve into an actual contact during the
+     * real merge (its kind:0 profile fetch can fail/defer), so a count
+     * shown here could overpromise what the merge actually delivers.
+     * The merge's own result (`restored`) is the only trustworthy number
+     * — that's what the post-merge toast already uses.
+     *
+     * @returns {Promise<{ ok: true, hasNew: boolean } | { ok: false, reason: string }>}
+     */
+    async peekNostrContacts({ identityStore, pool, relays, timeoutMs } = {}) {
+      await this.initialize()
+      if (!identityStore || !identityStore.bootstrapped) {
+        return { ok: false, reason: 'identity-not-bootstrapped' }
+      }
+      const pubkey = identityStore.nostrPubkeyHex
+      if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
+        return { ok: false, reason: 'no-pubkey' }
+      }
+
+      let secretKey
+      try {
+        secretKey = await identityStore.getNostrSecretKeyBytes()
+        const remote = await fetchAddressBook({ pool, relays, pubkey, secretKey, timeoutMs })
+        if (!remote) return { ok: true, hasNew: false }
+
+        const { live } = partitionContactPayload(remote.contacts)
+        const hasNew = live.some((rec) => !this.findContactByPubkey(rec.pubkey))
+        return { ok: true, hasNew }
+      } catch (err) {
+        console.warn('[addressBook] peek failed:', err)
+        return { ok: false, reason: 'fetch-failed' }
+      } finally {
+        if (secretKey) secretKey.fill(0)
+      }
+    },
+
     // Toggle favorite status
     async toggleFavorite(id) {
       await this.initialize()
@@ -1189,6 +1236,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (type === 'spark') {
         return this.isValidSparkAddress(address)
       }
+      if (type === 'arkade') {
+        return this.isValidArkadeAddress(address)
+      }
       if (type === 'bitcoin') {
         return this.isValidBitcoinAddress(address)
       }
@@ -1208,6 +1258,10 @@ export const useAddressBookStore = defineStore('addressBook', {
       return isSparkAddress(address)
     },
 
+    isValidArkadeAddress(address) {
+      return isArkadeAddress(address)
+    },
+
     isValidBitcoinAddress(address) {
       return isBitcoinAddress(address)
     },
@@ -1217,6 +1271,7 @@ export const useAddressBookStore = defineStore('addressBook', {
     detectAddressType(address) {
       if (!address) return null
       if (isSparkAddress(address)) return 'spark'
+      if (isArkadeAddress(address)) return 'arkade'
       if (isBitcoinAddress(address)) return 'bitcoin'
       // LNURL before the lightning-address check: an LNURL has no `@`, so the
       // two never collide, but keeping it explicit guards future edits.

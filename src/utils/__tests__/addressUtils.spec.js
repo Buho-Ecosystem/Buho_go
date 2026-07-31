@@ -13,8 +13,11 @@
  */
 
 import { strict as assert } from 'node:assert';
+import { bech32m } from 'bech32';
 import {
   isSparkAddress,
+  isArkadeAddress,
+  isBolt12Offer,
   isLightningInvoice,
   isLnurl,
   isBitcoinAddress,
@@ -65,9 +68,36 @@ test('isSparkAddress: new + legacy prefixes', () => {
   assert.equal(isSparkAddress('bc1qabc'), false);
 });
 
+test('isArkadeAddress: ark1 / tark1, case-insensitive, no cross-type collisions', () => {
+  assert.equal(isArkadeAddress('ark1qabcdef'), true);
+  assert.equal(isArkadeAddress('tark1qabcdef'), true);
+  assert.equal(isArkadeAddress('ARK1QABCDEF'), true);
+  assert.equal(isArkadeAddress('  ark1qabcdef  '), true);
+  // Must not swallow Spark / invoice / on-chain / junk.
+  assert.equal(isArkadeAddress('spark1abcdef'), false);
+  assert.equal(isArkadeAddress('sp1abcdef'), false);
+  assert.equal(isArkadeAddress('lnbc10n1pjxyz'), false);
+  assert.equal(isArkadeAddress('bc1qabc'), false);
+  assert.equal(isArkadeAddress('arkade'), false);
+  assert.equal(isArkadeAddress(null), false);
+  // And Spark must not swallow Arkade.
+  assert.equal(isSparkAddress('ark1qabcdef'), false);
+});
+
 test('isLightningInvoice / isLnurl: tolerate lightning: wrapper', () => {
   assert.equal(isLightningInvoice('lightning:lnbc10n1pjxyz'), true);
   assert.equal(isLnurl('lightning:lnurl1dp68'), true);
+});
+
+const VALID_BOLT12_OFFER = bech32m.encode('lno', [1, 2, 3, 4, 5, 6], 4096);
+
+test('isBolt12Offer: requires a valid Bech32m offer, including its checksum', () => {
+  assert.equal(isBolt12Offer(VALID_BOLT12_OFFER), true);
+  assert.equal(isBolt12Offer(`LIGHTNING:${VALID_BOLT12_OFFER.toUpperCase()}`), true);
+  assert.equal(isBolt12Offer(`${VALID_BOLT12_OFFER.slice(0, -1)}q`), false);
+  assert.equal(isBolt12Offer(`lNo${VALID_BOLT12_OFFER.slice(3)}`), false);
+  assert.equal(isBolt12Offer('lnbc10n1pjxyz'), false);
+  assert.equal(isBolt12Offer('lno1incomplete'), false);
 });
 
 test('isLnurl: tolerates the lnurl: wrapper in any case (field regression)', () => {

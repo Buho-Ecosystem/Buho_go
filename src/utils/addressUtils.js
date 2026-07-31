@@ -12,6 +12,8 @@
  *                      `spark1`, `sparkrt1`, `sparkt1`, `sparks1`, `sparkl1` (bech32m)
  *   - BOLT11 invoice — `lnbc` (mainnet), `lntb` (testnet), `lntbs` (signet),
  *                      `lnbcrt` (regtest)
+ *   - BOLT12 offer   — `lno1…` (recognized so unsupported offers receive a
+ *                      clear explanation instead of a generic payment error)
  *   - LNURL          — bech32 `lnurl1…` and LUD-17 URI schemes
  *                      (`lnurlp://`, `lnurlw://`, `lnurlc://`, `keyauth://`)
  *   - Bitcoin on-chain — mainnet `bc1…` / `1…` / `3…`,
@@ -24,6 +26,7 @@
  */
 
 import { extractLnFallbackParam } from './bip21.js';
+import { BOLT12_OFFER_HRP as BOLT12_OFFER_HRP_VALUE, isValidBolt12Offer } from './bolt12.js';
 
 // ----------------------------------------------------------------------------
 // Constants — exported so other modules can reuse them without re-typing
@@ -37,6 +40,18 @@ export const SPARK_PREFIXES = Object.freeze([
   'sp1', 'tsp1', 'sprt1',
 ]);
 
+/**
+ * Arkade (Ark L2) address prefixes. Bech32m, case-insensitive.
+ *   - `ark1`  — mainnet
+ *   - `tark1` — testnet / regtest
+ * See https://docs.arkadeos.com/wallets/getting-started/arkade-addresses
+ * @readonly
+ */
+export const ARKADE_PREFIXES = Object.freeze([
+  'ark1',   // mainnet
+  'tark1',  // testnet / regtest
+]);
+
 /** @readonly */
 export const LIGHTNING_INVOICE_HRPS = Object.freeze([
   'lnbc',    // mainnet
@@ -44,6 +59,9 @@ export const LIGHTNING_INVOICE_HRPS = Object.freeze([
   'lntbs',   // signet
   'lnbcrt',  // regtest
 ]);
+
+/** BOLT12 offers use the Bech32m HRP `lno`. @readonly */
+export const BOLT12_OFFER_HRP = BOLT12_OFFER_HRP_VALUE;
 
 /** @readonly */
 export const LNURL_PREFIXES = Object.freeze([
@@ -126,6 +144,20 @@ export function isSparkAddress(address) {
 }
 
 /**
+ * True if the input looks like an Arkade address (`ark1…` / `tark1…`).
+ * Mirrors {@link isSparkAddress}: case-insensitive prefix match, the
+ * single source of truth for the Arkade fast-path branch in the factory
+ * and the address-type classification across the app.
+ * @param {unknown} address
+ * @returns {boolean}
+ */
+export function isArkadeAddress(address) {
+  const lower = norm(address);
+  if (!lower) return false;
+  return ARKADE_PREFIXES.some(prefix => lower.startsWith(prefix));
+}
+
+/**
  * True if the input looks like a BOLT11 Lightning invoice.
  * Accepts a leading `lightning:` URI prefix since real-world inputs often
  * carry it (QR scans, deep links).
@@ -136,6 +168,19 @@ export function isLightningInvoice(invoice) {
   const lower = stripWrapperScheme(invoice).toLowerCase();
   if (!lower) return false;
   return LIGHTNING_INVOICE_HRPS.some(hrp => lower.startsWith(hrp));
+}
+
+/**
+ * True if the input looks like a BOLT12 offer. BOLT12 offers are not payable
+ * by BuhoGO yet, but recognizing them at every entry point lets the UI explain
+ * that safely before it tries to create a payment.
+ *
+ * Accepts the common `lightning:` wrapper used by QR codes and deep links.
+ * @param {unknown} offer
+ * @returns {boolean}
+ */
+export function isBolt12Offer(offer) {
+  return isValidBolt12Offer(stripWrapperScheme(offer));
 }
 
 /**
@@ -195,6 +240,7 @@ export function isLightningAddress(address) {
 
 export const isValidLightningAddress = isLightningAddress;
 export const isValidSparkAddress = isSparkAddress;
+export const isValidArkadeAddress = isArkadeAddress;
 export const isValidBitcoinAddress = isBitcoinAddress;
 
 // ----------------------------------------------------------------------------

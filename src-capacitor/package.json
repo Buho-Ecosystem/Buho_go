@@ -1,7 +1,7 @@
 {
   "name": "buho-app",
-  "version": "1.8.3",
-  "description": "BuhoGo - A Bitcoin Lightning Wallet for the Web",
+  "version": "1.9.0",
+  "description": "BuhoGO: the friendly self-custodial Bitcoin and Lightning wallet. Spark, Arkade, LNbits, and Nostr Wallet Connect in one app, on Android and the web.",
   "author": "pratikpatel <pratikpatelpp802@gmail.com> & drshift <keleeweb@tutanota.com>",
   "private": true,
   "dependencies": {

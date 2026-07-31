@@ -64,11 +64,12 @@
                 class="avatar-img"
                 @error="onAvatarLoadError"
               />
-              <Icon
+              <img
                 v-else
-                icon="tabler:user"
-                width="34"
-                height="34"
+                src="/buho_logo.svg"
+                alt=""
+                width="38"
+                height="38"
                 class="avatar-glyph"
                 aria-hidden="true"
               />
@@ -154,273 +155,206 @@
           </span>
         </label>
 
-        <!-- ─────────── PAYMENT ─────────── -->
-        <div class="form-section">
-          <div
-            class="section-label"
-            :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'"
-          >
-            {{ $t('Payment') }}
-          </div>
+        <!-- ─────────── Extended profile ───────────
+             Everything below About is optional depth (lightning
+             address, verified name) that most people don't need to
+             touch during onboarding. Collapsed by default behind a
+             bare chevron — no label, no caption, just the affordance
+             to go deeper for those who want to. The accessible name
+             lives in aria-label since there's no visible text. -->
+        <button
+          type="button"
+          class="extended-toggle"
+          :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+          :aria-expanded="extendedOpen"
+          :aria-label="$t('Extended profile')"
+          aria-controls="extended-profile-body"
+          @click="extendedOpen = !extendedOpen"
+        >
+          <Icon
+            icon="tabler:chevron-down"
+            width="18"
+            height="18"
+            class="extended-toggle-chevron"
+            :class="{ 'extended-toggle-chevron--open': extendedOpen }"
+            aria-hidden="true"
+          />
+        </button>
 
-          <div
-            class="section-card"
-            :class="$q.dark.isActive ? 'section-card-dark' : 'section-card-light'"
-          >
+        <q-slide-transition>
+          <div v-show="extendedOpen" id="extended-profile-body" class="extended-body">
 
-        <!-- Lightning address (lud16, optional) -->
-        <label class="field">
-          <span class="field-label-row">
-            <span class="field-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Lightning address') }}
-            </span>
-            <!-- Info button + stay-open tooltip. `no-parent-event` lets
-                 the v-model be the only source of truth, so a second tap
-                 cleanly toggles closed instead of fighting the menu's
-                 own auto-toggle. -->
-            <button
-              type="button"
-              class="info-btn"
-              :class="$q.dark.isActive ? 'info-btn-dark' : 'info-btn-light'"
-              :aria-label="$t('What is this?')"
-              :aria-expanded="lightningInfoOpen"
-              @click.prevent.stop="lightningInfoOpen = !lightningInfoOpen"
-            >
-              <Icon icon="tabler:info-circle" width="14" height="14" />
-            </button>
-            <!-- Anchored to the full-width label row (its parent), not the
-                 mid-row icon, so the popover can't run past the screen's
-                 right edge; the width is also capped to the viewport in CSS. -->
-            <q-menu
-              v-model="lightningInfoOpen"
-              anchor="bottom left"
-              self="top left"
-              :offset="[0, 8]"
-              no-parent-event
-            >
-              <div
-                class="info-tooltip"
-                :class="$q.dark.isActive ? 'info-tooltip-dark' : 'info-tooltip-light'"
-                role="tooltip"
-              >
-                <p
-                  class="info-tooltip-lede"
-                  :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-                >
-                  <Icon
-                    class="info-tooltip-glyph"
-                    icon="tabler:bolt-filled"
-                    width="17"
-                    height="17"
-                  />
-                  <span>{{ $t('Like email, but for Bitcoin.') }}</span>
-                </p>
-                <p
-                  class="info-tooltip-body"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-                >
-                  {{ $t('Friends in any wallet can paste it in to pay you. No QR codes, no copying invoices.') }}
-                </p>
-              </div>
-            </q-menu>
-          </span>
-          <div
-            class="field-input-wrap"
-            :class="[
-              $q.dark.isActive ? 'field-input-wrap-dark' : 'field-input-wrap-light',
-              { 'field-input-wrap--error': errors.lud16 },
-            ]"
-          >
-            <input
-              v-model="form.lud16"
-              type="text"
-              placeholder="you@your-site.example"
-              spellcheck="false"
-              autocomplete="off"
-              autocapitalize="none"
-              maxlength="200"
-              class="field-input"
-              :class="$q.dark.isActive ? 'field-input-dark' : 'field-input-light'"
-            />
-          </div>
-          <!--
-            Helper line under the input. Explains in one sentence what
-            the address is used for, so a first-time user knows whether
-            to fill it in. Errors take priority and replace the helper
-            line, mirroring the standard form-field pattern.
-          -->
-          <span v-if="errors.lud16" class="field-error" role="alert">
-            {{ errors.lud16 }}
-          </span>
-          <span
-            v-else
-            class="field-help"
-            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-          >
-            {{ $t('Your address for receiving Bitcoin payments. Leave blank if you don\'t have one.') }}
-          </span>
-        </label>
-
-          </div><!-- /section-card: PAYMENT -->
-        </div><!-- /form-section: PAYMENT -->
-
-        <!-- ─────────── PUBLIC IDENTITY ─────────── -->
-        <div class="form-section">
-          <div class="section-label-row">
-            <span
-              class="section-label"
-              :class="$q.dark.isActive ? 'section-label-dark' : 'section-label-light'"
-            >
-              {{ $t('Public identity') }}
-            </span>
-            <button
-              type="button"
-              class="info-btn"
-              :class="$q.dark.isActive ? 'info-btn-dark' : 'info-btn-light'"
-              :aria-label="$t('What is this?')"
-              :aria-expanded="identityInfoOpen"
-              @click.prevent.stop="identityInfoOpen = !identityInfoOpen"
-            >
-              <Icon icon="tabler:info-circle" width="14" height="14" />
-            </button>
-            <q-menu
-              v-model="identityInfoOpen"
-              anchor="bottom left"
-              self="top left"
-              :offset="[0, 8]"
-              no-parent-event
-            >
-              <div
-                class="info-tooltip"
-                :class="$q.dark.isActive ? 'info-tooltip-dark' : 'info-tooltip-light'"
-                role="tooltip"
-              >
-                <p
-                  class="info-tooltip-lede"
-                  :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-                >
-                  <Icon
-                    class="info-tooltip-glyph"
-                    icon="tabler:rosette-discount-check-filled"
-                    width="17"
-                    height="17"
-                  />
-                  <span>{{ $t('A name people can find and trust.') }}</span>
-                </p>
-                <p
-                  class="info-tooltip-body"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-                >
-                  {{ $t('Friends look up your profile with it. On BuhoGO, anyone can pay you straight to your name.') }}
-                </p>
-              </div>
-            </q-menu>
-          </div>
-
-          <!-- Section card holds the owned handles as flat list rows so
-               this section matches the Profile + Payment cards above —
-               no card-in-card. Active row shows the brand check + an
-               "Active" badge; tap any inactive row to promote it,
-               which marks the profile dirty so "Save & Publish" lights
-               up just like any other field edit. -->
-          <div
-            v-if="handles.length > 0"
-            class="section-card section-card--list"
-            :class="$q.dark.isActive ? 'section-card-dark' : 'section-card-light'"
-            role="radiogroup"
-            :aria-label="$t('Your verified addresses')"
-          >
-            <button
-              v-for="(h, idx) in handles"
-              :key="h.handle"
-              type="button"
-              class="handle-row"
-              :class="[
-                $q.dark.isActive ? 'handle-row-dark' : 'handle-row-light',
-                { 'handle-row--active': h.isActive },
-                { 'handle-row--first': idx === 0 },
-                { 'handle-row--last': idx === handles.length - 1 },
-              ]"
-              role="radio"
-              :aria-checked="h.isActive"
-              @click="onPickHandle(h.handle)"
-            >
-              <span class="handle-radio" aria-hidden="true">
-                <Icon
-                  v-if="h.isActive"
-                  icon="tabler:rosette-discount-check-filled"
-                  width="18"
-                  height="18"
-                  class="handle-radio-check"
-                />
-                <Icon
-                  v-else
-                  icon="tabler:circle"
-                  width="18"
-                  height="18"
-                  class="handle-radio-empty"
-                />
+            <!-- ─────────── Get paid ───────────
+                 Flat field, same rhythm as About above: icon-led label,
+                 input, one always-visible plain-language line underneath.
+                 No tap-to-reveal tooltip - what used to require an extra
+                 tap to learn now just sits on the page as the field's
+                 own caption, and no extra card wraps a single input. -->
+            <label class="field">
+              <span class="field-label-row">
+                <Icon icon="tabler:bolt-filled" width="15" height="15" class="field-label-icon field-label-icon--bolt" />
+                <span class="field-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                  {{ $t('Get paid') }}
+                </span>
               </span>
-              <span class="handle-text">
-                <span class="handle-local">{{ h.handle }}</span>
-                <span class="handle-suffix" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-                  @{{ nip05Domain }}
-                </span>
-                <!-- Renewal feature disabled — extension doesn't enforce
-                     expiry. When the upstream gains a renewal endpoint,
-                     restore the `.handle-local-row` wrapper around the
-                     two spans above and uncomment this caption.
-                <span
-                  v-if="expiryHint(h)"
-                  class="handle-expiry"
-                  :class="[
-                    $q.dark.isActive ? 'text-grey-4' : 'text-grey-6',
-                    { 'handle-expiry--soon': isExpiringSoon(h) },
-                  ]"
-                >
-                  <Icon
-                    v-if="isExpiringSoon(h)"
-                    icon="tabler:clock-hour-4"
-                    width="11"
-                    height="11"
-                    class="handle-expiry-icon"
-                  />
-                  {{ expiryHint(h) }}
-                </span>
-                -->
+              <div
+                class="field-input-wrap"
+                :class="[
+                  $q.dark.isActive ? 'field-input-wrap-dark' : 'field-input-wrap-light',
+                  { 'field-input-wrap--error': errors.lud16 },
+                ]"
+              >
+                <input
+                  v-model="form.lud16"
+                  type="text"
+                  placeholder="you@your-site.example"
+                  spellcheck="false"
+                  autocomplete="off"
+                  autocapitalize="none"
+                  maxlength="200"
+                  class="field-input"
+                  :class="$q.dark.isActive ? 'field-input-dark' : 'field-input-light'"
+                />
+              </div>
+              <!--
+                Helper line under the input. Errors take priority and
+                replace it, mirroring the standard form-field pattern.
+              -->
+              <span v-if="errors.lud16" class="field-error" role="alert">
+                {{ errors.lud16 }}
               </span>
               <span
-                v-if="h.isActive"
-                class="handle-active-badge"
-                :class="$q.dark.isActive ? 'handle-active-badge-dark' : 'handle-active-badge-light'"
+                v-else
+                class="field-help"
+                :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
               >
-                {{ $t('Active') }}
+                {{ $t('Friends can send Bitcoin straight to this address. Leave blank if you don\'t have one.') }}
               </span>
-            </button>
-          </div>
+            </label>
 
-          <!-- Empty state — should be vanishingly rare (the boot
-               orchestrator registers a free handle within seconds of
-               first launch), but a clean fallback beats showing the
-               Buy CTA in isolation if registration was offline. -->
-          <div
-            v-else
-            class="handles-empty"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          >
-            {{ $t('Your free verified address will appear here in a moment.') }}
-          </div>
+            <!-- ─────────── Your name ───────────
+                 Same flat rhythm; the handle picker keeps its light card
+                 because it's a list of rows, not a single input, but the
+                 uppercase section-label + separate tooltip are gone. -->
+            <div class="form-section">
+              <span class="field-label-row">
+                <Icon icon="tabler:rosette-discount-check-filled" width="15" height="15" class="field-label-icon field-label-icon--check" />
+                <span class="field-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                  {{ $t('Your name') }}
+                </span>
+              </span>
 
-          <button
-            type="button"
-            class="buy-cta"
-            :class="$q.dark.isActive ? 'buy-cta-dark' : 'buy-cta-light'"
-            @click="showMarketplace = true"
-          >
-            <Icon icon="tabler:plus" width="15" height="15" />
-            <span>{{ $t('Buy a custom name') }}</span>
-          </button>
-        </div><!-- /form-section: IDENTITY -->
+              <!-- Handles as flat list rows. Active row shows the brand
+                   check + an "Active" badge; tap any inactive row to
+                   promote it, which marks the profile dirty so "Save"
+                   lights up just like any other field edit. -->
+              <div
+                v-if="handles.length > 0"
+                class="section-card section-card--list"
+                :class="$q.dark.isActive ? 'section-card-dark' : 'section-card-light'"
+                role="radiogroup"
+                :aria-label="$t('Your verified addresses')"
+              >
+                <button
+                  v-for="(h, idx) in handles"
+                  :key="h.handle"
+                  type="button"
+                  class="handle-row"
+                  :class="[
+                    $q.dark.isActive ? 'handle-row-dark' : 'handle-row-light',
+                    { 'handle-row--active': h.isActive },
+                    { 'handle-row--first': idx === 0 },
+                    { 'handle-row--last': idx === handles.length - 1 },
+                  ]"
+                  role="radio"
+                  :aria-checked="h.isActive"
+                  @click="onPickHandle(h.handle)"
+                >
+                  <span class="handle-radio" aria-hidden="true">
+                    <Icon
+                      v-if="h.isActive"
+                      icon="tabler:rosette-discount-check-filled"
+                      width="18"
+                      height="18"
+                      class="handle-radio-check"
+                    />
+                    <Icon
+                      v-else
+                      icon="tabler:circle"
+                      width="18"
+                      height="18"
+                      class="handle-radio-empty"
+                    />
+                  </span>
+                  <span class="handle-text">
+                    <span class="handle-local">{{ h.handle }}</span>
+                    <span class="handle-suffix" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
+                      @{{ nip05Domain }}
+                    </span>
+                    <!-- Renewal feature disabled — extension doesn't enforce
+                         expiry. When the upstream gains a renewal endpoint,
+                         restore the `.handle-local-row` wrapper around the
+                         two spans above and uncomment this caption.
+                    <span
+                      v-if="expiryHint(h)"
+                      class="handle-expiry"
+                      :class="[
+                        $q.dark.isActive ? 'text-grey-4' : 'text-grey-6',
+                        { 'handle-expiry--soon': isExpiringSoon(h) },
+                      ]"
+                    >
+                      <Icon
+                        v-if="isExpiringSoon(h)"
+                        icon="tabler:clock-hour-4"
+                        width="11"
+                        height="11"
+                        class="handle-expiry-icon"
+                      />
+                      {{ expiryHint(h) }}
+                    </span>
+                    -->
+                  </span>
+                  <span
+                    v-if="h.isActive"
+                    class="handle-active-badge"
+                    :class="$q.dark.isActive ? 'handle-active-badge-dark' : 'handle-active-badge-light'"
+                  >
+                    {{ $t('Active') }}
+                  </span>
+                </button>
+              </div>
+
+              <!-- Empty state — should be vanishingly rare (the boot
+                   orchestrator registers a free handle within seconds of
+                   first launch), but a clean fallback beats showing the
+                   Buy CTA in isolation if registration was offline. -->
+              <div
+                v-else
+                class="handles-empty"
+                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+              >
+                {{ $t('Your free verified address will appear here in a moment.') }}
+              </div>
+
+              <span
+                class="field-help"
+                :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+              >
+                {{ $t('Friends use this to find and pay you on BuhoGO.') }}
+              </span>
+
+              <button
+                type="button"
+                class="buy-cta"
+                :class="$q.dark.isActive ? 'buy-cta-dark' : 'buy-cta-light'"
+                @click="showMarketplace = true"
+              >
+                <Icon icon="tabler:plus" width="15" height="15" />
+                <span>{{ $t('Buy a custom name') }}</span>
+              </button>
+            </div><!-- /form-section: IDENTITY -->
+          </div><!-- /extended-body -->
+        </q-slide-transition>
       </div>
       </div><!-- /sheet-scroll -->
 
@@ -549,15 +483,9 @@ export default {
        *  related — including buying a custom name). */
       showMarketplace: false,
 
-      /**
-       * Stay-open info tooltips. Each label that introduces an idea the
-       * user hasn't seen elsewhere in the app (Lightning address as
-       * money-email, public identity as findable handle) gets one.
-       * Backed by `q-menu` so the affordance is tap-to-toggle on mobile
-       * and outside-tap dismisses, instead of the hover-only default.
-       */
-      lightningInfoOpen: false,
-      identityInfoOpen: false,
+      /** Extended profile (lud16 + verified name) starts collapsed —
+       *  only Display name, About and the avatar show by default. */
+      extendedOpen: false,
 
       /** Avatar fallback flag — same pattern the page uses. */
       avatarBroken: false,
@@ -603,7 +531,6 @@ export default {
       return (
         this.form.displayName !== this.profile.displayName
         || this.form.about       !== this.profile.about
-        || this.form.website     !== this.profile.website
         || this.form.lud16       !== this.profile.lud16
       );
     },
@@ -657,6 +584,11 @@ export default {
       this.avatarBroken     = false;
       this.publishError     = null;
       this.showMarketplace  = false;
+      // Re-collapse extended profile on every open, unless the store
+      // already carries a lud16 or a non-default active handle — a
+      // returning user who has filled those in shouldn't have to
+      // re-expand the section just to see what they set.
+      this.extendedOpen     = Boolean(this.profile.lud16);
     },
 
     /**
@@ -729,6 +661,9 @@ export default {
       const lud16 = (this.form.lud16 || '').trim();
       if (!isLikelyLud16(lud16)) {
         this.errors.lud16 = this.$t('Looks like an unfamiliar format. Try name@example.com.');
+        // The error lives inside the collapsed Extended profile
+        // section — expand it so the user can actually see it.
+        this.extendedOpen = true;
         return false;
       }
       return true;
@@ -809,6 +744,10 @@ export default {
           patch[field] = this.form[field];
         }
       }
+      // A single "Display name" field drives both NIP-01 fields —
+      // `display_name` and `name` — so every relay/client reads the
+      // same name regardless of which one it prefers to render.
+      patch.name = this.form.displayName;
       this.profile.applyEdits(patch);
 
       // Now publish. profileStore.publish never throws — it returns
@@ -938,11 +877,14 @@ export default {
   border-top-right-radius: 22px;
 }
 
+/* Dark mode uses a quiet neutral lift instead of repeating the green
+   wash - same call as the profile page's own hero banner, so the two
+   don't compound into "everything BuhoGO opens is tinted green." */
 body.body--dark .edit-sheet::before {
   background: linear-gradient(
     to bottom,
-    rgba(21, 222, 114, 0.28) 0%,
-    rgba(21, 222, 114, 0.14) 50%,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.04) 50%,
     transparent 100%
   );
 }
@@ -1033,7 +975,9 @@ body.body--dark .edit-sheet::before {
   -webkit-user-drag: none;
 }
 
-.avatar-glyph { opacity: 0.7; }
+/* BuhoGO's own mark, full-strength rather than dimmed - a deliberate
+   brand fallback, not a muted "nothing here yet" placeholder. */
+.avatar-glyph { object-fit: contain; }
 
 /* Camera badge — neutral monochrome on both themes. No brand colour
    here; the avatar surface itself is the affordance. */
@@ -1097,139 +1041,62 @@ body.body--dark .avatar-edit-badge {
   gap: 14px;
 }
 
-.section-label {
-  font-family: 'Manrope', sans-serif;
-  /* Slightly smaller and less letter-spaced than before — the label
-     should orient, not announce. */
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin: 0 0 -2px 2px;
+/* Extended profile toggle — a bare chevron, no label, no caption.
+   Centred, icon-only tap target (36px, comfortably above the iOS
+   44pt floor once padding is included). Kept as a lightweight
+   `<button>` (not a SettingsSection instance; that component is
+   styled for the Settings page's card/row rhythm, not this sheet's
+   flat field list). */
+.extended-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease;
 }
 
-/* Calmer tones — the previous slate-grey was a notch too cold on cream;
-   warmer mid-tones blend with the sheet surface without disappearing.
-   Dark mode runs brighter because the previous tone faded out against
-   the near-black card surface and read as "almost invisible." */
-.section-label-light { color: #8a8e96; }
-.section-label-dark  { color: #b8c0cc; }
+.extended-toggle:hover { background: rgba(128, 128, 128, 0.12); }
 
-/* Row container that lays the section/field label next to its info
-   button. Keeps the (i) glyph baseline-aligned with the text and lets
-   the q-menu anchor itself reliably to the icon, not the label. */
-.section-label-row,
+.extended-toggle-chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+.extended-toggle-chevron--open {
+  transform: rotate(180deg);
+}
+
+.extended-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* Row container laying an icon next to a field/section label. Used by
+   every field now (About excepted - a plain label reads fine there),
+   so "Get paid" and "Your name" carry the same small identifying
+   glyph the rest of the app uses for icon-led rows. */
 .field-label-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.section-label-row {
-  margin: 0 0 -2px 2px;
-}
-
-.section-label-row .section-label { margin: 0; }
-
-/* Small circular info button. Picks up the surrounding text colour
-   so it reads as "part of the label," not a foreign affordance. The
-   q-menu it hosts opens on tap and dismisses on outside-tap, which is
-   the mobile-first behaviour the hover-tooltip default lacks. */
-.info-btn {
-  all: unset;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  cursor: pointer;
-  position: relative;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.info-btn-light { color: #94a3b8; }
-.info-btn-dark  { color: #64748b; }
-
-.info-btn-light:hover,
-.info-btn-light:focus-visible {
-  background: rgba(15, 23, 42, 0.06);
-  color: #334155;
-}
-
-.info-btn-dark:hover,
-.info-btn-dark:focus-visible {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-}
-
-.info-btn:focus-visible {
-  outline: 2px solid #15DE72;
-  outline-offset: 2px;
-}
-
-/* Tooltip card. Icon-led concept title at the top, a punchy one-liner
-   lede, then a calmer second paragraph for context. The icon chip is
-   tinted to the concept (amber for Lightning, brand-green for the
-   verified handle) so the tooltip reads as an explanation of THIS
-   thing, not a generic info box. */
-
-/* Capped to the viewport (minus a comfortable margin) so the popover can
-   never run off the right edge regardless of where its anchor row sits. */
-.info-tooltip {
-  width: min(304px, calc(100vw - 48px));
-  padding: 12px 14px 14px;
-  border-radius: 14px;
-  font-family: 'Manrope', sans-serif;
-}
-
-.info-tooltip-light {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  box-shadow:
-    0 1px 0 rgba(15, 23, 42, 0.04),
-    0 16px 32px -12px rgba(15, 23, 42, 0.22),
-    0 0 0 1px rgba(15, 23, 42, 0.08);
-}
-
-.info-tooltip-dark {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  box-shadow:
-    0 16px 32px -12px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-/* Headline: a small monochrome glyph + the one-line value prop. The glyph
-   is deliberately uncoloured — near-black on light, clean grey on dark — so
-   the hint reads as calm UI chrome rather than a status badge. */
-.info-tooltip-lede {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.35;
-  letter-spacing: -0.005em;
-  margin: 0 0 6px 0;
-}
-
-.info-tooltip-glyph {
+.field-label-icon {
   flex-shrink: 0;
-  margin-top: 1px;
 }
 
-.info-tooltip-light .info-tooltip-glyph { color: #0f172a; }
-.info-tooltip-dark .info-tooltip-glyph { color: #94a3b8; }
-
-.info-tooltip-body {
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.5;
-  letter-spacing: -0.003em;
-  margin: 0;
-}
+.field-label-icon--bolt { color: #f7931a; }
+.field-label-icon--check { color: #15a35b; }
 
 .field {
   display: flex;

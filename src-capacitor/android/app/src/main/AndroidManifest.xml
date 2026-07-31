@@ -53,10 +53,78 @@
                 <data android:scheme="BITCOIN" />
             </intent-filter>
 
-            <!-- NFC: NDEF tags carrying a Lightning / LNURL URI record (Bolt
-                 Cards -> lnurlw://, LNURL tags, lightning: tags, or a plain
-                 https:// that resolves to an LNURL). Schemes are case-sensitive
-                 here too - see the deep-link note above. -->
+            <!-- Deep link: nostr: (NIP-21). The profile-share QR encodes
+                 nostr:npub…, so scanning it with the system camera must
+                 offer BuhoGO — the deep-link handler resolves the profile
+                 to its Lightning address and opens the pay flow. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nostr" />
+                <data android:scheme="NOSTR" />
+            </intent-filter>
+
+            <!-- MainActivity itself deliberately declares NO NFC intent
+                 filters: it is the launcher / deep-link activity, and NFC
+                 system dispatch is owned exclusively by NfcDispatchActivity
+                 below. While BuhoGO is in the foreground, reader mode in
+                 MainActivity owns the NFC field instead (system dispatch
+                 never runs), keeping the robust in-app Ndef + IsoDep
+                 fallback read path. -->
+
+        </activity>
+
+        <!-- NfcDispatchActivity — BuhoGO's only receiver of system NFC
+             intents (cold start / backgrounded app). Narrow NDEF-only
+             dispatch: BuhoGO appears in Android's NFC app picker exactly
+             when a tapped tag carries a payment or auth URI it can actually
+             handle, and never for an arbitrary tag. Each scheme is declared
+             in lower- AND upper-case for the same reason as the VIEW filters
+             above: NFC intents are matched case-sensitively and tag content
+             is not normalized (some card-programming services write
+             upper-case scheme URIs).
+
+             ACTIVE — cold-start schemes BuhoGO fully supports today:
+               lnurlw   Bolt Card / LNURL-withdraw (tap-to-pay cards, rings)
+               lnurlp   LNURL-pay, incl. card refund/pay links
+               lightning BOLT11 invoices, wrapped LNURLs, BOLT12 recognition
+               lnurl    bech32 LNURL in its URI wrapper
+               bitcoin  BIP21 on-chain / unified (parity with the VIEW filter)
+               keyauth  LUD-04 login tags (flow always ends in a confirm UI)
+
+             FUTURE — add here AND in NfcDispatchActivity's allowlist:
+               lnurlc   once a channel-request flow is implemented
+               custom/proprietary tag schemes as product needs appear
+
+             NEVER — filters that would claim foreign tags (contactless bank
+             cards, transit cards, access badges, random stickers) and
+             re-introduce the old "app opens itself unprompted" behavior:
+               - ACTION_TAG_DISCOVERED: catch-all, deprecated in API 37.
+               - ACTION_TECH_DISCOVERED with IsoDep: matches every Type-4
+                 card including bank cards. Even the narrower IsoDep+Ndef
+                 tech list is dead weight: when a tag's NDEF is readable the
+                 NDEF filter above already wins, and on OEM stacks that fail
+                 to expose NTAG 424 DNA as NDEF the tech list lacks Ndef too,
+                 so the filter would not match exactly where it should help.
+                 Fallback for such devices: open the app, then tap (reader
+                 mode + raw IsoDep handle it).
+               - https:// or text/plain NDEF: far too broad, and newer
+                 Android versions dispatch http(s) NDEF tags as regular VIEW
+                 links anyway, so an NDEF https filter is not future-proof.
+
+             Android 17 note: once targetSdk moves past 36 this activity (and
+             only this one) must additionally declare
+             android:permission="android.permission.DISPATCH_NFC_MESSAGE".
+             Do not add it earlier — the permission does not exist on older
+             platforms and would break dispatch there. -->
+        <activity
+            android:name=".NfcDispatchActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -68,34 +136,11 @@
                 <data android:scheme="LNURLP" />
                 <data android:scheme="lnurlw" />
                 <data android:scheme="LNURLW" />
-                <data android:scheme="https" />
+                <data android:scheme="bitcoin" />
+                <data android:scheme="BITCOIN" />
+                <data android:scheme="keyauth" />
+                <data android:scheme="KEYAUTH" />
             </intent-filter>
-
-            <!-- NFC: NDEF tags written as a bare text/URI record with no usable
-                 scheme (a naked `LNURL1...` bech32 or a BOLT11). The MIME
-                 catch-all still routes them to us; nfc.js then classifies the
-                 payload via parsePaymentDestination. -->
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            <!-- NFC: IsoDep tech dispatch — catches NTAG 424 DNA / Bolt Cards when
-                 Android does not fire NDEF_DISCOVERED for T4T tags -->
-            <intent-filter>
-                <action android:name="android.nfc.action.TECH_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <meta-data
-                android:name="android.nfc.action.TECH_DISCOVERED"
-                android:resource="@xml/nfc_tech_filter" />
-
-            <!-- NFC: Fallback for any NFC tag (Tech dispatch) -->
-            <intent-filter>
-                <action android:name="android.nfc.action.TAG_DISCOVERED" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-
         </activity>
 
         <provider

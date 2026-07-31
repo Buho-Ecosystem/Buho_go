@@ -4,15 +4,11 @@
     :class="$q.dark.isActive ? 'contact-card-dark' : 'contact-card-light'"
     @click="$emit('pay', entry)"
   >
-    <!-- Avatar — real picture for nostr-sourced contacts, colored
-         initial otherwise. The change-color emit still fires on the
-         circle either way; for nostr contacts it's a no-op-friendly
-         click target (color picker just won't show a visible ring
-         under the photo). -->
+    <!-- Avatar — real picture for nostr-sourced contacts, the
+         app-wide monoline silhouette otherwise. -->
     <ContactAvatar
       class="contact-avatar"
       :entry="entry"
-      @click.stop="$emit('change-color', entry)"
     />
 
     <!-- Entry Details -->
@@ -26,6 +22,7 @@
             :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'"
             alt="Spark"
           />
+          <ArkadeLogo v-else-if="addressType === 'arkade'" variant="mark" color="white" :size="10" />
           <Icon v-else :icon="addressTypeIcon" width="10" height="10" />
           <span>{{ addressTypeLabel }}</span>
         </div>
@@ -130,17 +127,18 @@
 
 <script>
 import ContactAvatar from './ContactAvatar.vue'
+import ArkadeLogo from '../ArkadeLogo.vue'
 
 export default {
   name: 'AddressBookEntry',
-  components: { ContactAvatar },
+  components: { ContactAvatar, ArkadeLogo },
   props: {
     entry: {
       type: Object,
       required: true
     }
   },
-  emits: ['edit', 'delete', 'change-color', 'pay', 'toggle-favorite', 'copy-address'],
+  emits: ['edit', 'delete', 'pay', 'toggle-favorite', 'copy-address'],
   computed: {
     addressType() {
       return this.entry.addressType || 'lightning'
@@ -187,6 +185,7 @@ export default {
       const labels = {
         lightning: 'Lightning',
         spark: 'Spark',
+        arkade: 'Arkade',
         bitcoin: 'Bitcoin'
       }
       return labels[this.addressType] || labels.lightning
@@ -195,6 +194,7 @@ export default {
       const classes = {
         lightning: 'badge-lightning',
         spark: 'badge-spark',
+        arkade: 'badge-arkade',
         bitcoin: 'badge-bitcoin'
       }
       return classes[this.addressType] || classes.lightning
@@ -309,6 +309,11 @@ export default {
 
 .badge-spark {
   background: #000;
+  color: white;
+}
+
+.badge-arkade {
+  background: linear-gradient(135deg, #F14317, #C0360F);
   color: white;
 }
 

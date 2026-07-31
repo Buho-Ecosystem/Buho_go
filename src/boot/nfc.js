@@ -1,15 +1,26 @@
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
-import { addNfcListener, addNfcErrorListener, isNfcAvailable } from '../utils/nfc'
+import { App } from '@capacitor/app'
+import { addNfcListener, addNfcErrorListener, isNfcAvailable, consumePendingNfcScan } from '../utils/nfc'
 import { parsePaymentDestination } from '../providers/WalletFactory'
+import { triggerWalletStoreHydration } from '../utils/walletHydration'
+import { redactPaymentInput } from '../utils/logRedaction'
 
 /**
  * NFC boot plugin for Android.
  *
  * Only loaded in Capacitor builds (see quasar.config.js).
  *
- * Listens for NFC tag scans via the custom NfcPlugin Capacitor bridge.
+ * Two delivery paths converge here, both ending in processNfcPayload():
+ *
+ *  - Foreground (push): MainActivity's reader mode emits "nfcTag" events
+ *    through the NfcPlugin bridge while the app is visible.
+ *  - Cold / backgrounded start (pull): a tag tapped while the app was closed
+ *    reaches NfcDispatchActivity via Android's NDEF dispatch and is buffered
+ *    natively. We drain that at-most-once buffer at boot for cold starts and
+ *    on every app resume for taps that arrived while backgrounded.
+ *
  * Parsed payment data is buffered on walletStore.pendingDeepLink — the same
  * channel deep-links.js writes to — so Wallet.vue's watcher picks it up
  * without any additional wiring and without timing races.
@@ -20,6 +31,8 @@ import { parsePaymentDestination } from '../providers/WalletFactory'
  *   - LNURL via HTTPS → https://domain.tld/.well-known/lnurlp/...
  *   - Static Lightning invoice → BOLT-11
  *   - Lightning address → user@domain.com
+ *   - BIP21 → bitcoin:...?lightning=... (unified)
+ *   - LUD-04 login → keyauth://
  */
 
 export default boot(async ({ router }) => {
@@ -28,21 +41,20 @@ export default boot(async ({ router }) => {
   const { useWalletStore } = await import('../stores/wallet')
   const walletStore = useWalletStore()
 
-  // NFC error listener — tag found but unreadable
-  addNfcErrorListener((message) => {
-    console.warn('[nfc] Tag error:', message)
-    Notify.create({
-      type: 'warning',
-      icon: 'nfc',
-      message: 'NFC tag not readable',
-      caption: message,
-      timeout: 3000
-    })
-  })
+  /**
+   * Single processing pipeline for every NFC payload, regardless of how it
+   * reached the app. `source` is 'reader' (foreground reader mode) or
+   * 'system_dispatch' (cold/backgrounded start via NfcDispatchActivity).
+   */
+  const processNfcPayload = (raw, source) => {
+    // Scheme + length only: raw payloads carry one-time card-authentication
+    // parameters and must never reach logcat.
+    console.log(`[nfc] Tag scanned (${source}):`, redactPaymentInput(raw))
 
-  // Main NFC tag listener
-  addNfcListener(async (raw) => {
-    console.log('[nfc] Tag scanned:', raw)
+    // The guards below read persisted state (kiosk mode, activeWallet). On a
+    // cold start this runs before Wallet.vue has mounted and initialized the
+    // store, so hydrate first — idempotent, synchronous prefix is enough.
+    triggerWalletStoreHydration(walletStore)
 
     // Block while kiosk mode is locked
     if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
@@ -62,7 +74,7 @@ export default boot(async ({ router }) => {
       parsed = { type: 'lnurl', lnurl: raw, valid: true }
     }
 
-    if (!parsed || !parsed.valid || parsed.type === 'unknown') {
+    if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
       Notify.create({
         type: 'warning',
         icon: 'nfc',
@@ -70,6 +82,14 @@ export default boot(async ({ router }) => {
         caption: 'Tag does not contain a Lightning payment',
         timeout: 3000
       })
+      return
+    }
+
+    // A BOLT12 offer is a valid payment request that BuhoGO cannot pay yet.
+    // Surface the same global explanation as QR/paste instead of calling it
+    // an unreadable NFC tag or asking the user to configure a wallet.
+    if (parsed.type === 'bolt12_offer') {
+      walletStore.showUnsupportedBolt12Offer({ route: 'NFC tag' })
       return
     }
 
@@ -87,7 +107,7 @@ export default boot(async ({ router }) => {
 
     // Map to { data, type } shape that Wallet.vue's onPaymentDetected expects
     const paymentData = {
-      data: parsed.invoice || parsed.address || parsed.lnurl || raw,
+      data: parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || raw,
       type: parsed.type
     }
 
@@ -98,7 +118,34 @@ export default boot(async ({ router }) => {
     if (router.currentRoute.value?.path !== '/wallet') {
       router.push('/wallet').catch(() => { /* navigation rejection is non-fatal */ })
     }
+  }
+
+  // NFC error listener — tag found but unreadable
+  addNfcErrorListener((message) => {
+    console.warn('[nfc] Tag error:', message)
+    Notify.create({
+      type: 'warning',
+      icon: 'nfc',
+      message: 'NFC tag not readable',
+      caption: message,
+      timeout: 3000
+    })
   })
+
+  // Foreground path: reader-mode taps while the app is visible
+  addNfcListener((raw) => processNfcPayload(raw, 'reader'))
+
+  // Cold/backgrounded path: drain the native one-shot buffer. Registering the
+  // resume listener before the initial drain closes the gap where a scan
+  // could arrive between the two.
+  const drainPendingScan = async () => {
+    const pending = await consumePendingNfcScan()
+    if (pending?.raw) {
+      processNfcPayload(pending.raw, pending.source)
+    }
+  }
+  App.addListener('resume', drainPendingScan)
+  await drainPendingScan()
 
   // Inform user if NFC is disabled on device
   const available = await isNfcAvailable()

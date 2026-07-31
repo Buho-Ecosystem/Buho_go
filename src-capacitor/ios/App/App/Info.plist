@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+        <string>BuhoGo</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>BuhoGO uses the camera to scan Lightning, Bitcoin, and Nostr QR codes so you can pay invoices and add contacts without typing them by hand.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>BuhoGO uses Face ID to lock the app and to confirm sensitive actions like revealing your recovery phrase.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BuhoGO can read QR codes from saved screenshots so you can pay or sign in from images you have already received.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>mybuho.buhogo.oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!--
+				  Reverse-DNS form of the iOS OAuth client ID issued by Google
+				  Cloud Console. Replace `XXXXX-YYYYY` with the prefix from your
+				  client ID (the part before `.apps.googleusercontent.com`).
+				  Must match VITE_GOOGLE_OAUTH_IOS_REDIRECT_URI's scheme.
+				-->
+				<string>com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID-PREFIX</string>
+			</array>
+		</dict>
+		<!--
+		  Payment deep links. The iOS system camera (and other apps) can
+		  only hand a scanned lightning:/bitcoin:/lnurl* URI to BuhoGO
+		  when the scheme is claimed here — this mirrors the intent
+		  filters AndroidManifest.xml has carried all along. The Capacitor
+		  App plugin fires appUrlOpen for these; boot/deep-links buffers
+		  them into the wallet store on every native platform.
+
+		  `nostr:` is deliberately NOT claimed on iOS: custom schemes have
+		  no app picker here — one claimant silently wins — and a nostr:
+		  profile QR should open the user's social client, not hijack it
+		  into a wallet. Android keeps its nostr filter because Android
+		  shows a real chooser. In-app scanners handle nostr: regardless.
+		-->
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>mybuho.buhogo.payments</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lightning</string>
+				<string>bitcoin</string>
+				<string>lnurl</string>
+				<string>lnurlp</string>
+				<string>lnurlw</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

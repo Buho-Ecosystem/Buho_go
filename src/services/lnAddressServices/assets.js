@@ -12,14 +12,18 @@
  */
 import keFlag from '../../assets/lnAddressServices/flags/circle-flags--ke.svg?url'
 import zmFlag from '../../assets/lnAddressServices/flags/circle-flags--zm.svg?url'
+import tzFlag from '../../assets/lnAddressServices/flags/circle-flags--tz.svg?url'
 import bitzedLogo from '../../assets/lnAddressServices/logos/bitzed.svg?url'
 import tandoLogo from '../../assets/lnAddressServices/logos/tando.png?url'
+import chapsmartLogo from '../../assets/lnAddressServices/logos/chapsmart.png?url'
 
 const ASSET_URLS = {
   'flags/circle-flags--ke.svg': keFlag,
   'flags/circle-flags--zm.svg': zmFlag,
+  'flags/circle-flags--tz.svg': tzFlag,
   'logos/bitzed.svg': bitzedLogo,
   'logos/tando.png': tandoLogo,
+  'logos/chapsmart.png': chapsmartLogo,
 }
 
 /**

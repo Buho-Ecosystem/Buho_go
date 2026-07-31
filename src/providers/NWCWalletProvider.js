@@ -131,7 +131,14 @@ export class NWCWalletProvider extends WalletProvider {
     try {
       const info = await this.nwc.getInfo();
 
-      // Extract lightning address from NWC URL if not in info
+      // Extract lightning address from NWC URL if not in info.
+      //
+      // LUD-09 receiver-side limitation: this lud16 address is served by the
+      // backend NWC wallet (e.g. Alby), not by BuhoGO — the app runs no HTTP
+      // server — so we cannot attach a `successAction` to payments received
+      // here. Any such message is configured in that wallet's own service. As
+      // the payer we still read and display a recipient's successAction (see
+      // payInvoice).
       let lightningAddress = info.lud16 || this.metadata.lud16;
       if (!lightningAddress && this.nwcUrl) {
         try {
@@ -166,7 +173,12 @@ export class NWCWalletProvider extends WalletProvider {
     try {
       const invoice = await this.nwc.makeInvoice({
         amount: amount,
-        description: description || 'BuhoGO Payment',
+        // @getalby/sdk's NostrWebLNProvider.makeInvoice only ever reads
+        // `defaultMemo` off this argument (see RequestInvoiceArgs in its
+        // webln.js) — a `description` key here is silently ignored, which is
+        // exactly why user-typed invoice descriptions were ending up empty
+        // (blank d-tag) in the bolt11 this method returned.
+        defaultMemo: description || 'BuhoGO Payment',
         expiry: expiry
       });
 
@@ -326,14 +338,25 @@ export class NWCWalletProvider extends WalletProvider {
       // `mapNip47TransactionToTransaction` helper before handing
       // results to us. Values arrive in sats — no further unit
       // conversion needed here.
+      //
+      // Spread the raw NIP-47 record first so nothing it carries (e.g. a
+      // description_hash, or a field a future SDK version adds) is lost,
+      // then layer the canonical names on top.
       return transactions.transactions.map(tx => ({
+        ...tx,
         id: tx.payment_hash || tx.paymentHash || tx.id,
         type: tx.type === 'incoming' || tx.amount > 0 ? 'receive' : 'send',
         amount: Math.abs(tx.amount || 0),
         timestamp: tx.settled_at || tx.settledAt || tx.created_at || tx.createdAt || null,
+        created_at: tx.created_at || tx.createdAt || null,
+        settled_at: tx.settled_at || tx.settledAt || null,
         description: tx.description || tx.memo || '',
         status: tx.settled ? 'completed' : 'pending',
-        fee: tx.fees_paid || tx.feesPaid || 0
+        fee: tx.fees_paid || tx.feesPaid || 0,
+        paymentHash: tx.payment_hash || tx.paymentHash || null,
+        preimage: tx.preimage || null,
+        bolt11: tx.invoice || tx.bolt11 || tx.payment_request || null,
+        descriptionHash: tx.description_hash || tx.descriptionHash || null
       }));
     } catch (error) {
       // Many NWC wallets don't support listTransactions

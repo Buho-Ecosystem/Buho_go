@@ -37,6 +37,22 @@ test('Wallet of Satoshi: resolves name + logo from walletofsatoshi.com', () => {
   assert.equal(b.logo, '/Social_Wallet_logos/walletofsatoshi-icon.svg')
 })
 
+test('Plate-less marks (Wallet of Satoshi, Alby) are contained, not cropped', () => {
+  // Neither ships a background plate: cropped edge-to-edge the WoS frame loses
+  // its corners and Alby's tail gets sliced. Both must stay contained, with a
+  // per-brand inset that fits the whole mark inside the circular avatar.
+  for (const d of ['walletofsatoshi.com', 'getalby.com']) {
+    const b = matchWalletBrand(d)
+    assert.equal(b.logoContain, true, `${d} -> contained`)
+    assert.match(b.logoInset, /^\d{1,2}%$/, `${d} -> percentage inset`)
+  }
+  // App-icon art keeps the full-bleed crop — a stray inset would shrink it.
+  for (const d of ['phoenixwallet.me', 'primal.net', 'strike.me', 'damus.io']) {
+    assert.equal(matchWalletBrand(d).logoContain, undefined, `${d} -> full-bleed`)
+    assert.equal(matchWalletBrand(d).logoInset, undefined, `${d} -> no inset`)
+  }
+})
+
 test('Phoenix: resolves from phoenixwallet.me', () => {
   assert.equal(matchWalletBrand('phoenixwallet.me').name, 'Phoenix')
 })

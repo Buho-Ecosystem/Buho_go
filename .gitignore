@@ -2,8 +2,17 @@
 .thumbs.db
 node_modules
 
+# Local build scripts
+/build-release.sh
+/build-signed-release.sh
+
 # LLM Stuff
 /.claude
+/TX_METADATA_RESEARCH.md
+screenshots
+/RELEASE_NOTES_v*.md
+/STANDARD_RELEASE_NOTES_PROMPT.md
+/Release_Notes
 /Plans WIP
 /Articels
 /cloud_backup.md

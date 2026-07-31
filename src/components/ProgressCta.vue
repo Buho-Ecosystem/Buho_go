@@ -3,9 +3,9 @@
   Shared "filling" loading control for confirm / commit flows. Once the user
   has committed an action (tap a button or complete a slide-to-confirm), the
   parent swaps its CTA for this component, which:
-    - trickles a fill from left → ~90% and holds while the work is in flight
+    - continuously eases from left toward ~93% while the work is in flight
       (honest indeterminate progress — we rarely know the real duration), then
-    - snaps to 100% + a checkmark the moment `done` flips true,
+    - completes to 100% + a checkmark the moment `done` flips true,
   giving a clean bridge into the success screen that follows.
 
   Purely presentational and self-contained: the parent decides WHEN it mounts
@@ -57,11 +57,21 @@ export default {
     tall: { type: Boolean, default: false },
   },
   data() {
-    return { fillPct: 0 };
+    return {
+      fillPct: 0,
+      progressFrame: null,
+      progressStartedAt: 0,
+    };
   },
   watch: {
     done(complete) {
-      this.fillPct = complete ? 100 : 85;
+      if (complete) {
+        this.stopTrickle();
+        this.fillPct = 100;
+      } else {
+        this.fillPct = 0;
+        this.scheduleTrickle();
+      }
     },
   },
   mounted() {
@@ -69,13 +79,51 @@ export default {
       this.fillPct = 100;
       return;
     }
-    // Paint at 0 first, then creep steadily toward the ~85% cap. A looping
-    // shimmer (CSS) keeps the bar visibly alive even after it reaches the cap,
-    // so a longer wait never looks "stuck", and the leftover headroom makes
-    // the snap to 100% on success feel snappy.
-    requestAnimationFrame(() => {
-      if (!this.done) this.fillPct = 85;
-    });
+    // Paint at 0 first, then start the visual estimate on the next frame so
+    // the CTA morph is visible before the fill begins.
+    this.scheduleTrickle();
+  },
+  beforeUnmount() {
+    this.stopTrickle();
+  },
+  methods: {
+    scheduleTrickle() {
+      this.stopTrickle();
+      this.progressFrame = requestAnimationFrame(() => {
+        this.progressFrame = null;
+        this.startTrickle();
+      });
+    },
+
+    startTrickle() {
+      if (this.done || this.progressFrame != null) return;
+
+      // This is deliberately an indeterminate visual estimate, not a claim
+      // about network progress. The exponential curve moves promptly at the
+      // start, then slows continuously as it approaches the reserved final
+      // headroom. It avoids the former 0% → 85% → 100% two-step motion.
+      const maxPct = 93;
+      const startPct = Math.min(Math.max(this.fillPct, 8), maxPct);
+      const timeConstantMs = 3500;
+      this.progressStartedAt = performance.now();
+
+      const tick = (now) => {
+        if (this.done) return;
+        const elapsed = Math.max(0, now - this.progressStartedAt);
+        this.fillPct = maxPct - (maxPct - startPct) * Math.exp(-elapsed / timeConstantMs);
+        this.progressFrame = requestAnimationFrame(tick);
+      };
+
+      this.fillPct = startPct;
+      this.progressFrame = requestAnimationFrame(tick);
+    },
+
+    stopTrickle() {
+      if (this.progressFrame != null) {
+        cancelAnimationFrame(this.progressFrame);
+        this.progressFrame = null;
+      }
+    },
   },
 };
 </script>
@@ -106,7 +154,7 @@ export default {
   z-index: 0;
   overflow: hidden; /* clip the shimmer sweep to the filled area */
   background: var(--gradient-green); /* dark: brand green */
-  transition: width 3s cubic-bezier(0.25, 0.7, 0.35, 1);
+  transition: width 120ms linear;
 }
 .body--light .progress-cta-fill { background: var(--btn-neutral-bg); } /* light: brand black */
 

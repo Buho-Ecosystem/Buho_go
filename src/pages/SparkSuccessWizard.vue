@@ -66,6 +66,21 @@
           </q-carousel-slide>
         </template>
 
+        <!-- Arkade intro (single self-custodial wallet) -->
+        <template v-if="isArkadeMode">
+          <q-carousel-slide name="arkade-intro" class="wizard-slide">
+            <div class="slide-content">
+              <ArkadeLogo variant="full" :size="260" class="slide-illustration arkade-hero-logo" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Your Arkade wallet') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Send and receive Bitcoin in an instant, with fees so low you barely notice. Your keys, your coins.') }}
+              </p>
+            </div>
+          </q-carousel-slide>
+        </template>
+
         <!-- Extended screens (only if user opted in or general mode) -->
         <template v-if="showExtended">
           <!-- 4: Send & Receive -->
@@ -333,8 +348,11 @@
  *
  * Query params:
  *   ?mode=nwc-lnbits  — triggers the non-Spark flow
+ *   ?mode=arkade       — Arkade onboarding (single wallet, seed-based)
  *   ?full=true         — shows all screens immediately (used by Settings "Onboarding Guide")
  */
+
+import ArkadeLogo from '../components/ArkadeLogo.vue'
 
 // Spark-only intro screens (Business wallet, Personal wallet, Savings)
 const SPARK_INTRO = ['personal', 'business', 'savings']
@@ -350,19 +368,31 @@ const NWC_LNBITS_FEATURES = [
   'send-receive', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'lessons', 'map', 'ready'
 ]
 
+// Arkade: single self-custodial wallet — seed-based (keep the backup reminder),
+// but no Business/Personal pair, so no internal-transfer / auto-transfer slides.
+const ARKADE_FEATURES = [
+  'send-receive', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'lessons', 'map', 'ready'
+]
+
 export default {
   name: 'SparkSuccessWizard',
+  components: { ArkadeLogo },
   data() {
     const mode = this.$route.query.mode || 'spark'
-    const isSparkMode = mode !== 'nwc-lnbits'
+    const isArkadeMode = mode === 'arkade'
+    const isSparkMode = mode === 'spark'
     return {
-      currentSlide: isSparkMode ? 'personal' : 'send-receive',
+      currentSlide: isArkadeMode ? 'arkade-intro' : (isSparkMode ? 'personal' : 'send-receive'),
+      // Arkade & NWC/LNbits show the full feature tour straight away; Spark
+      // gates it behind "Tell me more" unless ?full=true.
       showExtended: !isSparkMode || this.$route.query.full === 'true',
-      isSparkMode
+      isSparkMode,
+      isArkadeMode
     }
   },
   computed: {
     activeSlides() {
+      if (this.isArkadeMode) return ['arkade-intro', ...ARKADE_FEATURES]
       if (!this.isSparkMode) return NWC_LNBITS_FEATURES
       return this.showExtended ? [...SPARK_INTRO, ...ALL_FEATURES] : SPARK_INTRO
     },

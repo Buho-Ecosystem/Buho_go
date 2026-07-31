@@ -47,11 +47,13 @@
           </div>
         </q-card-section>
 
-        <q-card-section class="q-pt-none">
-          <div class="nwc-logo-container">
-            <div class="nwc-logo-bg">
+        <q-card-section class="iform-body">
+          <div class="iform-eyebrow">{{ $t('Bring your own wallet') }}</div>
+
+          <div class="iform-head">
+            <div class="iform-tile">
               <!-- NWC Logo -->
-              <svg width="50" height="50" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg width="26" height="26" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_setup_grad)"/>
                 <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
                 <defs>
@@ -62,83 +64,73 @@
                 </defs>
               </svg>
             </div>
+            <div class="iform-titles">
+              <div class="iform-title">{{ $t('Connect NWC Wallet') }}</div>
+              <div class="iform-sub">{{ $t('Link your existing Lightning wallet via Nostr Wallet Connect') }}</div>
+            </div>
           </div>
 
-          <div class="welcome-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-            {{ $t('Connect NWC Wallet') }}
+          <div class="iform-secrow">
+            <span class="iform-seclabel">{{ $t('Connection') }}</span>
+            <button class="iform-scan" type="button" @click="openScanner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 7V6a2 2 0 0 1 2-2h2"/><path d="M4 17v1a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v1"/><path d="M16 20h2a2 2 0 0 0 2-2v-1"/><path d="M5 12h14"/>
+              </svg>
+              {{ $t('Scan') }}
+            </button>
           </div>
 
-          <div class="welcome-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Link your existing Lightning wallet via Nostr Wallet Connect') }}
+          <div class="iform-group">
+            <div class="iform-row">
+              <div class="iform-label">{{ $t('Wallet Name') }}</div>
+              <q-input
+                v-model="walletName"
+                :placeholder="$t('e.g. My Lightning Wallet')"
+                class="iform-input"
+                borderless
+                dense
+                hide-bottom-space
+              />
+            </div>
+            <div class="iform-row">
+              <div class="iform-label">{{ $t('NWC Connection String') }}</div>
+              <q-input
+                v-model="nwcString"
+                :placeholder="$t('nostr+walletconnect://...')"
+                class="iform-input"
+                borderless
+                dense
+                type="textarea"
+                autogrow
+                hide-bottom-space
+              />
+            </div>
           </div>
-
-          <!-- Wallet Name Input -->
-          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('Wallet Name') }}
-          </div>
-          <q-input
-            v-model="walletName"
-            :placeholder="$t('e.g. My Lightning Wallet')"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            input-class="q-px-md"
-            borderless
-            dense
-            class="q-mb-md"
-          />
-
-          <!-- NWC Connection String Input -->
-          <div class="input-label" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-            {{ $t('NWC Connection String') }}
-          </div>
-          <q-input
-            v-model="nwcString"
-            :placeholder="$t('nostr+walletconnect://...')"
-            :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-            input-class="q-px-md"
-            borderless
-            dense
-            type="textarea"
-            autogrow
-            class="q-mb-sm nwc-textarea"
-          />
 
           <!-- Error Message -->
-          <div v-if="errorMessage" class="error-message q-mb-md">
+          <div v-if="errorMessage" class="error-message q-mt-md">
             {{ errorMessage }}
           </div>
 
-          <div class="button-row">
-            <q-btn
-              class="connect-btn-inline"
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-              :loading="isConnecting"
-              @click="validateAndConnect"
-              :disable="!walletName || !nwcString"
-              no-caps
-              unelevated
-            >
-              <span v-if="!isConnecting">{{ $t('Connect') }}</span>
-              <template v-slot:loading>
-                <q-spinner-dots class="q-mr-sm"/>
-                {{ $t('Connecting...') }}
-              </template>
-            </q-btn>
-
-            <q-btn
-              unelevated
-              class="scan-qr-btn-inline"
-              :class="$q.dark.isActive ? 'btn_dark' : 'btn_light'"
-              @click="openScanner"
-              no-caps
-            >
-              <Icon icon="tabler:qrcode-scan" width="16" height="16" class="q-mr-sm" />
-              {{ $t('Scan') }}
-            </q-btn>
-          </div>
-
-          <div class="help-text q-mt-md" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
+          <div class="iform-hint">
             {{ $t('Get your NWC string from your Lightning wallet\'s settings') }}
           </div>
+
+          <q-btn
+            class="iform-connect full-width"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :loading="isConnecting"
+            @click="validateAndConnect"
+            :disable="!walletName || !nwcString"
+            no-caps
+            unelevated
+          >
+            <span v-if="!isConnecting">{{ $t('Connect') }}</span>
+            <template v-slot:loading>
+              <q-spinner-dots class="q-mr-sm"/>
+              {{ $t('Connecting...') }}
+            </template>
+          </q-btn>
         </q-card-section>
 
       </q-card>
@@ -529,76 +521,9 @@ export default {
   50% { background-position: 100% 50%; }
 }
 
-/* NWC Logo */
-.nwc-logo-container {
-  display: flex;
-  justify-content: center;
-  margin: 2rem 0 1.5rem;
-}
-
-.nwc-logo-bg {
-  width: 100px;
-  height: 100px;
-  background: linear-gradient(135deg, #1a1a2e, #2d2d44);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(247, 147, 26, 0.3);
-  position: relative;
-  overflow: hidden;
-}
-
-.nwc-logo-bg::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(247, 147, 26, 0.1), transparent);
-  border-radius: 50%;
-}
-
-.nwc-logo-bg svg {
-  z-index: 1;
-}
-
-/* Typography */
-.welcome-title {
-  text-align: center;
-  margin-bottom: 0.75rem;
-  font-size: 22px;
-  font-weight: 700;
-  font-family: 'Manrope', sans-serif;
-}
-
-.welcome-subtitle {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  font-size: 14px;
-  font-family: 'Manrope', sans-serif;
-}
-
+/* Scanner subtitle keeps its muted colour in dark mode */
 .view_title_dark {
   color: #B0B0B0;
-}
-
-/* Input Labels */
-.input-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
-  padding-left: 0.25rem;
-}
-
-/* NWC Textarea */
-.nwc-textarea :deep(textarea) {
-  min-height: 60px;
-  max-height: 120px;
-  font-size: 13px;
-  line-height: 1.4;
 }
 
 /* Error Message */
@@ -610,39 +535,6 @@ export default {
   padding: 0.5rem;
   background: rgba(255, 75, 75, 0.1);
   border-radius: 8px;
-}
-
-/* Button Styling */
-.button-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.connect-btn-inline {
-  flex: 2;
-  height: 52px;
-  border-radius: 24px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-}
-
-.scan-qr-btn-inline {
-  flex: 1;
-  height: 52px;
-  border-radius: 20px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  min-width: 0;
-}
-
-/* Help Text */
-.help-text {
-  text-align: center;
-  font-size: 12px;
-  font-family: 'Manrope', sans-serif;
 }
 
 /* Scanner Styles */
@@ -770,35 +662,6 @@ export default {
 
   .container {
     max-width: 100%;
-  }
-
-  .nwc-logo-bg {
-    width: 80px;
-    height: 80px;
-  }
-
-  .nwc-logo-bg svg {
-    width: 42px;
-    height: 42px;
-  }
-
-  .welcome-title {
-    font-size: 20px;
-  }
-
-  .welcome-subtitle {
-    font-size: 13px;
-    margin-bottom: 1.25rem;
-  }
-
-  .button-row {
-    gap: 0.5rem;
-  }
-
-  .connect-btn-inline,
-  .scan-qr-btn-inline {
-    height: 48px;
-    font-size: 13px;
   }
 
   .qr-scanner-container {

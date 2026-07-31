@@ -1,41 +1,37 @@
 <template>
-  <q-page :class="$q.dark.isActive ? 'address-book-page-dark' : 'address-book-page-light'">
-    <!-- Header -->
-    <div class="page-header" :class="$q.dark.isActive ? 'page_header_dark' : 'page_header_light'">
+  <q-page class="address-book-page">
+    <!-- Header — same grid-centered, inset-owning visual language as
+         SettingsHubHeader (Identity/Spend/Settings), adapted for a
+         drill-down page: a back chevron instead of the hub's Home icon,
+         since Address Book is reached via push from several places, not
+         a hub tab on the bottom nav. -->
+    <div class="page-header">
       <q-btn
         flat
         round
         dense
+        class="header-side-btn back-btn"
+        :aria-label="$t('Back')"
         @click="$router.back()"
-        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
       >
-        <Icon icon="tabler:chevron-left" width="18" height="18" />
+        <Icon icon="tabler:chevron-left" width="20" height="20" />
       </q-btn>
-      <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
+
+      <div class="header-title">
         {{ $t('Address Book') }}
       </div>
+
       <div class="header-actions">
-        <q-btn
-          flat
-          round
-          dense
-          class="ab-icon-btn"
-          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-          :aria-label="$t('Add Contact')"
-          @click="showAddModal"
-        >
-          <Icon icon="tabler:plus" width="20" height="20" />
-        </q-btn>
         <!-- Power-user overflow. The only thing here is "restore from
              Nostr" — every other sync action is automatic (publish on
-             change, recover on identity restore). Keeping it in a
-             kebab keeps the normal UI uncluttered. -->
+             change, recover on identity restore). Rarely tapped, so it
+             sits in the quiet slot next to the title rather than
+             competing with Add Contact for attention. -->
         <q-btn
           flat
           round
           dense
-          class="ab-icon-btn"
-          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          class="header-side-btn overflow-btn"
           :aria-label="$t('More options')"
         >
           <Icon icon="tabler:dots-vertical" width="18" height="18" />
@@ -67,6 +63,21 @@
             </q-list>
           </q-menu>
         </q-btn>
+
+        <!-- Add Contact — the primary action on this page, so it gets
+             its own visual presence (tinted brand-green circle) instead
+             of matching the neutral overflow button. Placed last/right
+             so it lands in the more reachable, more prominent slot. -->
+        <q-btn
+          flat
+          round
+          dense
+          class="add-contact-btn"
+          :aria-label="$t('Add Contact')"
+          @click="showAddModal"
+        >
+          <Icon icon="tabler:plus" width="20" height="20" />
+        </q-btn>
       </div>
     </div>
 
@@ -75,7 +86,7 @@
       <AddressBookList
         @add-contact="showAddModal"
         @edit-contact="showEditModal"
-        @pay-contact="showPaymentModal"
+        @pay-contact="payContact"
       />
     </div>
 
@@ -85,14 +96,6 @@
       :entry="selectedEntry"
       @saved="handleEntrySaved"
       @open-existing="handleOpenExisting"
-    />
-
-    <!-- Payment Modal -->
-    <PaymentModal
-      v-model="showPayment"
-      :contact="selectedContact"
-      @payment-sent="handlePaymentSent"
-      @bitcoin-payment-requested="handleBitcoinPaymentRequested"
     />
 
     <!-- Batch Send Modal -->
@@ -122,7 +125,6 @@ const AUTO_SYNC_DEBOUNCE_MS = 1500
 
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
-import PaymentModal from '../components/PaymentModal.vue'
 import BatchSendModal from '../components/BatchSendModal.vue'
 
 export default {
@@ -130,15 +132,12 @@ export default {
   components: {
     AddressBookList,
     AddressBookModal,
-    PaymentModal,
     BatchSendModal
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
-      showPayment: false,
-      selectedContact: null,
       showBatchSend: false,
       _autoSyncTimer: null,
     }
@@ -289,7 +288,7 @@ export default {
       this.showModal = true
     },
 
-    showPaymentModal(contact) {
+    payContact(contact) {
       // Kick off a silent profile re-sync before we even decide the
       // routing — fire-and-forget so it never blocks the tap. The
       // refresh updates the avatar / lud16 in place; if it errors,
@@ -314,15 +313,11 @@ export default {
         return
       }
 
-      // Bitcoin contacts need the L1 withdrawal flow - navigate directly to Wallet
-      if (contact.addressType === 'bitcoin') {
-        this.navigateToBitcoinWithdrawal(contact)
-        return
-      }
-
-      // Lightning and Spark contacts use PaymentModal
-      this.selectedContact = contact
-      this.showPayment = true
+      // Hand the contact to the wallet page — its dispatcher is the one
+      // send pipeline (LNURL metadata, Branta, branding, fee estimates,
+      // capability gate), so a contact paid from here behaves exactly
+      // like one paid from the Send sheet.
+      this.navigateToWalletPayment(contact)
     },
 
     /**
@@ -346,13 +341,14 @@ export default {
       })
     },
 
-    navigateToBitcoinWithdrawal(contact) {
+    navigateToWalletPayment(contact) {
       const address = contact.address || contact.lightningAddress
       this.$router.push({
         path: '/wallet',
         query: {
-          action: 'bitcoin_withdrawal',
+          action: 'pay_contact',
           address: address,
+          addressType: contact.addressType || 'lightning',
           contactName: contact.name
         }
       })
@@ -371,25 +367,7 @@ export default {
      */
     handleOpenExisting(entry) {
       if (!entry) return
-      this.showPaymentModal(entry)
-    },
-
-    handlePaymentSent() {
-      this.selectedContact = null
-      this.$q.notify({
-        type: 'positive',
-        message: this.$t('Sent'),
-
-      })
-    },
-
-    handleBitcoinPaymentRequested(paymentData) {
-      // Fallback handler if PaymentModal is opened with a Bitcoin contact
-      this.selectedContact = null
-      this.navigateToBitcoinWithdrawal({
-        name: paymentData.contact?.name,
-        address: paymentData.address
-      })
+      this.payContact(entry)
     },
 
     handleBatchCompleted(results) {
@@ -409,107 +387,124 @@ export default {
 </script>
 
 <style scoped>
-/* Base Page Styles */
-.address-book-page-dark {
+/* Base Page Styles — fixed-height flex column: the screen is laid out
+   once and never overflows the safe viewport. Header is a fixed-size
+   flex row; the content below is the single flex child that scrolls
+   internally (see .page-content). This is the same pattern
+   TransactionHistory.vue uses, and it's what makes the header's own
+   safe-area padding (below) actually correct: a `min-height: 100vh`
+   + `position: sticky` page (the old shape) lets the header grow
+   without the surrounding layout ever re-measuring against that
+   growth, which is exactly how a hardcoded `calc(100vh - Npx)`
+   content height drifts wrong on notched Android devices. Flexbox
+   fills "whatever's left" automatically, so there's no magic number
+   to keep in sync with the header's real height. */
+.address-book-page {
   background: var(--bg-secondary);
-  min-height: 100vh;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-}
-
-.address-book-page-light {
-  background: #F6F6F6;
-  min-height: 100vh;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-}
-
-/* Header Styles */
-.page_header_dark {
+  height: 100vh;
   display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Manrope', sans-serif;
+  max-width: 100vw;
+  /* The header owns the top safe-area inset (see .page-header), so the
+     global .q-page top padding is cancelled here; the bottom inset
+     clears the gesture nav bar below the scrollable content. */
+  padding-top: 0;
+  padding-bottom: var(--safe-bottom, 0px);
+}
+
+/* Header — same grid-centered, inset-owning shell as SettingsHubHeader
+   (Identity/Spend/Settings): grid instead of flex so the title stays
+   truly centered regardless of how wide either side's controls end up.
+   No `position: sticky` needed — the page itself doesn't scroll (see
+   .address-book-page above), so the header is just the first fixed-size
+   row in that column and stays put without it. */
+.page-header {
+  flex: 0 0 auto;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
+  padding: calc(0.875rem + var(--safe-top, 0px)) 1rem 0.875rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
-  z-index: 100;
 }
 
-.page_header_light {
+.header-title {
+  grid-column: 2;
+  justify-self: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.back-btn {
+  grid-column: 1;
+  justify-self: start;
+}
+
+/* Right-side header cluster: overflow (rarely used, quiet neutral
+   style) then Add Contact (primary action, its own tinted presence)
+   — swapped from the old + / kebab order so the more useful action
+   lands in the more reachable, more visually prominent slot. */
+.header-actions {
+  grid-column: 3;
+  justify-self: end;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-card);
-  position: sticky;
-  top: var(--safe-top, 0px);
-  z-index: 100;
+  gap: 4px;
 }
 
-.back_btn_dark,
-.back_btn_light {
+.header-side-btn {
   width: 40px;
   height: 40px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.15s ease;
-}
-
-.back_btn_dark {
-  color: #F6F6F6;
-}
-
-.back_btn_light {
   color: var(--text-secondary);
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.back_btn_dark:hover {
-  background: var(--border-card);
-}
-
-.back_btn_light:hover {
+.header-side-btn:hover {
   background: var(--bg-input);
+  color: var(--text-primary);
 }
 
-.main_page_title_dark {
-  color: #F6F6F6;
-  font-size: 1.25rem;
-  font-weight: 600;
-  flex: 1;
-  text-align: center;
-  font-family: 'Manrope', sans-serif;
-}
-
-.main_page_title_light {
-  color: #212121;
-  font-size: 1.25rem;
-  font-weight: 600;
-  flex: 1;
-  text-align: center;
-  font-family: 'Manrope', sans-serif;
-}
-
-/* Right-side header cluster: add + overflow, both icon buttons. */
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.ab-icon-btn {
+.overflow-btn {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+}
+
+/* Add Contact — soft brand-green tint gives the primary action its
+   own visual weight instead of matching the neutral overflow button
+   (same "quiet tint" language as the rest of the app: wallet-hint,
+   seed-callout, quick-chip.active). */
+.add-contact-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--brand-accent-soft, rgba(21, 222, 114, 0.14));
+  color: var(--brand-accent, #15DE72);
+  transition: background-color 0.15s ease, transform 0.08s ease;
+}
+
+.add-contact-btn:hover {
+  background: rgba(21, 222, 114, 0.22);
+}
+
+.add-contact-btn:active {
+  transform: scale(0.94);
 }
 
 .ab-spin {
@@ -520,25 +515,22 @@ export default {
   to { transform: rotate(360deg); }
 }
 
-/* Content */
+/* Content — the single flex child that fills whatever space the header
+   didn't use, and scrolls internally (AddressBookList owns its own
+   internal q-scroll-area sizing via the same flex-fill chain). */
 .page-content {
-  height: calc(100vh - 80px);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .page_header_dark,
-  .page_header_light {
-    padding: 0.75rem 1rem;
+  .page-header {
+    padding: calc(0.75rem + var(--safe-top, 0px)) 1rem 0.75rem;
   }
 
-  .main_page_title_dark,
-  .main_page_title_light {
-    font-size: 1.125rem;
-  }
-
-  .page-content {
-    height: calc(100vh - 70px);
+  .header-title {
+    font-size: 14px;
   }
 }
 </style>

@@ -50,31 +50,20 @@
       <div class="transaction-hero">
         <div class="hero-card">
           <div class="hero-content">
-            <!-- Header: icon + type/status -->
-            <div class="hero-header">
-              <q-skeleton type="circle" size="40px" animation="wave" />
-              <div class="hero-info">
-                <q-skeleton type="text" width="120px" height="17px" animation="wave" style="margin-bottom: 4px;" />
-                <q-skeleton type="text" width="80px" height="14px" animation="wave" />
-              </div>
-            </div>
-            <!-- Amounts -->
-            <div class="hero-amounts">
-              <q-skeleton type="text" width="180px" height="28px" animation="wave" style="margin: 0 auto 4px;" />
-              <q-skeleton type="text" width="100px" height="14px" animation="wave" style="margin: 0 auto;" />
-            </div>
+            <q-skeleton type="circle" size="56px" animation="wave" style="margin-bottom: 10px;" />
+            <q-skeleton type="text" width="140px" height="30px" animation="wave" />
+            <q-skeleton type="text" width="90px" height="15px" animation="wave" style="margin-top: 6px;" />
+            <q-skeleton type="text" width="70px" height="22px" animation="wave" style="margin-top: 10px; border-radius: 999px;" />
           </div>
         </div>
       </div>
 
       <!-- Detail Fields skeleton -->
-      <div style="padding: 0 1rem;">
-        <div class="detail-fields-grid">
-          <div v-for="n in 3" :key="'detail-skel-'+n" class="detail-field-group">
-            <q-skeleton type="text" width="30%" height="12px" animation="wave" style="margin-bottom: 6px;" />
-            <div class="detail-field-container">
-              <q-skeleton type="text" width="75%" height="14px" animation="wave" />
-            </div>
+      <div class="details-section">
+        <div class="tx-table">
+          <div v-for="n in 3" :key="'detail-skel-'+n" class="tx-row">
+            <q-skeleton type="text" width="30%" height="12px" animation="wave" />
+            <q-skeleton type="text" width="40%" height="14px" animation="wave" />
           </div>
         </div>
       </div>
@@ -85,33 +74,61 @@
       <!-- Transaction Hero Card -->
       <div class="transaction-hero">
         <div class="hero-card">
-          <!-- Hero Content: single row -->
+          <!-- Hero Content: centered column - direction icon, signed amount,
+               fiat value, status pill. The counterparty row in the table
+               below carries the "who", so the type label isn't repeated here. -->
           <div class="hero-content">
-            <!-- Left: Icon + Type + Status -->
-            <div class="hero-left">
-              <div class="direction-circle" :class="getDirectionCircleClass()">
-                <Icon :icon="getTransactionIcon()" width="20" height="20"/>
-              </div>
-              <div class="hero-info">
-                <div class="hero-type">
-                  {{ getTransactionTypeLabel() }}
-                </div>
-                <div class="hero-status" :class="getStatusClass()">
-                  <Icon :icon="getStatusIcon()" width="12" height="12"/>
-                  {{ getTransactionStatus() }}
-                </div>
-              </div>
+            <!-- A Learn & Earn reward carries the BuhoGO mark, but only when
+                 the user hasn't assigned a counterparty of their own. Plain
+                 <img>: ContactAvatar's picture prop only accepts https/data
+                 URLs, not a root-relative asset path. -->
+            <span class="hero-avatar-wrap">
+              <span v-if="isEarnReward && !heroAvatar" class="hero-avatar hero-avatar-earn">
+                <img :src="earnBrandLogo" class="hero-earn-logo" alt="" aria-hidden="true" />
+              </span>
+              <ContactAvatar
+                v-else-if="heroAvatar"
+                class="hero-avatar"
+                :entry="heroAvatar.entry"
+                :picture="heroAvatar.picture"
+                :name="heroAvatar.name"
+                :initial-length="2"
+              />
+              <!-- No known identity: the app-wide silhouette — the same
+                   avatar-first anatomy as the transaction list, with the
+                   movement-type badge carrying direction. -->
+              <ContactAvatar
+                v-else
+                class="hero-avatar"
+                :entry="{ address: getCounterpartyAddress() }"
+              />
+              <span
+                v-if="heroBadge"
+                class="hero-type-badge"
+                :class="heroBadge.cls"
+              >
+                <Icon :icon="heroBadge.icon" width="12" height="12" />
+              </span>
+            </span>
+
+            <div class="hero-amount" :class="getAmountClass()">
+              {{ getFormattedAmount() }}
             </div>
 
-            <!-- Right: Amount + Fiat -->
-            <div class="hero-amounts">
-              <div class="hero-amount" :class="getAmountClass()">
-                {{ getFormattedAmount() }}
-              </div>
-              <div class="hero-fiat">
-                <q-skeleton v-if="loadingFiatRates" type="text" width="60px" height="14px" />
-                <template v-else>{{ getFiatAmount() }}</template>
-              </div>
+            <!-- The fiat line prefers the value at settlement time (the rate
+                 this payment actually happened at); today's rate is only
+                 the fallback estimate. -->
+            <div class="hero-fiat">
+              <q-skeleton v-if="loadingFiatRates && !transaction.fiatAtSettlement" type="text" width="60px" height="14px" style="margin: 0 auto;" />
+              <template v-else-if="transaction.fiatAtSettlement">
+                {{ formatFiatValue(transaction.fiatAtSettlement.amount, transaction.fiatAtSettlement.currency) }} {{ $t('at settlement') }}
+              </template>
+              <template v-else>{{ getFiatAmount() }}</template>
+            </div>
+
+            <div class="hero-status-chip" :class="getStatusClass()">
+              <Icon :icon="getStatusIcon()" width="12" height="12"/>
+              {{ getTransactionStatus() }}
             </div>
           </div>
         </div>
@@ -119,33 +136,71 @@
 
       <!-- Transaction Info -->
       <div class="details-section">
-        <div class="section-label">
-          {{ $t('TRANSACTION DETAILS') }}
-        </div>
-        <div class="detail-fields-grid">
-          <div class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Date & Time') }}</div>
-            <div class="detail-field-container">{{ formatDateTime(transaction.settled_at) }}</div>
+        <div class="tx-table">
+          <div v-if="getCounterpartyAddress()" class="tx-row">
+            <div class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</div>
+            <div class="tx-row-value">{{ getCounterpartyAddress() }}</div>
           </div>
 
-          <div v-if="isBitcoinTransaction()" class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Network') }}</div>
-            <div class="detail-field-container">{{ $t('Bitcoin L1 (on-chain)') }}</div>
+          <!-- Branta merchant verification, carried over from the confirm
+               sheet's badge — same trust signal, now on the receipt. -->
+          <div
+            v-if="merchantVerification"
+            class="tx-row"
+            :class="{ 'tx-row-clickable': merchantVerification.verifyUrl }"
+            @click="openMerchantVerifyUrl"
+          >
+            <div class="tx-row-label">{{ $t('Verified by Branta') }}</div>
+            <div class="tx-row-value tx-row-value-verified">
+              <Icon icon="tabler:rosette-discount-check-filled" width="14" height="14" class="verified-row-icon" />
+              <span>{{ merchantVerification.name || $t('Verified merchant') }}</span>
+            </div>
           </div>
 
-          <div v-if="getTransactionDescription()" class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Description') }}</div>
-            <div class="detail-field-container">{{ getTransactionDescription() }}</div>
+          <!-- How this payment was made, when an auxiliary path stamped a
+               source (internal transfer, batch send, kiosk sale). -->
+          <div v-if="txTypeRowText" class="tx-row">
+            <div class="tx-row-label">{{ $t('Type') }}</div>
+            <div class="tx-row-value">{{ txTypeRowText }}</div>
           </div>
 
-          <div v-if="transaction.memo && transaction.memo !== getTransactionDescription()" class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Memo') }}</div>
-            <div class="detail-field-container">{{ transaction.memo }}</div>
+          <!-- Created + Settled as separate timestamps when the provider
+               reports both; a single combined row otherwise. -->
+          <template v-if="transaction.created_at && transaction.settled_at && transaction.created_at !== transaction.settled_at">
+            <div class="tx-row">
+              <div class="tx-row-label">{{ $t('Created') }}</div>
+              <div class="tx-row-value">{{ formatPreciseDateTime(transaction.created_at) }}</div>
+            </div>
+            <div class="tx-row">
+              <div class="tx-row-label">{{ $t('Settled') }}</div>
+              <div class="tx-row-value">{{ formatPreciseDateTime(transaction.settled_at) }}</div>
+            </div>
+          </template>
+          <div v-else class="tx-row">
+            <div class="tx-row-label">{{ $t('Date & Time') }}</div>
+            <div class="tx-row-value">{{ formatDateTime(transaction.settled_at) }}</div>
           </div>
 
-          <div v-if="getExtraComment()" class="detail-field-group">
-            <div class="detail-field-label">{{ $t('Comment') }}</div>
-            <div class="detail-field-container">{{ getExtraComment() }}</div>
+          <div v-if="isBitcoinTransaction()" class="tx-row">
+            <div class="tx-row-label">{{ $t('Network') }}</div>
+            <div class="tx-row-value">{{ $t('Bitcoin L1 (on-chain)') }}</div>
+          </div>
+
+          <!-- A reward's description is the untranslated brand memo, which
+               the Type row above already states in the user's language. -->
+          <div v-if="getTransactionDescription() && !isEarnReward" class="tx-row">
+            <div class="tx-row-label">{{ $t('Description') }}</div>
+            <div class="tx-row-value">{{ getTransactionDescription() }}</div>
+          </div>
+
+          <div v-if="transaction.memo && transaction.memo !== getTransactionDescription()" class="tx-row">
+            <div class="tx-row-label">{{ $t('Memo') }}</div>
+            <div class="tx-row-value">{{ transaction.memo }}</div>
+          </div>
+
+          <div v-if="getExtraComment()" class="tx-row">
+            <div class="tx-row-label">{{ $t('Comment') }}</div>
+            <div class="tx-row-value">&#8220;{{ getExtraComment() }}&#8221;</div>
           </div>
 
           <!--
@@ -162,21 +217,64 @@
             for now (informational only) — separate change.
           -->
           <template v-if="showFeeBreakdown">
-            <div class="detail-field-group">
-              <div class="detail-field-label">{{ $t('Network Fee') }}</div>
-              <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
+            <div class="tx-row">
+              <div class="tx-row-label">{{ $t('Network Fee') }}</div>
+              <div class="tx-row-value">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
             </div>
-            <div class="detail-field-group">
-              <div class="detail-field-label">{{ $t('Total deducted') }}</div>
-              <div class="detail-field-container">{{ formatAmount(totalDeductedSats, walletStore.useBip177Format) }}</div>
+            <div class="tx-row">
+              <div class="tx-row-label">{{ $t('Total deducted') }}</div>
+              <div class="tx-row-value">{{ formatAmount(totalDeductedSats, walletStore.useBip177Format) }}</div>
             </div>
           </template>
           <div
             v-else-if="transaction.fee && transaction.fee > 0"
-            class="detail-field-group"
+            class="tx-row"
           >
-            <div class="detail-field-label">{{ $t('Fee') }}</div>
-            <div class="detail-field-container">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
+            <div class="tx-row-label">{{ $t('Fee') }}</div>
+            <div class="tx-row-value">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
+          </div>
+
+          <div v-if="getSettlementRateDisplay()" class="tx-row">
+            <div class="tx-row-label">{{ $t('BTC price at settlement') }}</div>
+            <div class="tx-row-value">{{ getSettlementRateDisplay() }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sale breakdown (kiosk point-of-sale), only when the kiosk
+           stamped one on this transaction. -->
+      <div v-if="saleBreakdown" class="details-section">
+        <div class="section-label">
+          {{ $t('Sale') }}
+        </div>
+        <div class="tx-table">
+          <div class="tx-row">
+            <div class="tx-row-label">{{ $t('Subtotal') }}</div>
+            <div class="tx-row-value">{{ formatAmount(saleBreakdown.baseSats, walletStore.useBip177Format) }}</div>
+          </div>
+
+          <div v-if="saleBreakdown.tipSats > 0" class="tx-row">
+            <div class="tx-row-label">
+              {{ saleBreakdown.roundUp && saleBreakdown.tipPercent == null ? $t('Round up') : $t('Tip') }}
+            </div>
+            <div class="tx-row-value">
+              {{ formatAmount(saleBreakdown.tipSats, walletStore.useBip177Format) }}<template v-if="saleBreakdown.tipPercent != null"> ({{ saleBreakdown.tipPercent }}%)</template>
+            </div>
+          </div>
+
+          <div v-if="saleBreakdown.discountSats > 0" class="tx-row">
+            <div class="tx-row-label">{{ $t('Discount') }}</div>
+            <div class="tx-row-value">-{{ formatAmount(saleBreakdown.discountSats, walletStore.useBip177Format) }}</div>
+          </div>
+
+          <div v-if="saleBreakdown.itemCount > 1" class="tx-row">
+            <div class="tx-row-label">{{ $t('Items') }}</div>
+            <div class="tx-row-value">{{ saleBreakdown.itemCount }}</div>
+          </div>
+
+          <div class="tx-row tx-row-total">
+            <div class="tx-row-label">{{ $t('Total') }}</div>
+            <div class="tx-row-value">{{ formatAmount(saleBreakdown.totalSats, walletStore.useBip177Format) }}</div>
           </div>
         </div>
       </div>
@@ -203,36 +301,118 @@
         </div>
       </div>
 
-      <!-- Nostr Profile Section -->
-      <div
-        v-if="transaction.senderNpub && nostrProfile"
-        class="profile-section"
-        @click="viewNostrProfile"
-      >
-        <div class="profile-card">
-          <div class="profile-avatar">
-            <q-avatar size="48px">
-              <img
-                v-if="nostrProfile.picture"
-                :src="nostrProfile.picture"
-                :alt="nostrProfile.displayName || nostrProfile.name"
-              />
-              <Icon v-else icon="tabler:user" width="24" height="24" />
-            </q-avatar>
-          </div>
-          <div class="profile-info">
-            <div class="profile-name">
-              {{ nostrProfile.displayName || nostrProfile.name }}
+      <!-- LUD-09 message from the recipient, persisted from the send. -->
+      <div v-if="currentSuccessAction" class="details-section">
+        <div class="section-label">
+          {{ $t('Message from recipient') }}
+        </div>
+        <div class="settings-card detail-card">
+          <div class="success-action-detail">
+            <!-- message: plain text -->
+            <div v-if="currentSuccessAction.tag === 'message'" class="sa-detail-text">
+              {{ currentSuccessAction.message }}
             </div>
+
+            <!-- url: one elegant tap to open (new tab on web, in-app view on
+                 native). Domain-validated upstream to the callback host. -->
+            <button
+              v-else-if="currentSuccessAction.tag === 'url'"
+              type="button"
+              class="sa-detail-open"
+              @click="openSuccessActionUrl(currentSuccessAction.url)"
+            >
+              <span class="sa-detail-open-label">{{ currentSuccessAction.description || $t('Open link') }}</span>
+              <Icon icon="tabler:external-link" width="16" height="16" class="sa-detail-open-icon" />
+            </button>
+
+            <!-- aes: decrypted secret (tap to copy) -->
+            <template v-else-if="currentSuccessAction.tag === 'aes'">
+              <div v-if="currentSuccessAction.description" class="sa-detail-text">
+                {{ currentSuccessAction.description }}
+              </div>
+              <div v-if="currentSuccessAction.decryptError" class="sa-detail-error">
+                {{ $t('Could not decrypt the message') }}
+              </div>
+              <div
+                v-else
+                class="sa-detail-row"
+                @click="copySuccessSecret(currentSuccessAction.secret)"
+              >
+                <span class="sa-detail-secret">{{ currentSuccessAction.secret }}</span>
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- LUD-21 delivery confirmation (fiat landed on the recipient's mobile
+           money), shown once confirmed. -->
+      <div v-if="deliveryStatus && deliveryStatus.delivered" class="details-section">
+        <div class="section-label">
+          {{ $t('Delivery') }}
+        </div>
+        <div class="settings-card detail-card">
+          <div class="success-action-detail">
+            <div class="delivery-detail">
+              <Icon icon="tabler:circle-check-filled" width="18" height="18" class="delivery-detail-ok" />
+              <div class="delivery-detail-text">
+                <div class="delivery-detail-title">{{ $t('Delivered') }}</div>
+                <div v-if="deliveryStatus.recipient || deliveryStatus.receipt" class="delivery-detail-sub">
+                  <span v-if="deliveryStatus.recipient">{{ deliveryStatus.recipient }}</span>
+                  <span v-if="deliveryStatus.recipient && deliveryStatus.receipt"> · </span>
+                  <span v-if="deliveryStatus.receipt">{{ $t('Receipt') }} {{ deliveryStatus.receipt }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Zapper Section — who zapped, what they said, and the harvest
+           action: a zap is a contact introducing themselves with money.
+           Identity is real or absent (profile from relays, silhouette
+           until then) — never fabricated.
+
+           Verified zaps only. Without a valid signature on the zap
+           request the sender is an unproven claim, so there is nobody to
+           name, quote or save; the row keeps its nostr badge and this
+           section simply does not exist. See utils/zaps. -->
+      <div v-if="zapInfo?.verified" class="profile-section">
+        <div class="profile-card">
+          <div class="profile-avatar" @click="viewNostrProfile">
+            <ContactAvatar
+              class="zapper-avatar"
+              :picture="nostrProfile?.picture || ''"
+              :entry="{}"
+            />
+          </div>
+          <div class="profile-info" @click="viewNostrProfile">
+            <div class="profile-name">{{ zapperName }}</div>
             <div class="profile-meta">
               <Icon icon="tabler:bolt" class="zap-icon q-mr-xs" />
               {{ $t('Zap Transaction') }}
             </div>
-            <div class="profile-about" v-if="nostrProfile.about">
+            <div class="profile-about" v-if="zapInfo?.note">
+              “{{ zapInfo.note }}”
+            </div>
+            <div class="profile-about" v-else-if="nostrProfile?.about">
               {{ nostrProfile.about }}
             </div>
           </div>
-          <Icon icon="tabler:external-link" class="external-icon" />
+          <q-btn
+            v-if="!zapperSaved"
+            flat
+            dense
+            no-caps
+            class="zapper-save-btn"
+            :loading="savingZapper"
+            @click.stop="saveZapperAsContact"
+          >
+            <Icon icon="tabler:user-plus" width="15" height="15" class="q-mr-xs" />
+            {{ $t('Save') }}
+          </q-btn>
+          <Icon v-else icon="tabler:user-check" class="external-icon" />
         </div>
       </div>
 
@@ -312,94 +492,77 @@
       <!-- Developer Details -->
       <q-slide-transition>
         <div v-show="showDeveloperMode" class="developer-section">
-          <div class="developer-card">
-            <div class="section-title">
-              <Icon icon="tabler:code" class="q-mr-sm" />
-              {{ $t('Developer Details') }}
-            </div>
+          <div class="section-label">
+            {{ $t('Technical details') }}
+          </div>
 
-            <div class="developer-grid">
-              <div class="dev-item" v-if="transaction.id">
-                <div class="detail-field-label">
-                  {{ $t('Transaction ID') }}
-                </div>
-                <div class="dev-value hash-value ellipsis"
-                     @click="copyToClipboard(transaction.id)">
-                  {{ transaction.id }}
-                  <Icon icon="tabler:copy" class="copy-icon" />
-                </div>
-              </div>
-
-              <div class="dev-item" v-if="transaction.payment_hash">
-                <div class="detail-field-label">
-                  {{ $t('Payment Hash') }}
-                </div>
-                <div class="dev-value hash-value ellipsis"
-                     @click="copyToClipboard(transaction.payment_hash)">
-                  {{ transaction.payment_hash }}
-                  <Icon icon="tabler:copy" class="copy-icon" />
-                </div>
-              </div>
-
-              <div class="dev-item" v-if="transaction.preimage">
-                <div class="detail-field-label">
-                  {{ $t('Preimage') }}
-                </div>
-                <div class="dev-value hash-value ellipsis"
-                     @click="copyToClipboard(transaction.preimage)">
-                  {{ transaction.preimage }}
-                  <Icon icon="tabler:copy" class="copy-icon" />
-                </div>
-              </div>
-
-              <div class="dev-item" v-if="transaction.fee">
-                <div class="detail-field-label">
-                  {{ $t('Fee') }}
-                </div>
-                <div class="dev-value">
-                  {{ formatAmount(transaction.fee, walletStore.useBip177Format) }}
-                </div>
+          <div class="tx-table">
+            <div
+              v-if="transaction.id"
+              class="tx-row tx-row-clickable"
+              @click="copyToClipboard(transaction.id)"
+            >
+              <div class="tx-row-label">{{ $t('Transaction ID') }}</div>
+              <div class="tx-row-value tx-row-value-copy">
+                <span>{{ truncateMiddle(transaction.id) }}</span>
+                <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
               </div>
             </div>
 
-            <!-- Raw Invoice -->
-            <div class="raw-section" v-if="transaction.payment_request">
-              <div class="detail-field-label">
-                {{ $t('Raw Invoice') }}
-              </div>
-              <div class="raw-content">
-                <pre class="raw-text">{{
-                    transaction.payment_request
-                  }}</pre>
-                <q-btn
-                  flat
-                  dense
-                  @click="copyToClipboard(transaction.payment_request)"
-                  class="copy-btn"
-                >
-                  <Icon icon="tabler:copy" width="16" height="16" />
-                </q-btn>
+            <div
+              v-if="transaction.paymentHash || transaction.payment_hash"
+              class="tx-row tx-row-clickable"
+              @click="copyToClipboard(transaction.paymentHash || transaction.payment_hash)"
+            >
+              <div class="tx-row-label">{{ $t('Payment Hash') }}</div>
+              <div class="tx-row-value tx-row-value-copy">
+                <span>{{ truncateMiddle(transaction.paymentHash || transaction.payment_hash) }}</span>
+                <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
               </div>
             </div>
 
-            <!-- Raw JSON -->
-            <div class="raw-section">
-              <div class="detail-field-label">
-                {{ $t('Raw JSON') }}
+            <div
+              v-if="transaction.preimage"
+              class="tx-row tx-row-clickable"
+              @click="copyToClipboard(transaction.preimage)"
+            >
+              <div class="tx-row-label">{{ $t('Preimage') }}</div>
+              <div class="tx-row-value tx-row-value-copy">
+                <span>{{ truncateMiddle(transaction.preimage) }}</span>
+                <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
               </div>
-              <div class="raw-content">
-                <pre class="raw-text">{{
-                    JSON.stringify(transaction, null, 2)
-                  }}</pre>
-                <q-btn
-                  flat
-                  dense
-                  @click="copyToClipboard(JSON.stringify(transaction, null, 2))"
-                  class="copy-btn"
-                >
-                  <Icon icon="tabler:copy" width="16" height="16" />
-                </q-btn>
+            </div>
+
+            <div
+              v-if="transaction.payment_request"
+              class="tx-row tx-row-clickable"
+              @click="copyToClipboard(transaction.payment_request)"
+            >
+              <div class="tx-row-label">{{ $t('Invoice') }}</div>
+              <div class="tx-row-value tx-row-value-copy">
+                <span>{{ truncateMiddle(transaction.payment_request) }}</span>
+                <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
               </div>
+            </div>
+          </div>
+
+          <!-- Raw JSON -->
+          <div class="raw-section">
+            <div class="section-label">
+              {{ $t('Raw JSON') }}
+            </div>
+            <div class="raw-content">
+              <pre class="raw-text">{{
+                  JSON.stringify(transaction, null, 2)
+                }}</pre>
+              <q-btn
+                flat
+                dense
+                @click="copyToClipboard(JSON.stringify(transaction, null, 2))"
+                class="copy-btn"
+              >
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </q-btn>
             </div>
           </div>
         </div>
@@ -516,22 +679,49 @@ import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
+import { normalizeTx } from '../services/txNormalizer.js';
+import { matchLnAddressService } from '../services/lnAddressServices';
 import { shareContent } from '../utils/share';
+import { copySensitive } from '../utils/sensitiveClipboard.js';
+import { openInAppBrowser } from '../utils/inAppBrowser.js';
+import { pollVerify } from '../utils/lnurlVerify.js';
+import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import { zapInfoFromTx } from '../utils/zaps';
+import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
+import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
+import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
+
+// "Type" row text per metadata source (i18n message keys, resolved through
+// $t at render time). Lookup map on purpose: later passes stamp more sources
+// (e.g. 'nostr', 'phone') and only need a new entry here, no logic change.
+const TX_SOURCE_TYPE_KEYS = {
+  'internal-transfer': 'Internal transfer',
+  batch: 'Batch payment',
+  kiosk: 'Kiosk sale',
+  nostr: 'Nostr payment',
+  phone: 'Phone payment',
+};
 
 export default {
   name: 'TransactionDetailsPage',
-  components: { ContactAvatar },
+  components: { ContactAvatar, Icon },
   data() {
     return {
       loading: true,
       showDeveloperMode: false,
       transaction: null,
       nostrProfile: null,
+      // NIP-57 zap info for this tx (utils/zaps), null for non-zaps.
+      zapInfo: null,
+      savingZapper: false,
       walletState: {},
       walletStore: null,
       addressBookStore: null,
       metadataStore: null,
+      // LUD-21 delivery status for this tx (fiat-payout sends only): cached from
+      // a prior confirmation, or re-checked once from the stored verify URL.
+      deliveryStatus: null,
       showLoadingScreen: true,
       fiatRates: {},
       loadingFiatRates: true,
@@ -557,12 +747,22 @@ export default {
     this.addressBookStore = useAddressBookStore();
     this.metadataStore = useTransactionMetadataStore();
 
-    // Initialize stores
+    // Initialize stores. The wallet store is included because this page can
+    // be entered directly (a shared link, a reload, a cold app start on this
+    // route) without ever passing through the wallet page that normally
+    // hydrates it. initialize() is idempotent and returns immediately when
+    // another caller already ran it, so the normal in-app navigation path
+    // pays nothing for this.
+    await this.walletStore.initialize();
     await this.addressBookStore.initialize();
     await this.metadataStore.initialize();
 
     this.initializeTransactionDetails();
     this.loadFiatRates();
+  },
+
+  beforeUnmount() {
+    if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
   },
 
   watch: {
@@ -575,21 +775,136 @@ export default {
   },
 
   computed: {
+    // Zapper display name — profile name when the relays answered, a
+    // shortened npub until then. Honest, never invented.
+    zapperName() {
+      const name = (this.nostrProfile?.displayName || this.nostrProfile?.name || '').trim();
+      if (name) return name;
+      const npub = this.transaction?.senderNpub || '';
+      return npub ? `${npub.slice(0, 9)}…${npub.slice(-4)}` : '';
+    },
+
+    // Already in the book? Then the harvest button yields to a quiet check.
+    zapperSaved() {
+      if (!this.zapInfo?.pubkey || !this.addressBookStore) return false;
+      try {
+        return !!this.addressBookStore.findContactByPubkey(this.zapInfo.pubkey);
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * The wallet that owns this transaction: the ?wallet= route param
+     * when present (see getRouteWallet, which fetchTransactionFromWallet
+     * also consults to pick a provider), else the active wallet. Every
+     * metadata read/write on this page goes through this single id, so a
+     * `/transaction/:id` deep link always reads and writes the wallet
+     * whose list actually shows the change (see transactionMetadata.js).
+     */
+    metadataWalletId() {
+      const routeWallet = this.getRouteWallet();
+      if (routeWallet?.id) return routeWallet.id;
+      return this.walletStore?.activeWalletId || null;
+    },
+
     assignedContact() {
       if (!this.transaction || !this.metadataStore) return null;
       // Same live resolution as the history list: explicit contactId,
       // then manual removal, then the durable recipient address.
-      return this.metadataStore.getContactForTransaction(this.transaction.id);
+      return this.metadataStore.getContactForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /**
+     * Who the hero avatar represents, when we know: the assigned contact,
+     * else a resolved Nostr counterparty's profile picture (stamped at
+     * send time), else, for the phone-number payout rail, the provider's
+     * bundled logo. null falls back to the plain direction circle.
+     * Shape: { entry, picture?, name? } | null. `entry.address` is also
+     * carried alongside a resolved picture so ContactAvatar's own bundled
+     * provider-logo lookup (which its explicit `picture` URL gate doesn't
+     * cover) can still resolve the phone-rail logo.
+     */
+    heroAvatar() {
+      if (!this.transaction) return null;
+      if (this.assignedContact) return { entry: this.assignedContact };
+      if (!this.metadataStore) return null;
+      const address = this.getCounterpartyAddress();
+      const name = this.assignedContact?.name || address || '';
+      const avatar = this.metadataStore.getCounterpartyAvatarForTransaction(this.transaction.id, this.metadataWalletId);
+      if (avatar?.picture) return { picture: avatar.picture, name, entry: { address } };
+      // Zap: the zapper's relay profile picture (loaded by the zapper
+      // section below) — the receipt shows the same face the list does.
+      if (this.zapInfo && this.nostrProfile?.picture) {
+        return { picture: this.nostrProfile.picture, name: this.zapperName, entry: {} };
+      }
+      if (this.metadataStore.getSourceForTransaction(this.transaction.id, this.metadataWalletId) === 'phone' && address) {
+        const svc = matchLnAddressService(address);
+        const logo = svc?.logo || svc?.flag || null;
+        if (logo) return { picture: logo, name, entry: { address } };
+      }
+      return null;
+    },
+
+    /**
+     * Movement-type badge for the hero — identical vocabulary to the
+     * transaction list (received / sent / POS / batch / transfer / zap),
+     * so the receipt and the row that opened it agree. The status chip
+     * below the amount carries pending/expired; the badge only ever
+     * names the movement.
+     */
+    heroBadge() {
+      if (!this.transaction) return null;
+      if (this.zapInfo || this.transaction.senderNpub) {
+        return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
+      }
+      try {
+        const source = this.metadataStore?.getSourceForTransaction(this.transaction.id, this.metadataWalletId);
+        if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
+        if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
+        if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      } catch { /* metadata store not ready — direction still applies */ }
+      return this.transaction.type === 'incoming'
+        ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
+        : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };
     },
 
     currentTags() {
       if (!this.transaction || !this.metadataStore) return [];
-      return this.metadataStore.getTagsForTransaction(this.transaction.id);
+      return this.metadataStore.getTagsForTransaction(this.transaction.id, this.metadataWalletId);
     },
 
     currentNote() {
       if (!this.transaction || !this.metadataStore) return '';
-      return this.metadataStore.getNoteForTransaction(this.transaction.id);
+      return this.metadataStore.getNoteForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    // LUD-09 message the recipient returned on this payment, persisted at send
+    // time (already resolved — aes is decrypted before storage).
+    //
+    // Outgoing only: metadata is keyed by payment hash, and when both sides
+    // of a payment live in this app (send from one wallet, receive on
+    // another) the two transactions share that hash. Without the direction
+    // guard the recipient wallet would show "Message from recipient" to the
+    // recipient themselves.
+    currentSuccessAction() {
+      if (!this.transaction || !this.metadataStore) return null;
+      if (this.transaction.type !== 'outgoing') return null;
+      return this.metadataStore.getSuccessActionForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /**
+     * Branta merchant verification stamped on this outgoing send (see
+     * runBrantaVerification in Wallet.vue) — the receipt-side counterpart
+     * to the BrantaVerifiedBadge already shown on the confirm sheet
+     * before sending. Outgoing only, same reasoning as
+     * currentSuccessAction above (verification is only ever stamped by
+     * the send path).
+     */
+    merchantVerification() {
+      if (!this.transaction || !this.metadataStore) return null;
+      if (this.transaction.type !== 'outgoing') return null;
+      return this.metadataStore.getMerchantVerificationForTransaction(this.transaction.id, this.metadataWalletId);
     },
 
     filteredContacts() {
@@ -623,6 +938,11 @@ export default {
      * @returns {number} non-negative sats
      */
     displayAmountSats() {
+      // The normalizer computed the recipient amount with the correct
+      // per-provider fee semantics (Spark's amount includes the fee,
+      // LNbits/NWC exclude it) — trust it when present.
+      const recipient = Number(this.transaction?.recipientSats);
+      if (Number.isFinite(recipient)) return Math.abs(recipient);
       const gross = Math.abs(Number(this.transaction?.amount) || 0);
       const fee = Number(this.transaction?.fee) || 0;
       if (this.transaction?.type === 'outgoing' && fee > 0) {
@@ -635,13 +955,65 @@ export default {
 
     /** True when the fee + total breakdown rows should render. */
     showFeeBreakdown() {
-      const fee = Number(this.transaction?.fee) || 0;
+      const fee = Number(this.transaction?.feeSats ?? this.transaction?.fee) || 0;
       return this.transaction?.type === 'outgoing' && fee > 0;
     },
 
-    /** Gross deducted total for the "Total" row in the breakdown. */
+    /** Total deducted for the "Total" row in the breakdown. */
     totalDeductedSats() {
+      const total = Number(this.transaction?.totalSats);
+      if (Number.isFinite(total)) return Math.abs(total);
       return Math.abs(Number(this.transaction?.amount) || 0);
+    },
+
+    /**
+     * Translated "Type" row text when an auxiliary payment path stamped a
+     * metadata source on this tx; '' hides the row (unknown enums included,
+     * so a newer stamp never renders a raw identifier).
+     */
+    txTypeRowText() {
+      // A reward has no metadata source stamped on it (it is an incoming
+      // payment the app never sent), so name it from its own branding.
+      if (this.earnRewardLabel) return this.earnRewardLabel;
+      if (!this.transaction?.id || !this.metadataStore) return '';
+      const source = this.metadataStore.getSourceForTransaction(this.transaction.id, this.metadataWalletId);
+      const key = TX_SOURCE_TYPE_KEYS[source];
+      return key ? this.$t(key) : '';
+    },
+
+    /** BuhoGO mark shown on Learn & Earn reward transactions. */
+    earnBrandLogo() {
+      return EARN_BRAND.logo;
+    },
+
+    /**
+     * Localised label for a Learn & Earn reward, '' when this tx is not one.
+     * The invoice memo stays untranslated so it keeps matching after a
+     * language change; what the user reads is resolved here.
+     */
+    earnRewardLabel() {
+      const kind = earnRewardKind(this.transaction);
+      if (!kind) return '';
+      return kind === 'bonus'
+        ? this.$t('Learn & Earn bonus')
+        : this.$t('Learn & Earn reward');
+    },
+
+    isEarnReward() {
+      return this.earnRewardLabel !== '';
+    },
+
+    /**
+     * The curated point-of-sale breakdown a kiosk sale stamped on this
+     * transaction at invoice-creation time (subtotal, tip/round-up
+     * uplift, discount reserved for a future POS control, item count,
+     * total), scoped to `walletId`. null for every transaction the kiosk
+     * didn't create — the Sale section only renders when this is
+     * non-null.
+     */
+    saleBreakdown() {
+      if (!this.transaction?.id || !this.metadataStore) return null;
+      return this.metadataStore.getSaleBreakdownForTransaction(this.transaction.id, this.metadataWalletId);
     }
   },
 
@@ -650,7 +1022,7 @@ export default {
     debounceSaveNote(value) {
       clearTimeout(this._noteTimer);
       this._noteTimer = setTimeout(() => {
-        this.metadataStore.setNoteForTransaction(this.transaction.id, value);
+        this.metadataStore.setNoteForTransaction(this.transaction.id, this.metadataWalletId, value);
       }, 500);
     },
 
@@ -664,7 +1036,7 @@ export default {
 
     async assignContact(contact) {
       try {
-        await this.metadataStore.setContactForTransaction(this.transaction.id, contact.id);
+        await this.metadataStore.setContactForTransaction(this.transaction.id, this.metadataWalletId, contact.id);
         this.showContactPicker = false;
         this.contactSearch = '';
 
@@ -691,7 +1063,7 @@ export default {
       try {
         // Use the dedicated clear so live address resolution won't
         // immediately re-attach the same contact after removal.
-        await this.metadataStore.clearContactForTransaction(this.transaction.id);
+        await this.metadataStore.clearContactForTransaction(this.transaction.id, this.metadataWalletId);
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact removed'),
@@ -720,13 +1092,13 @@ export default {
         if (currentTags.includes(tag)) {
           // Remove tag
           const newTags = currentTags.filter(t => t !== tag);
-          await this.metadataStore.setTagsForTransaction(this.transaction.id, newTags);
+          await this.metadataStore.setTagsForTransaction(this.transaction.id, this.metadataWalletId, newTags);
         } else {
           if (currentTags.length >= 2) return;
 
           // Add tag
           const newTags = [...currentTags, tag];
-          await this.metadataStore.setTagsForTransaction(this.transaction.id, newTags);
+          await this.metadataStore.setTagsForTransaction(this.transaction.id, this.metadataWalletId, newTags);
         }
       } catch (error) {
         console.error('Error toggling tag:', error);
@@ -743,11 +1115,30 @@ export default {
       return `${address.substring(0, 10)}...${address.substring(address.length - 6)}`;
     },
 
+    /**
+     * Middle-truncates long technical values (hashes, invoices) for the
+     * developer-mode rows: keeps a `head`-char prefix and `tail`-char
+     * suffix, dropping the middle. Returns the value unchanged when it's
+     * already short enough that truncating wouldn't save space.
+     *
+     * @param {string} value
+     * @param {number} head
+     * @param {number} tail
+     */
+    truncateMiddle(value, head = 10, tail = 6) {
+      if (!value || typeof value !== 'string') return value;
+      if (value.length <= head + tail) return value;
+      return `${value.substring(0, head)}...${value.substring(value.length - tail)}`;
+    },
+
     async initializeTransactionDetails() {
       try {
         await this.loadTransactionDetails();
         this.loadDeveloperModePreference();
         this.showLoadingScreen = false;
+        // Runs only after the transaction is loaded (cache hit OR async fetch),
+        // so the stored verify URL / cached delivery status is always available.
+        this.resolveDeliveryStatus();
       } catch (error) {
         console.error('Error initializing transaction details:', error);
         this.showLoadingScreen = false;
@@ -777,9 +1168,16 @@ export default {
           await this.fetchTransactionFromWallet(txId);
         }
 
-        // Load nostr profile if it's a zap
-        if (this.transaction && this.transaction.senderNpub) {
-          await this.loadNostrProfile(this.transaction.senderNpub);
+        // Zap recognition + zapper profile. The list may have stamped
+        // senderNpub already; a deep link lands here cold, so re-derive
+        // from the description either way (NIP-57 kind-9734 parse, with
+        // the legacy bare-npub fallback inside zapInfoFromTx).
+        if (this.transaction) {
+          this.zapInfo = zapInfoFromTx(this.transaction);
+          if (this.zapInfo?.npub && !this.transaction.senderNpub) {
+            this.transaction.senderNpub = this.zapInfo.npub;
+          }
+          if (this.zapInfo) this.loadZapperProfile();
         }
 
       } catch (error) {
@@ -794,61 +1192,108 @@ export default {
       }
     },
 
+    /**
+     * The wallet the tx list said this tx belongs to (?wallet= query
+     * param), resolved against the persisted wallet list. null when the
+     * param is absent or unknown — the caller then falls back to the
+     * active wallet, exactly as before the param existed.
+     */
+    getRouteWallet() {
+      try {
+        const walletId = this.$route.query.wallet;
+        if (!walletId) return null;
+        return this.walletState.connectedWallets?.find(w => w.id === walletId) || null;
+      } catch (error) {
+        return null;
+      }
+    },
+
     async fetchTransactionFromWallet(txId) {
       try {
-        // Check wallet type and fetch accordingly
-        if (this.walletStore.isActiveWalletSpark) {
+        // Prefer the wallet named in the route: /transaction/:id alone is
+        // ambiguous across wallets (both sides of an internal payment can
+        // share an id), so the tx list passes the owning wallet along.
+        // Absent or unknown param -> the active wallet, as before.
+        const routeWallet = this.getRouteWallet();
+        const routeType = (routeWallet?.type || '').toLowerCase();
+
+        if (routeWallet && routeType === 'spark') {
+          await this.fetchSparkTransaction(txId, routeWallet.id);
+        } else if (routeWallet && routeType === 'lnbits') {
+          await this.fetchLNBitsTransaction(txId, routeWallet.id);
+        } else if (routeWallet && routeType === 'arkade') {
+          await this.fetchArkadeTransaction(txId, routeWallet.id);
+        } else if (routeWallet && routeType === 'nwc') {
+          await this.fetchNWCTransaction(txId, routeWallet);
+        } else if (this.walletStore.isActiveWalletSpark) {
           await this.fetchSparkTransaction(txId);
         } else if (this.walletStore.isActiveWalletLNBits) {
           await this.fetchLNBitsTransaction(txId);
+        } else if (this.walletStore.isActiveWalletArkade) {
+          await this.fetchArkadeTransaction(txId);
         } else {
           await this.fetchNWCTransaction(txId);
         }
 
-        // Process zap info if applicable
-        if (this.transaction && this.isZapTransaction(this.transaction)) {
-          this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);
-        }
       } catch (error) {
         console.error('Error fetching transaction from wallet:', error);
       }
     },
 
-    async fetchSparkTransaction(txId) {
-      // Ensure Spark wallet is connected (auto-connects if session PIN available)
-      const provider = await this.walletStore.ensureSparkConnected();
+    async fetchSparkTransaction(txId, walletId = null) {
+      // Ensure the Spark wallet is connected (auto-connects if a session PIN
+      // is available). Spark's Business and Personal wallets are separate
+      // accounts with separate providers, so a deep link that names one must
+      // target it explicitly: without the id we would read whichever Spark
+      // wallet is active, or throw outright when the active wallet is not
+      // Spark at all.
+      const provider = await this.walletStore.ensureSparkConnected(walletId);
 
       const transactions = await provider.getTransactions({ limit: 100, offset: 0 });
       const found = transactions.find(tx => tx.id === txId);
 
       if (found) {
-        // Normalize Spark transaction to expected format
-        this.transaction = {
-          id: found.id,
-          type: found.type === 'receive' ? 'incoming' : 'outgoing',
-          amount: found.amount,
-          description: found.description || '',
-          memo: found.description || '',
-          settled_at: found.timestamp,
-          fee: found.fee || 0,
-          status: found.status || 'completed',
-          sparkTransfer: found.sparkTransfer || false
-        };
+        this.transaction = this.normalizeForDetails(found, 'spark');
         console.log('Transaction loaded with description:', this.transaction.description);
       }
     },
 
-    async fetchNWCTransaction(txId) {
-      const activeWallet = this.walletState.connectedWallets?.find(
+    /**
+     * One canonical mapping for every provider's raw tx (see
+     * services/txNormalizer.js), merged with the stored
+     * price-at-settlement snapshot when the provider has none.
+     */
+    normalizeForDetails(rawTx, walletType) {
+      const stored = this.metadataStore?.getFiatAtSettlementForTransaction(rawTx?.id, this.metadataWalletId) || null;
+      return normalizeTx(rawTx, { walletType, fiatAtSettlement: stored });
+    },
+
+    async fetchArkadeTransaction(txId, walletId = null) {
+      // Arkade uses a provider like Spark; getTransactions() already returns
+      // direction as 'incoming'/'outgoing' and unix-seconds timestamps.
+      const provider = await this.walletStore.ensureArkadeConnected(walletId || this.walletStore.activeWalletId);
+
+      const transactions = await provider.getTransactions();
+      const found = transactions.find(tx => tx.id === txId);
+
+      if (found) {
+        this.transaction = this.normalizeForDetails(found, 'arkade');
+      }
+    },
+
+    async fetchNWCTransaction(txId, wallet = null) {
+      // The route-named wallet's connection when provided, else the active
+      // one — each NWC wallet has its own connection string.
+      const targetWallet = wallet || this.walletState.connectedWallets?.find(
         w => w.id === this.walletState.activeWalletId
       );
 
-      if (!activeWallet?.nwcString) {
+      if (!targetWallet?.nwcString) {
         throw new Error('No active NWC wallet found');
       }
 
       const nwc = new NostrWebLNProvider({
-        nostrWalletConnectUrl: activeWallet.nwcString,
+        nostrWalletConnectUrl: targetWallet.nwcString,
       });
 
       await nwc.enable();
@@ -856,33 +1301,32 @@ export default {
       const transactionsResponse = await nwc.listTransactions({ limit: 100 });
 
       if (transactionsResponse && transactionsResponse.transactions) {
-        this.transaction = transactionsResponse.transactions.find(tx =>
+        const found = transactionsResponse.transactions.find(tx =>
           tx.id === txId || tx.payment_hash === txId
         );
 
-        if (this.transaction) {
-          // Ensure consistent field names across different API responses
-          this.transaction.id = this.transaction.id || this.transaction.payment_hash || txId;
-          this.transaction.type = this.transaction.type || (this.transaction.amount > 0 ? 'incoming' : 'outgoing');
-          this.transaction.description = this.transaction.description || this.transaction.memo || '';
-          this.transaction.settled_at = this.transaction.settled_at || this.transaction.created_at || null;
-          this.transaction.fee = this.transaction.fee || this.transaction.fees_paid || 0;
-          this.transaction.payment_request = this.transaction.payment_request || this.transaction.invoice || null;
+        if (found) {
+          this.transaction = this.normalizeForDetails({
+            ...found,
+            id: found.id || found.payment_hash || txId,
+            fee: found.fee || found.fees_paid || 0,
+            payment_request: found.payment_request || found.invoice || null
+          }, 'nwc');
           console.log('NWC Transaction loaded with description:', this.transaction.description);
         }
       }
     },
 
-    async fetchLNBitsTransaction(txId) {
-      const activeWallet = this.walletStore.activeWallet;
-      if (!activeWallet) {
+    async fetchLNBitsTransaction(txId, walletId = null) {
+      const targetId = walletId || this.walletStore.activeWallet?.id;
+      if (!targetId) {
         throw new Error('No active LNbits wallet found');
       }
 
-      let provider = this.walletStore.providers[activeWallet.id];
+      let provider = this.walletStore.providers[targetId];
       if (!provider) {
-        await this.walletStore.connectLNBitsWallet(activeWallet.id);
-        provider = this.walletStore.providers[activeWallet.id];
+        await this.walletStore.connectLNBitsWallet(targetId);
+        provider = this.walletStore.providers[targetId];
       }
 
       if (!provider) {
@@ -893,54 +1337,68 @@ export default {
       const found = transactions.find(tx => tx.id === txId);
 
       if (found) {
-        // Normalize LNbits transaction to expected format
-        this.transaction = {
-          id: found.id,
-          type: found.type === 'receive' ? 'incoming' : 'outgoing',
-          amount: found.amount,
-          description: found.description || '',
-          memo: found.description || '',
-          settled_at: found.timestamp,
-          fee: found.fee || 0,
-          status: found.status || 'completed',
-          extra: found.extra || null
-        };
+        this.transaction = this.normalizeForDetails(found, 'lnbits');
       }
     },
 
-    isZapTransaction(tx) {
-      return tx.description && (
-        tx.description.toLowerCase().includes('zap') ||
-        tx.description.includes('⚡') ||
-        tx.type === 'incoming' && tx.description.match(/npub1[a-zA-Z0-9]{58}/)
-      );
+    /**
+     * Real zapper profile via the shared reactive cache (relays through
+     * zapperProfiles) — polled briefly because the cache fills async.
+     * Nothing is fabricated: no profile means the section renders the
+     * shortened npub and the silhouette, same honesty as the tx list.
+     */
+    loadZapperProfile() {
+      const read = () => {
+        const profile = zapperProfile(this.zapInfo);
+        if (profile) this.nostrProfile = profile;
+        return !!profile;
+      };
+      if (read()) return;
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts += 1;
+        if (read() || attempts >= 10) clearInterval(timer);
+      }, 800);
+      this._zapProfileTimer = timer;
     },
 
-    extractNpubFromZap(tx) {
-      const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
-      return npubMatch ? npubMatch[0] : null;
-    },
-
-    async loadNostrProfile(npub) {
+    /**
+     * Harvest a zapper into the address book — the zap already told us
+     * who they are (pubkey) and the profile fetch supplies lud16 +
+     * name/avatar. Uses the same store path as Add contact → Search,
+     * so dedupe and Nostr metadata handling stay identical.
+     */
+    async saveZapperAsContact() {
+      // `verified` is what earns a zapper a name; saving one as a contact
+      // is that attribution made permanent, so it needs the same proof.
+      // The button is already hidden without it — this is the backstop.
+      if (!this.zapInfo?.verified) return;
+      if (!this.zapInfo?.pubkey || !this.zapInfo?.npub) return;
+      this.savingZapper = true;
       try {
-        const cachedProfiles = localStorage.getItem('buhoGO_nostr_profiles');
-        if (cachedProfiles) {
-          const profiles = JSON.parse(cachedProfiles);
-          this.nostrProfile = profiles[npub];
+        // The address book verifies the raw kind-0 event itself
+        // (kind / author / signature) — hand it the original, cached
+        // from the list's fetch or freshly pulled here.
+        const event = await zapperProfileEvent(this.zapInfo);
+        if (!event) {
+          this.$q.notify({
+            type: 'info',
+            message: this.$t("This zapper hasn't published a profile yet"),
+          });
+          return;
         }
-
-        if (!this.nostrProfile) {
-          this.nostrProfile = {
-            name: npub.substring(0, 12) + '...',
-            displayName: 'Nostr User',
-            picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${npub}`,
-            about: 'Lightning Network enthusiast',
-            nip05: '',
-            lud16: `${npub.substring(0, 8)}@getalby.com`
-          };
-        }
+        await this.addressBookStore.addNostrContact({
+          pubkey: this.zapInfo.pubkey,
+          npub: this.zapInfo.npub,
+          event,
+          allowWithoutLightningAddress: true,
+        });
+        this.$q.notify({ type: 'positive', message: this.$t('Contact added') });
       } catch (error) {
-        console.error('Error loading nostr profile:', error);
+        // Most common: already saved — surface the store's message as-is.
+        this.$q.notify({ type: 'info', message: error?.message || this.$t("Couldn't save contact") });
+      } finally {
+        this.savingZapper = false;
       }
     },
 
@@ -967,17 +1425,6 @@ export default {
       return this.transaction.type === 'incoming' ? 'tx-status-received' : 'tx-status-sent';
     },
 
-    getDirectionCircleClass() {
-      if (this.isBitcoinTransaction()) return 'direction-circle-bitcoin';
-      if (this.transaction.senderNpub) return 'direction-circle-green';
-      return this.transaction.type === 'incoming' ? 'direction-circle-green' : 'direction-circle-red';
-    },
-
-    getTransactionIcon() {
-      if (this.isBitcoinTransaction()) return 'tabler:currency-bitcoin';
-      if (this.transaction.senderNpub) return 'tabler:bolt';
-      return this.transaction.type === 'incoming' ? 'tabler:arrow-down' : 'tabler:arrow-up';
-    },
 
     /**
      * Check if transaction is a Bitcoin L1 deposit/withdrawal
@@ -1005,20 +1452,23 @@ export default {
     },
 
     getTransactionStatus() {
+      if (this.transaction.status === 'expired') return this.$t('Expired');
       if (this.transaction.settled) return this.$t('Completed');
-      if (this.transaction.pending) return this.$t('Pending');
+      if (this.transaction.pending || this.transaction.status === 'pending') return this.$t('Pending');
       return this.$t('Completed');
     },
 
     getStatusIcon() {
+      if (this.transaction.status === 'expired') return 'tabler:clock-x';
       if (this.transaction.settled) return 'tabler:circle-check';
-      if (this.transaction.pending) return 'tabler:clock';
+      if (this.transaction.pending || this.transaction.status === 'pending') return 'tabler:clock';
       return 'tabler:circle-check';
     },
 
     getStatusClass() {
+      if (this.transaction.status === 'expired') return 'status-expired';
       if (this.transaction.settled) return 'status-completed';
-      if (this.transaction.pending) return 'status-pending';
+      if (this.transaction.pending || this.transaction.status === 'pending') return 'status-pending';
       return 'status-completed';
     },
 
@@ -1037,6 +1487,9 @@ export default {
     },
 
     getExtraComment() {
+      // The normalizer already lifted the LUD-12 comment onto the
+      // canonical shape when the provider had one.
+      if (this.transaction?.comment) return this.transaction.comment;
       if (!this.transaction?.extra) return null;
       const extra = this.transaction.extra;
       // LNbits stores LNURL comments in extra.comment
@@ -1048,6 +1501,44 @@ export default {
         } catch { return null; }
       }
       return null;
+    },
+
+    /**
+     * The counterparty line: for sends, the recipient address stamped at
+     * send time; for receives, the Lightning address that was paid when
+     * the backend reports one. Null hides the row.
+     */
+    getCounterpartyAddress() {
+      if (!this.transaction) return null;
+      if (this.transaction.type === 'outgoing' && this.transaction.id && this.metadataStore) {
+        const meta = this.metadataStore.getMetadataForTransaction(this.transaction.id, this.metadataWalletId);
+        if (meta?.recipientAddress) return meta.recipientAddress;
+      }
+      if (this.transaction.type === 'incoming' && this.transaction.lnaddress) {
+        return this.transaction.lnaddress;
+      }
+      return null;
+    },
+
+    /** Currency-symbol formatting shared by the fiat rows. */
+    formatFiatValue(amount, currency) {
+      const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF', AUD: 'A$', JPY: '¥' };
+      const symbol = symbols[currency] || (currency ? `${currency} ` : '');
+      return `${symbol}${Number(amount).toFixed(2)}`;
+    },
+
+    /**
+     * The BTC price row: the rate this payment actually settled at.
+     * Provided directly by LNbits; captured live for other providers.
+     */
+    getSettlementRateDisplay() {
+      const snap = this.transaction?.fiatAtSettlement;
+      if (!snap || !Number.isFinite(Number(snap.rate))) return null;
+      const locale = this.$i18n?.locale || 'en-US';
+      const formatted = Number(snap.rate).toLocaleString(locale, { maximumFractionDigits: 0 });
+      const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF', AUD: 'A$', JPY: '¥' };
+      const symbol = symbols[snap.currency] || snap.currency || '';
+      return `${symbol}${formatted}`;
     },
 
     /**
@@ -1154,6 +1645,22 @@ export default {
       return new Date(timestamp * 1000).toISOString();
     },
 
+    /**
+     * Precise locale datetime (down to the second) for the split
+     * Created/Settled rows, so two settlements a few seconds apart
+     * read as distinct instead of both rounding to the same minute.
+     */
+    formatPreciseDateTime(ts) {
+      return new Date(ts * 1000).toLocaleString(this.$i18n?.locale || 'en-US', {
+        day: 'numeric',
+        month: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    },
+
     async copyToClipboard(text) {
       try {
         await navigator.clipboard.writeText(text);
@@ -1169,6 +1676,53 @@ export default {
           message: this.$t('Couldn\'t copy'),
           
         });
+      }
+    },
+
+    // Open a LUD-09 `url` successAction (e.g. a payment receipt). Domain-
+    // validated upstream, so it only points back at the service that was paid.
+    // New tab on web, in-app view (Custom Tab / SFSafariViewController) on native.
+    openSuccessActionUrl(url) {
+      if (url) openInAppBrowser(url);
+    },
+
+    // Open Branta's verification page for this merchant. Mirrors
+    // BrantaVerifiedBadge.open() — a record with no verifyUrl (name/logo
+    // only) makes the row a static seal, not a link.
+    openMerchantVerifyUrl() {
+      if (this.merchantVerification?.verifyUrl) openInAppBrowser(this.merchantVerification.verifyUrl);
+    },
+
+    // LUD-21: show the fiat-delivery confirmation for this tx. Prefer a cached
+    // status; otherwise do a single re-check of the stored verify URL (already
+    // validated same-domain at send time). Best-effort — never blocks the view.
+    async resolveDeliveryStatus() {
+      if (!this.transaction || !this.metadataStore) return;
+      const cached = this.metadataStore.getDeliveryStatusForTransaction(this.transaction.id, this.metadataWalletId);
+      if (cached) { this.deliveryStatus = cached; return; }
+      const verifyUrl = this.metadataStore.getVerifyUrlForTransaction(this.transaction.id, this.metadataWalletId);
+      if (!verifyUrl) return;
+      const status = await pollVerify(verifyUrl, null, { timeoutMs: 0, intervalMs: 0 });
+      if (!status) return;
+      this.deliveryStatus = status;
+      // Cache once delivery is confirmed so later views are instant and offline.
+      if (status.delivered) {
+        try {
+          await this.metadataStore.setDeliveryStatusForTransaction(this.transaction.id, this.metadataWalletId, status);
+        } catch { /* best-effort cache */ }
+      }
+    },
+
+    // The decrypted `aes` secret is proof-of-payment material, so copy it via
+    // the sensitive-clipboard helper (auto-wipe), matching the success screen.
+    async copySuccessSecret(secret) {
+      if (!secret) return;
+      try {
+        await copySensitive(secret);
+        this.$q.notify({ type: 'positive', message: this.$t('Copied') });
+      } catch (error) {
+        console.error('Failed to copy secret:', error);
+        this.$q.notify({ type: 'negative', message: this.$t("Couldn't copy") });
       }
     },
 
@@ -1211,18 +1765,27 @@ export default {
   font-family: 'Manrope', sans-serif;
   overflow-x: hidden;
   max-width: 100vw;
+  /* The header owns the top safe-area inset (see .page-header), so the
+     global .q-page top padding is cancelled here. */
+  padding-top: 0;
 }
 
 /* ===== Header ===== */
+/* The header owns the top inset: its background fills the area under the
+   status bar and the title sits just beneath it. The sticky offset must
+   stay 0: overflow-x:hidden on this page (and on html/body) turns those
+   elements into scroll containers, so a non-zero `top` doesn't pin the
+   header to the viewport — it displaces it downward over the hero card
+   even before any scrolling (the Android "gap above the title" bug). */
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: calc(1rem + var(--safe-top, 0px)) 1rem 1rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-card);
   position: sticky;
-  top: var(--safe-top, 0px);
+  top: 0;
   z-index: 100;
 }
 
@@ -1302,6 +1865,111 @@ export default {
   line-height: 1.5;
 }
 
+/* ===== LUD-09 message from recipient ===== */
+.success-action-detail {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sa-detail-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.sa-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sa-detail-secret {
+  font-family: 'SF Mono', ui-monospace, 'Roboto Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* url action: a single elegant "open" row (new tab on web, in-app on native). */
+.sa-detail-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  transition: filter 0.15s ease, transform 0.08s ease;
+}
+
+.sa-detail-open:active { transform: scale(0.99); }
+
+.sa-detail-open-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-detail-open-icon {
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+/* LUD-21 delivery confirmation row. */
+.delivery-detail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.delivery-detail-ok {
+  color: #34C759;
+  flex-shrink: 0;
+}
+.delivery-detail-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.delivery-detail-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.delivery-detail-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.sa-detail-error {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  color: #FF6B6B;
+}
+
 /* ===== Loading States ===== */
 .loading-container {
   display: flex;
@@ -1322,6 +1990,9 @@ export default {
 /* ===== Transaction Content ===== */
 .transaction-content {
   min-height: calc(100vh - 80px);
+  /* Bottom-most content wrapper for the loaded state - clears the Android
+     gesture/nav bar the same way the rest of the app does. */
+  padding-bottom: max(1rem, var(--safe-bottom, 0px));
 }
 
 /* ===== Transaction Hero Card ===== */
@@ -1336,71 +2007,114 @@ export default {
   overflow: visible;
 }
 
+/* Centered column: direction icon, signed amount, fiat value, status pill. */
 .hero-content {
-  padding: 16px 20px;
+  padding: 28px 20px 24px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  text-align: center;
 }
 
-.hero-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+/* direction-circle is defined globally in app.css; enlarged for the hero */
+.hero-direction-circle {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  font-size: 26px;
+  margin-bottom: 10px;
 }
 
-/* direction-circle is defined globally in app.css */
+/* Same footprint as .hero-direction-circle, for the ContactAvatar variant
+   shown when the hero knows who the payment was with. */
+.hero-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-bottom: 10px;
+}
+
+.hero-avatar-wrap .hero-avatar {
+  margin-bottom: 0;
+}
+
+/* Movement-type badge on the hero — same vocabulary and colors as the
+   transaction list, so the receipt and the row agree at a glance. */
+.hero-type-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 0 0 2.5px var(--bg-card);
+}
+
+.tx-badge-in { background: #10B981; }
+.tx-badge-out { background: #EF4444; }
+.tx-badge-pos { background: #3B82F6; }
+.tx-badge-aux { background: #64748B; }
+.tx-badge-zap { background: #662482; }
+
+/* Nostr ostrich head, sized up for the same reason as in the history
+   list: it is filled art, not a stroked glyph, so it needs roughly
+   three quarters of the disc to stay readable. This disc is 20px. */
+.tx-badge-zap :deep(svg) {
+  width: 15px;
+  height: 15px;
+}
+
+.hero-avatar {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffffff;
+  font-family: 'Manrope', sans-serif;
+  margin-bottom: 10px;
+}
+
+/* Learn & Earn reward hero. The BuhoGO mark is a full-bleed square tile
+   carrying its own dark backdrop, so it fills the circle rather than sitting
+   on a tinted one. */
+.hero-avatar-earn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.hero-earn-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* In the hero, an outgoing payment is a normal event, not a warning — the
+   global red direction wash reads as an error at this size. Scoped override
+   only: incoming keeps its soft green, the global classes stay untouched. */
+.hero-direction-circle.direction-circle-red {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
+
 .direction-circle-bitcoin {
   background: rgba(247, 147, 26, 0.15);
   color: #F7931A;
 }
 
-.hero-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.hero-type {
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.3;
-  margin-bottom: 2px;
-  color: var(--text-primary);
-}
-
-.hero-status {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--text-muted);
-}
-
-.hero-status.status-completed {
-  color: #15DE72;
-}
-
-.hero-status.status-pending {
-  color: #78716c;
-}
-
-/* Hero Amounts */
-.hero-amounts {
-  text-align: right;
-  flex-shrink: 0;
-}
-
 .hero-amount {
   font-family: 'Manrope', sans-serif;
-  font-size: 20px;
+  font-size: 30px;
   font-weight: 700;
-  line-height: 1.3;
-  margin-bottom: 2px;
+  line-height: 1.25;
 }
 
 .hero-amount.amount-positive {
@@ -1408,20 +2122,67 @@ export default {
 }
 
 .hero-amount.amount-negative {
-  color: #FF4B4B;
+  color: var(--text-primary);
 }
 
 .hero-fiat {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.hero-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-top: 10px;
+}
+
+.hero-status-chip.status-completed {
+  background: rgba(21, 222, 114, 0.14);
+  color: #15DE72;
+}
+
+.hero-status-chip.status-pending {
+  background: rgba(245, 166, 35, 0.14);
+  color: #F5A623;
+}
+
+/* Expired invoice: muted text on a soft red-tinted wash — clearly "dead",
+   without the alarm-red of a failure. */
+.hero-status-chip.status-expired {
+  background: rgba(255, 68, 68, 0.10);
+  color: var(--text-muted);
 }
 
 /* ===== Profile Section ===== */
 .profile-section {
   padding: 1rem;
   cursor: pointer;
+}
+
+.zapper-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.zapper-save-btn {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-input);
 }
 
 .profile-card {
@@ -1545,31 +2306,95 @@ export default {
   font-family: 'Manrope', sans-serif;
 }
 
-/* ===== Detail Fields (3A) ===== */
-.detail-fields-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+/* ===== Transaction Table (key-value card) ===== */
+.tx-table {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
-.detail-field-group {
+.tx-row {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-card);
 }
 
-.detail-field-container {
-  background: var(--bg-input);
-  border-radius: 16px;
-  padding: 12px 16px;
-  color: var(--text-primary);
+.tx-row:last-child {
+  border-bottom: none;
+}
+
+.tx-row-label {
+  flex-shrink: 0;
+  max-width: 45%;
+  color: var(--text-secondary);
+  font-family: 'Manrope', sans-serif;
   font-size: 14px;
 }
 
-.detail-field-label {
+.tx-row-value {
+  min-width: 0;
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+.tx-row-clickable {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tx-row-clickable:hover,
+.tx-row-clickable:active {
+  background: var(--bg-input);
+}
+
+.tx-row-value-copy {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.tx-row-value-copy span {
+  font-family: 'SF Mono', ui-monospace, 'Roboto Mono', monospace;
+  font-size: 13px;
+}
+
+.copy-icon {
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 400;
-  margin-bottom: 6px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.tx-row-value-verified {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Monochrome, matching BrantaVerifiedBadge's seal exactly — a trust
+   signal, not a CTA, so no brand color here either. */
+.verified-row-icon {
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+body.body--dark .verified-row-icon {
+  color: #C7CCD4;
+}
+
+/* Sale breakdown's closing Total row — bolder value, same emphasis
+   weight already used elsewhere in this file (.delivery-detail-title). */
+.tx-row-total .tx-row-value {
+  font-weight: 700;
 }
 
 /* ===== Contact Picker Dialog ===== */
@@ -1694,82 +2519,22 @@ export default {
   cursor: default;
 }
 
-/* ===== Developer Section ===== */
+/* ===== Developer / Technical Section =====
+   Rows share the unified .tx-table look above; this section only adds
+   the caption spacing and the raw-JSON block underneath. */
 .developer-section {
   padding: 0 1rem 1rem 1rem;
 }
 
-.section-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-}
-
-.developer-card {
-  background: var(--bg-secondary);
-  border: 2px dashed var(--border-card);
-  border-radius: var(--radius-md);
-  padding: 1.5rem;
-}
-
-.developer-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.dev-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.dev-value {
-  font-size: 1rem;
-  color: var(--text-primary);
-  word-break: break-all;
-}
-
-.hash-value {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: var(--bg-primary);
-  border-radius: 8px;
-  transition: background-color 0.2s;
-  border: 1px solid var(--border-card);
-}
-
-.hash-value:hover {
-  background: var(--bg-input);
-}
-
-.copy-icon {
-  color: var(--text-muted);
-  opacity: 0.7;
-  flex-shrink: 0;
-}
-
 .raw-section {
-  margin-bottom: 1.5rem;
-}
-
-.raw-section:last-child {
-  margin-bottom: 0;
+  margin-top: 1.25rem;
 }
 
 .raw-content {
   position: relative;
-  background: var(--bg-primary);
+  background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: 8px;
-  margin-top: 0.5rem;
+  border-radius: var(--radius-md);
 }
 
 .raw-text {
@@ -1829,16 +2594,11 @@ export default {
 /* ===== Responsive Design ===== */
 @media (max-width: 480px) {
   .hero-content {
-    padding: 14px 16px;
-    gap: 10px;
-  }
-
-  .hero-type {
-    font-size: 14px;
+    padding: 24px 16px 20px;
   }
 
   .hero-amount {
-    font-size: 18px;
+    font-size: 26px;
   }
 
   .profile-section {
@@ -1853,8 +2613,8 @@ export default {
     padding: 0 0.75rem 1rem 0.75rem;
   }
 
-  .developer-card {
-    padding: 1rem;
+  .tx-row {
+    padding: 12px 14px;
   }
 
   .raw-text {

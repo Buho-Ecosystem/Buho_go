@@ -89,7 +89,7 @@ A great bug report is half the fix. Include:
 
 - **What you did** (3 lines max)
 - **What happened** vs **what you expected**
-- **Wallet type**: Spark, NWC, or LNBits
+- **Wallet type**: Spark, Arkade, NWC, or LNBits
 - **Platform**: web (which browser?), Android version, app version
 - **A screenshot or screen recording** if it is visual
 
@@ -114,7 +114,7 @@ We align on direction before code gets written. It saves everyone a wasted weeke
 Full setup and architecture live in the **[Developer Guide](Developer.md)**. The essentials:
 
 > [!TIP]
-> **Looking for high-impact work?** We are bringing a new **Arkade (Ark L2)** wallet to BuhoGO ([PR #177](https://github.com/Buho-Ecosystem/Buho_go/pull/177)). It is written and building, and it needs real-device testing, a couple of SDK decisions, and polish. Read **[ARK_ME.md](ARK_ME.md)** to jump in. You do not need to be a developer to help test it.
+> **Looking for high-impact work?** BuhoGO now ships an **Arkade (Ark L2)** wallet, our newest backend. Reviews, real-device testing, and swap-hardening PRs are all welcome. Read **[ARK_ME.md](ARK_ME.md)** to jump in. You do not need to be a developer to help test it.
 
 <details open>
 <summary><b>📦 Quick start</b></summary>
@@ -149,7 +149,7 @@ Feature and fix pull requests target **`dev`**. The `main` branch tracks the rel
 <summary><b>✅ Before you push</b></summary>
 
 - [ ] Tested on **dark and light** themes
-- [ ] Tested on **at least one** wallet type (Spark, NWC, or LNBits)
+- [ ] Tested on **at least one** wallet type (Spark, Arkade, NWC, or LNBits)
 - [ ] If you touched a flow used in **kiosk mode**, retested kiosk
 - [ ] No `console.log` of mnemonics, PINs, API keys, or NWC strings, ever
 - [ ] Screenshot or short clip in the pull request if it is visual

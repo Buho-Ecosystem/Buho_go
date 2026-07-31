@@ -11,11 +11,12 @@
 | You want…                                  | Choose      |
 | ------------------------------------------ | ----------- |
 | Full ownership, on-chain BTC, zero-fee Spark | **Spark**   |
+| Self-custody on the Ark L2, instant near-zero-fee transfers | **Arkade** |
 | Use your existing Lightning wallet         | **NWC**     |
 | Connect to your own LNBits server          | **LNBits**  |
 
 > [!WARNING]
-> Only **Spark** can send/receive on-chain Bitcoin and do zero-fee Spark transfers. NWC and LNBits are Lightning-only.
+> Only **Spark** and **Arkade** are fully self-custodial and send/receive on-chain Bitcoin with their own instant native transfers (zero-fee Spark, near-zero-fee Arkade `ark1`). NWC and LNBits are Lightning-only.
 
 ---
 
@@ -31,6 +32,21 @@
 
 > [!CAUTION]
 > Lose the seed → lose the coins. There is no recovery, no support line. Back it up *before* you receive funds.
+
+</details>
+
+<details>
+<summary><b>🟠 Arkade Wallet (Ark L2, self-custody)</b></summary>
+
+1. On the welcome screen, choose **Arkade**
+2. BuhoGO creates a **12-word seed phrase**. Write it down offline, on paper, twice
+3. Done. You can now send and receive `ark1…`, Lightning, and on-chain Bitcoin from one self-custodial wallet
+
+> [!CAUTION]
+> Same rule as Spark: lose the seed, lose the coins. BuhoGO nudges you to back up once the wallet holds funds, but do it before you receive.
+
+> [!NOTE]
+> Arkade uses the Ark protocol. `ark1…` transfers are instant and near-zero-fee, Lightning works through automatic swaps, and on-chain moves through boarding and offboard. Want the technical detail? See [ARK_ME.md](ARK_ME.md).
 
 </details>
 
@@ -62,10 +78,11 @@
 | ------------ | ------------------- | ------------------------------------ |
 | Lightning    | `lnbc…` invoice     | Default — fastest, smallest fees     |
 | Spark        | `spark1…`           | Free transfer from another Spark user |
-| Bitcoin (L1) | `bc1p…`             | From an exchange / cold wallet (Spark only) |
+| Arkade       | `ark1…`             | Instant, near-zero-fee transfer from another Arkade user |
+| Bitcoin (L1) | `bc1p…`             | From an exchange / cold wallet (Spark and Arkade) |
 
 > [!NOTE]
-> L1 deposits need **3 confirmations** (~30 min). Then tap **Claim** to make funds Lightning-spendable.
+> Spark L1 deposits need **3 confirmations** (~30 min), then tap **Claim** to make funds Lightning-spendable. Arkade receives on-chain through **boarding**, which credits your Arkade balance once confirmed.
 
 ---
 
@@ -79,7 +96,8 @@ Open **Send**, then **scan / paste / pick a contact**. BuhoGO auto-detects the f
 | `name@domain.com` | Lightning address |
 | `lnurl…` | LNURL |
 | `spark1…` | Spark address (Spark wallets only) |
-| `bc1…` / `bc1p…` | On-chain (Spark wallets only) |
+| `ark1…` | Arkade address (Arkade wallets only) |
+| `bc1…` / `bc1p…` | On-chain (Spark and Arkade wallets) |
 | `bitcoin:…?lightning=…` | BIP-21 (chooses Lightning if possible) |
 
 Confirm amount → swipe to send.
@@ -124,7 +142,7 @@ Tap the wallet name at the top of the home screen → pick another wallet. Each 
 | Language              | EN / DE / ES                                                 |
 | Display currency      | Sats or fiat (USD, EUR, …)                                   |
 | Biometric unlock      | Fingerprint / face on Android                                |
-| Show seed phrase      | View your Spark seed (re-entry of PIN required)              |
+| Show seed phrase      | View your Spark or Arkade seed (re-entry of PIN required)    |
 | Lightning Address     | LNBits wallets only — claim a `you@server` handle            |
 
 ---
@@ -140,6 +158,15 @@ Tap the wallet name at the top of the home screen → pick another wallet. Each 
 - **Can't restore?** Verify you typed all 12 words correctly, in order.
 - **Balance shows 0 after claim?** Wait for 3 confirmations on the deposit, then re-tap Claim.
 - **L1 withdrawal stuck?** Fee quotes expire. Re-quote and resubmit.
+
+</details>
+
+<details>
+<summary><b>Arkade</b></summary>
+
+- **Can't restore?** Check all 12 words are correct and in order. Restore auto-detects Spark vs Arkade by on-chain activity, so a phrase that never received funds may look empty until it does.
+- **Lightning send or receive rejected?** Swaps validate against Boltz min and max. A too-small or too-large amount is refused up front. Try an amount within the shown limits.
+- **Balance looks stuck?** Arkade renews VTXOs in the background and recovers recoverable balance automatically. Give it a moment after reconnecting.
 
 </details>
 

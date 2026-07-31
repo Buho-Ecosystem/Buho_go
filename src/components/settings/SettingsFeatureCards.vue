@@ -21,16 +21,20 @@
         icon:  iconify name,
         label: short feature name (1–2 words),
         meta?: optional caption (e.g. "2 active", "12 saved", "Off"),
-        active?: bool — green active treatment when true,
+        active?: bool — green active treatment + pulsing dot ("running now"),
+        warn?: bool — amber treatment + static dot ("needs attention, no rush").
+          Static on purpose: unlike `active`, this isn't announcing something
+          happening right now, so it doesn't get the attention-grabbing pulse.
+          Mutually exclusive with `active`.
       }
   -->
-  <div class="feature-cards">
+  <div class="feature-cards" :class="{ 'feature-cards--neutral': iconTone === 'neutral' }">
     <button
       v-for="f in features"
       :key="f.id"
       type="button"
       class="feature-card"
-      :class="{ 'feature-card--active': f.active }"
+      :class="{ 'feature-card--active': f.active, 'feature-card--warn': f.warn && !f.active }"
       @click="$emit('select', f.id)"
     >
       <span class="feature-card-icon">
@@ -39,6 +43,7 @@
       <span class="feature-card-label">{{ f.label }}</span>
       <span v-if="f.meta" class="feature-card-meta">{{ f.meta }}</span>
       <span v-if="f.active" class="feature-card-dot" aria-hidden="true" />
+      <span v-else-if="f.warn" class="feature-card-dot feature-card-dot--warn" aria-hidden="true" />
     </button>
   </div>
 </template>
@@ -51,6 +56,14 @@ export default {
   components: { Icon },
   props: {
     features: { type: Array, required: true },
+    /**
+     * 'brand' (default) keeps the green icon accent every existing
+     * call site already uses. 'neutral' swaps it for a black/grey
+     * tone — for pages that already carry a green accent elsewhere
+     * and don't want this row adding another one. Doesn't touch the
+     * warn/active colours; those are status signals, not decoration.
+     */
+    iconTone: { type: String, default: 'brand' },
   },
   emits: ['select'],
 };
@@ -85,6 +98,12 @@ export default {
   border-radius: var(--radius-md, 16px);
   text-align: left;
   min-height: 96px;
+  /* Grid items default to a content-based minimum width, so a long
+     nowrap meta string (e.g. "Nostr key, restore") can force this
+     card wider than its 1fr column instead of truncating - the whole
+     grid visibly distorts. min-width: 0 lets the card actually shrink
+     to its column and hand off to the meta line's own ellipsis. */
+  min-width: 0;
   transition: transform 0.12s ease, background 0.18s ease, border-color 0.18s ease;
   overflow: hidden;
 }
@@ -108,6 +127,16 @@ export default {
 body.body--light .feature-card-icon {
   background: rgba(5, 149, 115, 0.08);
   color: #059573;
+}
+
+/* Neutral tone — same icon chip, no green. */
+.feature-cards--neutral .feature-card-icon {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+body.body--light .feature-cards--neutral .feature-card-icon {
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
 }
 
 .feature-card-label {
@@ -168,6 +197,26 @@ body.body--light .feature-card--active .feature-card-meta {
   0%   { box-shadow: 0 0 0 0 rgba(21, 222, 114, 0.4); }
   70%  { box-shadow: 0 0 0 7px rgba(21, 222, 114, 0); }
   100% { box-shadow: 0 0 0 0 rgba(21, 222, 114, 0); }
+}
+
+/* Warning treatment — same warm amber the "Not verified" badge uses
+   elsewhere in Settings (SettingsRow's badge--warning), so a "this
+   needs attention" signal reads the same way everywhere in the app. */
+.feature-card--warn {
+  background: rgba(255, 168, 0, 0.10);
+  border-color: rgba(255, 168, 0, 0.30);
+}
+.feature-card--warn .feature-card-meta {
+  color: #FFB347;
+  font-weight: 600;
+}
+body.body--light .feature-card--warn .feature-card-meta {
+  color: #B8780E;
+}
+.feature-card-dot--warn {
+  background: #FFB347;
+  box-shadow: 0 0 0 3px rgba(255, 168, 0, 0.22);
+  animation: none;
 }
 
 /* Narrow phones (≤360px wide) — small fontsize drop so labels
