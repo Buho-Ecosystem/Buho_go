@@ -87,9 +87,143 @@ export function parseProfileContent(event) {
   }
 }
 
+/**
+ * The BuhoGO correctness gate for a fetched profile event:
+ *   - must be a kind:0 (a relay could mis-route)
+ *   - author must be one we asked for (defends against forged events
+ *     pointing at the wrong pubkey)
+ *   - signature must verify (defends against relay tampering)
+ *
+ * @param {object|null} event
+ * @param {Set<string>} allowedAuthors  lowercase hex pubkeys
+ * @returns {boolean}
+ */
+function isTrustworthyProfile(event, allowedAuthors) {
+  if (!event || event.kind !== PROFILE_KIND) return false;
+  if (typeof event.pubkey !== 'string' || !allowedAuthors.has(event.pubkey)) return false;
+  try {
+    return verifyEvent(event) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate + normalize a list of pubkeys, dropping duplicates.
+ *
+ * @param {readonly string[]} pubkeys
+ * @returns {string[]} lowercase hex, unique, order preserved
+ * @throws TypeError on a non-array or any invalid entry (caller bug)
+ */
+function normalizePubkeys(pubkeys) {
+  if (!Array.isArray(pubkeys)) {
+    throw new TypeError('pubkeys must be an array of 64-char hex strings');
+  }
+  const seen = new Set();
+  for (const pubkey of pubkeys) {
+    if (typeof pubkey !== 'string' || !/^[0-9a-f]{64}$/i.test(pubkey)) {
+      throw new TypeError('pubkeys must be an array of 64-char hex strings');
+    }
+    seen.add(pubkey.toLowerCase());
+  }
+  return [...seen];
+}
+
 // ----------------------------------------------------------------------------
 // Public API
 // ----------------------------------------------------------------------------
+
+/**
+ * How many authors may ride in a single REQ. Relays cap filter sizes,
+ * so a long zap list is split across a few queries rather than one
+ * oversized filter that a relay might reject outright.
+ */
+export const MAX_AUTHORS_PER_QUERY = 40;
+
+/**
+ * Fetch the current kind:0 for MANY pubkeys using one REQ per chunk of
+ * authors, instead of one REQ per person.
+ *
+ * A transaction list showing fifty zaps would otherwise open fifty
+ * subscriptions against every relay in the pool for what a single filter
+ * can answer. Same correctness rules as `fetchProfile` (signature
+ * verified, author matched, NIP-01 tie-break per author), same
+ * never-throws-on-network contract.
+ *
+ * No `limit` is sent: kind:0 is replaceable, so a compliant relay holds
+ * exactly one per author, and the per-author tie-break below settles any
+ * duplicates that arrive from different relays.
+ *
+ * @param {readonly string[]} pubkeys  64-char hex, duplicates tolerated
+ * @param {{
+ *   pool?:      import('nostr-core').RelayPool,
+ *   relays?:    readonly string[],
+ *   timeoutMs?: number,
+ * }} [opts]
+ * @returns {Promise<Map<string, import('nostr-core').NostrEvent>>}
+ *   keyed by lowercase hex pubkey; absent when that person has no
+ *   verifiable profile (or nothing answered in time)
+ *
+ * @throws TypeError on an invalid pubkey list or an unusable pool
+ *         (caller bug — distinguished from "couldn't fetch").
+ */
+export async function fetchProfiles(pubkeys, opts = {}) {
+  const authors = normalizePubkeys(pubkeys);
+  const pool = opts.pool ?? getRelayPool();
+  const relays = Array.isArray(opts.relays) && opts.relays.length > 0
+    ? opts.relays
+    : DEFAULT_RELAYS;
+  const maxWait = Number.isFinite(opts.timeoutMs)
+    ? opts.timeoutMs
+    : DEFAULT_FETCH_TIMEOUT_MS;
+
+  if (!pool || typeof pool.querySync !== 'function') {
+    throw new TypeError('pool must implement querySync(urls, filter, params)');
+  }
+
+  const result = new Map();
+  if (authors.length === 0) return result;
+
+  const allowed = new Set(authors);
+  const chunks = [];
+  for (let i = 0; i < authors.length; i += MAX_AUTHORS_PER_QUERY) {
+    chunks.push(authors.slice(i, i + MAX_AUTHORS_PER_QUERY));
+  }
+
+  // Chunks run concurrently: they are independent queries, and one slow
+  // relay shouldn't serialize the rest behind it.
+  const settled = await Promise.all(chunks.map(async (chunk) => {
+    try {
+      return await pool.querySync(
+        [...relays],
+        { kinds: [PROFILE_KIND], authors: chunk },
+        { maxWait },
+      );
+    } catch (err) {
+      // Same contract as fetchProfile: logged, never thrown. A failed
+      // chunk simply contributes no profiles.
+      console.warn('[nostr] fetchProfiles failed for', chunk.length, 'authors:', err);
+      return [];
+    }
+  }));
+
+  const byAuthor = new Map();
+  for (const events of settled) {
+    if (!Array.isArray(events)) continue;
+    for (const event of events) {
+      if (!isTrustworthyProfile(event, allowed)) continue;
+      const list = byAuthor.get(event.pubkey);
+      if (list) list.push(event);
+      else byAuthor.set(event.pubkey, [event]);
+    }
+  }
+
+  for (const [pubkey, events] of byAuthor) {
+    events.sort(compareEventFreshness);
+    result.set(pubkey, events[0]);
+  }
+  return result;
+}
 
 /**
  * Fetch the most recent kind:0 (profile metadata) event for a
@@ -147,20 +281,10 @@ export async function fetchProfile(pubkey, opts = {}) {
 
   if (!Array.isArray(events) || events.length === 0) return null;
 
-  // Reject anything that doesn't pass the BuhoGO correctness gate:
-  //   - must be a kind:0 (relay could mis-route)
-  //   - author must match the request (defends against forged events
-  //     pointing at the wrong pubkey)
-  //   - signature must verify (defends against relay tampering)
-  const valid = events.filter((event) => {
-    if (!event || event.kind !== PROFILE_KIND) return false;
-    if (event.pubkey !== pubkeyHex) return false;
-    try {
-      return verifyEvent(event) === true;
-    } catch {
-      return false;
-    }
-  });
+  // Same correctness gate the batched path uses: kind:0, author we
+  // asked for, signature verifies.
+  const allowed = new Set([pubkeyHex]);
+  const valid = events.filter((event) => isTrustworthyProfile(event, allowed));
 
   if (valid.length === 0) return null;
 

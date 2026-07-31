@@ -477,8 +477,13 @@
                       :name="getTxTitle(tx)"
                       :initial-length="2"
                     />
+                    <!-- Status rows (awaiting / expired) keep the icon
+                         circle — a clock says more than a silhouette
+                         there. Every completed row is avatar-first: the
+                         person/brand carries identity, the corner badge
+                         below carries the movement type. -->
                     <span
-                      v-else
+                      v-else-if="tx.status !== 'completed'"
                       class="tx-row-icon"
                       :class="[
                         $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
@@ -487,6 +492,20 @@
                       ]"
                     >
                       <Icon :icon="getTxIcon(tx)" width="18" height="18" />
+                    </span>
+                    <ContactAvatar
+                      v-else
+                      class="tx-row-avatar"
+                      :entry="{ address: getTxCounterparty(tx) }"
+                    />
+                    <!-- Movement-type badge (received / sent / POS /
+                         batch / transfer / zap) riding the avatar corner. -->
+                    <span
+                      v-if="getTxBadge(tx)"
+                      class="tx-row-type-badge"
+                      :class="getTxBadge(tx).cls"
+                    >
+                      <Icon :icon="getTxBadge(tx).icon" width="10" height="10" />
                     </span>
                   </span>
 
@@ -544,7 +563,10 @@
                       class="tx-row-amount"
                       :class="[
                         $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
-                        { 'tx-row-amount-in': tx.type === 'incoming' && tx.status === 'completed' }
+                        {
+                          'tx-row-amount-in': tx.type === 'incoming' && tx.status === 'completed',
+                          'tx-row-amount-out': tx.type === 'outgoing' && tx.status === 'completed'
+                        }
                       ]"
                     >
                       <HiddenAmount>{{ getFormattedAmount(tx) }}</HiddenAmount>
@@ -703,6 +725,9 @@ import { formatRelativeTime, formatShortTime, formatHumanDateTime } from '../uti
 import { groupMicropayments } from '../composables/useTransactionGrouping';
 import { matchLnAddressService } from '../services/lnAddressServices';
 import { EARN_BRAND, isEarnRewardTx, earnRewardKind } from '../services/earnBrand';
+import { zapInfoFromTx } from '../utils/zaps';
+import { zapperDisplayName, zapperPicture } from '../services/zapperProfiles';
+import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
@@ -740,7 +765,6 @@ export default {
       walletStore: null,
       addressBookStore: null,
       metadataStore: null,
-      nostrProfiles: {},
       expandedGroups: new Set(),
       expandedMicropaymentGroups: new Set(),
       showLoadingScreen: true,
@@ -1001,7 +1025,6 @@ export default {
     async initializeTransactionHistory() {
       try {
         await this.loadTransactions();
-        this.loadNostrProfiles();
         this.showLoadingScreen = false;
       } catch (error) {
         console.error('Error initializing transaction history:', error);
@@ -1063,6 +1086,10 @@ export default {
       if (!desc) return false;
       // Skip generic default descriptions
       if (desc === 'Lightning transaction') return false;
+      // A zap's description is the raw kind-9734 JSON — machine payload,
+      // never row text. The zap branches surface the human parts
+      // (zapper name, note) instead.
+      if (this.getTxZap(tx)) return false;
       return true;
     },
 
@@ -1097,6 +1124,10 @@ export default {
      */
     getTxMessage(tx) {
       if (!tx) return '';
+      // A zap's human message is the request's content — the note the
+      // zapper attached ("Great note! ⚡").
+      const zap = this.getTxZap(tx);
+      if (zap) return zap.note || '';
       const comment = String(tx.comment || '').trim();
       if (comment) return comment;
       if (this.shouldShowDescription(tx)) {
@@ -1156,6 +1187,14 @@ export default {
       try {
         const avatar = this.metadataStore.getCounterpartyAvatarForTransaction(tx.id, this.historyWalletId);
         if (avatar?.picture) return avatar.picture;
+        // Zap: the zapper's profile picture, once the relays answered.
+        // Reactive through the zapperProfiles cache — rows upgrade from
+        // silhouette to face in place.
+        const zap = this.getTxZap(tx);
+        if (zap) {
+          const picture = zapperPicture(zap);
+          if (picture) return picture;
+        }
         if (this.metadataStore.getSourceForTransaction(tx.id, this.historyWalletId) === 'phone') {
           const address = this.getTxCounterparty(tx);
           if (address) {
@@ -1195,6 +1234,15 @@ export default {
         if (note) return note;
         return this.$t('Auto-Transfer');
       }
+      // Zap: the row is about WHO zapped. Resolved profile name when the
+      // relays have answered, a shortened npub until then — reactive, so
+      // the row upgrades in place the moment the profile lands. Sits
+      // below contact (a saved zapper keeps their local name) and above
+      // every generic fallback.
+      const zap = this.getTxZap(tx);
+      if (zap) {
+        return zapperDisplayName(zap) || this.$t('Zap received');
+      }
       const counterparty = this.getTxCounterparty(tx);
       if (counterparty) return counterparty;
       if (this.shouldShowDescription(tx)) {
@@ -1203,7 +1251,6 @@ export default {
       if (this.isBitcoinTransaction(tx)) {
         return tx.type === 'incoming' ? this.$t('Bitcoin received') : this.$t('Bitcoin sent');
       }
-      if (tx.senderNpub) return this.$t('Zap received');
       return tx.type === 'incoming' ? this.$t('Payment received') : this.$t('Payment sent');
     },
 
@@ -1270,6 +1317,27 @@ export default {
      */
     getTxDirection(tx) {
       return tx?.type === 'incoming' ? 'in' : 'out';
+    },
+
+    /**
+     * The avatar-corner type badge: one small mark that says what kind
+     * of movement this was, so direction survives even when the avatar
+     * is a face or a brand logo. Exactly one badge per row; specificity
+     * order: zap → POS/aux source → plain direction. Completed rows
+     * only — pending/expired rows keep the status icon circle instead.
+     */
+    getTxBadge(tx) {
+      if (!tx || tx.status !== 'completed') return null;
+      if (this.getTxZap(tx)) {
+        return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
+      }
+      const source = this.getTxMetadataSource(tx);
+      if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
+      if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
+      if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      return tx.type === 'incoming'
+        ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
+        : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };
     },
 
     /**
@@ -1365,7 +1433,15 @@ export default {
           return contact.name;
         }
 
-        // 2. group.recipient is extractRecipient()'s pick, which now
+        // 2. A zap stream groups per zapper (grouping keys on
+        // senderNpub). Show the resolved profile name — a raw npub as
+        // the group title would defeat the whole identity effort.
+        if (group.recipient && group.recipient.startsWith('npub1')) {
+          const name = zapperDisplayName({ npub: group.recipient });
+          if (name) return name;
+        }
+
+        // 3. group.recipient is extractRecipient()'s pick, which now
         // prefers the stable counterpartyKey stamped in normalizeForList.
         // A Lightning address is immediately recognisable, so show it
         // as-is instead of falling through to the description.
@@ -1487,7 +1563,7 @@ export default {
 
         this.transactions.sort((a, b) => b.settled_at - a.settled_at);
 
-        await this.processZapTransactions();
+        this.processZapTransactions();
 
         // Auto-assign contacts from address book
         await this.autoAssignContacts();
@@ -1570,7 +1646,7 @@ export default {
 
           // Sort and process new transactions
           this.transactions.sort((a, b) => b.settled_at - a.settled_at);
-          await this.processZapTransactions();
+          this.processZapTransactions();
           await this.autoAssignContacts();
 
           batchCount++;
@@ -1632,8 +1708,27 @@ export default {
         const currency = this.walletState.preferredFiatCurrency || 'USD';
         this.metadataStore.stampFreshTransactions([tx], this.historyWalletId, currency).catch(() => {});
       }
+      // NIP-57: an incoming payment whose description is a kind-9734 zap
+      // request is a zap. Stamp senderNpub here — grouping keys off it
+      // (zap streams group per zapper) and TransactionDetails reads it.
+      const zap = this.getTxZap(tx);
+      if (zap?.npub && !tx.senderNpub) tx.senderNpub = zap.npub;
       tx.counterpartyKey = this.getCounterpartyKeyForGrouping(tx);
       return tx;
+    },
+
+    /**
+     * Zap info for a row (utils/zaps), memoized per tx id — the parse
+     * involves JSON work and rows re-render on scroll. null for
+     * everything that isn't a received zap.
+     */
+    getTxZap(tx) {
+      if (!tx || tx.type !== 'incoming') return null;
+      const key = tx.id || tx.paymentHash;
+      if (!key) return zapInfoFromTx(tx);
+      if (!this._zapMemo) this._zapMemo = new Map();
+      if (!this._zapMemo.has(key)) this._zapMemo.set(key, zapInfoFromTx(tx));
+      return this._zapMemo.get(key);
     },
 
     async loadSparkTransactionsBatch() {
@@ -1870,14 +1965,16 @@ export default {
       }
     },
 
-    async processZapTransactions() {
+    /**
+     * Tag zap rows with the sender's npub. Identity itself (name,
+     * picture) is resolved by services/zapperProfiles from real relay
+     * data at render time, so nothing is fetched or invented here.
+     */
+    processZapTransactions() {
       for (const tx of this.transactions) {
         if (this.isZapTransaction(tx)) {
           const npub = this.extractNpubFromZap(tx);
-          if (npub) {
-            tx.senderNpub = npub;
-            await this.fetchNostrProfile(npub);
-          }
+          if (npub) tx.senderNpub = npub;
         }
       }
     },
@@ -1893,51 +1990,6 @@ export default {
     extractNpubFromZap(tx) {
       const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
       return npubMatch ? npubMatch[0] : null;
-    },
-
-    async fetchNostrProfile(npub) {
-      if (this.nostrProfiles[npub]) return;
-
-      try {
-        const profile = {
-          name: npub.substring(0, 12) + '...',
-          displayName: this.generateDisplayName(),
-          picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${npub}`,
-          about: 'Lightning Network enthusiast',
-          nip05: '',
-          lud16: `${npub.substring(0, 8)}@getalby.com`
-        };
-
-        this.nostrProfiles[npub] = profile;
-        this.saveNostrProfiles();
-      } catch (error) {
-        console.error('Error fetching nostr profile:', error);
-      }
-    },
-
-    generateDisplayName() {
-      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry'];
-      return names[Math.floor(Math.random() * names.length)];
-    },
-
-    loadNostrProfiles() {
-      const saved = localStorage.getItem('buhoGO_nostr_profiles');
-      if (saved) {
-        try {
-          this.nostrProfiles = JSON.parse(saved);
-        } catch (error) {
-          console.error('Error loading nostr profiles:', error);
-        }
-      }
-    },
-
-    saveNostrProfiles() {
-      localStorage.setItem('buhoGO_nostr_profiles', JSON.stringify(this.nostrProfiles));
-    },
-
-    getSenderDisplayName(npub) {
-      const profile = this.nostrProfiles[npub];
-      return profile ? (profile.displayName || profile.name) : npub.substring(0, 12) + '...';
     },
 
     toggleGroup(dateKey) {
@@ -1977,9 +2029,6 @@ export default {
       // Check for Bitcoin (L1) transactions
       if (this.isBitcoinTransaction(tx)) {
         return tx.type === 'incoming' ? this.$t('Bitcoin Deposit') : this.$t('Bitcoin Withdrawal');
-      }
-      if (tx.senderNpub && this.nostrProfiles[tx.senderNpub]) {
-        return this.$t('Received');
       }
       return tx.type === 'incoming' ? this.$t('Received') : this.$t('Sent');
     },
@@ -2919,6 +2968,44 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Anchors the movement-type badge riding the avatar corner. */
+  position: relative;
+}
+
+/* ── Movement-type badge ──────────────────────────────────────
+   One small mark on the avatar corner: received / sent / POS /
+   batch / transfer / zap. Saturated fills with a white glyph read
+   identically in both themes; the ring picks up the page surface
+   so the badge sits ON the avatar, not beside it. */
+.tx-row-type-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--bg-primary);
+}
+
+.tx-badge-in { background: #10B981; }
+.tx-badge-out { background: #EF4444; }
+.tx-badge-pos { background: #3B82F6; }
+.tx-badge-aux { background: #64748B; }
+.tx-badge-zap { background: #662482; }
+
+/* The zap badge carries the Nostr ostrich head, a filled silhouette
+   rather than a stroked glyph like the other five badges. Filled art
+   needs more room to stay legible: below ~12px the eye and crest
+   collapse into a white smudge. Sized here instead of on the <Icon>
+   so the tabler glyphs keep their own tuned 10px. CSS wins over the
+   width/height presentation attributes Iconify writes. */
+.tx-badge-zap :deep(svg) {
+  width: 12px;
+  height: 12px;
 }
 
 .tx-row-avatar {
@@ -3108,6 +3195,16 @@ export default {
    they keep the raw green in both themes; outgoing stays neutral. */
 .tx-row-amount.tx-row-amount-in {
   color: var(--color-green, #15DE72);
+}
+
+/* Sent rows carry the signed red — the reference anatomy's
+   at-a-glance direction, matching the badge colors above. */
+.tx-row-amount.tx-row-amount-out {
+  color: #DC2626;
+}
+
+.body--dark .tx-row-amount.tx-row-amount-out {
+  color: #F16A6A;
 }
 
 /* ── Confirmation dots (pending Bitcoin deposits) ────────────── */

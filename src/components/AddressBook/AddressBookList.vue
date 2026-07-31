@@ -53,7 +53,6 @@
               :entry="entry"
               @edit="editEntry"
               @delete="confirmDeleteEntry"
-              @change-color="changeEntryColor"
               @pay="payContact"
               @toggle-favorite="toggleFavorite"
               @copy-address="copyAddress"
@@ -75,7 +74,6 @@
               :entry="entry"
               @edit="editEntry"
               @delete="confirmDeleteEntry"
-              @change-color="changeEntryColor"
               @pay="payContact"
               @toggle-favorite="toggleFavorite"
               @copy-address="copyAddress"
@@ -127,33 +125,6 @@
       </q-btn>
     </div>
 
-    <!-- Color Picker Dialog -->
-    <q-dialog v-model="showColorPicker">
-      <q-card class="color-picker-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section>
-          <div class="color-picker-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Choose Color for {name}', { name: selectedEntry?.name || '' }) }}
-          </div>
-        </q-card-section>
-
-        <q-card-section class="color-grid">
-          <div
-            v-for="color in colorPalette"
-            :key="color"
-            class="color-option"
-            :class="{ 'selected': selectedEntry?.color === color }"
-            :style="{ backgroundColor: color }"
-            @click="updateEntryColor(color)"
-          >
-            <Icon
-              v-if="selectedEntry?.color === color"
-              icon="tabler:check"
-              class="color-check"
-            />
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
 
     <!-- Delete Confirmation Dialog -->
     <q-dialog v-model="showDeleteDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
@@ -236,7 +207,6 @@ export default {
   emits: ['add-contact', 'edit-contact', 'pay-contact'],
   data() {
     return {
-      showColorPicker: false,
       selectedEntry: null,
       showDeleteDialog: false,
       entryToDelete: null,
@@ -247,8 +217,7 @@ export default {
     ...mapState(useAddressBookStore, [
       'entries',
       'filteredEntries',
-      'searchQuery',
-      'colorPalette'
+      'searchQuery'
     ]),
 
     filteredFavorites() {
@@ -324,32 +293,6 @@ export default {
       }
     },
 
-    changeEntryColor(entry) {
-      this.selectedEntry = entry
-      this.showColorPicker = true
-    },
-
-    async updateEntryColor(color) {
-      if (!this.selectedEntry) return
-
-      try {
-        await this.updateEntry(this.selectedEntry.id, { color })
-        this.showColorPicker = false
-        this.selectedEntry = null
-
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Color updated'),
-
-        })
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t update color'),
-
-        })
-      }
-    },
 
     showClearAllDialog() {
       this.showClearAllConfirmDialog = true
@@ -605,68 +548,11 @@ export default {
     max-width: 240px;
   }
 
-  .color-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
-  }
-
-  .color-option {
-    width: 40px;
-    height: 40px;
-  }
-
   .section-header {
     padding: 10px 12px 6px;
   }
 }
 
-/* Color Picker */
-.color-picker-card {
-  width: 100%;
-  max-width: 320px;
-  border-radius: 16px;
-}
-
-.color-picker-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 16px;
-  text-align: center;
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  padding: 1rem;
-}
-
-.color-option {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.color-option:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.color-option.selected {
-  transform: scale(1.1);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
-}
-
-.color-check {
-  color: white;
-  font-size: 20px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
 
 /* Delete / Clear-All Confirmation Dialog
    Surface language: rounded card (--radius-xl), layered shadow, generous

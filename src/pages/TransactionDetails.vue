@@ -82,20 +82,34 @@
                  the user hasn't assigned a counterparty of their own. Plain
                  <img>: ContactAvatar's picture prop only accepts https/data
                  URLs, not a root-relative asset path. -->
-            <span v-if="isEarnReward && !heroAvatar" class="hero-avatar hero-avatar-earn">
-              <img :src="earnBrandLogo" class="hero-earn-logo" alt="" aria-hidden="true" />
+            <span class="hero-avatar-wrap">
+              <span v-if="isEarnReward && !heroAvatar" class="hero-avatar hero-avatar-earn">
+                <img :src="earnBrandLogo" class="hero-earn-logo" alt="" aria-hidden="true" />
+              </span>
+              <ContactAvatar
+                v-else-if="heroAvatar"
+                class="hero-avatar"
+                :entry="heroAvatar.entry"
+                :picture="heroAvatar.picture"
+                :name="heroAvatar.name"
+                :initial-length="2"
+              />
+              <!-- No known identity: the app-wide silhouette — the same
+                   avatar-first anatomy as the transaction list, with the
+                   movement-type badge carrying direction. -->
+              <ContactAvatar
+                v-else
+                class="hero-avatar"
+                :entry="{ address: getCounterpartyAddress() }"
+              />
+              <span
+                v-if="heroBadge"
+                class="hero-type-badge"
+                :class="heroBadge.cls"
+              >
+                <Icon :icon="heroBadge.icon" width="12" height="12" />
+              </span>
             </span>
-            <ContactAvatar
-              v-else-if="heroAvatar"
-              class="hero-avatar"
-              :entry="heroAvatar.entry"
-              :picture="heroAvatar.picture"
-              :name="heroAvatar.name"
-              :initial-length="2"
-            />
-            <div v-else class="direction-circle hero-direction-circle" :class="getDirectionCircleClass()">
-              <Icon :icon="getTransactionIcon()" width="26" height="26"/>
-            </div>
 
             <div class="hero-amount" :class="getAmountClass()">
               {{ getFormattedAmount() }}
@@ -355,36 +369,50 @@
         </div>
       </div>
 
-      <!-- Nostr Profile Section -->
-      <div
-        v-if="transaction.senderNpub && nostrProfile"
-        class="profile-section"
-        @click="viewNostrProfile"
-      >
+      <!-- Zapper Section — who zapped, what they said, and the harvest
+           action: a zap is a contact introducing themselves with money.
+           Identity is real or absent (profile from relays, silhouette
+           until then) — never fabricated.
+
+           Verified zaps only. Without a valid signature on the zap
+           request the sender is an unproven claim, so there is nobody to
+           name, quote or save; the row keeps its nostr badge and this
+           section simply does not exist. See utils/zaps. -->
+      <div v-if="zapInfo?.verified" class="profile-section">
         <div class="profile-card">
-          <div class="profile-avatar">
-            <q-avatar size="48px">
-              <img
-                v-if="nostrProfile.picture"
-                :src="nostrProfile.picture"
-                :alt="nostrProfile.displayName || nostrProfile.name"
-              />
-              <Icon v-else icon="tabler:user" width="24" height="24" />
-            </q-avatar>
+          <div class="profile-avatar" @click="viewNostrProfile">
+            <ContactAvatar
+              class="zapper-avatar"
+              :picture="nostrProfile?.picture || ''"
+              :entry="{}"
+            />
           </div>
-          <div class="profile-info">
-            <div class="profile-name">
-              {{ nostrProfile.displayName || nostrProfile.name }}
-            </div>
+          <div class="profile-info" @click="viewNostrProfile">
+            <div class="profile-name">{{ zapperName }}</div>
             <div class="profile-meta">
               <Icon icon="tabler:bolt" class="zap-icon q-mr-xs" />
               {{ $t('Zap Transaction') }}
             </div>
-            <div class="profile-about" v-if="nostrProfile.about">
+            <div class="profile-about" v-if="zapInfo?.note">
+              “{{ zapInfo.note }}”
+            </div>
+            <div class="profile-about" v-else-if="nostrProfile?.about">
               {{ nostrProfile.about }}
             </div>
           </div>
-          <Icon icon="tabler:external-link" class="external-icon" />
+          <q-btn
+            v-if="!zapperSaved"
+            flat
+            dense
+            no-caps
+            class="zapper-save-btn"
+            :loading="savingZapper"
+            @click.stop="saveZapperAsContact"
+          >
+            <Icon icon="tabler:user-plus" width="15" height="15" class="q-mr-xs" />
+            {{ $t('Save') }}
+          </q-btn>
+          <Icon v-else icon="tabler:user-check" class="external-icon" />
         </div>
       </div>
 
@@ -659,6 +687,9 @@ import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { pollVerify } from '../utils/lnurlVerify.js';
 import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import { zapInfoFromTx } from '../utils/zaps';
+import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
+import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 
 // "Type" row text per metadata source (i18n message keys, resolved through
@@ -681,6 +712,9 @@ export default {
       showDeveloperMode: false,
       transaction: null,
       nostrProfile: null,
+      // NIP-57 zap info for this tx (utils/zaps), null for non-zaps.
+      zapInfo: null,
+      savingZapper: false,
       walletState: {},
       walletStore: null,
       addressBookStore: null,
@@ -727,6 +761,10 @@ export default {
     this.loadFiatRates();
   },
 
+  beforeUnmount() {
+    if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
+  },
+
   watch: {
     'fiatRates': {
       handler() {
@@ -737,6 +775,25 @@ export default {
   },
 
   computed: {
+    // Zapper display name — profile name when the relays answered, a
+    // shortened npub until then. Honest, never invented.
+    zapperName() {
+      const name = (this.nostrProfile?.displayName || this.nostrProfile?.name || '').trim();
+      if (name) return name;
+      const npub = this.transaction?.senderNpub || '';
+      return npub ? `${npub.slice(0, 9)}…${npub.slice(-4)}` : '';
+    },
+
+    // Already in the book? Then the harvest button yields to a quiet check.
+    zapperSaved() {
+      if (!this.zapInfo?.pubkey || !this.addressBookStore) return false;
+      try {
+        return !!this.addressBookStore.findContactByPubkey(this.zapInfo.pubkey);
+      } catch {
+        return false;
+      }
+    },
+
     /**
      * The wallet that owns this transaction: the ?wallet= route param
      * when present (see getRouteWallet, which fetchTransactionFromWallet
@@ -776,12 +833,40 @@ export default {
       const name = this.assignedContact?.name || address || '';
       const avatar = this.metadataStore.getCounterpartyAvatarForTransaction(this.transaction.id, this.metadataWalletId);
       if (avatar?.picture) return { picture: avatar.picture, name, entry: { address } };
+      // Zap: the zapper's relay profile picture (loaded by the zapper
+      // section below) — the receipt shows the same face the list does.
+      if (this.zapInfo && this.nostrProfile?.picture) {
+        return { picture: this.nostrProfile.picture, name: this.zapperName, entry: {} };
+      }
       if (this.metadataStore.getSourceForTransaction(this.transaction.id, this.metadataWalletId) === 'phone' && address) {
         const svc = matchLnAddressService(address);
         const logo = svc?.logo || svc?.flag || null;
         if (logo) return { picture: logo, name, entry: { address } };
       }
       return null;
+    },
+
+    /**
+     * Movement-type badge for the hero — identical vocabulary to the
+     * transaction list (received / sent / POS / batch / transfer / zap),
+     * so the receipt and the row that opened it agree. The status chip
+     * below the amount carries pending/expired; the badge only ever
+     * names the movement.
+     */
+    heroBadge() {
+      if (!this.transaction) return null;
+      if (this.zapInfo || this.transaction.senderNpub) {
+        return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
+      }
+      try {
+        const source = this.metadataStore?.getSourceForTransaction(this.transaction.id, this.metadataWalletId);
+        if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
+        if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
+        if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      } catch { /* metadata store not ready — direction still applies */ }
+      return this.transaction.type === 'incoming'
+        ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
+        : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };
     },
 
     currentTags() {
@@ -1083,9 +1168,16 @@ export default {
           await this.fetchTransactionFromWallet(txId);
         }
 
-        // Load nostr profile if it's a zap
-        if (this.transaction && this.transaction.senderNpub) {
-          await this.loadNostrProfile(this.transaction.senderNpub);
+        // Zap recognition + zapper profile. The list may have stamped
+        // senderNpub already; a deep link lands here cold, so re-derive
+        // from the description either way (NIP-57 kind-9734 parse, with
+        // the legacy bare-npub fallback inside zapInfoFromTx).
+        if (this.transaction) {
+          this.zapInfo = zapInfoFromTx(this.transaction);
+          if (this.zapInfo?.npub && !this.transaction.senderNpub) {
+            this.transaction.senderNpub = this.zapInfo.npub;
+          }
+          if (this.zapInfo) this.loadZapperProfile();
         }
 
       } catch (error) {
@@ -1143,10 +1235,6 @@ export default {
           await this.fetchNWCTransaction(txId);
         }
 
-        // Process zap info if applicable
-        if (this.transaction && this.isZapTransaction(this.transaction)) {
-          this.transaction.senderNpub = this.extractNpubFromZap(this.transaction);
-        }
       } catch (error) {
         console.error('Error fetching transaction from wallet:', error);
       }
@@ -1253,39 +1341,64 @@ export default {
       }
     },
 
-    isZapTransaction(tx) {
-      return tx.description && (
-        tx.description.toLowerCase().includes('zap') ||
-        tx.description.includes('⚡') ||
-        tx.type === 'incoming' && tx.description.match(/npub1[a-zA-Z0-9]{58}/)
-      );
+    /**
+     * Real zapper profile via the shared reactive cache (relays through
+     * zapperProfiles) — polled briefly because the cache fills async.
+     * Nothing is fabricated: no profile means the section renders the
+     * shortened npub and the silhouette, same honesty as the tx list.
+     */
+    loadZapperProfile() {
+      const read = () => {
+        const profile = zapperProfile(this.zapInfo);
+        if (profile) this.nostrProfile = profile;
+        return !!profile;
+      };
+      if (read()) return;
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts += 1;
+        if (read() || attempts >= 10) clearInterval(timer);
+      }, 800);
+      this._zapProfileTimer = timer;
     },
 
-    extractNpubFromZap(tx) {
-      const npubMatch = tx.description.match(/npub1[a-zA-Z0-9]{58}/);
-      return npubMatch ? npubMatch[0] : null;
-    },
-
-    async loadNostrProfile(npub) {
+    /**
+     * Harvest a zapper into the address book — the zap already told us
+     * who they are (pubkey) and the profile fetch supplies lud16 +
+     * name/avatar. Uses the same store path as Add contact → Search,
+     * so dedupe and Nostr metadata handling stay identical.
+     */
+    async saveZapperAsContact() {
+      // `verified` is what earns a zapper a name; saving one as a contact
+      // is that attribution made permanent, so it needs the same proof.
+      // The button is already hidden without it — this is the backstop.
+      if (!this.zapInfo?.verified) return;
+      if (!this.zapInfo?.pubkey || !this.zapInfo?.npub) return;
+      this.savingZapper = true;
       try {
-        const cachedProfiles = localStorage.getItem('buhoGO_nostr_profiles');
-        if (cachedProfiles) {
-          const profiles = JSON.parse(cachedProfiles);
-          this.nostrProfile = profiles[npub];
+        // The address book verifies the raw kind-0 event itself
+        // (kind / author / signature) — hand it the original, cached
+        // from the list's fetch or freshly pulled here.
+        const event = await zapperProfileEvent(this.zapInfo);
+        if (!event) {
+          this.$q.notify({
+            type: 'info',
+            message: this.$t("This zapper hasn't published a profile yet"),
+          });
+          return;
         }
-
-        if (!this.nostrProfile) {
-          this.nostrProfile = {
-            name: npub.substring(0, 12) + '...',
-            displayName: 'Nostr User',
-            picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${npub}`,
-            about: 'Lightning Network enthusiast',
-            nip05: '',
-            lud16: `${npub.substring(0, 8)}@getalby.com`
-          };
-        }
+        await this.addressBookStore.addNostrContact({
+          pubkey: this.zapInfo.pubkey,
+          npub: this.zapInfo.npub,
+          event,
+          allowWithoutLightningAddress: true,
+        });
+        this.$q.notify({ type: 'positive', message: this.$t('Contact added') });
       } catch (error) {
-        console.error('Error loading nostr profile:', error);
+        // Most common: already saved — surface the store's message as-is.
+        this.$q.notify({ type: 'info', message: error?.message || this.$t("Couldn't save contact") });
+      } finally {
+        this.savingZapper = false;
       }
     },
 
@@ -1312,17 +1425,6 @@ export default {
       return this.transaction.type === 'incoming' ? 'tx-status-received' : 'tx-status-sent';
     },
 
-    getDirectionCircleClass() {
-      if (this.isBitcoinTransaction()) return 'direction-circle-bitcoin';
-      if (this.transaction.senderNpub) return 'direction-circle-green';
-      return this.transaction.type === 'incoming' ? 'direction-circle-green' : 'direction-circle-red';
-    },
-
-    getTransactionIcon() {
-      if (this.isBitcoinTransaction()) return 'tabler:currency-bitcoin';
-      if (this.transaction.senderNpub) return 'tabler:bolt';
-      return this.transaction.type === 'incoming' ? 'tabler:arrow-down' : 'tabler:arrow-up';
-    },
 
     /**
      * Check if transaction is a Bitcoin L1 deposit/withdrawal
@@ -1925,6 +2027,46 @@ export default {
 
 /* Same footprint as .hero-direction-circle, for the ContactAvatar variant
    shown when the hero knows who the payment was with. */
+.hero-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-bottom: 10px;
+}
+
+.hero-avatar-wrap .hero-avatar {
+  margin-bottom: 0;
+}
+
+/* Movement-type badge on the hero — same vocabulary and colors as the
+   transaction list, so the receipt and the row agree at a glance. */
+.hero-type-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 0 0 2.5px var(--bg-card);
+}
+
+.tx-badge-in { background: #10B981; }
+.tx-badge-out { background: #EF4444; }
+.tx-badge-pos { background: #3B82F6; }
+.tx-badge-aux { background: #64748B; }
+.tx-badge-zap { background: #662482; }
+
+/* Nostr ostrich head, sized up for the same reason as in the history
+   list: it is filled art, not a stroked glyph, so it needs roughly
+   three quarters of the disc to stay readable. This disc is 20px. */
+.tx-badge-zap :deep(svg) {
+  width: 15px;
+  height: 15px;
+}
+
 .hero-avatar {
   width: 56px;
   height: 56px;
@@ -2024,6 +2166,23 @@ export default {
 .profile-section {
   padding: 1rem;
   cursor: pointer;
+}
+
+.zapper-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.zapper-save-btn {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-input);
 }
 
 .profile-card {
