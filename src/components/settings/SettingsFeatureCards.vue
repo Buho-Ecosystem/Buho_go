@@ -28,7 +28,7 @@
           Mutually exclusive with `active`.
       }
   -->
-  <div class="feature-cards">
+  <div class="feature-cards" :class="{ 'feature-cards--neutral': iconTone === 'neutral' }">
     <button
       v-for="f in features"
       :key="f.id"
@@ -56,6 +56,14 @@ export default {
   components: { Icon },
   props: {
     features: { type: Array, required: true },
+    /**
+     * 'brand' (default) keeps the green icon accent every existing
+     * call site already uses. 'neutral' swaps it for a black/grey
+     * tone — for pages that already carry a green accent elsewhere
+     * and don't want this row adding another one. Doesn't touch the
+     * warn/active colours; those are status signals, not decoration.
+     */
+    iconTone: { type: String, default: 'brand' },
   },
   emits: ['select'],
 };
@@ -119,6 +127,16 @@ export default {
 body.body--light .feature-card-icon {
   background: rgba(5, 149, 115, 0.08);
   color: #059573;
+}
+
+/* Neutral tone — same icon chip, no green. */
+.feature-cards--neutral .feature-card-icon {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+body.body--light .feature-cards--neutral .feature-card-icon {
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
 }
 
 .feature-card-label {

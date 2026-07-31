@@ -1432,6 +1432,7 @@ export default {
   "Close": "Cerrar",
   "Connection failed": "Conexión fallida",
   "Contact added": "Contacto agregado",
+  "Scan a contact": "Escanear un contacto",
   "Contact removed": "Contacto eliminado",
   "Contact saved": "Contacto guardado",
   "Copied": "Copiado",
@@ -2203,11 +2204,14 @@ export default {
   "Your verified handle, managed for you. Only change it if you host your own NIP-05.": "Tu identificador verificado, gestionado automáticamente. Cámbialo solo si alojas tu propio NIP-05.",
   "Copy your NIP-05 address": "Copiar tu dirección NIP-05",
   "Copy your Lightning address": "Copiar tu dirección Lightning",
+  "Copy your Money Address": "Copiar tu dirección de dinero",
+  "Money": "Dinero",
   "Lightning": "Lightning",
   "Scan in any wallet to pay this address.": "Escanéalo en cualquier cartera para pagar esta dirección.",
   "Scan in any Nostr app to find this profile.": "Escanéalo en cualquier app de Nostr para encontrar este perfil.",
   "Get started": "Empezar",
   "Payment": "Pago",
+  "Extended profile": "Perfil extendido",
   "Get paid": "Recibir pagos",
   "Friends can send Bitcoin straight to this address. Leave blank if you don't have one.": "Tus amigos pueden enviarte Bitcoin directo a esta dirección. Déjala en blanco si no tienes una.",
   "Friends use this to find and pay you on BuhoGO.": "Tus amigos lo usan para encontrarte y pagarte en BuhoGO.",
@@ -2440,5 +2444,26 @@ export default {
   "LNbits connection scanned": "Conexión de LNbits escaneada",
   "This LNDhub link is not from an LNbits server": "Este enlace LNDhub no es de un servidor LNbits",
   "That looks like an invoice (read-only) key": "Eso parece una clave de factura (solo lectura)",
-  "You can receive but not send": "Puedes recibir pero no enviar"
+  "You can receive but not send": "Puedes recibir pero no enviar",
+
+  // ── Hoja de envío (entrada primero) ──
+  "Enter a name, invoice, or address": "Escribe un nombre, factura o dirección",
+  "Enter a mobile number": "Escribe un número de móvil",
+  "Type the number, or pick the country first": "Escribe el número o elige primero el país",
+  "Mobile Money": "Mobile Money",
+  "Pay to borderless mobile money": "Paga a mobile money sin fronteras",
+  "Pay several people at once": "Paga a varias personas a la vez",
+  "Send to a contact": "Enviar a un contacto",
+  "No matches": "Sin coincidencias",
+  "Keep typing, or paste an invoice or address": "Sigue escribiendo o pega una factura o dirección",
+  "People you save appear here for one-tap sending": "Los contactos guardados aparecen aquí para enviar con un toque",
+  "We don't recognize this code": "No reconocemos este código",
+  "It doesn't look like a payment request": "No parece una solicitud de pago",
+  "Scan the withdraw QR code": "Escanea el código QR de retiro",
+  "This zapper hasn't published a profile yet": "Este zapper aún no ha publicado un perfil",
+
+  // ── Lenguaje de pago unificado (solo "Pago Bitcoin") ──
+  "Show details": "Mostrar detalles",
+  "Free · instant": "Gratis · instantáneo",
+  "Includes a small network fee": "Incluye una pequeña comisión de red"
 }

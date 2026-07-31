@@ -71,16 +71,15 @@
 
         <!-- MANUAL — also used for the edit flow -->
         <template v-else>
+          <!-- Static preview: the app-wide filled-bust silhouette.
+               Contacts no longer carry a color; a Nostr picture (via
+               the Search / Scan tabs) is the only way an avatar
+               personalizes. -->
           <div class="avatar-preview">
-            <div
-              class="preview-circle"
-              :style="{ backgroundColor: formData.color }"
-              @click="showColorPicker = true"
-            >
-              <span class="preview-initial">{{ getPreviewInitial() }}</span>
-              <div class="preview-edit-dot">
-                <Icon icon="tabler:palette" width="12" height="12" />
-              </div>
+            <div class="preview-circle">
+              <svg class="preview-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 12.3a4.05 4.05 0 1 0 0-8.1 4.05 4.05 0 0 0 0 8.1Zm0 2.2c-4.3 0-7.6 2.6-8.1 6.3h16.2c-.5-3.7-3.8-6.3-8.1-6.3Z" />
+              </svg>
             </div>
           </div>
 
@@ -194,33 +193,6 @@
       </q-card-actions>
     </q-card>
 
-    <!-- Color Picker Dialog -->
-    <q-dialog v-model="showColorPicker">
-      <q-card class="color-picker-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section>
-          <div class="color-picker-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Choose Color') }}
-          </div>
-        </q-card-section>
-
-        <q-card-section class="color-grid">
-          <div
-            v-for="color in colorPalette"
-            :key="color"
-            class="color-option"
-            :class="{ 'selected': formData.color === color }"
-            :style="{ backgroundColor: color }"
-            @click="selectColor(color)"
-          >
-            <Icon
-              v-if="formData.color === color"
-              icon="tabler:check"
-              class="color-check"
-            />
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
   </q-dialog>
 </template>
 
@@ -276,6 +248,17 @@ export default {
     entry: {
       type: Object,
       default: null
+    },
+    /**
+     * Which add-mode tab to land on when the sheet opens. Defaults to
+     * 'manual' (see the tab-order comment above) — callers that want a
+     * more specific entry point, e.g. the Identity page's header scan
+     * button jumping straight to the camera, pass 'scan' or 'search'.
+     * Ignored while editing (there is no tab bar in edit mode).
+     */
+    initialTab: {
+      type: String,
+      default: 'manual'
     }
   },
   emits: ['update:modelValue', 'saved', 'open-existing'],
@@ -286,15 +269,12 @@ export default {
       formData: {
         name: '',
         address: '',
-        color: '#3B82F6',
         notes: ''
       },
       isSaving: false,
-      showColorPicker: false
     }
   },
   computed: {
-    ...mapState(useAddressBookStore, ['colorPalette']),
 
     show: {
       get() {
@@ -363,11 +343,12 @@ export default {
     show(newVal) {
       if (newVal) {
         this.initializeForm()
-        // Both editing and add mode land on the manual "Enter" form: it
-        // works for everyone (Lightning/Spark/Bitcoin address) without
-        // assuming Nostr fluency, and resetting here keeps the next open
-        // from being biased by where the previous one finished.
-        this.activeTab = 'manual'
+        // Add mode lands on `initialTab` (defaults to the manual "Enter"
+        // form, which works for everyone without assuming Nostr fluency).
+        // Editing always lands on manual regardless of `initialTab` since
+        // there is no tab bar in that mode. Resetting here keeps the next
+        // open from being biased by where the previous one finished.
+        this.activeTab = this.isEditing ? 'manual' : this.initialTab
         this.$nextTick(() => {
           this.$refs.nameInput?.focus()
         })
@@ -377,7 +358,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions(useAddressBookStore, ['addEntry', 'updateEntry', 'getRandomColor']),
+    ...mapActions(useAddressBookStore, ['addEntry', 'updateEntry']),
 
     switchTab(id) {
       if (this.activeTab === id) return
@@ -393,14 +374,12 @@ export default {
         this.formData = {
           name: this.entry.name,
           address: this.entry.address || this.entry.lightningAddress || '',
-          color: this.entry.color,
           notes: this.entry.notes || ''
         }
       } else {
         this.formData = {
           name: '',
           address: '',
-          color: this.getRandomColor(),
           notes: ''
         }
       }
@@ -410,22 +389,12 @@ export default {
       this.formData = {
         name: '',
         address: '',
-        color: '#3B82F6',
         notes: ''
       }
       this.isSaving = false
-      this.showColorPicker = false
       this.activeTab = 'manual'
     },
 
-    getPreviewInitial() {
-      return this.formData.name ? this.formData.name.charAt(0).toUpperCase() : '?'
-    },
-
-    selectColor(color) {
-      this.formData.color = color
-      this.showColorPicker = false
-    },
 
     /**
      * Child save callback — fires after AddContactSearch or
@@ -469,7 +438,6 @@ export default {
           name: this.formData.name.trim(),
           address: this.formData.address.trim(),
           addressType: this.detectedType,
-          color: this.formData.color,
           notes: this.formData.notes?.trim() || ''
         }
 
@@ -626,51 +594,32 @@ export default {
   margin-bottom: 1.25rem;
 }
 
+/* Silhouette preview — same blue-on-pale-blue treatment as
+   ContactAvatar's fallback, purely informational (no picker behind
+   it anymore). */
 .preview-circle {
-  position: relative;
   width: 64px;
   height: 64px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: #EAEFF7;
+  color: #3B82F6;
 }
 
-.preview-circle:hover {
-  transform: scale(1.04);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+.body--dark .preview-circle {
+  background: #23272E;
+  color: #5B8DEF;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
-.preview-initial {
-  color: white;
-  font-family: 'Manrope', sans-serif;
-  font-size: 26px;
-  font-weight: 700;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.preview-edit-dot {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--bg-card, #fff);
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-  border: 1px solid var(--border-card);
-}
-
-.body--light .preview-edit-dot {
-  background: #fff;
-  color: #374151;
+.preview-glyph {
+  /* Filled marks read smaller than strokes — 52% matches the
+     reference wallet's bust-to-disc ratio. */
+  width: 52%;
+  height: 52%;
+  display: block;
 }
 
 /* Form */
@@ -871,53 +820,6 @@ export default {
   opacity: 0.4;
 }
 
-/* Color Picker */
-.color-picker-card {
-  width: 100%;
-  max-width: 320px;
-  border-radius: var(--radius-md);
-}
-
-.color-picker-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 18px;
-  text-align: center;
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  padding: 1rem;
-}
-
-.color-option {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.color-option:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.color-option.selected {
-  transform: scale(1.1);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
-}
-
-.color-check {
-  color: white;
-  font-size: 20px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
 
 /* Responsive Design */
 @media (max-width: 480px) {
@@ -943,14 +845,5 @@ export default {
     padding: 0.75rem 1.25rem 1.25rem;
   }
 
-  .color-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
-  }
-
-  .color-option {
-    width: 40px;
-    height: 40px;
-  }
 }
 </style>

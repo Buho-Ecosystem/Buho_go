@@ -1,8 +1,7 @@
 <template>
   <span
     class="contact-avatar"
-    :class="{ 'contact-avatar--has-image': visibleAvatarUrl }"
-    :style="!visibleAvatarUrl ? { background: backgroundColor } : null"
+    :class="visibleAvatarUrl ? 'contact-avatar--has-image' : 'contact-avatar--fallback'"
   >
     <img
       v-if="visibleAvatarUrl"
@@ -11,7 +10,20 @@
       :alt="''"
       @error="onImgError"
     />
-    <span v-else class="contact-avatar__initial">{{ initial }}</span>
+    <!-- No picture: the filled-bust silhouette (the reference wallet's
+         treatment, adopted 1:1) — solid blue figure on a pale blue-
+         tinted disc, both themes. One mark for everyone, no initials,
+         no per-contact color. The glyph scales with whatever size the
+         parent sets, so every surface keeps its rhythm. -->
+    <svg
+      v-else
+      class="contact-avatar__glyph"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M12 12.3a4.05 4.05 0 1 0 0-8.1 4.05 4.05 0 0 0 0 8.1Zm0 2.2c-4.3 0-7.6 2.6-8.1 6.3h16.2c-.5-3.7-3.8-6.3-8.1-6.3Z" />
+    </svg>
   </span>
 </template>
 
@@ -20,8 +32,10 @@
  * Unified contact avatar.
  *
  * Renders a Nostr-sourced profile picture when one is available,
- * otherwise falls back to the colored-initial circle every part of
- * the app already shows for manual contacts.
+ * otherwise falls back to the filled-bust silhouette — one mark for
+ * every picture-less contact, blue on a pale blue-tinted disc in both
+ * themes (the reference wallet's treatment, adopted 1:1). The old
+ * colored-initial circles are retired (design decision 2026-07-25).
  *
  * Layout is intentionally *not* owned by this component — the parent
  * supplies width / height / font-size through its own class so each
@@ -33,19 +47,16 @@
  *   3. graceful fallback when the image fails to load
  *
  * `entry` is intentionally permissive — full address-book entry, a
- * lightweight payment-recipient adapter, or just `{ name, color }`
- * all work. `picture` / `name` / `color` explicit overrides win when
- * supplied so callers can render in-flight resolved profiles before
- * a store entry exists yet.
+ * lightweight payment-recipient adapter, or just `{ name }` all work.
+ * `picture` explicit override wins when supplied so callers can
+ * render in-flight resolved profiles before a store entry exists yet.
  *
- * `initialLength` defaults to 1 char, matching the existing
- * AddressBookEntry pattern. Set to `2` for the transaction-row look
- * which uses `name.substring(0, 2)`.
+ * `name` / `color` / `initialLength` remain declared so existing call
+ * sites keep working, but the silhouette fallback ignores them — the
+ * per-contact color field is legacy data now.
  */
 
 import { matchLnAddressService } from '../../services/lnAddressServices'
-
-const DEFAULT_FALLBACK_COLOR = '#3B82F6'
 
 export default {
   name: 'ContactAvatar',
@@ -100,21 +111,6 @@ export default {
       return svc?.logo || ''
     },
 
-    initial() {
-      const candidate = (this.name || this.entry?.name || '').trim()
-      if (!candidate) return '?'
-      if (this.initialLength === 2) {
-        const cleaned = candidate.replace(/[^\p{L}\p{N}\s]/gu, '').trim()
-        const chars = cleaned.slice(0, 2)
-        return chars ? chars.toUpperCase() : '?'
-      }
-      const ch = candidate.replace(/[^\p{L}\p{N}]/u, '').charAt(0)
-      return (ch || '?').toUpperCase()
-    },
-
-    backgroundColor() {
-      return this.color || this.entry?.color || DEFAULT_FALLBACK_COLOR
-    },
   },
 
   watch: {
@@ -158,7 +154,25 @@ export default {
   display: block;
 }
 
-.contact-avatar__initial {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+/* Silhouette fallback — the reference wallet's look, copied 1:1:
+   solid blue bust on a pale blue-tinted disc. Dark mode keeps the
+   same blue (slightly lifted for contrast) on a cool dark disc. */
+.contact-avatar--fallback {
+  background: #EAEFF7;
+  color: #3B82F6;
+}
+
+.body--dark .contact-avatar--fallback {
+  background: #23272E;
+  color: #5B8DEF;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.contact-avatar__glyph {
+  /* Filled marks read smaller than strokes — 52% matches the
+     reference wallet's bust-to-disc ratio. */
+  width: 52%;
+  height: 52%;
+  display: block;
 }
 </style>

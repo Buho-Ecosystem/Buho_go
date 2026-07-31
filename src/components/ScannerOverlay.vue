@@ -33,7 +33,9 @@
         <button type="button" class="so-icon-btn" @click="$emit('close')">
           <Icon icon="tabler:x" width="22" height="22" />
         </button>
-        <div class="so-title">{{ title || $t('Scan QR Code') }}</div>
+        <!-- Optional headline. Payment flows pass none — the bottom prompt
+             carries the context, keeping the camera surface clean. -->
+        <div class="so-title">{{ title }}</div>
         <button
           v-if="torchAvailable"
           type="button"

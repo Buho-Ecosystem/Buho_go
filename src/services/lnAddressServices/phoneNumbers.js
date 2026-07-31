@@ -223,6 +223,42 @@ function buildResult(country, nsn, { confidence, ambiguous, source }) {
 // ----------------------------------------------------------------------------
 
 /**
+ * Country-locked recognition: the user has explicitly chosen the payout
+ * country (Mobile Money country selector), so cross-country ambiguity is
+ * impossible. Because the country is certain we can additionally accept the
+ * bare NSN (no trunk zero, no calling code) that the country-agnostic
+ * recognizePhoneNumber deliberately rejects as too weak a signal.
+ *
+ * @param {string} countryCode  ISO 3166-1 alpha-2 (e.g. 'KE', 'TZ', 'ZM')
+ * @param {unknown} raw
+ * @returns {object | null}  same shape as recognizePhoneNumber (never ambiguous)
+ */
+export function recognizePhoneNumberForCountry(countryCode, raw) {
+  const country = PAYOUT_COUNTRIES.find((c) => c.code === countryCode)
+  const parsed = parseRaw(raw)
+  if (!country || !parsed) return null
+  const { digits, hadInternationalMarker } = parsed
+
+  let nsn = null
+  if (digits.startsWith(country.callingCode)
+      && digits.length === country.callingCode.length + country.nsnLength) {
+    nsn = digits.slice(country.callingCode.length)
+  } else if (hadInternationalMarker) {
+    // An explicit "+" / "00" for a different calling code is a foreign
+    // number — locking the country must not reinterpret it.
+    return null
+  } else if (digits.startsWith(country.trunkPrefix)
+      && digits.length === country.trunkPrefix.length + country.nsnLength) {
+    nsn = digits.slice(country.trunkPrefix.length)
+  } else if (digits.length === country.nsnLength) {
+    nsn = digits
+  }
+
+  if (!nsn || !isValidMobile(country, nsn)) return null
+  return buildResult(country, nsn, { confidence: 'exact', ambiguous: false, source: 'country-locked' })
+}
+
+/**
  * Recognize a typed phone number and resolve it to a fiat-payout country plus
  * a constructed Lightning Address. Returns null when the input isn't a
  * recognized Kenyan / Zambian mobile number.

@@ -12,6 +12,7 @@ node_modules
 screenshots
 /RELEASE_NOTES_v*.md
 /STANDARD_RELEASE_NOTES_PROMPT.md
+/Release_Notes
 /Plans WIP
 /Articels
 /cloud_backup.md
