@@ -313,17 +313,22 @@
               {{ currentSuccessAction.message }}
             </div>
 
-            <!-- url: one elegant tap to open (new tab on web, in-app view on
-                 native). Domain-validated upstream to the callback host. -->
-            <button
-              v-else-if="currentSuccessAction.tag === 'url'"
-              type="button"
-              class="sa-detail-open"
-              @click="openSuccessActionUrl(currentSuccessAction.url)"
-            >
-              <span class="sa-detail-open-label">{{ currentSuccessAction.description || $t('Open link') }}</span>
-              <Icon icon="tabler:external-link" width="16" height="16" class="sa-detail-open-icon" />
-            </button>
+            <!-- url: the recipient's note, then the destination itself on the
+                 pill so the link target is readable before it is opened (new tab
+                 on web, in-app view on native). -->
+            <template v-else-if="currentSuccessAction.tag === 'url'">
+              <div v-if="currentSuccessAction.description" class="sa-detail-text">
+                {{ currentSuccessAction.description }}
+              </div>
+              <button
+                type="button"
+                class="sa-detail-open"
+                @click="openSuccessActionUrl(currentSuccessAction.url)"
+              >
+                <span class="sa-detail-open-label">{{ successActionUrlLabel }}</span>
+                <Icon icon="tabler:external-link" width="16" height="16" class="sa-detail-open-icon" />
+              </button>
+            </template>
 
             <!-- aes: decrypted secret (tap to copy) -->
             <template v-else-if="currentSuccessAction.tag === 'aes'">
@@ -684,6 +689,7 @@ import { matchLnAddressService } from '../services/lnAddressServices';
 import { shareContent } from '../utils/share';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
+import { formatSuccessActionUrl } from '../utils/successAction.js';
 import { pollVerify } from '../utils/lnurlVerify.js';
 import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
@@ -891,6 +897,14 @@ export default {
       if (!this.transaction || !this.metadataStore) return null;
       if (this.transaction.type !== 'outgoing') return null;
       return this.metadataStore.getSuccessActionForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /**
+     * Destination of a LUD-09 `url` action, shortened for the pill so the link
+     * target stays readable here as well as on the success sheet.
+     */
+    successActionUrlLabel() {
+      return formatSuccessActionUrl(this.currentSuccessAction?.url);
     },
 
     /**
@@ -1679,8 +1693,9 @@ export default {
       }
     },
 
-    // Open a LUD-09 `url` successAction (e.g. a payment receipt). Domain-
-    // validated upstream, so it only points back at the service that was paid.
+    // Open a LUD-09 `url` successAction (a receipt, a group invite, a download).
+    // Scheme-validated upstream to http(s), and the destination is printed on the
+    // button itself, so nothing opens the user hasn't read.
     // New tab on web, in-app view (Custom Tab / SFSafariViewController) on native.
     openSuccessActionUrl(url) {
       if (url) openInAppBrowser(url);

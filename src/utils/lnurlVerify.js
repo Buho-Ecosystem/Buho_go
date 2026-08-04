@@ -24,11 +24,12 @@ export function validateVerifyUrl(verifyUrl, callbackUrl) {
   if (typeof verifyUrl !== 'string' || !verifyUrl) return null
   try {
     const v = new URL(verifyUrl)
-    // https only (post-payment polling), and the same host as the callback —
-    // the same "same-domain" rule LUD-09 applies to `url` successActions
-    // (see sameDomain() in successAction.js), compared by hostname so it is
-    // port-insensitive. Fails closed on a missing/unparseable callback so we
-    // can never be tricked into polling a third-party URL.
+    // https only (post-payment polling), and the same host as the callback,
+    // compared by hostname so it is port-insensitive. Fails closed on a
+    // missing/unparseable callback so we can never be tricked into polling a
+    // third-party URL. Unlike a LUD-09 `url` successAction — a link the user
+    // reads and taps — this one the app calls by itself, so the host stays
+    // pinned to the service just paid.
     if (v.protocol !== 'https:') return null
     const c = new URL(callbackUrl)
     if (v.hostname !== c.hostname) return null
