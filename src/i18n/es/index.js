@@ -1583,6 +1583,7 @@ export default {
   "failed": "fallidos",
   "Total sent": "Total enviado",
   "sats sent": "sats enviados",
+  "Links from recipients": "Enlaces de destinatarios",
   "Failed payments": "Pagos fallidos",
   "Retry Failed": "Reintentar Fallidos",
   "Cancel Batch?": "¿Cancelar Envío?",
