@@ -105,15 +105,9 @@ A compromised device. A user who shares their seed or screen. A malicious LNBits
 provider, or relay the user chose to connect to. Builds from unofficial sources, so verify APK
 signatures. A lost seed phrase, for which there is no recovery path.
 
-## Acknowledgements
-
-| Date | Researcher | Issue | Severity |
-| --- | --- | --- | --- |
-| | | *No advisories published yet* | |
-
 ---
 
 For ordinary bugs and feature requests, use [Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
 and [CONTRIBUTING.md](CONTRIBUTING.md).
 
-*Last updated: `<DATE>`. The version in `main` is authoritative.*
+*Last updated: `2026_08_04`. The version in `main` is authoritative.*
