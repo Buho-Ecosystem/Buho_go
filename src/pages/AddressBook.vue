@@ -117,12 +117,6 @@ import { mapActions, mapState } from 'pinia'
 // payment flow without ever blocking the tap on a network call.
 const RESYNC_COOLDOWN_MS = 60 * 1000
 
-// Debounce window between a local contact mutation and the silent
-// NIP-51 publish. Long enough that a burst of edits (add three
-// contacts in a row) collapses to one publish; short enough that the
-// backup feels current.
-const AUTO_SYNC_DEBOUNCE_MS = 1500
-
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import BatchSendModal from '../components/BatchSendModal.vue'
@@ -139,7 +133,6 @@ export default {
       showModal: false,
       selectedEntry: null,
       showBatchSend: false,
-      _autoSyncTimer: null,
     }
   },
   computed: {
@@ -147,29 +140,12 @@ export default {
     // the status component directly off the store.
     ...mapState(useAddressBookStore, ['isRecovering', 'syncDirty']),
   },
-  watch: {
-    /**
-     * The store flips `syncDirty` after every nostr-contact mutation
-     * — add via Search/Scan, delete, petname edit — regardless of
-     * which child component triggered it. Watching the flag here is
-     * the single, gap-free hook: the page never has to wire a
-     * `@saved` / `@deleted` event per mutation path.
-     */
-    syncDirty(isDirty) {
-      if (isDirty) this._scheduleAutoSync()
-    },
-  },
+  // Automatic publishing is owned by the app-level driver
+  // (useAddressBookSync) so contacts added from ANY surface sync,
+  // not only while this page is mounted. This page keeps just the
+  // explicit actions: manual sync and kebab restore.
   async created() {
     await this.initializeAddressBook()
-    // Catch-up: a contact added in a previous session (the dirty
-    // flag persists to localStorage) syncs the moment the page opens.
-    if (this.syncDirty) this._scheduleAutoSync()
-  },
-  beforeUnmount() {
-    if (this._autoSyncTimer) {
-      clearTimeout(this._autoSyncTimer)
-      this._autoSyncTimer = null
-    }
   },
   methods: {
     ...mapActions(useAddressBookStore, ['initialize', 'syncToNostr', 'recoverFromNostr', 'isEntryPayable']),
@@ -185,22 +161,6 @@ export default {
 
         })
       }
-    },
-
-    /**
-     * Debounced, silent auto-sync. Fires after the dirty flag settles.
-     * `getMnemonic()` is a device-key decrypt — no biometric prompt —
-     * so this is genuinely invisible in the happy path. Failures are
-     * NOT toasted here: the status row already shows the error state
-     * and offers a tap-to-retry. Toasting an automatic background
-     * action the user didn't initiate would be noise.
-     */
-    _scheduleAutoSync() {
-      if (this._autoSyncTimer) clearTimeout(this._autoSyncTimer)
-      this._autoSyncTimer = setTimeout(() => {
-        this._autoSyncTimer = null
-        this.runSync({ silent: true })
-      }, AUTO_SYNC_DEBOUNCE_MS)
     },
 
     /**
@@ -267,8 +227,8 @@ export default {
         })
         return
       }
-      const caption = result.unpayable > 0
-        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
+      const caption = result.identityOnly > 0
+        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
         : undefined
       this.$q.notify({
         type: 'positive',
