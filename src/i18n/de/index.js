@@ -1582,6 +1582,7 @@ export default {
   "failed": "fehlgeschlagen",
   "Total sent": "Gesamt gesendet",
   "sats sent": "Sats gesendet",
+  "Links from recipients": "Links von Empfängern",
   "Failed payments": "Fehlgeschlagene Zahlungen",
   "Retry Failed": "Fehlgeschlagene wiederholen",
   "Cancel Batch?": "Sammelzahlung abbrechen?",
