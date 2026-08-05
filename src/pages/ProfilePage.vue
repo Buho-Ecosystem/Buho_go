@@ -548,14 +548,6 @@
       @restored="onIdentityRestored"
     />
 
-    <!-- "We found contacts on Nostr, add them?" — shown once, right
-         after identity restore, only when peekNostrContacts() finds
-         something new. See onIdentityRestored() below. -->
-    <ContactRestorePromptDialog
-      v-model="showContactRestorePrompt"
-      :loading="contactRestoreLoading"
-      @confirm="onConfirmContactRestore"
-    />
 
     <!-- Header scan button's target — the same Add Contact sheet Address
          Book's "+" opens, just landed on its Scan tab instead of Enter. -->
@@ -650,7 +642,6 @@ import AddSiteSheet from '../components/AddSiteSheet.vue';
 import SiteExamplesSheet from '../components/SiteExamplesSheet.vue';
 import SiteFavicon from '../components/SiteFavicon.vue';
 import ConnectedSiteSheet from '../components/ConnectedSiteSheet.vue';
-import ContactRestorePromptDialog from '../components/ContactRestorePromptDialog.vue';
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue';
 import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
@@ -685,7 +676,6 @@ export default {
     SiteExamplesSheet,
     SiteFavicon,
     ConnectedSiteSheet,
-    ContactRestorePromptDialog,
     AddressBookModal,
   },
 
@@ -702,11 +692,6 @@ export default {
       showIdentitySeedDialog: false,
       identitySeedDialogMode: 'backup',
       showIdentityRestoreDialog: false,
-
-      // "Add your contacts back?" prompt, shown after identity restore
-      // when peekNostrContacts() finds something new.
-      showContactRestorePrompt: false,
-      contactRestoreLoading: false,
 
       // Header scan button — opens the same Add Contact sheet Address
       // Book uses, landed directly on its Scan tab. A second, more
@@ -1088,17 +1073,18 @@ export default {
 
     async onIdentityRestored() {
       // The restore dialog already fired its own "Identity restored"
-      // notify. Profile recovery rides on top of that automatically —
-      // pull the user's public profile (kind:0) so "your name and
-      // avatar came back too". Address-book recovery is different: it
-      // only peeks for now (read-only, no local writes, no publish)
-      // and asks before merging anything in — see
-      // ContactRestorePromptDialog / onConfirmContactRestore below.
+      // notify. Profile and contact recovery ride on top of that
+      // automatically: the contact merge is additive (nothing local
+      // is overwritten), so there is no question the user needs to
+      // answer first — their contacts simply come back, with a toast
+      // when they do.
       //
       // Both run in parallel and are fire-and-forget. We don't block
       // the restore dialog's close on a relay round-trip, and a
       // failure on either side never undoes the successful identity
-      // restore.
+      // restore. A contact-recovery failure stays silent: the user
+      // can retry any time from Address Book → kebab → "Restore
+      // contacts from Nostr".
       const addressBook = useAddressBookStore();
       const identity = useIdentityStore();
       const profile = this.profile;
@@ -1111,9 +1097,9 @@ export default {
       // previous identity's name and avatar.
       profile.reset();
 
-      const [profileResult, peekResult] = await Promise.allSettled([
+      const [profileResult, contactsResult] = await Promise.allSettled([
         profile.recoverFromNostr({ identityStore: identity }),
-        addressBook.peekNostrContacts({ identityStore: identity }),
+        addressBook.recoverFromNostr({ identityStore: identity }),
       ]);
 
       if (profileResult.status === 'rejected') {
@@ -1136,70 +1122,23 @@ export default {
         // and shouldn't earn a toast.
       }
 
-      if (peekResult.status === 'rejected') {
-        // Defensive only — peekNostrContacts() catches its own errors
-        // internally and always resolves (never rejects), so this
-        // branch should be unreachable. Logged in case that contract
-        // ever changes.
-        console.warn('[profile] contact peek after restore failed:', peekResult.reason);
+      if (contactsResult.status === 'rejected') {
+        console.warn('[profile] contact recovery after restore failed:', contactsResult.reason);
         return;
       }
-      const peek = peekResult.value;
-      if (!peek || !peek.ok) {
-        // Non-fatal, and deliberately silent rather than a broken
-        // dialog — the user can still restore contacts any time from
-        // Address Book → kebab → "Restore contacts from Nostr".
-        console.warn('[profile] contact peek after restore failed:', peek && peek.reason);
-        return;
-      }
-      if (peek.hasNew) {
-        this.showContactRestorePrompt = true;
-      }
-    },
-
-    /**
-     * User tapped "Add contacts" on ContactRestorePromptDialog. Runs the
-     * real recoverFromNostr() merge (unchanged, same one the Address
-     * Book kebab menu uses) and reports its actual result — this is
-     * the only point in the flow that shows a contact count, because
-     * it's the only point where the count is authoritative.
-     */
-    async onConfirmContactRestore() {
-      const addressBook = useAddressBookStore();
-      const identity = useIdentityStore();
-
-      this.contactRestoreLoading = true;
-      try {
-        const result = await addressBook.recoverFromNostr({ identityStore: identity });
-        if (result && result.ok && result.hadRemote && result.restored > 0) {
-          const caption = result.identityOnly > 0
-            ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
-            : undefined;
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Restored {n} contacts', { n: result.restored }),
-            caption,
-            timeout: 4500,
-          });
-        } else if (!result || !result.ok) {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t("Couldn't restore contacts"),
-            caption: this.$t('Check your connection and try again.'),
-            timeout: 4000,
-          });
-        }
-      } catch (err) {
-        console.warn('[profile] contact restore after prompt failed:', err);
+      const result = contactsResult.value;
+      if (result && result.ok && result.restored > 0) {
+        const caption = result.identityOnly > 0
+          ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
+          : undefined;
         this.$q.notify({
-          type: 'negative',
-          message: this.$t("Couldn't restore contacts"),
-          caption: this.$t('Check your connection and try again.'),
-          timeout: 4000,
+          type: 'positive',
+          message: this.$t('Restored {n} contacts', { n: result.restored }),
+          caption,
+          timeout: 4500,
         });
-      } finally {
-        this.contactRestoreLoading = false;
-        this.showContactRestorePrompt = false;
+      } else if (result && result.ok === false) {
+        console.warn('[profile] contact recovery after restore failed:', result.reason);
       }
     },
 
