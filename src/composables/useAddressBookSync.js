@@ -47,15 +47,33 @@ export function useAddressBookSync() {
   let stateListener = null
   let lastPullAt = 0
 
-  const blocked = () => walletStore.kioskEnabled
+  // The reactive flag hydrates asynchronously, and on the kiosk boot
+  // path only after routing — so the persisted snapshot is the
+  // authority until the store catches up (same cold-start fallback as
+  // the kiosk route guard in boot/kiosk.js).
+  const blocked = () => {
+    if (walletStore.kioskEnabled) return true
+    try {
+      const saved = localStorage.getItem('buhoGO_wallet_store')
+      if (saved && JSON.parse(saved).kioskEnabled) return true
+    } catch { /* unreadable snapshot proves nothing */ }
+    return false
+  }
 
   async function syncNow() {
     if (blocked() || !identityStore.bootstrapped) return
+    let result = null
     try {
-      await addressBook.syncToNostr({ identityStore })
+      result = await addressBook.syncToNostr({ identityStore })
     } catch (err) {
       console.warn('[addressBookSync] background sync failed:', err)
     }
+    // Dirt can survive this call with no flag CHANGE for the watcher
+    // to see: another sync was in flight (null result), or a mutation
+    // landed mid-publish. Reschedule those; a failed run does NOT
+    // self-reschedule (that would hot-loop while offline) — the
+    // flush/online/pull triggers retry it.
+    if (addressBook.syncDirty && (result === null || result?.ok)) schedule()
   }
 
   function schedule() {

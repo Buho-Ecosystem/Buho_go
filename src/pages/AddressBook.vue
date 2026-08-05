@@ -148,7 +148,7 @@ export default {
     await this.initializeAddressBook()
   },
   methods: {
-    ...mapActions(useAddressBookStore, ['initialize', 'syncToNostr', 'recoverFromNostr', 'isEntryPayable']),
+    ...mapActions(useAddressBookStore, ['initialize', 'recoverFromNostr', 'isEntryPayable']),
 
     async initializeAddressBook() {
       try {
@@ -159,26 +159,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t load contacts'),
 
-        })
-      }
-    },
-
-    /**
-     * Publish the contact list to the user's private NIP-51 event.
-     * `silent` distinguishes the automatic debounced path (no toast)
-     * from the explicit status-row tap (toast on hard failure so the
-     * user knows their deliberate action didn't land).
-     */
-    async runSync({ silent = false } = {}) {
-      const identityStore = useIdentityStore()
-      if (!identityStore.bootstrapped) return
-      const result = await this.syncToNostr({ identityStore })
-      if (!silent && result && result.ok === false) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t sync contacts'),
-          caption: this.$t('Check your connection and try again.'),
-          timeout: 4000,
         })
       }
     },
@@ -201,6 +181,16 @@ export default {
         return
       }
       const result = await this.recoverFromNostr({ identityStore })
+      if (result === null) {
+        // Another sync (the app-level driver's, usually) is already in
+        // flight — that is busy, not broken.
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('Sync already running'),
+          timeout: 2500,
+        })
+        return
+      }
       if (!result || result.ok === false) {
         this.$q.notify({
           type: 'negative',
