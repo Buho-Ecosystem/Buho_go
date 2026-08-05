@@ -791,12 +791,17 @@ function fakeIdentity({ pubkey, secret }) {
  * fetch, and the NIP-65 fetch each see only what a real relay would
  * return for their filter.
  */
-function syncFakePool({ publish = 'ok', events = {} } = {}) {
+function syncFakePool({ publish = 'ok', events = {}, unreachable = [] } = {}) {
   const calls = { publish: [], query: [] };
   return {
     calls,
+    // Rejecting here is how a real pool signals a failed handshake —
+    // the reachability probe AND the publish fan-out both go through
+    // ensureRelay, so an unreachable relay fails both, like reality.
     async ensureRelay(url) {
+      if (unreachable.includes(url)) throw new Error('connect failed');
       return {
+        connected: true,
         publish: async (event) => {
           calls.publish.push({ url, event });
           if (publish === 'ok') return ['OK', event.id, true, ''];
@@ -812,7 +817,7 @@ function syncFakePool({ publish = 'ok', events = {} } = {}) {
       const kinds = Array.isArray(filter?.kinds) ? filter.kinds : null;
       const merged = [];
       for (const url of urls) {
-        if (!Array.isArray(events[url])) continue;
+        if (unreachable.includes(url) || !Array.isArray(events[url])) continue;
         for (const ev of events[url]) {
           if (!kinds || kinds.includes(ev.kind)) merged.push(ev);
         }
@@ -1493,6 +1498,212 @@ await test('addEntry: stores an LNURL contact that is payable', async () => {
   assert.equal(entry.addressType, 'lnurl');
   assert.equal(store.getEntryAddressType(entry), 'lnurl');
   assert.equal(store.isEntryPayable(entry), true);
+});
+
+// ---------------------------------------------------------------------------
+// Sync trust assumptions — the review findings. Every publish is a
+// whole-document replace shared with other apps, so these pin down
+// when a sync must REFUSE to publish, and which state must never leak
+// across identities.
+// ---------------------------------------------------------------------------
+
+await test('sync refuses to publish when no relay is provably reachable (no cache)', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const pool = syncFakePool({ unreachable: ['wss://a.test', 'wss://b.test'] });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://a.test', 'wss://b.test'],
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'fetch-failed');
+  assert.equal(pool.calls.publish.length, 0);
+  assert.equal(store.syncDirty, true);
+});
+
+await test('sync refuses the cache-recovery republish without proven absence', async () => {
+  const store = freshStore();
+  // A previous good sync left a cache for this identity.
+  store._saveDocCache({
+    pubkey: ALICE_PUBKEY,
+    eventId: 'ev-1',
+    createdAt: 1_700_000_000,
+    doc: { contacts: [{ id: 'c-x', name: 'From cache', npub: BOB_NPUB, updatedAt: 1_700_000_000 }], labels: [] },
+  });
+  const pool = syncFakePool({ unreachable: ['wss://a.test', 'wss://b.test'] });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://a.test', 'wss://b.test'],
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'fetch-failed');
+  assert.equal(pool.calls.publish.length, 0);
+});
+
+await test('an identity change drops the previous identity\'s cache, latch, and tombstones', async () => {
+  const store = freshStore();
+  // Alice syncs against a doc that carries a foreign (vCard-only)
+  // passenger another app owns.
+  const aliceDoc = {
+    contacts: [{ id: 'c-f', name: 'Phone-only person', phones: [{ label: '', value: '+1 555' }] }],
+    labels: ['friends'],
+  };
+  const pool1 = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(aliceDoc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY })] },
+  });
+  const first = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: pool1,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(first.ok, true);
+  assert.ok(store.legacyMigratedAt, 'legacy latch set for Alice');
+  store.nostrDeletions = [{ pubkey: BOB_PUBKEY, deletedAt: Date.now() }];
+  await store._persistSyncMeta();
+
+  // A local contact exists when Carol signs in on the same device.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+
+  const pool2 = syncFakePool();
+  const second = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    pool: pool2,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(second.ok, true);
+  assert.equal(second.published, true);
+  // Carol's doc is her own: it carries the local entry, never Alice's
+  // cached doc with the foreign passenger, and no stale tombstones.
+  const doc = decryptDoc(pool2.calls.publish[0].event, CAROL_SECRET, CAROL_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB));
+  assert.ok(!doc.contacts.some((c) => c.id === 'c-f'));
+  assert.ok(!doc.contacts.some((c) => c.trashed));
+});
+
+await test('a no-op sync never re-stamps a newer cache with the older fetched clock', async () => {
+  const store = freshStore();
+  const doc = {
+    contacts: [{ id: 'c-f', name: 'Foreign', phones: [{ label: '', value: '+1 555' }] }],
+    labels: [],
+  };
+  // Cache holds our own newer publish; the relay still serves an old copy.
+  store._saveDocCache({ pubkey: ALICE_PUBKEY, eventId: 'ev-new', createdAt: 5_000_000_000, doc });
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(doc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 })] },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.published, false);
+  const cached = JSON.parse(globalThis.localStorage.getItem('buhoGO_shared_contacts_doc_v1'));
+  assert.equal(cached.createdAt, 5_000_000_000);
+});
+
+await test('a mutation made mid-sync survives the dirty-flag clear', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const pool = syncFakePool();
+  // Simulate a contact edit landing while the sync is in flight: the
+  // doc fetch is the first await inside _runSync.
+  const origQuery = pool.querySync.bind(pool);
+  let injected = false;
+  pool.querySync = async (...args) => {
+    if (!injected) {
+      injected = true;
+      await store._markSyncDirty();
+    }
+    return origQuery(...args);
+  };
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(store.syncDirty, true, 'mid-sync dirt must survive the clear');
+});
+
+await test('a tombstone older than a doc re-add does not block the import', async () => {
+  const store = freshStore();
+  // Deleted here long ago; re-added in another app afterwards.
+  store.nostrDeletions = [{ pubkey: BOB_PUBKEY, deletedAt: 1_000_000 }];
+  const doc = {
+    contacts: [{ id: 'c-b', name: 'Bob again', npub: BOB_NPUB, updatedAt: nowSec() }],
+    labels: [],
+  };
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(doc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: nowSec() })] },
+  });
+  const result = await store.recoverFromNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async () => makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.restored, 1);
+  assert.ok(store.findContactByPubkey(BOB_PUBKEY));
+});
+
+await test('a legacy contact with no fetchable kind:0 still reaches the doc, and migration latches', async () => {
+  const store = freshStore();
+  const legacy = await makeLegacyEvent(
+    [{ pubkey: BOB_PUBKEY, petname: 'Old friend', updatedAt: 1_700_000_000_000, addedAt: 1_600_000_000_000 }],
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
+  );
+  const pool = syncFakePool({ events: { 'wss://r.test': [legacy] } });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async () => null, // Bob's profile is gone from relays
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.deferred, 1);
+  assert.equal(result.published, true);
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  const bob = doc.contacts.find((c) => c.npub === BOB_NPUB);
+  assert.ok(bob, 'the legacy contact must be in the published doc');
+  assert.equal(bob.name, 'Old friend');
+  assert.ok(store.legacyMigratedAt, 'migration latches: the doc now carries the contact');
+});
+
+await test('the legacy latch waits when absence of the legacy event is unproven', async () => {
+  const store = freshStore();
+  const docEvent = await makeRemoteDocEvent(
+    { contacts: [], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
+  );
+  // Two relays configured, only one reachable: the doc still arrives,
+  // but an empty legacy read could just mean the dead relay held it.
+  const pool = syncFakePool({
+    events: { 'wss://a.test': [docEvent] },
+    unreachable: ['wss://b.test'],
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://a.test', 'wss://b.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(store.legacyMigratedAt, null, 'latch must wait for a conclusive legacy read');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

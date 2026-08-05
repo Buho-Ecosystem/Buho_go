@@ -209,6 +209,16 @@ export const useAddressBookStore = defineStore('addressBook', {
     // Unset means the next sync still reads the old event; once set it
     // is never read again.
     legacyMigratedAt: null,
+    // Which identity the sync metadata (migration latch, tombstones)
+    // and the doc cache belong to. A restore or rotation changes the
+    // pubkey, and the previous identity's state must never leak into
+    // the new one — see _adoptSyncIdentity().
+    syncMetaPubkey: null,
+    // Bumped on every _markSyncDirty(). A finishing sync only clears
+    // the dirty flag when the generation still matches what it
+    // captured at start, so a mutation made mid-sync is never
+    // silently marked clean.
+    _dirtyGeneration: 0,
     // Pending delete-tombstones: [{ pubkey?, docId?, address?, deletedAt }].
     // A delete is a tombstone, never an omission — that's how a delete
     // propagates across devices instead of being "resurrected" by a
@@ -319,6 +329,7 @@ export const useAddressBookStore = defineStore('addressBook', {
             this.legacyMigratedAt = Number.isFinite(parsed.legacyMigratedAt)
               ? parsed.legacyMigratedAt
               : null
+            this.syncMetaPubkey = typeof parsed.pubkey === 'string' ? parsed.pubkey : null
             this.nostrDeletions = Array.isArray(parsed.nostrDeletions)
               ? parsed.nostrDeletions.filter(
                   (d) => d && Number.isFinite(d.deletedAt) && (
@@ -341,6 +352,10 @@ export const useAddressBookStore = defineStore('addressBook', {
     // mutation path; the sync layer reads this when deciding whether
     // a publish is actually necessary.
     async _markSyncDirty() {
+      // The generation bumps on EVERY mutation, even when the flag is
+      // already up — a sync in flight compares generations on
+      // completion so it never clears dirt it did not carry.
+      this._dirtyGeneration += 1
       if (this.syncDirty) return
       this.syncDirty = true
       await this._persistSyncMeta()
@@ -349,6 +364,7 @@ export const useAddressBookStore = defineStore('addressBook', {
     async _persistSyncMeta() {
       try {
         localStorage.setItem(SYNC_META_STORAGE_KEY, JSON.stringify({
+          pubkey: this.syncMetaPubkey,
           lastSyncedAt: this.lastSyncedAt,
           lastRecoveryAt: this.lastRecoveryAt,
           syncDirty: this.syncDirty,
@@ -358,6 +374,41 @@ export const useAddressBookStore = defineStore('addressBook', {
       } catch (error) {
         console.warn('Error saving address-book sync metadata:', error)
       }
+    },
+
+    /**
+     * Bind the sync metadata and doc cache to ONE identity. They
+     * describe a specific pubkey's address book; after an identity
+     * restore or rotation they would otherwise leak into the next
+     * identity — the old doc cache force-published under the new key
+     * (another identity's contacts, decrypted, republished), the old
+     * migration latch suppressing the new identity's legacy import,
+     * stale tombstones trashing the new identity's doc.
+     *
+     * On a pubkey change: drop all of it, and mark dirty when local
+     * entries exist so the new identity publishes its own book. The
+     * very first adoption (metadata written before this field existed)
+     * is benign — that state was produced under the only identity the
+     * device has seen.
+     */
+    async _adoptSyncIdentity(pubkey) {
+      if (this.syncMetaPubkey === pubkey) return
+      const firstAdoption = this.syncMetaPubkey === null
+      this.syncMetaPubkey = pubkey
+      if (!firstAdoption) {
+        this.legacyMigratedAt = null
+        this.nostrDeletions = []
+        this.lastSyncedAt = null
+        this.lastRecoveryAt = null
+        try {
+          localStorage.removeItem(DOC_CACHE_STORAGE_KEY)
+        } catch { /* cache is re-creatable */ }
+        if (this.entries.length > 0) {
+          this._dirtyGeneration += 1
+          this.syncDirty = true
+        }
+      }
+      await this._persistSyncMeta()
     },
 
     // Add new entry
@@ -860,6 +911,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
       let secretKey
       try {
+        await this._adoptSyncIdentity(pubkey)
         secretKey = await identityStore.getNostrSecretKeyBytes()
         const relaySet = await this._resolveSyncRelays({ pool, relays, pubkey, timeoutMs })
 
@@ -874,9 +926,14 @@ export const useAddressBookStore = defineStore('addressBook', {
         // 2. Establish the BASE doc. Our own cache can be fresher than
         //    what relays returned (a publish they haven't echoed yet,
         //    or relay data loss) — the newest known doc always wins.
-        const cache = this._loadDocCache()
+        //    But an EMPTY fetch is only meaningful when enough relays
+        //    provably answered: anything published from an unproven
+        //    absence could replace a doc that merely sat out of reach.
+        const cache = this._loadDocCache(pubkey)
+        const absenceProven = fetched.reachedRelays >= Math.min(2, relaySet.length)
         let baseDoc
         let baseCreatedAt
+        let baseWasFetched = false
         let forcePublish = false
         let hadRemote = fetched.found
         if (fetched.found) {
@@ -886,39 +943,44 @@ export const useAddressBookStore = defineStore('addressBook', {
           } else {
             baseDoc = fetched.doc
             baseCreatedAt = fetched.event.created_at
+            baseWasFetched = true
           }
+        } else if (!absenceProven) {
+          return fail('fetch-failed')
         } else if (cache) {
-          // Relays lost (or never got) the doc we know exists —
-          // recover it from the cache and force a republish.
+          // Absence is proven yet we have seen the doc before: the
+          // relays lost (or never got) it — recover it from the cache
+          // and force a republish.
           baseDoc = cache.doc
           baseCreatedAt = cache.createdAt
           forcePublish = true
           hadRemote = true
-        } else if (fetched.reachedRelays >= Math.min(2, relaySet.length)) {
+        } else {
           baseDoc = emptyDoc()
           baseCreatedAt = 0
-        } else {
-          // Nothing found, nothing cached, and too few relays answered
-          // to trust the absence. Retry later rather than risk
-          // publishing a fresh doc over an unreachable one.
-          return fail('fetch-failed')
         }
 
         // 3. LEGACY MIGRATION (read-only): fold the old kind:30000
-        //    list in exactly once. A network failure retries next run;
-        //    a missing or undecryptable event means there is nothing
-        //    to migrate.
+        //    list in exactly once. The read is conclusive when the
+        //    event arrived, or when its absence is backed by the doc
+        //    fetch having proven reachability for the same relay set
+        //    moments earlier (fetchAddressBook alone cannot tell "no
+        //    event" from "no relay answered"). An undecryptable event
+        //    is permanently unreadable — nothing to migrate.
         let legacyRecords = []
-        let legacyRetry = false
+        let legacyConclusive = false
         if (!this.legacyMigratedAt) {
           try {
             const legacy = await fetchAddressBook({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
             if (legacy) {
               hadRemote = true
               legacyRecords = partitionContactPayload(legacy.contacts).live
+              legacyConclusive = true
+            } else {
+              legacyConclusive = absenceProven
             }
           } catch (err) {
-            if (err?.code !== 'ADDRESS_BOOK_DECRYPT_FAILED') legacyRetry = true
+            legacyConclusive = err?.code === 'ADDRESS_BOOK_DECRYPT_FAILED'
           }
         }
 
@@ -930,11 +992,15 @@ export const useAddressBookStore = defineStore('addressBook', {
           relays: relaySet,
         })
 
-        // 5. MERGE local entries + tombstones into the doc.
+        // 5. MERGE local entries + tombstones into the doc. Legacy
+        //    contacts whose kind:0 couldn't be fetched right now ride
+        //    along as doc-only records — the doc is their durable
+        //    home, the local import catches up on a later sync.
         const merged = mergeEntriesIntoDoc({
           doc: baseDoc,
           entries: this.entries,
           deletions: this._prunedDeletions(),
+          extraNostrRecords: reconcile.legacyUnimported,
         })
 
         // 6. PUBLISH when the doc actually changed (or the cache
@@ -958,7 +1024,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           if (firstAccept) {
             published = true
             acceptedRelay = firstAccept.relay
-            this._saveDocCache({ eventId: event.id, createdAt, doc: merged.doc })
+            this._saveDocCache({ pubkey, eventId: event.id, createdAt, doc: merged.doc })
             await this._dropAppliedTombstones(merged.doc)
           } else {
             // Every relay refused — surface for diagnostics, the
@@ -966,9 +1032,14 @@ export const useAddressBookStore = defineStore('addressBook', {
             const results = await fanout.allSettled
             console.warn('[addressBook] sync landed on zero relays:', results)
           }
-        } else if (fetched.found) {
-          // Nothing to push: the fetched doc IS the truth — remember it.
+        } else if (fetched.found && baseWasFetched) {
+          // Nothing to push and the fetched doc was the base: remember
+          // it. When the cache won as base it already holds newer
+          // content — re-stamping it with the older fetched clock
+          // would let the next sync prefer the stale relay copy (and
+          // resurrect anything deleted since).
           this._saveDocCache({
+            pubkey,
             eventId: fetched.event.id,
             createdAt: fetched.event.created_at,
             doc: baseDoc,
@@ -982,15 +1053,17 @@ export const useAddressBookStore = defineStore('addressBook', {
         await this._applyDocLinks(merged.links)
 
         // The legacy list is migrated once its contacts verifiably
-        // live in the doc: every legacy import landed locally and any
-        // doc change was published. From then on the old event is
-        // never read again (and it was never written again).
+        // live in the doc: the read was conclusive, every legacy
+        // record is represented (imported locally or folded in as a
+        // doc-only record above), and any doc change was published.
+        // From then on the old event is never read again (and it was
+        // never written again).
         const changesLanded = (merged.changed || forcePublish) ? published : true
-        if (!this.legacyMigratedAt && !legacyRetry && !reconcile.legacyDeferred && changesLanded) {
+        if (!this.legacyMigratedAt && legacyConclusive && changesLanded) {
           this.legacyMigratedAt = Date.now()
         }
 
-        const { legacyDeferred, ...counters } = reconcile
+        const { legacyUnimported, ...counters } = reconcile
         return {
           ok: (merged.changed || forcePublish) ? published : true,
           hadRemote,
@@ -1019,7 +1092,10 @@ export const useAddressBookStore = defineStore('addressBook', {
      *
      * @returns {Promise<{ restored: number, removed: number,
      *   identityOnly: number, deferred: number, petnameUpdated: number,
-     *   legacyDeferred: boolean }>}
+     *   legacyUnimported: object[] }>}   // legacy records whose local
+     *                                    // import deferred — the merge
+     *                                    // folds them into the doc so
+     *                                    // they are never lost
      */
     async _reconcileWithDoc(docContacts, legacyRecords, { fetcher, pool, relays }) {
       let removed = 0
@@ -1027,7 +1103,7 @@ export const useAddressBookStore = defineStore('addressBook', {
       let identityOnly = 0
       let deferred = 0
       let petnameUpdated = 0
-      let legacyDeferred = false
+      const legacyUnimported = []
 
       // (a) Apply doc trash to local entries. `>=` on the clock: a
       //     trash always beats the entry state it was created from.
@@ -1098,7 +1174,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         const local = localByPubkey.get(dc.pubkey)
         if (local) {
           adoptDocValues(local, dc)
-        } else if (!this._isTombstoned({ pubkey: dc.pubkey, docId: dc.docId })) {
+        } else if (!this._isTombstoned({ pubkey: dc.pubkey, docId: dc.docId, updatedAtMs: dc.updatedAtMs })) {
           importQueue.push({
             pubkey: dc.pubkey,
             name: dc.name,
@@ -1112,7 +1188,7 @@ export const useAddressBookStore = defineStore('addressBook', {
       const docPubkeys = new Set(docContacts.nostr.map((c) => c.pubkey))
       for (const rec of legacyRecords) {
         if (localByPubkey.has(rec.pubkey) || docPubkeys.has(rec.pubkey)) continue
-        if (this._isTombstoned({ pubkey: rec.pubkey })) continue
+        if (this._isTombstoned({ pubkey: rec.pubkey, updatedAtMs: rec.updatedAt })) continue
         importQueue.push({
           pubkey: rec.pubkey,
           name: rec.petname || '',
@@ -1120,6 +1196,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           docId: null,
           relays: rec.relays,
           addedAt: rec.addedAt,
+          updatedAt: rec.updatedAt,
           legacy: true,
         })
       }
@@ -1138,7 +1215,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           else if (outcome === 'identity-only') { restored += 1; identityOnly += 1 }
           else {
             deferred += 1
-            if (chunk[j].legacy) legacyDeferred = true
+            if (chunk[j].legacy) legacyUnimported.push(chunk[j])
           }
         }
       }
@@ -1158,7 +1235,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           adoptDocValues(local, dc)
           continue
         }
-        if (this._isTombstoned({ docId: dc.docId, address: dc.paymentAddress })) continue
+        if (this._isTombstoned({ docId: dc.docId, address: dc.paymentAddress, updatedAtMs: dc.updatedAtMs })) continue
         // Another app may hold address formats we can't route (or a
         // Nostr entry may already own this address) — those stay
         // doc-only rather than becoming broken local entries.
@@ -1184,7 +1261,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
       await this.persistEntries()
       await this._persistSyncMeta()
-      return { restored, removed, identityOnly, deferred, petnameUpdated, legacyDeferred }
+      return { restored, removed, identityOnly, deferred, petnameUpdated, legacyUnimported }
     },
 
     /**
@@ -1276,18 +1353,31 @@ export const useAddressBookStore = defineStore('addressBook', {
       return [...new Set([...DEFAULT_RELAYS, ...own])]
     },
 
-    /** True when a pending local delete matches the given identity. */
-    _isTombstoned({ pubkey, docId, address }) {
+    /**
+     * True when a pending local delete matches the given identity AND
+     * is not older than the incoming record's clock. A doc write newer
+     * than the delete is a deliberate cross-app re-add — it must win
+     * now, not after the 90-day tombstone TTL runs out.
+     */
+    _isTombstoned({ pubkey, docId, address, updatedAtMs = 0 }) {
       const addr = typeof address === 'string' ? address.toLowerCase() : ''
+      const clock = Number.isFinite(updatedAtMs) ? updatedAtMs : 0
       return this._prunedDeletions().some((d) => (
-        (pubkey && d.pubkey === pubkey)
-        || (docId && d.docId === docId)
-        || (addr && (d.address || '') === addr)
+        ((pubkey && d.pubkey === pubkey)
+          || (docId && d.docId === docId)
+          || (addr && (d.address || '') === addr))
+        && d.deletedAt >= clock
       ))
     },
 
-    /** Last-seen shared doc, or null when absent/corrupt. */
-    _loadDocCache() {
+    /**
+     * Last-seen shared doc for THIS identity, or null. A cache written
+     * under a different pubkey is another identity's (decrypted)
+     * address book — treating it as ours would republish it under the
+     * wrong key, so it counts as absent. Also null on corrupt data;
+     * the cache is re-creatable from the next successful fetch.
+     */
+    _loadDocCache(pubkey) {
       try {
         const raw = localStorage.getItem(DOC_CACHE_STORAGE_KEY)
         if (!raw) return null
@@ -1295,6 +1385,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         if (!parsed || !Number.isFinite(parsed.createdAt) || typeof parsed.doc !== 'object') {
           return null
         }
+        if (parsed.pubkey !== pubkey) return null
         return {
           eventId: typeof parsed.eventId === 'string' ? parsed.eventId : '',
           createdAt: parsed.createdAt,
@@ -1305,9 +1396,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       }
     },
 
-    _saveDocCache({ eventId, createdAt, doc }) {
+    _saveDocCache({ pubkey, eventId, createdAt, doc }) {
       try {
-        localStorage.setItem(DOC_CACHE_STORAGE_KEY, JSON.stringify({ eventId, createdAt, doc }))
+        localStorage.setItem(DOC_CACHE_STORAGE_KEY, JSON.stringify({ pubkey, eventId, createdAt, doc }))
       } catch (error) {
         console.warn('Error saving contacts doc cache:', error)
       }
@@ -1389,11 +1480,15 @@ export const useAddressBookStore = defineStore('addressBook', {
 
       this.isSyncing = true
       this.lastSyncError = null
+      const dirtyGenAtStart = this._dirtyGeneration
       try {
         const result = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
         if (result.ok) {
           this.lastSyncedAt = Date.now()
-          this.syncDirty = false
+          // Only clear dirt this run actually carried — a contact
+          // added while the publish was in flight stays dirty and the
+          // next trigger picks it up.
+          if (this._dirtyGeneration === dirtyGenAtStart) this.syncDirty = false
           this.lastSyncError = null
         } else {
           this.lastSyncError = result.reason === 'decrypt-failed' ? 'DECRYPT_FAILED'
@@ -1435,15 +1530,17 @@ export const useAddressBookStore = defineStore('addressBook', {
       }
 
       this.isRecovering = true
+      const dirtyGenAtStart = this._dirtyGeneration
       try {
         const result = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
         if (result.ok) {
           this.lastRecoveryAt = Date.now()
           // Recovery publishes the merged union too, so when the
-          // publish landed the local state is fully in sync.
+          // publish landed the local state is fully in sync — unless
+          // a mutation slipped in while it ran (see syncToNostr).
           if (result.published) {
             this.lastSyncedAt = Date.now()
-            this.syncDirty = false
+            if (this._dirtyGeneration === dirtyGenAtStart) this.syncDirty = false
             this.lastSyncError = null
           }
         }

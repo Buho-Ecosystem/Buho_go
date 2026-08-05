@@ -163,13 +163,25 @@ function normStr(value) {
  *                      deletedAt: number }>,
  *   nowMs?:    number,
  * }} args
+ * `extraNostrRecords` carries contacts that must reach the doc even
+ * though no local entry exists for them yet — a legacy contact whose
+ * kind:0 is currently unfetchable. The doc is the durable home; the
+ * local import catches up on a later sync. Records whose npub is
+ * already in the doc (live or trashed) are skipped.
+ *
  * @returns {{
  *   doc:     object,                        // merged clone
  *   changed: boolean,                       // any mutation happened
  *   links:   Record<string, string>,        // entry.id -> doc contact id
  * }}
  */
-export function mergeEntriesIntoDoc({ doc, entries, deletions = [], nowMs = Date.now() }) {
+export function mergeEntriesIntoDoc({
+  doc,
+  entries,
+  deletions = [],
+  extraNostrRecords = [],
+  nowMs = Date.now(),
+}) {
   const merged = normalizeDoc(clone(doc));
   const links = {};
   let changed = false;
@@ -289,6 +301,29 @@ export function mergeEntriesIntoDoc({ doc, entries, deletions = [], nowMs = Date
       links[entry.id] = normStr(match.id);
       updateContact(match, entry, { paymentAddress: address });
     }
+  }
+
+  for (const rec of Array.isArray(extraNostrRecords) ? extraNostrRecords : []) {
+    const pubkey = normStr(rec.pubkey).toLowerCase();
+    if (!HEX_PUBKEY_RE.test(pubkey)) continue;
+    let npub = '';
+    try {
+      npub = nip19.npubEncode(pubkey);
+    } catch {
+      continue;
+    }
+    if (byNpub.has(npub.toLowerCase())) continue;
+    const record = {
+      id: newDocContactId(),
+      name: (normStr(rec.name).trim() || `${npub.slice(0, 12)}…`).slice(0, 80),
+      npub,
+      starred: !!rec.starred,
+      createdAt: toSeconds(rec.addedAt) || nowSec,
+      updatedAt: toSeconds(rec.updatedAt || rec.addedAt) || nowSec,
+    };
+    merged.contacts.push(record);
+    byNpub.set(npub.toLowerCase(), [record]);
+    changed = true;
   }
 
   // Deletes travel as trash, the ecosystem's recoverable soft-delete —
@@ -437,6 +472,40 @@ export function publishContactsDoc({ pool, relays, event, timeoutMs }) {
 }
 
 /**
+ * Query one relay with a provable reachability outcome.
+ *
+ * nostr-core's `querySync` alone cannot provide one: a socket that
+ * never connects resolves `[]` exactly like a connected relay with no
+ * matching events, and treating that as "reached, empty" is how a
+ * network blackout turns into publishing a fresh doc over the real
+ * one. `ensureRelay` rejects on a failed handshake, so connect-then-
+ * query makes `null` mean "not reached" while an array means "this
+ * relay really answered". An empty answer from a socket that died
+ * mid-query proves nothing and is demoted to "not reached" as well.
+ *
+ * A pool without `ensureRelay` cannot prove a connection, so it can
+ * never prove absence either — events still count, emptiness doesn't.
+ *
+ * @returns {Promise<object[] | null>}  events, or null when unreached
+ */
+async function queryOneRelay(pool, url, filter, maxWait) {
+  if (typeof pool.ensureRelay !== 'function') {
+    const events = await pool.querySync([url], filter, { maxWait });
+    return Array.isArray(events) && events.length > 0 ? events : null;
+  }
+  let relay;
+  try {
+    relay = await pool.ensureRelay(url, { connectionTimeout: maxWait });
+  } catch {
+    return null;
+  }
+  const events = await pool.querySync([url], filter, { maxWait });
+  if (!Array.isArray(events)) return null;
+  if (events.length === 0 && relay && relay.connected === false) return null;
+  return events;
+}
+
+/**
  * Fetch the newest shared contacts doc for the given identity.
  *
  * Relays are queried INDIVIDUALLY (not as one pooled query) because
@@ -444,8 +513,9 @@ export function publishContactsDoc({ pool, relays, event, timeoutMs }) {
  * relay answered". A replaceable event that exists but sits on a relay
  * we couldn't reach must never be treated as absent — publishing a
  * fresh doc over it would delete the user's contacts in every app.
- * `reachedRelays` counts the relays that answered cleanly; the caller
- * decides how many are enough to trust an empty result.
+ * `reachedRelays` counts relays whose socket provably connected (see
+ * `queryOneRelay`); the caller decides how many are enough to trust
+ * an empty result.
  *
  * @param {{
  *   pool?:      any,
@@ -484,7 +554,7 @@ export async function fetchContactsDoc({ pool, relays, pubkey, secretKey, timeou
   };
 
   const perRelay = await Promise.allSettled(
-    urls.map((url) => activePool.querySync([url], filter, { maxWait })),
+    urls.map((url) => queryOneRelay(activePool, url, filter, maxWait)),
   );
 
   let reachedRelays = 0;

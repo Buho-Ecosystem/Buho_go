@@ -318,5 +318,92 @@ await test('buildContactsDocEvent: refuses an over-sized doc instead of truncati
   );
 });
 
+await test('merge: extraNostrRecords land in the doc, existing npubs are skipped', () => {
+  const doc = emptyDoc();
+  doc.contacts.push({ id: 'c-bob', name: 'Bob', npub: BOB_NPUB, updatedAt: 1700000000 });
+  const { doc: merged, changed } = mergeEntriesIntoDoc({
+    doc,
+    entries: [],
+    extraNostrRecords: [
+      { pubkey: ALICE_PUBKEY, name: 'Alice (legacy)', addedAt: T1_MS, updatedAt: T2_MS },
+      { pubkey: BOB_PUBKEY, name: 'must be skipped' },
+    ],
+  });
+  assert.equal(changed, true);
+  assert.equal(merged.contacts.length, 2);
+  const alice = merged.contacts.find((c) => c.npub === ALICE_NPUB);
+  assert.equal(alice.name, 'Alice (legacy)');
+  assert.equal(alice.createdAt, 1_700_000_100);
+  assert.equal(alice.updatedAt, 1_700_000_200);
+  const bob = merged.contacts.find((c) => c.npub === BOB_NPUB);
+  assert.equal(bob.name, 'Bob');
+});
+
+await test('merge: an extra record without a petname gets the short-npub fallback name', () => {
+  const { doc: merged } = mergeEntriesIntoDoc({
+    doc: emptyDoc(),
+    entries: [],
+    extraNostrRecords: [{ pubkey: ALICE_PUBKEY, name: '' }],
+  });
+  assert.equal(merged.contacts.length, 1);
+  assert.ok(merged.contacts[0].name.startsWith(ALICE_NPUB.slice(0, 12)));
+});
+
+// ---------------------------------------------------------------------------
+// fetchContactsDoc — provable reachability. `querySync` alone resolves
+// [] for a dead socket exactly like for a connected-but-empty relay,
+// so "reached" must come from the connection handshake, never from a
+// resolved promise.
+// ---------------------------------------------------------------------------
+
+const { fetchContactsDoc } = await import('../nostrContactsDoc.js');
+
+function reachabilityPool({ unreachable = [], events = {} } = {}) {
+  return {
+    async ensureRelay(url) {
+      if (unreachable.includes(url)) throw new Error('connect failed');
+      return { connected: true };
+    },
+    async querySync(urls, _filter) {
+      const out = [];
+      for (const url of urls) out.push(...(events[url] || []));
+      return out;
+    },
+  };
+}
+
+await test('fetchContactsDoc: a relay whose handshake fails is not "reached"', async () => {
+  const result = await fetchContactsDoc({
+    pool: reachabilityPool({ unreachable: ['wss://a.test', 'wss://b.test'] }),
+    relays: ['wss://a.test', 'wss://b.test'],
+    pubkey: ALICE_PUBKEY,
+    secretKey: ALICE_SECRET,
+  });
+  assert.equal(result.found, false);
+  assert.equal(result.reachedRelays, 0);
+});
+
+await test('fetchContactsDoc: a connected relay with zero events IS "reached"', async () => {
+  const result = await fetchContactsDoc({
+    pool: reachabilityPool({ unreachable: ['wss://a.test'] }),
+    relays: ['wss://a.test', 'wss://b.test'],
+    pubkey: ALICE_PUBKEY,
+    secretKey: ALICE_SECRET,
+  });
+  assert.equal(result.found, false);
+  assert.equal(result.reachedRelays, 1);
+});
+
+await test('fetchContactsDoc: a pool without ensureRelay can never prove absence', async () => {
+  const result = await fetchContactsDoc({
+    pool: { async querySync() { return []; } },
+    relays: ['wss://a.test', 'wss://b.test'],
+    pubkey: ALICE_PUBKEY,
+    secretKey: ALICE_SECRET,
+  });
+  assert.equal(result.found, false);
+  assert.equal(result.reachedRelays, 0);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
