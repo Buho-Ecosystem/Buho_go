@@ -404,6 +404,20 @@ export const useAddressBookStore = defineStore('addressBook', {
         try {
           localStorage.removeItem(DOC_CACHE_STORAGE_KEY)
         } catch { /* cache is re-creatable */ }
+        // Entry links point into the PREVIOUS identity's doc. Kept,
+        // they would make the new identity's first sync read the ids'
+        // absence from ITS doc as remote hard deletes and drop every
+        // carried-over contact. Stripped, those contacts re-append
+        // into the new identity's doc like any unpublished entry.
+        let unlinked = false
+        for (let i = 0; i < this.entries.length; i += 1) {
+          if (this.entries[i].doc_contact_id) {
+            const { doc_contact_id, ...rest } = this.entries[i]
+            this.entries.splice(i, 1, rest)
+            unlinked = true
+          }
+        }
+        if (unlinked) await this.persistEntries()
         if (this.entries.length > 0) {
           this._dirtyGeneration += 1
           this.syncDirty = true
@@ -598,6 +612,11 @@ export const useAddressBookStore = defineStore('addressBook', {
           ))
           this.nostrDeletions.push(tombstone)
           await this._markSyncDirty()
+          // _markSyncDirty persists only on the clean-to-dirty flip;
+          // the tombstone must hit disk even when the book was already
+          // dirty, or an app kill drops the delete and the next sync
+          // re-imports the contact.
+          await this._persistSyncMeta()
         }
 
         return deletedEntry
@@ -1112,7 +1131,16 @@ export const useAddressBookStore = defineStore('addressBook', {
         secretKey.fill(0)
         secretKey = null
 
-        await this._applyDocLinks(merged.links)
+        // Links are only real once the doc they point into exists
+        // outside this device. After a refused publish an appended
+        // record's id refers to a doc nobody has — carrying it would
+        // make the next sync's hard-delete pass read the id's absence
+        // from the real doc as a remote delete and drop the contact.
+        // Matched links lose nothing by waiting: they re-derive on
+        // every successful merge.
+        if (!mustPublish || published) {
+          await this._applyDocLinks(merged.links)
+        }
 
         // The legacy list is migrated once its contacts verifiably
         // live in the doc: the read was conclusive, every legacy

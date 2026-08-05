@@ -439,6 +439,24 @@ await test('fetchContactsDoc: a connected relay with zero events IS "reached"', 
   assert.equal(result.reachedRelays, 1);
 });
 
+await test('fetchContactsDoc: a connected relay gets the full window before empty counts', async () => {
+  // The pool synthesizes EOSE on its own (shorter) timer; the probe
+  // must widen it so a slow relay is not mistaken for an empty one.
+  const relay = { connected: true, eoseTimeout: 4400 };
+  const pool = {
+    async ensureRelay() { return relay; },
+    async querySync() { return []; },
+  };
+  await fetchContactsDoc({
+    pool,
+    relays: ['wss://a.test'],
+    pubkey: ALICE_PUBKEY,
+    secretKey: ALICE_SECRET,
+    timeoutMs: 9000,
+  });
+  assert.equal(relay.eoseTimeout, 9000);
+});
+
 await test('fetchContactsDoc: a pool without ensureRelay can never prove absence', async () => {
   const result = await fetchContactsDoc({
     pool: { async querySync() { return []; } },

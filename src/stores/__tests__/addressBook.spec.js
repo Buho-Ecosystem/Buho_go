@@ -1805,5 +1805,95 @@ await test('the publish rebases onto an edit that landed during the sync window'
   assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB), 'and so does our contact');
 });
 
+await test('a refused publish never links appended records into the unpublished doc', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const docEvent = await makeRemoteDocEvent(
+    { contacts: [], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 },
+  );
+  const failing = syncFakePool({ publish: 'fail', events: { 'wss://r.test': [docEvent] } });
+  const first = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: failing,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(first.ok, false);
+  assert.ok(!store.entries[0].doc_contact_id, 'no link into a doc that never left the device');
+
+  // The retry must publish the contact, not hard-delete it because a
+  // stale link's id is absent from the real doc.
+  const retry = syncFakePool({ events: { 'wss://r.test': [docEvent] } });
+  const second = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: retry,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(second.ok, true);
+  assert.equal(store.entries.length, 1, 'the contact survives the retry');
+  const doc = decryptDoc(retry.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB));
+});
+
+await test('an identity switch unlinks entries so they re-append into the new identity\'s doc', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  // Alice's sync publishes and links the entry into HER doc.
+  const pool1 = syncFakePool();
+  await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: pool1,
+    relays: ['wss://r.test'],
+  });
+  assert.ok(store.entries[0].doc_contact_id, 'linked under Alice');
+
+  // Carol signs in on the same device; her own doc exists on relays.
+  const carolDoc = {
+    contacts: [{ id: 'c-carols', name: 'Carols friend', emails: [{ label: '', value: 'f@x.test' }] }],
+    labels: [],
+  };
+  const pool2 = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(carolDoc, { secret: CAROL_SECRET, pubkey: CAROL_PUBKEY })] },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    pool: pool2,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.ok(store.findContactByPubkey(BOB_PUBKEY), 'the carried-over contact survives the switch');
+  const doc = decryptDoc(pool2.calls.publish[0].event, CAROL_SECRET, CAROL_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB), 'and lands in the new identity\'s doc');
+  assert.ok(doc.contacts.some((c) => c.id === 'c-carols'), 'alongside its existing records');
+});
+
+await test('a delete made while the book is already dirty survives an app kill', async () => {
+  globalThis.localStorage = new MemoryStorage();
+  setActivePinia(createPinia());
+  const store = useAddressBookStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  assert.equal(store.syncDirty, true, 'precondition: already dirty when the delete happens');
+  await store.deleteEntry(store.entries[0].id);
+
+  // App kill before any sync: a fresh store over the same storage
+  // must still know about the delete, or the next sync re-imports.
+  setActivePinia(createPinia());
+  const reloaded = useAddressBookStore();
+  await reloaded.initialize();
+  assert.ok(reloaded.nostrDeletions.some((d) => d.pubkey === BOB_PUBKEY));
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -521,6 +521,10 @@ async function queryOneRelay(pool, url, filter, maxWait) {
   } catch {
     return null;
   }
+  // The pool synthesizes EOSE after the relay's own eoseTimeout
+  // (default well under our window) — a connected-but-slow relay
+  // would answer [] and count as reached. Give it the full window.
+  if (relay) relay.eoseTimeout = maxWait;
   const events = await pool.querySync([url], filter, { maxWait });
   if (!Array.isArray(events)) return null;
   if (events.length === 0 && relay && relay.connected === false) return null;
