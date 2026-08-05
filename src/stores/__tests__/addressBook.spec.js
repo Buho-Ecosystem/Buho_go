@@ -1706,5 +1706,104 @@ await test('the legacy latch waits when absence of the legacy event is unproven'
   assert.equal(store.legacyMigratedAt, null, 'latch must wait for a conclusive legacy read');
 });
 
+await test('a doc-linked entry missing from a fetched doc is a hard delete, not a re-add', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  // A previous sync linked this entry to a doc record that another
+  // app has since deleted forever.
+  store.entries.splice(0, 1, { ...store.entries[0], doc_contact_id: 'c-gone' });
+  const doc = {
+    contacts: [{ id: 'c-f', name: 'Foreign', phones: [{ label: '', value: '+1 555' }] }],
+    labels: [],
+  };
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(doc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY })] },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.removed, 1);
+  assert.equal(store.entries.length, 0, 'the hard-deleted contact must not survive locally');
+  assert.equal(pool.calls.publish.length, 0, 'and must not be re-appended to the doc');
+});
+
+await test('a hard delete is never inferred from the cache winning as base', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  store.entries.splice(0, 1, { ...store.entries[0], doc_contact_id: 'c-mine' });
+  // Our own newer publish (with the record) has not reached this
+  // relay yet; the relay still serves an older doc without it.
+  store._saveDocCache({
+    pubkey: ALICE_PUBKEY,
+    eventId: 'ev-new',
+    createdAt: 5_000_000_000,
+    doc: { contacts: [{ id: 'c-mine', name: 'Bob', npub: BOB_NPUB, updatedAt: 4_999_999_000 }], labels: [] },
+  });
+  const pool = syncFakePool({
+    events: {
+      'wss://r.test': [await makeRemoteDocEvent({ contacts: [], labels: [] }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 })],
+    },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(store.entries.length, 1, 'absence from a stale relay copy proves nothing');
+});
+
+await test('the publish rebases onto an edit that landed during the sync window', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const docV1 = await makeRemoteDocEvent(
+    { contacts: [], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 },
+  );
+  // While our reconcile ran, another app saved a contact.
+  const docV2 = await makeRemoteDocEvent(
+    { contacts: [{ id: 'c-window', name: 'Added in the window', emails: [{ label: '', value: 'w@x.test' }] }], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_500 },
+  );
+  const pool = syncFakePool();
+  let docFetches = 0;
+  const origQuery = pool.querySync.bind(pool);
+  pool.querySync = async (urls, filter, params) => {
+    if (Array.isArray(filter?.kinds) && filter.kinds.includes(CONTACTS_DOC_KIND)) {
+      docFetches += 1;
+      return docFetches === 1 ? [docV1] : [docV2];
+    }
+    return origQuery(urls, filter, params);
+  };
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.published, true);
+  assert.equal(docFetches, 2, 'one rebase re-fetch before the publish');
+  const published = pool.calls.publish[0].event;
+  assert.ok(published.created_at > 1_700_000_500, 'clock must beat the window edit');
+  const doc = decryptDoc(published, ALICE_SECRET, ALICE_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.id === 'c-window'), 'the window edit survives');
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB), 'and so does our contact');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

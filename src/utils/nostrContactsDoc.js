@@ -108,6 +108,24 @@ export function emptyDoc() {
   return { contacts: [], labels: [] };
 }
 
+/**
+ * Every contact id in the doc, foreign records included. The store's
+ * hard-delete detection needs the full id set: a locally-linked id
+ * absent from a genuinely fetched doc means the record was deleted
+ * forever in another app.
+ *
+ * @param {object} doc
+ * @returns {Set<string>}
+ */
+export function collectDocContactIds(doc) {
+  const ids = new Set();
+  for (const contact of normalizeDoc(doc).contacts) {
+    const id = normStr(contact.id);
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -196,8 +214,12 @@ export function mergeEntriesIntoDoc({
       list.push(contact);
       byNpub.set(npub, list);
     }
+    // Address matching exists for identity-less records only. A doc
+    // contact that carries an npub is someone's nostr-identity
+    // contact — a same-address manual entry or an address tombstone
+    // must never rename, re-star, or trash it through this index.
     const address = normStr(contact.paymentAddress).toLowerCase();
-    if (address) {
+    if (address && !npub) {
       const list = byAddress.get(address) || [];
       list.push(contact);
       byAddress.set(address, list);

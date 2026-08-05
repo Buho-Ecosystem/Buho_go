@@ -22,6 +22,7 @@ const {
   mergeEntriesIntoDoc,
   extractDocContacts,
   buildContactsDocEvent,
+  collectDocContactIds,
 } = await import('../nostrContactsDoc.js');
 const { deriveSelfConversationKey } = await import('../nostrAddressBook.js');
 
@@ -347,6 +348,50 @@ await test('merge: an extra record without a petname gets the short-npub fallbac
   });
   assert.equal(merged.contacts.length, 1);
   assert.ok(merged.contacts[0].name.startsWith(ALICE_NPUB.slice(0, 12)));
+});
+
+await test('merge: address matching never touches an npub-carrying contact', () => {
+  const doc = emptyDoc();
+  doc.contacts.push({
+    id: 'c-bob',
+    name: 'Bob (nostr)',
+    npub: BOB_NPUB,
+    paymentAddress: 'bob@wallet.test',
+    starred: false,
+    updatedAt: 1_700_000_000,
+  });
+  const manual = {
+    id: 'addr-m',
+    name: 'Bob typed in',
+    address: 'bob@wallet.test',
+    isFavorite: true,
+    createdAt: T3_MS,
+    updatedAt: T3_MS,
+  };
+  const { doc: merged } = mergeEntriesIntoDoc({
+    doc,
+    entries: [manual],
+    deletions: [{ address: 'bob@wallet.test', deletedAt: T3_MS }],
+  });
+  // The identity contact is untouched: not renamed, not starred, not
+  // trashed. The manual entry lands as its own record instead.
+  const bob = merged.contacts.find((c) => c.id === 'c-bob');
+  assert.equal(bob.name, 'Bob (nostr)');
+  assert.equal(bob.starred, false);
+  assert.ok(!bob.trashed);
+  assert.equal(merged.contacts.filter((c) => c.paymentAddress === 'bob@wallet.test').length, 2);
+});
+
+await test('collectDocContactIds: every id, foreign records included', () => {
+  const ids = collectDocContactIds({
+    contacts: [
+      { id: 'c-a', npub: BOB_NPUB },
+      { id: 'c-b', phones: [{ label: '', value: '+1' }] },
+      { name: 'no id at all' },
+    ],
+    labels: [],
+  });
+  assert.deepEqual([...ids].sort(), ['c-a', 'c-b']);
 });
 
 // ---------------------------------------------------------------------------

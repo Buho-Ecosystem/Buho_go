@@ -23,6 +23,7 @@ import {
   publishContactsDoc,
   normalizeDoc,
   emptyDoc,
+  collectDocContactIds,
 } from '../utils/nostrContactsDoc.js'
 import { DEFAULT_RELAYS } from '../utils/nostrRelays.js'
 
@@ -933,6 +934,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         const absenceProven = fetched.reachedRelays >= Math.min(2, relaySet.length)
         let baseDoc
         let baseCreatedAt
+        let baseEventId = ''
         let baseWasFetched = false
         let forcePublish = false
         let hadRemote = fetched.found
@@ -940,9 +942,11 @@ export const useAddressBookStore = defineStore('addressBook', {
           if (cache && cache.createdAt > fetched.event.created_at) {
             baseDoc = cache.doc
             baseCreatedAt = cache.createdAt
+            baseEventId = cache.eventId
           } else {
             baseDoc = fetched.doc
             baseCreatedAt = fetched.event.created_at
+            baseEventId = fetched.event.id
             baseWasFetched = true
           }
         } else if (!absenceProven) {
@@ -953,11 +957,23 @@ export const useAddressBookStore = defineStore('addressBook', {
           // and force a republish.
           baseDoc = cache.doc
           baseCreatedAt = cache.createdAt
+          baseEventId = cache.eventId
           forcePublish = true
           hadRemote = true
         } else {
           baseDoc = emptyDoc()
           baseCreatedAt = 0
+        }
+
+        // A doc-linked entry whose record vanished from a genuinely
+        // fetched doc was deleted forever in another app (emptied
+        // trash, merged away). The merge below would otherwise
+        // re-append it as a fresh record, resurrecting it everywhere.
+        // Only a fetched base can prove this — absence from the cache
+        // or an empty synthesized base proves nothing.
+        let hardRemoved = 0
+        if (baseWasFetched) {
+          hardRemoved = this._applyDocHardDeletes(collectDocContactIds(baseDoc))
         }
 
         // 3. LEGACY MIGRATION (read-only): fold the old kind:30000
@@ -992,11 +1008,13 @@ export const useAddressBookStore = defineStore('addressBook', {
           relays: relaySet,
         })
 
+        reconcile.removed += hardRemoved
+
         // 5. MERGE local entries + tombstones into the doc. Legacy
         //    contacts whose kind:0 couldn't be fetched right now ride
         //    along as doc-only records — the doc is their durable
         //    home, the local import catches up on a later sync.
-        const merged = mergeEntriesIntoDoc({
+        let merged = mergeEntriesIntoDoc({
           doc: baseDoc,
           entries: this.entries,
           deletions: this._prunedDeletions(),
@@ -1007,7 +1025,51 @@ export const useAddressBookStore = defineStore('addressBook', {
         //    recovery above demands it).
         let published = false
         let acceptedRelay = null
-        if (merged.changed || forcePublish) {
+        let mustPublish = merged.changed || forcePublish
+
+        // Rebase before publishing: the reconcile above can take tens
+        // of seconds (kind:0 fetches), and an edit another app
+        // published in that window must not be superseded by a doc
+        // built from the pre-edit base. One re-fetch, no loop; on any
+        // trouble we proceed with the original base, which is exactly
+        // the pre-rebase behavior. A fresh doc older than our base
+        // (possible when the cache won) never rebases us backwards.
+        if (mustPublish) {
+          try {
+            const fresh = await fetchContactsDoc({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
+            const isNewer = fresh.found && (
+              fresh.event.created_at > baseCreatedAt
+              || (fresh.event.created_at === baseCreatedAt && fresh.event.id !== baseEventId)
+            )
+            if (isNewer) {
+              const freshRemoved = this._applyDocHardDeletes(collectDocContactIds(fresh.doc))
+              if (freshRemoved > 0) {
+                reconcile.removed += freshRemoved
+                await this.persistEntries()
+              }
+              merged = mergeEntriesIntoDoc({
+                doc: fresh.doc,
+                entries: this.entries,
+                deletions: this._prunedDeletions(),
+                extraNostrRecords: reconcile.legacyUnimported,
+              })
+              fetched = fresh
+              baseDoc = fresh.doc
+              baseCreatedAt = fresh.event.created_at
+              baseEventId = fresh.event.id
+              baseWasFetched = true
+              hadRemote = true
+              // The window's edit may already contain everything we
+              // were about to push — then there is nothing to publish
+              // and the no-op path below caches the fresh doc.
+              mustPublish = merged.changed || forcePublish
+            }
+          } catch (err) {
+            console.warn('[addressBook] pre-publish rebase skipped:', err?.message || err)
+          }
+        }
+
+        if (mustPublish) {
           const createdAt = Math.max(Math.floor(Date.now() / 1000), baseCreatedAt + 1)
           let event
           try {
@@ -1058,14 +1120,14 @@ export const useAddressBookStore = defineStore('addressBook', {
         // doc-only record above), and any doc change was published.
         // From then on the old event is never read again (and it was
         // never written again).
-        const changesLanded = (merged.changed || forcePublish) ? published : true
+        const changesLanded = mustPublish ? published : true
         if (!this.legacyMigratedAt && legacyConclusive && changesLanded) {
           this.legacyMigratedAt = Date.now()
         }
 
         const { legacyUnimported, ...counters } = reconcile
         return {
-          ok: (merged.changed || forcePublish) ? published : true,
+          ok: mustPublish ? published : true,
           hadRemote,
           published,
           acceptedRelay,
@@ -1368,6 +1430,31 @@ export const useAddressBookStore = defineStore('addressBook', {
           || (addr && (d.address || '') === addr))
         && d.deletedAt >= clock
       ))
+    },
+
+    /**
+     * Remove entries whose linked doc record vanished from a genuinely
+     * fetched doc: that is a hard delete made in another app (emptied
+     * trash, merged away), and re-appending the entry on the next
+     * merge would resurrect the contact everywhere. Entries that were
+     * never doc-linked are untouched — they have not been published
+     * yet, so their absence proves nothing. Callers gate on a fetched
+     * base; the cache and the empty synthesized base cannot prove a
+     * hard delete.
+     *
+     * @param {Set<string>} docIds  every contact id in the fetched doc
+     * @returns {number}            entries removed
+     */
+    _applyDocHardDeletes(docIds) {
+      let removed = 0
+      for (let i = this.entries.length - 1; i >= 0; i -= 1) {
+        const linkedId = this.entries[i].doc_contact_id
+        if (typeof linkedId === 'string' && linkedId && !docIds.has(linkedId)) {
+          this.entries.splice(i, 1)
+          removed += 1
+        }
+      }
+      return removed
     },
 
     /**
