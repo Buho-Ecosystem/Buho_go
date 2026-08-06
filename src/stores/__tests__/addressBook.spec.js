@@ -1895,5 +1895,136 @@ await test('a delete made while the book is already dirty survives an app kill',
   assert.ok(reloaded.nostrDeletions.some((d) => d.pubkey === BOB_PUBKEY));
 });
 
+// ---------------------------------------------------------------------------
+// switchContactsIdentity — the Change-identity sheet's orchestration
+// ---------------------------------------------------------------------------
+
+const DAVE_SECRET = new Uint8Array(32).fill(0x44);
+const DAVE_PUBKEY = getPublicKey(DAVE_SECRET);
+const DAVE_NPUB = nip19.npubEncode(DAVE_PUBKEY);
+
+/**
+ * A mutable identity fake: switchContactsIdentity holds ONE store
+ * reference across the whole flow while the real identity store
+ * mutates in place, so the fake must flip the same way.
+ */
+function mutableIdentity({ pubkey, secret }) {
+  const identity = {
+    bootstrapped: true,
+    nostrPubkeyHex: pubkey,
+    _secret: secret,
+    async getNostrSecretKeyBytes() { return new Uint8Array(this._secret); },
+    switchTo({ pubkey: p, secret: s }) {
+      this.nostrPubkeyHex = p;
+      this._secret = s;
+    },
+  };
+  return identity;
+}
+
+await test('switchContactsIdentity (start fresh): flushes the old book, then swaps to the new identity\'s', async () => {
+  const store = freshStore();
+  const identity = mutableIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET });
+
+  // Alice has one unpublished contact (dirty) and Carol already owns
+  // a doc of her own on the relay.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const carolDoc = {
+    contacts: [{
+      id: 'c-carol1', name: 'Carol Friend', npub: DAVE_NPUB,
+      createdAt: 1_700_000_000, updatedAt: 1_700_000_000,
+    }],
+    labels: ['work'],
+  };
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(carolDoc, { secret: CAROL_SECRET, pubkey: CAROL_PUBKEY })] },
+  });
+
+  const result = await store.switchContactsIdentity({
+    identityStore: identity,
+    changeIdentity: async () => identity.switchTo({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    keepContacts: false,
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async (pk) => (pk === DAVE_PUBKEY
+      ? makeKind0(DAVE_SECRET, { name: 'Dave', lud16: 'dave@dave.test' })
+      : null),
+  });
+
+  assert.equal(result.ok, true);
+  // The pre-switch flush published Bob under ALICE's key.
+  const aliceEvents = pool.calls.publish.filter((p) => p.event.pubkey === ALICE_PUBKEY);
+  assert.ok(aliceEvents.length > 0, 'outgoing identity flushed first');
+  assert.ok(decryptDoc(aliceEvents[0].event, ALICE_SECRET, ALICE_PUBKEY)
+    .contacts.some((c) => c.npub === BOB_NPUB));
+  // The local book now belongs to Carol: her contact, not Alice's.
+  assert.ok(store.entries.some((e) => e.nostr_npub === DAVE_NPUB), 'Carol\'s contact imported');
+  assert.ok(!store.entries.some((e) => e.nostr_npub === BOB_NPUB), 'Alice\'s contact gone locally');
+  // (syncDirty may be set here: reconcile-imports mark the book dirty
+  // like every recovery does, and the driver's follow-up sync no-ops.)
+  // Nothing of Alice's was published under Carol's key.
+  for (const p of pool.calls.publish.filter((x) => x.event.pubkey === CAROL_PUBKEY)) {
+    assert.ok(!decryptDoc(p.event, CAROL_SECRET, CAROL_PUBKEY).contacts.some((c) => c.npub === BOB_NPUB));
+  }
+});
+
+await test('switchContactsIdentity (bring along): the carried book publishes under the new key as a union', async () => {
+  const store = freshStore();
+  const identity = mutableIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET });
+
+  // Alice's contact is synced and doc-linked; Carol's doc already
+  // holds her own record that must survive the union.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const pool1 = syncFakePool();
+  const first = await store.syncToNostr({ identityStore: identity, pool: pool1, relays: ['wss://r.test'] });
+  assert.equal(first.ok, true);
+  const linked = store.entries.find((e) => e.nostr_npub === BOB_NPUB);
+  assert.ok(linked.doc_contact_id, 'entry linked into Alice\'s doc');
+
+  const carolDoc = {
+    contacts: [{
+      id: 'c-carol1', name: 'Carol Friend', npub: DAVE_NPUB,
+      createdAt: 1_700_000_000, updatedAt: 1_700_000_000,
+    }],
+    labels: [],
+  };
+  const pool2 = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(carolDoc, { secret: CAROL_SECRET, pubkey: CAROL_PUBKEY })] },
+  });
+
+  const result = await store.switchContactsIdentity({
+    identityStore: identity,
+    changeIdentity: async () => identity.switchTo({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    keepContacts: true,
+    pool: pool2,
+    relays: ['wss://r.test'],
+    profileFetcher: async (pk) => (pk === DAVE_PUBKEY
+      ? makeKind0(DAVE_SECRET, { name: 'Dave', lud16: 'dave@dave.test' })
+      : null),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.published, true);
+  // Bob survived the switch and landed in CAROL's doc alongside her
+  // own record — a union, not a replace.
+  assert.ok(store.entries.some((e) => e.nostr_npub === BOB_NPUB));
+  const published = pool2.calls.publish.find((p) => p.event.pubkey === CAROL_PUBKEY);
+  const doc = decryptDoc(published.event, CAROL_SECRET, CAROL_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB), 'carried contact published');
+  assert.ok(doc.contacts.some((c) => c.id === 'c-carol1'), 'existing record survived');
+  // The entry was re-linked into the NEW doc, not left pointing at
+  // Alice's (whose id would read as a hard delete next sync).
+  const relinked = store.entries.find((e) => e.nostr_npub === BOB_NPUB);
+  assert.notEqual(relinked.doc_contact_id, linked.doc_contact_id);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

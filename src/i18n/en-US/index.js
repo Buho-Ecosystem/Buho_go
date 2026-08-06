@@ -2405,5 +2405,20 @@ export default {
   "LNbits connection scanned": "LNbits connection scanned",
   "This LNDhub link is not from an LNbits server": "This LNDhub link is not from an LNbits server",
   "That looks like an invoice (read-only) key": "That looks like an invoice (read-only) key",
-  "You can receive but not send": "You can receive but not send"
+  "You can receive but not send": "You can receive but not send",
+  "Change identity": "Change identity",
+  "Switch identities or create another one": "Switch identities or create another one",
+  "One recovery phrase backs every identity here. Each identity has its own profile and contacts.": "One recovery phrase backs every identity here. Each identity has its own profile and contacts.",
+  "Identity {n}": "Identity {n}",
+  "Create another identity": "Create another identity",
+  "Bring your contacts along?": "Bring your contacts along?",
+  "Your new identity can start with a copy of your current contacts, or with none. Your recovery phrase stays the same and backs both identities.": "Your new identity can start with a copy of your current contacts, or with none. Your recovery phrase stays the same and backs both identities.",
+  "Bring my contacts": "Bring my contacts",
+  "Start fresh": "Start fresh",
+  "Switched identity": "Switched identity",
+  "New identity created": "New identity created",
+  "Couldn't switch identity": "Couldn't switch identity",
+  "Couldn't create the identity": "Couldn't create the identity",
+  "Your identity list has not synced yet. Tap to retry.": "Your identity list has not synced yet. Tap to retry.",
+  "Identity list synced": "Identity list synced"
 }
