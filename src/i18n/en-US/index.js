@@ -429,6 +429,7 @@ export default {
   "This profile has no Lightning address yet, so we cannot save it for payments.": "This profile has no Lightning address yet, so we cannot save it for payments.",
   "{name} hasn't published a Lightning address. Open Address Book to check again later.": "{name} hasn't published a Lightning address. Open Address Book to check again later.",
   "Restore contacts from Nostr": "Restore contacts from Nostr",
+  "Sync already running": "Sync already running",
   "Pull contacts you saved on another device": "Pull contacts you saved on another device",
   "Payment address": "Payment address",
   "Paste the address from your friend or shop": "Paste the address from your friend or shop",

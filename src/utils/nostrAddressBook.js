@@ -1,5 +1,11 @@
 /**
- * Private NIP-51 address book sync.
+ * Private NIP-51 address book sync — LEGACY, read-only.
+ *
+ * The address book now syncs through the shared ecosystem contacts
+ * doc (see nostrContactsDoc.js). This module remains solely so the
+ * one-time migration can read lists published by earlier builds; the
+ * kind:30000 event is never written again. The old event is left on
+ * relays untouched so not-yet-updated installs keep working.
  *
  * The address book stores Nostr-sourced contacts locally so the app
  * works offline. But the user expects their contacts to come back

@@ -464,6 +464,7 @@ export default {
   "This profile has no Lightning address yet, so we cannot save it for payments.": "Este perfil aún no tiene dirección Lightning, así que no podemos guardarlo para pagos.",
   "{name} hasn't published a Lightning address. Open Address Book to check again later.": "{name} no ha publicado una dirección Lightning. Abre la Libreta de Direcciones para volver a comprobarlo más tarde.",
   "Restore contacts from Nostr": "Restaurar contactos desde Nostr",
+  "Sync already running": "La sincronización ya está en curso",
   "Pull contacts you saved on another device": "Recupera los contactos que guardaste en otro dispositivo",
   "Payment address": "Dirección de pago",
   "Paste the address from your friend or shop": "Pega la dirección de tu amigo o tienda",

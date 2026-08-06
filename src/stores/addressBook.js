@@ -8,14 +8,24 @@ import {
   isLnurl,
 } from '../utils/addressUtils.js'
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js'
+// Legacy kind:30000 list — READ ONLY, for the one-time migration into
+// the shared contacts doc. The old event is never written again.
 import {
-  buildAddressBookEvent,
   fetchAddressBook,
-  publishAddressBook,
-  serializeContactPayload,
-  mergeContactPayloads,
   partitionContactPayload,
 } from '../utils/nostrAddressBook.js'
+import {
+  fetchContactsDoc,
+  fetchOwnWriteRelays,
+  mergeEntriesIntoDoc,
+  extractDocContacts,
+  buildContactsDocEvent,
+  publishContactsDoc,
+  normalizeDoc,
+  emptyDoc,
+  collectDocContactIds,
+} from '../utils/nostrContactsDoc.js'
+import { DEFAULT_RELAYS } from '../utils/nostrRelays.js'
 
 // Address type constants
 export const ADDRESS_TYPES = {
@@ -165,6 +175,13 @@ function cloneEvent(event) {
 // still read `buhoGO_address_book` and ignore this sibling.
 const SYNC_META_STORAGE_KEY = 'buhoGO_address_book_sync_v1'
 
+// Last-seen shared contacts doc: `{ eventId, createdAt, doc }`. Two
+// jobs: (a) "never write blind" — with a cache we can safely republish
+// when relays return nothing (relay data loss), instead of refusing or
+// clobbering; (b) our own just-published doc is the freshest truth
+// even before relays echo it back.
+const DOC_CACHE_STORAGE_KEY = 'buhoGO_shared_contacts_doc_v1'
+
 // How long a delete-tombstone is carried in the synced payload. After
 // this window every device that's going to converge has already seen
 // the delete, so the tombstone has done its job; keeping it longer
@@ -189,9 +206,26 @@ export const useAddressBookStore = defineStore('addressBook', {
     lastSyncError: null,
     lastRecoveryAt: null,
     syncDirty: false,
-    // Pending delete-tombstones: [{ pubkey, deletedAt }]. A delete is
-    // a tombstone, never an omission — that's how a delete propagates
-    // across devices instead of being "resurrected" by a stale copy.
+    // When the legacy kind:30000 list was folded into the shared doc.
+    // Unset means the next sync still reads the old event; once set it
+    // is never read again.
+    legacyMigratedAt: null,
+    // Which identity the sync metadata (migration latch, tombstones)
+    // and the doc cache belong to. A restore or rotation changes the
+    // pubkey, and the previous identity's state must never leak into
+    // the new one — see _adoptSyncIdentity().
+    syncMetaPubkey: null,
+    // Bumped on every _markSyncDirty(). A finishing sync only clears
+    // the dirty flag when the generation still matches what it
+    // captured at start, so a mutation made mid-sync is never
+    // silently marked clean.
+    _dirtyGeneration: 0,
+    // Pending delete-tombstones: [{ pubkey?, docId?, address?, deletedAt }].
+    // A delete is a tombstone, never an omission — that's how a delete
+    // propagates across devices instead of being "resurrected" by a
+    // stale copy. Nostr entries carry their pubkey; manual entries the
+    // doc contact id they were linked to (or their address as the
+    // pre-link fallback).
     nostrDeletions: [],
     colorPalette: [
       '#3B82F6', // Blue
@@ -293,9 +327,17 @@ export const useAddressBookStore = defineStore('addressBook', {
             this.lastSyncedAt = Number.isFinite(parsed.lastSyncedAt) ? parsed.lastSyncedAt : null
             this.lastRecoveryAt = Number.isFinite(parsed.lastRecoveryAt) ? parsed.lastRecoveryAt : null
             this.syncDirty = !!parsed.syncDirty
+            this.legacyMigratedAt = Number.isFinite(parsed.legacyMigratedAt)
+              ? parsed.legacyMigratedAt
+              : null
+            this.syncMetaPubkey = typeof parsed.pubkey === 'string' ? parsed.pubkey : null
             this.nostrDeletions = Array.isArray(parsed.nostrDeletions)
               ? parsed.nostrDeletions.filter(
-                  (d) => d && typeof d.pubkey === 'string' && Number.isFinite(d.deletedAt),
+                  (d) => d && Number.isFinite(d.deletedAt) && (
+                    typeof d.pubkey === 'string'
+                    || typeof d.docId === 'string'
+                    || typeof d.address === 'string'
+                  ),
                 )
               : []
           }
@@ -311,6 +353,10 @@ export const useAddressBookStore = defineStore('addressBook', {
     // mutation path; the sync layer reads this when deciding whether
     // a publish is actually necessary.
     async _markSyncDirty() {
+      // The generation bumps on EVERY mutation, even when the flag is
+      // already up — a sync in flight compares generations on
+      // completion so it never clears dirt it did not carry.
+      this._dirtyGeneration += 1
       if (this.syncDirty) return
       this.syncDirty = true
       await this._persistSyncMeta()
@@ -319,14 +365,65 @@ export const useAddressBookStore = defineStore('addressBook', {
     async _persistSyncMeta() {
       try {
         localStorage.setItem(SYNC_META_STORAGE_KEY, JSON.stringify({
+          pubkey: this.syncMetaPubkey,
           lastSyncedAt: this.lastSyncedAt,
           lastRecoveryAt: this.lastRecoveryAt,
           syncDirty: this.syncDirty,
+          legacyMigratedAt: this.legacyMigratedAt,
           nostrDeletions: this._prunedDeletions(),
         }))
       } catch (error) {
         console.warn('Error saving address-book sync metadata:', error)
       }
+    },
+
+    /**
+     * Bind the sync metadata and doc cache to ONE identity. They
+     * describe a specific pubkey's address book; after an identity
+     * restore or rotation they would otherwise leak into the next
+     * identity — the old doc cache force-published under the new key
+     * (another identity's contacts, decrypted, republished), the old
+     * migration latch suppressing the new identity's legacy import,
+     * stale tombstones trashing the new identity's doc.
+     *
+     * On a pubkey change: drop all of it, and mark dirty when local
+     * entries exist so the new identity publishes its own book. The
+     * very first adoption (metadata written before this field existed)
+     * is benign — that state was produced under the only identity the
+     * device has seen.
+     */
+    async _adoptSyncIdentity(pubkey) {
+      if (this.syncMetaPubkey === pubkey) return
+      const firstAdoption = this.syncMetaPubkey === null
+      this.syncMetaPubkey = pubkey
+      if (!firstAdoption) {
+        this.legacyMigratedAt = null
+        this.nostrDeletions = []
+        this.lastSyncedAt = null
+        this.lastRecoveryAt = null
+        try {
+          localStorage.removeItem(DOC_CACHE_STORAGE_KEY)
+        } catch { /* cache is re-creatable */ }
+        // Entry links point into the PREVIOUS identity's doc. Kept,
+        // they would make the new identity's first sync read the ids'
+        // absence from ITS doc as remote hard deletes and drop every
+        // carried-over contact. Stripped, those contacts re-append
+        // into the new identity's doc like any unpublished entry.
+        let unlinked = false
+        for (let i = 0; i < this.entries.length; i += 1) {
+          if (this.entries[i].doc_contact_id) {
+            const { doc_contact_id, ...rest } = this.entries[i]
+            this.entries.splice(i, 1, rest)
+            unlinked = true
+          }
+        }
+        if (unlinked) await this.persistEntries()
+        if (this.entries.length > 0) {
+          this._dirtyGeneration += 1
+          this.syncDirty = true
+        }
+      }
+      await this._persistSyncMeta()
     },
 
     // Add new entry
@@ -373,8 +470,20 @@ export const useAddressBookStore = defineStore('addressBook', {
           throw new Error('This address already exists in your address book')
         }
 
+        // A re-add supersedes any pending delete-tombstone for this
+        // address, mirroring what addNostrContact does per pubkey.
+        const addrLower = newEntry.address.toLowerCase()
+        if (Array.isArray(this.nostrDeletions)) {
+          this.nostrDeletions = this.nostrDeletions.filter(
+            (d) => (d.address || '').toLowerCase() !== addrLower,
+          )
+        }
+
         this.entries.push(newEntry)
         await this.persistEntries()
+        // Manual contacts live in the shared doc too — a create must
+        // reach relays like any other mutation.
+        await this._markSyncDirty()
 
         return newEntry
       } catch (error) {
@@ -449,14 +558,14 @@ export const useAddressBookStore = defineStore('addressBook', {
         this.entries.splice(entryIndex, 1, updatedEntry)
         await this.persistEntries()
 
-        // The petname is the only syncable field updateEntry can
-        // touch on a Nostr contact (the address always comes from
-        // lud16). Mark dirty only when that flipped — avoids a
-        // publish round-trip for a notes-only edit.
-        if (
-          currentEntry.source === CONTACT_SOURCES.NOSTR
-          && updatedEntry.name_locally_edited !== currentEntry.name_locally_edited
-        ) {
+        // Name and address are synced fields in the shared doc; notes
+        // and color are device-local. Mark dirty only for the former —
+        // avoids a publish round-trip for a notes-only edit.
+        const nameChanged = updateData.name !== undefined
+          && updatedEntry.name !== currentEntry.name
+        const addressChanged = !!newAddress
+          && updatedEntry.address !== currentEntry.address
+        if (nameChanged || addressChanged) {
           await this._markSyncDirty()
         }
 
@@ -479,14 +588,35 @@ export const useAddressBookStore = defineStore('addressBook', {
         this.entries.splice(entryIndex, 1)
         await this.persistEntries()
 
+        // Record a tombstone, not just an omission — that's how the
+        // delete propagates to other devices instead of being
+        // "resurrected" by their stale copy of the list. In the shared
+        // doc a tombstone lands as `trashed: true` (recoverable from
+        // the other apps' trash), never as removal.
+        const tombstone = { deletedAt: Date.now() }
         if (deletedEntry.source === CONTACT_SOURCES.NOSTR && deletedEntry.nostr_pubkey) {
-          // Record a tombstone, not just an omission — that's how the
-          // delete propagates to other devices instead of being
-          // "resurrected" by their stale copy of the list.
-          const pubkey = deletedEntry.nostr_pubkey
-          this.nostrDeletions = (this.nostrDeletions || []).filter((d) => d.pubkey !== pubkey)
-          this.nostrDeletions.push({ pubkey, deletedAt: Date.now() })
+          tombstone.pubkey = deletedEntry.nostr_pubkey
+        }
+        if (typeof deletedEntry.doc_contact_id === 'string' && deletedEntry.doc_contact_id) {
+          tombstone.docId = deletedEntry.doc_contact_id
+        }
+        const address = this.getEntryAddress(deletedEntry)
+        if (!tombstone.pubkey && !tombstone.docId && address) {
+          tombstone.address = address.toLowerCase()
+        }
+        if (tombstone.pubkey || tombstone.docId || tombstone.address) {
+          this.nostrDeletions = (this.nostrDeletions || []).filter((d) => (
+            (!tombstone.pubkey || d.pubkey !== tombstone.pubkey)
+            && (!tombstone.docId || d.docId !== tombstone.docId)
+            && (!tombstone.address || (d.address || '') !== tombstone.address)
+          ))
+          this.nostrDeletions.push(tombstone)
           await this._markSyncDirty()
+          // _markSyncDirty persists only on the clean-to-dirty flip;
+          // the tombstone must hit disk even when the book was already
+          // dirty, or an app kill drops the delete and the next sync
+          // re-imports the contact.
+          await this._persistSyncMeta()
         }
 
         return deletedEntry
@@ -745,15 +875,6 @@ export const useAddressBookStore = defineStore('addressBook', {
     },
 
     /**
-     * Serialize the local Nostr-sourced contacts + pending deletions
-     * into the wire payload. Single source of truth for "what does
-     * this device currently believe the contact list is."
-     */
-    _localPayload() {
-      return serializeContactPayload(this.entries, this._prunedDeletions())
-    },
-
-    /**
      * Drop tombstones older than the TTL. After ~90 days every device
      * that's going to converge has already seen the delete, so the
      * tombstone has done its job and would only bloat the payload.
@@ -766,18 +887,23 @@ export const useAddressBookStore = defineStore('addressBook', {
     },
 
     /**
-     * Shared fetch → merge → publish → reconcile pipeline behind both
-     * `syncToNostr` and `recoverFromNostr`. They are the *same*
-     * operation — pull the remote, union-merge it with local, publish
-     * the union, then reconcile the local store to it. The only
-     * difference is which in-flight flag the caller manages and how
-     * the result is framed for the UI.
+     * Shared pipeline behind both `syncToNostr` and `recoverFromNostr`:
+     * fetch the shared contacts doc, fold the legacy list in (first run
+     * only), reconcile the doc into the local store, merge local
+     * changes back into the doc, and publish when something changed.
      *
-     * The union merge (see `mergeContactPayloads`) is what makes this
-     * safe across devices: a contact present on *either* side
-     * survives, deletes travel as tombstones, and the higher
-     * `updatedAt` wins a field conflict. No device can clobber
-     * another's writes.
+     * Safety rails, in order of importance:
+     *   - NEVER write before a successful read. Every publish is a
+     *     whole-document replace shared with the user's other apps; a
+     *     blind write would delete their data everywhere.
+     *   - "No doc exists" is only trusted when enough relays answered
+     *     cleanly (2, or all of them for smaller relay sets) AND no
+     *     doc cache exists. A timeout is not an absence.
+     *   - A doc we cannot decrypt is never overwritten.
+     *   - The replaceable clock strictly exceeds the doc we merged
+     *     from, so our write wins the NIP-01 tie-break.
+     *   - An over-sized doc aborts the publish — local state is kept
+     *     and retried, nothing is ever truncated to fit.
      *
      * The secret key is wiped the moment publishing is done — the
      * reconcile step never needs it.
@@ -793,73 +919,247 @@ export const useAddressBookStore = defineStore('addressBook', {
      * }>}
      */
     async _runSync({ identityStore, pool, relays, timeoutMs, profileFetcher }) {
+      const fail = (reason, hadRemote = false) => ({
+        ok: false, reason, hadRemote, published: false, acceptedRelay: null,
+        restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0,
+      })
+
       const pubkey = identityStore?.nostrPubkeyHex
       if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
-        return { ok: false, reason: 'no-pubkey', hadRemote: false, published: false, acceptedRelay: null,
-          restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
+        return fail('no-pubkey')
       }
 
       let secretKey
       try {
+        await this._adoptSyncIdentity(pubkey)
         secretKey = await identityStore.getNostrSecretKeyBytes()
+        const relaySet = await this._resolveSyncRelays({ pool, relays, pubkey, timeoutMs })
 
-        // 1. FETCH the remote list.
-        let remote
+        // 1. FETCH the shared doc — per-relay, so absence is provable.
+        let fetched
         try {
-          remote = await fetchAddressBook({ pool, relays, pubkey, secretKey, timeoutMs })
+          fetched = await fetchContactsDoc({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
         } catch (err) {
-          const reason = err?.code === 'ADDRESS_BOOK_DECRYPT_FAILED'
-            ? 'decrypt-failed'
-            : 'fetch-failed'
-          return { ok: false, reason, hadRemote: false, published: false, acceptedRelay: null,
-            restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
+          return fail(err?.code === 'CONTACTS_DOC_DECRYPT_FAILED' ? 'decrypt-failed' : 'fetch-failed')
         }
-        const hadRemote = !!remote
 
-        // 2. MERGE local ∪ remote. This is the no-data-loss guarantee.
-        const merged = mergeContactPayloads(
-          this._localPayload(),
-          remote ? remote.contacts : [],
-        )
+        // 2. Establish the BASE doc. Our own cache can be fresher than
+        //    what relays returned (a publish they haven't echoed yet,
+        //    or relay data loss) — the newest known doc always wins.
+        //    But an EMPTY fetch is only meaningful when enough relays
+        //    provably answered: anything published from an unproven
+        //    absence could replace a doc that merely sat out of reach.
+        const cache = this._loadDocCache(pubkey)
+        const absenceProven = fetched.reachedRelays >= Math.min(2, relaySet.length)
+        let baseDoc
+        let baseCreatedAt
+        let baseEventId = ''
+        let baseWasFetched = false
+        let forcePublish = false
+        let hadRemote = fetched.found
+        if (fetched.found) {
+          if (cache && cache.createdAt > fetched.event.created_at) {
+            baseDoc = cache.doc
+            baseCreatedAt = cache.createdAt
+            baseEventId = cache.eventId
+          } else {
+            baseDoc = fetched.doc
+            baseCreatedAt = fetched.event.created_at
+            baseEventId = fetched.event.id
+            baseWasFetched = true
+          }
+        } else if (!absenceProven) {
+          return fail('fetch-failed')
+        } else if (cache) {
+          // Absence is proven yet we have seen the doc before: the
+          // relays lost (or never got) it — recover it from the cache
+          // and force a republish.
+          baseDoc = cache.doc
+          baseCreatedAt = cache.createdAt
+          baseEventId = cache.eventId
+          forcePublish = true
+          hadRemote = true
+        } else {
+          baseDoc = emptyDoc()
+          baseCreatedAt = 0
+        }
 
-        // 3. PUBLISH the merged union. Skip only when there is
-        //    genuinely nothing — no live records, no tombstones, and
-        //    no remote event ever existed.
+        // A doc-linked entry whose record vanished from a genuinely
+        // fetched doc was deleted forever in another app (emptied
+        // trash, merged away). The merge below would otherwise
+        // re-append it as a fresh record, resurrecting it everywhere.
+        // Only a fetched base can prove this — absence from the cache
+        // or an empty synthesized base proves nothing.
+        let hardRemoved = 0
+        if (baseWasFetched) {
+          hardRemoved = this._applyDocHardDeletes(collectDocContactIds(baseDoc))
+        }
+
+        // 3. LEGACY MIGRATION (read-only): fold the old kind:30000
+        //    list in exactly once. The read is conclusive when the
+        //    event arrived, or when its absence is backed by the doc
+        //    fetch having proven reachability for the same relay set
+        //    moments earlier (fetchAddressBook alone cannot tell "no
+        //    event" from "no relay answered"). An undecryptable event
+        //    is permanently unreadable — nothing to migrate.
+        let legacyRecords = []
+        let legacyConclusive = false
+        if (!this.legacyMigratedAt) {
+          try {
+            const legacy = await fetchAddressBook({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
+            if (legacy) {
+              hadRemote = true
+              legacyRecords = partitionContactPayload(legacy.contacts).live
+              legacyConclusive = true
+            } else {
+              legacyConclusive = absenceProven
+            }
+          } catch (err) {
+            legacyConclusive = err?.code === 'ADDRESS_BOOK_DECRYPT_FAILED'
+          }
+        }
+
+        // 4. RECONCILE doc (+ legacy) into the local store FIRST, so
+        //    the publish below already carries everything we imported.
+        const reconcile = await this._reconcileWithDoc(extractDocContacts(baseDoc), legacyRecords, {
+          fetcher: typeof profileFetcher === 'function' ? profileFetcher : fetchProfile,
+          pool,
+          relays: relaySet,
+        })
+
+        reconcile.removed += hardRemoved
+
+        // 5. MERGE local entries + tombstones into the doc. Legacy
+        //    contacts whose kind:0 couldn't be fetched right now ride
+        //    along as doc-only records — the doc is their durable
+        //    home, the local import catches up on a later sync.
+        let merged = mergeEntriesIntoDoc({
+          doc: baseDoc,
+          entries: this.entries,
+          deletions: this._prunedDeletions(),
+          extraNostrRecords: reconcile.legacyUnimported,
+        })
+
+        // 6. PUBLISH when the doc actually changed (or the cache
+        //    recovery above demands it).
         let published = false
         let acceptedRelay = null
-        const nothingToDo = merged.length === 0 && !hadRemote
-        if (!nothingToDo) {
-          const event = buildAddressBookEvent({ secretKey, pubkey, payload: merged })
-          const fanout = publishAddressBook({ pool, relays, event, timeoutMs })
+        let mustPublish = merged.changed || forcePublish
+
+        // Rebase before publishing: the reconcile above can take tens
+        // of seconds (kind:0 fetches), and an edit another app
+        // published in that window must not be superseded by a doc
+        // built from the pre-edit base. One re-fetch, no loop; on any
+        // trouble we proceed with the original base, which is exactly
+        // the pre-rebase behavior. A fresh doc older than our base
+        // (possible when the cache won) never rebases us backwards.
+        if (mustPublish) {
+          try {
+            const fresh = await fetchContactsDoc({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
+            const isNewer = fresh.found && (
+              fresh.event.created_at > baseCreatedAt
+              || (fresh.event.created_at === baseCreatedAt && fresh.event.id !== baseEventId)
+            )
+            if (isNewer) {
+              const freshRemoved = this._applyDocHardDeletes(collectDocContactIds(fresh.doc))
+              if (freshRemoved > 0) {
+                reconcile.removed += freshRemoved
+                await this.persistEntries()
+              }
+              merged = mergeEntriesIntoDoc({
+                doc: fresh.doc,
+                entries: this.entries,
+                deletions: this._prunedDeletions(),
+                extraNostrRecords: reconcile.legacyUnimported,
+              })
+              fetched = fresh
+              baseDoc = fresh.doc
+              baseCreatedAt = fresh.event.created_at
+              baseEventId = fresh.event.id
+              baseWasFetched = true
+              hadRemote = true
+              // The window's edit may already contain everything we
+              // were about to push — then there is nothing to publish
+              // and the no-op path below caches the fresh doc.
+              mustPublish = merged.changed || forcePublish
+            }
+          } catch (err) {
+            console.warn('[addressBook] pre-publish rebase skipped:', err?.message || err)
+          }
+        }
+
+        if (mustPublish) {
+          const createdAt = Math.max(Math.floor(Date.now() / 1000), baseCreatedAt + 1)
+          let event
+          try {
+            event = buildContactsDocEvent({ secretKey, pubkey, doc: merged.doc, createdAt })
+          } catch (err) {
+            if (err?.code === 'CONTACTS_DOC_TOO_LARGE') {
+              console.warn('[addressBook] contacts doc over the size ceiling, publish deferred:', err.message)
+              return fail('doc-too-large', hadRemote)
+            }
+            throw err
+          }
+          const fanout = publishContactsDoc({ pool, relays: relaySet, event, timeoutMs })
           const firstAccept = await fanout.firstAccept
           if (firstAccept) {
             published = true
             acceptedRelay = firstAccept.relay
+            this._saveDocCache({ pubkey, eventId: event.id, createdAt, doc: merged.doc })
+            await this._dropAppliedTombstones(merged.doc)
           } else {
             // Every relay refused — surface for diagnostics, the
             // caller keeps syncDirty set so it retries.
             const results = await fanout.allSettled
             console.warn('[addressBook] sync landed on zero relays:', results)
           }
+        } else if (fetched.found && baseWasFetched) {
+          // Nothing to push and the fetched doc was the base: remember
+          // it. When the cache won as base it already holds newer
+          // content — re-stamping it with the older fetched clock
+          // would let the next sync prefer the stale relay copy (and
+          // resurrect anything deleted since).
+          this._saveDocCache({
+            pubkey,
+            eventId: fetched.event.id,
+            createdAt: fetched.event.created_at,
+            doc: baseDoc,
+          })
         }
 
-        // Secret key is done — reconcile is pure-local.
+        // Secret key is done — the rest is pure-local bookkeeping.
         secretKey.fill(0)
         secretKey = null
 
-        // 4. RECONCILE the local store to the merged truth.
-        const reconcile = await this._reconcileWithMergedPayload(merged, {
-          fetcher: typeof profileFetcher === 'function' ? profileFetcher : fetchProfile,
-          pool,
-          relays,
-        })
+        // Links are only real once the doc they point into exists
+        // outside this device. After a refused publish an appended
+        // record's id refers to a doc nobody has — carrying it would
+        // make the next sync's hard-delete pass read the id's absence
+        // from the real doc as a remote delete and drop the contact.
+        // Matched links lose nothing by waiting: they re-derive on
+        // every successful merge.
+        if (!mustPublish || published) {
+          await this._applyDocLinks(merged.links)
+        }
 
+        // The legacy list is migrated once its contacts verifiably
+        // live in the doc: the read was conclusive, every legacy
+        // record is represented (imported locally or folded in as a
+        // doc-only record above), and any doc change was published.
+        // From then on the old event is never read again (and it was
+        // never written again).
+        const changesLanded = mustPublish ? published : true
+        if (!this.legacyMigratedAt && legacyConclusive && changesLanded) {
+          this.legacyMigratedAt = Date.now()
+        }
+
+        const { legacyUnimported, ...counters } = reconcile
         return {
-          ok: nothingToDo || published,
+          ok: mustPublish ? published : true,
           hadRemote,
           published,
           acceptedRelay,
-          ...reconcile,
+          ...counters,
         }
       } finally {
         if (secretKey) secretKey.fill(0)
@@ -867,102 +1167,191 @@ export const useAddressBookStore = defineStore('addressBook', {
     },
 
     /**
-     * Reconcile the local store to a freshly-merged payload:
-     *   - remove locally-live entries the merge says are tombstoned
-     *   - rebuild local tombstones from the merge (mirror == canonical)
-     *   - for live records already local: converge the petname to the
-     *     merge's last-writer-wins value
-     *   - for live records not local: fetch their kind:0 and add them,
-     *     with bounded concurrency so a 50-contact restore doesn't
-     *     turn into 50 serial relay round-trips
+     * Reconcile the shared doc (plus any not-yet-migrated legacy
+     * records) into the local store:
+     *   - a doc contact trashed with a newer clock removes the local
+     *     entry — that is how a delete made in another app (or on
+     *     another device) propagates here
+     *   - doc contacts already local converge name/starred to the
+     *     doc's last-writer-wins values and remember their doc id
+     *   - Nostr doc contacts not local are rebuilt from their kind:0
+     *     with bounded concurrency; manual ones are created directly
+     *     from the doc's payment address
+     *   - legacy records not in the doc and not local join the same
+     *     import queue (that IS the migration)
      *
      * @returns {Promise<{ restored: number, removed: number,
-     *   identityOnly: number, deferred: number, petnameUpdated: number }>}
+     *   identityOnly: number, deferred: number, petnameUpdated: number,
+     *   legacyUnimported: object[] }>}   // legacy records whose local
+     *                                    // import deferred — the merge
+     *                                    // folds them into the doc so
+     *                                    // they are never lost
      */
-    async _reconcileWithMergedPayload(merged, { fetcher, pool, relays }) {
-      const { live, tombstonedPubkeys } = partitionContactPayload(merged)
+    async _reconcileWithDoc(docContacts, legacyRecords, { fetcher, pool, relays }) {
       let removed = 0
       let restored = 0
       let identityOnly = 0
       let deferred = 0
       let petnameUpdated = 0
+      const legacyUnimported = []
 
-      // (a) Remove locally-live Nostr entries that are tombstoned in
-      //     the merged truth — this is how a delete on one device
-      //     propagates to every other.
+      // (a) Apply doc trash to local entries. `>=` on the clock: a
+      //     trash always beats the entry state it was created from.
       for (let i = this.entries.length - 1; i >= 0; i -= 1) {
         const e = this.entries[i]
-        if (
-          e.source === CONTACT_SOURCES.NOSTR
-          && e.nostr_pubkey
-          && tombstonedPubkeys.has(e.nostr_pubkey)
-        ) {
+        let trashedMatch = null
+        if (e.source === CONTACT_SOURCES.NOSTR && e.nostr_pubkey) {
+          trashedMatch = docContacts.nostr.find((c) => c.trashed && c.pubkey === e.nostr_pubkey)
+        } else {
+          const addr = this.getEntryAddress(e).toLowerCase()
+          trashedMatch = docContacts.manual.find((c) => c.trashed && (
+            (c.docId && c.docId === e.doc_contact_id)
+            || (addr && c.paymentAddress.toLowerCase() === addr)
+          ))
+        }
+        if (trashedMatch && trashedMatch.updatedAtMs >= (e.updatedAt || 0)) {
           this.entries.splice(i, 1)
           removed += 1
         }
       }
 
-      // (b) Local tombstone set now mirrors the canonical merged set,
-      //     so `_localPayload()` on the next sync stays consistent.
-      this.nostrDeletions = [...tombstonedPubkeys].map((pk) => {
-        const rec = merged.find((m) => m.pubkey === pk && m.deleted)
-        return { pubkey: pk, deletedAt: rec ? rec.updatedAt : Date.now() }
-      })
-
-      // (c) Split live records into "already local" (converge petname)
-      //     and "remote-only" (fetch + add).
+      // (b) Nostr doc contacts: converge the ones we have, queue the
+      //     ones we don't. A pending local tombstone blocks a
+      //     re-import — our delete simply hasn't reached the doc yet.
       const localByPubkey = new Map()
       for (const e of this.entries) {
         if (e.source === CONTACT_SOURCES.NOSTR && e.nostr_pubkey) {
           localByPubkey.set(e.nostr_pubkey, e)
         }
       }
-      const remoteOnly = []
-      for (const rec of live) {
-        const localEntry = localByPubkey.get(rec.pubkey)
-        if (!localEntry) {
-          remoteOnly.push(rec)
-          continue
-        }
-        // Converge the petname to the merge's LWW value. The merged
-        // record's petname IS the authoritative answer — adopt it.
-        const desiredName = rec.petname
-          ? rec.petname.slice(0, 80)
-          : pickDisplayNameFromProfile(localEntry.nostr_profile, localEntry.nostr_npub)
-        const desiredEdited = !!rec.petname
-        if (
-          localEntry.name !== desiredName
-          || localEntry.name_locally_edited !== desiredEdited
-        ) {
-          const idx = this.entries.findIndex((e) => e.id === localEntry.id)
-          if (idx !== -1) {
-            this.entries.splice(idx, 1, {
-              ...localEntry,
-              name: desiredName,
-              name_locally_edited: desiredEdited,
-              updatedAt: Date.now(),
-            })
+
+      const adoptDocValues = (entry, dc) => {
+        const next = { ...entry }
+        let touched = false
+        if (dc.updatedAtMs > (entry.updatedAt || 0)) {
+          if (dc.name && dc.name !== entry.name) {
+            next.name = dc.name.slice(0, 80)
+            if (entry.source === CONTACT_SOURCES.NOSTR) {
+              const derived = pickDisplayNameFromProfile(entry.nostr_profile, entry.nostr_npub)
+              next.name_locally_edited = next.name !== derived
+            }
+            touched = true
+          }
+          if (!!entry.isFavorite !== dc.starred) {
+            next.isFavorite = dc.starred
+            touched = true
+          }
+          if (touched) {
+            // Adopt the doc's clock, not "now" — the entry must not
+            // suddenly look newer than the doc value it just copied.
+            next.updatedAt = dc.updatedAtMs
             petnameUpdated += 1
+          }
+        }
+        if (dc.docId && entry.doc_contact_id !== dc.docId) {
+          next.doc_contact_id = dc.docId
+          touched = true
+        }
+        if (touched) {
+          const idx = this.entries.findIndex((e) => e.id === entry.id)
+          if (idx !== -1) this.entries.splice(idx, 1, next)
+        }
+      }
+
+      const importQueue = []
+      for (const dc of docContacts.nostr) {
+        if (dc.trashed) continue
+        const local = localByPubkey.get(dc.pubkey)
+        if (local) {
+          adoptDocValues(local, dc)
+        } else if (!this._isTombstoned({ pubkey: dc.pubkey, docId: dc.docId, updatedAtMs: dc.updatedAtMs })) {
+          importQueue.push({
+            pubkey: dc.pubkey,
+            name: dc.name,
+            starred: dc.starred,
+            docId: dc.docId,
+            addedAt: dc.createdAtMs || undefined,
+          })
+        }
+      }
+
+      const docPubkeys = new Set(docContacts.nostr.map((c) => c.pubkey))
+      for (const rec of legacyRecords) {
+        if (localByPubkey.has(rec.pubkey) || docPubkeys.has(rec.pubkey)) continue
+        if (this._isTombstoned({ pubkey: rec.pubkey, updatedAtMs: rec.updatedAt })) continue
+        importQueue.push({
+          pubkey: rec.pubkey,
+          name: rec.petname || '',
+          starred: false,
+          docId: null,
+          relays: rec.relays,
+          addedAt: rec.addedAt,
+          updatedAt: rec.updatedAt,
+          legacy: true,
+        })
+      }
+
+      // (c) Rebuild queued contacts from their kind:0, bounded
+      //     concurrency so a 50-contact restore doesn't turn into 50
+      //     serial relay round-trips.
+      for (let i = 0; i < importQueue.length; i += SYNC_FETCH_CONCURRENCY) {
+        const chunk = importQueue.slice(i, i + SYNC_FETCH_CONCURRENCY)
+        const outcomes = await Promise.all(
+          chunk.map((rec) => this._restoreOneRemoteContact(rec, { fetcher, pool, relays })),
+        )
+        for (let j = 0; j < outcomes.length; j += 1) {
+          const outcome = outcomes[j]
+          if (outcome === 'restored') restored += 1
+          else if (outcome === 'identity-only') { restored += 1; identityOnly += 1 }
+          else {
+            deferred += 1
+            if (chunk[j].legacy) legacyUnimported.push(chunk[j])
           }
         }
       }
 
-      // (d) Fetch + add the remote-only contacts, bounded concurrency.
-      for (let i = 0; i < remoteOnly.length; i += SYNC_FETCH_CONCURRENCY) {
-        const chunk = remoteOnly.slice(i, i + SYNC_FETCH_CONCURRENCY)
-        const outcomes = await Promise.all(
-          chunk.map((rec) => this._restoreOneRemoteContact(rec, { fetcher, pool, relays })),
-        )
-        for (const outcome of outcomes) {
-          if (outcome === 'restored') restored += 1
-          else if (outcome === 'identity-only') { restored += 1; identityOnly += 1 }
-          else deferred += 1
+      // (d) Manual doc contacts: link/converge the ones we have,
+      //     create the ones we don't. No relay round-trip needed —
+      //     the doc itself carries everything a manual entry is.
+      for (const dc of docContacts.manual) {
+        if (dc.trashed) continue
+        const local = this.entries.find((e) => (
+          e.source !== CONTACT_SOURCES.NOSTR && (
+            (dc.docId && e.doc_contact_id === dc.docId)
+            || this.getEntryAddress(e).toLowerCase() === dc.paymentAddress.toLowerCase()
+          )
+        ))
+        if (local) {
+          adoptDocValues(local, dc)
+          continue
         }
+        if (this._isTombstoned({ docId: dc.docId, address: dc.paymentAddress, updatedAtMs: dc.updatedAtMs })) continue
+        // Another app may hold address formats we can't route (or a
+        // Nostr entry may already own this address) — those stay
+        // doc-only rather than becoming broken local entries.
+        const addressType = this.detectAddressType(dc.paymentAddress)
+        if (!addressType || !this.isValidAddress(dc.paymentAddress, addressType)) continue
+        if (this.findContactByAddress(dc.paymentAddress)) continue
+        this.entries.push({
+          id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: (dc.name || dc.paymentAddress).slice(0, 80),
+          address: dc.paymentAddress,
+          addressType,
+          lightningAddress: addressType === 'lightning' ? dc.paymentAddress : '',
+          color: this.getRandomColor(),
+          notes: '',
+          isFavorite: dc.starred,
+          lastUsedAt: null,
+          createdAt: dc.createdAtMs || Date.now(),
+          updatedAt: dc.updatedAtMs || Date.now(),
+          doc_contact_id: dc.docId,
+        })
+        restored += 1
       }
 
       await this.persistEntries()
       await this._persistSyncMeta()
-      return { restored, removed, identityOnly, deferred, petnameUpdated }
+      return { restored, removed, identityOnly, deferred, petnameUpdated, legacyUnimported }
     },
 
     /**
@@ -1006,19 +1395,27 @@ export const useAddressBookStore = defineStore('addressBook', {
           npub,
           event,
           relayHints: rec.relays || [],
+          isFavorite: !!rec.starred,
           // The canonical identity is the pubkey — a contact who
           // dropped their lud16 must still come back (identity-only).
           allowWithoutLightningAddress: true,
         })
-        if (rec.petname) {
-          await this.updateEntry(entry.id, { name: rec.petname })
+        if (rec.name && rec.name !== entry.name) {
+          // The doc's name wins over the profile-derived one; going
+          // through updateEntry sets `name_locally_edited` correctly.
+          await this.updateEntry(entry.id, { name: rec.name })
         }
-        if (Number.isFinite(rec.addedAt)) {
+        const patch = {}
+        if (Number.isFinite(rec.addedAt) && rec.addedAt > 0) {
           // Preserve the original add time so the restored list keeps
           // the user's mental ordering.
+          patch.createdAt = rec.addedAt
+        }
+        if (rec.docId) patch.doc_contact_id = rec.docId
+        if (Object.keys(patch).length > 0) {
           const idx = this.entries.findIndex((e) => e.id === entry.id)
           if (idx !== -1) {
-            this.entries.splice(idx, 1, { ...this.entries[idx], createdAt: rec.addedAt })
+            this.entries.splice(idx, 1, { ...this.entries[idx], ...patch })
           }
         }
         return this.isEntryPayable(entry) ? 'restored' : 'identity-only'
@@ -1028,6 +1425,140 @@ export const useAddressBookStore = defineStore('addressBook', {
         console.warn('[addressBook] recovery: addNostrContact failed for', rec.pubkey, err)
         return 'deferred'
       }
+    },
+
+    /**
+     * Resolve the relay set for a sync: an explicit override wins
+     * (tests, targeted recovery), otherwise the defaults unioned with
+     * the user's own NIP-65 write relays — the doc must land where
+     * their other apps look for it.
+     */
+    async _resolveSyncRelays({ pool, relays, pubkey, timeoutMs }) {
+      if (Array.isArray(relays) && relays.length > 0) return [...relays]
+      const own = await fetchOwnWriteRelays({
+        pool,
+        pubkey,
+        timeoutMs: Math.min(Number.isFinite(timeoutMs) ? timeoutMs : 4000, 4000),
+      })
+      return [...new Set([...DEFAULT_RELAYS, ...own])]
+    },
+
+    /**
+     * True when a pending local delete matches the given identity AND
+     * is not older than the incoming record's clock. A doc write newer
+     * than the delete is a deliberate cross-app re-add — it must win
+     * now, not after the 90-day tombstone TTL runs out.
+     */
+    _isTombstoned({ pubkey, docId, address, updatedAtMs = 0 }) {
+      const addr = typeof address === 'string' ? address.toLowerCase() : ''
+      const clock = Number.isFinite(updatedAtMs) ? updatedAtMs : 0
+      return this._prunedDeletions().some((d) => (
+        ((pubkey && d.pubkey === pubkey)
+          || (docId && d.docId === docId)
+          || (addr && (d.address || '') === addr))
+        && d.deletedAt >= clock
+      ))
+    },
+
+    /**
+     * Remove entries whose linked doc record vanished from a genuinely
+     * fetched doc: that is a hard delete made in another app (emptied
+     * trash, merged away), and re-appending the entry on the next
+     * merge would resurrect the contact everywhere. Entries that were
+     * never doc-linked are untouched — they have not been published
+     * yet, so their absence proves nothing. Callers gate on a fetched
+     * base; the cache and the empty synthesized base cannot prove a
+     * hard delete.
+     *
+     * @param {Set<string>} docIds  every contact id in the fetched doc
+     * @returns {number}            entries removed
+     */
+    _applyDocHardDeletes(docIds) {
+      let removed = 0
+      for (let i = this.entries.length - 1; i >= 0; i -= 1) {
+        const linkedId = this.entries[i].doc_contact_id
+        if (typeof linkedId === 'string' && linkedId && !docIds.has(linkedId)) {
+          this.entries.splice(i, 1)
+          removed += 1
+        }
+      }
+      return removed
+    },
+
+    /**
+     * Last-seen shared doc for THIS identity, or null. A cache written
+     * under a different pubkey is another identity's (decrypted)
+     * address book — treating it as ours would republish it under the
+     * wrong key, so it counts as absent. Also null on corrupt data;
+     * the cache is re-creatable from the next successful fetch.
+     */
+    _loadDocCache(pubkey) {
+      try {
+        const raw = localStorage.getItem(DOC_CACHE_STORAGE_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        if (!parsed || !Number.isFinite(parsed.createdAt) || typeof parsed.doc !== 'object') {
+          return null
+        }
+        if (parsed.pubkey !== pubkey) return null
+        return {
+          eventId: typeof parsed.eventId === 'string' ? parsed.eventId : '',
+          createdAt: parsed.createdAt,
+          doc: normalizeDoc(parsed.doc),
+        }
+      } catch {
+        return null
+      }
+    },
+
+    _saveDocCache({ pubkey, eventId, createdAt, doc }) {
+      try {
+        localStorage.setItem(DOC_CACHE_STORAGE_KEY, JSON.stringify({ pubkey, eventId, createdAt, doc }))
+      } catch (error) {
+        console.warn('Error saving contacts doc cache:', error)
+      }
+    },
+
+    /**
+     * Remember which doc contact each entry maps to. The link is what
+     * keeps a rename stable: matching by id survives the address or
+     * name changing on either side.
+     */
+    async _applyDocLinks(links) {
+      if (!links || typeof links !== 'object') return
+      let touched = false
+      for (let i = 0; i < this.entries.length; i += 1) {
+        const docId = links[this.entries[i].id]
+        if (typeof docId === 'string' && docId && this.entries[i].doc_contact_id !== docId) {
+          this.entries.splice(i, 1, { ...this.entries[i], doc_contact_id: docId })
+          touched = true
+        }
+      }
+      if (touched) await this.persistEntries()
+    },
+
+    /**
+     * A tombstone has done its job once the published doc shows its
+     * target trashed — from then on the doc itself carries the delete
+     * and the local tombstone would only block a deliberate re-add
+     * made in another app.
+     */
+    async _dropAppliedTombstones(doc) {
+      const { nostr, manual } = extractDocContacts(doc)
+      const trashedPubkeys = new Set(nostr.filter((c) => c.trashed).map((c) => c.pubkey))
+      const trashedDocIds = new Set(
+        [...nostr, ...manual].filter((c) => c.trashed && c.docId).map((c) => c.docId),
+      )
+      const trashedAddresses = new Set(
+        manual.filter((c) => c.trashed).map((c) => c.paymentAddress.toLowerCase()),
+      )
+      const before = (this.nostrDeletions || []).length
+      this.nostrDeletions = (this.nostrDeletions || []).filter((d) => !(
+        (d.pubkey && trashedPubkeys.has(d.pubkey))
+        || (d.docId && trashedDocIds.has(d.docId))
+        || (d.address && trashedAddresses.has(d.address))
+      ))
+      if (this.nostrDeletions.length !== before) await this._persistSyncMeta()
     },
 
     /**
@@ -1064,16 +1595,21 @@ export const useAddressBookStore = defineStore('addressBook', {
 
       this.isSyncing = true
       this.lastSyncError = null
+      const dirtyGenAtStart = this._dirtyGeneration
       try {
         const result = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
         if (result.ok) {
           this.lastSyncedAt = Date.now()
-          this.syncDirty = false
+          // Only clear dirt this run actually carried — a contact
+          // added while the publish was in flight stays dirty and the
+          // next trigger picks it up.
+          if (this._dirtyGeneration === dirtyGenAtStart) this.syncDirty = false
           this.lastSyncError = null
         } else {
           this.lastSyncError = result.reason === 'decrypt-failed' ? 'DECRYPT_FAILED'
             : result.reason === 'fetch-failed' ? 'FETCH_FAILED'
             : result.reason === 'no-pubkey' ? 'NO_PUBKEY'
+            : result.reason === 'doc-too-large' ? 'DOC_TOO_LARGE'
             : 'ALL_RELAYS_REJECTED'
           // syncDirty stays set so the next trigger retries.
         }
@@ -1109,15 +1645,17 @@ export const useAddressBookStore = defineStore('addressBook', {
       }
 
       this.isRecovering = true
+      const dirtyGenAtStart = this._dirtyGeneration
       try {
         const result = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
         if (result.ok) {
           this.lastRecoveryAt = Date.now()
           // Recovery publishes the merged union too, so when the
-          // publish landed the local state is fully in sync.
+          // publish landed the local state is fully in sync — unless
+          // a mutation slipped in while it ran (see syncToNostr).
           if (result.published) {
             this.lastSyncedAt = Date.now()
-            this.syncDirty = false
+            if (this._dirtyGeneration === dirtyGenAtStart) this.syncDirty = false
             this.lastSyncError = null
           }
         }
@@ -1133,50 +1671,8 @@ export const useAddressBookStore = defineStore('addressBook', {
       }
     },
 
-    /**
-     * Read-only check for whether the user's Nostr backup has contacts
-     * not yet in the local address book — no local writes, no relay
-     * publish, safe to call speculatively. Used to ask "add your
-     * contacts back?" before committing to the real `recoverFromNostr()`
-     * merge.
-     *
-     * Deliberately returns a boolean, not a count: a live pubkey found
-     * here can still fail to resolve into an actual contact during the
-     * real merge (its kind:0 profile fetch can fail/defer), so a count
-     * shown here could overpromise what the merge actually delivers.
-     * The merge's own result (`restored`) is the only trustworthy number
-     * — that's what the post-merge toast already uses.
-     *
-     * @returns {Promise<{ ok: true, hasNew: boolean } | { ok: false, reason: string }>}
-     */
-    async peekNostrContacts({ identityStore, pool, relays, timeoutMs } = {}) {
-      await this.initialize()
-      if (!identityStore || !identityStore.bootstrapped) {
-        return { ok: false, reason: 'identity-not-bootstrapped' }
-      }
-      const pubkey = identityStore.nostrPubkeyHex
-      if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
-        return { ok: false, reason: 'no-pubkey' }
-      }
-
-      let secretKey
-      try {
-        secretKey = await identityStore.getNostrSecretKeyBytes()
-        const remote = await fetchAddressBook({ pool, relays, pubkey, secretKey, timeoutMs })
-        if (!remote) return { ok: true, hasNew: false }
-
-        const { live } = partitionContactPayload(remote.contacts)
-        const hasNew = live.some((rec) => !this.findContactByPubkey(rec.pubkey))
-        return { ok: true, hasNew }
-      } catch (err) {
-        console.warn('[addressBook] peek failed:', err)
-        return { ok: false, reason: 'fetch-failed' }
-      } finally {
-        if (secretKey) secretKey.fill(0)
-      }
-    },
-
-    // Toggle favorite status
+    // Toggle favorite status. Favorites travel as the shared doc's
+    // `starred` flag, so the flip syncs like any other edit.
     async toggleFavorite(id) {
       await this.initialize()
       const entry = this.entries.find(e => e.id === id)
@@ -1184,6 +1680,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         entry.isFavorite = !entry.isFavorite
         entry.updatedAt = Date.now()
         await this.persistEntries()
+        await this._markSyncDirty()
       }
       return entry
     },
