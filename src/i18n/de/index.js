@@ -2410,5 +2410,21 @@ export default {
   // ── Zahlungssprache vereinheitlicht (nur "Bitcoin-Zahlung") ──
   "Show details": "Details anzeigen",
   "Free · instant": "Gratis · sofort",
-  "Includes a small network fee": "Enthält eine kleine Netzwerkgebühr"
+  "Includes a small network fee": "Enthält eine kleine Netzwerkgebühr",
+  "Change identity": "Identität wechseln",
+  "Switch identities or create another one": "Identitäten wechseln oder eine weitere erstellen",
+  "One recovery phrase backs every identity here. Each identity has its own profile and contacts.": "Eine Wiederherstellungsphrase sichert alle Identitäten hier. Jede Identität hat ihr eigenes Profil und ihre eigenen Kontakte.",
+  "Identity {n}": "Identität {n}",
+  "Create another identity": "Weitere Identität erstellen",
+  "Bring your contacts along?": "Kontakte mitnehmen?",
+  "Your new identity can start with a copy of your current contacts, or with none. Your recovery phrase stays the same and backs both identities.": "Deine neue Identität kann mit einer Kopie deiner aktuellen Kontakte starten oder ohne. Deine Wiederherstellungsphrase bleibt gleich und sichert beide Identitäten.",
+  "Bring my contacts": "Kontakte mitnehmen",
+  "Start fresh": "Neu starten",
+  "Switched identity": "Identität gewechselt",
+  "New identity created": "Neue Identität erstellt",
+  "Couldn't switch identity": "Identität konnte nicht gewechselt werden",
+  "Couldn't create the identity": "Identität konnte nicht erstellt werden",
+  "Your identity list has not synced yet. Tap to retry.": "Deine Identitätsliste wurde noch nicht synchronisiert. Zum Wiederholen tippen.",
+  "Identity list synced": "Identitätsliste synchronisiert",
+  "Your latest contact changes could not be synced yet, so nothing was changed. Check your connection and try again.": "Deine letzten Kontaktänderungen konnten noch nicht synchronisiert werden, daher wurde nichts geändert. Prüfe deine Verbindung und versuche es erneut."
 }

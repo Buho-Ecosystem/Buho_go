@@ -430,6 +430,15 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
         if (payload.identity?.mnemonic) {
           await identity.importMnemonic(payload.identity.mnemonic, true);
           restoredIdentity = true;
+          // The import lands on NIP-06 account 0; the published
+          // identity pointer says which account was actually active.
+          // Best-effort and bounded — no pointer (or no network)
+          // means account 0 stays, which is always safe.
+          try {
+            await identity.resolveActiveNostrAccount();
+          } catch (err) {
+            console.warn('[cloudBackup] pointer discovery after restore failed:', err);
+          }
         }
 
         if (payload.spark?.mnemonic && !wallet.hasAnySparkWallet) {

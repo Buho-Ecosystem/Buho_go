@@ -1089,6 +1089,27 @@ export default {
       const identity = useIdentityStore();
       const profile = this.profile;
 
+      // Before any recovery: let the published identity pointer say
+      // which NIP-06 account is actually active. A user who created
+      // more identities under the same words would otherwise land on
+      // account 0 and have profile + contacts pulled for the wrong
+      // key. Bounded and best-effort inside the store — no pointer
+      // found means account 0 stays, exactly today's behavior.
+      //
+      // The sync driver's triggers (persisted-dirty watcher, online,
+      // foreground pull) must not start a sync under account 0 while
+      // the pointer is being resolved — adoption would run against the
+      // wrong key. Holding `isRecovering` is the single guard every
+      // sync entry point already respects; it is released in a finally
+      // and reclaimed synchronously by recoverFromNostr below, so no
+      // gap opens in between.
+      addressBook.isRecovering = true;
+      try {
+        await identity.resolveActiveNostrAccount();
+      } finally {
+        addressBook.isRecovering = false;
+      }
+
       // Wipe the profile store before recovery. Profile metadata is
       // identity-scoped, so any local fields are stale under the new
       // pubkey. If the restored identity has a published kind:0, the

@@ -2409,5 +2409,21 @@ export default {
   // ── Lenguaje de pago unificado (solo "Pago Bitcoin") ──
   "Show details": "Mostrar detalles",
   "Free · instant": "Gratis · instantáneo",
-  "Includes a small network fee": "Incluye una pequeña comisión de red"
+  "Includes a small network fee": "Incluye una pequeña comisión de red",
+  "Change identity": "Cambiar identidad",
+  "Switch identities or create another one": "Cambia de identidad o crea otra",
+  "One recovery phrase backs every identity here. Each identity has its own profile and contacts.": "Una sola frase de recuperación respalda todas las identidades aquí. Cada identidad tiene su propio perfil y sus propios contactos.",
+  "Identity {n}": "Identidad {n}",
+  "Create another identity": "Crear otra identidad",
+  "Bring your contacts along?": "¿Llevar tus contactos contigo?",
+  "Your new identity can start with a copy of your current contacts, or with none. Your recovery phrase stays the same and backs both identities.": "Tu nueva identidad puede empezar con una copia de tus contactos actuales o sin ninguno. Tu frase de recuperación sigue siendo la misma y respalda ambas identidades.",
+  "Bring my contacts": "Llevar mis contactos",
+  "Start fresh": "Empezar de cero",
+  "Switched identity": "Identidad cambiada",
+  "New identity created": "Nueva identidad creada",
+  "Couldn't switch identity": "No se pudo cambiar la identidad",
+  "Couldn't create the identity": "No se pudo crear la identidad",
+  "Your identity list has not synced yet. Tap to retry.": "Tu lista de identidades aún no se ha sincronizado. Toca para reintentar.",
+  "Identity list synced": "Lista de identidades sincronizada",
+  "Your latest contact changes could not be synced yet, so nothing was changed. Check your connection and try again.": "Tus últimos cambios de contactos aún no se pudieron sincronizar, así que no se cambió nada. Comprueba tu conexión e inténtalo de nuevo."
 }

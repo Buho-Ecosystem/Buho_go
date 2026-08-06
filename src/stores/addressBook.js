@@ -1671,6 +1671,119 @@ export const useAddressBookStore = defineStore('addressBook', {
       }
     },
 
+    /**
+     * Move the address book across an identity change, in the only
+     * order that cannot lose data:
+     *
+     *   1. flush pending edits under the CURRENT identity (best
+     *      effort — a failed flush must not strand the user on an
+     *      identity they asked to leave; whatever did not land stays
+     *      in the old identity's doc from an earlier publish, and the
+     *      old identity remains reachable to retry from)
+     *   2. `changeIdentity()` — the caller flips the identity store
+     *      (switch or create); injected so this store never has to
+     *      know which of the two it is
+     *   3. keepContacts=false: drop the local book with NO tombstones
+     *      (the old identity's doc must stay intact; there is simply
+     *      nothing local to carry over)
+     *      keepContacts=true: keep the entries — the sync below
+     *      adopts the new pubkey, which unlinks every doc id and
+     *      marks the book dirty, so the carried contacts publish
+     *      into the new identity's doc as a union with whatever it
+     *      already holds
+     *   4. pull the new identity's book
+     *
+     * Runs under `isRecovering` for its WHOLE duration so the
+     * app-level sync driver (debounce timers, background flushes)
+     * cannot fire between steps and publish the old book under the
+     * new key before step 3 has decided its fate.
+     *
+     * @param {{
+     *   identityStore:  any,
+     *   changeIdentity: () => Promise<unknown>,
+     *   keepContacts?:  boolean,
+     *   pool?: any, relays?: readonly string[], timeoutMs?: number,
+     *   profileFetcher?: Function,
+     * }} args
+     * @returns same shape as `recoverFromNostr`, or null when another
+     *          sync operation is already running
+     */
+    async switchContactsIdentity({
+      identityStore, changeIdentity, keepContacts = false,
+      pool, relays, timeoutMs, profileFetcher,
+    } = {}) {
+      await this.initialize()
+      if (typeof changeIdentity !== 'function') {
+        throw new TypeError('changeIdentity callback is required')
+      }
+      if (this.isSyncing || this.isRecovering) return null
+      if (!identityStore || !identityStore.bootstrapped) {
+        return { ok: false, reason: 'identity-not-bootstrapped' }
+      }
+
+      this.isRecovering = true
+      try {
+        // 1. Flush the outgoing identity. Best-effort ONLY when the
+        //    entries survive the switch anyway (keepContacts): for a
+        //    start-fresh switch, step 3 destroys the local book, so an
+        //    unflushed dirty delta (offline adds, edits, deletes since
+        //    the last publish) would be destroyed with it. That switch
+        //    must not happen — abort before the identity flips and let
+        //    the caller surface "sync your changes first".
+        if (this.syncDirty) {
+          const dirtyGenAtStart = this._dirtyGeneration
+          try {
+            const flushed = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
+            if (flushed.ok) {
+              this.lastSyncedAt = Date.now()
+              if (this._dirtyGeneration === dirtyGenAtStart) this.syncDirty = false
+            }
+          } catch (err) {
+            console.warn('[addressBook] pre-switch flush failed:', err)
+          }
+        }
+        if (!keepContacts && this.syncDirty) {
+          return { ok: false, reason: 'flush-failed', hadRemote: false, published: false,
+            acceptedRelay: null, restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
+        }
+
+        // 2. The identity flips here.
+        await changeIdentity()
+
+        // 3. Decide what the new identity starts with.
+        if (!keepContacts) {
+          this.entries = []
+          this.searchQuery = ''
+          this.nostrDeletions = []
+          this.syncDirty = false
+          await this.persistEntries()
+          await this._persistSyncMeta()
+        }
+
+        // 4. Pull the new identity's book (adoption runs inside
+        //    _runSync and handles the keepContacts=true unlink+dirty).
+        const dirtyGenAtStart = this._dirtyGeneration
+        const result = await this._runSync({ identityStore, pool, relays, timeoutMs, profileFetcher })
+        if (result.ok) {
+          this.lastRecoveryAt = Date.now()
+          if (result.published) {
+            this.lastSyncedAt = Date.now()
+            if (this._dirtyGeneration === dirtyGenAtStart) this.syncDirty = false
+            this.lastSyncError = null
+          }
+        }
+        await this._persistSyncMeta()
+        return result
+      } catch (err) {
+        console.warn('[addressBook] identity switch failed:', err)
+        await this._persistSyncMeta()
+        return { ok: false, reason: 'unknown', hadRemote: false, published: false,
+          acceptedRelay: null, restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
+      } finally {
+        this.isRecovering = false
+      }
+    },
+
     // Toggle favorite status. Favorites travel as the shared doc's
     // `starred` flag, so the flip syncs like any other edit.
     async toggleFavorite(id) {

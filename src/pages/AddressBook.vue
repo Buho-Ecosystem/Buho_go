@@ -60,6 +60,24 @@
                   </q-item-label>
                 </q-item-section>
               </q-item>
+              <q-item clickable v-close-popup @click="openChangeIdentity">
+                <q-item-section avatar style="min-width: 32px;">
+                  <Icon
+                    icon="tabler:users"
+                    width="16"
+                    height="16"
+                    style="color: var(--text-secondary)"
+                  />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label :class="$q.dark.isActive ? 'menu-label-dark' : 'menu-label-light'">
+                    {{ $t('Change identity') }}
+                  </q-item-label>
+                  <q-item-label caption>
+                    {{ $t('Switch identities or create another one') }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
             </q-list>
           </q-menu>
         </q-btn>
@@ -103,6 +121,10 @@
       v-model="showBatchSend"
       @batch-completed="handleBatchCompleted"
     />
+
+    <!-- Identity switcher: each identity owns its own contact list,
+         so the entry point lives here next to the restore action. -->
+    <ChangeIdentitySheet v-model="showChangeIdentity" />
   </q-page>
 </template>
 
@@ -120,19 +142,22 @@ const RESYNC_COOLDOWN_MS = 60 * 1000
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import BatchSendModal from '../components/BatchSendModal.vue'
+import ChangeIdentitySheet from '../components/AddressBook/ChangeIdentitySheet.vue'
 
 export default {
   name: 'AddressBookPage',
   components: {
     AddressBookList,
     AddressBookModal,
-    BatchSendModal
+    BatchSendModal,
+    ChangeIdentitySheet
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
       showBatchSend: false,
+      showChangeIdentity: false,
     }
   },
   computed: {
@@ -169,6 +194,24 @@ export default {
      * result — including the calm "nothing to restore" case so the
      * user isn't left wondering whether the tap did anything.
      */
+    /**
+     * Open the identity switcher. Same precondition as restore: with
+     * no identity there is nothing to switch between or climb from.
+     */
+    openChangeIdentity() {
+      const identityStore = useIdentityStore()
+      if (!identityStore.bootstrapped) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('No identity yet'),
+          caption: this.$t('Set up or restore your BuhoGO identity first.'),
+          timeout: 4000,
+        })
+        return
+      }
+      this.showChangeIdentity = true
+    },
+
     async runRecovery() {
       const identityStore = useIdentityStore()
       if (!identityStore.bootstrapped) {
