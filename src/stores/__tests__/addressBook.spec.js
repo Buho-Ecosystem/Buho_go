@@ -2026,5 +2026,40 @@ await test('switchContactsIdentity (bring along): the carried book publishes und
   assert.notEqual(relinked.doc_contact_id, linked.doc_contact_id);
 });
 
+await test('switchContactsIdentity (start fresh): a failed flush aborts BEFORE the identity flips', async () => {
+  const store = freshStore();
+  const identity = mutableIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET });
+
+  // Dave was added offline: dirty, never published. Every relay
+  // refuses the flush publish, so the dirty delta cannot land.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  assert.equal(store.syncDirty, true);
+
+  const pool = syncFakePool({ publish: 'fail' });
+  let identityFlipped = false;
+  const result = await store.switchContactsIdentity({
+    identityStore: identity,
+    changeIdentity: async () => {
+      identityFlipped = true;
+      identity.switchTo({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET });
+    },
+    keepContacts: false,
+    pool,
+    relays: ['wss://r.test'],
+  });
+
+  // The unsynced book would have been destroyed by the clear — the
+  // switch must refuse instead, with the identity untouched.
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'flush-failed');
+  assert.equal(identityFlipped, false, 'changeIdentity never ran');
+  assert.ok(store.entries.some((e) => e.nostr_npub === BOB_NPUB), 'dirty book preserved');
+  assert.equal(store.syncDirty, true, 'still dirty, retryable');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

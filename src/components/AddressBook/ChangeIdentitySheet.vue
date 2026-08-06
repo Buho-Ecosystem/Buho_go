@@ -259,6 +259,14 @@ export default {
           this.$q.notify({ type: 'info', message: this.$t('Sync already running'), timeout: 3000 })
           return
         }
+        // switchContactsIdentity swallows every internal failure into
+        // {ok:false} — a thrown changeIdentity included — so the catch
+        // below only sees programming errors. Failure is decided HERE.
+        if (!result.ok) {
+          this._notifySwitchFailed(result, this.$t('Couldn\'t switch identity'))
+          await this.refreshIdentities()
+          return
+        }
         this._refreshProfileForNewIdentity()
         await this.refreshIdentities()
         this.$emit('changed')
@@ -277,6 +285,20 @@ export default {
       }
     },
 
+    /**
+     * Failure toast for a non-ok switch/create result. The one reason
+     * worth its own words is 'flush-failed': the identity did NOT
+     * change because unsynced contact edits would have been destroyed
+     * — the user needs to know it is about their pending changes, not
+     * a generic hiccup.
+     */
+    _notifySwitchFailed(result, message) {
+      const caption = result.reason === 'flush-failed'
+        ? this.$t('Your latest contact changes could not be synced yet, so nothing was changed. Check your connection and try again.')
+        : this.$t('Check your connection and try again.')
+      this.$q.notify({ type: 'negative', message, caption, timeout: 4500 })
+    },
+
     async onCreateIdentity(keepContacts) {
       if (this.busy) return
       this.busy = true
@@ -289,6 +311,11 @@ export default {
         })
         if (result === null) {
           this.$q.notify({ type: 'info', message: this.$t('Sync already running'), timeout: 3000 })
+          return
+        }
+        if (!result.ok) {
+          this._notifySwitchFailed(result, this.$t('Couldn\'t create the identity'))
+          await this.refreshIdentities()
           return
         }
         this._refreshProfileForNewIdentity()

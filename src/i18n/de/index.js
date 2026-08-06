@@ -2425,5 +2425,6 @@ export default {
   "Couldn't switch identity": "Identität konnte nicht gewechselt werden",
   "Couldn't create the identity": "Identität konnte nicht erstellt werden",
   "Your identity list has not synced yet. Tap to retry.": "Deine Identitätsliste wurde noch nicht synchronisiert. Zum Wiederholen tippen.",
-  "Identity list synced": "Identitätsliste synchronisiert"
+  "Identity list synced": "Identitätsliste synchronisiert",
+  "Your latest contact changes could not be synced yet, so nothing was changed. Check your connection and try again.": "Deine letzten Kontaktänderungen konnten noch nicht synchronisiert werden, daher wurde nichts geändert. Prüfe deine Verbindung und versuche es erneut."
 }

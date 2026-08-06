@@ -834,5 +834,101 @@ await test('importMnemonic still lands on account 0 with a reset roster', async 
   assert.equal(s.pointerDirty, false);
 });
 
+await test('republishNostrPointer merges the fetched roster instead of outbidding it away', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0], 'local roster starts minimal');
+
+  // Another device created accounts 1 and 2; this device never heard
+  // of them. Its publish must carry them forward, not orphan them.
+  let published = null;
+  const result = await s.republishNostrPointer({
+    relays: ['wss://stub.test'],
+    fetcher: async () => ({
+      active: 2,
+      accounts: [{ i: 0 }, { i: 1, label: 'Work' }, { i: 2 }],
+      eventCreatedAt: 1_700_000_000,
+      decrypted: true,
+    }),
+    publisher: ({ event }) => {
+      published = event;
+      return {
+        firstAccept: Promise.resolve({ relay: 'wss://stub.test' }),
+        allSettled: Promise.resolve([]),
+      };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0, 1, 2], 'store learned the union');
+  assert.equal(s.nostrKnownAccounts.find((a) => a.i === 1).label, 'Work');
+  // The event carries the union too; active stays LOCAL intent (0).
+  const { nip44 } = await import('nostr-core');
+  const { deriveSelfConversationKey } = await import('../../utils/nostrAddressBook.js');
+  const sk0 = await s.getNostrSecretKeyBytes();
+  const payload = JSON.parse(nip44.decrypt(
+    published.content,
+    deriveSelfConversationKey(sk0, s.nostrPubkeyHex),
+  ));
+  assert.equal(payload.active, 0);
+  assert.deepEqual(payload.accounts.map((a) => a.i), [0, 1, 2]);
+  assert.ok(published.created_at >= 1_700_000_001, 'outbids the fetched clock');
+});
+
+await test('rotateNostrIdentity flags the pointer as lagging', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  assert.equal(s.pointerDirty, false);
+  await s.rotateNostrIdentity();
+  assert.equal(s.pointerDirty, true, 'dormant path inherits the retry surface');
+});
+
+await test('resolveActiveNostrAccount finds a pointer that lives only on the NIP-65 relays', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  const sk0 = await s.getNostrSecretKeyBytes();
+  const pubkey0 = s.nostrPubkeyHex;
+
+  const { finalizeEvent } = await import('nostr-core');
+  const { buildPointerEvent } = await import('../../utils/nostrIdentityPointer.js');
+  const { DEFAULT_RELAYS } = await import('../../utils/nostrRelays.js');
+
+  // Account 0's NIP-65 list (on a default relay) names a custom write
+  // relay; the pointer sits ONLY there. Restore must still find it.
+  const relayList = finalizeEvent({
+    kind: 10002,
+    created_at: 1_700_000_000,
+    tags: [['r', 'wss://custom.test']],
+    content: '',
+  }, sk0);
+  const pointer = buildPointerEvent({
+    secretKey0: sk0,
+    pubkey0,
+    active: 1,
+    accounts: [{ i: 0 }, { i: 1 }],
+    createdAt: 1_700_000_100,
+  });
+  const eventsByUrl = {
+    [DEFAULT_RELAYS[0]]: [relayList],
+    'wss://custom.test': [pointer],
+  };
+  const pool = {
+    async querySync(urls, filter) {
+      const kinds = Array.isArray(filter?.kinds) ? filter.kinds : [];
+      const out = [];
+      for (const url of urls) {
+        for (const ev of eventsByUrl[url] || []) {
+          if (kinds.includes(ev.kind)) out.push(ev);
+        }
+      }
+      return out;
+    },
+  };
+
+  const result = await s.resolveActiveNostrAccount({ pool });
+  assert.deepEqual(result, { found: true, active: 1, upgraded: true });
+  assert.equal(s.nostrAccountIndex, 1);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -2420,5 +2420,6 @@ export default {
   "Couldn't switch identity": "Couldn't switch identity",
   "Couldn't create the identity": "Couldn't create the identity",
   "Your identity list has not synced yet. Tap to retry.": "Your identity list has not synced yet. Tap to retry.",
-  "Identity list synced": "Identity list synced"
+  "Identity list synced": "Identity list synced",
+  "Your latest contact changes could not be synced yet, so nothing was changed. Check your connection and try again.": "Your latest contact changes could not be synced yet, so nothing was changed. Check your connection and try again."
 }

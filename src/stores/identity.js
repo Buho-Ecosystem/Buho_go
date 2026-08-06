@@ -862,6 +862,10 @@ export const useIdentityStore = defineStore('identity', {
           [...this.nostrKnownAccounts, { i: nextAccount, createdAt: Date.now() }],
           nextAccount,
         );
+        // This dormant path publishes no pointer itself; flag the lag
+        // so the Change-identity sheet's retry surface picks it up.
+        const prevPointerDirty = this.pointerDirty;
+        this.pointerDirty = true;
         try {
           this._persistMetadata();
         } catch (persistErr) {
@@ -870,6 +874,7 @@ export const useIdentityStore = defineStore('identity', {
           this.nostrNpub = prev.npub;
           this.nip05Handles = prev.nip05Handles;
           this.nostrKnownAccounts = prev.knownAccounts;
+          this.pointerDirty = prevPointerDirty;
           throw persistErr;
         }
 
@@ -1117,13 +1122,26 @@ export const useIdentityStore = defineStore('identity', {
         }
 
         // Replaceable event: strictly outbid whatever is out there so
-        // this publish wins even against a skewed clock.
+        // this publish wins even against a skewed clock. The fetched
+        // pointer is more than a clock floor — its roster may know
+        // identities this device does not (created elsewhere, never
+        // hydrated here). Publishing only the local roster would
+        // orphan them for every future restore, so the rosters merge
+        // and the store learns the union too. The ACTIVE index stays
+        // local: this publish exists to broadcast the user's latest
+        // action on this device.
         let floorCreatedAt = 0;
         try {
           const existing = await doFetch({
             pool, relays: relaySet, pubkey0, secretKey0, timeoutMs,
           });
-          if (existing) floorCreatedAt = existing.eventCreatedAt;
+          if (existing) {
+            floorCreatedAt = existing.eventCreatedAt;
+            this.nostrKnownAccounts = sanitizeRoster(
+              [...this.nostrKnownAccounts, ...existing.accounts],
+              this.nostrAccountIndex,
+            );
+          }
         } catch { /* best-effort floor; now() still wins the common case */ }
 
         const event = buildPointerEvent({
@@ -1156,10 +1174,10 @@ export const useIdentityStore = defineStore('identity', {
      * its roster; finding nothing means account 0 stays, which is
      * exactly today's behavior and always safe.
      *
-     * Single-flight: the restore orchestrator (ProfilePage, and the
-     * cloud-restore flow once it ships) awaits this BEFORE contact
-     * recovery so contacts are pulled for the right identity, and a
-     * second caller during that window shares the same lookup.
+     * Single-flight: the restore orchestrators (ProfilePage's phrase
+     * restore and the cloud-backup Drive restore) await this BEFORE
+     * contact recovery so contacts are pulled for the right identity,
+     * and a second caller during that window shares the same lookup.
      *
      * @param {{
      *   pool?:      any,
@@ -1183,9 +1201,23 @@ export const useIdentityStore = defineStore('identity', {
           const account0 = deriveNostrIdentity(mnemonic, 0);
           secretKey0 = account0.privateKey;
 
+          // Query the same relay set the publish targets (defaults
+          // union account 0's NIP-65 write relays) — a pointer that
+          // only landed on the user's own relays must still be found
+          // by a restore. Skipped for injected fetchers: a stub
+          // ignores relays and the NIP-65 lookup would hit the
+          // network from unit tests.
+          let relaySet = relays;
+          if ((!Array.isArray(relaySet) || relaySet.length === 0) && doFetch === fetchPointer) {
+            const own = await fetchOwnWriteRelays({
+              pool, pubkey: account0.publicKeyHex, timeoutMs,
+            });
+            relaySet = [...new Set([...DEFAULT_RELAYS, ...own])];
+          }
+
           const pointer = await doFetch({
             pool,
-            relays,
+            relays: relaySet,
             pubkey0: account0.publicKeyHex,
             secretKey0,
             timeoutMs,

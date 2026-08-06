@@ -1723,7 +1723,13 @@ export const useAddressBookStore = defineStore('addressBook', {
 
       this.isRecovering = true
       try {
-        // 1. Best-effort flush of the outgoing identity.
+        // 1. Flush the outgoing identity. Best-effort ONLY when the
+        //    entries survive the switch anyway (keepContacts): for a
+        //    start-fresh switch, step 3 destroys the local book, so an
+        //    unflushed dirty delta (offline adds, edits, deletes since
+        //    the last publish) would be destroyed with it. That switch
+        //    must not happen — abort before the identity flips and let
+        //    the caller surface "sync your changes first".
         if (this.syncDirty) {
           const dirtyGenAtStart = this._dirtyGeneration
           try {
@@ -1735,6 +1741,10 @@ export const useAddressBookStore = defineStore('addressBook', {
           } catch (err) {
             console.warn('[addressBook] pre-switch flush failed:', err)
           }
+        }
+        if (!keepContacts && this.syncDirty) {
+          return { ok: false, reason: 'flush-failed', hadRemote: false, published: false,
+            acceptedRelay: null, restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
         }
 
         // 2. The identity flips here.
