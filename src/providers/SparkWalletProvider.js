@@ -32,6 +32,7 @@ const ExitSpeed = Object.freeze({
 import { Invoice } from '@getalby/lightning-tools';
 import { parseSuccessAction } from '../utils/successAction.js';
 import { validateVerifyUrl } from '../utils/lnurlVerify.js';
+import { lnurlGetJson } from '../utils/lnurlHttp.js';
 import { buildLnurlPayCallbackUrl } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
@@ -1251,13 +1252,16 @@ export class SparkWalletProvider extends WalletProvider {
 
       // Fetch LNURL-pay endpoint
       const lnurlEndpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-      const response = await fetch(lnurlEndpoint);
+      const response = await lnurlGetJson(lnurlEndpoint);
 
       if (!response.ok) {
         throw new Error('Failed to fetch Lightning address info');
       }
 
-      const lnurlData = await response.json();
+      const lnurlData = response.data;
+      if (!lnurlData || lnurlData.status === 'ERROR') {
+        throw new Error(lnurlData?.reason || 'Failed to fetch Lightning address info');
+      }
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
       // is bounded by the provider in its own units (it rejects out-of-range).
@@ -1276,15 +1280,18 @@ export class SparkWalletProvider extends WalletProvider {
         commentAllowed: lnurlData.commentAllowed,
       });
 
-      const invoiceResponse = await fetch(callbackUrl);
+      const invoiceResponse = await lnurlGetJson(callbackUrl);
       if (!invoiceResponse.ok) {
         throw new Error('Failed to get invoice from Lightning address');
       }
 
-      const invoiceData = await invoiceResponse.json();
+      const invoiceData = invoiceResponse.data;
 
-      if (invoiceData.status === 'ERROR') {
-        throw new Error(invoiceData.reason || 'Failed to get invoice');
+      if (!invoiceData || invoiceData.status === 'ERROR') {
+        throw new Error(invoiceData?.reason || 'Failed to get invoice');
+      }
+      if (!invoiceData.pr) {
+        throw new Error('No payment request received from Lightning address');
       }
 
       // Pay the invoice - DO NOT pass amountSats because LNURL invoices

@@ -2216,6 +2216,7 @@ import { isBiometricAvailable } from '../utils/biometric.js'
 import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
+import {lnurlGetJson} from '../utils/lnurlHttp.js'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
@@ -3883,14 +3884,14 @@ export default {
         const lnurlPayUrl = `https://${domain}/.well-known/lnurlp/${name}`;
 
         // Step 1: Fetch LNURL-pay params
-        const paramsResponse = await fetch(lnurlPayUrl);
+        const paramsResponse = await lnurlGetJson(lnurlPayUrl);
         if (!paramsResponse.ok) {
           throw new Error('Failed to fetch LNURL-pay params');
         }
-        const params = await paramsResponse.json();
+        const params = paramsResponse.data;
 
-        if (params.status === 'ERROR') {
-          throw new Error(params.reason || 'LNURL-pay error');
+        if (!params || params.status === 'ERROR') {
+          throw new Error(params?.reason || 'LNURL-pay error');
         }
 
         // Validate amount is within bounds (params use millisats)
@@ -3907,14 +3908,14 @@ export default {
         const callbackUrl = new URL(params.callback);
         callbackUrl.searchParams.set('amount', amountMsat.toString());
 
-        const invoiceResponse = await fetch(callbackUrl.toString());
+        const invoiceResponse = await lnurlGetJson(callbackUrl.toString());
         if (!invoiceResponse.ok) {
           throw new Error('Failed to fetch invoice');
         }
-        const invoiceData = await invoiceResponse.json();
+        const invoiceData = invoiceResponse.data;
 
-        if (invoiceData.status === 'ERROR') {
-          throw new Error(invoiceData.reason || 'Failed to generate invoice');
+        if (!invoiceData || invoiceData.status === 'ERROR') {
+          throw new Error(invoiceData?.reason || 'Failed to generate invoice');
         }
 
         // Success - show the invoice QR
