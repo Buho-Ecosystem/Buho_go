@@ -22,6 +22,14 @@
           @click="$router.push('/identity/username')"
         />
         <IdentityRow
+          icon="tabler:arrow-bar-to-down"
+          :tone="lud16 ? 'neutral' : 'warn'"
+          :label="$t('Where money lands')"
+          :caption="lud16 || $t('No address yet, so nobody can pay you')"
+          :mono="!!lud16"
+          @click="$router.push('/identity/get-paid')"
+        />
+        <IdentityRow
           icon="tabler:cloud"
           :label="$t('Visible in other apps')"
           :caption="publishCaption"
@@ -119,6 +127,11 @@ export default {
   computed: {
     username() {
       return this.identity.nip05ActiveEntry?.handle || '';
+    },
+
+    /** The payment destination behind the username. */
+    lud16() {
+      return this.profile.lud16 || '';
     },
 
     profileCaption() {

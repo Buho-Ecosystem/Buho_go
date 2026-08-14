@@ -44,7 +44,7 @@
         :status="statusLine"
         :progress="progress"
         :qr-value="qrValue"
-        :qr-caption="$t('Someone can scan this to save you and pay you')"
+        :qr-caption="qrCaption"
         :can-switch="canSwitch"
         @switch-identity="onSwitchIdentity"
         @avatar-error="avatarBroken = true"
@@ -214,9 +214,21 @@ export default {
       }
     },
 
-    /** NIP-21 profile URI. Scanning it saves the person and offers a payment. */
+    /** NIP-21 profile URI: identity, not payment. Scanning saves the person. */
     qrValue() {
       return this.identity.nostrNpub ? `nostr:${this.identity.nostrNpub}` : '';
+    },
+
+    /**
+     * Scanning the card can only start a payment when the profile carries a
+     * Lightning address, because that is what a payer's wallet resolves the
+     * name to. Promising a payment without one would be a promise the send
+     * path cannot keep.
+     */
+    qrCaption() {
+      return this.profile.lud16
+        ? this.$t('Someone can scan this to save you and pay you')
+        : this.$t('Someone can scan this to save you as a contact');
     },
 
     contactCount() {

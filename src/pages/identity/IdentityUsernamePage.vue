@@ -16,12 +16,26 @@
       -->
       <div class="uname-hero">
         <div class="uname-big">{{ activeUsername ? '@' + activeUsername : '…' }}</div>
-        <div class="uname-sub">{{ $t('This is how people find you and pay you') }}</div>
+        <div class="uname-sub">{{ $t('This is how people find you') }}</div>
       </div>
 
       <button type="button" class="btn-ghost" @click="showMarketplace = true">
         {{ $t('Change username') }}
       </button>
+
+      <IdentityGroup
+        :title="$t('Paying by name')"
+        :footer="payFooter"
+      >
+        <IdentityRow
+          icon="tabler:arrow-bar-to-down"
+          :tone="lud16 ? 'neutral' : 'warn'"
+          :label="lud16 ? $t('Money lands at') : $t('Nobody can pay you yet')"
+          :caption="lud16 || $t('Add a Lightning address')"
+          :mono="!!lud16"
+          @click="$router.push('/identity/get-paid')"
+        />
+      </IdentityGroup>
 
       <IdentityGroup
         v-if="oldUsernames.length > 0"
@@ -96,6 +110,22 @@ export default {
   computed: {
     activeUsername() {
       return this.identity.nip05ActiveEntry?.handle || '';
+    },
+
+    lud16() {
+      return this.profile.lud16 || '';
+    },
+
+    /**
+     * A username on its own cannot receive anything: a payer's wallet
+     * resolves the name to the profile behind it and then to its Lightning
+     * address. Saying so here is the difference between a name that works
+     * and a name that quietly fails for whoever tries to use it.
+     */
+    payFooter() {
+      return this.lud16
+        ? this.$t('Someone typing your username gets sent to that address.')
+        : this.$t('A username finds you, but the money needs somewhere to land. Until you add an address, paying by name fails.');
     },
 
     /**

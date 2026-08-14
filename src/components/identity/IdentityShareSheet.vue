@@ -98,8 +98,23 @@ export default {
       return this.identity.nostrNpub || '';
     },
 
+    /**
+     * What the code carries. A `nostr:` URI is the right payload for a
+     * scanner: BuhoGO and every other client know what to do with it.
+     */
     qrValue() {
       return this.npub ? `nostr:${this.npub}` : '';
+    },
+
+    /**
+     * What gets sent or copied. Deliberately NOT the `nostr:` URI: a person
+     * pasting this into a chat needs something the recipient can tap, and a
+     * custom scheme is both unopenable for them and rejected outright by
+     * some share targets. njump resolves any npub to a readable profile
+     * page, which is what the sheet this replaced used.
+     */
+    shareUrl() {
+      return this.npub ? `https://njump.me/${this.npub}` : '';
     },
 
     qrOptions() {
@@ -122,9 +137,9 @@ export default {
 
   methods: {
     async onCopy() {
-      if (!this.qrValue) return;
+      if (!this.shareUrl) return;
       try {
-        await navigator.clipboard.writeText(this.qrValue);
+        await navigator.clipboard.writeText(this.shareUrl);
         this.copied = true;
         if (this._copyTimer) clearTimeout(this._copyTimer);
         this._copyTimer = setTimeout(() => { this.copied = false; }, 1600);
@@ -133,13 +148,38 @@ export default {
       }
     },
 
+    /**
+     * `shareContent` resolves with a result instead of throwing, so an
+     * ignored return value looks exactly like a dead button: every desktop
+     * browser and a few WebViews have no share sheet at all and come back
+     * with `unsupported`. Each outcome gets an answer, and the one that
+     * cannot be fixed here falls back to the clipboard so the user still
+     * leaves with their link.
+     */
     async onShare() {
-      if (!this.qrValue) return;
-      await shareContent({
+      if (!this.shareUrl) return;
+
+      const result = await shareContent({
         title: this.profileName,
         text: this.$t('Add me on BuhoGO'),
-        url: this.qrValue,
+        url: this.shareUrl,
       });
+
+      if (result.success || result.reason === 'cancelled') return;
+
+      if (result.reason === 'unsupported') {
+        await this.onCopy();
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Link copied'),
+          caption: this.$t('This device has no share menu, so we copied it instead.'),
+          timeout: 3000,
+        });
+        return;
+      }
+
+      console.warn('[identity-share] share failed:', result.error);
+      this.$q.notify({ type: 'negative', message: this.$t("Couldn't share"), timeout: 2500 });
     },
   },
 };
