@@ -20,6 +20,11 @@ import { boot } from 'quasar/wrappers';
  * or the next identity action.
  */
 export default boot(async () => {
+  // The screenshot harness seeds identities whose handles already exist in the
+  // fixture. Registering would mean writing a real record on mybuho.de for a
+  // throwaway test key on every audit run, so we never register under audit.
+  if (typeof window !== 'undefined' && window.__AUDIT__) return;
+
   const { useIdentityStore } = await import('../stores/identity.js');
   const { useProfileStore } = await import('../stores/profile.js');
   const { deriveBaseSlug, registerFreeHandle } = await import('../services/nip05.js');

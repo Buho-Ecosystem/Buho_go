@@ -35,6 +35,7 @@
       type="button"
       class="feature-card"
       :class="{ 'feature-card--active': f.active, 'feature-card--warn': f.warn && !f.active }"
+      :data-audit="f.audit || null"
       @click="$emit('select', f.id)"
     >
       <span class="feature-card-icon">

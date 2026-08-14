@@ -43,7 +43,21 @@ const routes = [
       { path: '/settings', component: () => import('pages/Settings.vue') },
       { path: '/about', component: () => import('pages/AboutPage.vue') },
       { path: '/spend', component: () => import('pages/SpendPage.vue') },
-      { path: '/identity', component: () => import('pages/ProfilePage.vue') },
+      // Identity. The tab itself is the card; everything configurable lives
+      // on its own pushed screen rather than in a stack of bottom sheets, so
+      // each one is addressable, has a back button, and can be deep-linked.
+      { path: '/identity', component: () => import('pages/identity/IdentityHomePage.vue') },
+      { path: '/identity/about', component: () => import('pages/identity/IdentityAboutPage.vue') },
+      { path: '/identity/manage', component: () => import('pages/identity/IdentityManagePage.vue') },
+      { path: '/identity/profile', component: () => import('pages/identity/IdentityProfilePage.vue') },
+      { path: '/identity/username', component: () => import('pages/identity/IdentityUsernamePage.vue') },
+      { path: '/identity/get-paid', component: () => import('pages/identity/IdentityGetPaidPage.vue') },
+      { path: '/identity/sign-in', component: () => import('pages/identity/IdentitySignInPage.vue') },
+      { path: '/identity/words', component: () => import('pages/identity/IdentityWordsPage.vue') },
+      { path: '/identity/identities', component: () => import('pages/identity/IdentityListPage.vue') },
+      { path: '/identity/advanced', component: () => import('pages/identity/IdentityAdvancedPage.vue') },
+      { path: '/identity/visible', component: () => import('pages/identity/IdentityVisiblePage.vue') },
+      { path: '/identity/erase', component: () => import('pages/identity/IdentityErasePage.vue') },
       // Legacy alias - anything that still links to /profile (e.g. an
       // older deep link) lands on the same page under its new tab name.
       // Query params are preserved (a redirect string alone would drop

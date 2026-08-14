@@ -1,0 +1,409 @@
+<template>
+  <q-page class="id-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <div class="id-topbar">
+      <div class="id-topbar-spacer"></div>
+      <button
+        v-if="!setupComplete"
+        type="button"
+        class="id-topbar-btn"
+        :aria-label="$t('What is this card for')"
+        @click="$router.push('/identity/about')"
+      >
+        <Icon icon="tabler:info-circle" width="21" height="21" />
+      </button>
+      <button
+        type="button"
+        class="id-topbar-btn"
+        data-audit="identity-scan"
+        :aria-label="$t('Scan')"
+        @click="showScanSheet = true"
+      >
+        <Icon icon="tabler:scan" width="21" height="21" />
+      </button>
+      <button
+        type="button"
+        class="id-topbar-btn"
+        data-audit="identity-manage"
+        :aria-label="$t('Manage identity')"
+        @click="$router.push('/identity/manage')"
+      >
+        <Icon icon="tabler:adjustments-horizontal" width="21" height="21" />
+      </button>
+    </div>
+
+    <div class="id-body">
+      <h1 class="id-large-title">{{ $t('You') }}</h1>
+
+      <!-- The card. Everything the user needs to recognise and hand over
+           their identity is on one object: photo, name, username, health,
+           and the code on its back. -->
+      <IdentityCard
+        :name="cardName"
+        :username="username"
+        :avatar="avatarUrl"
+        :status="statusLine"
+        :progress="progress"
+        :qr-value="qrValue"
+        :qr-caption="$t('Someone can scan this to save you and pay you')"
+        :can-switch="canSwitch"
+        @switch-identity="onSwitchIdentity"
+        @avatar-error="avatarBroken = true"
+      />
+
+      <!-- The three things a person actually does with an identity. Present
+           from day one: setup never stands in front of use. -->
+      <div class="id-verbs">
+        <button type="button" class="id-verb" data-audit="identity-share" @click="showShareSheet = true">
+          <span class="id-verb-icon"><Icon icon="tabler:share-2" width="19" height="19" /></span>
+          <span class="id-verb-label">{{ $t('Share') }}</span>
+        </button>
+        <button type="button" class="id-verb" data-audit="identity-get-paid" @click="$router.push('/identity/get-paid')">
+          <span class="id-verb-icon"><Icon icon="tabler:arrow-bar-to-down" width="19" height="19" /></span>
+          <span class="id-verb-label">{{ $t('Get paid') }}</span>
+        </button>
+        <button type="button" class="id-verb" data-audit="identity-sign-in" @click="$router.push('/identity/sign-in')">
+          <span class="id-verb-icon"><Icon icon="tabler:world" width="19" height="19" /></span>
+          <span class="id-verb-label">{{ $t('Sign in') }}</span>
+        </button>
+      </div>
+
+      <!-- Setup, while it lasts. Gone for good once complete. -->
+      <template v-if="!setupComplete">
+        <SetupLadder :steps="steps" :done="stepsDone" :total="stepsTotal" />
+        <p v-if="!cardWordsSaved" class="id-foot">
+          {{ $t('Without the 12 words, a lost phone means a lost card. It takes two minutes and a piece of paper.') }}
+        </p>
+      </template>
+
+      <!-- The payoff once setup is done: the people you actually pay. -->
+      <PeopleStrip
+        v-if="setupComplete && recentPeople.length > 0"
+        :people="recentPeople"
+        :total="contactCount"
+        @pay="payContact"
+        @scan="showScanSheet = true"
+        @see-all="$router.push('/address-book')"
+      />
+
+      <IdentityGroup class="id-block">
+        <IdentityRow
+          v-if="!setupComplete || recentPeople.length === 0"
+          icon="tabler:address-book"
+          :label="$t('Contacts')"
+          :caption="contactCount > 0
+            ? $t('{n} people you can pay by name', { n: contactCount })
+            : $t('No contacts yet')"
+          @click="$router.push('/address-book')"
+        />
+        <IdentityRow
+          icon="tabler:adjustments-horizontal"
+          :label="$t('Manage identity')"
+          :caption="$t('Photo, username, 12 words, more')"
+          @click="$router.push('/identity/manage')"
+        />
+        <IdentityRow
+          v-if="!setupComplete"
+          icon="tabler:info-circle"
+          :label="$t('What is this card for')"
+          :caption="$t('One minute, three answers')"
+          @click="$router.push('/identity/about')"
+        />
+      </IdentityGroup>
+
+      <p v-if="!setupComplete" class="id-foot id-foot--last">
+        {{ $t('Your card is separate from your money. Nothing here can move your Bitcoin.') }}
+      </p>
+    </div>
+
+    <!-- Share: one sheet, replacing the two competing ones the old page had. -->
+    <IdentityShareSheet v-model="showShareSheet" />
+
+    <!-- Switch identity, reached from the photo on the card. -->
+    <IdentitySwitchSheet v-model="showSwitchSheet" @changed="onIdentityChanged" />
+
+    <!-- Scan someone else's card. Same add-contact flow the address book
+         uses, landed on its scan tab. -->
+    <AddressBookModal
+      v-model="showScanSheet"
+      initial-tab="scan"
+      @saved="onContactSaved"
+      @open-existing="onScanContactOpenExisting"
+    />
+
+    <SettingsHubNav />
+  </q-page>
+</template>
+
+<script>
+import { Icon } from '@iconify/vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
+import IdentityCard from '../../components/identity/IdentityCard.vue';
+import SetupLadder from '../../components/identity/SetupLadder.vue';
+import PeopleStrip from '../../components/identity/PeopleStrip.vue';
+import IdentityGroup from '../../components/identity/IdentityGroup.vue';
+import IdentityRow from '../../components/identity/IdentityRow.vue';
+import IdentityShareSheet from '../../components/identity/IdentityShareSheet.vue';
+import IdentitySwitchSheet from '../../components/identity/IdentitySwitchSheet.vue';
+import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue';
+import { useIdentityHealth } from '../../composables/useIdentityHealth';
+import { useAddressBookStore } from '../../stores/addressBook';
+
+/** How many faces fit the strip before it needs scrolling on a small phone. */
+const PEOPLE_SHOWN = 8;
+
+export default {
+  name: 'IdentityHomePage',
+
+  components: {
+    Icon,
+    SettingsHubNav,
+    IdentityCard,
+    SetupLadder,
+    PeopleStrip,
+    IdentityGroup,
+    IdentityRow,
+    IdentityShareSheet,
+    IdentitySwitchSheet,
+    AddressBookModal,
+  },
+
+  setup() {
+    const health = useIdentityHealth();
+    const addressBook = useAddressBookStore();
+    return { ...health, addressBook };
+  },
+
+  data() {
+    return {
+      showShareSheet: false,
+      showSwitchSheet: false,
+      showScanSheet: false,
+      avatarBroken: false,
+      canSwitch: false,
+    };
+  },
+
+  computed: {
+    cardName() {
+      if (this.profile.displayName || this.profile.name) {
+        return this.profile.displayName || this.profile.name;
+      }
+      return this.$t('Add your name');
+    },
+
+    /** Local part only. The domain is plumbing and lives on Get paid. */
+    username() {
+      return this.identity.nip05ActiveEntry?.handle || '';
+    },
+
+    avatarUrl() {
+      if (!this.profile.picture || this.avatarBroken) return '';
+      return this.profile.picture;
+    },
+
+    statusLine() {
+      switch (this.statusKey) {
+        case 'setting-up':
+          return this.$t('Setting up');
+        case 'words-missing':
+          return this.$t('12 words not saved');
+        case 'steps-left':
+          return this.$t('{done} of {total} done', { done: this.stepsDone, total: this.stepsTotal });
+        default:
+          return this.$t('Ready, 12 words saved');
+      }
+    },
+
+    /** NIP-21 profile URI. Scanning it saves the person and offers a payment. */
+    qrValue() {
+      return this.identity.nostrNpub ? `nostr:${this.identity.nostrNpub}` : '';
+    },
+
+    contactCount() {
+      return this.addressBook.entries.length;
+    },
+
+    /**
+     * Most recently added contacts. Sorting by "last paid" would be better,
+     * but the address book does not record it yet, and inventing a field for
+     * a first release would be a data migration for a nicety.
+     */
+    recentPeople() {
+      return [...this.addressBook.entries]
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+        .slice(0, PEOPLE_SHOWN);
+    },
+  },
+
+  watch: {
+    'profile.picture'() {
+      this.avatarBroken = false;
+    },
+  },
+
+  async created() {
+    await this.identity.hydrate();
+    await this.profile.hydrate();
+
+    // The identity is created the first time someone opens this tab. That is
+    // still true, but it is no longer invisible: the card appears with the
+    // reserved username already on it, which is the moment it becomes real.
+    if (!this.identity.bootstrapped) {
+      await this.identity.ensureIdentity();
+    }
+
+    // Only offer the switcher when there is something to switch to. A user
+    // with one identity should never be shown machinery for many.
+    try {
+      const list = await this.identity.listNostrIdentities();
+      this.canSwitch = Array.isArray(list) && list.length > 1;
+    } catch {
+      this.canSwitch = false;
+    }
+  },
+
+  methods: {
+    onSwitchIdentity() {
+      // The photo always opens the switcher, even with a single identity:
+      // creating a second one is the other thing this sheet does, and hiding
+      // it behind a count the user cannot see would repeat the old mistake.
+      this.showSwitchSheet = true;
+    },
+
+    async onIdentityChanged() {
+      this.avatarBroken = false;
+      const list = await this.identity.listNostrIdentities().catch(() => []);
+      this.canSwitch = Array.isArray(list) && list.length > 1;
+    },
+
+    payContact(entry) {
+      const address = entry.address || entry.lightningAddress;
+      if (!address) return;
+      this.$router.push({
+        path: '/wallet',
+        query: {
+          action: 'pay_contact',
+          address,
+          addressType: entry.addressType || 'lightning',
+          contactName: entry.name,
+        },
+      });
+    },
+
+    onContactSaved() {
+      this.$q.notify({ type: 'positive', message: this.$t('Contact added'), timeout: 2500 });
+    },
+
+    onScanContactOpenExisting(entry) {
+      if (entry) this.payContact(entry);
+    },
+  },
+};
+</script>
+
+<style scoped>
+/* The hub header is gone: this screen has a large title in the body instead,
+   which is where a title belongs on a screen nobody pushed into. The page
+   cancels the global q-page top padding because the top bar owns the inset. */
+.id-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
+  padding-top: 0;
+}
+
+.id-topbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: calc(var(--safe-top, 0px) + 6px) 10px 2px;
+  flex: 0 0 auto;
+}
+
+.id-topbar-spacer { flex: 1; }
+
+.id-topbar-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.id-topbar-btn:active { background: rgba(127, 127, 127, 0.12); }
+
+.id-body {
+  flex: 1 1 auto;
+  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.id-large-title {
+  font-size: 30px;
+  font-weight: 770;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+  color: var(--text-primary);
+  margin: 2px 2px 12px;
+}
+
+.id-verbs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.id-verb {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 17px;
+  padding: 15px 8px 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  color: var(--text-primary);
+  min-height: 88px;
+}
+
+.id-verb:active { background: rgba(127, 127, 127, 0.06); }
+
+.id-verb-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+}
+
+.id-verb-label {
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.id-block { margin-top: 20px; }
+
+.id-foot {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 8px 6px 0;
+}
+
+.id-foot--last { margin-top: 14px; }
+</style>

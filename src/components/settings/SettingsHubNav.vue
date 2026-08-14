@@ -56,7 +56,10 @@ export default {
   computed: {
     activeTab() {
       const path = this.$route.path;
-      if (path === '/identity' || path === '/profile') return 'identity';
+      // Prefix match, not equality: the identity tab now has child routes
+      // (/identity/manage, /identity/words …) and an exact comparison
+      // silently dropped the highlight the moment a user pushed one.
+      if (path === '/profile' || path === '/identity' || path.startsWith('/identity/')) return 'identity';
       if (path === '/spend') return 'spend';
       return 'settings';
     },
