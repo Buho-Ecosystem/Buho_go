@@ -2649,4 +2649,12 @@ export default {
   "Pay {name}": "{name} bezahlen",
   "Couldn't save the contact": "Kontakt konnte nicht gespeichert werden",
   "Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.": "Dein Link öffnet eine Seite mit deinem Namen, deinem Foto und einem Weg, dich zu bezahlen, auch für jemanden, der BuhoGO noch nicht hat.",
+  "Opens your Bitcoin wallet.": "Öffnet deine Bitcoin-Wallet.",
+  "Copy the address": "Adresse kopieren",
+  "Hide the code": "Code ausblenden",
+  "Show the code": "Code anzeigen",
+  "Scan it from another phone": "Von einem anderen Handy scannen",
+  "Pay them by name next time": "Beim nächsten Mal per Name bezahlen",
+  "Opens the app if you have it": "Öffnet die App, falls du sie hast",
+  "A Bitcoin wallet you can pay people by name with.": "Eine Bitcoin-Wallet, mit der du Menschen per Name bezahlst.",
 }

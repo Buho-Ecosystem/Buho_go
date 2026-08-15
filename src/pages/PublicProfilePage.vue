@@ -1,15 +1,16 @@
 <template>
   <q-page class="pp-page">
     <div class="pp-shell">
-      <!-- Loading. A spinner and nothing else: the page has one job and the
-           visitor cannot do anything until the lookup lands. -->
+      <!-- Loading. A spinner and one line: the visitor can do nothing until
+           the lookup lands, so there is nothing else to show them. -->
       <div v-if="state === 'loading'" class="pp-state">
         <q-spinner size="30px" color="grey-7" />
         <p class="pp-state-text">{{ $t('Looking this up') }}</p>
       </div>
 
-      <!-- Not found. The likeliest cause is a typo or an old link, and
-           neither is the visitor's fault, so the copy does not scold. -->
+      <!-- Not found. A typo or an old link, neither of which is the
+           visitor's fault, so the copy does not scold and still offers a
+           way forward. -->
       <div v-else-if="state === 'missing'" class="pp-state">
         <span class="pp-state-mark"><Icon icon="tabler:user-question" width="30" height="30" /></span>
         <h1 class="pp-state-title">{{ $t('No card here') }}</h1>
@@ -18,9 +19,14 @@
       </div>
 
       <template v-else>
-        <!-- The person. Same shape as the card in the app, so a visitor who
-             later installs BuhoGO recognises what they already saw. -->
-        <section class="pp-card">
+        <!--
+          1. Who this is.
+
+          The person owns the top of the page on their own. Everything below
+          is something the visitor can do about them, which is the order a
+          stranger reads in: who, then what.
+        -->
+        <section class="pp-person">
           <span class="pp-avatar">
             <img v-if="avatar" :src="avatar" alt="" @error="avatarBroken = true" />
             <Icon v-else icon="tabler:user" width="38" height="38" />
@@ -31,64 +37,107 @@
           <p v-if="about" class="pp-about">{{ about }}</p>
         </section>
 
-        <!-- Paying. The address is what makes any of this work, so when it is
-             missing the page says so plainly instead of showing a button that
-             would fail. -->
+        <!--
+          2. The one thing most visitors came to do.
+
+          A single filled button, alone, with nothing competing beside it.
+          Everything else on the page is quieter than this by design.
+        -->
         <template v-if="lud16">
           <button type="button" class="pp-btn pp-btn--primary" @click="onPay">
             <Icon icon="tabler:arrow-bar-to-down" width="18" height="18" />
             {{ payLabel }}
           </button>
+          <p class="pp-caption">{{ $t('Opens your Bitcoin wallet.') }}</p>
 
-          <button type="button" class="pp-btn pp-btn--ghost" @click="showAddress = !showAddress">
-            {{ showAddress ? $t('Hide the address') : $t('Show the address') }}
-          </button>
+          <!--
+            3. The same payment, by hand.
 
-          <!-- Desktop and any wallet that cannot open a link: the address
-               itself, as text and as a code. -->
-          <div v-if="showAddress" class="pp-address">
-            <div class="pp-qr">
-              <vue-qrcode :value="lud16" :options="qrOptions" class="pp-qr-canvas" />
-            </div>
-            <button type="button" class="pp-copy" @click="copyAddress">
-              <span class="pp-copy-value">{{ lud16 }}</span>
-              <Icon :icon="copied ? 'tabler:check' : 'tabler:copy'" width="16" height="16" />
+            A grouped list rather than more buttons: these are for people
+            whose wallet cannot take a link, or who are reading this on a
+            desktop, and they should read as details rather than as choices
+            competing with Pay.
+          -->
+          <div class="pp-group">
+            <button type="button" class="pp-row" @click="copyAddress">
+              <span class="pp-row-icon"><Icon :icon="copied ? 'tabler:check' : 'tabler:copy'" width="17" height="17" /></span>
+              <span class="pp-row-text">
+                <span class="pp-row-label">{{ copied ? $t('Copied') : $t('Copy the address') }}</span>
+                <span class="pp-row-caption pp-row-caption--mono">{{ lud16 }}</span>
+              </span>
             </button>
-            <p class="pp-hint">{{ $t('Scan or paste this into any Bitcoin wallet.') }}</p>
+
+            <button type="button" class="pp-row" :aria-expanded="showCode" @click="showCode = !showCode">
+              <span class="pp-row-icon"><Icon icon="tabler:qrcode" width="17" height="17" /></span>
+              <span class="pp-row-text">
+                <span class="pp-row-label">{{ showCode ? $t('Hide the code') : $t('Show the code') }}</span>
+                <span class="pp-row-caption">{{ $t('Scan it from another phone') }}</span>
+              </span>
+              <Icon
+                icon="tabler:chevron-down"
+                width="17"
+                height="17"
+                class="pp-row-chev"
+                :class="{ 'pp-row-chev--open': showCode }"
+              />
+            </button>
+
+            <div v-if="showCode" class="pp-code">
+              <div class="pp-qr">
+                <vue-qrcode :value="lud16" :options="qrOptions" class="pp-qr-canvas" />
+              </div>
+            </div>
           </div>
         </template>
 
+        <!-- Nothing to pay yet. Stated once, quietly, where the pay button
+             would have been. -->
         <div v-else class="pp-note">
           <Icon icon="tabler:info-circle" width="17" height="17" />
           <span>{{ $t('{name} has not set up payments yet, so there is nothing to send to.', { name: spokenName }) }}</span>
         </div>
 
-        <!-- Keeping the person. Inside BuhoGO this saves them; outside it
-             hands the visitor over to the app, which is the only place the
-             contact can actually live. -->
-        <button v-if="insideBuhoGo" type="button" class="pp-btn pp-btn--ghost" :disabled="saved" @click="saveContact">
-          <Icon :icon="saved ? 'tabler:check' : 'tabler:user-plus'" width="18" height="18" />
-          {{ saved ? $t('Saved to your contacts') : $t('Save to my contacts') }}
-        </button>
+        <!--
+          4. Keeping the person.
 
-        <template v-else>
-          <a class="pp-btn pp-btn--ghost" :href="nostrUri">
-            <Icon icon="tabler:user-plus" width="18" height="18" />
-            {{ $t('Add to BuhoGO') }}
+          Inside BuhoGO this saves them outright. Outside it is a handoff to
+          the app, because a contact has nowhere else to live.
+        -->
+        <div class="pp-group pp-group--spaced">
+          <button v-if="insideBuhoGo" type="button" class="pp-row" :disabled="saved" @click="saveContact">
+            <span class="pp-row-icon"><Icon :icon="saved ? 'tabler:check' : 'tabler:user-plus'" width="17" height="17" /></span>
+            <span class="pp-row-text">
+              <span class="pp-row-label">{{ saved ? $t('Saved to your contacts') : $t('Save to my contacts') }}</span>
+              <span v-if="!saved" class="pp-row-caption">{{ $t('Pay them by name next time') }}</span>
+            </span>
+          </button>
+
+          <a v-else class="pp-row" :href="nostrUri">
+            <span class="pp-row-icon"><Icon icon="tabler:user-plus" width="17" height="17" /></span>
+            <span class="pp-row-text">
+              <span class="pp-row-label">{{ $t('Add to BuhoGO') }}</span>
+              <span class="pp-row-caption">{{ $t('Opens the app if you have it') }}</span>
+            </span>
           </a>
-          <p class="pp-hint pp-hint--centred">
-            {{ $t('Do not have it?') }}
+        </div>
+
+        <!--
+          5. What this even is.
+
+          The visitor may never have heard of BuhoGO, and a bare logo does
+          not answer that. One sentence, at the end, where it belongs.
+        -->
+        <footer class="pp-foot">
+          <a class="pp-foot-brand" :href="BUHOGO_HOME">
+            <img src="/buho_logo.svg" alt="" width="17" height="17" />
+            <span>BuhoGO</span>
+          </a>
+          <p class="pp-foot-text">
+            {{ $t('A Bitcoin wallet you can pay people by name with.') }}
             <a class="pp-link" :href="BUHOGO_HOME">{{ $t('Get BuhoGO') }}</a>
           </p>
-        </template>
+        </footer>
       </template>
-
-      <footer class="pp-foot">
-        <a class="pp-foot-link" :href="BUHOGO_HOME">
-          <img src="/buho_logo.svg" alt="" width="18" height="18" />
-          <span>BuhoGO</span>
-        </a>
-      </footer>
     </div>
   </q-page>
 </template>
@@ -100,6 +149,7 @@ import { Capacitor } from '@capacitor/core';
 import { lookupIdentifier } from '../utils/nostrLookup.js';
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js';
 import { profileDisplayName, sanitizeImageUrl, shortenNpub } from '../services/nostrRecipient.js';
+import { isLightningAddress } from '../utils/addressUtils.js';
 import { BUHOGO_HOME, expandProfileSlug, isKey, KEY_PARAM } from '../utils/profileLink.js';
 import { getQrOptionsWithSize } from '../utils/qrConfig.js';
 import { useWalletStore } from '../stores/wallet';
@@ -120,7 +170,7 @@ export default {
       npub: '',
       profile: null,
       avatarBroken: false,
-      showAddress: false,
+      showCode: false,
       copied: false,
       saved: false,
       BUHOGO_HOME,
@@ -129,13 +179,15 @@ export default {
   },
 
   computed: {
-    /** True when the card actually published a name we can use in prose. */
+    /** True when the card published a name we can use in prose. */
     hasName() {
       return !!this.profile?.name;
     },
 
-    /** The heading. A shortened key is an acceptable heading; it is not an
-        acceptable subject for a sentence, which is what `spokenName` is for. */
+    /**
+     * The heading. A shortened key is an acceptable heading; it is not an
+     * acceptable subject for a sentence, which is what `spokenName` is for.
+     */
     displayName() {
       if (this.hasName) return this.profile.name;
       return this.npub ? shortenNpub(this.npub) : this.$t('This person');
@@ -146,9 +198,24 @@ export default {
       return this.hasName ? this.firstName : this.$t('This person');
     },
 
+    firstName() {
+      return String(this.displayName).trim().split(/\s+/)[0];
+    },
+
+    /**
+     * The handle to print under the name.
+     *
+     * A NIP-05 address of `_@domain` is the convention for "this domain
+     * itself" and its local part is not a name: printing it verbatim gives
+     * the reader `@_`. Those show the domain instead, which is what every
+     * other client does and what the person actually goes by.
+     */
     username() {
-      const nip05 = this.profile?.nip05 || '';
-      return nip05 ? nip05.split('@')[0] : '';
+      const nip05 = String(this.profile?.nip05 || '').trim();
+      if (!nip05.includes('@')) return nip05;
+      const [local, domain] = nip05.split('@');
+      if (!local || local === '_') return domain || '';
+      return local;
     },
 
     about() {
@@ -160,15 +227,24 @@ export default {
       return this.profile?.picture || '';
     },
 
+    /**
+     * The payment address, only when it is actually payable.
+     *
+     * Profiles in the wild carry malformed values here, `@domain` with no
+     * local part being a common one. Offering to pay something the send path
+     * would reject is worse than saying there is nothing to pay, so this
+     * uses the same validator the wallet uses before it will spend.
+     */
     lud16() {
-      return this.profile?.lud16 || '';
+      const value = String(this.profile?.lud16 || '').trim();
+      return isLightningAddress(value) ? value : '';
     },
 
     /**
      * True when the page is being read by someone who already has BuhoGO:
      * the native app, or the web build with a wallet already set up. A
      * stranger opening the link in a browser has neither, and needs the
-     * app-handoff buttons instead of in-app actions.
+     * handoff rather than in-app actions.
      */
     insideBuhoGo() {
       if (Capacitor.isNativePlatform()) return true;
@@ -177,10 +253,6 @@ export default {
 
     payLabel() {
       return this.hasName ? this.$t('Pay {name}', { name: this.firstName }) : this.$t('Pay');
-    },
-
-    firstName() {
-      return String(this.displayName).trim().split(/\s+/)[0];
     },
 
     /** Opens BuhoGO on Android, which already claims the nostr scheme. */
@@ -205,13 +277,11 @@ export default {
     /**
      * Slug to profile.
      *
-     * A username has to go through NIP-05, which is a call to that
-     * username's domain and can fail for reasons that have nothing to do
-     * with the person or the link: the domain can be down, slow, or its
-     * record can have moved. The link carries the key in `k` for exactly
-     * that case, so a lookup failure falls back to it instead of showing a
-     * stranger a dead page. Only a link with no key left to try can be
-     * genuinely missing.
+     * A username goes through NIP-05, which is a call to that username's
+     * domain and can fail for reasons that have nothing to do with the
+     * person or the link. The link carries the key in `k` for exactly that
+     * case, so a lookup failure falls back to it instead of showing a
+     * stranger a dead page. Only a link with no key left to try is missing.
      */
     async resolve() {
       const identifier = expandProfileSlug(this.$route.params.id);
@@ -274,7 +344,7 @@ export default {
     /**
      * Inside the app this hands the address to the send flow. Outside it
      * hands it to the operating system, which offers every installed wallet
-     * including BuhoGO. Either way the visitor never has to copy anything.
+     * including BuhoGO.
      */
     onPay() {
       if (!this.lud16) return;
@@ -293,9 +363,9 @@ export default {
       }
 
       window.location.href = `lightning:${this.lud16}`;
-      // No wallet handled the scheme, most likely a desktop browser. Reveal
-      // the address so the visit still ends somewhere useful.
-      setTimeout(() => { this.showAddress = true; }, 1200);
+      // Nothing handled the scheme, most likely a desktop browser. Open the
+      // code so the visit still ends somewhere useful.
+      setTimeout(() => { this.showCode = true; }, 1200);
     },
 
     async copyAddress() {
@@ -335,17 +405,17 @@ export default {
 </script>
 
 <style scoped>
-/* This page is read by people who have never seen BuhoGO, often on a random
-   phone in a chat app's in-app browser. It carries its own light palette
-   rather than inheriting the wallet's theme, so it looks the same for
-   everyone and never depends on a setting the visitor has not made. */
+/* This page is read by people who have never seen BuhoGO, usually inside a
+   chat app's browser. It carries its own light palette rather than inheriting
+   the wallet's theme, so it looks the same for everyone and never depends on
+   a setting the visitor has not made. */
 .pp-page {
   min-height: 100vh;
   background: #FAF7EF;
   font-family: 'Manrope', sans-serif;
   display: flex;
   justify-content: center;
-  padding: max(24px, env(safe-area-inset-top, 0px)) 20px max(24px, env(safe-area-inset-bottom, 0px));
+  padding: max(28px, env(safe-area-inset-top, 0px)) 20px max(28px, env(safe-area-inset-bottom, 0px));
 }
 
 .pp-shell {
@@ -392,13 +462,13 @@ export default {
   max-width: 300px;
 }
 
-/* The person */
-.pp-card {
+/* 1. The person */
+.pp-person {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 8px 0 26px;
+  padding: 4px 0 28px;
 }
 
 .pp-avatar {
@@ -416,12 +486,13 @@ export default {
 .pp-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .pp-name {
-  font-size: 25px;
+  font-size: 26px;
   font-weight: 760;
-  letter-spacing: -0.032em;
+  letter-spacing: -0.034em;
   color: #1A1A1C;
   margin: 16px 0 0;
   line-height: 1.2;
+  word-break: break-word;
 }
 
 .pp-username {
@@ -439,8 +510,7 @@ export default {
   max-width: 320px;
 }
 
-/* Actions. One primary, everything else quiet, which is the whole point of
-   a page with a single job. */
+/* 2. The primary action, alone */
 .pp-btn {
   display: flex;
   align-items: center;
@@ -456,7 +526,6 @@ export default {
   font-weight: 650;
   letter-spacing: -0.01em;
   cursor: pointer;
-  margin-bottom: 10px;
   text-decoration: none;
 }
 
@@ -467,17 +536,94 @@ export default {
   background: transparent;
   color: #1A1A1C;
   border-color: #E3DCC7;
+  margin-top: 10px;
 }
 
-.pp-btn:disabled { opacity: 0.55; cursor: default; }
+.pp-caption {
+  font-size: 12.5px;
+  color: #928D83;
+  text-align: center;
+  margin: 9px 0 0;
+}
 
-/* Address block */
-.pp-address {
+/* 3 and 4. Grouped lists, the same inset shape the app uses */
+.pp-group {
+  margin-top: 20px;
+  background: #FFFDF8;
+  border: 1px solid #E3DCC7;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.pp-group--spaced { margin-top: 14px; }
+
+.pp-row {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 6px 0 4px;
+  gap: 13px;
+  width: 100%;
+  min-height: 62px;
+  padding: 13px 14px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-family: 'Manrope', sans-serif;
+  color: #1A1A1C;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.pp-row + .pp-row { border-top: 1px solid #EEE8DA; }
+.pp-row:active { background: rgba(40, 34, 20, 0.04); }
+.pp-row:disabled { cursor: default; opacity: 0.75; }
+
+.pp-row-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: #F3EFE3;
+  color: #5F5B52;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.pp-row-text { flex: 1; min-width: 0; }
+
+.pp-row-label {
+  display: block;
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.012em;
+}
+
+.pp-row-caption {
+  display: block;
+  font-size: 12.5px;
+  color: #5F5B52;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The address is a value, so it gets the monospace face; the rest of the
+   captions are prose and stay in the body face. */
+.pp-row-caption--mono { font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; }
+
+.pp-row-chev {
+  color: #928D83;
+  flex: 0 0 auto;
+  transition: transform 0.2s ease;
+}
+
+.pp-row-chev--open { transform: rotate(180deg); }
+
+.pp-code {
+  display: flex;
+  justify-content: center;
+  padding: 0 14px 18px;
+  border-top: 1px solid #EEE8DA;
 }
 
 .pp-qr {
@@ -486,35 +632,13 @@ export default {
   border-radius: 20px;
   background: #fff;
   padding: 10px;
+  margin-top: 16px;
   box-shadow: 0 14px 30px -20px rgba(40, 34, 20, 0.55);
 }
 
 .pp-qr :deep(img),
 .pp-qr :deep(canvas),
 .pp-qr-canvas { width: 100%; height: 100%; display: block; }
-
-.pp-copy {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 100%;
-  background: #F3EFE3;
-  border: 1px solid #E3DCC7;
-  border-radius: 14px;
-  padding: 12px 14px;
-  cursor: pointer;
-  font-family: 'Manrope', sans-serif;
-  color: #1A1A1C;
-  min-height: 48px;
-}
-
-.pp-copy-value {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .pp-note {
   display: flex;
@@ -526,41 +650,43 @@ export default {
   color: #5F5B52;
   font-size: 13.5px;
   line-height: 1.5;
-  margin-bottom: 14px;
 }
 
 .pp-note svg { color: #928D83; margin-top: 1px; flex: 0 0 auto; }
 
-.pp-hint {
-  font-size: 12.5px;
-  color: #928D83;
-  line-height: 1.5;
-  margin: 2px 0 10px;
-  text-align: center;
-}
-
-.pp-hint--centred { text-align: center; }
-
-.pp-link { color: #059573; font-weight: 620; text-decoration: none; }
-
+/* 5. What this is */
 .pp-foot {
   display: flex;
-  justify-content: center;
-  padding-top: 22px;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding-top: 28px;
 }
 
-.pp-foot-link {
+.pp-foot-brand {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
-  font-weight: 650;
-  color: #928D83;
+  font-size: 13px;
+  font-weight: 700;
+  color: #5F5B52;
   text-decoration: none;
+  letter-spacing: -0.01em;
 }
 
-/* Desktop gets the same column rather than a stretched layout: the page is a
-   handoff, and a wide version of it would only add empty space. */
+.pp-foot-text {
+  font-size: 12.5px;
+  color: #928D83;
+  text-align: center;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 300px;
+}
+
+.pp-link { color: #059573; font-weight: 620; text-decoration: none; white-space: nowrap; }
+
+/* Desktop keeps the same single column: the page is a handoff, and a wide
+   version of it would only add empty space around the same four elements. */
 @media (min-width: 720px) {
   .pp-page { align-items: center; }
 }

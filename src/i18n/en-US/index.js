@@ -2644,4 +2644,12 @@ export default {
   "Pay {name}": "Pay {name}",
   "Couldn't save the contact": "Couldn't save the contact",
   "Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.": "Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.",
+  "Opens your Bitcoin wallet.": "Opens your Bitcoin wallet.",
+  "Copy the address": "Copy the address",
+  "Hide the code": "Hide the code",
+  "Show the code": "Show the code",
+  "Scan it from another phone": "Scan it from another phone",
+  "Pay them by name next time": "Pay them by name next time",
+  "Opens the app if you have it": "Opens the app if you have it",
+  "A Bitcoin wallet you can pay people by name with.": "A Bitcoin wallet you can pay people by name with.",
 }
