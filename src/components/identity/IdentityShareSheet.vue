@@ -102,21 +102,11 @@ export default {
     },
 
     /**
-     * What the code carries. A `nostr:` URI is the right payload for a
-     * scanner: BuhoGO and every other client know what to do with it.
-     */
-    qrValue() {
-      return this.npub ? `nostr:${this.npub}` : '';
-    },
-
-    /**
-     * Scanning can only lead to a payment when the card carries an address,
-     * so the caption says so rather than promising one either way.
+     * The same code as the back of the card, and the same job: scanning it
+     * saves the person. Payment has its own screen and its own code.
      */
     qrCaption() {
-      return this.profile.lud16
-        ? this.$t('Someone can scan this to save you and pay you')
-        : this.$t('Someone can scan this to save you. Add an address and they can pay you too.');
+      return this.$t('Someone can scan this to save you as a contact');
     },
 
     /**

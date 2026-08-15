@@ -2593,6 +2593,17 @@ export default {
   "This device has no share menu, so we copied it instead.": "Este dispositivo no tiene menú de compartir, así que lo copiamos.",
 
   // ─── Identity: strings added with the bucket, erase and switch work ───
+  "Send this to anyone, anywhere. It works whether or not they have BuhoGO.": "Manda esto a cualquiera, esté donde esté. Funciona tenga o no BuhoGO.",
+  "Show this to get paid in person": "Muestra esto para cobrar en persona",
+  "If an app asks for an address": "Si una app te pide una dirección",
+  "It is also what makes your link short, so people can read it back to you.": "También es lo que hace tu enlace corto, para que puedan leértelo en voz alta.",
+  "Payments go straight to that wallet. Remove it and BuhoGO receives for you again.": "Los pagos van directos a esa wallet. Quítala y BuhoGO vuelve a recibir por ti.",
+  "Some apps ask for a \"Lightning address\". This is yours. You never have to remember it: send your link instead.": "Algunas apps piden una \"dirección Lightning\". Esta es la tuya. Nunca tienes que recordarla: manda tu enlace.",
+  "Someone with a Bitcoin wallet can scan this": "Quien tenga una wallet de Bitcoin puede escanear esto",
+  "Use my own wallet instead": "Usar mi propia wallet",
+  "Your code, your link, where money lands": "Tu código, tu enlace, dónde llega el dinero",
+  "Your link works for everyone. They can pay you, save you, or get BuhoGO, whichever they need.": "Tu enlace funciona para todos. Pueden pagarte, guardarte o descargar BuhoGO, lo que necesiten.",
+  "Your name finds you. Get paid is where you set up receiving.": "Tu nombre te encuentra. En Cobrar configuras cómo recibir.",
   "Bring back the Bitcoin in your Arkade wallet.": "Recupera los Bitcoin de tu wallet Arkade.",
   "Bring back the Bitcoin in your Spark wallets.": "Recupera los Bitcoin de tus wallets Spark.",
   "Bring back the Bitcoin in {wallet}.": "Recupera los Bitcoin de {wallet}.",

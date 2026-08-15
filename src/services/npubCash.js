@@ -24,6 +24,20 @@
  *                                       -> { data: { quotes: [...] },
  *                                            metadata: { total, limit } }
  *   PUT  {BASE}/api/v2/user/mint       NIP-98 (not the JWT)
+ *   POST {BASE}/api/v2/user/username   NIP-98, body { username }
+ *                                       -> 400 "Missing parameters: username"
+ *                                       -> 400 "Invalid username!"
+ *                                       -> 409 "Username already taken"
+ *                                       -> 402 "Payment required"
+ *
+ * That last one is the important discovery: a readable `maria@npub.cash` is a
+ * PAID product. It would otherwise be the perfect identifier, because
+ * npub.cash serves `.well-known/nostr.json` AND `.well-known/lnurlp/`, so one
+ * claimed name is both the Nostr handle and a Lightning address any wallet can
+ * pay. Free users get the raw-key form instead, which is payable but not
+ * something a person can say out loud. The client below is written and
+ * verified against the live service so a purchase flow can use it later; it is
+ * not called yet.
  *
  * CORS is open (`access-control-allow-origin: *`), so the web build talks to it
  * directly and the Capacitor build uses the identical path. No proxy needed.
@@ -68,10 +82,39 @@ export function npubCashAddress(npub) {
   return `${npub}@${NPUBCASH_DOMAIN}`;
 }
 
+/**
+ * Address for a claimed name.
+ *
+ * This is the whole point of claiming one: `maria@npub.cash` is a single
+ * string that is BOTH the person's NIP-05 (npub.cash serves
+ * `.well-known/nostr.json`) and a Lightning address any wallet can pay
+ * (it serves `.well-known/lnurlp/` too). One name, not three identifiers.
+ */
+export function npubCashNameAddress(username) {
+  const name = String(username || '').trim().toLowerCase();
+  return name ? `${name}@${NPUBCASH_DOMAIN}` : '';
+}
+
 /** True if an address points at npub.cash, so we can tell ours from a user's own. */
 export function isNpubCashAddress(address) {
   if (typeof address !== 'string') return false;
   return address.trim().toLowerCase().endsWith(`@${NPUBCASH_DOMAIN}`);
+}
+
+/** The raw-key form, which is what we replace as soon as a name is claimed. */
+export function isNpubCashKeyAddress(address) {
+  if (!isNpubCashAddress(address)) return false;
+  return address.trim().toLowerCase().startsWith('npub1');
+}
+
+/**
+ * What a username has to look like before it is worth a round trip.
+ *
+ * Mirrors what the service accepts. Checking locally means a typo gets an
+ * answer immediately instead of after a signature and a request.
+ */
+export function isValidNpubCashUsername(username) {
+  return /^[a-z0-9][a-z0-9_.-]{1,29}$/.test(String(username || '').trim().toLowerCase());
 }
 
 async function withTimeout(promise, ms, label) {
@@ -98,8 +141,10 @@ async function withTimeout(promise, ms, label) {
  * actually received, so the URL has to match byte for byte, query string
  * included. `nostr-core` already implements this; nothing to hand-roll.
  */
-function nip98Header(url, method, secretKey) {
-  const event = createHttpAuthEvent({ url, method }, secretKey);
+function nip98Header(url, method, secretKey, body) {
+  // NIP-98 hashes the request body into the event when one is present, so a
+  // POST must pass it or the signature covers only the URL and method.
+  const event = createHttpAuthEvent(body ? { url, method, body } : { url, method }, secretKey);
   return getAuthorizationHeader(event);
 }
 
@@ -221,6 +266,55 @@ export async function fetchQuotes({ secretKey, pubkeyHex, since = 0, baseUrl } =
  * whatever npub.cash uses and read the mint back off each quote. Exposed
  * because the day we do vet one, this is the whole change.
  */
+/**
+ * Claim a human-readable name.
+ *
+ * Turns `npub1az708…@npub.cash` into `maria@npub.cash`. That matters far more
+ * than it looks: because npub.cash serves both `.well-known/nostr.json` and
+ * `.well-known/lnurlp/`, the claimed name is simultaneously the person's
+ * Nostr handle and a Lightning address any wallet can pay. It is the one
+ * string that removes the need for the user to hold three of them.
+ *
+ * The signature is bound to the body, so the name in the request is the name
+ * that was signed for.
+ *
+ * @returns {Promise<{ ok: true, address: string } |
+ *                   { ok: false, reason:
+ *                       'PAYMENT_REQUIRED'|'TAKEN'|'INVALID'|'FAILED' }>}
+ */
+export async function claimUsername({ secretKey, username, baseUrl } = {}) {
+  const name = String(username || '').trim().toLowerCase();
+  if (!isValidNpubCashUsername(name)) return { ok: false, reason: 'INVALID' };
+
+  const base = baseUrl || NPUBCASH_API;
+  const url = `${base}/api/v2/user/username`;
+  const body = JSON.stringify({ username: name });
+
+  let res;
+  try {
+    res = await withTimeout(
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: nip98Header(url, 'POST', secretKey, body),
+        },
+        body,
+      }),
+      REQUEST_TIMEOUT_MS,
+      'claim username',
+    );
+  } catch {
+    return { ok: false, reason: 'FAILED' };
+  }
+
+  if (res.ok) return { ok: true, address: npubCashNameAddress(name) };
+  if (res.status === 402) return { ok: false, reason: 'PAYMENT_REQUIRED' };
+  if (res.status === 409) return { ok: false, reason: 'TAKEN' };
+  if (res.status === 400) return { ok: false, reason: 'INVALID' };
+  return { ok: false, reason: 'FAILED' };
+}
+
 export async function setMintUrl({ secretKey, mintUrl, baseUrl } = {}) {
   const base = baseUrl || NPUBCASH_API;
   const url = `${base}/api/v2/user/mint`;
@@ -230,7 +324,7 @@ export async function setMintUrl({ secretKey, mintUrl, baseUrl } = {}) {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: nip98Header(url, 'PUT', secretKey),
+        Authorization: nip98Header(url, 'PUT', secretKey, JSON.stringify({ mintUrl })),
       },
       body: JSON.stringify({ mintUrl }),
     }),

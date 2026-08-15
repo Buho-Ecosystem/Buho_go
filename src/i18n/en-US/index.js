@@ -2589,6 +2589,17 @@ export default {
   "This device has no share menu, so we copied it instead.": "This device has no share menu, so we copied it instead.",
 
   // ─── Identity: strings added with the bucket, erase and switch work ───
+  "Send this to anyone, anywhere. It works whether or not they have BuhoGO.": "Send this to anyone, anywhere. It works whether or not they have BuhoGO.",
+  "Show this to get paid in person": "Show this to get paid in person",
+  "If an app asks for an address": "If an app asks for an address",
+  "It is also what makes your link short, so people can read it back to you.": "It is also what makes your link short, so people can read it back to you.",
+  "Payments go straight to that wallet. Remove it and BuhoGO receives for you again.": "Payments go straight to that wallet. Remove it and BuhoGO receives for you again.",
+  "Some apps ask for a \"Lightning address\". This is yours. You never have to remember it: send your link instead.": "Some apps ask for a \"Lightning address\". This is yours. You never have to remember it: send your link instead.",
+  "Someone with a Bitcoin wallet can scan this": "Someone with a Bitcoin wallet can scan this",
+  "Use my own wallet instead": "Use my own wallet instead",
+  "Your code, your link, where money lands": "Your code, your link, where money lands",
+  "Your link works for everyone. They can pay you, save you, or get BuhoGO, whichever they need.": "Your link works for everyone. They can pay you, save you, or get BuhoGO, whichever they need.",
+  "Your name finds you. Get paid is where you set up receiving.": "Your name finds you. Get paid is where you set up receiving.",
   "Bring back the Bitcoin in your Arkade wallet.": "Bring back the Bitcoin in your Arkade wallet.",
   "Bring back the Bitcoin in your Spark wallets.": "Bring back the Bitcoin in your Spark wallets.",
   "Bring back the Bitcoin in {wallet}.": "Bring back the Bitcoin in {wallet}.",

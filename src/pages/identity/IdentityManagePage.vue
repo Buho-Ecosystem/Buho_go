@@ -25,8 +25,7 @@
           icon="tabler:arrow-bar-to-down"
           :tone="lud16 ? 'neutral' : 'warn'"
           :label="$t('Get paid')"
-          :caption="lud16 || $t('No address yet, so nobody can pay you')"
-          :mono="!!lud16"
+          :caption="lud16 ? $t('Your code, your link, where money lands') : $t('Setting up')"
           @click="$router.push('/identity/get-paid')"
         />
         <IdentityRow

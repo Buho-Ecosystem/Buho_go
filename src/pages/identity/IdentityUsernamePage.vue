@@ -103,15 +103,17 @@ export default {
     },
 
     /**
-     * A username on its own cannot receive anything: a payer's wallet
-     * resolves the name to the profile behind it and then to its Lightning
-     * address. Saying so here is the difference between a name that works
-     * and a name that quietly fails for whoever tries to use it.
+     * What the name is for, in the user's terms.
+     *
+     * It used to explain that a username resolves to a profile and then to a
+     * Lightning address, which is true and is none of their business. The one
+     * consequence they can act on is that the name is what makes their link
+     * readable, and Get paid owns everything about receiving.
      */
     payFooter() {
       return this.lud16
-        ? this.$t('Someone typing your username gets sent to that address.')
-        : this.$t('A username finds you, but the money needs somewhere to land. Until you add an address, paying by name fails.');
+        ? this.$t('It is also what makes your link short, so people can read it back to you.')
+        : this.$t('Your name finds you. Get paid is where you set up receiving.');
     },
 
     /**

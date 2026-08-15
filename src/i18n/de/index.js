@@ -2594,6 +2594,17 @@ export default {
   "This device has no share menu, so we copied it instead.": "Dieses Gerät hat kein Teilen-Menü, deshalb haben wir ihn kopiert.",
 
   // ─── Identity: strings added with the bucket, erase and switch work ───
+  "Send this to anyone, anywhere. It works whether or not they have BuhoGO.": "Schick das an alle, überall. Es funktioniert, ob sie BuhoGO haben oder nicht.",
+  "Show this to get paid in person": "Zeig das, um vor Ort bezahlt zu werden",
+  "If an app asks for an address": "Wenn eine App nach einer Adresse fragt",
+  "It is also what makes your link short, so people can read it back to you.": "Er macht auch deinen Link kurz, sodass andere ihn dir vorlesen können.",
+  "Payments go straight to that wallet. Remove it and BuhoGO receives for you again.": "Zahlungen gehen direkt an dieses Wallet. Entferne sie und BuhoGO empfängt wieder für dich.",
+  "Some apps ask for a \"Lightning address\". This is yours. You never have to remember it: send your link instead.": "Manche Apps fragen nach einer \"Lightning-Adresse\". Das ist deine. Du musst sie dir nie merken: schick einfach deinen Link.",
+  "Someone with a Bitcoin wallet can scan this": "Wer ein Bitcoin Wallet hat, kann das scannen",
+  "Use my own wallet instead": "Stattdessen mein eigenes Wallet nutzen",
+  "Your code, your link, where money lands": "Dein Code, dein Link, wo das Geld ankommt",
+  "Your link works for everyone. They can pay you, save you, or get BuhoGO, whichever they need.": "Dein Link funktioniert für alle. Sie können dich bezahlen, dich speichern oder BuhoGO holen, ganz wie sie wollen.",
+  "Your name finds you. Get paid is where you set up receiving.": "Dein Name findet dich. Unter Geld empfangen richtest du das Empfangen ein.",
   "Bring back the Bitcoin in your Arkade wallet.": "Holt die Bitcoin in deinem Arkade Wallet zurück.",
   "Bring back the Bitcoin in your Spark wallets.": "Holt die Bitcoin in deinen Spark Wallets zurück.",
   "Bring back the Bitcoin in {wallet}.": "Holt die Bitcoin in {wallet} zurück.",
