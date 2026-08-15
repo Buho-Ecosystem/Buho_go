@@ -1,0 +1,246 @@
+/* ============================================================================
+   Identity surface chrome
+   ============================================================================
+
+   One stylesheet for the shapes every identity screen is built from, instead
+   of the same forty lines copy-pasted into eleven scoped blocks. Three things
+   that were wrong while it was duplicated, and are fixed here once:
+
+     1. The primary button used --btn-neutral-bg, which in dark mode is the
+        exact colour of a card (1.00 contrast) and near-invisible against the
+        page (1.12). Every primary action on the surface disappeared in dark.
+     2. Group footers and helper text used --text-muted, which is where all the
+        explanation on this surface lives and which fails AA in both themes.
+     3. Large titles, radii and paddings drifted apart page by page.
+
+   Selectors are global on purpose: the class names were already identical
+   across the pages, and a shared shape should not be re-declared per screen.
+   ========================================================================= */
+
+/* ---------- Page chrome ---------- */
+
+.id-sub-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Manrope', sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
+  padding-top: var(--safe-top, 0px);
+}
+
+/* The floating tab bar belongs to the three hub tabs, not to pushed screens,
+   so a sub-screen only needs breathing room at the bottom. */
+.id-sub-body {
+  flex: 1 1 auto;
+  padding: 0 16px calc(32px + var(--safe-bottom, 0px));
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* The pages bind .bg-light / .bg-dark but nothing on this surface defined
+   them, so the paper came from whatever the app shell happened to paint.
+   Both resolve to the same token; the theme swaps the token, not the class. */
+.id-sub-page.bg-light,
+.id-sub-page.bg-dark,
+.id-page.bg-light,
+.id-page.bg-dark { background: var(--bg-primary); }
+
+.id-large-title {
+  font-size: 30px;
+  font-weight: 770;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+  color: var(--text-primary);
+  margin: 2px 2px 14px;
+}
+
+/* A lede sits under a title and needs less space beneath it than the title
+   would otherwise leave. */
+.id-large-title + .id-lede { margin-top: -6px; }
+
+.id-lede {
+  font-size: 14.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 2px 16px;
+}
+
+/* Footers carry the teaching on this surface. --text-muted fails AA against
+   the paper, and an explanation nobody can read is not an explanation. */
+.id-foot {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 8px 6px 0;
+  opacity: 0.86;
+}
+
+.id-block { margin-top: 20px; }
+
+/* ---------- Buttons ----------
+
+   One filled action, one outlined alternative, one quiet escape, one
+   destructive. The filled variant inverts by theme rather than reusing a
+   surface token, so it is always the highest-contrast thing on the screen. */
+
+.id-btn,
+.identity-surface .btn-primary,
+.identity-surface .btn-ghost,
+.identity-surface .btn-quiet,
+.identity-surface .btn-danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  padding: 15px 18px;
+  border-radius: var(--radius-md);
+  min-height: 52px;
+  margin-top: 16px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.identity-surface .btn-primary {
+  background: #1A1A1C;
+  color: #FAF7EF;
+}
+
+body.body--dark .identity-surface .btn-primary {
+  background: #F4F4F4;
+  color: #0C0C0C;
+}
+
+.identity-surface .btn-primary:active:not(:disabled) { opacity: 0.88; }
+
+.identity-surface .btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--border-card);
+}
+
+/* In dark the hairline alone does not clear 3:1 against the page, so the
+   ghost gets a surface of its own rather than vanishing. */
+body.body--dark .identity-surface .btn-ghost {
+  background: var(--bg-card);
+  border-color: #39413A;
+}
+
+.identity-surface .btn-quiet {
+  background: transparent;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+.identity-surface .btn-danger {
+  background: var(--color-red);
+  color: #fff;
+}
+
+/* A disabled destructive button must read as unavailable, not as armed and
+   waiting. Transparency alone left a legible red button that did nothing.
+   The `!important` is not decoration: Quasar sets `opacity: .6 !important` on
+   every [disabled] element, which overrode the states declared here and left
+   a faded-but-still-red Erase button on the confirmation screen. */
+.identity-surface .btn-danger:disabled {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  border-color: var(--border-card);
+  cursor: default;
+  opacity: 1 !important;
+}
+
+.identity-surface .btn-primary:disabled,
+.identity-surface .btn-ghost:disabled {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  border-color: var(--border-card);
+  cursor: default;
+  opacity: 1 !important;
+}
+
+.identity-surface .btn-quiet:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 1 !important;
+}
+
+/* ---------- Fields ---------- */
+
+.identity-surface .field { display: block; margin-bottom: 16px; }
+
+.identity-surface .field-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 6px 3px;
+}
+
+.identity-surface .field-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  color: var(--text-primary);
+  min-height: 50px;
+}
+
+.identity-surface .field-input--error { border-color: var(--color-red); }
+
+.identity-surface .field-help,
+.identity-surface .field-error {
+  display: block;
+  font-size: 12px;
+  margin: 7px 3px 0;
+  line-height: 1.45;
+}
+
+.identity-surface .field-help { color: var(--text-secondary); opacity: 0.86; }
+.identity-surface .field-error { color: var(--color-red); }
+
+/* ---------- Sheets ----------
+
+   Bottom sheets on this surface share one head, one grab handle and one body
+   inset. The close control is a real 44pt target: Quasar's `dense` round
+   button is 34px, which is under the minimum and was used on every sheet. */
+
+.identity-surface .sheet-grab,
+.id-sheet-grab { display: flex; justify-content: center; padding: 9px 0 2px; }
+
+.identity-surface .sheet-grab span,
+.id-sheet-grab span {
+  width: 36px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border-card);
+  display: block;
+}
+
+.identity-surface .sheet-head { display: flex; align-items: center; gap: 8px; padding: 8px 14px 4px; }
+
+.identity-surface .sheet-title {
+  flex: 1;
+  padding-left: 4px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 17px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.identity-surface .sheet-body { padding: 8px 16px 20px; }
+
+.identity-surface .sheet-close {
+  min-width: 44px;
+  min-height: 44px;
+}

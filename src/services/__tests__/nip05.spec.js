@@ -385,3 +385,37 @@ await test('deriveBaseSlug: no longer emits a buho<npub> machine slug', () => {
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+
+// The vocabulary is the product here: these guard the qualities the lists
+// were curated for, so a later "let's add more words" pass cannot quietly
+// reintroduce part-number names.
+await test('deriveMemorableSlug: the two words never collide at the seam', () => {
+  const longest = (slug) => ADJECTIVES
+    .filter((a) => slug.startsWith(a) && ANIMALS.includes(slug.slice(a.length)))
+    .sort((x, y) => y.length - x.length)[0];
+
+  for (let i = 0; i < 500; i += 1) {
+    const slug = deriveMemorableSlug(`npub1seamcheck${i}`);
+    const adjective = longest(slug);
+    assert.ok(adjective, `unparseable slug: ${slug}`);
+    const animal = slug.slice(adjective.length);
+    assert.notEqual(
+      adjective[adjective.length - 1],
+      animal[0],
+      `doubled letter at the seam: ${slug}`,
+    );
+  }
+});
+
+await test('name vocabulary: no duplicates, no word in both lists', () => {
+  assert.equal(new Set(ADJECTIVES).size, ADJECTIVES.length);
+  assert.equal(new Set(ANIMALS).size, ANIMALS.length);
+  assert.deepEqual(ADJECTIVES.filter((a) => ANIMALS.includes(a)), []);
+});
+
+await test('name vocabulary: every word is short and lowercase letters only', () => {
+  for (const word of [...ADJECTIVES, ...ANIMALS]) {
+    assert.match(word, /^[a-z]+$/, `not plain lowercase: ${word}`);
+    assert.ok(word.length >= 3 && word.length <= 9, `bad length: ${word}`);
+  }
+});

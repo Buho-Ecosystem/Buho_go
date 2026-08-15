@@ -30,6 +30,11 @@ export default defineConfig((ctx) => {
       // handle once an identity exists. Safe everywhere (a plain fetch);
       // idempotent and best-effort.
       'nip05',
+      // 'social-bucket' gives every identity a payment address it did not have
+      // to go and find, by adopting <npub>@npub.cash as the profile's lud16 and
+      // publishing it. Without this a new user's username resolves to a profile
+      // with nothing to pay. Best-effort and idempotent, same as 'nip05'.
+      'social-bucket',
       ctx.mode.capacitor ? 'deep-links' : '',
       ctx.mode.capacitor ? 'nfc' : '',
       ctx.dev ? 'audit' : ''
@@ -37,7 +42,11 @@ export default defineConfig((ctx) => {
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: [
-      'app.css'
+      'app.css',
+      // Shared chrome for the identity surface. Global rather than scoped per
+      // page: eleven screens were repeating the same forty lines, and the one
+      // that mattered most (the primary button) was invisible in dark mode.
+      'identity.css'
     ],
 
     // https://github.com/quasarframework/quasar/tree/dev/extras
