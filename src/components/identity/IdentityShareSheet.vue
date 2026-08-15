@@ -51,8 +51,9 @@
           />
         </IdentityGroup>
 
-        <p class="share-foot">
-          {{ $t('If someone only needs to pay you, Get paid gives them just your payment name.') }}
+        <p v-if="shareUrl" class="share-foot">
+          {{ $t('Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.') }}
+          <span class="share-url">{{ shareUrlDisplay }}</span>
         </p>
       </div>
     </q-card>
@@ -68,6 +69,7 @@ import { useIdentityStore } from '../../stores/identity';
 import { useProfileStore } from '../../stores/profile';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
 import { shareContent } from '../../utils/share.js';
+import { buildProfileLink } from '../../utils/profileLink.js';
 
 export default {
   name: 'IdentityShareSheet',
@@ -107,14 +109,32 @@ export default {
     },
 
     /**
-     * What gets sent or copied. Deliberately NOT the `nostr:` URI: a person
-     * pasting this into a chat needs something the recipient can tap, and a
-     * custom scheme is both unopenable for them and rejected outright by
-     * some share targets. njump resolves any npub to a readable profile
-     * page, which is what the sheet this replaced used.
+     * What gets sent or copied.
+     *
+     * Deliberately NOT the `nostr:` URI: whoever opens a shared link most
+     * likely has no BuhoGO and no Nostr client, and a custom scheme is a
+     * dead end for them as well as being rejected by some share targets.
+     * This points at BuhoGO's own profile page, which can show the card,
+     * take a payment, and offer the app. Prefers the username, so the link
+     * reads as something a person could say out loud.
      */
     shareUrl() {
-      return this.npub ? `https://njump.me/${this.npub}` : '';
+      return buildProfileLink({
+        username: this.identity.nip05ActiveEntry?.handle,
+        nip05: this.profile.nip05 || this.identity.nip05Address,
+        npub: this.npub,
+      });
+    },
+
+    /**
+     * The readable half of the link, for showing in the sheet. The key that
+     * rides along as a fallback is machinery: it doubles the length, it is
+     * not something anyone reads, and putting it on screen would make the
+     * link look far more complicated than it is. What gets copied and shared
+     * is always the whole thing.
+     */
+    shareUrlDisplay() {
+      return this.shareUrl.replace(/^https:\/\//, '').split('?')[0];
     },
 
     qrOptions() {
@@ -270,5 +290,14 @@ export default {
   color: var(--text-muted);
   line-height: 1.5;
   margin: 10px 6px 0;
+}
+
+.share-url {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  word-break: break-all;
 }
 </style>

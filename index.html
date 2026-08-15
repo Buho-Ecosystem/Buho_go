@@ -45,6 +45,26 @@
     <meta property="twitter:description" content="BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone"/>
     <meta property="twitter:image" content="https://buho-go.netlify.app/dark_img.png"/>
 
+    <!--
+      Clean links for shared profile cards.
+
+      The app routes on the hash, but a link a person hands to a friend
+      should read as `go.mybuho.de/p/maria`, not `go.mybuho.de/#/p/maria`.
+      Netlify serves index.html for any path, so this rewrites the path form
+      into the hash form before the router ever runs. It fires only for /p/
+      and only in a browser, so the packaged Android build (whose path is
+      always /) is untouched.
+    -->
+    <script>
+      (function () {
+        var path = window.location.pathname || '';
+        if (path.indexOf('/p/') !== 0) return;
+        if (window.location.hash) return;
+        var target = path + window.location.search;
+        window.location.replace('/#' + target);
+      })();
+    </script>
+
 </head>
 <body>
 <!-- quasar:entry-point -->

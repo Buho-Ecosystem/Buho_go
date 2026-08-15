@@ -2630,4 +2630,23 @@ export default {
   "Money lands at": "Geld landet bei",
   "Someone typing your username gets sent to that address.": "Wer deinen Benutzernamen eintippt, landet bei dieser Adresse.",
   "A username finds you, but the money needs somewhere to land. Until you add an address, paying by name fails.": "Ein Benutzername findet dich, aber das Geld braucht ein Ziel. Ohne Adresse schlägt Bezahlen per Name fehl.",
+
+  // ─── Public profile page (a shared card link) ───
+  "Looking this up": "Wird nachgeschlagen",
+  "No card here": "Hier ist keine Karte",
+  "This link does not point at anyone. It may have been mistyped.": "Dieser Link zeigt auf niemanden. Vielleicht hat er sich vertippt.",
+  "Go to BuhoGO": "Zu BuhoGO",
+  "Hide the address": "Adresse ausblenden",
+  "Show the address": "Adresse anzeigen",
+  "Scan or paste this into any Bitcoin wallet.": "Scanne das oder füge es in eine beliebige Bitcoin-Wallet ein.",
+  "{name} has not set up payments yet, so there is nothing to send to.": "{name} hat Zahlungen noch nicht eingerichtet, es gibt also kein Ziel.",
+  "Saved to your contacts": "In deinen Kontakten gespeichert",
+  "Save to my contacts": "Zu meinen Kontakten",
+  "Add to BuhoGO": "Zu BuhoGO hinzufügen",
+  "Do not have it?": "Noch nicht installiert?",
+  "Get BuhoGO": "BuhoGO holen",
+  "This person": "Diese Person",
+  "Pay {name}": "{name} bezahlen",
+  "Couldn't save the contact": "Kontakt konnte nicht gespeichert werden",
+  "Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.": "Dein Link öffnet eine Seite mit deinem Namen, deinem Foto und einem Weg, dich zu bezahlen, auch für jemanden, der BuhoGO noch nicht hat.",
 }

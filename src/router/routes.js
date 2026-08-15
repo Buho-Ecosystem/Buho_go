@@ -43,6 +43,12 @@ const routes = [
       { path: '/settings', component: () => import('pages/Settings.vue') },
       { path: '/about', component: () => import('pages/AboutPage.vue') },
       { path: '/spend', component: () => import('pages/SpendPage.vue') },
+      // Public profile page. The one route in the app meant for people who
+      // do not have BuhoGO: it is what a shared card link opens. Takes a
+      // username, a full NIP-05 address or an npub. Deliberately outside the
+      // identity tab, because the visitor is not the owner of the card.
+      { path: '/p/:id', component: () => import('pages/PublicProfilePage.vue') },
+
       // Identity. The tab itself is the card; everything configurable lives
       // on its own pushed screen rather than in a stack of bottom sheets, so
       // each one is addressable, has a back button, and can be deep-linked.

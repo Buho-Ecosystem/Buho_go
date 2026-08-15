@@ -2625,4 +2625,23 @@ export default {
   "Money lands at": "Money lands at",
   "Someone typing your username gets sent to that address.": "Someone typing your username gets sent to that address.",
   "A username finds you, but the money needs somewhere to land. Until you add an address, paying by name fails.": "A username finds you, but the money needs somewhere to land. Until you add an address, paying by name fails.",
+
+  // ─── Public profile page (a shared card link) ───
+  "Looking this up": "Looking this up",
+  "No card here": "No card here",
+  "This link does not point at anyone. It may have been mistyped.": "This link does not point at anyone. It may have been mistyped.",
+  "Go to BuhoGO": "Go to BuhoGO",
+  "Hide the address": "Hide the address",
+  "Show the address": "Show the address",
+  "Scan or paste this into any Bitcoin wallet.": "Scan or paste this into any Bitcoin wallet.",
+  "{name} has not set up payments yet, so there is nothing to send to.": "{name} has not set up payments yet, so there is nothing to send to.",
+  "Saved to your contacts": "Saved to your contacts",
+  "Save to my contacts": "Save to my contacts",
+  "Add to BuhoGO": "Add to BuhoGO",
+  "Do not have it?": "Do not have it?",
+  "Get BuhoGO": "Get BuhoGO",
+  "This person": "This person",
+  "Pay {name}": "Pay {name}",
+  "Couldn't save the contact": "Couldn't save the contact",
+  "Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.": "Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.",
 }
