@@ -14,6 +14,10 @@
     push into.
   -->
   <div class="id-nav">
+    <!-- Centred independently of the back label's width, and non-interactive
+         so it never eats a tap meant for the control underneath. -->
+    <span v-if="title" class="id-nav-title">{{ title }}</span>
+
     <button
       v-if="backTo"
       type="button"
@@ -25,7 +29,6 @@
     </button>
     <span v-else class="id-nav-pad" aria-hidden="true"></span>
 
-    <span v-if="title" class="id-nav-title">{{ title }}</span>
     <span class="id-nav-spacer"></span>
     <slot name="actions" />
   </div>
@@ -58,7 +61,23 @@ export default {
 </script>
 
 <style scoped>
+/*
+ * Not sticky, deliberately.
+ *
+ * The back control scrolling out of view on the long screens is real, and
+ * `position: sticky; top: 0` is the obvious fix. It does not work here:
+ * `body { overflow-x: hidden }` (app.css) makes body a scroll container whose
+ * height equals its content, so a sticky descendant pins to a box that is
+ * itself scrolling away with the document. Measured on Manage identity: with
+ * sticky applied the nav still moved from y=0 to y=-384 after a 384px scroll.
+ *
+ * The settings hub header has the same declaration and the same behaviour, so
+ * nothing in the app pins today; this surface is consistent, not worse. A real
+ * fix means changing the app's scroll container, which is not this component's
+ * call to make.
+ */
 .id-nav {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -78,11 +97,11 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
-  color: var(--brand-accent);
+  color: var(--brand-accent-text);
   cursor: pointer;
   padding: 6px 8px 6px 2px;
   min-height: 44px;
-  border-radius: 10px;
+  border-radius: var(--radius-ms);
 }
 
 .id-nav-back:active { opacity: 0.6; }
@@ -97,6 +116,15 @@ export default {
 .id-nav-pad { width: 8px; }
 
 .id-nav-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
   font-family: 'Manrope', sans-serif;
   font-size: 16px;
   font-weight: 700;

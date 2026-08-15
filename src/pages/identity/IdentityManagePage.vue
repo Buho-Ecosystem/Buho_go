@@ -1,9 +1,9 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('You')" to="/identity" />
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Manage identity') }}</h1>
+      <h1 class="id-large-title">{{ $t('Manage your card') }}</h1>
 
       <!-- What is on the card. Sections are named by the question a user is
            asking, not by the feature that answers it. -->
@@ -24,7 +24,7 @@
         <IdentityRow
           icon="tabler:arrow-bar-to-down"
           :tone="lud16 ? 'neutral' : 'warn'"
-          :label="$t('Where money lands')"
+          :label="$t('Get paid')"
           :caption="lud16 || $t('No address yet, so nobody can pay you')"
           :mono="!!lud16"
           @click="$router.push('/identity/get-paid')"
@@ -35,7 +35,6 @@
           :caption="publishCaption"
           :chip="publishChip"
           :chip-tone="publishChipTone"
-          :chevron="false"
           @click="$router.push('/identity/visible')"
         />
       </IdentityGroup>
@@ -49,7 +48,7 @@
           :chip="allWordsSaved ? $t('Done') : $t('To do')"
           :chip-tone="allWordsSaved ? 'ok' : 'warn'"
           :chip-icon="allWordsSaved ? 'tabler:check' : ''"
-          :chevron="false"
+          wrap
           @click="$router.push('/identity/words')"
         />
         <IdentityRow
@@ -58,15 +57,14 @@
           :caption="appLockCaption"
           :chip="biometricsEnabled ? $t('On') : $t('Off')"
           :chip-tone="biometricsEnabled ? 'ok' : 'mute'"
-          :chevron="false"
-          @click="$router.push('/settings')"
+          :interactive="false"
         />
       </IdentityGroup>
 
       <IdentityGroup :title="$t('More')">
         <IdentityRow
           icon="tabler:users"
-          :label="$t('Your identities')"
+          :label="$t('Your cards')"
           :caption="identityCountCaption"
           @click="$router.push('/identity/identities')"
         />
@@ -87,25 +85,24 @@
            a footer that answers the fear before the tap. -->
       <IdentityGroup
         class="id-danger-group"
-        :footer="$t('Erasing an identity never touches your wallets or your Bitcoin.')"
+        :footer="$t('Erasing a card never touches your wallets or your Bitcoin.')"
       >
         <IdentityRow
           icon="tabler:trash"
           danger
-          :label="$t('Erase this identity')"
+          :label="$t('Erase this card')"
           :chevron="false"
           @click="$router.push('/identity/erase')"
         />
       </IdentityGroup>
     </div>
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
@@ -114,7 +111,7 @@ import { useWalletStore } from '../../stores/wallet';
 export default {
   name: 'IdentityManagePage',
 
-  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
+  components: { IdentityNav, IdentityGroup, IdentityRow },
 
   setup() {
     return { ...useIdentityHealth(), walletStore: useWalletStore() };
@@ -125,6 +122,9 @@ export default {
   },
 
   computed: {
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity'); },
+
     username() {
       return this.identity.nip05ActiveEntry?.handle || '';
     },
@@ -201,32 +201,6 @@ export default {
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.id-large-title {
-  font-size: 30px;
-  font-weight: 770;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  color: var(--text-primary);
-  margin: 2px 2px 14px;
-}
 
 /* Air above the destructive group so it never reads as the next item in a
    list of routine settings. */

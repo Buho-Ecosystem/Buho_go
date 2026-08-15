@@ -1,16 +1,15 @@
 <template>
-  <q-page class="id-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+  <q-page class="id-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
     <div class="id-topbar">
-      <div class="id-topbar-spacer"></div>
       <button
-        v-if="!setupComplete"
         type="button"
         class="id-topbar-btn"
-        :aria-label="$t('What is this card for')"
-        @click="$router.push('/identity/about')"
+        :aria-label="$t('Wallet')"
+        @click="$router.push('/wallet')"
       >
-        <Icon icon="tabler:info-circle" width="21" height="21" />
+        <Icon icon="tabler:home" width="21" height="21" />
       </button>
+      <div class="id-topbar-spacer"></div>
       <button
         type="button"
         class="id-topbar-btn"
@@ -19,15 +18,6 @@
         @click="showScanSheet = true"
       >
         <Icon icon="tabler:scan" width="21" height="21" />
-      </button>
-      <button
-        type="button"
-        class="id-topbar-btn"
-        data-audit="identity-manage"
-        :aria-label="$t('Manage identity')"
-        @click="$router.push('/identity/manage')"
-      >
-        <Icon icon="tabler:adjustments-horizontal" width="21" height="21" />
       </button>
     </div>
 
@@ -42,11 +32,14 @@
         :username="username"
         :avatar="avatarUrl"
         :status="statusLine"
+        :status-tone="statusTone"
         :progress="progress"
         :qr-value="qrValue"
         :qr-caption="qrCaption"
         :can-switch="canSwitch"
+        :needs-name="needsName"
         @switch-identity="onSwitchIdentity"
+        @add-name="$router.push('/identity/profile')"
         @avatar-error="avatarBroken = true"
       />
 
@@ -97,7 +90,7 @@
         />
         <IdentityRow
           icon="tabler:adjustments-horizontal"
-          :label="$t('Manage identity')"
+          :label="$t('Manage your card')"
           :caption="$t('Photo, username, 12 words, more')"
           @click="$router.push('/identity/manage')"
         />
@@ -117,9 +110,6 @@
 
     <!-- Share: one sheet, replacing the two competing ones the old page had. -->
     <IdentityShareSheet v-model="showShareSheet" />
-
-    <!-- Switch identity, reached from the photo on the card. -->
-    <IdentitySwitchSheet v-model="showSwitchSheet" @changed="onIdentityChanged" />
 
     <!-- Scan someone else's card. Same add-contact flow the address book
          uses, landed on its scan tab. -->
@@ -143,10 +133,10 @@ import PeopleStrip from '../../components/identity/PeopleStrip.vue';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import IdentityShareSheet from '../../components/identity/IdentityShareSheet.vue';
-import IdentitySwitchSheet from '../../components/identity/IdentitySwitchSheet.vue';
 import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useAddressBookStore } from '../../stores/addressBook';
+import { usePayContact } from '../../composables/usePayContact';
 
 /** How many faces fit the strip before it needs scrolling on a small phone. */
 const PEOPLE_SHOWN = 8;
@@ -163,7 +153,6 @@ export default {
     IdentityGroup,
     IdentityRow,
     IdentityShareSheet,
-    IdentitySwitchSheet,
     AddressBookModal,
   },
 
@@ -176,7 +165,6 @@ export default {
   data() {
     return {
       showShareSheet: false,
-      showSwitchSheet: false,
       showScanSheet: false,
       avatarBroken: false,
       canSwitch: false,
@@ -185,10 +173,17 @@ export default {
 
   computed: {
     cardName() {
-      if (this.profile.displayName || this.profile.name) {
-        return this.profile.displayName || this.profile.name;
-      }
-      return this.$t('Add your name');
+      if (this.needsName) return this.$t('Add your name');
+      return this.profile.displayName || this.profile.name;
+    },
+
+    /**
+     * The card's name slot holds an instruction rather than a name. Tied to
+     * exactly the condition cardName uses, so the slot is a control whenever
+     * it is telling the user to do something and never otherwise.
+     */
+    needsName() {
+      return !this.profile.displayName && !this.profile.name;
     },
 
     /** Local part only. The domain is plumbing and lives on Get paid. */
@@ -207,11 +202,25 @@ export default {
           return this.$t('Setting up');
         case 'words-missing':
           return this.$t('12 words not saved');
+        case 'wallet-words-missing':
+          return this.$t('Wallet words not saved');
         case 'steps-left':
           return this.$t('{done} of {total} done', { done: this.stepsDone, total: this.stepsTotal });
         default:
           return this.$t('Ready, 12 words saved');
       }
+    },
+
+    /**
+     * Only two states earn a warning mark: the card words are the last thing
+     * left, or the wallet phrase is outstanding. Everything else is either
+     * finished or in progress, and neither is a fault.
+     */
+    statusTone() {
+      if (this.statusKey === 'words-missing' || this.statusKey === 'wallet-words-missing') {
+        return 'warn';
+      }
+      return this.statusKey === 'ready' ? 'ok' : 'progress';
     },
 
     /** NIP-21 profile URI: identity, not payment. Scanning saves the person. */
@@ -228,7 +237,7 @@ export default {
     qrCaption() {
       return this.profile.lud16
         ? this.$t('Someone can scan this to save you and pay you')
-        : this.$t('Someone can scan this to save you as a contact');
+        : this.$t('Someone can scan this to save you. Add an address and they can pay you too.');
     },
 
     contactCount() {
@@ -264,6 +273,11 @@ export default {
       await this.identity.ensureIdentity();
     }
 
+    // The card footer now reports on the wallet phrase too, and the wallet
+    // store only reads its blob inside initialize(). Without this the card
+    // would say "Ready" on a cold start purely because no wallets had loaded.
+    await this.ensureWalletLoaded();
+
     // Only offer the switcher when there is something to switch to. A user
     // with one identity should never be shown machinery for many.
     try {
@@ -275,31 +289,31 @@ export default {
   },
 
   methods: {
+    /**
+     * What the photo does depends on what the card is missing.
+     *
+     * With one identity and no photo, the obvious meaning of tapping a blank
+     * avatar is "put a picture here", and offering to create a second identity
+     * instead is a non sequitur on day one. Once there is more than one
+     * identity the photo becomes the switcher, which is the pattern people
+     * already know from account switchers.
+     */
     onSwitchIdentity() {
-      // The photo always opens the switcher, even with a single identity:
-      // creating a second one is the other thing this sheet does, and hiding
-      // it behind a count the user cannot see would repeat the old mistake.
-      this.showSwitchSheet = true;
+      if (this.canSwitch) {
+        this.$router.push('/identity/identities');
+        return;
+      }
+      this.$router.push('/identity/profile');
     },
 
-    async onIdentityChanged() {
-      this.avatarBroken = false;
-      const list = await this.identity.listNostrIdentities().catch(() => []);
-      this.canSwitch = Array.isArray(list) && list.length > 1;
-    },
 
+    /**
+     * Shared with the address book, so a face tapped here behaves exactly
+     * like the same person tapped there: an identity-only contact explains
+     * itself and re-syncs rather than doing nothing at all.
+     */
     payContact(entry) {
-      const address = entry.address || entry.lightningAddress;
-      if (!address) return;
-      this.$router.push({
-        path: '/wallet',
-        query: {
-          action: 'pay_contact',
-          address,
-          addressType: entry.addressType || 'lightning',
-          contactName: entry.name,
-        },
-      });
+      usePayContact(this).payContact(entry);
     },
 
     onContactSaved() {
@@ -359,15 +373,6 @@ export default {
   margin: 0 auto;
 }
 
-.id-large-title {
-  font-size: 30px;
-  font-weight: 770;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  color: var(--text-primary);
-  margin: 2px 2px 12px;
-}
-
 .id-verbs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -378,7 +383,7 @@ export default {
 .id-verb {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: 17px;
+  border-radius: var(--radius-md);
   padding: 15px 8px 13px;
   display: flex;
   flex-direction: column;
@@ -395,7 +400,7 @@ export default {
 .id-verb-icon {
   width: 40px;
   height: 40px;
-  border-radius: 13px;
+  border-radius: var(--radius-ms);
   background: var(--bg-input);
   color: var(--text-secondary);
   display: grid;
@@ -407,15 +412,4 @@ export default {
   font-weight: 650;
   letter-spacing: -0.01em;
 }
-
-.id-block { margin-top: 20px; }
-
-.id-foot {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 8px 6px 0;
-}
-
-.id-foot--last { margin-top: 14px; }
 </style>

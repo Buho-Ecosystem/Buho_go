@@ -1702,6 +1702,7 @@ export const useAddressBookStore = defineStore('addressBook', {
      *   identityStore:  any,
      *   changeIdentity: () => Promise<unknown>,
      *   keepContacts?:  boolean,
+     *   discardUnsynced?: boolean,
      *   pool?: any, relays?: readonly string[], timeoutMs?: number,
      *   profileFetcher?: Function,
      * }} args
@@ -1709,7 +1710,7 @@ export const useAddressBookStore = defineStore('addressBook', {
      *          sync operation is already running
      */
     async switchContactsIdentity({
-      identityStore, changeIdentity, keepContacts = false,
+      identityStore, changeIdentity, keepContacts = false, discardUnsynced = false,
       pool, relays, timeoutMs, profileFetcher,
     } = {}) {
       await this.initialize()
@@ -1742,7 +1743,11 @@ export const useAddressBookStore = defineStore('addressBook', {
             console.warn('[addressBook] pre-switch flush failed:', err)
           }
         }
-        if (!keepContacts && this.syncDirty) {
+        //    `discardUnsynced` is the erase case: the user has asked for the
+        //    book to be destroyed, so unpublished changes are not data at
+        //    risk, they are part of what they asked to lose. Refusing to
+        //    proceed there would leave someone unable to start over offline.
+        if (!keepContacts && !discardUnsynced && this.syncDirty) {
           return { ok: false, reason: 'flush-failed', hadRemote: false, published: false,
             acceptedRelay: null, restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
         }

@@ -48,7 +48,7 @@ export default {
     return {
       tabs: [
         { id: 'settings', icon: 'tabler:settings', label: 'Settings', route: '/settings' },
-        { id: 'identity', icon: 'tabler:user', label: 'Identity', route: '/identity' },
+        { id: 'identity', icon: 'tabler:user', label: 'You', route: '/identity' },
         { id: 'spend', icon: 'tabler:shopping-bag', label: 'Spend', route: '/spend' },
       ],
     };

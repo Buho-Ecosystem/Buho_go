@@ -11,12 +11,12 @@
     is a different job and lives on Get paid, which the footer points at.
   -->
   <q-dialog v-model="open" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-    <q-card class="share-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+    <q-card class="identity-surface share-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="sheet-grab" aria-hidden="true"><span></span></div>
 
       <div class="sheet-head">
         <div class="sheet-title">{{ $t('Share your card') }}</div>
-        <q-btn flat round dense :aria-label="$t('Close')" @click="open = false">
+        <q-btn flat round class="sheet-close" :aria-label="$t('Close')" @click="open = false">
           <Icon icon="tabler:x" width="18" height="18" />
         </q-btn>
       </div>
@@ -30,9 +30,10 @@
               <img :src="avatarUrl" alt="" @error="avatarBroken = true" />
             </div>
           </div>
-          <div class="share-qr-caption">
-            {{ $t('Scanning this saves you as a contact and opens a payment') }}
-          </div>
+          <!-- Same QR as the card's back, so it says the same thing. It
+               used to promise a payment unconditionally, including for cards
+               with nothing to pay to. -->
+          <div class="share-qr-caption">{{ qrCaption }}</div>
         </div>
 
         <IdentityGroup class="share-actions">
@@ -106,6 +107,16 @@ export default {
      */
     qrValue() {
       return this.npub ? `nostr:${this.npub}` : '';
+    },
+
+    /**
+     * Scanning can only lead to a payment when the card carries an address,
+     * so the caption says so rather than promising one either way.
+     */
+    qrCaption() {
+      return this.profile.lud16
+        ? this.$t('Someone can scan this to save you and pay you')
+        : this.$t('Someone can scan this to save you. Add an address and they can pay you too.');
     },
 
     /**
@@ -209,34 +220,9 @@ export default {
 .share-sheet {
   width: 100%;
   max-width: 520px;
-  border-radius: 24px 24px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
 }
-
-.sheet-grab { display: flex; justify-content: center; padding: 9px 0 2px; }
-.sheet-grab span {
-  width: 36px; height: 4px; border-radius: 999px;
-  background: var(--border-card); display: block;
-}
-
-.sheet-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px 4px;
-}
-
-.sheet-title {
-  flex: 1;
-  padding-left: 4px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 720;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-.sheet-body { padding: 8px 16px 20px; }
 
 .share-qr-wrap {
   display: flex;
@@ -249,7 +235,7 @@ export default {
 .share-qr {
   width: 192px;
   height: 192px;
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   background: #fff;
   padding: 10px;
   position: relative;
@@ -268,7 +254,7 @@ export default {
   transform: translate(-50%, -50%);
   width: 44px;
   height: 44px;
-  border-radius: 13px;
+  border-radius: var(--radius-ms);
   overflow: hidden;
   border: 4px solid #fff;
 }

@@ -1,6 +1,6 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('Manage')" />
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
       <div class="erase-head">
@@ -36,6 +36,17 @@
           :label="$t('{n} websites will treat you as a new person', { n: siteCount })"
           :interactive="false"
         />
+        <!-- The bucket belongs to the key being thrown away, so its ecash
+             goes with it. This is the only loss here made of money, so it
+             is stated in sats and says what to do instead. -->
+        <IdentityRow
+          v-if="bucketSats > 0"
+          icon="tabler:alert-triangle"
+          tone="danger"
+          :label="$t('{n} sats in your Social Bucket are lost', { n: bucketSats })"
+          :caption="$t('Move it to a wallet first')"
+          :interactive="false"
+        />
         <!-- Only when the words were never written down, which is the case
              where this is genuinely irreversible. -->
         <IdentityRow
@@ -49,12 +60,11 @@
       </IdentityGroup>
 
       <label class="field">
-        <span class="field-label">{{ $t('Type "I understand" to continue') }}</span>
+        <span class="field-label">{{ $t('Type "{phrase}" to continue', { phrase: confirmPhrase }) }}</span>
         <input
           v-model="confirmInput"
           type="text"
           class="field-input"
-          :placeholder="confirmPhrase"
           spellcheck="false"
           autocomplete="off"
         />
@@ -70,51 +80,65 @@
         <span>{{ $t('Erase and start fresh') }}</span>
       </button>
       <button type="button" class="btn-quiet" :disabled="busy" @click="$router.back()">
-        {{ $t('Keep my identity') }}
+        {{ $t('Keep my card') }}
       </button>
     </div>
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useAddressBookStore } from '../../stores/addressBook';
+import { useSocialBucketStore } from '../../stores/socialBucket';
 import { useWalletStore } from '../../stores/wallet';
-
-/** Matched verbatim to the wallet-removal flow so the gesture is learned once. */
-const CONFIRM_PHRASE = 'I understand';
 
 export default {
   name: 'IdentityErasePage',
 
-  components: { Icon, SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
+  components: { Icon, IdentityNav, IdentityGroup, IdentityRow },
 
   setup() {
     return {
       ...useIdentityHealth(),
       addressBook: useAddressBookStore(),
+      bucket: useSocialBucketStore(),
       walletStore: useWalletStore(),
     };
   },
 
   data() {
-    return { confirmInput: '', busy: false, confirmPhrase: CONFIRM_PHRASE };
+    return { confirmInput: '', busy: false };
   },
 
   computed: {
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity/manage'); },
+
+    /**
+     * Matched verbatim to the wallet-removal gate so the gesture is learned
+     * once, and translated for the same reason it is there at all: copying
+     * characters in a language you do not read is not understanding.
+     */
+    confirmPhrase() {
+      return this.$t('I understand');
+    },
+
     canErase() {
       return this.confirmInput.trim() === this.confirmPhrase;
     },
 
     siteCount() {
       return this.identity.connectedSites.length;
+    },
+
+    bucketSats() {
+      return this.bucket.balanceSats;
     },
 
     contactCount() {
@@ -138,6 +162,9 @@ export default {
   async created() {
     await this.identity.hydrate();
     await this.profile.hydrate();
+    // The bucket balance is part of what this screen promises to destroy, so
+    // it has to be read before the promise is shown.
+    await this.bucket.hydrate();
   },
 
   methods: {
@@ -145,10 +172,30 @@ export default {
       if (!this.canErase || this.busy) return;
       this.busy = true;
       try {
-        await this.identity.regenerate();
+        // The screen counts the contacts it is about to erase, so it has to
+        // actually erase them. Regenerating the key alone left the local book
+        // in place, and the next sync republished every contact under the new
+        // identity: the one thing the user was told would not survive.
+        const result = await this.addressBook.switchContactsIdentity({
+          identityStore: this.identity,
+          changeIdentity: () => this.identity.regenerate(),
+          keepContacts: false,
+          discardUnsynced: true,
+        });
+        if (result === null) {
+          this.$q.notify({
+            type: 'info',
+            message: this.$t('Still finishing the last change'),
+            caption: this.$t('Try again in a moment.'),
+            timeout: 3500,
+          });
+          return;
+        }
         // Card metadata is identity-scoped: the new key has published
         // nothing, so the old name and photo are meaningless under it.
         this.profile.reset();
+        // The bucket is the old key's, and the screen said so.
+        this.bucket.reset();
         this.$q.notify({
           type: 'positive',
           message: this.$t('Your new card is ready'),
@@ -173,30 +220,13 @@ export default {
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
 
 .erase-head { text-align: center; padding: 20px 8px 6px; }
 
 .erase-mark {
   width: 76px;
   height: 76px;
-  border-radius: 26px;
+  border-radius: var(--radius-xl);
   background: rgba(255, 68, 68, 0.10);
   color: var(--color-red);
   display: grid;
@@ -212,48 +242,4 @@ export default {
   color: var(--text-primary);
   margin: 0 0 14px;
 }
-
-.field { display: block; margin: 18px 0 16px; }
-
-.field-label {
-  display: block;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin: 0 0 6px 3px;
-}
-
-.field-input {
-  width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
-  border-radius: 13px;
-  padding: 14px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  color: var(--text-primary);
-  min-height: 50px;
-}
-
-.btn-danger,
-.btn-quiet {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15.5px;
-  font-weight: 650;
-  padding: 15px 18px;
-  border-radius: 15px;
-  min-height: 52px;
-  cursor: pointer;
-  border: 0;
-  margin-bottom: 9px;
-}
-
-.btn-danger { background: var(--color-red); color: #fff; }
-.btn-danger:disabled { opacity: 0.4; cursor: default; }
-.btn-quiet { background: transparent; color: var(--text-secondary); }
 </style>

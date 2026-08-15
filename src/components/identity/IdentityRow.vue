@@ -26,8 +26,12 @@
     <slot name="leading" />
 
     <span class="id-row-text">
-      <span class="id-row-label">{{ label }}</span>
-      <span v-if="caption || $slots.caption" class="id-row-caption" :class="{ 'id-row-caption--mono': mono }">
+      <span class="id-row-label" :class="{ 'id-row-label--mono': monoLabel }">{{ label }}</span>
+      <span
+        v-if="caption || $slots.caption"
+        class="id-row-caption"
+        :class="{ 'id-row-caption--mono': mono, 'id-row-caption--wrap': wrap }"
+      >
         <slot name="caption">{{ caption }}</slot>
       </span>
     </span>
@@ -63,13 +67,23 @@ export default {
     icon: { type: String, default: '' },
     /** 'neutral' | 'accent' | 'warn' | 'danger' */
     tone: { type: String, default: 'neutral' },
+    /** Monospace the caption, for rows whose caption is a value. */
     mono: { type: Boolean, default: false },
+    /** Monospace the label, for rows whose LABEL is the value. */
+    monoLabel: { type: Boolean, default: false },
     chip: { type: String, default: '' },
     /** 'ok' | 'warn' | 'mute' */
     chipTone: { type: String, default: 'mute' },
     chipIcon: { type: String, default: '' },
     interactive: { type: Boolean, default: true },
     chevron: { type: Boolean, default: true },
+    /**
+     * Let the caption run past two lines.
+     *
+     * Captions clamp at two lines, which fits every sentence on the surface.
+     * A caption that genuinely needs more opts in rather than being cut.
+     */
+    wrap: { type: Boolean, default: false },
     danger: { type: Boolean, default: false },
   },
 
@@ -108,7 +122,7 @@ export default {
 .id-row-glyph {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
+  border-radius: var(--radius-ms);
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -116,8 +130,8 @@ export default {
   color: var(--text-secondary);
 }
 
-.id-row-glyph--accent { background: var(--brand-accent-soft); color: var(--brand-accent); }
-.id-row-glyph--warn   { background: rgba(154, 107, 0, 0.10); color: #9A6B00; }
+.id-row-glyph--accent { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.id-row-glyph--warn   { background: var(--color-warn-soft); color: var(--color-warn); }
 .id-row-glyph--danger { background: rgba(255, 68, 68, 0.10); color: var(--color-red); }
 
 .id-row-text { flex: 1; min-width: 0; }
@@ -130,21 +144,39 @@ export default {
   color: var(--text-primary);
 }
 
+.id-row-label--mono {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .id-row--danger .id-row-label { color: var(--color-red); }
 
+/* Two lines, not one. The caption is where this surface explains itself, and
+   clipping mid-word made "Card words saved, wallet words still to save" read
+   as "Card words saved, wallet words s…", which is ambiguous with the
+   sentence that means the opposite. */
 .id-row-caption {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   font-size: 12.5px;
   color: var(--text-secondary);
   margin-top: 2px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .id-row-caption--mono {
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.id-row-caption--wrap {
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  line-height: 1.4;
 }
 
 .id-row-chip {
@@ -154,17 +186,15 @@ export default {
   font-size: 11.5px;
   font-weight: 650;
   padding: 4px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   white-space: nowrap;
   flex: 0 0 auto;
 }
 
-.id-row-chip--ok   { background: var(--brand-accent-soft); color: var(--brand-accent); }
-.id-row-chip--warn { background: rgba(154, 107, 0, 0.10); color: #9A6B00; }
+.id-row-chip--ok   { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.id-row-chip--warn { background: var(--color-warn-soft); color: var(--color-warn); }
 .id-row-chip--mute { background: var(--bg-input); color: var(--text-secondary); }
 
 .id-row-chev { color: var(--text-muted); flex: 0 0 auto; }
 
-body.body--dark .id-row-glyph--warn { background: rgba(232, 196, 104, 0.12); color: #E8C468; }
-body.body--dark .id-row-chip--warn  { background: rgba(232, 196, 104, 0.12); color: #E8C468; }
 </style>

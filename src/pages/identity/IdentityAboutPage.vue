@@ -1,9 +1,9 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="backLabel" />
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Your card') }}</h1>
+      <h1 class="id-large-title">{{ $t('What is this card for') }}</h1>
 
       <!--
         The three questions a person actually has, answered without a single
@@ -28,14 +28,13 @@
       <button type="button" class="btn-ghost" @click="$router.back()">{{ $t('Got it') }}</button>
     </div>
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 
 const CARDS = [
   {
@@ -58,52 +57,21 @@ const CARDS = [
 export default {
   name: 'IdentityAboutPage',
 
-  components: { Icon, SettingsHubNav, IdentityNav },
+  components: { Icon, IdentityNav },
 
   data() {
     return { cards: CARDS };
   },
 
   computed: {
-    /**
-     * Reachable from the card and from Manage, so the back label follows
-     * where the user actually came from rather than guessing.
-     */
-    backLabel() {
-      const from = this.$router.options.history.state?.back;
-      return from === '/identity/manage' ? this.$t('Manage') : this.$t('You');
-    },
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity'); },
+
   },
 };
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.id-large-title {
-  font-size: 30px;
-  font-weight: 770;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  color: var(--text-primary);
-  margin: 2px 2px 14px;
-}
 
 .about-card {
   display: flex;
@@ -111,7 +79,7 @@ export default {
   align-items: flex-start;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   padding: 17px;
   margin-bottom: 11px;
 }
@@ -119,7 +87,7 @@ export default {
 .about-icon {
   width: 40px;
   height: 40px;
-  border-radius: 13px;
+  border-radius: var(--radius-ms);
   display: grid;
   place-items: center;
   background: var(--brand-accent-soft);
@@ -146,7 +114,7 @@ export default {
   gap: 9px;
   align-items: flex-start;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   font-size: 13px;
   color: var(--text-secondary);
@@ -155,22 +123,4 @@ export default {
 }
 
 .about-note svg { color: var(--text-muted); margin-top: 1px; flex: 0 0 auto; }
-
-.btn-ghost {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15.5px;
-  font-weight: 650;
-  padding: 15px 18px;
-  border-radius: 15px;
-  min-height: 52px;
-  margin-top: 16px;
-  background: transparent;
-  color: var(--text-primary);
-  border: 1px solid var(--border-card);
-  cursor: pointer;
-}
 </style>

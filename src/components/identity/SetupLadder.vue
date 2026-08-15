@@ -28,7 +28,7 @@
       type="button"
       class="ladder-step"
       :class="{ 'ladder-step--done': step.done }"
-      :disabled="step.done || !step.route"
+      :disabled="!step.route"
       @click="step.route ? $router.push(step.route) : null"
     >
       <span class="ladder-tick">
@@ -36,7 +36,7 @@
       </span>
       <span class="ladder-label">{{ $t(step.label) }}</span>
       <Icon
-        v-if="!step.done && step.route"
+        v-if="step.route"
         icon="tabler:chevron-right"
         width="16"
         height="16"
@@ -75,7 +75,7 @@ export default {
   margin-top: 14px;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -99,7 +99,7 @@ export default {
   font-size: 11.5px;
   font-weight: 650;
   padding: 4px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-input);
   color: var(--text-secondary);
 }
@@ -146,7 +146,9 @@ export default {
   color: var(--text-primary);
 }
 
-.ladder-step--done .ladder-label { color: var(--text-muted); }
+/* Done, not disabled. These rows still open the thing they describe, so the
+   label stays readable and only the tick reports the state. */
+.ladder-step--done .ladder-label { color: var(--text-secondary); }
 
 .ladder-chev { color: var(--text-muted); }
 </style>

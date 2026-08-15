@@ -185,6 +185,11 @@ body.platform-android {
     /* Shared tokens */
     --color-green: #15DE72;
     --color-red: #FF4444;
+    /* "Not done yet". One token, because the app had two hardcoded amber
+       pairs for the same state and the same warning came out a different
+       yellow depending on which tab you were on. */
+    --color-warn: #E8C468;
+    --color-warn-soft: rgba(232, 196, 104, 0.12);
     --gradient-green: linear-gradient(90deg, #059573 0%, #78D53C 100%);
 
     /* ─── Brand accent + neutral-button tokens (theme-aware) ────
@@ -208,6 +213,10 @@ body.platform-android {
     ──────────────────────────────────────────────────────── */
     --brand-accent:       #15DE72;
     --brand-accent-soft:  rgba(21, 222, 114, 0.14);
+    /* Accent for TEXT. The decorative accent is tuned for fills and glyphs;
+       text needs 4.5:1 against the page. On the dark paper the bright brand
+       green already clears it, so the two coincide here. */
+    --brand-accent-text:  #15DE72;
     --btn-neutral-bg:     #1A1A1A;
     --btn-neutral-fg:     #FFFFFF;
     --btn-neutral-border: transparent;
@@ -227,6 +236,9 @@ body.platform-android {
     --map-cta-bg:         var(--color-green);
     --map-cta-fg:         #0E1F17;
     --radius-sm: 8px;
+    /* The step between sm and md. Small marks and inline chips, whose corners
+       have to read as concentric inside a 16px control. */
+    --radius-ms: 12px;
     --radius-md: 16px;
     --radius-lg: 20px;
     --radius-xl: 24px;
@@ -276,6 +288,8 @@ body.body--light {
        inflow) stay untouched. */
     --brand-accent:       #059573;
     --brand-accent-soft:  rgba(5, 149, 115, 0.08);
+    /* 6.07:1 on cream, where the decorative #059573 manages only 3.53:1. */
+    --brand-accent-text:  #046B53;
 
     /* Neutral primary CTA — single dark pill on cream. Gives one
        visual weight to any "primary action" button regardless of
@@ -289,6 +303,12 @@ body.body--light {
        var(--color-green) will now get the muted accent instead of
        the bright brand green. */
     --color-green: #059573;
+
+    /* Darker than either amber it replaces: #B8780E was 3.42:1 on the cream
+       paper and #9A6B00 was 4.38:1, both under AA for the small text this
+       colour is used on. */
+    --color-warn: #8A5F00;
+    --color-warn-soft: rgba(138, 95, 0, 0.10);
 
     /* Map goes black-forward in light mode: emphasis, active states,
        and primary actions render in near-black on cream rather than

@@ -389,6 +389,10 @@ export default {
           npub: this.resolved.npub,
           event: this.profileEvent,
           relayHints: this.resolved.relays || [],
+          // A person without a Lightning address is still a person. The entry
+          // carries an empty address and every payment path already gates on
+          // `isEntryPayable`; a later refresh promotes them once they publish.
+          allowWithoutLightningAddress: true,
         });
         this.$q.notify({
           type: 'positive',

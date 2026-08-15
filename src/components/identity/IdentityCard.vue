@@ -22,32 +22,18 @@
   <div class="id-card-stage" :class="{ 'is-flipped': flipped }">
     <div class="id-card-flipper">
       <!-- Front -->
-      <button
-        type="button"
-        class="id-card-face id-card-front"
-        :aria-label="$t('Show my code')"
-        @click="flip"
-      >
-        <span class="id-card-issuer">
-          <Icon icon="tabler:shield-check" width="13" height="13" />
-          {{ $t('Your BuhoGO card') }}
-        </span>
+      <div class="id-card-face id-card-front" @click="flip">
+        <!-- No mark here. A tick or a shield above the photo and the handle
+             reads as "this person is verified", which is the one claim a
+             username must never make. -->
+        <span class="id-card-issuer">{{ $t('Your BuhoGO card') }}</span>
 
         <span class="id-card-body">
-          <!--
-            Nested interactive element. It is a span with a click handler
-            rather than a button so it stays valid inside the card button,
-            and it carries its own role + keyboard handler to remain
-            operable.
-          -->
-          <span
+          <button
+            type="button"
             class="id-card-ring"
-            role="button"
-            tabindex="0"
-            :aria-label="$t('Switch identity')"
+            :aria-label="$t('Switch card')"
             @click.stop="$emit('switch-identity')"
-            @keydown.enter.stop="$emit('switch-identity')"
-            @keydown.space.prevent.stop="$emit('switch-identity')"
           >
             <svg class="id-card-progress" viewBox="0 0 76 76" aria-hidden="true">
               <circle cx="38" cy="38" r="35" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="2.5" />
@@ -69,32 +55,41 @@
             <span v-if="canSwitch" class="id-card-swap" aria-hidden="true">
               <Icon icon="tabler:switch-horizontal" width="12" height="12" />
             </span>
-          </span>
+          </button>
 
-          <span class="id-card-meta">
+          <!-- When there is no name yet this slot holds an instruction, so
+               it has to be the control that carries it out. Left as plain
+               text once a real name is there: a name is not a button. -->
+          <component
+            :is="needsName ? 'button' : 'span'"
+            :type="needsName ? 'button' : null"
+            class="id-card-meta"
+            :class="{ 'id-card-meta--action': needsName }"
+            @click="needsName ? onAddName($event) : null"
+          >
             <span class="id-card-name">{{ name }}</span>
             <span v-if="username" class="id-card-handle">{{ '@' + username }}</span>
-          </span>
+          </component>
         </span>
 
         <span class="id-card-foot">
           <span class="id-card-status">
-            <Icon :icon="complete ? 'tabler:check' : 'tabler:alert-triangle'" width="13" height="13" />
+            <Icon :icon="statusIcon" width="13" height="13" />
             {{ status }}
           </span>
-          <span class="id-card-flip-btn">
+          <button type="button" class="id-card-flip-btn" @click.stop="flip">
             <Icon icon="tabler:qrcode" width="13" height="13" />
             {{ $t('Code') }}
-          </span>
+          </button>
         </span>
-      </button>
+      </div>
 
       <!-- Back. Tapping anywhere turns it over, same as the front, so the
            card behaves like an object rather than a screen with controls. -->
       <button
         type="button"
         class="id-card-face id-card-back"
-        :aria-label="$t('Turn back')"
+        :aria-label="qrCaption ? qrCaption + '. ' + $t('Turn back') : $t('Turn back')"
         @click="flip"
       >
         <span class="id-card-qr">
@@ -134,6 +129,10 @@ export default {
     avatar: { type: String, default: '' },
     /** Health line shown in the footer. Already localised by the caller. */
     status: { type: String, required: true },
+    /** 'ok' | 'warn' | 'progress'. Decides the mark beside the status line. */
+    statusTone: { type: String, default: 'progress' },
+    /** True when `name` is the "add one" prompt rather than a real name. */
+    needsName: { type: Boolean, default: false },
     /** 0..1 setup progress. 1 turns the ring neutral. */
     progress: { type: Number, default: 1 },
     qrValue: { type: String, default: '' },
@@ -141,7 +140,7 @@ export default {
     canSwitch: { type: Boolean, default: false },
   },
 
-  emits: ['switch-identity', 'avatar-error', 'flip'],
+  emits: ['switch-identity', 'avatar-error', 'flip', 'add-name'],
 
   data() {
     return {
@@ -153,6 +152,17 @@ export default {
   computed: {
     complete() {
       return this.progress >= 1;
+    },
+
+    /**
+     * Setup running is progress, not a fault. The warning mark is reserved
+     * for the state that genuinely is one: the words are the last thing left
+     * and they are still not written down.
+     */
+    statusIcon() {
+      if (this.statusTone === 'ok') return 'tabler:check';
+      if (this.statusTone === 'warn') return 'tabler:alert-triangle';
+      return 'tabler:circle-dashed';
     },
 
     ringOffset() {
@@ -171,6 +181,11 @@ export default {
   },
 
   methods: {
+    onAddName(event) {
+      event.stopPropagation();
+      this.$emit('add-name');
+    },
+
     flip() {
       this.flipped = !this.flipped;
       this.$emit('flip', this.flipped);
@@ -207,7 +222,7 @@ export default {
 .id-card-face {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  border-radius: 26px;
+  border-radius: var(--radius-xl);
   width: 100%;
   display: block;
   transition: opacity 0s linear 0.31s;
@@ -268,6 +283,9 @@ export default {
   flex: 0 0 auto;
   display: block;
   cursor: pointer;
+  border: 0;
+  padding: 0;
+  background: transparent;
 }
 
 .id-card-progress {
@@ -308,6 +326,15 @@ export default {
   display: grid;
   place-items: center;
   border: 2.5px solid #12271F;
+}
+
+.id-card-meta--action {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: 'Manrope', sans-serif;
 }
 
 .id-card-meta { min-width: 0; }
@@ -351,12 +378,15 @@ export default {
 }
 
 .id-card-flip-btn {
+  border: 0;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
   display: flex;
   align-items: center;
   gap: 6px;
   background: rgba(255, 255, 255, 0.14);
   color: #F3F7F4;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 9px 14px;
   font-size: 12px;
   font-weight: 650;
@@ -388,7 +418,7 @@ export default {
 .id-card-qr {
   width: 130px;
   height: 130px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   background: #fff;
   padding: 7px;
   position: relative;
@@ -414,7 +444,7 @@ export default {
   transform: translate(-50%, -50%);
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: var(--radius-ms);
   overflow: hidden;
   border: 3px solid #fff;
   display: block;

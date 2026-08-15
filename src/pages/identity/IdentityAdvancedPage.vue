@@ -1,6 +1,6 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('Manage')" />
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
       <h1 class="id-large-title">{{ $t('Advanced') }}</h1>
@@ -59,18 +59,17 @@
 
     <ClientExamplesSheet v-model="showClients" />
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import ClientExamplesSheet from '../../components/ClientExamplesSheet.vue';
 import { useIdentityStore } from '../../stores/identity';
-import { copySensitive, cancelPendingSensitiveClear } from '../../utils/sensitiveClipboard';
+import { copySensitive } from '../../utils/sensitiveClipboard';
 
 /** How long the key stays on screen once revealed. */
 const REVEAL_MS = 60_000;
@@ -78,7 +77,7 @@ const REVEAL_MS = 60_000;
 export default {
   name: 'IdentityAdvancedPage',
 
-  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow, ClientExamplesSheet },
+  components: { IdentityNav, IdentityGroup, IdentityRow, ClientExamplesSheet },
 
   setup() {
     return { identity: useIdentityStore() };
@@ -102,15 +101,24 @@ export default {
   },
 
   /**
-   * Leaving the screen drops the key from memory and cancels the pending
-   * clipboard wipe, so a closed screen never keeps a timer running while
-   * the user is doing something unrelated.
+   * Leaving the screen drops the key from memory and stops this screen's own
+   * timers.
+   *
+   * The clipboard wipe is deliberately NOT cancelled here. The screen promises
+   * "clipboard clears after 30 seconds", and leaving the screen is exactly
+   * what a person does right after copying a key into another app. Cancelling
+   * the wipe on unmount would break that promise in the one case it exists
+   * for, and leave a secret key on the clipboard indefinitely.
    */
   beforeUnmount() {
     this.nsec = '';
     if (this._revealTimer) clearTimeout(this._revealTimer);
     if (this._copyTimer) clearTimeout(this._copyTimer);
-    cancelPendingSensitiveClear();
+  },
+
+  computed: {
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity/manage'); },
   },
 
   methods: {
@@ -124,7 +132,7 @@ export default {
         console.warn('[identity-advanced] reveal failed:', err);
         this.$q.notify({
           type: 'negative',
-          message: this.$t('Could not read your key'),
+          message: this.$t('Could not read your secret key'),
           caption: this.$t('Close BuhoGO and open it again.'),
           timeout: 4000,
         });
@@ -175,44 +183,11 @@ export default {
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.id-large-title {
-  font-size: 30px;
-  font-weight: 770;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  color: var(--text-primary);
-  margin: 2px 2px 8px;
-}
-
-.id-lede {
-  font-size: 14.5px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0 2px 16px;
-}
 
 .secret-box {
   margin-top: 12px;
   padding: 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   border: 1px solid var(--border-card);
 }

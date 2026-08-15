@@ -207,11 +207,10 @@ export default {
   align-items: center;
   justify-content: center;
 }
-.attention-card--warning .attention-icon { background: rgba(255, 168, 0, 0.15); color: #FFB347; }
+.attention-card--warning .attention-icon { background: var(--color-warn-soft); color: var(--color-warn); }
 .attention-card--info    .attention-icon { background: rgba(80, 160, 255, 0.15); color: #6CB0FF; }
 .attention-card--danger  .attention-icon { background: rgba(255, 68, 68, 0.15); color: var(--color-red, #FF4444); }
 
-body.body--light .attention-card--warning .attention-icon { color: #B8780E; }
 body.body--light .attention-card--info    .attention-icon { color: #1E63B8; }
 
 .attention-body {

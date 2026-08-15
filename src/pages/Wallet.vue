@@ -69,9 +69,9 @@
         class="float-right"
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="$router.push('/identity')"
-        aria-label="Profile and settings"
+        :aria-label="$t('You')"
       >
-        <Icon icon="tabler:user-circle" width="21" height="21" class="header-icon" />
+        <Icon icon="tabler:user" width="21" height="21" class="header-icon" />
       </q-btn>
     </q-toolbar>
 

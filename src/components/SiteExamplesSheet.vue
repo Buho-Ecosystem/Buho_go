@@ -35,7 +35,7 @@
           class="examples-title"
           :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'"
         >
-          {{ $t('Where can I sign in?') }}
+          {{ $t('Where does this work') }}
         </div>
         <q-btn
           flat
@@ -54,7 +54,7 @@
           class="examples-lede"
           :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
         >
-          {{ $t('A few sites you can sign in to with your BuhoGO profile. No password, no email.') }}
+          {{ $t('A few websites you can sign in to with your BuhoGO card. No password, no email.') }}
         </p>
 
         <ul class="examples-list">

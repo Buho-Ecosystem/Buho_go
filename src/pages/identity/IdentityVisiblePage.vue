@@ -1,6 +1,6 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('Manage')" />
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
       <h1 class="id-large-title">{{ $t('Visible in other apps') }}</h1>
@@ -25,11 +25,11 @@
           :icon="published ? 'tabler:check' : 'tabler:cloud-off'"
           :tone="published ? 'accent' : 'neutral'"
           :label="published ? $t('Up to date') : $t('Not shared yet')"
-          :caption="published ? $t('Last updated {when}', { when: lastUpdated }) : $t('Save your card to share it')"
+          :caption="published ? $t('Last updated {when}', { when: lastUpdated }) : $t('Tap Update now to share it')"
           :interactive="false"
         />
         <IdentityRow
-          icon="tabler:refresh"
+          icon="tabler:cloud-up"
           :label="publishing ? $t('Updating') : $t('Update now')"
           :caption="$t('If another app still shows an old photo')"
           :chevron="false"
@@ -38,13 +38,12 @@
       </IdentityGroup>
     </div>
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import { useProfileStore } from '../../stores/profile';
@@ -52,13 +51,16 @@ import { useProfileStore } from '../../stores/profile';
 export default {
   name: 'IdentityVisiblePage',
 
-  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
+  components: { IdentityNav, IdentityGroup, IdentityRow },
 
   setup() {
     return { profile: useProfileStore() };
   },
 
   computed: {
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity/manage'); },
+
     published() {
       return !!this.profile.lastPublishedAt;
     },
@@ -90,7 +92,12 @@ export default {
       if (this.publishing) return;
       // publish() always writes the current payload, so a plain call is the
       // retry. There is no force flag to pass.
-      const result = await this.profile.publish();
+      let result = null;
+      try {
+        result = await this.profile.publish();
+      } catch (err) {
+        console.warn('[identity-visible] publish failed:', err);
+      }
       if (result && result.ok) {
         this.$q.notify({ type: 'positive', message: this.$t('Updated'), timeout: 2000 });
       } else {
@@ -107,37 +114,4 @@ export default {
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.id-large-title {
-  font-size: 30px;
-  font-weight: 770;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  color: var(--text-primary);
-  margin: 2px 2px 8px;
-}
-
-.id-lede {
-  font-size: 14.5px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0 2px 16px;
-}
 </style>

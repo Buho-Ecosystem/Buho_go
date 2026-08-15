@@ -1,18 +1,6 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('You')" to="/identity">
-      <template #actions>
-        <button
-          type="button"
-          class="nav-icon"
-          data-audit="identity-add-site"
-          :aria-label="$t('Sign in somewhere new')"
-          @click="showAddSite = true"
-        >
-          <Icon icon="tabler:plus" width="20" height="20" />
-        </button>
-      </template>
-    </IdentityNav>
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
       <h1 class="id-large-title">{{ $t('Sign in') }}</h1>
@@ -49,6 +37,7 @@
           icon="tabler:scan"
           :label="$t('Sign in somewhere new')"
           :caption="$t('Scan the code the website shows')"
+          data-audit="identity-add-site"
           @click="showAddSite = true"
         />
         <IdentityRow
@@ -66,14 +55,13 @@
     <IdentityAuthDialog v-model="showAuth" :challenge="pendingChallenge" />
     <ConnectedSiteSheet v-model="showSiteSheet" :site="selectedSite" @forget="forgetSite" />
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import SiteFavicon from '../../components/SiteFavicon.vue';
@@ -88,7 +76,6 @@ export default {
 
   components: {
     Icon,
-    SettingsHubNav,
     IdentityNav,
     IdentityGroup,
     IdentityRow,
@@ -115,6 +102,9 @@ export default {
   },
 
   computed: {
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity'); },
+
     sites() {
       return this.identity.connectedSitesSorted;
     },
@@ -141,10 +131,10 @@ export default {
       const days = Math.floor((Date.now() - timestamp) / 86400000);
       if (days === 0) return this.$t('today');
       if (days === 1) return this.$t('yesterday');
-      if (days < 30) return this.$t('{n}d ago', { n: days });
+      if (days < 30) return this.$t('{n} days ago', { n: days });
       const months = Math.floor(days / 30);
-      if (months < 12) return this.$t('{n}mo ago', { n: months });
-      return this.$t('{n}y ago', { n: Math.floor(months / 12) });
+      if (months < 12) return this.$t('{n} months ago', { n: months });
+      return this.$t('{n} years ago', { n: Math.floor(months / 12) });
     },
 
     openSite(site) {
@@ -164,7 +154,7 @@ export default {
       this.$q.notify({
         type: 'info',
         message: this.$t('Removed {site}', { site: this.displayDomain(domain) }),
-        caption: this.$t('The website still has your key. Signing in again will re-link it.'),
+        caption: this.$t('This only clears the record on your phone. Signing in there again will add it back.'),
         timeout: 4000,
       });
       this.showSiteSheet = false;
@@ -175,39 +165,6 @@ export default {
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.id-large-title {
-  font-size: 30px;
-  font-weight: 770;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  color: var(--text-primary);
-  margin: 2px 2px 8px;
-}
-
-.id-lede {
-  font-size: 14.5px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0 2px 16px;
-}
 
 .id-empty {
   font-size: 13.5px;
@@ -216,19 +173,6 @@ export default {
   margin: 4px 6px 0;
 }
 
-.id-block { margin-top: 12px; }
-
-.nav-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
 
 .nav-icon:active { background: rgba(127, 127, 127, 0.12); }
 </style>

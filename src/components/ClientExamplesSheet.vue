@@ -3,7 +3,7 @@
 
   Surfaces concrete apps where the user can sign in with their
   BuhoGO profile's private key. Reached from the "Where can I use
-  this key?" link inside NostrIdentityDialog right after the user
+  this key?" row on the Advanced screen, right after the user
   reveals the key — the exact moment they're asking "ok, where do
   I take this?".
 
@@ -37,7 +37,7 @@
           class="examples-title"
           :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'"
         >
-          {{ $t('Where can I use this key?') }}
+          {{ $t('Which apps accept it') }}
         </div>
         <q-btn
           flat
@@ -56,7 +56,7 @@
           class="examples-lede"
           :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
         >
-          {{ $t('Paste your private key into one of these apps to sign in as the same profile you have here.') }}
+          {{ $t('Paste your secret key into one of these apps to sign in as the same card you have here.') }}
         </p>
 
         <!-- Mobile apps -->
@@ -180,7 +180,7 @@
           :class="$q.dark.isActive ? 'examples-warn-dark' : 'examples-warn-light'"
         >
           <Icon icon="tabler:shield" width="14" height="14" />
-          <span>{{ $t('Only paste your private key into apps you trust. Anyone with the key controls your profile.') }}</span>
+          <span>{{ $t('Only paste your secret key into apps you trust. Anyone who has it controls your card.') }}</span>
         </div>
       </q-card-section>
     </q-card>
@@ -451,7 +451,7 @@ export default {
 
 /*
   Closing safety note. Same visual weight as the warn callout
-  inside NostrIdentityDialog itself so the trust message is
+  on the Advanced screen itself so the trust message is
   consistent across surfaces a user might see private-key text.
 */
 .examples-warn {

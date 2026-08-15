@@ -92,8 +92,17 @@
 
       <template v-else>
         <div class="preview-status preview-status--muted">
-          {{ $t('This profile has no Lightning address yet, so we cannot save it for payments.') }}
+          {{ $t('No Lightning address yet, so you cannot pay them. Saving them now means you can the moment they add one.') }}
         </div>
+        <button
+          type="button"
+          class="preview-cta preview-cta--primary"
+          :disabled="saving"
+          @click="$emit('save')"
+        >
+          <q-spinner v-if="saving" size="14px" class="q-mr-xs" />
+          <span>{{ saving ? $t('Saving…') : $t('Save to address book') }}</span>
+        </button>
         <button
           type="button"
           class="preview-cta preview-cta--secondary"

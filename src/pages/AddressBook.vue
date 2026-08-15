@@ -112,6 +112,7 @@
 
 <script>
 import { useAddressBookStore } from '../stores/addressBook'
+import { usePayContact } from '../composables/usePayContact'
 import { useIdentityStore } from '../stores/identity'
 import { mapActions, mapState } from 'pinia'
 
@@ -119,7 +120,6 @@ import { mapActions, mapState } from 'pinia'
 // them. Locked decision #2: only on tap, never periodic, so a stale
 // avatar / lud16 corrects itself the next time the user opens the
 // payment flow without ever blocking the tap on a network call.
-const RESYNC_COOLDOWN_MS = 60 * 1000
 
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
@@ -152,7 +152,7 @@ export default {
     await this.initializeAddressBook()
   },
   methods: {
-    ...mapActions(useAddressBookStore, ['initialize', 'recoverFromNostr', 'isEntryPayable']),
+    ...mapActions(useAddressBookStore, ['initialize', 'recoverFromNostr']),
 
     async initializeAddressBook() {
       try {
@@ -190,8 +190,9 @@ export default {
         // flight — that is busy, not broken.
         this.$q.notify({
           type: 'info',
-          message: this.$t('Sync already running'),
-          timeout: 2500,
+          message: this.$t('Still finishing the last change'),
+          caption: this.$t('Try again in a moment.'),
+          timeout: 3500,
         })
         return
       }
@@ -242,70 +243,13 @@ export default {
       this.showModal = true
     },
 
-    payContact(contact) {
-      // Kick off a silent profile re-sync before we even decide the
-      // routing — fire-and-forget so it never blocks the tap. The
-      // refresh updates the avatar / lud16 in place; if it errors,
-      // the user still pays with the last-known data.
-      this.maybeRefreshContact(contact)
-
-      // Identity-only Nostr contact — restored (or saved) without a
-      // current Lightning address. We don't route into a payment flow
-      // it can't finish; instead we explain, and the silent refresh
-      // fired above will promote them to payable the moment they
-      // publish a lud16.
-      if (contact.source === 'nostr' && !this.isEntryPayable(contact)) {
-        this.$q.notify({
-          type: 'info',
-          message: this.$t('No Lightning address yet'),
-          caption: this.$t(
-            "{name} hasn't published a Lightning address. We'll use it automatically once they do.",
-            { name: contact.name },
-          ),
-          timeout: 4500,
-        })
-        return
-      }
-
-      // Hand the contact to the wallet page — its dispatcher is the one
-      // send pipeline (LNURL metadata, Branta, branding, fee estimates,
-      // capability gate), so a contact paid from here behaves exactly
-      // like one paid from the Send sheet.
-      this.navigateToWalletPayment(contact)
-    },
-
     /**
-     * Silent re-sync hook for Nostr-sourced contacts. Skips:
-     *   - manual contacts (nothing to sync against)
-     *   - contacts we've re-synced within the cooldown window
-     *     (defends a rage-tap from hammering the relays)
-     *
-     * Errors are swallowed by `refreshContact` itself (it returns a
-     * typed result, never throws) so this stays fire-and-forget.
+     * Lives in usePayContact now, because the identity tab's People strip
+     * pays the same contacts and its own copy of this had dropped both the
+     * identity-only guard and the silent re-sync.
      */
-    maybeRefreshContact(contact) {
-      if (!contact || contact.source !== 'nostr' || !contact.nostr_pubkey) return
-      const last = Number(contact.last_synced_at) || 0
-      if (Date.now() - last < RESYNC_COOLDOWN_MS) return
-      const store = useAddressBookStore()
-      store.refreshContact(contact.id).catch((err) => {
-        // refreshContact never throws — this is purely defensive in
-        // case a future change drops that invariant.
-        console.warn('[addressBook] silent refresh threw:', err)
-      })
-    },
-
-    navigateToWalletPayment(contact) {
-      const address = contact.address || contact.lightningAddress
-      this.$router.push({
-        path: '/wallet',
-        query: {
-          action: 'pay_contact',
-          address: address,
-          addressType: contact.addressType || 'lightning',
-          contactName: contact.name
-        }
-      })
+    payContact(contact) {
+      usePayContact(this).payContact(contact)
     },
 
     handleEntrySaved() {

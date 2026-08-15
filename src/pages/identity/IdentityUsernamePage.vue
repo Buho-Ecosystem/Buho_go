@@ -1,6 +1,6 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('Manage')" />
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
       <!--
@@ -23,19 +23,7 @@
         {{ $t('Change username') }}
       </button>
 
-      <IdentityGroup
-        :title="$t('Paying by name')"
-        :footer="payFooter"
-      >
-        <IdentityRow
-          icon="tabler:arrow-bar-to-down"
-          :tone="lud16 ? 'neutral' : 'warn'"
-          :label="lud16 ? $t('Money lands at') : $t('Nobody can pay you yet')"
-          :caption="lud16 || $t('Add a Lightning address')"
-          :mono="!!lud16"
-          @click="$router.push('/identity/get-paid')"
-        />
-      </IdentityGroup>
+      <p class="id-foot">{{ payFooter }}</p>
 
       <IdentityGroup
         v-if="oldUsernames.length > 0"
@@ -52,9 +40,6 @@
         />
       </IdentityGroup>
 
-      <p v-else class="id-foot">
-        {{ $t('Every username you have ever used keeps working forever. Only the newest one shows on your card.') }}
-      </p>
 
       <!-- A username is a nickname. Nothing here may suggest it proves who
            somebody is, in either direction. -->
@@ -73,14 +58,13 @@
     -->
     <Nip05MarketplaceSheet v-model="showMarketplace" @purchased="onPurchased" />
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import Nip05MarketplaceSheet from '../../components/Nip05MarketplaceSheet.vue';
@@ -92,7 +76,6 @@ export default {
 
   components: {
     Icon,
-    SettingsHubNav,
     IdentityNav,
     IdentityGroup,
     IdentityRow,
@@ -108,6 +91,9 @@ export default {
   },
 
   computed: {
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity/manage'); },
+
     activeUsername() {
       return this.identity.nip05ActiveEntry?.handle || '';
     },
@@ -154,37 +140,33 @@ export default {
       const address = this.identity.nip05Address;
       if (!address) return;
       this.profile.setField('nip05', address);
-      const result = await this.profile.publish();
+      let result = null;
+      try {
+        result = await this.profile.publish();
+      } catch (err) {
+        console.warn('[identity-username] publish failed:', err);
+      }
       if (result && result.ok) {
         this.$q.notify({
           type: 'positive',
           message: this.$t('{name} is yours', { name: '@' + this.activeUsername }),
           timeout: 2500,
         });
+        return;
       }
+      // The name is registered either way; only the card is behind.
+      this.$q.notify({
+        type: 'warning',
+        message: this.$t('{name} is yours', { name: '@' + this.activeUsername }),
+        caption: this.$t('Your card will show it once BuhoGO can reach the network.'),
+        timeout: 4000,
+      });
     },
   },
 };
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
 
 .uname-hero { text-align: center; padding: 14px 0 4px; }
 
@@ -202,30 +184,12 @@ export default {
   margin-top: 6px;
 }
 
-.btn-ghost {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15.5px;
-  font-weight: 650;
-  padding: 15px 18px;
-  border-radius: 15px;
-  min-height: 52px;
-  margin-top: 20px;
-  background: transparent;
-  color: var(--text-primary);
-  border: 1px solid var(--border-card);
-  cursor: pointer;
-}
-
 .uname-note {
   display: flex;
   gap: 9px;
   align-items: flex-start;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   font-size: 13px;
   color: var(--text-secondary);
@@ -234,11 +198,4 @@ export default {
 }
 
 .uname-note svg { color: var(--text-muted); margin-top: 1px; flex: 0 0 auto; }
-
-.id-foot {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 18px 6px 0;
-}
 </style>

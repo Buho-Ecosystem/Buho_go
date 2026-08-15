@@ -45,7 +45,7 @@
         -->
         <template v-if="lud16">
           <button type="button" class="pp-btn pp-btn--primary" @click="onPay">
-            <Icon icon="tabler:arrow-bar-to-down" width="18" height="18" />
+            <Icon icon="tabler:arrow-up-right" width="18" height="18" />
             {{ payLabel }}
           </button>
           <p class="pp-caption">{{ $t('Opens your Bitcoin wallet.') }}</p>
@@ -104,7 +104,7 @@
           the app, because a contact has nowhere else to live.
         -->
         <div class="pp-group pp-group--spaced">
-          <button v-if="insideBuhoGo" type="button" class="pp-row" :disabled="saved" @click="saveContact">
+          <button v-if="insideBuhoGo" type="button" class="pp-row" :disabled="saved || saving" @click="saveContact">
             <span class="pp-row-icon"><Icon :icon="saved ? 'tabler:check' : 'tabler:user-plus'" width="17" height="17" /></span>
             <span class="pp-row-text">
               <span class="pp-row-label">{{ saved ? $t('Saved to your contacts') : $t('Save to my contacts') }}</span>
@@ -168,11 +168,17 @@ export default {
     return {
       state: 'loading', // 'loading' | 'ready' | 'missing'
       npub: '',
+      // Kept from the lookup so a save can go through the Nostr contact path,
+      // which is keyed on the pubkey and does not need a Lightning address.
+      pubkey: '',
+      relayHints: [],
+      profileEvent: null,
       profile: null,
       avatarBroken: false,
       showCode: false,
       copied: false,
       saved: false,
+      saving: false,
       BUHOGO_HOME,
       _copyTimer: null,
     };
@@ -220,6 +226,16 @@ export default {
 
     about() {
       return this.profile?.about || '';
+    },
+
+    /**
+     * What this person gets filed under. The heading may fall back to a
+     * shortened key, which identifies them on screen but is not something to
+     * save an address book entry as.
+     */
+    contactName() {
+      if (this.hasName) return this.profile.name;
+      return this.username || this.$t('Unnamed');
     },
 
     avatar() {
@@ -305,6 +321,8 @@ export default {
       }
 
       this.npub = resolved.npub;
+      this.pubkey = resolved.pubkey;
+      this.relayHints = Array.isArray(resolved.relays) ? resolved.relays : [];
 
       // The card renders either way. A key that resolves but has published
       // nothing is still a real person, and a relay round trip that fails is
@@ -312,6 +330,7 @@ export default {
       try {
         const event = await fetchProfile(resolved.pubkey, { relays: resolved.relays });
         if (event) {
+          this.profileEvent = event;
           const content = parseProfileContent(event);
           this.profile = {
             name: profileDisplayName(content),
@@ -380,24 +399,58 @@ export default {
       }
     },
 
+    /**
+     * Saving goes through the Nostr contact path, not the plain address one.
+     *
+     * Two reasons. A person is their key, so a contact keyed on the pubkey
+     * survives them changing where money lands. And the plain path validates
+     * whatever it is handed as a Lightning address, so passing an npub to it
+     * threw "Invalid Lightning address format": saving anyone whose card had
+     * no Lightning address failed outright, which is exactly the person a
+     * visitor most needs to keep.
+     */
     async saveContact() {
-      if (this.saved) return;
-      const address = this.lud16 || this.npub;
-      if (!address) return;
-
+      if (this.saved || this.saving) return;
+      this.saving = true;
       try {
-        // addEntry initialises the store itself, so a visitor who lands here
-        // before the address book has ever loaded is handled.
-        await this.addressBook.addEntry({
-          name: this.displayName,
-          address,
-          addressType: this.lud16 ? 'lightning' : 'nostr',
-        });
+        if (this.profileEvent) {
+          await this.addressBook.addNostrContact({
+            pubkey: this.pubkey,
+            npub: this.npub,
+            event: this.profileEvent,
+            relayHints: this.relayHints,
+            allowWithoutLightningAddress: true,
+          });
+        } else if (this.lud16) {
+          // No card came back from the relays, so there is nothing to verify
+          // and nothing to key on. An address and a name is still a contact.
+          await this.addressBook.addEntry({
+            name: this.contactName,
+            address: this.lud16,
+            addressType: 'lightning',
+          });
+        } else {
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t("Couldn't load their card"),
+            caption: this.$t('Try again in a moment.'),
+            timeout: 3500,
+          });
+          return;
+        }
         this.saved = true;
         this.$q.notify({ type: 'positive', message: this.$t('Contact added'), timeout: 2500 });
       } catch (err) {
+        // Already having them is the outcome the button promises, not a
+        // failure to report.
+        if (/already/i.test(String(err?.message || ''))) {
+          this.saved = true;
+          return;
+        }
         console.warn('[public-profile] save failed:', err);
         this.$q.notify({ type: 'negative', message: this.$t("Couldn't save the contact"), timeout: 3000 });
+      } finally {
+        this.saving = false;
       }
     },
   },
@@ -415,7 +468,9 @@ export default {
   font-family: 'Manrope', sans-serif;
   display: flex;
   justify-content: center;
-  padding: max(28px, env(safe-area-inset-top, 0px)) 20px max(28px, env(safe-area-inset-bottom, 0px));
+  /* --safe-top / --safe-bottom, not raw env(): env resolves to 0 on most
+     Android Capacitor WebViews, and this page is reachable inside the app. */
+  padding: max(28px, var(--safe-top, 0px)) 20px max(28px, var(--safe-bottom, 0px));
 }
 
 .pp-shell {
@@ -549,7 +604,7 @@ export default {
 /* 3 and 4. Grouped lists, the same inset shape the app uses */
 .pp-group {
   margin-top: 20px;
-  background: #FFFDF8;
+  background: #FAF7EF;
   border: 1px solid #E3DCC7;
   border-radius: 18px;
   overflow: hidden;
@@ -573,7 +628,7 @@ export default {
   text-decoration: none;
 }
 
-.pp-row + .pp-row { border-top: 1px solid #EEE8DA; }
+.pp-row + .pp-row { border-top: 1px solid #E3DCC7; }
 .pp-row:active { background: rgba(40, 34, 20, 0.04); }
 .pp-row:disabled { cursor: default; opacity: 0.75; }
 
@@ -623,7 +678,7 @@ export default {
   display: flex;
   justify-content: center;
   padding: 0 14px 18px;
-  border-top: 1px solid #EEE8DA;
+  border-top: 1px solid #E3DCC7;
 }
 
 .pp-qr {

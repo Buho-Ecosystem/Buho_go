@@ -48,7 +48,8 @@ export default {
 
 .id-group-sub {
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  opacity: 0.86;
   margin: -5px 4px 9px;
   line-height: 1.45;
 }
@@ -56,7 +57,7 @@ export default {
 .id-group {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -66,9 +67,13 @@ export default {
   border-radius: 0;
 }
 
+/* This is where the surface keeps its teaching: no row has a help icon and no
+   screen has an info button, so the footer carries the explanation. It cannot
+   be the least readable text on the page. */
 .id-group-footer {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  opacity: 0.86;
   line-height: 1.5;
   margin: 8px 6px 0;
 }

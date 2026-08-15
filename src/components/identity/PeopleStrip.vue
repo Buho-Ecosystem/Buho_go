@@ -79,9 +79,9 @@ export default {
 
 .people-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
-  padding: 0 4px 10px;
+  padding: 0 4px 4px;
 }
 
 .people-title {
@@ -93,15 +93,21 @@ export default {
   color: var(--text-primary);
 }
 
+/* The only way from this tab to the full address book, so it is a real
+   target. The negative margin keeps its optical right edge on the grid. */
 .people-all {
   border: 0;
   background: transparent;
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 620;
-  color: var(--brand-accent);
+  color: var(--brand-accent-text);
   cursor: pointer;
-  padding: 4px 2px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 6px;
+  margin-right: -6px;
 }
 
 /* Horizontal scroll with no visible bar: the row is meant to feel like a

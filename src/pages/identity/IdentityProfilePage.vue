@@ -1,6 +1,6 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('Manage')" :title="$t('Photo and name')">
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" :title="$t('Photo and name')">
       <template #actions>
         <button
           type="button"
@@ -25,7 +25,13 @@
         that owns it.
       -->
       <div class="avatar-wrap">
-        <button type="button" class="avatar-btn" :disabled="profile.isUploadingAvatar" @click="showPicker = true">
+        <button
+          type="button"
+          class="avatar-btn"
+          :disabled="profile.isUploadingAvatar"
+          :aria-label="visibleAvatar ? $t('Change your photo') : $t('Add a photo')"
+          @click="showPicker = true"
+        >
           <span class="avatar">
             <img v-if="visibleAvatar" :src="visibleAvatar" alt="" @error="avatarBroken = true" />
             <Icon v-else icon="tabler:user" width="32" height="32" />
@@ -84,14 +90,13 @@
       @removed="avatarBroken = false"
     />
 
-    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import ProfileAvatarPickerSheet from '../../components/ProfileAvatarPickerSheet.vue';
 import { useProfileStore } from '../../stores/profile';
 import { useIdentityStore } from '../../stores/identity';
@@ -99,7 +104,7 @@ import { useIdentityStore } from '../../stores/identity';
 export default {
   name: 'IdentityProfilePage',
 
-  components: { Icon, SettingsHubNav, IdentityNav, ProfileAvatarPickerSheet },
+  components: { Icon, IdentityNav, ProfileAvatarPickerSheet },
 
   setup() {
     return { profile: useProfileStore(), identity: useIdentityStore() };
@@ -115,6 +120,9 @@ export default {
   },
 
   computed: {
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity/manage'); },
+
     visibleAvatar() {
       if (!this.profile.picture || this.avatarBroken) return '';
       return this.profile.picture;
@@ -153,7 +161,12 @@ export default {
       this.profile.setField('displayName', this.form.displayName.trim());
       this.profile.setField('about', this.form.about.trim());
 
-      const result = await this.profile.publish();
+      let result = null;
+      try {
+        result = await this.profile.publish();
+      } catch (err) {
+        console.warn('[identity-profile] publish failed:', err);
+      }
       if (result && result.ok) {
         this.$q.notify({ type: 'positive', message: this.$t('Saved'), timeout: 2000 });
         this.$router.back();
@@ -170,23 +183,6 @@ export default {
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
 
 .nav-save {
   font-family: 'Manrope', sans-serif;
@@ -194,12 +190,14 @@ export default {
   font-weight: 650;
   padding: 10px 15px;
   min-height: 44px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 0;
-  background: var(--btn-neutral-bg);
-  color: var(--btn-neutral-fg);
+  background: #1A1A1C;
+  color: #FAF7EF;
   cursor: pointer;
 }
+
+body.body--dark .nav-save { background: #F4F4F4; color: #0C0C0C; }
 
 .nav-save:disabled { opacity: 0.4; cursor: default; }
 
@@ -242,51 +240,23 @@ export default {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--btn-neutral-bg);
-  color: var(--btn-neutral-fg);
+  background: #1A1A1C;
+  color: #FAF7EF;
   display: grid;
   place-items: center;
   border: 3px solid var(--bg-primary);
 }
 
-.field { display: block; margin-bottom: 16px; }
-
-.field-label {
-  display: block;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin: 0 0 6px 3px;
-}
-
-.field-input {
-  width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
-  border-radius: 13px;
-  padding: 14px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  color: var(--text-primary);
-  min-height: 50px;
-}
+body.body--dark .avatar-badge { background: #F4F4F4; color: #0C0C0C; }
 
 .field-input--multiline { resize: none; line-height: 1.45; }
-
-.field-help {
-  display: block;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 7px 3px 0;
-  line-height: 1.45;
-}
 
 .publish-error {
   display: flex;
   gap: 10px;
   align-items: flex-start;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: rgba(255, 68, 68, 0.09);
   color: var(--color-red);
   margin-bottom: 14px;
@@ -294,11 +264,4 @@ export default {
 
 .publish-error-title { font-size: 13.5px; font-weight: 650; }
 .publish-error-body { font-size: 12.5px; margin-top: 2px; line-height: 1.45; opacity: 0.9; }
-
-.id-foot {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 8px 6px 0;
-}
 </style>

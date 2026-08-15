@@ -1,47 +1,49 @@
 <template>
-  <q-page class="id-sub-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="backLabel" />
+  <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
       <h1 class="id-large-title">{{ $t('Get paid') }}</h1>
 
       <!--
-        The relationship this screen has to teach, in the user's terms:
+        Two things are true at once and the screen has to hold both without
+        making the user choose:
 
-          username  is how people find you
-          address   is where the money lands
+          @maria                 what a person hands to another person
+          <address>              what a wallet needs in order to send
 
-        Your username points at your address. Until an address exists, the
-        username cannot be paid at all: the send path resolves a name to a
-        profile and then to its `lud16`, and gives up when that is empty. An
-        earlier draft of this screen showed the username itself as "your
-        payment address", which was wrong in the most expensive way a wallet
-        can be wrong.
+        They reach the same place, so the code carries the address (any wallet
+        can scan it) and the rows say plainly where each form works.
       -->
-      <template v-if="lud16">
+      <template v-if="payAddress">
         <div class="pay-qr-wrap">
           <div class="pay-qr">
-            <vue-qrcode v-if="lud16" :value="lud16" :options="qrOptions" class="pay-qr-canvas" />
+            <vue-qrcode :value="payAddress" :options="qrOptions" class="pay-qr-canvas" />
           </div>
           <div class="pay-qr-caption">{{ $t('Anyone can scan this to send you Bitcoin') }}</div>
         </div>
 
-        <IdentityGroup class="pay-block" :footer="landingFooter">
+        <IdentityGroup class="pay-block" :footer="reachFooter">
           <IdentityRow
-            icon="tabler:arrow-bar-to-down"
+            v-if="username"
+            icon="tabler:at"
             tone="accent"
-            :label="lud16"
-            :caption="landingCaption"
-            mono
-            :chip="copied ? $t('Copied') : $t('Copy')"
-            :chip-tone="copied ? 'ok' : 'mute'"
+            :label="'@' + username"
+            :caption="$t('In BuhoGO and other Nostr apps')"
+            :chip="copied === 'name' ? $t('Copied') : $t('Copy')"
+            :chip-tone="copied === 'name' ? 'ok' : 'mute'"
             :chevron="false"
-            @click="copyAddress"
+            @click="copy(usernameAddress, 'name')"
           />
           <IdentityRow
-            icon="tabler:pencil"
-            :label="$t('Change where money lands')"
-            @click="openEditor"
+            icon="tabler:wallet"
+            :label="payAddressShown"
+            :caption="$t('In any Bitcoin wallet')"
+            mono-label
+            :chip="copied === 'address' ? $t('Copied') : $t('Copy')"
+            :chip-tone="copied === 'address' ? 'ok' : 'mute'"
+            :chevron="false"
+            @click="copy(payAddress, 'address')"
           />
         </IdentityGroup>
 
@@ -50,80 +52,78 @@
           {{ $t('Share this') }}
         </button>
 
+        <!--
+          Where the money actually lands. Shown when payments route through the
+          identity's own bucket, which is the default, and also whenever the
+          bucket still holds something after the user has moved on to their own
+          address. Hidden entirely for someone using their own wallet address
+          with an empty bucket, because then it is not part of their story.
+        -->
         <IdentityGroup
-          :title="$t('By name')"
-          :footer="$t('Your username points at the address above. Change the address and your username follows it, so the name you hand out never has to change.')"
+          v-if="usingBucket || bucket.hasBalance"
+          :title="$t('Where it lands')"
+          :footer="bucketFooter"
         >
           <IdentityRow
-            icon="tabler:at"
-            :label="username ? '@' + username : $t('Being reserved')"
-            :caption="$t('People can pay you with this too')"
-            :chevron="false"
-            :interactive="false"
+            data-audit="identity-bucket"
+            icon="tabler:inbox"
+            :tone="bucket.hasBalance ? 'accent' : 'neutral'"
+            :label="$t('Social Bucket')"
+            :caption="bucketCaption"
+            :chip="bucket.hasBalance ? $t('Move') : ''"
+            chip-tone="ok"
+            @click="showBucket = true"
+          />
+        </IdentityGroup>
+
+        <IdentityGroup
+          v-if="!usingBucket"
+          :title="$t('Your own address')"
+          :footer="$t('Payments go straight to that wallet. Remove it and BuhoGO goes back to receiving for you.')"
+        >
+          <IdentityRow
+            icon="tabler:pencil"
+            :label="$t('Change or remove it')"
+            @click="openEditor"
+          />
+        </IdentityGroup>
+
+        <IdentityGroup v-else :title="$t('If you prefer another wallet')">
+          <IdentityRow
+            icon="tabler:pencil"
+            :label="$t('Use an address from another wallet')"
+            :caption="$t('Payments then skip the bucket')"
+            @click="openEditor"
           />
         </IdentityGroup>
       </template>
 
       <!--
-        No address yet. This is the common case: Spark wallets do not have a
-        Lightning address, so most people have to bring one from a wallet
-        they already use. The screen's whole job here is to say why it
-        matters and take the value.
+        No address at all. Since every identity is given one, this means the
+        setup step has not finished or could not reach the network, so it says
+        that rather than blaming the user for not having one.
       -->
-      <template v-else>
-        <div class="pay-empty">
-          <span class="pay-empty-mark"><Icon icon="tabler:arrow-bar-to-down" width="30" height="30" /></span>
-          <h2 class="pay-empty-title">{{ $t('Nobody can pay you yet') }}</h2>
-          <p class="pay-empty-body">
-            {{ $t('Your username is how people find you. A Lightning address is where the money lands. You need both, and BuhoGO cannot invent the second one for you.') }}
-          </p>
-        </div>
-
-        <IdentityGroup
-          v-if="walletAddress"
-          :title="$t('From a wallet you already use here')"
-          :footer="$t('Money would arrive in that wallet, which is already connected to BuhoGO.')"
-        >
-          <IdentityRow
-            icon="tabler:wallet"
-            tone="accent"
-            :label="walletAddress"
-            :caption="$t('From {wallet}', { wallet: walletName })"
-            mono
-            :chip="$t('Use this')"
-            chip-tone="ok"
-            :chevron="false"
-            @click="useWalletAddress"
-          />
-        </IdentityGroup>
-
+      <div v-else class="pay-empty">
+        <span class="pay-empty-mark"><q-spinner size="26px" /></span>
+        <h2 class="pay-empty-title">{{ $t('Setting up your address') }}</h2>
+        <p class="pay-empty-body">
+          {{ $t('BuhoGO is giving your name somewhere to receive. This needs a connection and finishes on its own.') }}
+        </p>
         <button type="button" class="btn-primary" @click="openEditor">
           <Icon icon="tabler:plus" width="17" height="17" />
-          {{ $t('Add a Lightning address') }}
+          {{ $t('Use my own address instead') }}
         </button>
-
-        <p class="id-foot">
-          {{ $t('Most Bitcoin wallets give you one. It looks like an email address, for example you{\'@\'}your-wallet.com.') }}
-        </p>
-
-        <IdentityGroup :title="$t('Your username')" :footer="$t('It works for finding you and for saving you as a contact today. Paying by name starts working the moment you add an address.')">
-          <IdentityRow
-            icon="tabler:at"
-            :label="username ? '@' + username : $t('Being reserved')"
-            :interactive="false"
-          />
-        </IdentityGroup>
-      </template>
+      </div>
     </div>
 
-    <!-- One field, one warning, nothing else. A short focused task, which is
-         what a sheet is for. -->
+    <!-- One field, one warning. A short focused task, which is what a sheet
+         is for. -->
     <q-dialog v-model="showEditor" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="other-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <q-card class="identity-surface other-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <div class="sheet-grab" aria-hidden="true"><span></span></div>
         <div class="sheet-head">
-          <div class="sheet-title">{{ $t('Where should money land?') }}</div>
-          <q-btn flat round dense :aria-label="$t('Close')" @click="showEditor = false">
+          <div class="sheet-title">{{ $t('Your own address') }}</div>
+          <q-btn flat round class="sheet-close" :aria-label="$t('Close')" @click="showEditor = false">
             <Icon icon="tabler:x" width="18" height="18" />
           </q-btn>
         </div>
@@ -150,7 +150,7 @@
 
           <div class="sheet-warn">
             <Icon icon="tabler:info-circle" width="17" height="17" />
-            <span>{{ $t('Money sent to this address arrives in that wallet. If it is not one of your BuhoGO wallets, your balance here will not change.') }}</span>
+            <span>{{ $t('Payments then arrive in that wallet instead of your bucket. If it is not one of your BuhoGO wallets, your balance here will not change.') }}</span>
           </div>
 
           <button type="button" class="btn-primary" :disabled="profile.isPublishing" @click="saveAddress">
@@ -158,55 +158,64 @@
             <span>{{ $t('Save') }}</span>
           </button>
           <button
-            v-if="lud16"
+            v-if="!usingBucket"
             type="button"
             class="btn-quiet"
             :disabled="profile.isPublishing"
             @click="clearAddress"
           >
-            {{ $t('Remove it') }}
+            {{ $t('Go back to my bucket') }}
           </button>
         </div>
       </q-card>
     </q-dialog>
 
-    <SettingsHubNav />
+    <SocialBucketSheet v-model="showBucket" />
+
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
-import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
+import SocialBucketSheet from '../../components/identity/SocialBucketSheet.vue';
 import { useIdentityStore } from '../../stores/identity';
 import { useProfileStore } from '../../stores/profile';
-import { useWalletStore } from '../../stores/wallet';
+import { useSocialBucketStore } from '../../stores/socialBucket';
+import { npubCashAddress, isNpubCashAddress } from '../../services/npubCash.js';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
 import { shareContent } from '../../utils/share.js';
-
-/** local@domain.tld, the shape every Lightning address takes. */
-const ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { isLightningAddress } from '../../utils/addressUtils.js';
 
 export default {
   name: 'IdentityGetPaidPage',
 
-  components: { Icon, VueQrcode, SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
+  components: {
+    Icon,
+    VueQrcode,
+    IdentityNav,
+    IdentityGroup,
+    IdentityRow,
+    SocialBucketSheet,
+  },
 
   setup() {
     return {
       identity: useIdentityStore(),
       profile: useProfileStore(),
-      walletStore: useWalletStore(),
+      bucket: useSocialBucketStore(),
     };
   },
 
   data() {
     return {
-      copied: false,
+      copied: '',
       showEditor: false,
+      showBucket: false,
       editorInput: '',
       editorError: '',
       _copyTimer: null,
@@ -214,51 +223,61 @@ export default {
   },
 
   computed: {
-    backLabel() {
-      const from = this.$router.options.history.state?.back;
-      return from === '/identity/manage' ? this.$t('Manage') : this.$t('You');
-    },
+    /** Back goes to whichever screen opened this one. */
+    backNav() { return identityBack(this.$router, '/identity/manage'); },
 
-    /** The username. Identity, not payment. */
+
     username() {
       return this.identity.nip05ActiveEntry?.handle || '';
     },
 
-    /** The payment destination. Everything on this screen hangs off it. */
-    lud16() {
+    /** The full form of the username, which is what a copy has to hand over. */
+    usernameAddress() {
+      return this.profile.nip05 || this.identity.nip05Address || '';
+    },
+
+    /** What any wallet can actually send to. */
+    payAddress() {
       return this.profile.lud16 || '';
     },
 
+    /** True while payments route through the identity's own bucket. */
     /**
-     * A Lightning address belonging to a wallet already connected here, so
-     * the common case becomes one tap instead of a copy from another app.
-     * Spark returns null by design, which is exactly why the manual path
-     * has to be first class.
+     * The address as it is read, not as it is sent.
+     *
+     * A bucket address is the npub plus a domain, seventy characters that
+     * wrap to three lines and tell the reader nothing. Nobody types this one:
+     * it is scanned, copied or shared, and all three carry the real value.
+     * Their own address is short enough to show whole.
      */
-    walletAddress() {
-      return this.walletStore.activeWalletLightningAddress || '';
+    payAddressShown() {
+      const value = this.payAddress;
+      if (value.length <= 30) return value;
+      const [local, domain] = value.split('@');
+      if (!domain) return `${value.slice(0, 12)}…${value.slice(-6)}`;
+      return `${local.slice(0, 8)}…${local.slice(-5)}@${domain}`;
     },
 
-    walletName() {
-      const active = this.walletStore.wallets.find((w) => w.id === this.walletStore.activeWalletId);
-      return active?.name || this.$t('your wallet');
+    usingBucket() {
+      return isNpubCashAddress(this.payAddress);
     },
 
-    /** True when the published address is one of the wallets in this app. */
-    landsHere() {
-      return !!this.lud16 && this.lud16.toLowerCase() === this.walletAddress.toLowerCase();
+    reachFooter() {
+      return this.username
+        ? this.$t('Both reach the same place. Give people your name, and the long one only when an app asks for an address.')
+        : this.$t('Give this to anyone who wants to pay you.');
     },
 
-    landingCaption() {
-      return this.landsHere
-        ? this.$t('Money arrives in {wallet}', { wallet: this.walletName })
-        : this.$t('Money arrives in that wallet');
+    bucketCaption() {
+      if (this.bucket.isSyncing && !this.bucket.hasBalance) return this.$t('Checking');
+      if (!this.bucket.hasBalance) return this.$t('Nothing waiting');
+      return this.$t('{n} sats waiting', { n: this.formatSats(this.bucket.balanceSats) });
     },
 
-    landingFooter() {
-      return this.landsHere
-        ? this.$t('This is one of your BuhoGO wallets, so payments show up in your balance here.')
-        : this.$t('This address belongs to another app, so payments arrive there and your BuhoGO balance does not change.');
+    bucketFooter() {
+      return this.usingBucket
+        ? this.$t('Payments to your name arrive here, then you move them to one of your wallets.')
+        : this.$t('Money that arrived before you set your own address is still here.');
     },
 
     qrOptions() {
@@ -269,10 +288,22 @@ export default {
   async created() {
     await this.identity.hydrate();
     await this.profile.hydrate();
-    // The wallet's own address is one of the two ways to fill this in.
-    if (!this.walletStore.isInitialized) {
-      await this.walletStore.initialize().catch(() => {});
+    await this.bucket.hydrate();
+
+    // Adopting the address is a boot step, but a user can land here in the few
+    // seconds before it finishes, or after it failed offline. Asking again
+    // costs nothing and turns a confusing empty screen into a working one.
+    if (!this.payAddress && this.identity.nostrNpub) {
+      const address = npubCashAddress(this.identity.nostrNpub);
+      if (address) {
+        const changed = this.profile.adoptBucketAddress(address, {
+          isBucketAddress: isNpubCashAddress,
+        });
+        if (changed) this.profile.publish().catch(() => {});
+      }
     }
+
+    this.bucket.sync({ identityStore: this.identity });
   },
 
   beforeUnmount() {
@@ -280,13 +311,17 @@ export default {
   },
 
   methods: {
-    async copyAddress() {
-      if (!this.lud16) return;
+    formatSats(n) {
+      return new Intl.NumberFormat().format(Math.max(0, Math.floor(n || 0)));
+    },
+
+    async copy(value, which) {
+      if (!value) return;
       try {
-        await navigator.clipboard.writeText(this.lud16);
-        this.copied = true;
+        await navigator.clipboard.writeText(value);
+        this.copied = which;
         if (this._copyTimer) clearTimeout(this._copyTimer);
-        this._copyTimer = setTimeout(() => { this.copied = false; }, 1600);
+        this._copyTimer = setTimeout(() => { this.copied = ''; }, 1600);
       } catch {
         this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
       }
@@ -294,17 +329,17 @@ export default {
 
     /**
      * `shareContent` reports failure through its return value rather than by
-     * throwing, so an unhandled result reads as a dead button on every
-     * device without a share menu.
+     * throwing, so an unhandled result reads as a dead button on every device
+     * without a share menu.
      */
     async shareAddress() {
-      if (!this.lud16) return;
+      if (!this.payAddress) return;
 
-      const result = await shareContent({ title: this.$t('Get paid'), text: this.lud16 });
+      const result = await shareContent({ title: this.$t('Get paid'), text: this.payAddress });
       if (result.success || result.reason === 'cancelled') return;
 
       if (result.reason === 'unsupported') {
-        await this.copyAddress();
+        await this.copy(this.payAddress, 'address');
         this.$q.notify({
           type: 'positive',
           message: this.$t('Copied'),
@@ -319,43 +354,44 @@ export default {
     },
 
     openEditor() {
-      this.editorInput = this.lud16;
+      this.editorInput = this.usingBucket ? '' : this.payAddress;
       this.editorError = '';
       this.showEditor = true;
-    },
-
-    useWalletAddress() {
-      this.editorInput = this.walletAddress;
-      this.editorError = '';
-      this.saveAddress();
     },
 
     async saveAddress() {
       const value = this.editorInput.trim().toLowerCase();
       if (!value) {
-        this.editorError = this.$t('Enter an address, or remove the one you have.');
+        this.editorError = this.$t('Enter an address, or go back to your bucket.');
         return;
       }
-      if (!ADDRESS_RE.test(value)) {
+      if (!isLightningAddress(value)) {
         this.editorError = this.$t('That does not look like an address yet. It should read like an email address.');
         return;
       }
       this.editorError = '';
-      await this.persist(value, this.$t('People can pay you now'));
+      await this.persist(value, this.$t('Payments now go to your own wallet'));
     },
 
+    /** Back to the bucket: clear the field and let the identity receive again. */
     async clearAddress() {
-      await this.persist('', this.$t('Address removed'));
+      const address = npubCashAddress(this.identity.nostrNpub);
+      await this.persist(address, this.$t('Payments come back to your bucket'));
     },
 
     /**
-     * Publishing is what makes the username work: the address only becomes
-     * reachable by name once it is on the published card, so a save that
-     * does not reach the relays has not finished the job and has to say so.
+     * Publishing is what makes any of this work: the address only becomes
+     * reachable once it is on the published profile, so a save that did not
+     * reach the network has not finished the job and has to say so.
      */
     async persist(value, successMessage) {
       this.profile.setField('lud16', value);
-      const result = await this.profile.publish();
+      let result = null;
+      try {
+        result = await this.profile.publish();
+      } catch (err) {
+        console.warn('[identity-get-paid] publish failed:', err);
+      }
       this.showEditor = false;
 
       if (result && result.ok) {
@@ -375,32 +411,6 @@ export default {
 </script>
 
 <style scoped>
-.id-sub-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: 'Manrope', sans-serif;
-  overflow-x: hidden;
-  max-width: 100vw;
-  padding-top: var(--safe-top, 0px);
-}
-
-.id-sub-body {
-  flex: 1 1 auto;
-  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.id-large-title {
-  font-size: 30px;
-  font-weight: 770;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  color: var(--text-primary);
-  margin: 2px 2px 14px;
-}
 
 .pay-qr-wrap {
   display: flex;
@@ -413,7 +423,7 @@ export default {
 .pay-qr {
   width: 192px;
   height: 192px;
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   background: #fff;
   padding: 10px;
   box-shadow: 0 16px 34px -22px rgba(0, 0, 0, 0.55);
@@ -433,14 +443,12 @@ export default {
 
 .pay-block { margin-top: 16px; }
 
-/* Empty state. Not an illustration and not a warning: a short explanation
-   of the one thing that is missing, then the control that fixes it. */
 .pay-empty { text-align: center; padding: 10px 6px 4px; }
 
 .pay-empty-mark {
   width: 66px;
   height: 66px;
-  border-radius: 22px;
+  border-radius: var(--radius-lg);
   background: var(--bg-input);
   color: var(--text-secondary);
   display: grid;
@@ -464,103 +472,20 @@ export default {
   margin: 0 0 6px;
 }
 
-.btn-primary,
-.btn-quiet {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15.5px;
-  font-weight: 650;
-  padding: 15px 18px;
-  border-radius: 15px;
-  min-height: 52px;
-  margin-top: 16px;
-  border: 0;
-  cursor: pointer;
-}
-
-.btn-primary { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
-.btn-primary:disabled { opacity: 0.45; cursor: default; }
-.btn-quiet { background: transparent; color: var(--color-red); margin-top: 6px; }
-
-.id-foot {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 10px 6px 0;
-}
-
 /* Sheet */
 .other-sheet {
   width: 100%;
   max-width: 520px;
-  border-radius: 24px 24px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
 }
-
-.sheet-grab { display: flex; justify-content: center; padding: 9px 0 2px; }
-.sheet-grab span {
-  width: 36px; height: 4px; border-radius: 999px;
-  background: var(--border-card); display: block;
-}
-
-.sheet-head { display: flex; align-items: center; gap: 8px; padding: 8px 14px 4px; }
-
-.sheet-title {
-  flex: 1;
-  padding-left: 4px;
-  font-size: 17px;
-  font-weight: 720;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-.sheet-body { padding: 8px 16px 20px; }
-
-.field { display: block; margin-bottom: 16px; }
-
-.field-label {
-  display: block;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin: 0 0 6px 3px;
-}
-
-.field-input {
-  width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
-  border-radius: 13px;
-  padding: 14px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  color: var(--text-primary);
-  min-height: 50px;
-}
-
-.field-input--error { border-color: var(--color-red); }
-
-.field-help,
-.field-error {
-  display: block;
-  font-size: 12px;
-  margin: 7px 3px 0;
-  line-height: 1.45;
-}
-
-.field-help { color: var(--text-muted); }
-.field-error { color: var(--color-red); }
 
 .sheet-warn {
   display: flex;
   gap: 9px;
   align-items: flex-start;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   color: var(--text-secondary);
   font-size: 13px;

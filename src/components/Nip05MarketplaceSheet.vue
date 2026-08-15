@@ -88,7 +88,7 @@
                 ref="nameInputEl"
                 v-model="nameInput"
                 type="text"
-                :placeholder="$t('your-name')"
+                :placeholder="$t('your-username')"
                 spellcheck="false"
                 autocomplete="off"
                 autocapitalize="none"
@@ -272,7 +272,7 @@
           <div class="centered-stage">
             <q-spinner color="grey" size="36px" />
             <div class="centered-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Activating your handle…') }}
+              {{ $t('Setting up your username…') }}
             </div>
             <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('Waiting for the payment to settle. This is usually quick.') }}
@@ -456,7 +456,7 @@ export default {
         case 'paying':     return this.$t('Confirm purchase');
         case 'activating': return this.$t('Activating');
         case 'success':    return this.$t('Success');
-        default:           return this.$t('Choose a name');
+        default:           return this.$t('Choose a username');
       }
     },
 
@@ -502,7 +502,7 @@ export default {
     /** Live `<name>@mybuho.de` preview — the user's typed input or a
      *  faded placeholder while the field is empty. */
     previewName() {
-      return this.nameInput.trim().toLowerCase() || this.$t('your-name');
+      return this.nameInput.trim().toLowerCase() || this.$t('your-username');
     },
 
     /** True iff the preview is showing the placeholder text rather than
@@ -547,11 +547,11 @@ export default {
 
     statusText() {
       if (this.searchInflight) return this.$t('Checking…');
-      if (!this.nameInput) return this.$t('Type a name to check availability.');
+      if (!this.nameInput) return this.$t('Type a username to check availability.');
       if (this.hasLocalError) return this.localErrorMessage;
-      if (this.searchError) return this.$t("Couldn't reach the name server. Try again.");
-      if (!this.searchResult) return this.$t('Type a name to check availability.');
-      if (!this.searchResult.available) return this.$t('Taken. Pick another name.');
+      if (this.searchError) return this.$t("Couldn't check that username. Try again.");
+      if (!this.searchResult) return this.$t('Type a username to check availability.');
+      if (!this.searchResult.available) return this.$t('Taken. Pick another username.');
       const price = this.searchResult.priceSats;
       if (!price) return this.$t('Available.');
       return this.$t('Available · {sats} sats', { sats: this.formatSats(price) });
@@ -559,10 +559,10 @@ export default {
 
     localErrorMessage() {
       switch (this.localValidation.reason) {
-        case 'too-short':     return this.$t('At least 2 characters.');
+        case 'too-short':     return this.$t('A username needs at least 2 letters.');
         case 'too-long':      return this.$t('Too long. Keep it under 64 characters.');
         case 'invalid-chars': return this.$t('Letters, numbers, dot, hyphen and underscore only.');
-        default:              return this.$t('Pick a valid name.');
+        default:              return this.$t('Pick a valid username.');
       }
     },
 
@@ -590,7 +590,7 @@ export default {
     continueLabel() {
       if (!this.searchResult || !this.searchResult.available) return this.$t('Continue');
       const price = this.searchResult.priceSats;
-      if (!price) return this.$t('Add free name');
+      if (!price) return this.$t('Take the free username');
       return this.$t('Buy · {sats} sats', { sats: this.formatSats(price) });
     },
 
@@ -841,7 +841,7 @@ export default {
               result = await registerFreeHandle({ baseSlug: localPart, pubkeyHex });
             }
           } catch {
-            this.payError = this.$t("That name couldn't be created. Try a different one.");
+            this.payError = this.$t("That username couldn't be created. Try a different one.");
             return;
           }
           this.commitPurchase({
@@ -861,7 +861,7 @@ export default {
           this.invoice = await requestPaidHandle({ localPart, pubkeyHex });
         } catch (err) {
           if (err?.status === 409 || err?.status === 400) {
-            this.payError = this.$t('That name was just taken. Pick another.');
+            this.payError = this.$t('That username was just taken. Pick another.');
           } else {
             this.payError = this.$t("Couldn't create the invoice. Try again.");
           }
@@ -944,7 +944,7 @@ export default {
         // invoice actually pays — but we shouldn't leave the user
         // staring at a spinner. Drop back to paying with a hint.
         this.step = 'paying';
-        this.payError = this.$t('Still waiting for the payment. The name will activate as soon as it settles.');
+        this.payError = this.$t('Still waiting for the payment. The username is yours as soon as it settles.');
         return;
       }
 
