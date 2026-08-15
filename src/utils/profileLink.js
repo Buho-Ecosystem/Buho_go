@@ -103,6 +103,50 @@ export function expandProfileSlug(raw) {
   return `${value.toLowerCase()}@${NIP05_DOMAIN}`;
 }
 
+/**
+ * Read a BuhoGO profile link back into the identifier it points at.
+ *
+ * The code on a card carries this link rather than a `nostr:` URI, because a
+ * plain phone camera can open a link and can do nothing at all with a custom
+ * scheme. That only works if our own scanner also understands it: without
+ * this, BuhoGO would be the one app that could not read its own QR and would
+ * sit there scanning while any other camera resolved it fine.
+ *
+ * Returns the identifier to resolve (username, NIP-05 address, npub) or ''
+ * for anything that is not one of our profile links.
+ *
+ * @param {string} value  a scanned or pasted string
+ * @returns {string}
+ */
+export function parseProfileLink(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return '';
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';
+  if (!url.pathname.startsWith(PROFILE_PATH)) return '';
+
+  // The host is not checked against a single origin on purpose: the same page
+  // is served from the web build, from a preview deploy and from whatever the
+  // app is pointed at during development, and a link that resolves everywhere
+  // except the environment you are testing in is its own kind of bug. The
+  // path prefix plus a decodable slug is what makes it ours.
+  const slug = decodeURIComponent(url.pathname.slice(PROFILE_PATH.length)).trim();
+  if (!slug) return '';
+
+  // The key rides along for exactly this case: a username whose domain is
+  // unreachable still resolves, because the link carried the key too.
+  const fallbackKey = String(url.searchParams.get(KEY_PARAM) || '').trim();
+  if (isKey(slug)) return slug;
+  if (fallbackKey && isKey(fallbackKey)) return fallbackKey;
+  return expandProfileSlug(slug);
+}
+
 /** True for the identifier forms that resolve locally, with no server involved. */
 export function isKey(value) {
   return /^(npub1|nprofile1)/i.test(String(value || '').trim());

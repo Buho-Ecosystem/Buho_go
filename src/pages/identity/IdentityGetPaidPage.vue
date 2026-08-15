@@ -24,7 +24,7 @@
       <template v-if="payAddress">
         <div class="pay-qr-wrap">
           <div class="pay-qr">
-            <vue-qrcode :value="payAddress" :options="qrOptions" class="pay-qr-canvas" />
+            <vue-qrcode :value="payQrValue" :options="qrOptions" class="pay-qr-canvas" />
           </div>
           <div class="pay-qr-caption">{{ $t('Show this to get paid in person') }}</div>
         </div>
@@ -239,6 +239,18 @@ export default {
     /** The readable half. The key rides along in the query and is machinery. */
     shareUrlDisplay() {
       return this.shareUrl.replace(/^https:\/\//, '').split('?')[0];
+    },
+
+    /**
+     * What the code carries.
+     *
+     * `lightning:` is what turns the code from plain text into something the
+     * operating system routes: a phone camera offers the installed wallets
+     * instead of offering to web-search the address. Every wallet unwraps the
+     * scheme, so nothing that could read the bare address stops working.
+     */
+    payQrValue() {
+      return this.payAddress ? `lightning:${this.payAddress}` : '';
     },
 
     /** What any wallet can actually send to. */

@@ -84,7 +84,7 @@
 
             <div v-if="showCode" class="pp-code">
               <div class="pp-qr">
-                <vue-qrcode :value="lud16" :options="qrOptions" class="pp-qr-canvas" />
+                <vue-qrcode :value="payUri" :options="qrOptions" class="pp-qr-canvas" />
               </div>
             </div>
           </div>
@@ -254,6 +254,14 @@ export default {
     lud16() {
       const value = String(this.profile?.lud16 || '').trim();
       return isLightningAddress(value) ? value : '';
+    },
+
+    /**
+     * The code and the button hand over the same thing, and both carry the
+     * scheme so the receiving app knows what it is being given.
+     */
+    payUri() {
+      return this.lud16 ? `lightning:${this.lud16}` : '';
     },
 
     /**

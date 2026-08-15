@@ -137,6 +137,7 @@ import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue'
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { usePayContact } from '../../composables/usePayContact';
+import { buildProfileLink } from '../../utils/profileLink.js';
 
 /** How many faces fit the strip before it needs scrolling on a small phone. */
 const PEOPLE_SHOWN = 8;
@@ -175,6 +176,69 @@ export default {
     cardName() {
       if (this.needsName) return this.$t('Add your name');
       return this.profile.displayName || this.profile.name;
+    },
+
+    /**
+     * The card's name slot holds an instruction rather than a name. Tied to
+     * exactly the condition cardName uses, so the slot is a control whenever
+     * it is telling the user to do something and never otherwise.
+     */
+    needsName() {
+      return !this.profile.displayName && !this.profile.name;
+    },
+
+    /** Local part only. The domain is plumbing and lives on Get paid. */
+    username() {
+      return this.identity.nip05ActiveEntry?.handle || '';
+    },
+
+    avatarUrl() {
+      if (!this.profile.picture || this.avatarBroken) return '';
+      return this.profile.picture;
+    },
+
+    statusLine() {
+      switch (this.statusKey) {
+        case 'setting-up':
+          return this.$t('Setting up');
+        case 'words-missing':
+          return this.$t('12 words not saved');
+        case 'wallet-words-missing':
+          return this.$t('Wallet words not saved');
+        case 'steps-left':
+          return this.$t('{done} of {total} done', { done: this.stepsDone, total: this.stepsTotal });
+        default:
+          return this.$t('Ready, 12 words saved');
+      }
+    },
+
+    /**
+     * Only two states earn a warning mark: the card words are the last thing
+     * left, or the wallet phrase is outstanding. Everything else is either
+     * finished or in progress, and neither is a fault.
+     */
+    statusTone() {
+      if (this.statusKey === 'words-missing' || this.statusKey === 'wallet-words-missing') {
+        return 'warn';
+      }
+      return this.statusKey === 'ready' ? 'ok' : 'progress';
+    },
+
+    /**
+     * The card's code carries the person's link.
+     *
+     * It used to be `nostr:npub…`, which only an app that already speaks
+     * Nostr can act on. A stranger holding up a phone camera got nothing.
+     * The link resolves for everyone: a plain camera opens the profile page,
+     * and BuhoGO's scanner reads it straight back to the identifier and goes
+     * to the add-contact flow, so scanning in-app is unchanged.
+     */
+    qrValue() {
+      return buildProfileLink({
+        username: this.identity.nip05ActiveEntry?.handle,
+        nip05: this.profile.nip05 || this.identity.nip05Address,
+        npub: this.identity.nostrNpub,
+      });
     },
 
     /**

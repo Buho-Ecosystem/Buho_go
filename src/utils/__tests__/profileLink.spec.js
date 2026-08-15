@@ -1,0 +1,116 @@
+/**
+ * Profile links, both directions.
+ *
+ * `parseProfileLink` decides what a scanned code resolves to, so it is the
+ * one place where "BuhoGO reads its own QR" is either true or not. The card's
+ * code carries a link precisely so a plain phone camera can open it; if this
+ * function regresses, BuhoGO becomes the only scanner that cannot read a
+ * BuhoGO card, and the failure is silent (the scanner just keeps scanning).
+ */
+
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  buildProfileLink,
+  parseProfileLink,
+  profileSlug,
+  expandProfileSlug,
+  isKey,
+  PROFILE_PATH,
+  PUBLIC_WEB_ORIGIN,
+} from '../profileLink.js';
+
+const NPUB = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
+
+await test('buildProfileLink prefers the username and carries the key as a fallback', () => {
+  const link = buildProfileLink({ username: 'maria', npub: NPUB });
+  assert.ok(link.startsWith(`${PUBLIC_WEB_ORIGIN}${PROFILE_PATH}maria`), link);
+  assert.match(link, /[?&]k=npub1/);
+});
+
+await test('buildProfileLink with only a key does not append the key to itself', () => {
+  const link = buildProfileLink({ npub: NPUB });
+  assert.equal(link, `${PUBLIC_WEB_ORIGIN}${PROFILE_PATH}${NPUB}`);
+});
+
+await test('buildProfileLink returns empty when there is nothing to point at', () => {
+  assert.equal(buildProfileLink({}), '');
+  assert.equal(buildProfileLink(), '');
+});
+
+await test('a link built from a card parses back to something resolvable', () => {
+  const link = buildProfileLink({ username: 'maria', npub: NPUB });
+  assert.equal(parseProfileLink(link), NPUB);
+});
+
+await test('parseProfileLink prefers the key, which needs no network', () => {
+  // The username would need a NIP-05 lookup against a domain that can be down.
+  // The key resolves locally, so when the link carries both, the key wins.
+  assert.equal(parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/maria?k=${NPUB}`), NPUB);
+});
+
+await test('parseProfileLink expands a bare username to its NIP-05 address', () => {
+  const out = parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/maria`);
+  assert.match(out, /^maria@/);
+});
+
+await test('parseProfileLink keeps a full address slug as-is', () => {
+  assert.equal(parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/maria@example.com`), 'maria@example.com');
+});
+
+await test('parseProfileLink reads a key slug directly', () => {
+  assert.equal(parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/${NPUB}`), NPUB);
+});
+
+await test('parseProfileLink decodes a percent-encoded slug', () => {
+  assert.equal(
+    parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/maria%40example.com`),
+    'maria@example.com',
+  );
+});
+
+await test('parseProfileLink ignores anything that is not a profile link', () => {
+  for (const value of [
+    '',
+    null,
+    undefined,
+    'nostr:npub1abc',
+    'maria@walletofsatoshi.com',
+    'lightning:maria@npub.cash',
+    'lnbc10n1pjqxyz',
+    `${PUBLIC_WEB_ORIGIN}/`,
+    `${PUBLIC_WEB_ORIGIN}/wallet`,
+    'not a url at all',
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+  ]) {
+    assert.equal(parseProfileLink(value), '', `should not parse: ${String(value)}`);
+  }
+});
+
+await test('parseProfileLink accepts the same path from any host it is served on', () => {
+  // Preview deploys and local dev serve the identical page; a code that only
+  // scanned in production would be untestable everywhere else.
+  assert.equal(parseProfileLink(`https://deploy-preview.example.com/p/${NPUB}`), NPUB);
+});
+
+await test('parseProfileLink rejects a profile path with an empty slug', () => {
+  assert.equal(parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/`), '');
+  assert.equal(parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/%20`), '');
+});
+
+await test('profileSlug and expandProfileSlug round-trip a username', () => {
+  const slug = profileSlug({ username: 'maria', npub: NPUB });
+  assert.equal(slug, 'maria');
+  assert.match(expandProfileSlug(slug), /^maria@/);
+});
+
+await test('isKey only accepts the local-resolving forms', () => {
+  assert.equal(isKey(NPUB), true);
+  assert.equal(isKey('nprofile1abc'), true);
+  assert.equal(isKey('maria@example.com'), false);
+  assert.equal(isKey(''), false);
+});
+
+console.log('\n14 passed, 0 failed');

@@ -102,6 +102,15 @@ export default {
     },
 
     /**
+     * Same code as the back of the card, and the same reasoning: it carries
+     * the link so any camera can open it, not a `nostr:` URI only a Nostr
+     * app could act on.
+     */
+    qrValue() {
+      return this.shareUrl;
+    },
+
+    /**
      * The same code as the back of the card, and the same job: scanning it
      * saves the person. Payment has its own screen and its own code.
      */

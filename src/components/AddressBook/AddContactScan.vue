@@ -125,6 +125,7 @@ import { normalizePaymentAddress } from '../../utils/addressUtils.js';
 import { fetchProfile, parseProfileContent } from '../../utils/nostrFetch.js';
 import { copyToClipboard } from 'quasar';
 import NostrContactPreview from './NostrContactPreview.vue';
+import { parseProfileLink } from '../../utils/profileLink.js';
 
 export default {
   name: 'AddContactScan',
@@ -292,7 +293,11 @@ export default {
      *    BIP21 `bitcoin:` and `lightning:` QR URIs) → hand the bare value
      *    up to the parent, which flips to the manual "Enter" form with the
      *    address pre-filled so the user just adds a name + note.
-     * 3. Anything else (BOLT11 invoice, plain URL, a bare NIP-05 that
+     * 3. A BuhoGO profile link → the identifier inside it, then step 1.
+     *    The code on a card carries a link so a plain phone camera can open
+     *    it; without this branch BuhoGO would be the only scanner that
+     *    could not read BuhoGO's own QR.
+     * 4. Anything else (BOLT11 invoice, other URLs, a bare NIP-05 that
      *    isn't a Lightning address) → keep scanning; it isn't a contact
      *    destination we can save.
      *
@@ -309,6 +314,17 @@ export default {
       // this is belt-and-suspenders — it just removes the prefix as a
       // variable across every downstream branch.
       const trimmed = text.trim().replace(/^nostr:/i, '');
+
+      // Our own profile link resolves to the identifier it points at, so a
+      // scanned card behaves exactly like a scanned key.
+      const fromLink = parseProfileLink(trimmed);
+      if (fromLink) {
+        this.detected = true;
+        this.stopScanner();
+        this.showCamera = false;
+        this.resolveAndFetch(fromLink);
+        return;
+      }
 
       const kind = classifyIdentifier(trimmed);
       if (kind && kind !== 'nip05') {
