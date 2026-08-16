@@ -8,9 +8,9 @@
  *
  * The sweep is two mint operations with a Lightning invoice in the middle:
  *
- *   1. mint    each paid quote becomes ecash proofs. The quote is locked to the
- *              identity's Nostr key, so this step needs a signature. Until it
- *              runs, the money is a promise held by npub.cash.
+ *   1. mint    each paid quote becomes ecash proofs. A quote may be locked to
+ *              the identity's Nostr key; only those quotes need a signature.
+ *              Until this runs, the money is a promise held by the mint.
  *   2. melt    the proofs pay a bolt11 invoice created by the destination
  *              BuhoGO wallet, and the sats land where the user actually keeps
  *              money.
@@ -25,6 +25,7 @@
  */
 
 import { Wallet } from '@cashu/cashu-ts';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 /** Nothing below this is worth a melt: the fee would eat it. */
 export const MIN_SWEEP_SATS = 10;
@@ -55,6 +56,27 @@ async function walletFor(mintUrl) {
   return wallet;
 }
 
+/**
+ * Nostr public keys are x-only, while NUT-20 quotes carry a compressed key.
+ * The same x coordinate has two possible private-key representations. Give
+ * cashu-ts both so it can select the one matching the quote's 02/03 prefix.
+ */
+function signingKeyCandidates(privkeyHex) {
+  const key = String(privkeyHex || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(key)) {
+    throw new SweepError('The identity signing key is invalid', 'INVALID_SIGNING_KEY');
+  }
+
+  const scalar = BigInt(`0x${key}`);
+  const order = secp256k1.Point.Fn.ORDER;
+  if (scalar <= 0n || scalar >= order) {
+    throw new SweepError('The identity signing key is invalid', 'INVALID_SIGNING_KEY');
+  }
+
+  const negated = (order - scalar).toString(16).padStart(64, '0');
+  return negated === key ? [key] : [key, negated];
+}
+
 export function sumProofs(proofs) {
   return (proofs || []).reduce((total, p) => total + (Number(p?.amount) || 0), 0);
 }
@@ -68,22 +90,49 @@ export function sumProofs(proofs) {
  *
  * @returns {Promise<{proofs: Array, minted: Array<string>, failed: Array<{quoteId, reason}>}>}
  */
-export async function mintQuotes({ quotes, privkeyHex, mintUrl }) {
+export async function mintQuotes({
+  quotes,
+  privkeyHex,
+  mintUrl,
+  walletFactory = walletFor,
+}) {
   if (!quotes?.length) return { proofs: [], minted: [], failed: [] };
   if (!mintUrl) throw new SweepError('No mint for these payments', 'NO_MINT');
 
-  const wallet = await walletFor(mintUrl);
+  const wallet = await walletFactory(mintUrl);
   const proofs = [];
   const minted = [];
   const failed = [];
 
   for (const quote of quotes) {
-    const amount = Number(quote.amount) || 0;
-    if (amount <= 0) continue;
     try {
-      const got = await wallet.mintProofsBolt11(amount, quote.quoteId, {
-        privkey: privkeyHex,
-      });
+      // npub.cash tells us where to find a quote, but the mint is the source
+      // of truth for its state, amount and NUT-20 lock. In particular, an
+      // unlocked quote must NOT receive a signature: CDK rejects one as
+      // invalid, which was the cause of bucket payouts returning HTTP 400.
+      const mintQuote = await wallet.checkMintQuoteBolt11(quote.quoteId);
+      const state = String(mintQuote?.state || '').toUpperCase();
+      if (state !== 'PAID') {
+        throw new SweepError(
+          state === 'ISSUED' ? 'Payment was already collected' : 'Payment is not ready',
+          state === 'ISSUED' ? 'QUOTE_ISSUED' : 'QUOTE_NOT_PAID',
+        );
+      }
+
+      const amount = Number(mintQuote.amount);
+      if (!Number.isSafeInteger(amount) || amount <= 0) {
+        throw new SweepError('The mint returned an invalid amount', 'INVALID_QUOTE_AMOUNT');
+      }
+
+      // NUT-23 defines `expiry` as the deadline for paying the Lightning
+      // invoice, not a deadline for redeeming an invoice that is already
+      // PAID. cashu-ts currently applies its generic expiry guard during
+      // minting, so omit that one field after the state check above.
+      const { expiry: _invoicePaymentDeadline, ...redeemableQuote } = mintQuote;
+      const config = redeemableQuote.pubkey
+        ? { privkey: signingKeyCandidates(privkeyHex) }
+        : undefined;
+      const got = await wallet.mintProofsBolt11(amount, redeemableQuote, config);
       proofs.push(...got);
       minted.push(quote.quoteId);
     } catch (err) {
@@ -160,13 +209,19 @@ export async function meltToInvoice({ proofs, mintUrl, privkeyHex, createInvoice
  * claim a balance that no longer exists. Failure here is not fatal: an
  * unreachable mint means we keep what we have and try again later.
  */
-export async function pruneSpentProofs({ proofs, mintUrl }) {
+export async function pruneSpentProofs({ proofs, mintUrl, requireCheck = false }) {
   if (!proofs?.length || !mintUrl) return proofs || [];
   try {
     const wallet = await walletFor(mintUrl);
     const states = await wallet.checkProofsStates(proofs);
+    if (!Array.isArray(states) || states.length !== proofs.length) {
+      throw new Error('Mint returned an incomplete proof-state response');
+    }
     return proofs.filter((_, i) => states[i]?.state === 'UNSPENT');
   } catch (err) {
+    if (requireCheck) {
+      throw new SweepError('Could not validate restored proofs', 'PROOF_CHECK_FAILED', err);
+    }
     console.warn('[social-bucket] could not check proof states, keeping all', err);
     return proofs;
   }

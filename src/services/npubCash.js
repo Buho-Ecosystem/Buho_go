@@ -9,8 +9,9 @@
  *
  * npub.cash gives every Nostr key a working Lightning address with no signup:
  * `<npub>@npub.cash` is payable the moment the key exists. Payments are held as
- * ecash by a mint until the owner comes to collect, and in v2 that ecash is
- * locked to the owner's own key, so the service cannot spend it.
+ * ecash by a mint until the owner comes to collect. Quotes can be NUT-20 locked
+ * to the owner's key, but the API also returns unlocked quotes; redemption must
+ * follow the canonical quote returned by the mint rather than assume either.
  *
  * The address is never shown to anyone. It lives in the `lud16` field of the
  * published profile, and what people actually hand out is `@username`, which

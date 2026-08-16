@@ -5,9 +5,8 @@
     The back control carries the *previous* screen's name rather than a bare
     chevron, so a user who lands three levels deep always knows what they are
     returning to. `back-to` is the label, `to` is where it actually goes:
-    identity screens are reachable from more than one place (Get paid opens
-    from the card and from Manage), so the route cannot be inferred from the
-    label alone.
+    some identity screens are reachable from more than one place, so the route
+    cannot be inferred from the label alone.
 
     Top-level screens pass no `backTo` and get a large title in the body
     instead, which is where the title belongs on a screen the user did not

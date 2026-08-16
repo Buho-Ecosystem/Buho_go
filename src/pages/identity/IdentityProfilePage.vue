@@ -1,6 +1,6 @@
 <template>
   <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" :title="$t('Photo and name')">
+    <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to">
       <template #actions>
         <button
           type="button"
@@ -15,15 +15,9 @@
     </IdentityNav>
 
     <div class="id-sub-body">
-      <!--
-        Two fields. That is the whole screen.
+      <h1 class="id-large-title">{{ $t('Photo and name') }}</h1>
+      <p class="id-lede">{{ $t('This is the first thing people see when they find or scan you.') }}</p>
 
-        The sheet this replaces carried the avatar, name, bio, a collapsed
-        section, an outside payment address, a radio list of usernames, a buy
-        button, a nested marketplace sheet, an error banner and a sticky save
-        bar. Everything except photo, name and one line moved to the screen
-        that owns it.
-      -->
       <div class="avatar-wrap">
         <button
           type="button"
@@ -43,31 +37,36 @@
             <Icon icon="tabler:camera" width="13" height="13" />
           </span>
         </button>
+        <button type="button" class="avatar-action" @click="showPicker = true">
+          {{ visibleAvatar ? $t('Change photo') : $t('Add a photo') }}
+        </button>
       </div>
 
-      <label class="field">
-        <span class="field-label">{{ $t('Name') }}</span>
-        <input
-          v-model="form.displayName"
-          type="text"
-          class="field-input"
-          :placeholder="$t('Your name')"
-          maxlength="200"
-          spellcheck="false"
-          autocomplete="off"
-        />
-      </label>
+      <section class="profile-fields">
+        <label class="field">
+          <span class="field-label">{{ $t('Name') }}</span>
+          <input
+            v-model="form.displayName"
+            type="text"
+            class="field-input"
+            :placeholder="$t('Your name')"
+            maxlength="200"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </label>
 
-      <label class="field">
-        <span class="field-label">{{ $t('A line about you') }}</span>
-        <textarea
-          v-model="form.about"
-          class="field-input field-input--multiline"
-          rows="3"
-          maxlength="280"
-        ></textarea>
-        <span class="field-help">{{ $t('Optional. Shown on your card.') }}</span>
-      </label>
+        <label class="field field--last">
+          <span class="field-label">{{ $t('About you') }}</span>
+          <textarea
+            v-model="form.about"
+            class="field-input field-input--multiline"
+            rows="3"
+            maxlength="280"
+          ></textarea>
+          <span class="field-help">{{ $t('Optional. Keep it short and recognizable.') }}</span>
+        </label>
+      </section>
 
       <!-- Publish failures used to appear in a banner inside a sheet the
            user had already closed. Here it sits where the save happened. -->
@@ -204,7 +203,7 @@ body.body--dark .nav-save { background: #F4F4F4; color: #0C0C0C; }
 
 .nav-save:disabled { opacity: 0.4; cursor: default; }
 
-.avatar-wrap { display: flex; justify-content: center; padding: 14px 0 22px; }
+.avatar-wrap { display: flex; flex-direction: column; align-items: center; padding: 10px 0 24px; }
 
 .avatar-btn {
   position: relative;
@@ -251,6 +250,28 @@ body.body--dark .nav-save { background: #F4F4F4; color: #0C0C0C; }
 }
 
 body.body--dark .avatar-badge { background: #F4F4F4; color: #0C0C0C; }
+
+.avatar-action {
+  min-height: 44px;
+  margin-top: 5px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--brand-accent-text);
+  font-family: 'Manrope', sans-serif;
+  font-size: 13.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.profile-fields {
+  padding: 16px 14px 1px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.field--last { margin-bottom: 14px !important; }
 
 .field-input--multiline { resize: none; line-height: 1.45; }
 

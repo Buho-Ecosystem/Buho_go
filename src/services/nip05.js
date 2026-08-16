@@ -24,6 +24,23 @@ export const NIP05_DOMAIN = 'mybuho.de';
 const LNBITS_BASE = 'https://timecatcher.lnbits.de';
 const DOMAIN_ID = 'ANpwyDeLkZFG5kS8Y9v8bA';
 
+/**
+ * Public mybuho.de price tiers, in sats. The extension calculates the final
+ * amount server-side and `searchHandle()` remains authoritative at checkout;
+ * this snapshot only powers the up-front explainer in the picker.
+ *
+ * Verified against the public domain search endpoint on 2026-08-16. Keeping
+ * the values beside the server identifiers makes a pricing change one small,
+ * reviewable config update instead of scattering amounts through the UI.
+ */
+export const NIP05_PRICE_TIERS = Object.freeze([
+  Object.freeze({ id: 'two-to-three', minChars: 2, maxChars: 3, priceSats: 10_000 }),
+  Object.freeze({ id: 'four', minChars: 4, maxChars: 4, priceSats: 4_000 }),
+  Object.freeze({ id: 'five-to-six', minChars: 5, maxChars: 6, priceSats: 2_000 }),
+  Object.freeze({ id: 'seven-plus', minChars: 7, maxChars: null, priceSats: 1_000 }),
+  Object.freeze({ id: 'free-suffix', suffixDigits: 6, priceSats: 0 }),
+]);
+
 // Free-tier handles must be `<base>.<6 digits>`; keep the base short and safe.
 const BASE_MAX = 20;
 const REGISTER_ATTEMPTS = 4; // retries with a fresh suffix on collision/error

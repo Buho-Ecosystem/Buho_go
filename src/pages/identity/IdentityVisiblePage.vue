@@ -8,34 +8,21 @@
         {{ $t('Your photo and name are kept in sync so other Bitcoin apps can show who you are when you pay someone.') }}
       </p>
 
-      <!--
-        Every save already writes the card out to a handful of servers and
-        the user never saw it happen, so a failure was invisible and a
-        success was unprovable. One status line and a retry is all a person
-        can act on.
+      <section class="visibility-card" :class="{ 'visibility-card--ready': published }">
+        <span class="visibility-mark">
+          <Icon :icon="published ? 'tabler:check' : 'tabler:cloud-off'" width="28" height="28" />
+        </span>
+        <h2>{{ published ? $t('Up to date') : $t('Not shared yet') }}</h2>
+        <p>{{ published ? $t('Last updated {when}', { when: lastUpdated }) : $t('Update now to make your profile visible in other apps.') }}</p>
+      </section>
 
-        The servers are not named and not counted. That would be an accurate
-        answer to a question nobody asked, and relay choice is exactly the
-        kind of detail that should stay behind the curtain.
-      -->
-      <IdentityGroup
-        :footer="$t('What is shared: your photo, your name, your line about you, and your payment name. What is never shared: your contacts, your balance, your payments and your 12 words.')"
-      >
-        <IdentityRow
-          :icon="published ? 'tabler:check' : 'tabler:cloud-off'"
-          :tone="published ? 'accent' : 'neutral'"
-          :label="published ? $t('Up to date') : $t('Not shared yet')"
-          :caption="published ? $t('Last updated {when}', { when: lastUpdated }) : $t('Tap Update now to share it')"
-          :interactive="false"
-        />
-        <IdentityRow
-          icon="tabler:cloud-up"
-          :label="publishing ? $t('Updating') : $t('Update now')"
-          :caption="$t('If another app still shows an old photo')"
-          :chevron="false"
-          @click="republish"
-        />
-      </IdentityGroup>
+      <button type="button" class="btn-primary" :disabled="publishing" @click="republish">
+        <q-spinner v-if="publishing" size="18px" />
+        <Icon v-else icon="tabler:cloud-up" width="18" height="18" />
+        <span>{{ publishing ? $t('Updating') : $t('Update now') }}</span>
+      </button>
+
+      <p class="id-foot">{{ $t('Shared: your photo, name, about line and payment name. Private: your contacts, balance, payments and 12 words.') }}</p>
     </div>
 
       <SettingsHubNav />
@@ -47,14 +34,13 @@
 import IdentityNav from '../../components/identity/IdentityNav.vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
-import IdentityGroup from '../../components/identity/IdentityGroup.vue';
-import IdentityRow from '../../components/identity/IdentityRow.vue';
+import { Icon } from '@iconify/vue';
 import { useProfileStore } from '../../stores/profile';
 
 export default {
   name: 'IdentityVisiblePage',
 
-  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
+  components: { SettingsHubNav, Icon, IdentityNav },
 
   setup() {
     return { profile: useProfileStore() };
@@ -117,4 +103,9 @@ export default {
 </script>
 
 <style scoped>
+.visibility-card { padding: 26px 20px 22px; text-align: center; border: 1px solid var(--border-card); border-radius: var(--radius-xl); background: var(--bg-card); }
+.visibility-mark { width: 58px; height: 58px; margin: 0 auto 14px; display: grid; place-items: center; border-radius: 50%; background: var(--bg-input); color: var(--text-secondary); }
+.visibility-card--ready .visibility-mark { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.visibility-card h2 { margin: 0; color: var(--text-primary); font-size: 20px; font-weight: 740; letter-spacing: -0.025em; }
+.visibility-card p { margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
 </style>

@@ -61,7 +61,7 @@
         <q-card-section class="site-privacy" :class="$q.dark.isActive ? 'site-privacy-dark' : 'site-privacy-light'">
           <Icon icon="tabler:info-circle" width="14" height="14" class="site-privacy-icon" />
           <span class="site-privacy-text">
-            {{ $t('{site} still keeps your public code on its end. Removing it here only clears the record on your phone.', { site: displayDomain }) }}
+            {{ $t('{site} still keeps your publicly shareable npub. Removing it here only clears the record on your phone.', { site: displayDomain }) }}
           </span>
         </q-card-section>
 

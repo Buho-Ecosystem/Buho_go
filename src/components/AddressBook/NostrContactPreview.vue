@@ -46,9 +46,9 @@
     <!-- Bio (clamped). Skipped when empty so the card collapses. -->
     <div v-if="about" class="preview-bio">{{ about }}</div>
 
-    <!-- Payment row. Either a Lightning-address chip or an inline note
-         that the profile has no payment metadata. Locked decision #6
-         forbids manual override so we never offer to fill it in. -->
+    <!-- Payment row. Either a Lightning-address chip or a calm note that
+         the identity does not currently publish payment metadata. The
+         contact can still be saved and becomes payable after a refresh. -->
     <div class="preview-pay-row">
       <div v-if="lud16" class="preview-pay-chip preview-pay-chip--ok">
         <Icon icon="tabler:bolt" width="13" height="13" />
@@ -63,7 +63,7 @@
     <!-- Footer CTA. Three mutually-exclusive states:
            1. already-saved → open the existing entry
            2. payable + new → primary save CTA
-           3. not payable   → soft explanation, save disabled  -->
+           3. identity-only → explanation + save and copy actions -->
     <div class="preview-footer">
       <template v-if="existingEntry">
         <div class="preview-status preview-status--info">
@@ -132,9 +132,8 @@
  * Three CTA states (mutually exclusive):
  *   - already saved → open existing entry (no duplicate save path)
  *   - payable & new → primary "Save to address book"
- *   - no lud16      → soft note + "Copy npub" escape hatch (locked
- *                     decision #6 forbids saving a contact without a
- *                     Lightning address)
+ *   - no lud16      → soft note + save and "Copy npub" actions; a later
+ *                     refresh can promote the entry to payable
  */
 import ContactAvatar from './ContactAvatar.vue';
 

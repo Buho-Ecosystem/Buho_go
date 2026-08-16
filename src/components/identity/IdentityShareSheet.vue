@@ -15,7 +15,7 @@
       <div class="sheet-grab" aria-hidden="true"><span></span></div>
 
       <div class="sheet-head">
-        <div class="sheet-title">{{ $t('Share your card') }}</div>
+        <div class="sheet-title">{{ $t('Share your public profile') }}</div>
         <q-btn flat round class="sheet-close" :aria-label="$t('Close')" @click="open = false">
           <Icon icon="tabler:x" width="18" height="18" />
         </q-btn>
@@ -30,9 +30,8 @@
               <img :src="avatarUrl" alt="" @error="avatarBroken = true" />
             </div>
           </div>
-          <!-- Same QR as the card's back, so it says the same thing. It
-               used to promise a payment unconditionally, including for cards
-               with nothing to pay to. -->
+          <!-- Same Nostr identity QR as the card. The actions below deliberately
+               share the public web link instead, for people outside BuhoGO. -->
           <div class="share-qr-caption">{{ qrCaption }}</div>
         </div>
 
@@ -71,6 +70,7 @@ import { useProfileStore } from '../../stores/profile';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
 import { shareContent } from '../../utils/share.js';
 import { buildProfileLink } from '../../utils/profileLink.js';
+import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
 
 export default {
   name: 'IdentityShareSheet',
@@ -101,13 +101,9 @@ export default {
       return this.identity.nostrNpub || '';
     },
 
-    /**
-     * Same code as the back of the card, and the same reasoning: it carries
-     * the link so any camera can open it, not a `nostr:` URI only a Nostr
-     * app could act on.
-     */
+    /** Nearby card exchange: BuhoGO scans the Nostr identity directly. */
     qrValue() {
-      return this.shareUrl;
+      return buildNostrIdentityUri(this.npub);
     },
 
     /**
@@ -115,11 +111,11 @@ export default {
      * saves the person. Payment has its own screen and its own code.
      */
     qrCaption() {
-      return this.$t('Someone can scan this to save you as a contact');
+      return this.$t('This QR contains your publicly shareable npub. Scan it to save you as a contact.');
     },
 
     /**
-     * What gets sent or copied.
+     * What gets sent or copied (distinct from the nearby-scan QR above).
      *
      * Deliberately NOT the `nostr:` URI: whoever opens a shared link most
      * likely has no BuhoGO and no Nostr client, and a custom scheme is a

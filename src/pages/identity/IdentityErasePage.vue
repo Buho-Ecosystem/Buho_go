@@ -167,7 +167,7 @@ export default {
     await this.profile.hydrate();
     // The bucket balance is part of what this screen promises to destroy, so
     // it has to be read before the promise is shown.
-    await this.bucket.hydrate();
+    await this.bucket.hydrate({ pubkey: this.identity.nostrPubkeyHex });
   },
 
   methods: {

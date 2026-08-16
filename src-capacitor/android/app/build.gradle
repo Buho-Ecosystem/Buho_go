@@ -39,9 +39,15 @@ repositories {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    // App lock (AppLockPlugin) — biometric prompt with device-credential fallback
+    implementation "androidx.biometric:biometric:$androidxBiometricVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "com.google.android.gms:play-services-base:$playServicesVersion"
+    // Cloud backup — Google sign-in + on-demand Drive tokens (CloudBackupPlugin).
+    // No google-services.json needed: the OAuth Android client is registered
+    // server-side by package name + signing SHA-1.
+    implementation "com.google.android.gms:play-services-auth:21.2.0"
     implementation project(':capacitor-android')
     implementation 'com.google.android.play:app-update:2.1.0'
     testImplementation "junit:junit:$junitVersion"

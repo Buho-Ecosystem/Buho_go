@@ -245,6 +245,20 @@
           :caption="`${wallets.length} ${wallets.length === 1 ? $t('wallet') : $t('wallets')}`"
           @click="showWalletsDialog = true"
         />
+
+        <!--
+          Encrypted cloud backup (Android only — Drive via the native
+          plugin). Complements the seed-phrase rows above: the phrase is
+          still THE backup a user should verify; this puts an encrypted
+          copy of all wallet secrets where a lost phone can't take it.
+        -->
+        <SettingsRow
+          v-if="cloudBackupAvailable"
+          icon="tabler:cloud-lock"
+          :label="$t('Google Drive backup')"
+          :caption="$t('A backup of your wallets')"
+          @click="showCloudBackupSheet = true"
+        />
       </SettingsSection>
 
       <!--
@@ -1855,6 +1869,9 @@
       @verified="onSeedPhraseVerified"
     />
 
+    <!-- Encrypted Google Drive backup (Android only) -->
+    <CloudBackupSheet v-model="showCloudBackupSheet" />
+
     <!-- App Lock enable: explain what happens before the native prompt -->
     <BiometricEnableDialog
       v-model="showBiometricEnableDialog"
@@ -2216,11 +2233,13 @@ import { isBiometricAvailable } from '../utils/biometric.js'
 import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
+import {lnurlGetJson} from '../utils/lnurlHttp.js'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
 import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
+import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
@@ -2240,6 +2259,7 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { version } from '../../package.json'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
+import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 
 // Preset Mempool servers offered in the exchange-rate source picker.
 // Kept at module scope so they are referenced via computed getters in
@@ -2256,6 +2276,7 @@ export default {
     VueQrcode,
     ArkadeLogo,
     SparkSeedPhraseDialog,
+    CloudBackupSheet,
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
@@ -2340,6 +2361,8 @@ export default {
 
       // Unified seed-phrase dialog (view + backup flows)
       showSeedPhraseDialog: false,
+      // Encrypted Google Drive backup sheet (Android only)
+      showCloudBackupSheet: false,
       seedPhraseMode: 'view', // 'view' | 'backup'
       // Set only by the identity surface's per-phrase deep link; null means
       // "the active seed wallet", which is what this page's own rows want.
@@ -2536,6 +2559,15 @@ export default {
      */
     isNativeApp() {
       return Capacitor.isNativePlatform();
+    },
+
+    /**
+     * Cloud backup is Android-only today (Google Drive via the native
+     * plugin). The row is hidden elsewhere rather than shown disabled:
+     * web builds must not advertise a backup they cannot perform.
+     */
+    cloudBackupAvailable() {
+      return isCloudBackupPlatform();
     },
 
     bitcoinPrefsStore() {
@@ -3909,14 +3941,14 @@ export default {
         const lnurlPayUrl = `https://${domain}/.well-known/lnurlp/${name}`;
 
         // Step 1: Fetch LNURL-pay params
-        const paramsResponse = await fetch(lnurlPayUrl);
+        const paramsResponse = await lnurlGetJson(lnurlPayUrl);
         if (!paramsResponse.ok) {
           throw new Error('Failed to fetch LNURL-pay params');
         }
-        const params = await paramsResponse.json();
+        const params = paramsResponse.data;
 
-        if (params.status === 'ERROR') {
-          throw new Error(params.reason || 'LNURL-pay error');
+        if (!params || params.status === 'ERROR') {
+          throw new Error(params?.reason || 'LNURL-pay error');
         }
 
         // Validate amount is within bounds (params use millisats)
@@ -3933,14 +3965,14 @@ export default {
         const callbackUrl = new URL(params.callback);
         callbackUrl.searchParams.set('amount', amountMsat.toString());
 
-        const invoiceResponse = await fetch(callbackUrl.toString());
+        const invoiceResponse = await lnurlGetJson(callbackUrl.toString());
         if (!invoiceResponse.ok) {
           throw new Error('Failed to fetch invoice');
         }
-        const invoiceData = await invoiceResponse.json();
+        const invoiceData = invoiceResponse.data;
 
-        if (invoiceData.status === 'ERROR') {
-          throw new Error(invoiceData.reason || 'Failed to generate invoice');
+        if (!invoiceData || invoiceData.status === 'ERROR') {
+          throw new Error(invoiceData?.reason || 'Failed to generate invoice');
         }
 
         // Success - show the invoice QR

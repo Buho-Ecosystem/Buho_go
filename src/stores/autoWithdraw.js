@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
-import { LightningAddress } from '@getalby/lightning-tools'
+import { lnurlGetJson } from '../utils/lnurlHttp.js'
 
 const STORAGE_KEY = 'buhoGO_auto_withdraw'
 const SPEED_LABELS = { low: 'Economy', medium: 'Standard', high: 'Priority' }
@@ -322,22 +322,25 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       if (!config.lightningAddress) throw new Error('No Lightning address configured')
 
       // Resolve lightning address
-      const ln = new LightningAddress(config.lightningAddress)
-      await ln.fetch()
-      const lnurlpData = ln.lnurlpData
-      if (!lnurlpData?.callback) throw new Error('Could not resolve Lightning address')
+      const [username, domain] = config.lightningAddress.split('@')
+      if (!username || !domain) throw new Error('Could not resolve Lightning address')
+      const metaResponse = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${username}`)
+      const lnurlpData = metaResponse.ok ? metaResponse.data : null
+      if (!lnurlpData?.callback || lnurlpData.status === 'ERROR') {
+        throw new Error('Could not resolve Lightning address')
+      }
 
       // Request invoice
       const amountMs = sendAmount * 1000
       const separator = lnurlpData.callback.includes('?') ? '&' : '?'
       const callbackUrl = `${lnurlpData.callback}${separator}amount=${amountMs}`
-      const invoiceResponse = await fetch(callbackUrl)
+      const invoiceResponse = await lnurlGetJson(callbackUrl)
 
       if (!invoiceResponse.ok) {
         throw new Error('Failed to get invoice from Lightning address')
       }
 
-      const invoiceData = await invoiceResponse.json()
+      const invoiceData = invoiceResponse.data || {}
       if (invoiceData.status === 'ERROR') {
         throw new Error(invoiceData.reason || 'Invoice request failed')
       }

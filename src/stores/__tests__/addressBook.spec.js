@@ -337,6 +337,51 @@ await test('addNostrContact: allowWithoutLightningAddress stores an identity-onl
   assert.equal(store.isEntryPayable(entry), false);
 });
 
+await test('addNostrContact: preserves an explicitly paid address with full Nostr metadata', async () => {
+  const store = freshStore();
+  const paidAddress = `${ALICE_NPUB}@npub.cash`;
+  const event = makeKind0(ALICE_SECRET, {
+    display_name: 'Alice',
+    picture: 'https://example.test/alice.png',
+    // Deliberately no lud16: the successful npub.cash destination is the
+    // payment fact, while kind:0 supplies the contact identity.
+  });
+  const entry = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event,
+    paymentAddress: paidAddress,
+    paymentAddressType: 'lightning',
+  });
+  assert.equal(entry.source, CONTACT_SOURCES.NOSTR);
+  assert.equal(entry.address, paidAddress);
+  assert.equal(entry.lightningAddress, paidAddress);
+  assert.equal(entry.nostr_profile.picture, 'https://example.test/alice.png');
+  assert.equal(entry.nostr_payment_address_explicit, true);
+});
+
+await test('refreshContact: never replaces an explicitly paid Nostr destination', async () => {
+  const store = freshStore();
+  const paidAddress = `${ALICE_NPUB}@npub.cash`;
+  const t0 = 1_700_000_000;
+  const entry = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event: makeKind0(ALICE_SECRET, { name: 'Alice' }, t0),
+    paymentAddress: paidAddress,
+    paymentAddressType: 'lightning',
+  });
+  const newer = makeKind0(ALICE_SECRET, {
+    name: 'Alice Updated',
+    lud16: 'different@wallet.test',
+    picture: 'https://example.test/new.png',
+  }, t0 + 60);
+  const result = await store.refreshContact(entry.id, { fetcher: async () => newer });
+  assert.equal(result.updated, true);
+  assert.equal(result.entry.address, paidAddress);
+  assert.equal(result.entry.nostr_profile.picture, 'https://example.test/new.png');
+});
+
 await test('addNostrContact: interactive flow still rejects no-lud16 without the flag', async () => {
   const store = freshStore();
   const event = makeKind0(ALICE_SECRET, { display_name: 'Alice' });

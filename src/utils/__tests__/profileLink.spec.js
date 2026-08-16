@@ -1,11 +1,9 @@
 /**
  * Profile links, both directions.
  *
- * `parseProfileLink` decides what a scanned code resolves to, so it is the
- * one place where "BuhoGO reads its own QR" is either true or not. The card's
- * code carries a link precisely so a plain phone camera can open it; if this
- * function regresses, BuhoGO becomes the only scanner that cannot read a
- * BuhoGO card, and the failure is silent (the scanner just keeps scanning).
+ * `parseProfileLink` lets shared public links enter the same contact resolver
+ * as the card's direct NIP-21 QR. The card no longer depends on this parser,
+ * but pasted/scanned links and Android intents still do.
  */
 
 import assert from 'node:assert/strict';

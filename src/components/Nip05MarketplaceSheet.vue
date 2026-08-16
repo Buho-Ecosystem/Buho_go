@@ -22,6 +22,18 @@
           {{ headerTitle }}
         </div>
         <q-btn
+          v-if="step === 'browse'"
+          flat
+          round
+          dense
+          :aria-label="$t('View username pricing')"
+          class="sheet-price-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          @click="pricingOpen = !pricingOpen"
+        >
+          <Icon icon="tabler:receipt-2" width="18" height="18" />
+        </q-btn>
+        <q-btn
           flat
           round
           dense
@@ -34,6 +46,49 @@
           <Icon icon="tabler:x" width="18" height="18" />
         </q-btn>
       </div>
+
+      <template v-if="pricingOpen">
+        <button
+          type="button"
+          class="pricing-dismiss"
+          :aria-label="$t('Close pricing')"
+          @click="pricingOpen = false"
+        ></button>
+        <section
+          class="pricing-popover"
+          :class="$q.dark.isActive ? 'pricing-popover-dark' : 'pricing-popover-light'"
+          role="dialog"
+          :aria-label="$t('Username pricing')"
+        >
+          <header class="pricing-popover-header">
+            <span class="pricing-popover-icon" aria-hidden="true">
+              <Icon icon="tabler:coins" width="19" height="19" />
+            </span>
+            <span>
+              <strong>{{ $t('Username pricing') }}</strong>
+              <small>{{ $t('Current mybuho.de prices') }}</small>
+            </span>
+          </header>
+
+          <table class="pricing-table">
+            <tbody>
+              <tr v-for="tier in pricingRows" :key="tier.id">
+                <th scope="row">
+                  <span>{{ tier.label }}</span>
+                  <small v-if="tier.example">{{ tier.example }}</small>
+                </th>
+                <td :class="{ 'pricing-free': tier.priceSats === 0 }">
+                  {{ tier.priceSats === 0 ? $t('Free') : `${formatSats(tier.priceSats)} ${$t('sats')}` }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p class="pricing-note">
+            {{ $t('The exact price is always shown before you continue.') }}
+          </p>
+        </section>
+      </template>
 
       <!-- Scrollable body. Each step renders into the same shell so the
            sheet height feels intentional rather than jumping. -->
@@ -368,6 +423,7 @@ import {
   registerExactFreeHandle,
   requestPaidHandle,
   waitForActivation,
+  NIP05_PRICE_TIERS,
 } from '../services/nip05';
 
 const SEARCH_DEBOUNCE_MS = 350;
@@ -432,6 +488,7 @@ export default {
       // (search-then-create, pay-then-poll, etc.). Disables the button so
       // the user can't double-tap their way into a duplicate registration.
       actionInflight: false,
+      pricingOpen: false,
 
       // The poll abort handle so closing the sheet during activation can
       // stop the network traffic and any unhandled rejections.
@@ -450,6 +507,27 @@ export default {
     },
 
     domain() { return NIP05_DOMAIN; },
+
+    pricingRows() {
+      return NIP05_PRICE_TIERS.map((tier) => {
+        switch (tier.id) {
+          case 'two-to-three':
+            return { ...tier, label: this.$t('2–3 characters') };
+          case 'four':
+            return { ...tier, label: this.$t('4 characters') };
+          case 'five-to-six':
+            return { ...tier, label: this.$t('5–6 characters') };
+          case 'seven-plus':
+            return { ...tier, label: this.$t('7+ characters') };
+          default:
+            return {
+              ...tier,
+              label: this.$t('Free name'),
+              example: this.$t('With a .123456 ending'),
+            };
+        }
+      });
+    },
 
     headerTitle() {
       switch (this.step) {
@@ -715,6 +793,7 @@ export default {
       this.clearTimers();
       this.activationController?.abort();
       this.activationController = null;
+      this.pricingOpen = false;
     },
 
     resetForNewSession() {
@@ -729,6 +808,7 @@ export default {
       this.qrExpanded = false;
       this.invoiceCopied = false;
       this.actionInflight = false;
+      this.pricingOpen = false;
       this.purchasedAddress = '';
       this.walletMenuOpen = false;
       this.selectedWalletId = this.walletStore.activeWalletId || null;
@@ -1030,6 +1110,123 @@ export default {
 }
 
 .sheet-close-btn { flex: 0 0 auto; }
+.sheet-price-btn { flex: 0 0 auto; color: var(--text-secondary); }
+
+.pricing-dismiss {
+  position: absolute !important;
+  inset: 0;
+  z-index: 4 !important;
+  width: 100%;
+  border: 0;
+  background: rgba(15, 23, 42, 0.12);
+  cursor: default;
+}
+
+body.body--dark .pricing-dismiss { background: rgba(0, 0, 0, 0.28); }
+
+.pricing-popover {
+  position: absolute !important;
+  top: 54px;
+  right: 16px;
+  z-index: 5 !important;
+  width: min(310px, calc(100% - 32px));
+  padding: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.24);
+}
+
+.pricing-popover-light { background: #fffdf8; color: #171719; }
+.pricing-popover-dark { background: #202124; color: #f6f6f2; border-color: rgba(255, 255, 255, 0.1); }
+
+.pricing-popover-header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 13px;
+}
+
+.pricing-popover-header > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pricing-popover-header strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.pricing-popover-header small {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.pricing-popover-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #08783e;
+  background: rgba(21, 222, 114, 0.13);
+}
+
+body.body--dark .pricing-popover-icon {
+  color: #71e8a7;
+  background: rgba(21, 222, 114, 0.15);
+}
+
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Manrope', sans-serif;
+}
+
+.pricing-table tr { border-top: 1px solid rgba(15, 23, 42, 0.075); }
+body.body--dark .pricing-table tr { border-top-color: rgba(255, 255, 255, 0.08); }
+
+.pricing-table th,
+.pricing-table td { padding: 10px 0; }
+
+.pricing-table th {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.pricing-table th small {
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.pricing-table td {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pricing-table td.pricing-free { color: #08783e; }
+body.body--dark .pricing-table td.pricing-free { color: #71e8a7; }
+
+.pricing-note {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
 
 .sheet-scroll {
   flex: 1 1 auto;
