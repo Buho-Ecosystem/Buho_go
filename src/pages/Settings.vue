@@ -256,7 +256,7 @@
           v-if="cloudBackupAvailable"
           icon="tabler:cloud-lock"
           :label="$t('Google Drive backup')"
-          :caption="$t('Encrypted backup of your wallets')"
+          :caption="$t('A backup of your wallets')"
           @click="showCloudBackupSheet = true"
         />
       </SettingsSection>
@@ -2258,6 +2258,7 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { version } from '../../package.json'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
+import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 
 // Preset Mempool servers offered in the exchange-rate source picker.
 // Kept at module scope so they are referenced via computed getters in
@@ -2552,7 +2553,7 @@ export default {
      * web builds must not advertise a backup they cannot perform.
      */
     cloudBackupAvailable() {
-      return Capacitor.getPlatform() === 'android';
+      return isCloudBackupPlatform();
     },
 
     bitcoinPrefsStore() {

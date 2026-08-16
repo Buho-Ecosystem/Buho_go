@@ -2,20 +2,20 @@
   CloudBackupSheet
 
   Self-contained bottom sheet covering the whole Google Drive backup
-  lifecycle: sign in, create or replace the encrypted backup, restore from
-  it, delete it, sign out.
+  lifecycle: sign in, create or replace the backup, restore from it,
+  delete it, sign out.
 
   Crypto and orchestration live in stores/cloudBackup.js; the native Drive
   transport lives behind services/cloudStorage.js. This component is
   presentation + flow control only and never sees a decrypted seed phrase.
 
-  There is exactly ONE backup file per Google account (a new backup
-  overwrites the old one), so there is no file picker: backup and restore
-  both act on the canonical file.
+  There is exactly ONE backup per Google account (a new backup overwrites
+  the old one), so there is no file picker: backup and restore both act on
+  the canonical file.
 
   The `intent` prop lets entry points steer the flow: Settings opens with
   'backup', the welcome screen's recovery entry opens with 'restore' and
-  jumps straight to the passphrase step once signed in.
+  jumps straight to the restore step once signed in.
 -->
 <template>
   <q-dialog
@@ -40,7 +40,7 @@
           flat
           round
           dense
-          :disable="busy"
+          :disable="store.isBackingUp || store.isRestoring"
           @click="close"
           :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
           :aria-label="$t('Close')"
@@ -73,9 +73,9 @@
         <div class="cb-illustration">
           <Icon icon="tabler:cloud-lock" width="40" height="40" />
         </div>
-        <h2 class="cb-heading">{{ $t('Encrypted Google Drive backup') }}</h2>
+        <h2 class="cb-heading">{{ $t('Google Drive backup') }}</h2>
         <p class="cb-lede">
-          {{ $t('Your recovery phrases and wallet connections are encrypted on this device with a passphrase you choose, then uploaded to your Google Drive. Anyone with the file still needs your passphrase to use it.') }}
+          {{ $t('Keeps a backup of your wallets and Nostr identity in your Google Drive, so you can bring them back on a new phone.') }}
         </p>
         <div class="cb-callout" :class="$q.dark.isActive ? 'cb-callout-dark' : 'cb-callout-light'">
           <Icon icon="tabler:shield-check" width="18" height="18" class="cb-callout-icon" />
@@ -118,7 +118,7 @@
             <div class="cb-menu-sub">
               {{
                 store.hasBackupableSecret
-                  ? $t('Encrypt and upload your wallets and Nostr identity. Replaces the previous backup.')
+                  ? $t('Upload your wallets and Nostr identity. Replaces the previous backup.')
                   : $t('Create or restore a wallet first.')
               }}
             </div>
@@ -160,51 +160,14 @@
         </button>
       </q-card-section>
 
-      <!-- Step: BACKUP — set passphrase -->
+      <!-- Step: BACKUP — confirm -->
       <q-card-section v-else-if="step === 'backup'" class="cb-body">
+        <div class="cb-illustration">
+          <Icon icon="tabler:cloud-upload" width="40" height="40" />
+        </div>
         <p class="cb-lede">
-          {{ $t('Choose a passphrase. You will need it to restore. Lose it and the backup file is unrecoverable.') }}
+          {{ $t('Your wallets and Nostr identity will be backed up to your Google Drive.') }}
         </p>
-        <q-input
-          v-model="passphrase"
-          :type="showPassphrase ? 'text' : 'password'"
-          :label="$t('Backup passphrase')"
-          outlined
-          dense
-          :error="!!passphraseError"
-          :error-message="passphraseError"
-          autocomplete="new-password"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          class="cb-input"
-        >
-          <template v-slot:append>
-            <q-btn flat dense round @click="showPassphrase = !showPassphrase" :aria-label="$t('Show')">
-              <Icon :icon="showPassphrase ? 'tabler:eye-off' : 'tabler:eye'" width="16" height="16" />
-            </q-btn>
-          </template>
-        </q-input>
-        <q-input
-          v-model="passphraseConfirm"
-          :type="showPassphrase ? 'text' : 'password'"
-          :label="$t('Confirm passphrase')"
-          outlined
-          dense
-          autocomplete="new-password"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          class="cb-input"
-        />
-        <q-input
-          v-model="hint"
-          :label="$t('Hint (optional, stored in cleartext)')"
-          outlined
-          dense
-          maxlength="200"
-          class="cb-input"
-        />
         <div v-if="store.hasRemoteBackup" class="cb-callout cb-callout--warn">
           <Icon icon="tabler:alert-triangle" width="18" height="18" class="cb-callout-icon" />
           <div class="cb-callout-text">
@@ -213,37 +176,25 @@
         </div>
       </q-card-section>
 
-      <!-- Step: RESTORE — enter passphrase -->
+      <!-- Step: RESTORE — confirm -->
       <q-card-section v-else-if="step === 'restore'" class="cb-body">
+        <div class="cb-illustration">
+          <Icon icon="tabler:cloud-download" width="40" height="40" />
+        </div>
         <p class="cb-lede">
-          {{ $t('Enter the passphrase you set when you created this backup.') }}
+          {{ $t('Bring back the wallets and Nostr identity from the backup in your Google Drive.') }}
         </p>
-        <q-input
-          v-model="restorePassphrase"
-          :type="showPassphrase ? 'text' : 'password'"
-          :label="$t('Backup passphrase')"
-          outlined
-          dense
-          :error="!!restoreError"
-          :error-message="restoreError"
-          autocomplete="off"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          class="cb-input"
-        >
-          <template v-slot:append>
-            <q-btn flat dense round @click="showPassphrase = !showPassphrase" :aria-label="$t('Show')">
-              <Icon :icon="showPassphrase ? 'tabler:eye-off' : 'tabler:eye'" width="16" height="16" />
-            </q-btn>
-          </template>
-        </q-input>
 
         <div class="cb-callout" :class="$q.dark.isActive ? 'cb-callout-dark' : 'cb-callout-light'">
           <Icon icon="tabler:info-circle" width="18" height="18" class="cb-callout-icon" />
           <div class="cb-callout-text">
             {{ $t('Restoring adds whatever is missing on this device. Wallets and the Nostr identity already set up here are kept as they are.') }}
           </div>
+        </div>
+
+        <div v-if="restoreError" class="cb-callout cb-callout--warn">
+          <Icon icon="tabler:alert-triangle" width="18" height="18" class="cb-callout-icon" />
+          <div class="cb-callout-text">{{ restoreError }}</div>
         </div>
       </q-card-section>
 
@@ -298,7 +249,7 @@ export default {
     modelValue: { type: Boolean, required: true },
     /**
      * What the user came here to do. 'restore' (welcome screen) jumps
-     * straight to the passphrase step after sign-in when a backup exists;
+     * straight to the restore step after sign-in when a backup exists;
      * 'backup' (Settings) lands on the menu.
      */
     intent: {
@@ -318,12 +269,6 @@ export default {
   data() {
     return {
       step: 'checking',
-      passphrase: '',
-      passphraseConfirm: '',
-      hint: '',
-      showPassphrase: false,
-      passphraseError: '',
-      restorePassphrase: '',
       restoreError: '',
       signInError: '',
       // True when the last sign-in failure smells like an OAuth/consent
@@ -358,8 +303,8 @@ export default {
     primaryLabel() {
       switch (this.step) {
         case 'sign-in': return this.$t('Connect Google account');
-        case 'backup':  return this.$t('Encrypt and upload');
-        case 'restore': return this.$t('Decrypt and restore');
+        case 'backup':  return this.$t('Back up now');
+        case 'restore': return this.$t('Restore');
         case 'done':    return this.$t('Done');
         default:        return '';
       }
@@ -374,12 +319,7 @@ export default {
     },
 
     primaryEnabled() {
-      if (this.busy) return false;
-      if (this.step === 'backup') {
-        return this.passphrase.length >= 8 && this.passphrase === this.passphraseConfirm;
-      }
-      if (this.step === 'restore') return this.restorePassphrase.length > 0;
-      return true;
+      return !this.busy;
     },
   },
 
@@ -402,8 +342,18 @@ export default {
           return;
         }
         // refresh() doubles as the signed-in probe: success proves the
-        // grant works, "auth-required" leaves signedIn false.
-        await this.store.refresh().catch(() => {});
+        // grant works, "auth-required" leaves signedIn false. Any other
+        // rejection is a connectivity/service problem and must not be
+        // presented as "you are signed out" — that road leads a signed-in
+        // user into a pointless account chooser with misleading errors.
+        try {
+          await this.store.refresh();
+        } catch (err) {
+          console.warn('[cb-sheet] bootstrap probe:', err);
+          this.step = 'sign-in';
+          this.signInError = this.$t('Could not reach Google Drive. Check your connection and try again.');
+          return;
+        }
         if (!this.store.signedIn) {
           this.step = 'sign-in';
           return;
@@ -425,12 +375,6 @@ export default {
     },
 
     resetLocalState() {
-      this.passphrase = '';
-      this.passphraseConfirm = '';
-      this.hint = '';
-      this.showPassphrase = false;
-      this.passphraseError = '';
-      this.restorePassphrase = '';
       this.restoreError = '';
       this.signInError = '';
       this.offerSignOutRetry = false;
@@ -439,7 +383,9 @@ export default {
     },
 
     close() {
-      if (this.busy) return;
+      // Only a mutation in flight blocks closing. A slow or wedged probe,
+      // sign-in, or listing must never trap the user in the sheet.
+      if (this.store.isBackingUp || this.store.isRestoring) return;
       this.open = false;
     },
 
@@ -475,6 +421,9 @@ export default {
       const r = String(reason || '');
       if (/user-cancelled|cancelled/i.test(r)) {
         return this.$t('Sign-in was cancelled.');
+      }
+      if (/auth-required|not-signed-in/i.test(r)) {
+        return this.$t('Please sign in to Google again.');
       }
       if (/network-error/i.test(r)) {
         return this.$t('Network error. Check your connection and try again.');
@@ -524,21 +473,10 @@ export default {
     },
 
     async onBackup() {
-      this.passphraseError = '';
-      if (this.passphrase.length < 8) {
-        this.passphraseError = this.$t('Use at least 8 characters.');
-        return;
-      }
-      if (this.passphrase !== this.passphraseConfirm) {
-        this.passphraseError = this.$t('Passphrases do not match.');
-        return;
-      }
       try {
-        await this.store.backup(this.passphrase, { hint: this.hint });
-        this.passphrase = '';
-        this.passphraseConfirm = '';
+        await this.store.backup();
         this.doneTitle = this.$t('Backup uploaded');
-        this.doneSubtitle = this.$t('Your encrypted recovery file is now in your Google Drive. Keep your passphrase somewhere safe. You cannot recover the file without it.');
+        this.doneSubtitle = this.$t('Your backup is now in your Google Drive.');
         this.step = 'done';
       } catch (err) {
         if (!this.store.signedIn) {
@@ -558,15 +496,19 @@ export default {
     async onRestore() {
       this.restoreError = '';
       try {
-        const result = await this.store.restore(this.restorePassphrase);
-        this.restorePassphrase = '';
+        const result = await this.store.restore();
         this.doneTitle = this.$t('Restore complete');
         this.doneSubtitle = this.describeRestoreResult(result);
         this.$emit('restored', result);
         this.step = 'done';
       } catch (err) {
-        if (err instanceof WrongPassphraseError || err?.code === 'WRONG_PASSPHRASE') {
-          this.restoreError = this.$t('Wrong passphrase or the file is corrupted.');
+        if (
+          err instanceof WrongPassphraseError ||
+          err?.code === 'WRONG_PASSPHRASE' ||
+          err?.code === 'BACKUP_UNREADABLE' ||
+          err?.code === 'UNSUPPORTED_PAYLOAD'
+        ) {
+          this.restoreError = this.$t('This backup cannot be read. Create a new backup from the device that has your wallets.');
           return;
         }
         if (err?.code === 'NO_BACKUP_FOUND') {
@@ -614,7 +556,7 @@ export default {
     async onDeleteBackup() {
       this.$q.dialog({
         title: this.$t('Delete backup'),
-        message: this.$t('Remove the encrypted backup file from your Google Drive? You can create a new one at any time.'),
+        message: this.$t('Remove the backup from your Google Drive? You can create a new one at any time.'),
         cancel: true,
         persistent: true,
       }).onOk(async () => {

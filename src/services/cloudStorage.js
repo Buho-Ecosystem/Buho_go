@@ -7,7 +7,7 @@
  * moves files in the app's hidden Drive appDataFolder. Encryption happens
  * in utils/backupCrypto BEFORE upload and AFTER download, so the plugin and
  * this facade only ever see the opaque encrypted envelope, never a seed
- * phrase or passphrase.
+ * phrase.
  *
  * No OAuth client ID or secret ships in the app: Google identifies the
  * Android app by its package name + APK signing SHA-1, both registered in
@@ -15,9 +15,15 @@
  * mints short-lived access tokens on demand, so there is no token for the
  * JS layer to store, refresh, or leak.
  *
- * The backup file name is fixed so a new backup always overwrites the
- * previous one - one canonical file per Drive account, never a pile of
- * stale copies.
+ * Two fixed file names, one backup per Drive account: the envelope file is
+ * the backup itself, the key file holds the material backupCrypto needs to
+ * open it. A new backup always overwrites the previous envelope, never
+ * piles up stale copies.
+ *
+ * Transport errors always reject; a resolved null/absent result only ever
+ * means "this file does not exist in the Drive account". The store depends
+ * on that distinction to keep "no backup yet" and "could not reach Drive"
+ * from ever blurring into each other.
  *
  * Web and iOS have no native implementation and report
  * { available: false }; the UI renders that as "not available on this
@@ -28,12 +34,17 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 const BACKUP_FILE_NAME = 'buhogo-wallet-backup.json';
+const KEY_FILE_NAME = 'buhogo-backup-key.json';
 
 const CloudBackup = registerPlugin('CloudBackup');
 
-/** Human label for where backups live. Android-only feature today. */
-export function providerName() {
-  return 'Google Drive';
+/**
+ * Synchronous platform gate, the single source of truth for "can this
+ * build even try". Entry points (Settings row, Welcome restore) use this;
+ * isAvailable() below additionally probes the native side.
+ */
+export function isCloudBackupPlatform() {
+  return Capacitor.getPlatform() === 'android';
 }
 
 /**
@@ -41,7 +52,7 @@ export function providerName() {
  * @returns {Promise<{ available: boolean, reason?: string }>}
  */
 export async function isAvailable() {
-  if (Capacitor.getPlatform() !== 'android') {
+  if (!isCloudBackupPlatform()) {
     return { available: false, reason: 'platform-not-supported' };
   }
   try {
@@ -69,6 +80,8 @@ export async function signOut() {
 /**
  * Upload an encrypted envelope, overwriting any previous backup.
  * @param {string} envelopeJson  JSON string produced by encryptBackup().
+ * @returns {Promise<{ name: string, modifiedAt?: string, size?: number }>}
+ *          Metadata of the file as written, from the upload response.
  */
 export async function uploadBackup(envelopeJson) {
   const res = await CloudBackup.uploadBackup({
@@ -85,9 +98,31 @@ export async function uploadBackup(envelopeJson) {
  * Download the backup envelope.
  * @returns {Promise<string|null>}  The envelope JSON, or null when no
  *                                  backup exists in this Drive account.
+ *                                  Rejects on any transport/auth failure.
  */
 export async function downloadBackup() {
   const res = await CloudBackup.downloadBackup({ fileName: BACKUP_FILE_NAME });
+  return res?.content || null;
+}
+
+/** Upload the backup key file. @param {string} keyJson */
+export async function uploadBackupKey(keyJson) {
+  const res = await CloudBackup.uploadBackup({
+    fileName: KEY_FILE_NAME,
+    content: keyJson,
+  });
+  if (!res?.ok) {
+    throw new Error(res?.reason || 'upload-failed');
+  }
+  return res;
+}
+
+/**
+ * Download the backup key file.
+ * @returns {Promise<string|null>}  null when none exists; rejects on failure.
+ */
+export async function downloadBackupKey() {
+  const res = await CloudBackup.downloadBackup({ fileName: KEY_FILE_NAME });
   return res?.content || null;
 }
 
@@ -102,9 +137,14 @@ export async function getRemoteBackupInfo() {
   return files.find((f) => f.name === BACKUP_FILE_NAME) || null;
 }
 
-/** Delete the backup file. Resolves ok even when none exists. */
+/** Delete the backup and its key file. Resolves ok even when none exists. */
 export async function deleteBackup() {
-  return CloudBackup.deleteBackup({ fileName: BACKUP_FILE_NAME });
+  const res = await CloudBackup.deleteBackup({ fileName: BACKUP_FILE_NAME });
+  if (res && res.ok === false) {
+    throw new Error(res.reason || 'delete-failed');
+  }
+  const keyRes = await CloudBackup.deleteBackup({ fileName: KEY_FILE_NAME });
+  if (keyRes && keyRes.ok === false) {
+    throw new Error(keyRes.reason || 'delete-failed');
+  }
 }
-
-export const BACKUP_FILE = BACKUP_FILE_NAME;
