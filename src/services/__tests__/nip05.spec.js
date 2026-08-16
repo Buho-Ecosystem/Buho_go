@@ -19,6 +19,7 @@ import {
   waitForActivation,
   deriveNameSlug,
   deriveBaseSlug,
+  NIP05_PRICE_TIERS,
 } from '../nip05.js';
 import { deriveMemorableSlug, ADJECTIVES, ANIMALS } from '../nip05Names.js';
 
@@ -58,6 +59,21 @@ function makeFetchStub(queue = []) {
 }
 
 console.log('nip05 marketplace service');
+
+await test('NIP05_PRICE_TIERS is an immutable, ordered pricing snapshot', () => {
+  assert.equal(Object.isFrozen(NIP05_PRICE_TIERS), true);
+  assert.equal(NIP05_PRICE_TIERS.every(Object.isFrozen), true);
+  assert.deepEqual(
+    NIP05_PRICE_TIERS.map(({ id, priceSats }) => [id, priceSats]),
+    [
+      ['two-to-three', 10_000],
+      ['four', 4_000],
+      ['five-to-six', 2_000],
+      ['seven-plus', 1_000],
+      ['free-suffix', 0],
+    ],
+  );
+});
 
 // ---------------------------------------------------------------------------
 // isLikelyAvailableLocalPart — client-side shape check
