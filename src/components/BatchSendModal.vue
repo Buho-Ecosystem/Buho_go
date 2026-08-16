@@ -638,6 +638,7 @@ import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
+import { lnurlGetJson } from '../utils/lnurlHttp.js'
 import { stripWrapperScheme } from '../utils/addressUtils'
 import { parseSuccessAction, resolveSuccessAction, formatSuccessActionUrl } from '../utils/successAction.js'
 import { openInAppBrowser } from '../utils/inAppBrowser.js'
@@ -1151,15 +1152,15 @@ async function fetchLightningAddressInvoice(address, amountSats) {
 
   // Fetch LNURL endpoint info
   const endpoint = `https://${domain}/.well-known/lnurlp/${username}`
-  const response = await fetch(endpoint)
+  const response = await lnurlGetJson(endpoint)
 
   if (!response.ok) {
     throw new Error('Failed to fetch Lightning address info')
   }
 
-  const data = await response.json()
-  if (data.status === 'ERROR') {
-    throw new Error(data.reason || 'Lightning address error')
+  const data = response.data
+  if (!data || data.status === 'ERROR') {
+    throw new Error(data?.reason || 'Lightning address error')
   }
 
   // Validate amount
@@ -1174,14 +1175,14 @@ async function fetchLightningAddressInvoice(address, amountSats) {
   // Request invoice - use & if callback already has query params
   const separator = data.callback.includes('?') ? '&' : '?'
   const callbackUrl = `${data.callback}${separator}amount=${amountMs}`
-  const invoiceResponse = await fetch(callbackUrl)
+  const invoiceResponse = await lnurlGetJson(callbackUrl)
   if (!invoiceResponse.ok) {
     throw new Error('Failed to get invoice')
   }
 
-  const invoiceData = await invoiceResponse.json()
-  if (invoiceData.status === 'ERROR') {
-    throw new Error(invoiceData.reason || 'Invoice error')
+  const invoiceData = invoiceResponse.data
+  if (!invoiceData || invoiceData.status === 'ERROR') {
+    throw new Error(invoiceData?.reason || 'Invoice error')
   }
 
   return {
@@ -1215,14 +1216,14 @@ async function fetchLnurlInvoice(lnurl, requestedSats) {
     }
   }
 
-  const response = await fetch(endpoint)
+  const response = await lnurlGetJson(endpoint)
   if (!response.ok) {
     throw new Error('Failed to fetch LNURL info')
   }
 
-  const data = await response.json()
-  if (data.status === 'ERROR') {
-    throw new Error(data.reason || 'LNURL error')
+  const data = response.data
+  if (!data || data.status === 'ERROR') {
+    throw new Error(data?.reason || 'LNURL error')
   }
   if (data.tag !== 'payRequest') {
     throw new Error('Not an LNURL-pay link')
@@ -1246,14 +1247,14 @@ async function fetchLnurlInvoice(lnurl, requestedSats) {
   // Request invoice - use & if callback already has query params
   const separator = data.callback.includes('?') ? '&' : '?'
   const callbackUrl = `${data.callback}${separator}amount=${amountMs}`
-  const invoiceResponse = await fetch(callbackUrl)
+  const invoiceResponse = await lnurlGetJson(callbackUrl)
   if (!invoiceResponse.ok) {
     throw new Error('Failed to get invoice')
   }
 
-  const invoiceData = await invoiceResponse.json()
-  if (invoiceData.status === 'ERROR') {
-    throw new Error(invoiceData.reason || 'Invoice error')
+  const invoiceData = invoiceResponse.data
+  if (!invoiceData || invoiceData.status === 'ERROR') {
+    throw new Error(invoiceData?.reason || 'Invoice error')
   }
 
   return {
