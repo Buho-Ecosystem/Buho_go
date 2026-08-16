@@ -369,7 +369,7 @@ export class SparkWalletProvider extends WalletProvider {
     } finally {
       if (wallet) {
         try {
-          wallet.cleanupConnections();
+          wallet.cleanup();
         } catch (err) {
           console.warn('probeAccountActivity: cleanup failed', err);
         }
@@ -413,10 +413,10 @@ export class SparkWalletProvider extends WalletProvider {
   async disconnect() {
     if (this.wallet) {
       try {
-        // Await the teardown — cleanupConnections() is async (aborts the event
+        // Await the teardown — cleanup() is async (aborts the event
         // stream, closes gRPC connections, flushes logging). Not awaiting it
         // let a follow-up reconnect race a half-finished cleanup.
-        await this.wallet.cleanupConnections();
+        await this.wallet.cleanup();
       } catch (error) {
         console.warn('Error cleaning up Spark connections:', error);
       }
