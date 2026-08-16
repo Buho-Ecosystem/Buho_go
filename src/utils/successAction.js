@@ -67,16 +67,26 @@ function isHttpUrl(value) {
 }
 
 /**
- * Whether two URLs share the same host — the LUD-09 rule that a `url`
- * successAction must live on the same domain as the LNURL callback. An
- * unparseable or missing callback fails closed (treated as a mismatch).
+ * Shorten a `url` action's link for display: drop the scheme and any trailing
+ * slash, and ellipsize the middle when it is too long for one line. The host
+ * always stays visible — it is the part that tells the payer where they are
+ * about to go.
+ *
+ * @param {string} url
+ * @param {number} [max=42] target length of the returned label
+ * @returns {string}
  */
-function sameDomain(a, b) {
-  try {
-    return new URL(a).hostname === new URL(b).hostname;
-  } catch {
-    return false;
-  }
+export function formatSuccessActionUrl(url, max = 42) {
+  if (typeof url !== 'string' || !url) return '';
+  const trimmed = url.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (trimmed.length <= max) return trimmed;
+  const slash = trimmed.indexOf('/');
+  const host = slash === -1 ? trimmed : trimmed.slice(0, slash);
+  // Keep the host intact and eat into the path; a host longer than the budget
+  // is simply truncated at the end.
+  const room = max - host.length - 1;
+  if (room < 4) return `${trimmed.slice(0, max - 1)}…`;
+  return `${host}…${trimmed.slice(trimmed.length - room + 1)}`;
 }
 
 /**
@@ -85,19 +95,27 @@ function sameDomain(a, b) {
  *
  * Strict by design: the object arrives from a remote server, so we whitelist
  * the three LUD-09 tags, clamp free text, and reject a `url` that isn't
- * http(s). Per LUD-09 a `url`'s domain MUST equal the `callback` domain; a
- * mismatch is degraded to its description (a plain message) rather than shown
- * as a link. The `aes` ciphertext/iv are kept verbatim for later decryption.
+ * http(s) — `javascript:`, `data:` and friends never reach the UI. The `aes`
+ * ciphertext/iv are kept verbatim for later decryption.
+ *
+ * On the `url` variant we deliberately do NOT enforce LUD-09's "url domain
+ * must equal the callback domain" line. Real recipients routinely link away
+ * from the host that served the invoice (a ticket paid at a shop pointing to
+ * the group chat it grants access to), and every widely used wallet shows
+ * those links, so enforcing it hides legitimate content and looks like a bug.
+ * The payer is protected instead by the UI contract: the link is never
+ * followed automatically, the actual destination is rendered next to the
+ * button, and opening it takes a deliberate tap.
  *
  * @param {any} raw
  * @param {string} [callbackUrl] the LNURL-pay `callback` the invoice came from,
- *   used to enforce the LUD-09 same-domain rule on a `url` action.
+ *   kept in the signature for callers and future provenance checks.
  * @returns {null
  *   | {tag:'message', message:string}
  *   | {tag:'url', description:string, url:string}
  *   | {tag:'aes', description:string, ciphertext:string, iv:string}}
  */
-export function parseSuccessAction(raw, callbackUrl) {
+export function parseSuccessAction(raw, callbackUrl) { // eslint-disable-line no-unused-vars
   if (!raw || typeof raw !== 'object') return null;
 
   switch (raw.tag) {
@@ -108,15 +126,7 @@ export function parseSuccessAction(raw, callbackUrl) {
     case 'url': {
       const url = typeof raw.url === 'string' ? raw.url.trim() : '';
       if (!isHttpUrl(url)) return null;
-      const description = clampText(raw.description);
-      // LUD-09: the url's domain MUST equal the LNURL `callback` domain. A
-      // mismatch is a phishing vector (a merchant pointing the payer at an
-      // unrelated site), so we refuse to surface it as a link — degrade to the
-      // description as a plain message, or drop it entirely.
-      if (!sameDomain(url, callbackUrl)) {
-        return description ? { tag: 'message', message: description } : null;
-      }
-      return { tag: 'url', description, url };
+      return { tag: 'url', description: clampText(raw.description), url };
     }
     case 'aes': {
       const ciphertext = typeof raw.ciphertext === 'string' ? raw.ciphertext.trim() : '';

@@ -46,6 +46,8 @@ import {
   signOut as cloudSignOut,
   uploadBackup,
   downloadBackup,
+  uploadBackupKey,
+  downloadBackupKey,
   getRemoteBackupInfo,
   deleteBackup,
 } from '../services/cloudStorage.js';
@@ -81,10 +83,6 @@ function isAuthRequired(err) {
 
 export const useCloudBackupStore = defineStore('cloudBackup', {
   state: () => ({
-    /** null = not probed yet; then boolean. */
-    available: null,
-    /** Why the platform reports unavailable (e.g. 'platform-not-supported'). */
-    unavailableReason: null,
     /** True once a Drive call has succeeded this session. */
     signedIn: false,
     /** Email of the signed-in Google account (from the last sign-in). */
@@ -97,8 +95,6 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
     isBackingUp: false,
     isRestoring: false,
     isListing: false,
-    /** Last error message from any cloud op, for UI surfacing. */
-    lastError: null,
   }),
 
   getters: {
@@ -125,12 +121,15 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       }
     },
 
+    /** Persist the non-secret bookkeeping that survives restarts. */
+    _persistMeta() {
+      writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: this.signedInEmail });
+    },
+
     /** Probe platform availability. @returns {Promise<boolean>} */
     async checkAvailability() {
       const res = await cloudIsAvailable();
-      this.available = Boolean(res?.available);
-      this.unavailableReason = res?.reason || null;
-      return this.available;
+      return Boolean(res?.available);
     },
 
     /**
@@ -149,7 +148,6 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           this.signedIn = false;
           return;
         }
-        this.lastError = err?.message || String(err);
         throw err;
       } finally {
         this.isListing = false;
@@ -164,7 +162,6 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
      */
     async signIn() {
       this.isAuthing = true;
-      this.lastError = null;
       try {
         const res = await cloudSignIn();
         if (!res?.ok) {
@@ -174,11 +171,16 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
         }
         this.signedIn = true;
         this.signedInEmail = res.account || null;
-        writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: this.signedInEmail });
+        this._persistMeta();
         await this.refresh();
-      } catch (err) {
-        this.lastError = err?.message || String(err);
-        throw err;
+        if (!this.signedIn) {
+          // The listing probe right after a "successful" sign-in still hit
+          // auth-required: the grant is not actually usable (e.g. revoked
+          // server-side). Surface that instead of pretending success.
+          const err = new Error('auth-required');
+          err.reason = 'auth-required';
+          throw err;
+        }
       } finally {
         this.isAuthing = false;
       }
@@ -192,7 +194,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
         this.signedIn = false;
         this.signedInEmail = null;
         this.remoteBackup = null;
-        writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: null });
+        this._persistMeta();
       }
     },
 
@@ -255,30 +257,59 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
     },
 
     /**
-     * Encrypt every local wallet secret + the identity seed under
-     * `passphrase` and upload the envelope, overwriting the previous one.
-     *
-     * @param {string} passphrase
-     * @param {object} [opts]
-     * @param {string} [opts.hint]  Optional cleartext hint stored in the
-     *                              envelope.
+     * Fetch the backup key from the key file, or null when there is none
+     * (or it does not parse). Never creates one — restore must only read.
      */
-    async backup(passphrase, opts = {}) {
+    async _loadKey() {
+      const raw = await downloadBackupKey();
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        return typeof parsed?.k === 'string' && parsed.k.length > 0 ? parsed.k : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * The key for the envelope. An existing key is reused so every envelope
+     * ever written with it stays readable; created on first backup.
+     */
+    async _loadOrCreateKey() {
+      const existing = await this._loadKey();
+      if (existing) return existing;
+      const bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      const key = btoa(bin);
+      await uploadBackupKey(JSON.stringify({ v: 1, k: key }));
+      return key;
+    },
+
+    /**
+     * Encrypt every local wallet secret + the identity seed and upload the
+     * envelope, overwriting the previous one.
+     */
+    async backup() {
       this.isBackingUp = true;
-      this.lastError = null;
       try {
         const payload = await this._gatherPayload();
-        const envelope = await encryptBackup(payload, passphrase, {
-          hint: opts.hint || '',
-        });
-        await uploadBackup(JSON.stringify(envelope));
+        const key = await this._loadOrCreateKey();
+        const envelope = await encryptBackup(payload, key);
+        const uploaded = await uploadBackup(JSON.stringify(envelope));
 
         this.lastBackupAt = envelope.createdAt;
-        writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: this.signedInEmail });
-        await this.refresh();
+        this._persistMeta();
+        // The upload response carries the written file's metadata, so the
+        // remote state is known without a follow-up listing round trip.
+        this.remoteBackup = {
+          name: uploaded?.name || '',
+          modifiedAt: uploaded?.modifiedAt || envelope.createdAt,
+          size: uploaded?.size || 0,
+        };
       } catch (err) {
         if (isAuthRequired(err)) this.signedIn = false;
-        this.lastError = err?.message || String(err);
         throw err;
       } finally {
         this.isBackingUp = false;
@@ -290,14 +321,12 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
      * in the payload that is missing on this device is recreated, anything
      * already present is left untouched.
      *
-     * @param {string} passphrase
      * @returns {Promise<{ restored: string[], skipped: string[], failed: Array<{label: string, reason: string}> }>}
      *          Labels are payload-kind names ('spark', 'arkade', wallet
      *          display names for nwc/lnbits, 'identity') for UI summary.
      */
-    async restore(passphrase) {
+    async restore() {
       this.isRestoring = true;
-      this.lastError = null;
       try {
         const envelopeJson = await downloadBackup();
         if (!envelopeJson) {
@@ -305,8 +334,17 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           err.code = 'NO_BACKUP_FOUND';
           throw err;
         }
-        const payload = await decryptBackup(envelopeJson, passphrase);
-        if (!payload || ![1, 2].includes(payload.v)) {
+        const key = await this._loadKey();
+        if (!key) {
+          // An envelope with no readable key file cannot be opened. Distinct
+          // from NO_BACKUP_FOUND so the UI never claims "no backup" while
+          // one is sitting in the account.
+          const err = new Error('Backup cannot be read');
+          err.code = 'BACKUP_UNREADABLE';
+          throw err;
+        }
+        const payload = await decryptBackup(envelopeJson, key);
+        if (!payload || !Number.isInteger(payload.v) || payload.v < 1 || payload.v > PAYLOAD_VERSION) {
           const err = new Error(`Unsupported backup payload version: ${payload?.v}`);
           err.code = 'UNSUPPORTED_PAYLOAD';
           throw err;
@@ -314,7 +352,6 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
         return await this._applyPayload(payload);
       } catch (err) {
         if (isAuthRequired(err)) this.signedIn = false;
-        this.lastError = err?.message || String(err);
         throw err;
       } finally {
         this.isRestoring = false;
@@ -330,6 +367,15 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       const wallet = useWalletStore();
       const identity = useIdentityStore();
 
+      // The welcome-screen restore path reaches here before either store
+      // has loaded its persisted state. Applying against empty in-memory
+      // state would mis-read "nothing on this device": the wallet store
+      // would refuse to persist (it never drops wallets it saw on disk)
+      // and the identity guard below would see bootstrapped=false while a
+      // key exists. Hydrate first; both calls are idempotent.
+      if (!wallet.isInitialized) await wallet.initialize();
+      await identity.hydrate();
+
       const restored = [];
       const skipped = [];
       const failed = [];
@@ -342,8 +388,20 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           skipped.push('identity');
         } else {
           try {
-            await identity.importMnemonic(payload.identity.mnemonic, true);
+            // markBackedUp=false: restoring from the cloud proves nothing
+            // about the user ever having written the 12 words down, so the
+            // write-them-down prompt must survive the restore.
+            await identity.importMnemonic(payload.identity.mnemonic, false);
             restored.push('identity');
+            // The import lands on NIP-06 account 0; the published
+            // identity pointer says which account was actually active.
+            // Best-effort and bounded: no pointer (or no network)
+            // means account 0 stays, which is always safe.
+            try {
+              await identity.resolveActiveNostrAccount();
+            } catch (err) {
+              console.warn('[cloudBackup] pointer discovery after restore failed:', err);
+            }
           } catch (err) {
             failed.push({ label: 'identity', reason: err?.message || String(err) });
           }
@@ -439,15 +497,12 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       return { restored, skipped, failed };
     },
 
-    /** Delete the remote backup file. */
+    /** Delete the remote backup and its key file. */
     async deleteRemote() {
-      const res = await deleteBackup();
-      if (res && res.ok === false) {
-        throw new Error(res.reason || 'delete-failed');
-      }
+      await deleteBackup();
       this.remoteBackup = null;
       this.lastBackupAt = null;
-      writeMeta({ lastBackupAt: null, signedInEmail: this.signedInEmail });
+      this._persistMeta();
     },
   },
 });

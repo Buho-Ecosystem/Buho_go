@@ -48,8 +48,7 @@ import javax.net.ssl.HttpsURLConnection;
  * recovery file out of casual view.
  *
  * Encryption happens in JS BEFORE upload (utils/backupCrypto.js); this
- * plugin only ever moves opaque bytes and never sees a seed phrase or the
- * passphrase.
+ * plugin only ever moves opaque bytes and never sees a seed phrase.
  *
  * Auth model: no OAuth client ID or secret ships in the app. Google
  * identifies the app by its package name (mybuho.buhogo) plus the APK
@@ -153,7 +152,7 @@ public class CloudBackupPlugin extends Plugin {
         } catch (ApiException e) {
             int code = e.getStatusCode();
             String codeName = GoogleSignInStatusCodes.getStatusCodeString(code);
-            String detail = e.getMessage() == null ? "" : (" — " + e.getMessage());
+            String detail = e.getMessage() == null ? "" : (": " + e.getMessage());
             Log.e(TAG, "onSignInResult: ApiException(" + code + ") " + codeName + detail, e);
 
             JSObject ret = new JSObject();
@@ -326,6 +325,26 @@ public class CloudBackupPlugin extends Plugin {
         return GoogleAuthUtil.getToken(getContext(), email, "oauth2:" + DRIVE_SCOPE);
     }
 
+    /**
+     * Play Services caches tokens for ~1h and getToken keeps returning the
+     * cached one even after the user revoked the grant server-side. When
+     * Drive answers 401/403 the cached token must be flushed, otherwise
+     * every re-sign-in "succeeds" locally and immediately 401s again.
+     */
+    private void invalidateToken(String token) {
+        try {
+            GoogleAuthUtil.clearToken(getContext(), token);
+        } catch (Exception e) {
+            Log.w(TAG, "clearToken failed: " + e.getMessage());
+        }
+    }
+
+    /** Unbounded network waits must not hang the UI's state machine. */
+    private static void applyTimeouts(HttpURLConnection con) {
+        con.setConnectTimeout(15000);
+        con.setReadTimeout(20000);
+    }
+
     @PluginMethod
     public void uploadBackup(final PluginCall call) {
         final String fileName = call.getString("fileName");
@@ -359,17 +378,19 @@ public class CloudBackupPlugin extends Plugin {
                     content + "\r\n" +
                     "--" + boundary + "--";
 
-                String urlStr = existingId != null
+                String urlStr = (existingId != null
                     ? "https://www.googleapis.com/upload/drive/v3/files/" + existingId
                         + "?uploadType=multipart"
-                    : DRIVE_UPLOAD_URL;
+                    : DRIVE_UPLOAD_URL)
+                    + "&fields=" + URLEncoder.encode("id,name,modifiedTime,size", "UTF-8");
 
                 HttpsURLConnection con = (HttpsURLConnection) new URL(urlStr).openConnection();
-                con.setRequestMethod(existingId != null ? "PATCH" : "POST");
-                // Some Android versions reject PATCH on HttpURLConnection — workaround:
+                applyTimeouts(con);
+                // HttpURLConnection rejects PATCH as a method on Android, so
+                // updates go out as POST with the standard override header.
+                con.setRequestMethod("POST");
                 if (existingId != null) {
                     con.setRequestProperty("X-HTTP-Method-Override", "PATCH");
-                    con.setRequestMethod("POST");
                 }
                 con.setRequestProperty("Authorization", "Bearer " + token);
                 con.setRequestProperty("Content-Type", "multipart/related; boundary=" + boundary);
@@ -385,7 +406,18 @@ public class CloudBackupPlugin extends Plugin {
                 int code = con.getResponseCode();
                 if (code >= 200 && code < 300) {
                     ret.put("ok", true);
+                    // Hand the caller the metadata of what it just wrote so
+                    // the JS layer never needs a follow-up listing round trip.
+                    try {
+                        JSONObject res = new JSONObject(readAll(con.getInputStream()));
+                        ret.put("name", res.optString("name", fileName));
+                        ret.put("modifiedAt", res.optString("modifiedTime", ""));
+                        ret.put("size", res.optLong("size", bytes.length));
+                    } catch (Exception ignored) {
+                        ret.put("name", fileName);
+                    }
                 } else {
+                    if (code == 401 || code == 403) invalidateToken(token);
                     ret.put("ok", false);
                     ret.put("reason", "http-" + code + ": " + readErrorBody(con));
                 }
@@ -414,28 +446,38 @@ public class CloudBackupPlugin extends Plugin {
                 String token = fetchAccessTokenSync();
                 String fileId = findFileIdSync(token, fileName);
                 if (fileId == null) {
+                    // The only case that means "no such backup". Every other
+                    // outcome below is an error and must reject, so the JS
+                    // layer can never mistake a failure for an absent file.
                     ret.put("content", JSONObject.NULL);
                     call.resolve(ret);
                     return;
                 }
                 URL url = new URL(DRIVE_FILES_URL + "/" + fileId + "?alt=media");
                 HttpsURLConnection con = (HttpsURLConnection) url.openConnection();
+                applyTimeouts(con);
                 con.setRequestProperty("Authorization", "Bearer " + token);
                 int code = con.getResponseCode();
                 if (code != 200) {
-                    ret.put("content", JSONObject.NULL);
-                    ret.put("reason", "http-" + code + ": " + readErrorBody(con));
-                    call.resolve(ret);
+                    String reason = "http-" + code + ": " + readErrorBody(con);
+                    con.disconnect();
+                    if (code == 401 || code == 403) {
+                        invalidateToken(token);
+                        call.reject("auth-required");
+                        return;
+                    }
+                    call.reject(reason);
                     return;
                 }
                 String body = readAll(con.getInputStream());
                 con.disconnect();
                 ret.put("content", body);
                 call.resolve(ret);
+            } catch (UserRecoverableAuthException e) {
+                call.reject("auth-required");
             } catch (Exception e) {
-                ret.put("content", JSONObject.NULL);
-                ret.put("reason", e.getMessage() == null ? "unknown" : e.getMessage());
-                call.resolve(ret);
+                String msg = e.getMessage() == null ? "download-failed" : e.getMessage();
+                call.reject(msg.contains("not-signed-in") ? "auth-required" : msg);
             }
         }).start();
     }
@@ -453,42 +495,46 @@ public class CloudBackupPlugin extends Plugin {
                     + "&fields=" + URLEncoder.encode("files(id,name,modifiedTime,size)", "UTF-8")
                     + "&q=" + URLEncoder.encode(q, "UTF-8"));
                 HttpsURLConnection con = (HttpsURLConnection) url.openConnection();
+                applyTimeouts(con);
                 con.setRequestProperty("Authorization", "Bearer " + token);
                 int code = con.getResponseCode();
-                if (code == 200) {
-                    JSONObject json = new JSONObject(readAll(con.getInputStream()));
-                    JSONArray arr = json.optJSONArray("files");
-                    if (arr != null) {
-                        for (int i = 0; i < arr.length(); i++) {
-                            JSONObject f = arr.getJSONObject(i);
-                            JSObject row = new JSObject();
-                            row.put("name", f.optString("name"));
-                            row.put("modifiedAt", f.optString("modifiedTime"));
-                            row.put("size", f.optLong("size", 0));
-                            files.put(row);
-                        }
-                    }
-                } else {
-                    ret.put("reason", "http-" + code);
+                if (code != 200) {
+                    con.disconnect();
                     // An expired/revoked grant surfaces here first — reject
                     // with the sentinel the JS layer maps to "sign in again".
+                    // Everything else rejects too: an empty-but-ok result must
+                    // only ever mean "the listing genuinely came back empty".
                     if (code == 401 || code == 403) {
+                        invalidateToken(token);
                         call.reject("auth-required");
                         return;
                     }
+                    call.reject("http-" + code);
+                    return;
                 }
+                JSONObject json = new JSONObject(readAll(con.getInputStream()));
                 con.disconnect();
+                JSONArray arr = json.optJSONArray("files");
+                if (arr != null) {
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject f = arr.getJSONObject(i);
+                        JSObject row = new JSObject();
+                        row.put("name", f.optString("name"));
+                        row.put("modifiedAt", f.optString("modifiedTime"));
+                        row.put("size", f.optLong("size", 0));
+                        files.put(row);
+                    }
+                }
                 ret.put("files", files);
                 call.resolve(ret);
             } catch (Exception e) {
                 String msg = e.getMessage();
-                if (msg != null && (msg.contains("not-signed-in") || e instanceof UserRecoverableAuthException)) {
+                if (e instanceof UserRecoverableAuthException
+                        || (msg != null && msg.contains("not-signed-in"))) {
                     call.reject("auth-required");
                     return;
                 }
-                ret.put("files", files);
-                ret.put("reason", msg == null ? "unknown" : msg);
-                call.resolve(ret);
+                call.reject(msg == null ? "list-failed" : msg);
             }
         }).start();
     }
@@ -512,6 +558,7 @@ public class CloudBackupPlugin extends Plugin {
                 }
                 URL url = new URL(DRIVE_FILES_URL + "/" + fileId);
                 HttpsURLConnection con = (HttpsURLConnection) url.openConnection();
+                applyTimeouts(con);
                 con.setRequestMethod("DELETE");
                 con.setRequestProperty("Authorization", "Bearer " + token);
                 int code = con.getResponseCode();
@@ -519,6 +566,7 @@ public class CloudBackupPlugin extends Plugin {
                 if (code >= 200 && code < 300) {
                     ret.put("ok", true);
                 } else {
+                    if (code == 401 || code == 403) invalidateToken(token);
                     ret.put("ok", false);
                     ret.put("reason", "http-" + code);
                 }
@@ -538,11 +586,16 @@ public class CloudBackupPlugin extends Plugin {
             + "&fields=" + URLEncoder.encode("files(id,name)", "UTF-8")
             + "&q=" + URLEncoder.encode(q, "UTF-8"));
         HttpsURLConnection con = (HttpsURLConnection) url.openConnection();
+        applyTimeouts(con);
         con.setRequestProperty("Authorization", "Bearer " + token);
         int code = con.getResponseCode();
         if (code != 200) {
             String body = readErrorBody(con);
             con.disconnect();
+            if (code == 401 || code == 403) {
+                invalidateToken(token);
+                throw new Exception("auth-required");
+            }
             throw new Exception("list-failed http-" + code + ": " + body);
         }
         JSONObject json = new JSONObject(readAll(con.getInputStream()));

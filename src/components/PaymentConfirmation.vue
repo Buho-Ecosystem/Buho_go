@@ -98,10 +98,10 @@
             class="success-action-card"
             :class="$q.dark.isActive ? 'sa-card-dark' : 'sa-card-light'"
           >
-            <!-- A `url` action is a self-explanatory call to action (its own
-                 description labels the button), so it skips the generic caption. -->
+            <!-- A `url` action without a description is a bare call to action,
+                 so it skips the generic caption. -->
             <div
-              v-if="successAction.tag !== 'url'"
+              v-if="successAction.tag !== 'url' || successAction.description"
               class="success-action-label"
               :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
             >
@@ -117,20 +117,28 @@
               {{ successAction.message }}
             </div>
 
-            <!-- url: one elegant tap to open. The link is domain-validated
-                 upstream (same host as the callback just paid), so opening it is
-                 safe; openInAppBrowser opens a new tab on web and an in-app view
+            <!-- url: the recipient's note, then the destination itself on the
+                 pill so the payer sees where the tap leads before taking it.
+                 openInAppBrowser opens a new tab on web and an in-app view
                  (Custom Tab / SFSafariViewController) on native. -->
-            <button
-              v-else-if="successAction.tag === 'url'"
-              type="button"
-              class="success-action-open"
-              :class="$q.dark.isActive ? 'sa-open-dark' : 'sa-open-light'"
-              @click="openSuccessActionUrl"
-            >
-              <span class="success-action-open-label">{{ successAction.description || $t('Open link') }}</span>
-              <Icon icon="tabler:external-link" width="16" height="16" class="success-action-open-icon" />
-            </button>
+            <template v-else-if="successAction.tag === 'url'">
+              <div
+                v-if="successAction.description"
+                class="success-action-text"
+                :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'"
+              >
+                {{ successAction.description }}
+              </div>
+              <button
+                type="button"
+                class="success-action-open"
+                :class="$q.dark.isActive ? 'sa-open-dark' : 'sa-open-light'"
+                @click="openSuccessActionUrl"
+              >
+                <span class="success-action-open-label">{{ successActionUrlLabel }}</span>
+                <Icon icon="tabler:external-link" width="16" height="16" class="success-action-open-icon" />
+              </button>
+            </template>
 
             <!-- aes: decrypted secret (tap to copy), or a graceful failure note -->
             <template v-else-if="successAction.tag === 'aes'">
@@ -236,6 +244,7 @@ import { useWalletStore } from '../stores/wallet';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
 import SuccessCheckmark from './SuccessCheckmark.vue';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
+import { formatSuccessActionUrl } from '../utils/successAction.js';
 
 export default {
   name: 'PaymentConfirmation',
@@ -387,6 +396,14 @@ export default {
       return this.keepsOpen
         ? this.$t('Done')
         : this.$t('Close Now')
+    },
+    /**
+     * The destination of a LUD-09 `url` action, shortened for the pill. Shown
+     * instead of a generic "Open link" so the payer reads the host before
+     * tapping — the link may point anywhere, not just at the paid service.
+     */
+    successActionUrlLabel() {
+      return formatSuccessActionUrl(this.successAction?.url)
     }
   },
   watch: {
@@ -504,10 +521,10 @@ export default {
      * user can also re-copy later from Transaction Details.
      */
     /**
-     * Open a LUD-09 `url` successAction (e.g. a payment receipt). Domain-
-     * validated upstream (parseSuccessAction pins it to the callback host), so
-     * it can only point back at the service just paid. New tab on web, in-app
-     * view on native.
+     * Open a LUD-09 `url` successAction (a receipt, a group invite, a download).
+     * Scheme-validated upstream to http(s); the destination is on the button the
+     * user tapped, so nothing opens that they haven't read. New tab on web,
+     * in-app view on native.
      */
     openSuccessActionUrl() {
       const url = this.successAction?.url;

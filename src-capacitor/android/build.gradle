@@ -7,8 +7,8 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.7.2'
-        classpath 'com.google.gms:google-services:4.4.2'
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.google.gms:google-services:4.4.4'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
@@ -22,26 +22,20 @@ allprojects {
         google()
         mavenCentral()
     }
-    configurations.all {
-        resolutionStrategy.eachDependency { details ->
-            if (details.requested.group == 'org.jetbrains.kotlin'
-                && (details.requested.name == 'kotlin-stdlib-jdk7'
-                    || details.requested.name == 'kotlin-stdlib-jdk8'
-                    || details.requested.name == 'kotlin-stdlib-common'
-                    || details.requested.name == 'kotlin-stdlib')) {
-                details.useVersion '1.8.22'
-            }
-        }
-    }
 }
 
+// Capacitor 8 and its plugin modules already declare Java 21 themselves; this
+// blanket override exists to pull any straggler module (a Cordova-bridged
+// plugin still on Java 8/11) up to the same level. It runs in afterEvaluate,
+// so it wins over whatever a module set — keep it at 21, never below, or it
+// silently downgrades every Capacitor module.
 subprojects {
     afterEvaluate { project ->
         if (project.hasProperty("android")) {
             android {
                 compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_17
-                    targetCompatibility JavaVersion.VERSION_17
+                    sourceCompatibility JavaVersion.VERSION_21
+                    targetCompatibility JavaVersion.VERSION_21
                 }
             }
         }

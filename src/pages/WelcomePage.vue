@@ -170,7 +170,7 @@
           </span>
           <span class="bgo-st">
             <span class="bgo-t">{{ $t('Restore from Google Drive') }}</span>
-            <span class="bgo-d">{{ $t('Your encrypted cloud backup') }}</span>
+            <span class="bgo-d">{{ $t('Your cloud backup') }}</span>
           </span>
           <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M1 1l5.5 5.5L1 12"/>
@@ -219,7 +219,7 @@
     </q-dialog>
 
     <!-- Encrypted Google Drive restore (Android only). intent="restore"
-         jumps straight to the passphrase step once signed in. -->
+         jumps straight to the restore step once signed in. -->
     <CloudBackupSheet
       v-model="showCloudRestoreSheet"
       intent="restore"
@@ -230,9 +230,9 @@
 </template>
 
 <script>
-import { Capacitor } from '@capacitor/core'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import CloudBackupSheet from '../components/CloudBackupSheet.vue'
+import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 import {
   SUPPORTED_LOCALES,
   applyLocale,
@@ -262,7 +262,7 @@ export default {
       return getLocaleLabel(this.$i18n.locale)
     },
     cloudRestoreAvailable() {
-      return Capacitor.getPlatform() === 'android'
+      return isCloudBackupPlatform()
     },
   },
   mounted() {
