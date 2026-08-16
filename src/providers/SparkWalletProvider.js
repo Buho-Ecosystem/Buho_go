@@ -467,6 +467,32 @@ export class SparkWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Balance from the SDK's in-memory cache — no network round trip. The
+   * cache is kept current by the wallet's event stream, but it starts
+   * empty on a fresh connection, so callers that need a number before the
+   * first sync must bring their own fallback. Shape-compatible with
+   * getBalance(); display use only — spend/max logic must keep reading
+   * getBalance().
+   */
+  async getCachedBalance() {
+    this._ensureConnected();
+
+    try {
+      const result = await this.wallet.getCachedBalance();
+      const available = result?.satsBalance?.available ?? result?.balance ?? 0n;
+
+      return {
+        balance: Number(available),
+        pending: Number(result?.satsBalance?.incoming ?? 0n),
+        tokenBalances: result?.tokenBalances || []
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
   async getInfo() {
     this._ensureConnected();
 
