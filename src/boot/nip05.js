@@ -82,13 +82,21 @@ export default boot(async () => {
   // Catch-up for identities that already exist at startup.
   ensureHandle();
 
-  // New / rotated identities: re-run once a pubkey appears or changes.
+  // New / rotated / switched identities: re-run once a pubkey appears
+  // or changes. The multi-identity actions belong here too — a created
+  // or switched-to identity (and one adopted from the published
+  // pointer during restore) must get its free handle without waiting
+  // for an app relaunch. ensureHandle() is idempotent per pubkey, so
+  // over-firing is harmless.
   identity.$onAction(({ name, after }) => {
     after(() => {
       if (
         name === 'ensureIdentity' ||
         name === 'importMnemonic' ||
-        name === 'rotateNostrIdentity'
+        name === 'rotateNostrIdentity' ||
+        name === 'createAnotherNostrIdentity' ||
+        name === 'switchNostrIdentity' ||
+        name === 'resolveActiveNostrAccount'
       ) {
         ensureHandle();
       }

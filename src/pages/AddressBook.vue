@@ -60,6 +60,24 @@
                   </q-item-label>
                 </q-item-section>
               </q-item>
+              <q-item clickable v-close-popup @click="openChangeIdentity">
+                <q-item-section avatar style="min-width: 32px;">
+                  <Icon
+                    icon="tabler:users"
+                    width="16"
+                    height="16"
+                    style="color: var(--text-secondary)"
+                  />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label :class="$q.dark.isActive ? 'menu-label-dark' : 'menu-label-light'">
+                    {{ $t('Change identity') }}
+                  </q-item-label>
+                  <q-item-label caption>
+                    {{ $t('Switch identities or create another one') }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
             </q-list>
           </q-menu>
         </q-btn>
@@ -103,6 +121,10 @@
       v-model="showBatchSend"
       @batch-completed="handleBatchCompleted"
     />
+
+    <!-- Identity switcher: each identity owns its own contact list,
+         so the entry point lives here next to the restore action. -->
+    <ChangeIdentitySheet v-model="showChangeIdentity" />
   </q-page>
 </template>
 
@@ -117,29 +139,25 @@ import { mapActions, mapState } from 'pinia'
 // payment flow without ever blocking the tap on a network call.
 const RESYNC_COOLDOWN_MS = 60 * 1000
 
-// Debounce window between a local contact mutation and the silent
-// NIP-51 publish. Long enough that a burst of edits (add three
-// contacts in a row) collapses to one publish; short enough that the
-// backup feels current.
-const AUTO_SYNC_DEBOUNCE_MS = 1500
-
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import BatchSendModal from '../components/BatchSendModal.vue'
+import ChangeIdentitySheet from '../components/AddressBook/ChangeIdentitySheet.vue'
 
 export default {
   name: 'AddressBookPage',
   components: {
     AddressBookList,
     AddressBookModal,
-    BatchSendModal
+    BatchSendModal,
+    ChangeIdentitySheet
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
       showBatchSend: false,
-      _autoSyncTimer: null,
+      showChangeIdentity: false,
     }
   },
   computed: {
@@ -147,32 +165,15 @@ export default {
     // the status component directly off the store.
     ...mapState(useAddressBookStore, ['isRecovering', 'syncDirty']),
   },
-  watch: {
-    /**
-     * The store flips `syncDirty` after every nostr-contact mutation
-     * — add via Search/Scan, delete, petname edit — regardless of
-     * which child component triggered it. Watching the flag here is
-     * the single, gap-free hook: the page never has to wire a
-     * `@saved` / `@deleted` event per mutation path.
-     */
-    syncDirty(isDirty) {
-      if (isDirty) this._scheduleAutoSync()
-    },
-  },
+  // Automatic publishing is owned by the app-level driver
+  // (useAddressBookSync) so contacts added from ANY surface sync,
+  // not only while this page is mounted. This page keeps just the
+  // explicit actions: manual sync and kebab restore.
   async created() {
     await this.initializeAddressBook()
-    // Catch-up: a contact added in a previous session (the dirty
-    // flag persists to localStorage) syncs the moment the page opens.
-    if (this.syncDirty) this._scheduleAutoSync()
-  },
-  beforeUnmount() {
-    if (this._autoSyncTimer) {
-      clearTimeout(this._autoSyncTimer)
-      this._autoSyncTimer = null
-    }
   },
   methods: {
-    ...mapActions(useAddressBookStore, ['initialize', 'syncToNostr', 'recoverFromNostr', 'isEntryPayable']),
+    ...mapActions(useAddressBookStore, ['initialize', 'recoverFromNostr', 'isEntryPayable']),
 
     async initializeAddressBook() {
       try {
@@ -188,47 +189,29 @@ export default {
     },
 
     /**
-     * Debounced, silent auto-sync. Fires after the dirty flag settles.
-     * `getMnemonic()` is a device-key decrypt — no biometric prompt —
-     * so this is genuinely invisible in the happy path. Failures are
-     * NOT toasted here: the status row already shows the error state
-     * and offers a tap-to-retry. Toasting an automatic background
-     * action the user didn't initiate would be noise.
-     */
-    _scheduleAutoSync() {
-      if (this._autoSyncTimer) clearTimeout(this._autoSyncTimer)
-      this._autoSyncTimer = setTimeout(() => {
-        this._autoSyncTimer = null
-        this.runSync({ silent: true })
-      }, AUTO_SYNC_DEBOUNCE_MS)
-    },
-
-    /**
-     * Publish the contact list to the user's private NIP-51 event.
-     * `silent` distinguishes the automatic debounced path (no toast)
-     * from the explicit status-row tap (toast on hard failure so the
-     * user knows their deliberate action didn't land).
-     */
-    async runSync({ silent = false } = {}) {
-      const identityStore = useIdentityStore()
-      if (!identityStore.bootstrapped) return
-      const result = await this.syncToNostr({ identityStore })
-      if (!silent && result && result.ok === false) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t sync contacts'),
-          caption: this.$t('Check your connection and try again.'),
-          timeout: 4000,
-        })
-      }
-    },
-
-    /**
      * Pull the user's private address book from Nostr and merge.
      * Always an explicit action (kebab tap), so it always reports a
      * result — including the calm "nothing to restore" case so the
      * user isn't left wondering whether the tap did anything.
      */
+    /**
+     * Open the identity switcher. Same precondition as restore: with
+     * no identity there is nothing to switch between or climb from.
+     */
+    openChangeIdentity() {
+      const identityStore = useIdentityStore()
+      if (!identityStore.bootstrapped) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('No identity yet'),
+          caption: this.$t('Set up or restore your BuhoGO identity first.'),
+          timeout: 4000,
+        })
+        return
+      }
+      this.showChangeIdentity = true
+    },
+
     async runRecovery() {
       const identityStore = useIdentityStore()
       if (!identityStore.bootstrapped) {
@@ -241,6 +224,16 @@ export default {
         return
       }
       const result = await this.recoverFromNostr({ identityStore })
+      if (result === null) {
+        // Another sync (the app-level driver's, usually) is already in
+        // flight — that is busy, not broken.
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('Sync already running'),
+          timeout: 2500,
+        })
+        return
+      }
       if (!result || result.ok === false) {
         this.$q.notify({
           type: 'negative',
@@ -267,8 +260,8 @@ export default {
         })
         return
       }
-      const caption = result.unpayable > 0
-        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
+      const caption = result.identityOnly > 0
+        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
         : undefined
       this.$q.notify({
         type: 'positive',

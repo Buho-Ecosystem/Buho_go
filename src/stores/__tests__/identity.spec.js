@@ -674,5 +674,261 @@ await test('rotateNostrIdentity clears every handle (new key, fresh registration
   assert.equal(s.nip05Address, null);
 });
 
+// ---------------------------------------------------------------------------
+// Multiple identities — the account-index climb + pointer
+// ---------------------------------------------------------------------------
+
+/** Pointer opts that keep the store off the network and record calls. */
+function pointerStub({ fetched = null, accept = true } = {}) {
+  const calls = { published: [] };
+  return {
+    calls,
+    opts: {
+      relays: ['wss://stub.test'],
+      fetcher: async () => fetched,
+      publisher: ({ event }) => {
+        calls.published.push(event);
+        return {
+          firstAccept: Promise.resolve(accept ? { relay: 'wss://stub.test' } : null),
+          allSettled: Promise.resolve([]),
+        };
+      },
+    },
+  };
+}
+
+await test('createAnotherNostrIdentity climbs to the next unused index and persists the roster', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+
+  const first = await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  assert.equal(first.account, 1);
+  assert.equal(s.nostrAccountIndex, 1);
+  const second = await s.createAnotherNostrIdentity({ label: 'Business', pointer: stub.opts });
+  assert.equal(second.account, 2);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0, 1, 2]);
+  assert.equal(s.nostrKnownAccounts.find((a) => a.i === 2).label, 'Business');
+  assert.equal(s.pointerDirty, false);
+  assert.equal(stub.calls.published.length, 2);
+
+  // The roster survives a reload.
+  setActivePinia(createPinia());
+  const reloaded = useIdentityStore();
+  await reloaded.hydrate();
+  assert.deepEqual(reloaded.nostrKnownAccounts.map((a) => a.i), [0, 1, 2]);
+  assert.equal(reloaded.nostrAccountIndex, 2);
+});
+
+await test('a refused pointer publish leaves the identity created but flagged dirty', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub({ accept: false });
+  const created = await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  assert.equal(created.account, 1);
+  assert.equal(s.nostrAccountIndex, 1);
+  assert.equal(s.pointerDirty, true);
+});
+
+await test('switchNostrIdentity validates roster membership and re-caches the key', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  const npubOfOne = s.nostrNpub;
+
+  await s.switchNostrIdentity(0, { pointer: stub.opts });
+  assert.equal(s.nostrAccountIndex, 0);
+  assert.notEqual(s.nostrNpub, npubOfOne);
+
+  await s.switchNostrIdentity(1, { pointer: stub.opts });
+  assert.equal(s.nostrNpub, npubOfOne);
+
+  await assert.rejects(
+    () => s.switchNostrIdentity(9, { pointer: stub.opts }),
+    (err) => err.code === 'NOSTR_ACCOUNT_UNKNOWN',
+  );
+});
+
+await test('per-account NIP-05 handles survive a switch round-trip', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  s.addNip05Handle({ handle: 'owl-zero' });
+  const stub = pointerStub();
+
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  assert.equal(s.nip05Handles.length, 0, 'new identity starts with no handles');
+  s.addNip05Handle({ handle: 'owl-one' });
+
+  await s.switchNostrIdentity(0, { pointer: stub.opts });
+  assert.equal(s.nip05Handles[0].handle, 'owl-zero');
+  await s.switchNostrIdentity(1, { pointer: stub.opts });
+  assert.equal(s.nip05Handles[0].handle, 'owl-one');
+});
+
+await test('resolveActiveNostrAccount adopts a higher pointer account and merges the roster', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  const npubOfZero = s.nostrNpub;
+
+  const result = await s.resolveActiveNostrAccount({
+    fetcher: async () => ({
+      active: 3,
+      accounts: [{ i: 0 }, { i: 1, label: 'Work' }, { i: 3 }],
+      eventCreatedAt: 1_700_000_000,
+      decrypted: true,
+    }),
+  });
+  assert.deepEqual(result, { found: true, active: 3, upgraded: true });
+  assert.equal(s.nostrAccountIndex, 3);
+  assert.notEqual(s.nostrNpub, npubOfZero);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0, 1, 3]);
+  assert.equal(s.nostrKnownAccounts.find((a) => a.i === 1).label, 'Work');
+});
+
+await test('resolveActiveNostrAccount stays on account 0 when no pointer exists', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  const result = await s.resolveActiveNostrAccount({ fetcher: async () => null });
+  assert.deepEqual(result, { found: false, active: 0, upgraded: false });
+  assert.equal(s.nostrAccountIndex, 0);
+});
+
+await test('resolveActiveNostrAccount is single-flight while a lookup runs', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  let fetches = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const fetcher = async () => {
+    fetches += 1;
+    await gate;
+    return null;
+  };
+  const a = s.resolveActiveNostrAccount({ fetcher });
+  const b = s.resolveActiveNostrAccount({ fetcher });
+  release();
+  await Promise.all([a, b]);
+  assert.equal(fetches, 1, 'second caller shares the in-flight lookup');
+});
+
+await test('createAnotherNostrIdentity refuses to overflow past 2^31', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  s.nostrKnownAccounts = [{ i: 0 }, { i: 2 ** 31 - 1 }];
+  await assert.rejects(
+    () => s.createAnotherNostrIdentity({ pointer: pointerStub().opts }),
+    (err) => err.code === 'NOSTR_ACCOUNT_EXHAUSTED',
+  );
+});
+
+await test('importMnemonic still lands on account 0 with a reset roster', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  await s.createAnotherNostrIdentity({ pointer: pointerStub().opts });
+  assert.equal(s.nostrAccountIndex, 1);
+
+  await s.importMnemonic(FIXED_SEED);
+  assert.equal(s.nostrAccountIndex, 0);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0]);
+  assert.equal(s.pointerDirty, false);
+});
+
+await test('republishNostrPointer merges the fetched roster instead of outbidding it away', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0], 'local roster starts minimal');
+
+  // Another device created accounts 1 and 2; this device never heard
+  // of them. Its publish must carry them forward, not orphan them.
+  let published = null;
+  const result = await s.republishNostrPointer({
+    relays: ['wss://stub.test'],
+    fetcher: async () => ({
+      active: 2,
+      accounts: [{ i: 0 }, { i: 1, label: 'Work' }, { i: 2 }],
+      eventCreatedAt: 1_700_000_000,
+      decrypted: true,
+    }),
+    publisher: ({ event }) => {
+      published = event;
+      return {
+        firstAccept: Promise.resolve({ relay: 'wss://stub.test' }),
+        allSettled: Promise.resolve([]),
+      };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0, 1, 2], 'store learned the union');
+  assert.equal(s.nostrKnownAccounts.find((a) => a.i === 1).label, 'Work');
+  // The event carries the union too; active stays LOCAL intent (0).
+  const { nip44 } = await import('nostr-core');
+  const { deriveSelfConversationKey } = await import('../../utils/nostrAddressBook.js');
+  const sk0 = await s.getNostrSecretKeyBytes();
+  const payload = JSON.parse(nip44.decrypt(
+    published.content,
+    deriveSelfConversationKey(sk0, s.nostrPubkeyHex),
+  ));
+  assert.equal(payload.active, 0);
+  assert.deepEqual(payload.accounts.map((a) => a.i), [0, 1, 2]);
+  assert.ok(published.created_at >= 1_700_000_001, 'outbids the fetched clock');
+});
+
+await test('rotateNostrIdentity flags the pointer as lagging', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  assert.equal(s.pointerDirty, false);
+  await s.rotateNostrIdentity();
+  assert.equal(s.pointerDirty, true, 'dormant path inherits the retry surface');
+});
+
+await test('resolveActiveNostrAccount finds a pointer that lives only on the NIP-65 relays', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  const sk0 = await s.getNostrSecretKeyBytes();
+  const pubkey0 = s.nostrPubkeyHex;
+
+  const { finalizeEvent } = await import('nostr-core');
+  const { buildPointerEvent } = await import('../../utils/nostrIdentityPointer.js');
+  const { DEFAULT_RELAYS } = await import('../../utils/nostrRelays.js');
+
+  // Account 0's NIP-65 list (on a default relay) names a custom write
+  // relay; the pointer sits ONLY there. Restore must still find it.
+  const relayList = finalizeEvent({
+    kind: 10002,
+    created_at: 1_700_000_000,
+    tags: [['r', 'wss://custom.test']],
+    content: '',
+  }, sk0);
+  const pointer = buildPointerEvent({
+    secretKey0: sk0,
+    pubkey0,
+    active: 1,
+    accounts: [{ i: 0 }, { i: 1 }],
+    createdAt: 1_700_000_100,
+  });
+  const eventsByUrl = {
+    [DEFAULT_RELAYS[0]]: [relayList],
+    'wss://custom.test': [pointer],
+  };
+  const pool = {
+    async querySync(urls, filter) {
+      const kinds = Array.isArray(filter?.kinds) ? filter.kinds : [];
+      const out = [];
+      for (const url of urls) {
+        for (const ev of eventsByUrl[url] || []) {
+          if (kinds.includes(ev.kind)) out.push(ev);
+        }
+      }
+      return out;
+    },
+  };
+
+  const result = await s.resolveActiveNostrAccount({ pool });
+  assert.deepEqual(result, { found: true, active: 1, upgraded: true });
+  assert.equal(s.nostrAccountIndex, 1);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

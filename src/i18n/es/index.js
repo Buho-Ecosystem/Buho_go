@@ -522,6 +522,7 @@ export default {
   "This profile has no Lightning address yet, so we cannot save it for payments.": "Este perfil aún no tiene dirección Lightning, así que no podemos guardarlo para pagos.",
   "{name} hasn't published a Lightning address. Open Address Book to check again later.": "{name} no ha publicado una dirección Lightning. Abre la Libreta de Direcciones para volver a comprobarlo más tarde.",
   "Restore contacts from Nostr": "Restaurar contactos desde Nostr",
+  "Sync already running": "La sincronización ya está en curso",
   "Pull contacts you saved on another device": "Recupera los contactos que guardaste en otro dispositivo",
   "Payment address": "Dirección de pago",
   "Paste the address from your friend or shop": "Pega la dirección de tu amigo o tienda",
@@ -1641,6 +1642,7 @@ export default {
   "failed": "fallidos",
   "Total sent": "Total enviado",
   "sats sent": "sats enviados",
+  "Links from recipients": "Enlaces de destinatarios",
   "Failed payments": "Pagos fallidos",
   "Retry Failed": "Reintentar Fallidos",
   "Cancel Batch?": "¿Cancelar Envío?",
@@ -2465,5 +2467,21 @@ export default {
   // ── Lenguaje de pago unificado (solo "Pago Bitcoin") ──
   "Show details": "Mostrar detalles",
   "Free · instant": "Gratis · instantáneo",
-  "Includes a small network fee": "Incluye una pequeña comisión de red"
+  "Includes a small network fee": "Incluye una pequeña comisión de red",
+  "Change identity": "Cambiar identidad",
+  "Switch identities or create another one": "Cambia de identidad o crea otra",
+  "One recovery phrase backs every identity here. Each identity has its own profile and contacts.": "Una sola frase de recuperación respalda todas las identidades aquí. Cada identidad tiene su propio perfil y sus propios contactos.",
+  "Identity {n}": "Identidad {n}",
+  "Create another identity": "Crear otra identidad",
+  "Bring your contacts along?": "¿Llevar tus contactos contigo?",
+  "Your new identity can start with a copy of your current contacts, or with none. Your recovery phrase stays the same and backs both identities.": "Tu nueva identidad puede empezar con una copia de tus contactos actuales o sin ninguno. Tu frase de recuperación sigue siendo la misma y respalda ambas identidades.",
+  "Bring my contacts": "Llevar mis contactos",
+  "Start fresh": "Empezar de cero",
+  "Switched identity": "Identidad cambiada",
+  "New identity created": "Nueva identidad creada",
+  "Couldn't switch identity": "No se pudo cambiar la identidad",
+  "Couldn't create the identity": "No se pudo crear la identidad",
+  "Your identity list has not synced yet. Tap to retry.": "Tu lista de identidades aún no se ha sincronizado. Toca para reintentar.",
+  "Identity list synced": "Lista de identidades sincronizada",
+  "Your latest contact changes could not be synced yet, so nothing was changed. Check your connection and try again.": "Tus últimos cambios de contactos aún no se pudieron sincronizar, así que no se cambió nada. Comprueba tu conexión e inténtalo de nuevo."
 }

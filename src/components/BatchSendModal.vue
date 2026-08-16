@@ -504,6 +504,27 @@
               </div>
             </div>
 
+            <!--
+              LUD-09 links. One quiet row per recipient that sent one back:
+              who it came from, where it goes, and a tap to open it. Tapping
+              leaves this summary standing so a batch that returns several
+              links can be worked through one at a time.
+            -->
+            <div v-if="linkedResults.length > 0" class="link-list">
+              <div class="link-header">{{ $t('Links from recipients') }}</div>
+              <button
+                v-for="result in linkedResults"
+                :key="result.contact.id"
+                type="button"
+                class="link-item"
+                @click="openResultLink(result)"
+              >
+                <span class="link-name">{{ result.contact.name }}</span>
+                <span class="link-url">{{ formatSuccessActionUrl(result.successAction.url, 28) }}</span>
+                <Icon icon="tabler:external-link" width="15" height="15" class="link-icon" />
+              </button>
+            </div>
+
             <!-- Failed List -->
             <div v-if="failedCount > 0" class="failed-list">
               <div class="failed-header">{{ $t('Failed payments') }}:</div>
@@ -618,6 +639,8 @@ import { useAddressBookStore } from '../stores/addressBook'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
 import { stripWrapperScheme } from '../utils/addressUtils'
+import { parseSuccessAction, resolveSuccessAction, formatSuccessActionUrl } from '../utils/successAction.js'
+import { openInAppBrowser } from '../utils/inAppBrowser.js'
 import { bech32 } from 'bech32'
 import { getUserFriendlyError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
 import ContactAvatar from './AddressBook/ContactAvatar.vue'
@@ -855,6 +878,16 @@ const totalSent = computed(() => {
   return paymentResults.value
     .filter(r => r.status === 'success')
     .reduce((sum, r) => sum + r.amount, 0)
+})
+
+/**
+ * Recipients that returned a LUD-09 link (a ticket, a receipt, an invite).
+ * Only the `url` variant earns a place in the summary — a plain message or a
+ * decrypted secret has nothing to act on here and stays on the receipt in
+ * Transaction Details, where every variant is stored.
+ */
+const linkedResults = computed(() => {
+  return paymentResults.value.filter(r => r.successAction?.tag === 'url' && r.successAction.url)
 })
 
 const progressPercent = computed(() => {
@@ -1099,6 +1132,17 @@ function onBeforeHide() {
 // ─────────────────────────────────────────────────────────────
 // Methods - Execution Helpers
 // ─────────────────────────────────────────────────────────────
+/**
+ * Resolve a Lightning address to a payable invoice.
+ *
+ * Returns the LUD-09 `successAction` alongside the invoice because the raw
+ * callback response is the only place it exists — the caller pays a bare
+ * bolt11 and would otherwise never see the recipient's post-payment message.
+ * It is parsed (validated) here and resolved after the payment settles, since
+ * an `aes` secret needs the preimage.
+ *
+ * @returns {Promise<{pr: string, successAction: object|null}>}
+ */
 async function fetchLightningAddressInvoice(address, amountSats) {
   const [username, domain] = address.split('@')
   if (!username || !domain) {
@@ -1140,7 +1184,10 @@ async function fetchLightningAddressInvoice(address, amountSats) {
     throw new Error(invoiceData.reason || 'Invoice error')
   }
 
-  return invoiceData.pr
+  return {
+    pr: invoiceData.pr,
+    successAction: parseSuccessAction(invoiceData.successAction, data.callback),
+  }
 }
 
 // Resolve an LNURL-pay link (bech32 LNURL1… or LUD-17 lnurlp://…) to a payable
@@ -1151,7 +1198,8 @@ async function fetchLightningAddressInvoice(address, amountSats) {
 //   2. fixed-amount links (minSendable === maxSendable) are honored — the
 //      server dictates the amount, so `requestedSats` is overridden by the
 //      fixed amount rather than rejected.
-// Returns { pr, amountSats } so the caller can record the amount actually sent.
+// Returns { pr, amountSats, successAction } so the caller can record the amount
+// actually sent and surface the recipient's LUD-09 message.
 async function fetchLnurlInvoice(lnurl, requestedSats) {
   const clean = stripWrapperScheme(lnurl)
 
@@ -1208,7 +1256,11 @@ async function fetchLnurlInvoice(lnurl, requestedSats) {
     throw new Error(invoiceData.reason || 'Invoice error')
   }
 
-  return { pr: invoiceData.pr, amountSats }
+  return {
+    pr: invoiceData.pr,
+    amountSats,
+    successAction: parseSuccessAction(invoiceData.successAction, data.callback),
+  }
 }
 
 function getActiveWallet() {
@@ -1277,7 +1329,9 @@ async function startBatch() {
     contact,
     amount: getContactAmount(contact),
     status: 'pending',
-    error: null
+    error: null,
+    // LUD-09 message this recipient returned, once the payment settles.
+    successAction: null
   }))
 
   const walletType = getActiveWalletType()
@@ -1297,6 +1351,13 @@ async function startBatch() {
 
     const result = paymentResults.value[i]
     result.status = 'sending'
+
+    // LUD-09: the branches below each record what this recipient returned —
+    // `action` is the parsed successAction (only an LNURL-pay callback carries
+    // one) and `payment` is the settled payment, whose preimage decrypts an
+    // `aes` secret. Both are consumed once, after the branch succeeds.
+    let action = null
+    let payment = null
 
     try {
       if (!provider) {
@@ -1333,8 +1394,10 @@ async function startBatch() {
       // Handle Lightning address type
       else if (addressType === 'lightning') {
         if (walletType === WALLET_TYPES.SPARK) {
-          // Spark has native payLightningAddress
-          await provider.payLightningAddress(address, result.amount)
+          // Spark has native payLightningAddress, which parses the
+          // successAction at its own callback boundary.
+          payment = await provider.payLightningAddress(address, result.amount)
+          action = payment?.successAction || null
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.LNBITS) {
           // LNbits: fetch invoice then pay. Route through ensureLNBitsConnected
@@ -1342,24 +1405,28 @@ async function startBatch() {
           // surfaces cleanly) rather than every remaining payment throwing
           // "wallet is not connected".
           const lnbitsProvider = await walletStore.ensureLNBitsConnected()
-          const invoice = await fetchLightningAddressInvoice(address, result.amount)
-          await lnbitsProvider.payInvoice({ invoice })
+          const { pr: invoice, successAction } = await fetchLightningAddressInvoice(address, result.amount)
+          action = successAction
+          payment = await lnbitsProvider.payInvoice({ invoice })
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.ARKADE) {
           // Arkade pays the LN address via a Boltz submarine swap.
           const arkadeProvider = await walletStore.ensureArkadeConnected()
-          const invoice = await fetchLightningAddressInvoice(address, result.amount)
-          await arkadeProvider.payInvoice({ invoice })
+          const { pr: invoice, successAction } = await fetchLightningAddressInvoice(address, result.amount)
+          action = successAction
+          payment = await arkadeProvider.payInvoice({ invoice })
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.NWC) {
-          // NWC: create service and pay
+          // NWC: create service and pay. Its payLightningAddress parses the
+          // successAction at its own callback boundary.
           const nwcString = getActiveWalletNwcString()
           if (!nwcString) {
             throw new Error('NWC connection not found')
           }
           const lightningService = new LightningPaymentService(nwcString)
           const paymentData = await lightningService.processPaymentInput(address)
-          await lightningService.sendPayment(paymentData, result.amount)
+          payment = await lightningService.sendPayment(paymentData, result.amount)
+          action = payment?.successAction || null
           result.status = 'success'
         } else {
           throw new Error('Unsupported wallet type')
@@ -1380,10 +1447,11 @@ async function startBatch() {
       // resulting invoice has the amount baked in, so every wallet type can
       // settle it the same way: pay the invoice.
       else if (addressType === 'lnurl') {
-        const { pr: invoice, amountSats } = await fetchLnurlInvoice(address, result.amount)
+        const { pr: invoice, amountSats, successAction } = await fetchLnurlInvoice(address, result.amount)
         // Record the amount actually sent — a fixed-amount link overrides the
         // batch amount, so the summary must reflect what really went out.
         result.amount = amountSats
+        action = successAction
 
         if (walletType === WALLET_TYPES.NWC) {
           const nwcString = getActiveWalletNwcString()
@@ -1391,12 +1459,12 @@ async function startBatch() {
             throw new Error('NWC connection not found')
           }
           const lightningService = new LightningPaymentService(nwcString)
-          await lightningService.payInvoice(invoice)
+          payment = await lightningService.payInvoice(invoice)
         } else if (walletType === WALLET_TYPES.LNBITS) {
           const lnbitsProvider = await walletStore.ensureLNBitsConnected()
-          await lnbitsProvider.payInvoice({ invoice })
+          payment = await lnbitsProvider.payInvoice({ invoice })
         } else {
-          await provider.payInvoice({ invoice })
+          payment = await provider.payInvoice({ invoice })
         }
         result.status = 'success'
       } else {
@@ -1408,15 +1476,21 @@ async function startBatch() {
       if (result.status === 'success') {
         await addressBookStore.updateLastUsed(result.contact.id)
 
+        // LUD-09: resolve the recipient's message now that the payment has
+        // settled (an `aes` secret needs the preimage). Never throws — a
+        // decryption failure comes back flagged, not raised.
+        result.successAction = await resolveSuccessAction(action, payment?.preimage)
+
         // Queue a pending metadata link so the tx, once it surfaces in
-        // history, is stamped with the contact/address and marked as a
-        // batch send. Best-effort — a metadata failure must never fail
-        // a payment that already went out.
+        // history, is stamped with the contact/address, the recipient's
+        // message, and marked as a batch send. Best-effort — a metadata
+        // failure must never fail a payment that already went out.
         try {
           await transactionMetadataStore.enqueuePendingContactLink({
             contactId: result.contact.id || null,
             recipientAddress: address,
             amountSats: result.amount,
+            successAction: result.successAction,
             source: 'batch',
             walletId: walletStore.activeWalletId || null,
           })
@@ -1468,6 +1542,17 @@ function retryFailed() {
   selectedContacts.value = failedResults.value.map(r => r.contact)
   step.value = 1
   paymentResults.value = []
+}
+
+/**
+ * Open a recipient's LUD-09 link. The summary stays open on purpose: a batch
+ * can hand back several links, and the user comes straight back for the next
+ * one. openInAppBrowser never navigates this window — it overlays a Custom Tab
+ * on native and opens a new tab on web.
+ */
+function openResultLink(result) {
+  const url = result?.successAction?.url
+  if (url) openInAppBrowser(url)
 }
 </script>
 
@@ -2714,6 +2799,74 @@ function retryFailed() {
 
 .stat-failed {
   color: var(--c-error);
+}
+
+/* LUD-09 links returned by recipients: same block rhythm as the failed list
+   below, in neutral chrome so it reads as an offer rather than a warning. */
+.link-list {
+  width: 100%;
+  text-align: left;
+  background: var(--c-bg2);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.link-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text2);
+  margin-bottom: 12px;
+}
+
+.link-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--c-border);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.link-item:last-child {
+  border-bottom: none;
+}
+
+.link-item:hover { opacity: 0.75; }
+.link-item:active { opacity: 0.6; }
+.link-item:focus-visible {
+  outline: 2px solid var(--c-success);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.link-name {
+  color: var(--c-text);
+  font-weight: 500;
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-url {
+  color: var(--c-text2);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-icon {
+  color: var(--c-text3);
+  flex-shrink: 0;
 }
 
 .failed-list {

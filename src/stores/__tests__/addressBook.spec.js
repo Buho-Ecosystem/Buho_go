@@ -756,16 +756,20 @@ await test('addNostrContact + reload: entry survives a localStorage roundtrip', 
 });
 
 // ---------------------------------------------------------------------------
-// syncToNostr — fetch, merge, publish, reconcile against the NIP-51 list
+// syncToNostr — fetch, reconcile, merge, publish against the shared
+// contacts doc (kind:30078, the ecosystem wire format)
 // ---------------------------------------------------------------------------
 
+const {
+  CONTACTS_DOC_KIND,
+  CONTACTS_DOC_D_TAG,
+} = await import('../../utils/nostrContactsDoc.js');
 const {
   ADDRESS_BOOK_KIND,
   ADDRESS_BOOK_D_TAG,
   deriveSelfConversationKey,
-  decryptAddressBookContent,
 } = await import('../../utils/nostrAddressBook.js');
-const { verifyEvent: verifyEv } = await import('nostr-core');
+const { verifyEvent: verifyEv, nip44: nip44mod } = await import('nostr-core');
 
 /**
  * Minimal identity-store stub. The real store reads the encrypted
@@ -783,13 +787,21 @@ function fakeIdentity({ pubkey, secret }) {
 /**
  * Fake pool that records every publish/query, returns a configurable
  * verdict per relay for publish, and serves canned events for query.
+ * Events are filtered by kind so the doc fetch, the legacy-migration
+ * fetch, and the NIP-65 fetch each see only what a real relay would
+ * return for their filter.
  */
-function syncFakePool({ publish = 'ok', events = {} } = {}) {
+function syncFakePool({ publish = 'ok', events = {}, unreachable = [] } = {}) {
   const calls = { publish: [], query: [] };
   return {
     calls,
+    // Rejecting here is how a real pool signals a failed handshake —
+    // the reachability probe AND the publish fan-out both go through
+    // ensureRelay, so an unreachable relay fails both, like reality.
     async ensureRelay(url) {
+      if (unreachable.includes(url)) throw new Error('connect failed');
       return {
+        connected: true,
         publish: async (event) => {
           calls.publish.push({ url, event });
           if (publish === 'ok') return ['OK', event.id, true, ''];
@@ -802,9 +814,13 @@ function syncFakePool({ publish = 'ok', events = {} } = {}) {
     },
     async querySync(urls, filter, params) {
       calls.query.push({ urls: [...urls], filter, params });
+      const kinds = Array.isArray(filter?.kinds) ? filter.kinds : null;
       const merged = [];
       for (const url of urls) {
-        if (Array.isArray(events[url])) merged.push(...events[url]);
+        if (unreachable.includes(url) || !Array.isArray(events[url])) continue;
+        for (const ev of events[url]) {
+          if (!kinds || kinds.includes(ev.kind)) merged.push(ev);
+        }
       }
       return merged;
     },
@@ -812,12 +828,24 @@ function syncFakePool({ publish = 'ok', events = {} } = {}) {
 }
 
 /**
- * Build a signed + NIP-44-self-encrypted kind:30000 address-book event,
- * exactly as a *different device* (or an earlier session) would have
- * published it. The store's fetch-merge-publish path consumes this as
- * "the remote list".
+ * Build a signed + NIP-44-self-encrypted contacts doc event, exactly
+ * as another ecosystem app (or an earlier session of this one) would
+ * have published it.
  */
-async function makeRemoteEvent(payload, { secret, pubkey, createdAt = 1_700_000_000 } = {}) {
+async function makeRemoteDocEvent(doc, { secret, pubkey, createdAt = 1_700_000_000 } = {}) {
+  const { finalizeEvent, nip44 } = await import('nostr-core');
+  const key = nip44.getConversationKey(new Uint8Array(secret), pubkey);
+  const content = nip44.encrypt(JSON.stringify(doc), key);
+  return finalizeEvent({
+    kind: CONTACTS_DOC_KIND,
+    created_at: createdAt,
+    tags: [['d', CONTACTS_DOC_D_TAG], ['client', 'lotus'], ['encrypted', 'nip44']],
+    content,
+  }, new Uint8Array(secret));
+}
+
+/** Legacy kind:30000 list event — only the migration path reads these. */
+async function makeLegacyEvent(payload, { secret, pubkey, createdAt = 1_700_000_000 } = {}) {
   const { finalizeEvent, nip44 } = await import('nostr-core');
   const key = nip44.getConversationKey(new Uint8Array(secret), pubkey);
   const content = nip44.encrypt(JSON.stringify(payload), key);
@@ -829,6 +857,14 @@ async function makeRemoteEvent(payload, { secret, pubkey, createdAt = 1_700_000_
   }, new Uint8Array(secret));
 }
 
+/** Self-decrypt a published doc event back to its plaintext object. */
+function decryptDoc(event, secret, pubkey) {
+  const key = deriveSelfConversationKey(new Uint8Array(secret), pubkey);
+  return JSON.parse(nip44mod.decrypt(event.content, key));
+}
+
+const nowSec = () => Math.floor(Date.now() / 1000);
+
 await test('syncToNostr: skipped when identity not bootstrapped', async () => {
   const store = freshStore();
   const result = await store.syncToNostr({ identityStore: { bootstrapped: false } });
@@ -836,23 +872,21 @@ await test('syncToNostr: skipped when identity not bootstrapped', async () => {
   assert.equal(result.reason, 'identity-not-bootstrapped');
 });
 
-await test('syncToNostr: no contacts and no remote list is a clean no-op', async () => {
+await test('syncToNostr: empty book and no remote doc is a clean no-op', async () => {
   const store = freshStore();
-  await store.addEntry({ name: 'Plain', address: 'plain@a.test', addressType: 'lightning' });
   const pool = syncFakePool();
   const result = await store.syncToNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool,
     relays: ['wss://r.test'],
   });
-  // Nothing local, nothing remote — succeed without ever publishing.
   assert.equal(result.ok, true);
   assert.equal(result.hadRemote, false);
   assert.equal(result.published, false);
   assert.equal(pool.calls.publish.length, 0);
 });
 
-await test('syncToNostr: publishes a signed kind:30000 with the buhogo d tag', async () => {
+await test('syncToNostr: publishes a signed kind:30078 doc with the frozen d tag', async () => {
   const store = freshStore();
   await store.addNostrContact({
     pubkey: ALICE_PUBKEY,
@@ -868,25 +902,41 @@ await test('syncToNostr: publishes a signed kind:30000 with the buhogo d tag', a
   assert.equal(result.ok, true);
   assert.equal(result.acceptedRelay, 'wss://r.test');
   assert.equal(result.published, true);
-  // The actual event hit the publish call.
   assert.equal(pool.calls.publish.length, 1);
   const sent = pool.calls.publish[0].event;
-  assert.equal(sent.kind, ADDRESS_BOOK_KIND);
+  assert.equal(sent.kind, CONTACTS_DOC_KIND);
   assert.equal(sent.pubkey, ALICE_PUBKEY);
-  const dTag = sent.tags.find((t) => t[0] === 'd');
-  assert.equal(dTag[1], ADDRESS_BOOK_D_TAG);
+  assert.deepEqual(sent.tags.find((t) => t[0] === 'd'), ['d', CONTACTS_DOC_D_TAG]);
   assert.equal(verifyEv(sent), true);
 });
 
-await test('syncToNostr: ciphertext decrypts back to exactly the synced payload', async () => {
+await test('syncToNostr: a manual contact syncs into the doc as a paymentAddress record', async () => {
+  const store = freshStore();
+  await store.addEntry({ name: 'Plain', address: 'plain@a.test', addressType: 'lightning' });
+  assert.equal(store.syncDirty, true);
+  const pool = syncFakePool();
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.published, true);
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.equal(doc.contacts.length, 1);
+  assert.equal(doc.contacts[0].paymentAddress, 'plain@a.test');
+  assert.equal(doc.contacts[0].name, 'Plain');
+  // The entry remembers its doc record for stable future matching.
+  assert.equal(store.entries[0].doc_contact_id, doc.contacts[0].id);
+});
+
+await test('syncToNostr: ciphertext decrypts back to the doc, rename included', async () => {
   const store = freshStore();
   await store.addNostrContact({
     pubkey: ALICE_PUBKEY,
     npub: ALICE_NPUB,
     event: makeKind0(ALICE_SECRET, { display_name: 'Alice', lud16: 'a@a.test' }),
-    relayHints: ['wss://hint.test'],
   });
-  // Locally rename so petname propagates.
   const entry = store.entries[0];
   await store.updateEntry(entry.id, { name: 'Bestie' });
 
@@ -896,13 +946,10 @@ await test('syncToNostr: ciphertext decrypts back to exactly the synced payload'
     pool,
     relays: ['wss://r.test'],
   });
-  const sent = pool.calls.publish[0].event;
-  const key = deriveSelfConversationKey(new Uint8Array(ALICE_SECRET), ALICE_PUBKEY);
-  const payload = decryptAddressBookContent(sent.content, key);
-  assert.equal(payload.length, 1);
-  assert.equal(payload[0].pubkey, ALICE_PUBKEY);
-  assert.deepEqual(payload[0].relays, ['wss://hint.test']);
-  assert.equal(payload[0].petname, 'Bestie');
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.equal(doc.contacts.length, 1);
+  assert.equal(doc.contacts[0].npub, ALICE_NPUB);
+  assert.equal(doc.contacts[0].name, 'Bestie');
 });
 
 await test('syncToNostr: clears syncDirty + bumps lastSyncedAt on success', async () => {
@@ -940,9 +987,9 @@ await test('syncToNostr: every-relay-rejects yields ok:false + records error cod
   assert.equal(store.syncDirty, true); // unchanged — caller may retry
 });
 
-// --- Fetch-merge-publish: the no-data-loss guarantee (Findings 1 & 2) -------
+// --- Fetch-reconcile-merge-publish: the no-data-loss guarantee --------------
 
-await test('syncToNostr: union-merges the remote list so a contact on either side survives', async () => {
+await test('syncToNostr: merges the remote doc so a contact on either side survives', async () => {
   const store = freshStore();
   // Local knows Bob.
   await store.addNostrContact({
@@ -950,11 +997,11 @@ await test('syncToNostr: union-merges the remote list so a contact on either sid
     npub: BOB_NPUB,
     event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
   });
-  // The remote list (published by another device) knows Carol.
-  const remoteEvent = await makeRemoteEvent(
-    [{ pubkey: CAROL_PUBKEY, addedAt: 1_700_000_000 }],
-    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
-  );
+  // The remote doc (written by another app or device) knows Carol.
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{ id: 'c-carol1', name: 'Carol', npub: CAROL_NPUB, createdAt: 1_700_000_000, updatedAt: 1_700_000_000 }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const carolProfile = makeKind0(CAROL_SECRET, { name: 'Carol', lud16: 'carol@c.test' });
 
   const pool = syncFakePool({ events: { 'wss://r.test': [remoteEvent] } });
@@ -967,19 +1014,54 @@ await test('syncToNostr: union-merges the remote list so a contact on either sid
 
   assert.equal(result.ok, true);
   assert.equal(result.hadRemote, true);
-  assert.equal(result.restored, 1); // Carol pulled in from the remote list
-  // Neither side's contact was lost.
+  assert.equal(result.restored, 1); // Carol pulled in from the doc
   assert.equal(store.entries.length, 2);
   assert.ok(store.findContactByPubkey(BOB_PUBKEY));
   assert.ok(store.findContactByPubkey(CAROL_PUBKEY));
-  // And the event we published is the union, not just our local half.
-  const sent = pool.calls.publish[0].event;
-  const key = deriveSelfConversationKey(new Uint8Array(ALICE_SECRET), ALICE_PUBKEY);
-  const payload = decryptAddressBookContent(sent.content, key);
-  assert.equal(payload.length, 2);
+  // Carol keeps her doc identity; Bob was appended next to her.
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.equal(doc.contacts.length, 2);
+  assert.ok(doc.contacts.some((c) => c.id === 'c-carol1'));
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB));
 });
 
-await test('syncToNostr: deleting the last contact publishes a tombstone, never a skip', async () => {
+await test('syncToNostr: foreign contacts and labels round-trip untouched', async () => {
+  const store = freshStore();
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{
+      id: 'c-phoneonly',
+      name: 'Phone Person',
+      phones: [{ label: '', value: '+1 555 0100' }],
+      customField: 'must-survive',
+      createdAt: 1_700_000_000,
+      updatedAt: 1_700_000_000,
+    }],
+    labels: ['friends'],
+    labelColors: { friends: 'sage' },
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const pool = syncFakePool({ events: { 'wss://r.test': [remoteEvent] } });
+  await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  // The phone-only contact never became a local entry...
+  assert.equal(store.entries.length, 1);
+  // ...but survived the publish byte-for-byte, labels included.
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  const foreign = doc.contacts.find((c) => c.id === 'c-phoneonly');
+  assert.equal(foreign.customField, 'must-survive');
+  assert.deepEqual(foreign.phones, [{ label: '', value: '+1 555 0100' }]);
+  assert.deepEqual(doc.labels, ['friends']);
+  assert.deepEqual(doc.labelColors, { friends: 'sage' });
+});
+
+await test('syncToNostr: deleting the last contact publishes it as trashed, never a skip', async () => {
   const store = freshStore();
   const e = await store.addNostrContact({
     pubkey: ALICE_PUBKEY,
@@ -991,12 +1073,11 @@ await test('syncToNostr: deleting the last contact publishes a tombstone, never 
     pool: syncFakePool(),
     relays: ['wss://r.test'],
   });
-  // Delete the one and only contact.
   await store.deleteEntry(e.id);
 
-  // The next sync must still publish — an empty book goes out as a
-  // tombstone, otherwise the delete never reaches the other devices
-  // and a stale copy resurrects the contact on restore.
+  // The next sync must still publish: the delete travels as
+  // `trashed: true` in the doc (recoverable in other apps' trash),
+  // otherwise a stale copy resurrects the contact on restore.
   const pool = syncFakePool();
   const result = await store.syncToNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
@@ -1005,29 +1086,32 @@ await test('syncToNostr: deleting the last contact publishes a tombstone, never 
   });
   assert.equal(result.ok, true);
   assert.equal(result.published, true);
-  assert.equal(pool.calls.publish.length, 1);
-  const sent = pool.calls.publish[0].event;
-  const key = deriveSelfConversationKey(new Uint8Array(ALICE_SECRET), ALICE_PUBKEY);
-  const payload = decryptAddressBookContent(sent.content, key);
-  assert.equal(payload.length, 1);
-  assert.equal(payload[0].pubkey, ALICE_PUBKEY);
-  assert.equal(payload[0].deleted, true);
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.equal(doc.contacts.length, 1);
+  assert.equal(doc.contacts[0].npub, ALICE_NPUB);
+  assert.equal(doc.contacts[0].trashed, true);
+  assert.equal(store.entries.length, 0);
 });
 
-await test('syncToNostr: a remote tombstone removes a locally-live contact', async () => {
+await test('syncToNostr: a remote trashed contact removes the locally-live copy', async () => {
   const store = freshStore();
-  // Bob is live locally.
   await store.addNostrContact({
     pubkey: BOB_PUBKEY,
     npub: BOB_NPUB,
     event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
   });
-  // The remote list says Bob was deleted on another device, with a
-  // clock strictly newer than our local copy.
-  const remoteEvent = await makeRemoteEvent(
-    [{ pubkey: BOB_PUBKEY, deleted: true, updatedAt: Date.now() + 60_000 }],
-    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
-  );
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{
+      id: 'c-bob1',
+      name: 'Bob',
+      npub: BOB_NPUB,
+      trashed: true,
+      trashedAt: nowSec() + 60,
+      createdAt: 1_700_000_000,
+      updatedAt: nowSec() + 60,
+    }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const result = await store.syncToNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
@@ -1036,8 +1120,72 @@ await test('syncToNostr: a remote tombstone removes a locally-live contact', asy
   assert.equal(result.ok, true);
   assert.equal(result.removed, 1);
   assert.equal(store.entries.length, 0);
-  // The delete is now a local tombstone too, so it keeps propagating.
-  assert.ok(store.nostrDeletions.some((d) => d.pubkey === BOB_PUBKEY));
+});
+
+await test('syncToNostr: folds the legacy kind:30000 list in exactly once', async () => {
+  const store = freshStore();
+  const legacyEvent = await makeLegacyEvent(
+    [{ pubkey: CAROL_PUBKEY, petname: 'Caz', addedAt: 1_700_000_000 }],
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
+  );
+  const carolProfile = makeKind0(CAROL_SECRET, { name: 'Carol', lud16: 'carol@c.test' });
+  const pool = syncFakePool({ events: { 'wss://r.test': [legacyEvent] } });
+  assert.equal(store.legacyMigratedAt, null);
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async (pk) => (pk === CAROL_PUBKEY ? carolProfile : null),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.hadRemote, true);
+  assert.equal(result.restored, 1);
+  // The legacy petname migrated as the contact's name.
+  assert.equal(store.entries[0].name, 'Caz');
+  // The published doc now carries the migrated contact...
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === CAROL_NPUB));
+  // ...the published event is the doc, not the legacy list...
+  assert.ok(pool.calls.publish.every((p) => p.event.kind === CONTACTS_DOC_KIND));
+  // ...and the migration never runs again.
+  assert.ok(Number.isFinite(store.legacyMigratedAt));
+});
+
+await test('syncToNostr: a manual doc contact from another app becomes a local entry', async () => {
+  const store = freshStore();
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{
+      id: 'c-shop1',
+      name: 'Coffee Shop',
+      paymentAddress: 'shop@pay.test',
+      starred: true,
+      createdAt: 1_700_000_000,
+      updatedAt: 1_700_000_000,
+    }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.restored, 1);
+  assert.equal(store.entries.length, 1);
+  const entry = store.entries[0];
+  assert.equal(entry.name, 'Coffee Shop');
+  assert.equal(entry.address, 'shop@pay.test');
+  assert.equal(entry.addressType, 'lightning');
+  assert.equal(entry.isFavorite, true);
+  assert.equal(entry.doc_contact_id, 'c-shop1');
+  assert.equal(store.isEntryPayable(entry), true);
+});
+
+await test('addEntry: marks syncDirty', async () => {
+  const store = freshStore();
+  assert.equal(store.syncDirty, false);
+  await store.addEntry({ name: 'Plain', address: 'p@p.test', addressType: 'lightning' });
+  assert.equal(store.syncDirty, true);
 });
 
 await test('addNostrContact: marks syncDirty', async () => {
@@ -1058,7 +1206,6 @@ await test('deleteEntry: marks syncDirty for a nostr entry', async () => {
     npub: ALICE_NPUB,
     event: makeKind0(ALICE_SECRET, { name: 'A', lud16: 'a@a.test' }),
   });
-  // First sync to clear dirty
   await store.syncToNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool(),
@@ -1069,27 +1216,25 @@ await test('deleteEntry: marks syncDirty for a nostr entry', async () => {
   assert.equal(store.syncDirty, true);
 });
 
-await test('deleteEntry: does NOT mark syncDirty for a manual entry', async () => {
+await test('deleteEntry: marks syncDirty for a manual entry too', async () => {
   const store = freshStore();
   const manual = await store.addEntry({
     name: 'Plain', address: 'p@p.test', addressType: 'lightning',
-  });
-  // Add then sync a nostr contact so dirty starts false.
-  await store.addNostrContact({
-    pubkey: ALICE_PUBKEY,
-    npub: ALICE_NPUB,
-    event: makeKind0(ALICE_SECRET, { name: 'A', lud16: 'a@a.test' }),
   });
   await store.syncToNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool(),
     relays: ['wss://r.test'],
   });
-  await store.deleteEntry(manual.id);
   assert.equal(store.syncDirty, false);
+  await store.deleteEntry(manual.id);
+  assert.equal(store.syncDirty, true);
+  // The tombstone targets the doc record, so the delete can land as
+  // trash even though the entry is gone locally.
+  assert.ok(store.nostrDeletions.some((d) => d.docId || d.address));
 });
 
-await test('updateEntry: petname flip on a nostr entry marks dirty', async () => {
+await test('updateEntry: a rename marks dirty', async () => {
   const store = freshStore();
   const e = await store.addNostrContact({
     pubkey: ALICE_PUBKEY,
@@ -1102,7 +1247,6 @@ await test('updateEntry: petname flip on a nostr entry marks dirty', async () =>
     relays: ['wss://r.test'],
   });
   assert.equal(store.syncDirty, false);
-  // Rename → name_locally_edited flips → dirty
   await store.updateEntry(e.id, { name: 'Buddy' });
   assert.equal(store.syncDirty, true);
 });
@@ -1123,12 +1267,29 @@ await test('updateEntry: a notes-only change does NOT mark dirty', async () => {
   assert.equal(store.syncDirty, false);
 });
 
+await test('toggleFavorite: marks dirty — starred travels in the doc', async () => {
+  const store = freshStore();
+  const e = await store.addNostrContact({
+    pubkey: ALICE_PUBKEY,
+    npub: ALICE_NPUB,
+    event: makeKind0(ALICE_SECRET, { name: 'Alice', lud16: 'a@a.test' }),
+  });
+  await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: syncFakePool(),
+    relays: ['wss://r.test'],
+  });
+  assert.equal(store.syncDirty, false);
+  await store.toggleFavorite(e.id);
+  assert.equal(store.syncDirty, true);
+});
+
 // ---------------------------------------------------------------------------
-// recoverFromNostr — same fetch-merge-publish-reconcile core as
-// syncToNostr, framed for the restore wizard
+// recoverFromNostr — same fetch-reconcile-merge-publish core as
+// syncToNostr, framed for the restore flow
 // ---------------------------------------------------------------------------
 
-await test('recoverFromNostr: hadRemote=false when relays have no list', async () => {
+await test('recoverFromNostr: hadRemote=false when relays have no doc', async () => {
   const store = freshStore();
   const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
@@ -1140,19 +1301,16 @@ await test('recoverFromNostr: hadRemote=false when relays have no list', async (
   assert.equal(result.restored, 0);
 });
 
-await test('recoverFromNostr: rebuilds a contact from the remote list + fresh kind:0', async () => {
+await test('recoverFromNostr: rebuilds a contact from the doc + fresh kind:0', async () => {
   const store = freshStore();
-  const remoteList = [
-    { pubkey: BOB_PUBKEY, relays: ['wss://bob-hint.test'], addedAt: 1_700_000_000 },
-  ];
-  const remoteEvent = await makeRemoteEvent(remoteList, {
-    secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
-  });
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{ id: 'c-bob1', name: '', npub: BOB_NPUB, createdAt: 1_700_000_000, updatedAt: 1_700_000_000 }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const bobProfileEvent = makeKind0(BOB_SECRET, {
     display_name: 'Bob the Builder',
     lud16: 'bob@bob.test',
   });
-  // Inject a fake fetchProfile that returns Bob's kind:0.
   const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
@@ -1167,18 +1325,17 @@ await test('recoverFromNostr: rebuilds a contact from the remote list + fresh ki
   assert.equal(restored.source, CONTACT_SOURCES.NOSTR);
   assert.equal(restored.nostr_pubkey, BOB_PUBKEY);
   assert.equal(restored.address, 'bob@bob.test');
-  // addedAt was preserved
-  assert.equal(restored.createdAt, 1_700_000_000);
+  assert.equal(restored.doc_contact_id, 'c-bob1');
+  // The doc's add time was preserved (seconds -> ms).
+  assert.equal(restored.createdAt, 1_700_000_000_000);
 });
 
-await test('recoverFromNostr: applies the synced petname when restoring', async () => {
+await test('recoverFromNostr: the doc name wins over the profile-derived one', async () => {
   const store = freshStore();
-  const remoteList = [
-    { pubkey: BOB_PUBKEY, petname: 'Bobby' },
-  ];
-  const remoteEvent = await makeRemoteEvent(remoteList, {
-    secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
-  });
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{ id: 'c-bob1', name: 'Bobby', npub: BOB_NPUB, createdAt: 1_700_000_000, updatedAt: 1_700_000_000 }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const bobProfileEvent = makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' });
   await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
@@ -1192,10 +1349,10 @@ await test('recoverFromNostr: applies the synced petname when restoring', async 
 
 await test('recoverFromNostr: a contact whose kind:0 lacks lud16 restores as identity-only', async () => {
   const store = freshStore();
-  const remoteList = [{ pubkey: BOB_PUBKEY }];
-  const remoteEvent = await makeRemoteEvent(remoteList, {
-    secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
-  });
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{ id: 'c-bob1', name: 'Bob', npub: BOB_NPUB, createdAt: 1_700_000_000, updatedAt: 1_700_000_000 }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const bobNoLud16 = makeKind0(BOB_SECRET, { name: 'Bob' /* no lud16 */ });
   const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
@@ -1223,11 +1380,11 @@ await test('recoverFromNostr: an already-local contact is reconciled, not re-fet
   });
   assert.equal(existing.name_locally_edited, false);
 
-  // Remote knows the same pubkey, with an older clock — nothing to converge.
-  const remoteList = [{ pubkey: BOB_PUBKEY, updatedAt: 1 }];
-  const remoteEvent = await makeRemoteEvent(remoteList, {
-    secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
-  });
+  // The doc knows the same npub, with an older clock — nothing to converge.
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{ id: 'c-bob1', name: 'Bob', npub: BOB_NPUB, createdAt: 1, updatedAt: 1 }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
@@ -1239,9 +1396,11 @@ await test('recoverFromNostr: an already-local contact is reconciled, not re-fet
   assert.equal(result.removed, 0);
   assert.equal(store.entries.length, 1);
   assert.equal(store.entries[0].name, 'Bob');
+  // Reconcile still remembered the doc link.
+  assert.equal(store.entries[0].doc_contact_id, 'c-bob1');
 });
 
-await test('recoverFromNostr: a newer remote petname converges onto an un-edited local contact', async () => {
+await test('recoverFromNostr: a newer doc rename converges onto the local contact', async () => {
   const store = freshStore();
   await store.addNostrContact({
     pubkey: BOB_PUBKEY,
@@ -1249,14 +1408,10 @@ await test('recoverFromNostr: a newer remote petname converges onto an un-edited
     event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
   });
 
-  // Remote carries a petname with a clock strictly newer than the local
-  // entry's — last-writer-wins says the petname should land locally.
-  const remoteList = [
-    { pubkey: BOB_PUBKEY, petname: 'My Bobby', updatedAt: Date.now() + 60_000 },
-  ];
-  const remoteEvent = await makeRemoteEvent(remoteList, {
-    secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
-  });
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{ id: 'c-bob1', name: 'My Bobby', npub: BOB_NPUB, createdAt: 1_700_000_000, updatedAt: nowSec() + 60 }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
@@ -1268,7 +1423,7 @@ await test('recoverFromNostr: a newer remote petname converges onto an un-edited
   assert.equal(store.entries[0].name_locally_edited, true);
 });
 
-await test('recoverFromNostr: a locally-edited name outranks a stale remote petname', async () => {
+await test('recoverFromNostr: a locally-edited name outranks a stale doc name', async () => {
   const store = freshStore();
   const existing = await store.addNostrContact({
     pubkey: BOB_PUBKEY,
@@ -1278,11 +1433,10 @@ await test('recoverFromNostr: a locally-edited name outranks a stale remote petn
   await store.updateEntry(existing.id, { name: 'Local Bob' });
   assert.equal(store.entries[0].name_locally_edited, true);
 
-  // Remote petname carries an older clock, so the local edit wins the merge.
-  const remoteList = [{ pubkey: BOB_PUBKEY, petname: 'Remote Bobby', updatedAt: 1 }];
-  const remoteEvent = await makeRemoteEvent(remoteList, {
-    secret: ALICE_SECRET, pubkey: ALICE_PUBKEY,
-  });
+  const remoteEvent = await makeRemoteDocEvent({
+    contacts: [{ id: 'c-bob1', name: 'Remote Bobby', npub: BOB_NPUB, createdAt: 1, updatedAt: 1 }],
+    labels: [],
+  }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY });
   const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
     pool: syncFakePool({ events: { 'wss://r.test': [remoteEvent] } }),
@@ -1293,9 +1447,8 @@ await test('recoverFromNostr: a locally-edited name outranks a stale remote petn
   assert.equal(store.entries[0].name, 'Local Bob');
 });
 
-await test('recoverFromNostr: publishes the merged union and clears syncDirty (Finding 5)', async () => {
+await test('recoverFromNostr: publishes the merged doc and clears syncDirty', async () => {
   const store = freshStore();
-  // A freshly-added contact leaves the store dirty.
   await store.addNostrContact({
     pubkey: BOB_PUBKEY,
     npub: BOB_NPUB,
@@ -1303,7 +1456,7 @@ await test('recoverFromNostr: publishes the merged union and clears syncDirty (F
   });
   assert.equal(store.syncDirty, true);
 
-  // Recovery is also a publish: it pushes the merged union back out, so
+  // Recovery is also a publish: it pushes the merged doc back out, so
   // a successful recovery leaves the store in sync — not dirty.
   const result = await store.recoverFromNostr({
     identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
@@ -1345,6 +1498,567 @@ await test('addEntry: stores an LNURL contact that is payable', async () => {
   assert.equal(entry.addressType, 'lnurl');
   assert.equal(store.getEntryAddressType(entry), 'lnurl');
   assert.equal(store.isEntryPayable(entry), true);
+});
+
+// ---------------------------------------------------------------------------
+// Sync trust assumptions — the review findings. Every publish is a
+// whole-document replace shared with other apps, so these pin down
+// when a sync must REFUSE to publish, and which state must never leak
+// across identities.
+// ---------------------------------------------------------------------------
+
+await test('sync refuses to publish when no relay is provably reachable (no cache)', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const pool = syncFakePool({ unreachable: ['wss://a.test', 'wss://b.test'] });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://a.test', 'wss://b.test'],
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'fetch-failed');
+  assert.equal(pool.calls.publish.length, 0);
+  assert.equal(store.syncDirty, true);
+});
+
+await test('sync refuses the cache-recovery republish without proven absence', async () => {
+  const store = freshStore();
+  // A previous good sync left a cache for this identity.
+  store._saveDocCache({
+    pubkey: ALICE_PUBKEY,
+    eventId: 'ev-1',
+    createdAt: 1_700_000_000,
+    doc: { contacts: [{ id: 'c-x', name: 'From cache', npub: BOB_NPUB, updatedAt: 1_700_000_000 }], labels: [] },
+  });
+  const pool = syncFakePool({ unreachable: ['wss://a.test', 'wss://b.test'] });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://a.test', 'wss://b.test'],
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'fetch-failed');
+  assert.equal(pool.calls.publish.length, 0);
+});
+
+await test('an identity change drops the previous identity\'s cache, latch, and tombstones', async () => {
+  const store = freshStore();
+  // Alice syncs against a doc that carries a foreign (vCard-only)
+  // passenger another app owns.
+  const aliceDoc = {
+    contacts: [{ id: 'c-f', name: 'Phone-only person', phones: [{ label: '', value: '+1 555' }] }],
+    labels: ['friends'],
+  };
+  const pool1 = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(aliceDoc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY })] },
+  });
+  const first = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: pool1,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(first.ok, true);
+  assert.ok(store.legacyMigratedAt, 'legacy latch set for Alice');
+  store.nostrDeletions = [{ pubkey: BOB_PUBKEY, deletedAt: Date.now() }];
+  await store._persistSyncMeta();
+
+  // A local contact exists when Carol signs in on the same device.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+
+  const pool2 = syncFakePool();
+  const second = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    pool: pool2,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(second.ok, true);
+  assert.equal(second.published, true);
+  // Carol's doc is her own: it carries the local entry, never Alice's
+  // cached doc with the foreign passenger, and no stale tombstones.
+  const doc = decryptDoc(pool2.calls.publish[0].event, CAROL_SECRET, CAROL_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB));
+  assert.ok(!doc.contacts.some((c) => c.id === 'c-f'));
+  assert.ok(!doc.contacts.some((c) => c.trashed));
+});
+
+await test('a no-op sync never re-stamps a newer cache with the older fetched clock', async () => {
+  const store = freshStore();
+  const doc = {
+    contacts: [{ id: 'c-f', name: 'Foreign', phones: [{ label: '', value: '+1 555' }] }],
+    labels: [],
+  };
+  // Cache holds our own newer publish; the relay still serves an old copy.
+  store._saveDocCache({ pubkey: ALICE_PUBKEY, eventId: 'ev-new', createdAt: 5_000_000_000, doc });
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(doc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 })] },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.published, false);
+  const cached = JSON.parse(globalThis.localStorage.getItem('buhoGO_shared_contacts_doc_v1'));
+  assert.equal(cached.createdAt, 5_000_000_000);
+});
+
+await test('a mutation made mid-sync survives the dirty-flag clear', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const pool = syncFakePool();
+  // Simulate a contact edit landing while the sync is in flight: the
+  // doc fetch is the first await inside _runSync.
+  const origQuery = pool.querySync.bind(pool);
+  let injected = false;
+  pool.querySync = async (...args) => {
+    if (!injected) {
+      injected = true;
+      await store._markSyncDirty();
+    }
+    return origQuery(...args);
+  };
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(store.syncDirty, true, 'mid-sync dirt must survive the clear');
+});
+
+await test('a tombstone older than a doc re-add does not block the import', async () => {
+  const store = freshStore();
+  // Deleted here long ago; re-added in another app afterwards.
+  store.nostrDeletions = [{ pubkey: BOB_PUBKEY, deletedAt: 1_000_000 }];
+  const doc = {
+    contacts: [{ id: 'c-b', name: 'Bob again', npub: BOB_NPUB, updatedAt: nowSec() }],
+    labels: [],
+  };
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(doc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: nowSec() })] },
+  });
+  const result = await store.recoverFromNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async () => makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.restored, 1);
+  assert.ok(store.findContactByPubkey(BOB_PUBKEY));
+});
+
+await test('a legacy contact with no fetchable kind:0 still reaches the doc, and migration latches', async () => {
+  const store = freshStore();
+  const legacy = await makeLegacyEvent(
+    [{ pubkey: BOB_PUBKEY, petname: 'Old friend', updatedAt: 1_700_000_000_000, addedAt: 1_600_000_000_000 }],
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
+  );
+  const pool = syncFakePool({ events: { 'wss://r.test': [legacy] } });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async () => null, // Bob's profile is gone from relays
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.deferred, 1);
+  assert.equal(result.published, true);
+  const doc = decryptDoc(pool.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  const bob = doc.contacts.find((c) => c.npub === BOB_NPUB);
+  assert.ok(bob, 'the legacy contact must be in the published doc');
+  assert.equal(bob.name, 'Old friend');
+  assert.ok(store.legacyMigratedAt, 'migration latches: the doc now carries the contact');
+});
+
+await test('the legacy latch waits when absence of the legacy event is unproven', async () => {
+  const store = freshStore();
+  const docEvent = await makeRemoteDocEvent(
+    { contacts: [], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY },
+  );
+  // Two relays configured, only one reachable: the doc still arrives,
+  // but an empty legacy read could just mean the dead relay held it.
+  const pool = syncFakePool({
+    events: { 'wss://a.test': [docEvent] },
+    unreachable: ['wss://b.test'],
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://a.test', 'wss://b.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(store.legacyMigratedAt, null, 'latch must wait for a conclusive legacy read');
+});
+
+await test('a doc-linked entry missing from a fetched doc is a hard delete, not a re-add', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  // A previous sync linked this entry to a doc record that another
+  // app has since deleted forever.
+  store.entries.splice(0, 1, { ...store.entries[0], doc_contact_id: 'c-gone' });
+  const doc = {
+    contacts: [{ id: 'c-f', name: 'Foreign', phones: [{ label: '', value: '+1 555' }] }],
+    labels: [],
+  };
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(doc, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY })] },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.removed, 1);
+  assert.equal(store.entries.length, 0, 'the hard-deleted contact must not survive locally');
+  assert.equal(pool.calls.publish.length, 0, 'and must not be re-appended to the doc');
+});
+
+await test('a hard delete is never inferred from the cache winning as base', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  store.entries.splice(0, 1, { ...store.entries[0], doc_contact_id: 'c-mine' });
+  // Our own newer publish (with the record) has not reached this
+  // relay yet; the relay still serves an older doc without it.
+  store._saveDocCache({
+    pubkey: ALICE_PUBKEY,
+    eventId: 'ev-new',
+    createdAt: 5_000_000_000,
+    doc: { contacts: [{ id: 'c-mine', name: 'Bob', npub: BOB_NPUB, updatedAt: 4_999_999_000 }], labels: [] },
+  });
+  const pool = syncFakePool({
+    events: {
+      'wss://r.test': [await makeRemoteDocEvent({ contacts: [], labels: [] }, { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 })],
+    },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(store.entries.length, 1, 'absence from a stale relay copy proves nothing');
+});
+
+await test('the publish rebases onto an edit that landed during the sync window', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const docV1 = await makeRemoteDocEvent(
+    { contacts: [], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 },
+  );
+  // While our reconcile ran, another app saved a contact.
+  const docV2 = await makeRemoteDocEvent(
+    { contacts: [{ id: 'c-window', name: 'Added in the window', emails: [{ label: '', value: 'w@x.test' }] }], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_500 },
+  );
+  const pool = syncFakePool();
+  let docFetches = 0;
+  const origQuery = pool.querySync.bind(pool);
+  pool.querySync = async (urls, filter, params) => {
+    if (Array.isArray(filter?.kinds) && filter.kinds.includes(CONTACTS_DOC_KIND)) {
+      docFetches += 1;
+      return docFetches === 1 ? [docV1] : [docV2];
+    }
+    return origQuery(urls, filter, params);
+  };
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.published, true);
+  assert.equal(docFetches, 2, 'one rebase re-fetch before the publish');
+  const published = pool.calls.publish[0].event;
+  assert.ok(published.created_at > 1_700_000_500, 'clock must beat the window edit');
+  const doc = decryptDoc(published, ALICE_SECRET, ALICE_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.id === 'c-window'), 'the window edit survives');
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB), 'and so does our contact');
+});
+
+await test('a refused publish never links appended records into the unpublished doc', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const docEvent = await makeRemoteDocEvent(
+    { contacts: [], labels: [] },
+    { secret: ALICE_SECRET, pubkey: ALICE_PUBKEY, createdAt: 1_700_000_000 },
+  );
+  const failing = syncFakePool({ publish: 'fail', events: { 'wss://r.test': [docEvent] } });
+  const first = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: failing,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(first.ok, false);
+  assert.ok(!store.entries[0].doc_contact_id, 'no link into a doc that never left the device');
+
+  // The retry must publish the contact, not hard-delete it because a
+  // stale link's id is absent from the real doc.
+  const retry = syncFakePool({ events: { 'wss://r.test': [docEvent] } });
+  const second = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: retry,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(second.ok, true);
+  assert.equal(store.entries.length, 1, 'the contact survives the retry');
+  const doc = decryptDoc(retry.calls.publish[0].event, ALICE_SECRET, ALICE_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB));
+});
+
+await test('an identity switch unlinks entries so they re-append into the new identity\'s doc', async () => {
+  const store = freshStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  // Alice's sync publishes and links the entry into HER doc.
+  const pool1 = syncFakePool();
+  await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET }),
+    pool: pool1,
+    relays: ['wss://r.test'],
+  });
+  assert.ok(store.entries[0].doc_contact_id, 'linked under Alice');
+
+  // Carol signs in on the same device; her own doc exists on relays.
+  const carolDoc = {
+    contacts: [{ id: 'c-carols', name: 'Carols friend', emails: [{ label: '', value: 'f@x.test' }] }],
+    labels: [],
+  };
+  const pool2 = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(carolDoc, { secret: CAROL_SECRET, pubkey: CAROL_PUBKEY })] },
+  });
+  const result = await store.syncToNostr({
+    identityStore: fakeIdentity({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    pool: pool2,
+    relays: ['wss://r.test'],
+  });
+  assert.equal(result.ok, true);
+  assert.ok(store.findContactByPubkey(BOB_PUBKEY), 'the carried-over contact survives the switch');
+  const doc = decryptDoc(pool2.calls.publish[0].event, CAROL_SECRET, CAROL_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB), 'and lands in the new identity\'s doc');
+  assert.ok(doc.contacts.some((c) => c.id === 'c-carols'), 'alongside its existing records');
+});
+
+await test('a delete made while the book is already dirty survives an app kill', async () => {
+  globalThis.localStorage = new MemoryStorage();
+  setActivePinia(createPinia());
+  const store = useAddressBookStore();
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  assert.equal(store.syncDirty, true, 'precondition: already dirty when the delete happens');
+  await store.deleteEntry(store.entries[0].id);
+
+  // App kill before any sync: a fresh store over the same storage
+  // must still know about the delete, or the next sync re-imports.
+  setActivePinia(createPinia());
+  const reloaded = useAddressBookStore();
+  await reloaded.initialize();
+  assert.ok(reloaded.nostrDeletions.some((d) => d.pubkey === BOB_PUBKEY));
+});
+
+// ---------------------------------------------------------------------------
+// switchContactsIdentity — the Change-identity sheet's orchestration
+// ---------------------------------------------------------------------------
+
+const DAVE_SECRET = new Uint8Array(32).fill(0x44);
+const DAVE_PUBKEY = getPublicKey(DAVE_SECRET);
+const DAVE_NPUB = nip19.npubEncode(DAVE_PUBKEY);
+
+/**
+ * A mutable identity fake: switchContactsIdentity holds ONE store
+ * reference across the whole flow while the real identity store
+ * mutates in place, so the fake must flip the same way.
+ */
+function mutableIdentity({ pubkey, secret }) {
+  const identity = {
+    bootstrapped: true,
+    nostrPubkeyHex: pubkey,
+    _secret: secret,
+    async getNostrSecretKeyBytes() { return new Uint8Array(this._secret); },
+    switchTo({ pubkey: p, secret: s }) {
+      this.nostrPubkeyHex = p;
+      this._secret = s;
+    },
+  };
+  return identity;
+}
+
+await test('switchContactsIdentity (start fresh): flushes the old book, then swaps to the new identity\'s', async () => {
+  const store = freshStore();
+  const identity = mutableIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET });
+
+  // Alice has one unpublished contact (dirty) and Carol already owns
+  // a doc of her own on the relay.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const carolDoc = {
+    contacts: [{
+      id: 'c-carol1', name: 'Carol Friend', npub: DAVE_NPUB,
+      createdAt: 1_700_000_000, updatedAt: 1_700_000_000,
+    }],
+    labels: ['work'],
+  };
+  const pool = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(carolDoc, { secret: CAROL_SECRET, pubkey: CAROL_PUBKEY })] },
+  });
+
+  const result = await store.switchContactsIdentity({
+    identityStore: identity,
+    changeIdentity: async () => identity.switchTo({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    keepContacts: false,
+    pool,
+    relays: ['wss://r.test'],
+    profileFetcher: async (pk) => (pk === DAVE_PUBKEY
+      ? makeKind0(DAVE_SECRET, { name: 'Dave', lud16: 'dave@dave.test' })
+      : null),
+  });
+
+  assert.equal(result.ok, true);
+  // The pre-switch flush published Bob under ALICE's key.
+  const aliceEvents = pool.calls.publish.filter((p) => p.event.pubkey === ALICE_PUBKEY);
+  assert.ok(aliceEvents.length > 0, 'outgoing identity flushed first');
+  assert.ok(decryptDoc(aliceEvents[0].event, ALICE_SECRET, ALICE_PUBKEY)
+    .contacts.some((c) => c.npub === BOB_NPUB));
+  // The local book now belongs to Carol: her contact, not Alice's.
+  assert.ok(store.entries.some((e) => e.nostr_npub === DAVE_NPUB), 'Carol\'s contact imported');
+  assert.ok(!store.entries.some((e) => e.nostr_npub === BOB_NPUB), 'Alice\'s contact gone locally');
+  // (syncDirty may be set here: reconcile-imports mark the book dirty
+  // like every recovery does, and the driver's follow-up sync no-ops.)
+  // Nothing of Alice's was published under Carol's key.
+  for (const p of pool.calls.publish.filter((x) => x.event.pubkey === CAROL_PUBKEY)) {
+    assert.ok(!decryptDoc(p.event, CAROL_SECRET, CAROL_PUBKEY).contacts.some((c) => c.npub === BOB_NPUB));
+  }
+});
+
+await test('switchContactsIdentity (bring along): the carried book publishes under the new key as a union', async () => {
+  const store = freshStore();
+  const identity = mutableIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET });
+
+  // Alice's contact is synced and doc-linked; Carol's doc already
+  // holds her own record that must survive the union.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  const pool1 = syncFakePool();
+  const first = await store.syncToNostr({ identityStore: identity, pool: pool1, relays: ['wss://r.test'] });
+  assert.equal(first.ok, true);
+  const linked = store.entries.find((e) => e.nostr_npub === BOB_NPUB);
+  assert.ok(linked.doc_contact_id, 'entry linked into Alice\'s doc');
+
+  const carolDoc = {
+    contacts: [{
+      id: 'c-carol1', name: 'Carol Friend', npub: DAVE_NPUB,
+      createdAt: 1_700_000_000, updatedAt: 1_700_000_000,
+    }],
+    labels: [],
+  };
+  const pool2 = syncFakePool({
+    events: { 'wss://r.test': [await makeRemoteDocEvent(carolDoc, { secret: CAROL_SECRET, pubkey: CAROL_PUBKEY })] },
+  });
+
+  const result = await store.switchContactsIdentity({
+    identityStore: identity,
+    changeIdentity: async () => identity.switchTo({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET }),
+    keepContacts: true,
+    pool: pool2,
+    relays: ['wss://r.test'],
+    profileFetcher: async (pk) => (pk === DAVE_PUBKEY
+      ? makeKind0(DAVE_SECRET, { name: 'Dave', lud16: 'dave@dave.test' })
+      : null),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.published, true);
+  // Bob survived the switch and landed in CAROL's doc alongside her
+  // own record — a union, not a replace.
+  assert.ok(store.entries.some((e) => e.nostr_npub === BOB_NPUB));
+  const published = pool2.calls.publish.find((p) => p.event.pubkey === CAROL_PUBKEY);
+  const doc = decryptDoc(published.event, CAROL_SECRET, CAROL_PUBKEY);
+  assert.ok(doc.contacts.some((c) => c.npub === BOB_NPUB), 'carried contact published');
+  assert.ok(doc.contacts.some((c) => c.id === 'c-carol1'), 'existing record survived');
+  // The entry was re-linked into the NEW doc, not left pointing at
+  // Alice's (whose id would read as a hard delete next sync).
+  const relinked = store.entries.find((e) => e.nostr_npub === BOB_NPUB);
+  assert.notEqual(relinked.doc_contact_id, linked.doc_contact_id);
+});
+
+await test('switchContactsIdentity (start fresh): a failed flush aborts BEFORE the identity flips', async () => {
+  const store = freshStore();
+  const identity = mutableIdentity({ pubkey: ALICE_PUBKEY, secret: ALICE_SECRET });
+
+  // Dave was added offline: dirty, never published. Every relay
+  // refuses the flush publish, so the dirty delta cannot land.
+  await store.addNostrContact({
+    pubkey: BOB_PUBKEY,
+    npub: BOB_NPUB,
+    event: makeKind0(BOB_SECRET, { name: 'Bob', lud16: 'bob@bob.test' }),
+  });
+  assert.equal(store.syncDirty, true);
+
+  const pool = syncFakePool({ publish: 'fail' });
+  let identityFlipped = false;
+  const result = await store.switchContactsIdentity({
+    identityStore: identity,
+    changeIdentity: async () => {
+      identityFlipped = true;
+      identity.switchTo({ pubkey: CAROL_PUBKEY, secret: CAROL_SECRET });
+    },
+    keepContacts: false,
+    pool,
+    relays: ['wss://r.test'],
+  });
+
+  // The unsynced book would have been destroyed by the clear — the
+  // switch must refuse instead, with the identity untouched.
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'flush-failed');
+  assert.equal(identityFlipped, false, 'changeIdentity never ran');
+  assert.ok(store.entries.some((e) => e.nostr_npub === BOB_NPUB), 'dirty book preserved');
+  assert.equal(store.syncDirty, true, 'still dirty, retryable');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

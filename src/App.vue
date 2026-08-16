@@ -26,6 +26,7 @@ import { Capacitor } from '@capacitor/core'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from 'src/stores/wallet'
 import { authenticate as biometricAuth } from 'src/utils/biometric'
+import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 
 export default defineComponent({
@@ -36,6 +37,12 @@ export default defineComponent({
   setup () {
     const store = useWalletStore()
     const $q = useQuasar()
+
+    // Shared-contacts sync driver. App-level so contacts added from
+    // any surface publish, whether or not the Address Book page is
+    // ever opened. No-ops on kiosk devices.
+    useAddressBookSync()
+
     const locked = ref(false)
     const isDark = ref($q.dark.isActive)
     let stateListener = null
