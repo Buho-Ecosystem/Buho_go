@@ -136,7 +136,7 @@ export function parseProfileLink(value) {
   // app is pointed at during development, and a link that resolves everywhere
   // except the environment you are testing in is its own kind of bug. The
   // path prefix plus a decodable slug is what makes it ours.
-  const slug = decodeURIComponent(url.pathname.slice(PROFILE_PATH.length)).trim();
+  const slug = safeDecode(url.pathname.slice(PROFILE_PATH.length)).trim();
   if (!slug) return '';
 
   // The key rides along for exactly this case: a username whose domain is
@@ -145,6 +145,22 @@ export function parseProfileLink(value) {
   if (isKey(slug)) return slug;
   if (fallbackKey && isKey(fallbackKey)) return fallbackKey;
   return expandProfileSlug(slug);
+}
+
+/**
+ * Percent-decode a path segment without ever throwing.
+ *
+ * `decodeURIComponent` raises URIError on malformed input like `%ZZ`, and the
+ * two callers of this module are a camera scanner and the Android intent
+ * handler — both fed by whatever a QR or a link happens to contain. A slug
+ * that cannot be decoded is not one of ours.
+ */
+function safeDecode(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -165,7 +181,7 @@ export function profileLinkRoute(value) {
   if (!parseProfileLink(value)) return null;
 
   const url = new URL(String(value).trim());
-  const slug = decodeURIComponent(url.pathname.slice(PROFILE_PATH.length)).trim();
+  const slug = safeDecode(url.pathname.slice(PROFILE_PATH.length)).trim();
   const key = String(url.searchParams.get(KEY_PARAM) || '').trim();
 
   return {

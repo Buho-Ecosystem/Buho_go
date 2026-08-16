@@ -141,6 +141,20 @@ await test('profileLinkRoute drops a fallback key that is not a key', () => {
   assert.deepEqual(route.query, {});
 });
 
+await test('malformed percent-encoding never throws, it is simply not ours', () => {
+  // Both consumers are hostile-input paths: the camera scanner and the
+  // Android intent handler. decodeURIComponent raises URIError on %ZZ, and
+  // an exception here crashes a scan callback mid-frame.
+  for (const bad of [
+    `${PUBLIC_WEB_ORIGIN}/p/%ZZ`,
+    `${PUBLIC_WEB_ORIGIN}/p/%E0%A4%A`,
+    `${PUBLIC_WEB_ORIGIN}/p/maria%`,
+  ]) {
+    assert.equal(parseProfileLink(bad), '', bad);
+    assert.equal(profileLinkRoute(bad), null, bad);
+  }
+});
+
 await test('profileLinkRoute returns null for anything the payment parser owns', () => {
   for (const value of [
     'lightning:maria@npub.cash',
@@ -154,4 +168,4 @@ await test('profileLinkRoute returns null for anything the payment parser owns',
   }
 });
 
-console.log('\n19 passed, 0 failed');
+console.log('\n20 passed, 0 failed');
