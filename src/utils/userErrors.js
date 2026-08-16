@@ -378,10 +378,15 @@ function translateTechJargon(msg, t) {
     return t('The app is out of date. Please update and try again.');
   }
 
-  // Pure network failure with no upstream prose attached.
-  if (lower === 'failed to fetch'
-      || lower === 'network request failed'
-      || lower === 'load failed') {
+  // Transport failures: browser fetch strings, the native HTTP plugin's
+  // platform messages, and the LNURL helper's timeout. Curated copy keeps
+  // them out of the upstream-attribution path ("Reported by ..."), which
+  // would falsely present client-side failures as the service's words.
+  const transport = classifyTransportFailure(msg);
+  if (transport === 'timeout') {
+    return t('The server did not respond or the link is no longer valid');
+  }
+  if (transport === 'offline') {
     return t("Couldn't reach the network. Please check your internet and try again.");
   }
 
@@ -407,6 +412,49 @@ function translateTechJargon(msg, t) {
     }
   }
 
+  return null;
+}
+
+/**
+ * Classify a transport-level failure message: 'timeout' when the request
+ * gave up waiting, 'offline' when the device could not reach the host at
+ * all, null for anything else. Covers the browser fetch strings (exact
+ * match, so upstream prose that merely contains them is not swallowed)
+ * plus the native HTTP plugin's platform messages, which embed hostnames
+ * and so need substring matching (Android UnknownHostException /
+ * SocketTimeoutException text, iOS NSURLError descriptions), and the
+ * lnurlHttp timeout. Exported so UI-side translators (e.g. the send
+ * field's inline resolver copy) stay in sync with this one list.
+ */
+export function classifyTransportFailure(msg) {
+  if (!msg) return null;
+  const lower = String(msg).toLowerCase();
+  // Platform timeout strings are a small closed set, so they are matched
+  // exactly; a server's own prose ('Payment attempt timed out') must keep
+  // its text and its upstream attribution. 'did not respond in time' is
+  // our own lnurlHttp timeout and safe to substring-match (callers may
+  // prefix context onto it).
+  if (lower.includes('did not respond in time')
+      || lower === 'read timed out'
+      || lower === 'connect timed out'
+      || lower === 'timeout'
+      || lower === 'the request timed out.'
+      || lower === 'ssl handshake timed out') {
+    return 'timeout';
+  }
+  if (lower === 'failed to fetch'
+      || lower === 'network request failed'
+      || lower === 'load failed'
+      || lower.includes('unable to resolve host')
+      || lower.includes('no address associated')
+      // Android connect failure embeds host and port; require the port
+      // marker so a server's own 'failed to connect to peer' prose passes
+      // through untouched.
+      || /failed to connect to .*port \d+/.test(lower)
+      || lower.includes('internet connection appears to be offline')
+      || lower.includes('network connection was lost')) {
+    return 'offline';
+  }
   return null;
 }
 

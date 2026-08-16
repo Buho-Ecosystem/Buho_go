@@ -159,6 +159,24 @@
           </svg>
         </button>
 
+        <!-- Android only: pull the encrypted backup out of Google Drive.
+             Hidden elsewhere - the native plugin is the only implementation. -->
+        <button v-if="cloudRestoreAvailable" class="bgo-srow" type="button" @click="openCloudRestore">
+          <span class="bgo-tile">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6.5 19a4.5 4.5 0 1 1 .42-8.98 6 6 0 0 1 11.45 1.67A3.5 3.5 0 0 1 17.5 19h-11Z"/>
+              <path d="M12 12v6m0 0-2.4-2.4M12 18l2.4-2.4"/>
+            </svg>
+          </span>
+          <span class="bgo-st">
+            <span class="bgo-t">{{ $t('Restore from Google Drive') }}</span>
+            <span class="bgo-d">{{ $t('Your cloud backup') }}</span>
+          </span>
+          <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M1 1l5.5 5.5L1 12"/>
+          </svg>
+        </button>
+
         <div class="bgo-spower">{{ $t('For power users') }}</div>
 
         <button class="bgo-srow" type="button" @click="goToNWCSetup">
@@ -199,11 +217,22 @@
         </button>
       </div>
     </q-dialog>
+
+    <!-- Encrypted Google Drive restore (Android only). intent="restore"
+         jumps straight to the restore step once signed in. -->
+    <CloudBackupSheet
+      v-model="showCloudRestoreSheet"
+      intent="restore"
+      @restored="onCloudRestored"
+      @update:model-value="onCloudSheetToggled"
+    />
   </q-page>
 </template>
 
 <script>
 import LoadingScreen from '../components/LoadingScreen.vue'
+import CloudBackupSheet from '../components/CloudBackupSheet.vue'
+import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 import {
   SUPPORTED_LOCALES,
   applyLocale,
@@ -214,19 +243,27 @@ export default {
   name: 'WelcomePage',
   components: {
     LoadingScreen,
+    CloudBackupSheet,
   },
   data() {
     return {
       showLoadingScreen: true,
       loadingText: 'Initializing BuhoGO...',
       showMoreSheet: false,
+      showCloudRestoreSheet: false,
+      // Set once a Drive restore brought anything back; navigation happens
+      // when the sheet closes so the user first sees the result summary.
+      cloudRestoreSucceeded: false,
       supportedLocales: SUPPORTED_LOCALES,
     }
   },
   computed: {
     currentLocaleLabel() {
       return getLocaleLabel(this.$i18n.locale)
-    }
+    },
+    cloudRestoreAvailable() {
+      return isCloudBackupPlatform()
+    },
   },
   mounted() {
     setTimeout(() => {
@@ -259,6 +296,21 @@ export default {
       }
     },
     goToSparkSetup() { this.$router.push('/spark-setup') },
+    openCloudRestore() {
+      this.showMoreSheet = false
+      this.showCloudRestoreSheet = true
+    },
+    onCloudRestored(result) {
+      // Anything usable back on the device counts: freshly restored, or
+      // already present (e.g. a retry after a partial first attempt).
+      this.cloudRestoreSucceeded =
+        (result?.restored?.length || 0) + (result?.skipped?.length || 0) > 0
+    },
+    onCloudSheetToggled(open) {
+      if (!open && this.cloudRestoreSucceeded) {
+        this.$router.push('/wallet')
+      }
+    },
     goToArkadeSetup() { this.showMoreSheet = false; this.$router.push('/arkade-setup') },
     goToRestore() { this.showMoreSheet = false; this.$router.push('/restore') },
     goToNWCSetup() { this.showMoreSheet = false; this.$router.push('/nwc-setup') },

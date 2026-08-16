@@ -1,5 +1,6 @@
 import { boot } from 'quasar/wrappers'
 import { useWalletStore } from 'stores/wallet'
+import { readPersistedWalletState } from 'src/utils/walletHydration'
 
 /**
  * Kiosk Mode navigation guard.
@@ -17,15 +18,9 @@ export default boot(({ router }) => {
     // Check reactive store first
     let kioskLocked = store.kioskEnabled && !store.kioskOwnerAccess
 
-    // Cold-start fallback: store not yet initialized, check localStorage directly
-    if (!store.kioskEnabled) {
-      try {
-        const saved = localStorage.getItem('buhoGO_wallet_store')
-        if (saved) {
-          const parsed = JSON.parse(saved)
-          if (parsed.kioskEnabled) kioskLocked = true
-        }
-      } catch (e) { /* ignore */ }
+    // Cold-start fallback: store not yet initialized, check the snapshot
+    if (!store.kioskEnabled && readPersistedWalletState()?.kioskEnabled) {
+      kioskLocked = true
     }
 
     if (!kioskLocked) return true

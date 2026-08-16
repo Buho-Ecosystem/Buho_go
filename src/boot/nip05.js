@@ -13,7 +13,7 @@ import { boot } from 'quasar/wrappers';
  *
  * Orchestrated here rather than inside a store so neither the identity nor
  * the profile store has to import the other (which would risk a circular
- * import) — the same pattern boot/cloud-backup.js uses for its auto-backups.
+ * import).
  *
  * Idempotent and best-effort: once a handle exists we never re-register, and
  * a failed attempt (offline, server hiccup) simply retries on the next launch

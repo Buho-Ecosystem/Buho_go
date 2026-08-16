@@ -5,14 +5,15 @@
  * Supports Lightning invoices, Lightning addresses, and LNURL-pay.
  *
  * @requires @getalby/sdk - For NWC WebLN provider
- * @requires @getalby/lightning-tools - For Lightning address and invoice handling
+ * @requires @getalby/lightning-tools - For invoice decoding
  * @requires bech32 - For LNURL decoding
  */
 
 import { NostrWebLNProvider } from '@getalby/sdk';
-import { LightningAddress, Invoice } from '@getalby/lightning-tools';
+import { Invoice } from '@getalby/lightning-tools';
 import { bech32 } from 'bech32';
 import { parseSuccessAction } from './successAction.js';
+import { lnurlGetJson } from './lnurlHttp.js';
 import {
   isLightningAddress as isLightningAddressShared,
   isLightningInvoice as isLightningInvoiceShared,
@@ -206,16 +207,29 @@ export class LightningPaymentService {
    */
   async handleLightningAddress(address) {
     try {
-      const ln = new LightningAddress(address);
-      await ln.fetch();
+      // Resolve the .well-known endpoint directly over the CORS-safe
+      // transport (no third-party proxy involved), same rails as the
+      // other wallet backends.
+      const [username, domain] = address.split('@');
+      if (!username || !domain) {
+        throw new Error('Invalid Lightning address format');
+      }
 
-      const lnurlpData = ln.lnurlpData;
-      if (!lnurlpData) {
+      const response = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${username}`);
+      if (!response.ok) {
         throw new Error('Failed to fetch Lightning Address data');
       }
 
-      const minSendable = lnurlpData.min || 1000;
-      const maxSendable = lnurlpData.max || 100000000000;
+      const data = response.data;
+      if (!data || data.status === 'ERROR') {
+        throw new Error(data?.reason || 'Failed to fetch Lightning Address data');
+      }
+      if (data.tag !== 'payRequest' || !data.callback) {
+        throw new Error('Failed to fetch Lightning Address data');
+      }
+
+      const minSendable = data.minSendable || 1000;
+      const maxSendable = data.maxSendable || 100000000000;
 
       // Detect fixed amount: when min equals max, it's a fixed amount request
       const isFixedAmount = minSendable === maxSendable;
@@ -233,9 +247,9 @@ export class LightningPaymentService {
         isFixedAmount,
         fixedAmountSats,
         amount: fixedAmountSats, // Pre-fill amount if fixed
-        commentAllowed: lnurlpData.commentAllowed || 0,
-        callback: lnurlpData.callback,
-        metadata: lnurlpData.metadata,
+        commentAllowed: data.commentAllowed || 0,
+        callback: data.callback,
+        metadata: data.metadata,
         description: `Payment to ${address}`,
       };
     } catch (error) {
@@ -254,15 +268,15 @@ export class LightningPaymentService {
       const cleanLnurl = stripWrapperScheme(lnurlInput);
       const url = this.decodeLNURL(cleanLnurl);
 
-      const response = await fetch(url);
+      const response = await lnurlGetJson(url);
       if (!response.ok) {
-        throw new Error(`LNURL fetch failed: ${response.status} ${response.statusText}`);
+        throw new Error(`LNURL fetch failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (data.status === 'ERROR') {
-        throw new Error(data.reason || 'LNURL request failed');
+      if (!data || data.status === 'ERROR') {
+        throw new Error(data?.reason || 'LNURL request failed');
       }
 
       if (data.tag !== 'payRequest') {
@@ -394,14 +408,13 @@ export class LightningPaymentService {
     this.validateAmount(amount, paymentData);
 
     // Resolve the LNURL-pay callback. Reuse the one captured when the address
-    // was first parsed; fall back to a live lightning-tools fetch if absent.
+    // was first parsed; fall back to a live re-resolve if absent.
     let callback = paymentData.callback;
     let commentAllowed = paymentData.commentAllowed || 0;
     if (!callback) {
-      const ln = new LightningAddress(paymentData.address);
-      await ln.fetch();
-      callback = ln.lnurlpData?.callback;
-      commentAllowed = ln.lnurlpData?.commentAllowed || 0;
+      const resolved = await this.handleLightningAddress(paymentData.address);
+      callback = resolved.callback;
+      commentAllowed = resolved.commentAllowed || 0;
       if (!callback) {
         throw new Error('Failed to resolve Lightning address');
       }
@@ -417,11 +430,11 @@ export class LightningPaymentService {
       url.searchParams.set('comment', comment.substring(0, commentAllowed));
     }
 
-    const response = await fetch(url.toString());
+    const response = await lnurlGetJson(url.toString());
     if (!response.ok) {
-      throw new Error(`LNURL callback failed: ${response.status} ${response.statusText}`);
+      throw new Error(`LNURL callback failed: ${response.status}`);
     }
-    const data = await response.json();
+    const data = response.data || {};
     if (data.status === 'ERROR') {
       throw new Error(data.reason || 'Lightning address payment request failed');
     }
@@ -463,12 +476,12 @@ export class LightningPaymentService {
       callbackUrl.searchParams.set('comment', comment.substring(0, paymentData.commentAllowed));
     }
 
-    const response = await fetch(callbackUrl.toString());
+    const response = await lnurlGetJson(callbackUrl.toString());
     if (!response.ok) {
-      throw new Error(`LNURL callback failed: ${response.status} ${response.statusText}`);
+      throw new Error(`LNURL callback failed: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = response.data || {};
 
     if (data.status === 'ERROR') {
       throw new Error(data.reason || 'LNURL payment request failed');

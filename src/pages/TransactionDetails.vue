@@ -691,6 +691,7 @@ import { copySensitive } from '../utils/sensitiveClipboard.js';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { formatSuccessActionUrl } from '../utils/successAction.js';
 import { pollVerify } from '../utils/lnurlVerify.js';
+import { lnurlFetch } from '../utils/lnurlHttp.js';
 import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import { zapInfoFromTx } from '../utils/zaps';
@@ -1719,7 +1720,7 @@ export default {
       if (cached) { this.deliveryStatus = cached; return; }
       const verifyUrl = this.metadataStore.getVerifyUrlForTransaction(this.transaction.id, this.metadataWalletId);
       if (!verifyUrl) return;
-      const status = await pollVerify(verifyUrl, null, { timeoutMs: 0, intervalMs: 0 });
+      const status = await pollVerify(verifyUrl, null, { timeoutMs: 0, intervalMs: 0, fetchImpl: lnurlFetch });
       if (!status) return;
       this.deliveryStatus = status;
       // Cache once delivery is confirmed so later views are instant and offline.

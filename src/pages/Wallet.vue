@@ -833,6 +833,8 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
+import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
+import {classifyTransportFailure} from '../utils/userErrors.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
@@ -4099,13 +4101,18 @@ export default {
         callbackUrl.searchParams.set('pin', pin);
       }
 
-      // Wrap the fetch so any network-layer error (DNS, CORS, TLS,
+      // Wrap the request so any network-layer error (DNS, CORS, TLS,
       // offline) gets its message scrubbed of `pin=` before it
       // propagates to console.error, Sentry, or the notify surface.
       // Some platforms include the full URL in fetch error strings.
       let response;
       try {
-        response = await fetch(callbackUrl.toString());
+        // Generous 90s bound: withdraw services can be slow to pay out,
+        // and a premature client-side timeout would show a failure for a
+        // withdraw that still completes (the k1 is single-use, so the
+        // user can't meaningfully retry). Only a genuinely hung server
+        // should trip this.
+        response = await lnurlGetJson(callbackUrl.toString(), { timeoutMs: 90000 });
       } catch (networkError) {
         const safeMessage = this.redactPinFromString(
           networkError?.message || 'Network error contacting withdraw service'
@@ -4114,10 +4121,10 @@ export default {
       }
 
       if (!response.ok) {
-        throw new Error(`Withdraw callback failed: ${response.status} ${response.statusText}`);
+        throw new Error(`Withdraw callback failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = response.data || {};
       if (data.status === 'ERROR') {
         // Translate the two spec-defined PIN error reasons so the
         // sheet-level error surface shows them in the user's language.
@@ -4705,10 +4712,23 @@ export default {
           // rescue found nothing either — fail early, in the field, rather than
           // open a confirm sheet that can only fail at send time. (SA-retail
           // merchants are curated and keep their existing handling below.)
+          // A transport failure (timeout, DNS, CORS on web) carries its own
+          // reason: the address may be perfectly valid, so don't claim it
+          // doesn't exist — mirror the bech32-LNURL branch above.
           if (!lnurlInfo.minSendable && paymentData.source !== SA_RETAIL_SOURCE) {
             resolved = false;
-            this.failSendResolution(this.$t("We couldn't find this Lightning address"), fromField);
+            const reason = lnurlInfo.error && lnurlInfo.reason
+              ? lnurlInfo.reason
+              : this.$t("We couldn't find this Lightning address");
+            this.failSendResolution(reason, fromField);
             return;
+          }
+
+          // Past the guard the info is spread into pendingPayment; strip the
+          // failure markers so a curated SA-retail miss doesn't carry them.
+          if (lnurlInfo.error) {
+            delete lnurlInfo.error;
+            delete lnurlInfo.reason;
           }
 
           const walletType = this.walletStore.activeWalletType;
@@ -5566,7 +5586,7 @@ export default {
         this.sendDeliveryStatus = { settled: false, delivered: false, done: false };
         pollVerify(verifyUrl, (s) => {
           if (this._deliveryToken === token) this.sendDeliveryStatus = { ...s, done: false };
-        }, { signal: controller?.signal }).then((final) => {
+        }, { signal: controller?.signal, fetchImpl: lnurlFetch }).then((final) => {
           // `done` marks the poll terminal, so the UI can distinguish "still
           // confirming" from "settled but not yet delivered" (M-Pesa lag).
           if (this._deliveryToken === token) {
@@ -5769,11 +5789,11 @@ export default {
       const url = this.decodeLNURL(lnurl);
 
       // Fetch LNURL endpoint
-      const response = await fetch(url);
+      const response = await lnurlGetJson(url);
       if (!response.ok) throw new Error('Failed to fetch LNURL');
 
-      const data = await response.json();
-      if (data.status === 'ERROR') throw new Error(data.reason || 'LNURL error');
+      const data = response.data;
+      if (!data || data.status === 'ERROR') throw new Error(data?.reason || 'LNURL error');
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
       // is bounded by the provider in its own units (validated in the sheet).
@@ -5786,11 +5806,11 @@ export default {
       }
       const callbackUrl = buildLnurlPayCallbackUrl({ callback: data.callback, amountSats, payout });
 
-      const invoiceResponse = await fetch(callbackUrl);
+      const invoiceResponse = await lnurlGetJson(callbackUrl);
       if (!invoiceResponse.ok) throw new Error('Failed to get invoice');
 
-      const invoiceData = await invoiceResponse.json();
-      if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
+      const invoiceData = invoiceResponse.data;
+      if (!invoiceData || invoiceData.status === 'ERROR') throw new Error(invoiceData?.reason || 'Invoice error');
 
       // Return the invoice together with any LUD-09 successAction (recipient's
       // post-payment message) and LUD-21 `verify` URL the callback included.
@@ -5804,43 +5824,53 @@ export default {
     },
 
     /**
-     * fetch() bounded by a timeout so a hung LNURL / Lightning-address server
-     * can't leave the Send sheet spinning forever. On timeout it aborts; the
-     * caller's try/catch then treats it as "not found" (same as any failure).
-     * Manual AbortController keeps it working on the older WebKit we still
-     * target (AbortSignal.timeout isn't available there).
+     * Translate a transport-level LNURL fetch failure into a reason the
+     * send field / error dialog can show. Timeouts and network failures
+     * (browser fetch strings and the native HTTP plugin's platform
+     * messages alike, via the shared classifier) map to existing
+     * translated copy; anything else keeps its message for the
+     * technical-details pane.
      */
-    async fetchWithTimeout(url, ms = 10000) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), ms);
-      try {
-        return await fetch(url, { signal: controller.signal });
-      } finally {
-        clearTimeout(timer);
+    describeLnurlTransportError(error) {
+      const kind = error?.name === 'AbortError'
+        ? 'timeout'
+        : classifyTransportFailure(error?.message);
+      if (kind === 'timeout') {
+        return this.$t('The server did not respond or the link is no longer valid');
       }
+      if (kind === 'offline') {
+        return this.$t("Couldn't reach the network. Please check your internet and try again.");
+      }
+      return error?.message
+        || this.$t('The server did not respond or the link is no longer valid');
     },
 
     /**
      * Fetch LNURL info from a Lightning address
-     * Returns min/max amounts and whether it's a fixed amount
+     * Returns min/max amounts and whether it's a fixed amount.
+     * A server that answers but doesn't serve the address yields {} ("not
+     * found"); a transport failure (timeout, DNS, CORS on web) yields
+     * { error: true, reason } so the caller doesn't misreport a reachable
+     * address as nonexistent. Bounded to 10s so a hung server can't leave
+     * the Send sheet spinning forever.
      */
     async fetchLightningAddressInfo(address) {
-      try {
-        const [username, domain] = address.split('@');
-        if (!username || !domain) {
-          return {};
-        }
+      const [username, domain] = address.split('@');
+      if (!username || !domain) {
+        return {};
+      }
 
+      try {
         const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-        const response = await this.fetchWithTimeout(endpoint);
+        const response = await lnurlGetJson(endpoint, { timeoutMs: 10000 });
 
         if (!response.ok) {
           return {};
         }
 
-        const data = await response.json();
+        const data = response.data;
 
-        if (data.status === 'ERROR') {
+        if (!data || data.status === 'ERROR') {
           return {};
         }
 
@@ -5864,7 +5894,7 @@ export default {
         };
       } catch (error) {
         console.warn('Failed to fetch Lightning address info:', error.message);
-        return {};
+        return { error: true, reason: this.describeLnurlTransportError(error) };
       }
     },
 
@@ -5921,13 +5951,20 @@ export default {
     async fetchLNURLInfo(lnurl) {
       try {
         const url = this.decodeLNURL(lnurl);
-        const response = await this.fetchWithTimeout(url);
+        const response = await lnurlGetJson(url, { timeoutMs: 10000 });
 
         if (!response.ok) {
           return { error: true, reason: `Server returned ${response.status}` };
         }
 
-        const data = await response.json();
+        const data = response.data;
+
+        if (!data) {
+          return {
+            error: true,
+            reason: this.$t('The server did not respond or the link is no longer valid'),
+          };
+        }
 
         if (data.status === 'ERROR') {
           return { error: true, reason: data.reason || 'This link is no longer valid' };
@@ -5984,13 +6021,10 @@ export default {
         };
       } catch (error) {
         console.warn('Failed to fetch LNURL info:', error.message);
-        // Surface the underlying error so the caller's error dialog can
-        // translate it via `translateTechJargon` (network/DNS issues
-        // become "Couldn't reach the network..."; anything else falls
-        // through to the standard generic). Returning {} would have
-        // dropped the diagnostic and forced the caller into a misleading
-        // upstream-attributed message.
-        return { error: true, reason: error?.message || 'Network error' };
+        // Surface the underlying failure so the send field / error dialog
+        // shows what actually happened (timeout, offline) instead of a
+        // misleading upstream-attributed message.
+        return { error: true, reason: this.describeLnurlTransportError(error) };
       }
     },
 
@@ -6009,15 +6043,15 @@ export default {
 
       // Fetch LNURL endpoint info
       const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-      const response = await fetch(endpoint);
+      const response = await lnurlGetJson(endpoint);
 
       if (!response.ok) {
         throw new Error('Failed to resolve Lightning address');
       }
 
-      const data = await response.json();
-      if (data.status === 'ERROR') {
-        throw new Error(data.reason || 'Lightning address error');
+      const data = response.data;
+      if (!data || data.status === 'ERROR') {
+        throw new Error(data?.reason || 'Lightning address error');
       }
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
@@ -6038,14 +6072,14 @@ export default {
       });
 
       // Request the invoice
-      const invoiceResponse = await fetch(callbackUrl);
+      const invoiceResponse = await lnurlGetJson(callbackUrl);
       if (!invoiceResponse.ok) {
         throw new Error('Failed to get invoice from Lightning address');
       }
 
-      const invoiceData = await invoiceResponse.json();
-      if (invoiceData.status === 'ERROR') {
-        throw new Error(invoiceData.reason || 'Invoice generation failed');
+      const invoiceData = invoiceResponse.data;
+      if (!invoiceData || invoiceData.status === 'ERROR') {
+        throw new Error(invoiceData?.reason || 'Invoice generation failed');
       }
 
       // Return the invoice together with any LUD-09 successAction (recipient's
