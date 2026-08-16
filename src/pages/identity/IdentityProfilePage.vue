@@ -90,12 +90,15 @@
       @removed="avatarBroken = false"
     />
 
+      <SettingsHubNav />
+
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import ProfileAvatarPickerSheet from '../../components/ProfileAvatarPickerSheet.vue';
 import { useProfileStore } from '../../stores/profile';
@@ -104,7 +107,7 @@ import { useIdentityStore } from '../../stores/identity';
 export default {
   name: 'IdentityProfilePage',
 
-  components: { Icon, IdentityNav, ProfileAvatarPickerSheet },
+  components: { SettingsHubNav, Icon, IdentityNav, ProfileAvatarPickerSheet },
 
   setup() {
     return { profile: useProfileStore(), identity: useIdentityStore() };

@@ -29,11 +29,10 @@
   padding-top: var(--safe-top, 0px);
 }
 
-/* The floating tab bar belongs to the three hub tabs, not to pushed screens,
-   so a sub-screen only needs breathing room at the bottom. */
+/* Every identity screen floats the hub tab bar, so the body clears it. */
 .id-sub-body {
   flex: 1 1 auto;
-  padding: 0 16px calc(32px + var(--safe-bottom, 0px));
+  padding: 0 16px calc(104px + var(--safe-bottom, 0px));
   max-width: 720px;
   width: 100%;
   margin: 0 auto;

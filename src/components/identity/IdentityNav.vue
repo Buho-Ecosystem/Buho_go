@@ -31,6 +31,17 @@
 
     <span class="id-nav-spacer"></span>
     <slot name="actions" />
+
+    <!-- The hub's one universal way out, on every screen, far right, the
+         same glyph and place as the Settings and Spend headers. -->
+    <button
+      type="button"
+      class="id-nav-home"
+      :aria-label="$t('Home')"
+      @click="$router.push('/wallet')"
+    >
+      <Icon icon="tabler:home" width="20" height="20" />
+    </button>
   </div>
 </template>
 
@@ -133,4 +144,18 @@ export default {
 }
 
 .id-nav-spacer { flex: 1; }
+
+.id-nav-home {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-ms);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.id-nav-home:active { background: rgba(127, 127, 127, 0.12); }
 </style>

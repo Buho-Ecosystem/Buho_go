@@ -59,11 +59,14 @@
 
     <ClientExamplesSheet v-model="showClients" />
 
+      <SettingsHubNav />
+
   </q-page>
 </template>
 
 <script>
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
@@ -77,7 +80,7 @@ const REVEAL_MS = 60_000;
 export default {
   name: 'IdentityAdvancedPage',
 
-  components: { IdentityNav, IdentityGroup, IdentityRow, ClientExamplesSheet },
+  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow, ClientExamplesSheet },
 
   setup() {
     return { identity: useIdentityStore() };

@@ -28,12 +28,15 @@
       <button type="button" class="btn-ghost" @click="$router.back()">{{ $t('Got it') }}</button>
     </div>
 
+      <SettingsHubNav />
+
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 
 const CARDS = [
@@ -57,7 +60,7 @@ const CARDS = [
 export default {
   name: 'IdentityAboutPage',
 
-  components: { Icon, IdentityNav },
+  components: { SettingsHubNav, Icon, IdentityNav },
 
   data() {
     return { cards: CARDS };

@@ -32,7 +32,7 @@
           <button
             type="button"
             class="id-card-ring"
-            :aria-label="$t('Switch card')"
+            :aria-label="$t('Switch account')"
             @click.stop="$emit('switch-identity')"
           >
             <svg class="id-card-progress" viewBox="0 0 76 76" aria-hidden="true">

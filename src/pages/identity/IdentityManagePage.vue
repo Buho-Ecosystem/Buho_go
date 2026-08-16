@@ -62,7 +62,7 @@
       <IdentityGroup :title="$t('More')">
         <IdentityRow
           icon="tabler:users"
-          :label="$t('Your cards')"
+          :label="$t('Your accounts')"
           :caption="identityCountCaption"
           @click="$router.push('/identity/identities')"
         />
@@ -95,11 +95,14 @@
       </IdentityGroup>
     </div>
 
+      <SettingsHubNav />
+
   </q-page>
 </template>
 
 <script>
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
@@ -109,7 +112,7 @@ import { useWalletStore } from '../../stores/wallet';
 export default {
   name: 'IdentityManagePage',
 
-  components: { IdentityNav, IdentityGroup, IdentityRow },
+  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
 
   setup() {
     return { ...useIdentityHealth(), walletStore: useWalletStore() };
@@ -167,8 +170,8 @@ export default {
 
     identityCountCaption() {
       return this.identityCount > 1
-        ? this.$t('{n} cards, same 12 words', { n: this.identityCount })
-        : this.$t('One card. You can add more');
+        ? this.$t('{n} accounts, same 12 words', { n: this.identityCount })
+        : this.$t('One account. You can add more');
     },
   },
 

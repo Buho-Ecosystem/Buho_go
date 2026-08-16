@@ -1,14 +1,6 @@
 <template>
   <q-page class="id-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
     <div class="id-topbar">
-      <button
-        type="button"
-        class="id-topbar-btn"
-        :aria-label="$t('Wallet')"
-        @click="$router.push('/wallet')"
-      >
-        <Icon icon="tabler:home" width="21" height="21" />
-      </button>
       <div class="id-topbar-spacer"></div>
       <button
         type="button"
@@ -18,6 +10,15 @@
         @click="showScanSheet = true"
       >
         <Icon icon="tabler:scan" width="21" height="21" />
+      </button>
+      <!-- Far right, like every hub header: the one universal way home. -->
+      <button
+        type="button"
+        class="id-topbar-btn"
+        :aria-label="$t('Home')"
+        @click="$router.push('/wallet')"
+      >
+        <Icon icon="tabler:home" width="21" height="21" />
       </button>
     </div>
 

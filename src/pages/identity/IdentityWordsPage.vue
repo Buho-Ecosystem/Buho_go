@@ -95,12 +95,15 @@
 
     <IdentityRestoreDialog v-model="showRestoreDialog" @restored="onIdentityRestored" />
 
+      <SettingsHubNav />
+
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
@@ -113,6 +116,7 @@ export default {
   name: 'IdentityWordsPage',
 
   components: {
+    SettingsHubNav,
     Icon,
     IdentityNav,
     IdentityGroup,

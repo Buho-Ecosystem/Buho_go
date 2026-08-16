@@ -3,9 +3,9 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Your cards') }}</h1>
+      <h1 class="id-large-title">{{ $t('Your accounts') }}</h1>
       <p class="id-lede">
-        {{ $t('You can keep more than one card. They never see each other, and the same 12 words bring all of them back.') }}
+        {{ $t('You can keep more than one account. They never see each other, and the same 12 words bring all of them back.') }}
       </p>
 
       <!--
@@ -36,7 +36,7 @@
       <IdentityGroup class="id-block">
         <IdentityRow
           icon="tabler:plus"
-          :label="$t('Add a card')"
+          :label="$t('Add an account')"
           :caption="$t('For a shop, a stage name, a second life')"
           :interactive="!busy"
           @click="step = 'create'"
@@ -78,11 +78,14 @@
         </div>
       </q-card>
     </q-dialog>
+      <SettingsHubNav />
+
   </q-page>
 </template>
 
 <script>
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
@@ -93,7 +96,7 @@ import { useAddressBookStore } from '../../stores/addressBook';
 export default {
   name: 'IdentityListPage',
 
-  components: { IdentityNav, IdentityGroup, IdentityRow },
+  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
 
   setup() {
     return {
@@ -132,12 +135,12 @@ export default {
     askTitle() {
       return this.step === 'create'
         ? this.$t('Bring your contacts along?')
-        : this.$t('Switch card?');
+        : this.$t('Switch account?');
     },
 
     askBody() {
       return this.step === 'create'
-        ? this.$t('Your new card can start with a copy of your contacts, or with none. The same 12 words cover both cards.')
+        ? this.$t('Your new account can start with a copy of your contacts, or with none. The same 12 words cover both.')
         : this.$t('Your card, your contacts and your username all change. Your wallets and your Bitcoin stay as they are.');
     },
   },
@@ -164,8 +167,14 @@ export default {
       }
     },
 
+    /**
+     * A user-set label wins, then the card's own username, then the
+     * numbered fallback for a card that has neither yet.
+     */
     identityName(row) {
-      return row.label || this.$t('Card {n}', { n: row.account + 1 });
+      if (row.label) return row.label;
+      if (row.username) return `@${row.username}`;
+      return this.$t('Account {n}', { n: row.account + 1 });
     },
 
     onSwitch(row) {
@@ -216,21 +225,21 @@ export default {
           return;
         }
         if (!result.ok) {
-          this._notifyFailed(result, this.$t("Couldn't switch card"));
+          this._notifyFailed(result, this.$t("Couldn't switch account"));
           await this.refresh();
           return;
         }
 
         this._refreshProfileForNewIdentity();
         await this.refresh();
-        this.$q.notify({ type: 'positive', message: this.$t('Switched card'), timeout: 3000 });
+        this.$q.notify({ type: 'positive', message: this.$t('Switched account'), timeout: 3000 });
         this.step = null;
         this.pending = null;
       } catch (err) {
         console.warn('[identity-list] switch failed:', err);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("Couldn't switch card"),
+          message: this.$t("Couldn't switch account"),
           caption: this.$t('Check your connection and try again.'),
           timeout: 4000,
         });
@@ -257,20 +266,20 @@ export default {
           return;
         }
         if (!result.ok) {
-          this._notifyFailed(result, this.$t("Couldn't create the card"));
+          this._notifyFailed(result, this.$t("Couldn't create the account"));
           await this.refresh();
           return;
         }
 
         this._refreshProfileForNewIdentity();
         await this.refresh();
-        this.$q.notify({ type: 'positive', message: this.$t('New card created'), timeout: 3000 });
+        this.$q.notify({ type: 'positive', message: this.$t('New account created'), timeout: 3000 });
         this.step = null;
       } catch (err) {
         console.warn('[identity-list] create failed:', err);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("Couldn't create the card"),
+          message: this.$t("Couldn't create the account"),
           caption: this.$t('Check your connection and try again.'),
           timeout: 4000,
         });

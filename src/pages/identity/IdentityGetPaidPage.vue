@@ -165,6 +165,8 @@
 
     <SocialBucketSheet v-model="showBucket" />
 
+      <SettingsHubNav />
+
   </q-page>
 </template>
 
@@ -172,6 +174,7 @@
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
@@ -189,6 +192,7 @@ export default {
   name: 'IdentityGetPaidPage',
 
   components: {
+    SettingsHubNav,
     Icon,
     VueQrcode,
     IdentityNav,
