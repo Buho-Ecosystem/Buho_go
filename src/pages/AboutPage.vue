@@ -49,7 +49,10 @@
           icon="tabler:info-circle"
           :label="$t('Version')"
           :inline-value="'v' + appVersion"
-          :interactive="false"
+          :caption="versionCaption"
+          :badge="updateStore.hasUpdate ? $t('Update available') : ''"
+          :badge-variant="updateStore.isRequired ? 'danger' : 'info'"
+          @click="onVersionClick"
         />
       </SettingsSection>
 
@@ -80,10 +83,14 @@ import { Icon } from '@iconify/vue';
 import { version } from '../../package.json';
 import SettingsSection from '../components/settings/SettingsSection.vue';
 import SettingsRow from '../components/settings/SettingsRow.vue';
+import { useUpdateStore } from '../stores/update';
 
 export default {
   name: 'AboutPage',
   components: { Icon, SettingsSection, SettingsRow },
+  setup() {
+    return { updateStore: useUpdateStore() };
+  },
   data() {
     return {
       nostrCommunityUrl: 'https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/85016a489c551428a50c339c75b6931a?n=BuhoGO&a=Public+discussion%2C+support%2C+and+updates+for+the+Buho+GO+Wallet%3A+a+native+wallet+interface+for+Spark%2C+Ark%2C+LNbits%2C+Nostr+Wallet+Connect%2C+and+&p=https%3A%2F%2Fblossom.primal.net%2Fd816ffbd78b10591710a1be9deca91700fe278e50250a07f0b1e421f0db03748',
@@ -93,8 +100,46 @@ export default {
     appVersion() {
       return version;
     },
+    versionCaption() {
+      if (this.updateStore.isRequired) return this.$t('Update required');
+      if (this.updateStore.hasUpdate) return this.$t('A newer version is ready');
+      if (this.updateStore.status === 'checking') return this.$t('Checking for updates...');
+      return this.$t('Tap to check for updates');
+    },
   },
   methods: {
+    async onVersionClick() {
+      let result = null;
+      if (!this.updateStore.hasUpdate) {
+        result = await this.updateStore.checkForUpdates({ force: true });
+      }
+      if (this.updateStore.hasUpdate) {
+        this.updateStore.openSheet();
+        return;
+      }
+      if (result?.error || this.updateStore.status === 'error') {
+        this.$q.notify({
+          message: this.$t('Could not check for updates. Please try again.'),
+          icon: 'cloud_off',
+          timeout: 3000,
+        });
+        return;
+      }
+      if (result?.skipped === 'kiosk') {
+        this.$q.notify({
+          message: this.$t('Update checks are unavailable in kiosk mode.'),
+          icon: 'info',
+          timeout: 3000,
+        });
+        return;
+      }
+      this.$q.notify({
+        message: this.$t('BuhoGO is up to date'),
+        icon: 'check_circle',
+        timeout: 2500,
+      });
+    },
+
     openGithubRepo() {
       window.open('https://github.com/Buho-Ecosystem/Buho_go', '_blank', 'noopener,noreferrer');
     },

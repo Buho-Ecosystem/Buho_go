@@ -1,4 +1,5 @@
 import { register } from 'register-service-worker'
+import { PWA_UPDATE_EVENT, PWA_UPDATE_FLAG } from 'src/utils/updateEvents'
 
 // The ready(), registered(), cached(), updatefound() and updated()
 // events passes a ServiceWorkerRegistration instance in their arguments.
@@ -28,7 +29,11 @@ register(process.env.SERVICE_WORKER_FILE, {
   },
 
   updated (/* registration */) {
-    // console.log('New content is available; please refresh.')
+    // GenerateSW activates the new worker immediately, but the current page
+    // still runs its existing JavaScript until reload. Hand readiness to the
+    // shared in-app update experience instead of forcing a surprise refresh.
+    window[PWA_UPDATE_FLAG] = true
+    window.dispatchEvent(new CustomEvent(PWA_UPDATE_EVENT))
   },
 
   offline () {

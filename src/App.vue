@@ -15,6 +15,10 @@
 
   <router-view />
 
+  <!-- Shared, channel-aware update UI. Soft updates stay nonmodal until the
+       user opens them; required updates wait until biometric UI is gone. -->
+  <UpdateExperience :suspended="locked" />
+
   <!-- Global payment-error dialog. Wired to walletStore.paymentError so
        any page or store can surface a failure via showPaymentError(). -->
   <PaymentErrorDialog />
@@ -29,11 +33,12 @@ import { authenticate as biometricAuth, isBiometricAvailable } from 'src/utils/b
 import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils/walletHydration'
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
+import UpdateExperience from 'src/components/UpdateExperience.vue'
 
 export default defineComponent({
   name: 'App',
 
-  components: { PaymentErrorDialog },
+  components: { PaymentErrorDialog, UpdateExperience },
 
   setup () {
     const store = useWalletStore()
