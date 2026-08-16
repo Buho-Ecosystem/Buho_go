@@ -3,17 +3,28 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Manage your card') }}</h1>
+      <h1 class="id-large-title">{{ $t('Your profile') }}</h1>
+      <p class="id-lede">
+        {{ $t('Choose how people see and find you. Your private information stays on this phone.') }}
+      </p>
 
-      <!-- What is on the card. Sections are named by the question a user is
-           asking, not by the feature that answers it. -->
-      <IdentityGroup :footer="$t('Your photo and name are public. Your contacts, your balance and your 12 words never leave your phone.')">
-        <IdentityRow
-          icon="tabler:user"
-          :label="$t('Photo and name')"
-          :caption="profileCaption"
-          @click="$router.push('/identity/profile')"
-        />
+      <button type="button" class="profile-summary" @click="$router.push('/identity/profile')">
+        <span class="profile-avatar">
+          <img v-if="profilePicture" :src="profilePicture" alt="" @error="avatarBroken = true" />
+          <Icon v-else icon="tabler:user" width="30" height="30" />
+        </span>
+        <span class="profile-summary-copy">
+          <span class="profile-kicker">{{ $t('Public profile') }}</span>
+          <span class="profile-name">{{ profileCaption }}</span>
+          <span class="profile-handle">{{ username ? '@' + username : $t('Add a username') }}</span>
+        </span>
+        <span class="profile-edit">{{ $t('Edit') }}</span>
+      </button>
+
+      <IdentityGroup
+        :title="$t('Public profile')"
+        :footer="$t('Your photo, name and profile details are public. Your contacts, balance and 12 words stay private.')"
+      >
         <IdentityRow
           icon="tabler:at"
           tone="accent"
@@ -26,11 +37,11 @@
           :tone="lud16 ? 'neutral' : 'warn'"
           :label="$t('Get paid')"
           :caption="lud16 ? $t('Your code, your link, where money lands') : $t('Setting up')"
-          @click="$router.push('/identity/get-paid')"
+          @click="$router.push({ path: '/identity', query: { sheet: 'get-paid' } })"
         />
         <IdentityRow
           icon="tabler:cloud"
-          :label="$t('Visible in other apps')"
+          :label="$t('Public profile sharing')"
           :caption="publishCaption"
           :chip="publishChip"
           :chip-tone="publishChipTone"
@@ -38,7 +49,7 @@
         />
       </IdentityGroup>
 
-      <IdentityGroup :title="$t('Safety')">
+      <IdentityGroup :title="$t('Recovery')">
         <IdentityRow
           icon="tabler:shield-lock"
           :tone="cardWordsSaved ? 'neutral' : 'warn'"
@@ -49,17 +60,9 @@
           :chip-icon="cardWordsSaved ? 'tabler:check' : ''"
           @click="$router.push('/identity/words')"
         />
-        <IdentityRow
-          icon="tabler:lock"
-          :label="$t('App lock')"
-          :caption="appLockCaption"
-          :chip="biometricsEnabled ? $t('On') : $t('Off')"
-          :chip-tone="biometricsEnabled ? 'ok' : 'mute'"
-          :interactive="false"
-        />
       </IdentityGroup>
 
-      <IdentityGroup :title="$t('More')">
+      <IdentityGroup :title="$t('Accounts and access')">
         <IdentityRow
           icon="tabler:users"
           :label="$t('Your accounts')"
@@ -68,14 +71,9 @@
         />
         <IdentityRow
           icon="tabler:key"
-          :label="$t('Advanced')"
-          :caption="$t('Use this card in other apps')"
+          :label="$t('Keys and apps')"
+          :caption="$t('Your npub and secret key')"
           @click="$router.push('/identity/advanced')"
-        />
-        <IdentityRow
-          icon="tabler:info-circle"
-          :label="$t('What is this card for')"
-          @click="$router.push('/identity/about')"
         />
       </IdentityGroup>
 
@@ -102,24 +100,24 @@
 
 <script>
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { Icon } from '@iconify/vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
-import { useWalletStore } from '../../stores/wallet';
 
 export default {
   name: 'IdentityManagePage',
 
-  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
+  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow },
 
   setup() {
-    return { ...useIdentityHealth(), walletStore: useWalletStore() };
+    return { ...useIdentityHealth() };
   },
 
   data() {
-    return { identityCount: 1 };
+    return { identityCount: 1, avatarBroken: false };
   },
 
   computed: {
@@ -139,6 +137,10 @@ export default {
       return this.profile.displayName || this.profile.name || this.$t('Not set yet');
     },
 
+    profilePicture() {
+      return this.avatarBroken ? '' : (this.profile.picture || '');
+    },
+
     publishCaption() {
       if (!this.profile.lastPublishedAt) return this.$t('Not shared yet');
       return this.$t('Up to date');
@@ -152,22 +154,6 @@ export default {
       return 'ok';
     },
 
-    /**
-     * The one line that has to carry the two-phrase problem. It names both
-     * halves explicitly, because a user who saved one genuinely believes
-     * they are done.
-     */
-
-    biometricsEnabled() {
-      return !!this.walletStore.biometricsEnabled;
-    },
-
-    appLockCaption() {
-      return this.biometricsEnabled
-        ? this.$t('Fingerprint needed to open BuhoGO')
-        : this.$t('Anyone who opens your phone can open BuhoGO');
-    },
-
     identityCountCaption() {
       return this.identityCount > 1
         ? this.$t('{n} accounts, same 12 words', { n: this.identityCount })
@@ -178,8 +164,6 @@ export default {
   async created() {
     await this.identity.hydrate();
     await this.profile.hydrate();
-    // Needed before the 12-words row can say how many phrases exist.
-    await this.ensureWalletLoaded();
     try {
       const list = await this.identity.listNostrIdentities();
       this.identityCount = Array.isArray(list) ? list.length : 1;
@@ -191,6 +175,44 @@ export default {
 </script>
 
 <style scoped>
+
+.profile-summary {
+  width: 100%;
+  min-height: 108px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 16px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  font-family: 'Manrope', sans-serif;
+  cursor: pointer;
+  box-shadow: 0 14px 34px -30px rgba(0, 0, 0, 0.7);
+}
+
+.profile-summary:active { transform: scale(0.992); }
+
+.profile-avatar {
+  width: 68px;
+  height: 68px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent-text);
+}
+
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile-summary-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.profile-kicker { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); }
+.profile-name { margin-top: 2px; font-size: 19px; font-weight: 740; letter-spacing: -0.025em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-handle { margin-top: 2px; font-size: 12.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-edit { flex: 0 0 auto; min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--radius-pill); background: var(--brand-accent-soft); color: var(--brand-accent-text); font-size: 12.5px; font-weight: 700; }
 
 /* Air above the destructive group so it never reads as the next item in a
    list of routine settings. */

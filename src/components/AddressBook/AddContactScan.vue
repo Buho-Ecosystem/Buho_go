@@ -1,6 +1,7 @@
 <template>
   <div class="scan-pane">
     <p
+      v-if="!detected"
       class="scan-lede"
       :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
     >
@@ -13,18 +14,19 @@
          and SendModal use, so the scanner lifecycle matches the rest
          of the app. -->
     <div
+      v-if="!detected"
       class="scan-frame"
       :class="$q.dark.isActive ? 'scan-frame-dark' : 'scan-frame-light'"
     >
       <video
-        v-if="showCamera && !cameraError && !resolved"
+        v-if="showCamera && !cameraError"
         ref="videoEl"
         class="scan-video"
         playsinline
       />
 
       <div
-        v-if="!showCamera && !cameraError && !resolved"
+        v-if="!showCamera && !cameraError"
         class="scan-overlay"
       >
         <q-spinner-dots size="36px" color="grey-6" />
@@ -39,28 +41,34 @@
         <p>{{ cameraError }}</p>
       </div>
 
-      <!-- Result overlay sits inside the same frame so the layout
-           doesn't jump when a code is decoded. -->
-      <div v-if="resolved" class="scan-result-overlay">
-        <div
-          v-if="!profileEvent && !resultError"
-          class="scan-status scan-status--progress"
-        >
-          <q-spinner size="20px" />
-          <span>{{ $t('Looking up the profile…') }}</span>
-        </div>
-        <div
-          v-else-if="resultError"
-          class="scan-status scan-status--error"
-        >
-          <Icon icon="tabler:alert-circle" width="20" height="20" />
-          <span>{{ resultError }}</span>
-        </div>
+    </div>
+
+    <!-- A successful scan replaces the camera rather than leaving a stopped,
+         empty video frame above the result. While the identifier/profile is
+         resolving, keep the feedback compact so the contact remains the sole
+         focus as soon as it is ready. -->
+    <div
+      v-else-if="!profileEvent"
+      class="scan-feedback"
+      :class="[
+        $q.dark.isActive ? 'scan-feedback--dark' : 'scan-feedback--light',
+        resultError ? 'scan-feedback--error' : '',
+      ]"
+      role="status"
+      aria-live="polite"
+    >
+      <div v-if="!resultError" class="scan-status scan-status--progress">
+        <q-spinner size="20px" />
+        <span>{{ $t('Looking up the profile…') }}</span>
+      </div>
+      <div v-else class="scan-status scan-status--error">
+        <Icon icon="tabler:alert-circle" width="20" height="20" />
+        <span>{{ resultError }}</span>
       </div>
     </div>
 
     <NostrContactPreview
-      v-if="resolved && profileEvent"
+      v-else
       class="scan-preview"
       :pubkey="resolved.pubkey"
       :npub="resolved.npub"
@@ -73,12 +81,12 @@
       @copy-npub="onCopyNpub"
     />
 
-    <!-- Footer actions. "Scan again" only shows after we've stopped
+    <!-- Footer actions. "Scan again" shows as soon as a code has stopped
          the scanner; "Paste instead" is always offered as the escape
          hatch (the parent tab control reuses it to flip to Search). -->
     <div class="scan-actions">
       <button
-        v-if="resolved"
+        v-if="detected"
         type="button"
         class="scan-secondary-btn"
         @click="restart"
@@ -293,10 +301,9 @@ export default {
      *    BIP21 `bitcoin:` and `lightning:` QR URIs) → hand the bare value
      *    up to the parent, which flips to the manual "Enter" form with the
      *    address pre-filled so the user just adds a name + note.
-     * 3. A BuhoGO profile link → the identifier inside it, then step 1.
-     *    The code on a card carries a link so a plain phone camera can open
-     *    it; without this branch BuhoGO would be the only scanner that
-     *    could not read BuhoGO's own QR.
+     * 3. A shared BuhoGO profile link → the identifier inside it, then step 1.
+     *    The card itself uses `nostr:npub…`, but links received elsewhere
+     *    should still land in the same add-contact flow.
      * 4. Anything else (BOLT11 invoice, other URLs, a bare NIP-05 that
      *    isn't a Lightning address) → keep scanning; it isn't a contact
      *    destination we can save.
@@ -315,8 +322,8 @@ export default {
       // variable across every downstream branch.
       const trimmed = text.trim().replace(/^nostr:/i, '');
 
-      // Our own profile link resolves to the identifier it points at, so a
-      // scanned card behaves exactly like a scanned key.
+      // A shared profile link resolves to the identifier it points at, just
+      // like the direct NIP-21 identity printed on the card.
       const fromLink = parseProfileLink(trimmed);
       if (fromLink) {
         this.detected = true;
@@ -524,15 +531,28 @@ export default {
   line-height: 1.4;
 }
 
-.scan-result-overlay {
-  position: absolute;
-  inset: 0;
+.scan-feedback {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  min-height: 112px;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+}
+
+.scan-feedback--light {
+  background: rgba(120, 120, 120, 0.04);
+  color: var(--text-secondary);
+}
+
+.scan-feedback--dark {
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-secondary);
+}
+
+.scan-feedback--error {
+  border-color: rgba(239, 68, 68, 0.24);
 }
 
 .scan-status {
@@ -545,11 +565,32 @@ export default {
 }
 
 .scan-status--error {
-  color: #FFCFB5;
+  color: #C2413A;
+}
+
+.scan-feedback--dark .scan-status--error {
+  color: #FFB4AA;
 }
 
 .scan-preview {
-  margin-top: 0.25rem;
+  animation: scan-preview-in 0.18s ease-out;
+}
+
+@keyframes scan-preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-preview {
+    animation: none;
+  }
 }
 
 .scan-actions {

@@ -734,6 +734,7 @@ import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 // (e.g. 'nostr', 'phone') and only need a new entry here, no logic change.
 const TX_SOURCE_CHIP_KEYS = {
   'internal-transfer': 'Transfer',
+  'social-bucket': 'Profile payout',
   batch: 'Batch',
   kiosk: 'Kiosk',
   nostr: 'Nostr',
@@ -745,6 +746,7 @@ const TX_SOURCE_CHIP_KEYS = {
 // avatar or arrow already tells the story).
 const TX_SOURCE_ICONS = {
   'internal-transfer': 'tabler:arrows-exchange',
+  'social-bucket': 'tabler:user-dollar',
   kiosk: 'tabler:building-store',
 };
 
@@ -1335,6 +1337,7 @@ export default {
       if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
       if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
       if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      if (source === 'social-bucket') return { icon: 'tabler:user-dollar', cls: 'tx-badge-aux' };
       return tx.type === 'incoming'
         ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
         : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };

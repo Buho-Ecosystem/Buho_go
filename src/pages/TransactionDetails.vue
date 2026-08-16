@@ -703,6 +703,7 @@ import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 // (e.g. 'nostr', 'phone') and only need a new entry here, no logic change.
 const TX_SOURCE_TYPE_KEYS = {
   'internal-transfer': 'Internal transfer',
+  'social-bucket': 'Profile payout',
   batch: 'Batch payment',
   kiosk: 'Kiosk sale',
   nostr: 'Nostr payment',
@@ -869,6 +870,7 @@ export default {
         if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
         if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
         if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+        if (source === 'social-bucket') return { icon: 'tabler:user-dollar', cls: 'tx-badge-aux' };
       } catch { /* metadata store not ready — direction still applies */ }
       return this.transaction.type === 'incoming'
         ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }

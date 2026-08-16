@@ -3,58 +3,65 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Advanced') }}</h1>
+      <h1 class="id-large-title">{{ $t('Keys and apps') }}</h1>
       <p class="id-lede">
-        {{ $t('Your card works in other Bitcoin and social apps. They ask for the key below.') }}
+        {{ $t('Use your profile in other Nostr apps. Your public npub is safe to share; your secret key is not.') }}
       </p>
 
-      <!--
-        Copy first, reveal second.
-
-        The safeguarding guidance is direct about this: prefer a copy button
-        and keep the secret off the screen, because the realistic threat is
-        the person standing next to you rather than an attack on the device.
-        The old dialog rendered the key by default with two timers running
-        and put the phishing warning after the reveal.
-      -->
-      <IdentityGroup :footer="$t('This key is made from your 12 words, so there is nothing extra to write down. Anyone who gets it becomes you, forever. Never paste it into a website that asks you to log in.')">
+      <IdentityGroup
+        :title="$t('Publicly shareable npub')"
+        :footer="$t('Your npub helps people and apps find your public profile. It cannot reveal your secret key or spend your Bitcoin.')"
+      >
         <IdentityRow
-          icon="tabler:lock"
-          tone="danger"
-          :label="$t('Copy my secret key')"
-          :caption="secretCopied
-            ? $t('Copied. The clipboard clears in {n} seconds', { n: 30 })
-            : $t('Clipboard clears after 30 seconds')"
-          :chevron="false"
-          @click="copySecret"
-        />
-        <IdentityRow
-          icon="tabler:eye"
-          :label="revealed ? $t('Hide it again') : $t('Show it on screen')"
-          :caption="$t('Only if nobody is looking')"
-          :chevron="false"
-          @click="toggleReveal"
-        />
-      </IdentityGroup>
-
-      <div v-if="revealed && nsec" class="secret-box">
-        <code class="secret-value">{{ nsec }}</code>
-      </div>
-
-      <IdentityGroup :title="$t('Also here')">
-        <IdentityRow
-          icon="tabler:copy"
-          :label="publicCopied ? $t('Copied') : $t('Copy my public code')"
-          :caption="$t('Some apps use this to find you')"
+          icon="tabler:world"
+          tone="accent"
+          :label="publicCopied ? $t('Copied') : $t('Copy my npub')"
+          :caption="shortNpub"
+          mono
           :chevron="false"
           @click="copyPublic"
         />
+      </IdentityGroup>
+
+      <IdentityGroup
+        :title="$t('Secret access')"
+        :footer="$t('Your secret key gives full control of your profile. Only use it in an app you trust, never on a website that unexpectedly asks for it.')"
+      >
         <IdentityRow
-          icon="tabler:info-circle"
-          :label="$t('Which apps accept it')"
+          icon="tabler:key"
+          tone="danger"
+          :label="secretExpanded ? $t('Hide secret-key options') : $t('Use my secret key')"
+          :caption="$t('For signing in to another trusted Nostr app')"
+          :chevron="!secretExpanded"
+          @click="toggleSecretControls"
+        />
+        <IdentityRow
+          icon="tabler:external-link"
+          :label="$t('Apps that use your profile')"
+          :caption="$t('See examples before sharing your secret key')"
           @click="showClients = true"
         />
       </IdentityGroup>
+
+      <section v-if="secretExpanded" class="secret-controls">
+        <div class="secret-warning">
+          <Icon icon="tabler:alert-triangle" width="19" height="19" />
+          <span>{{ $t('Anyone with this key can act as you. BuhoGO will never ask you to send it to someone.') }}</span>
+        </div>
+
+        <button type="button" class="btn-ghost" @click="copySecret">
+          <Icon icon="tabler:copy" width="18" height="18" />
+          <span>{{ secretCopied ? $t('Copied. Clipboard clears in 30 seconds') : $t('Copy secret key') }}</span>
+        </button>
+        <button type="button" class="btn-quiet" @click="toggleReveal">
+          <Icon :icon="revealed ? 'tabler:eye-off' : 'tabler:eye'" width="18" height="18" />
+          <span>{{ revealed ? $t('Hide it again') : $t('Show it on screen') }}</span>
+        </button>
+
+        <div v-if="revealed && nsec" class="secret-box">
+          <code class="secret-value">{{ nsec }}</code>
+        </div>
+      </section>
     </div>
 
     <ClientExamplesSheet v-model="showClients" />
@@ -66,6 +73,7 @@
 
 <script>
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { Icon } from '@iconify/vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
@@ -80,7 +88,7 @@ const REVEAL_MS = 60_000;
 export default {
   name: 'IdentityAdvancedPage',
 
-  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow, ClientExamplesSheet },
+  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow, ClientExamplesSheet },
 
   setup() {
     return { identity: useIdentityStore() };
@@ -92,6 +100,7 @@ export default {
       revealed: false,
       secretCopied: false,
       publicCopied: false,
+      secretExpanded: false,
       showClients: false,
       _revealTimer: null,
       _copyTimer: null,
@@ -122,9 +131,24 @@ export default {
   computed: {
     /** Back goes to whichever screen opened this one. */
     backNav() { return identityBack(this.$router, this.$route.path); },
+
+    shortNpub() {
+      const value = this.identity.nostrNpub || '';
+      if (value.length <= 24) return value;
+      return `${value.slice(0, 16)}…${value.slice(-8)}`;
+    },
   },
 
   methods: {
+    toggleSecretControls() {
+      this.secretExpanded = !this.secretExpanded;
+      if (!this.secretExpanded) {
+        this.revealed = false;
+        this.nsec = '';
+        if (this._revealTimer) clearTimeout(this._revealTimer);
+      }
+    },
+
     async loadSecret() {
       if (this.nsec) return this.nsec;
       try {
@@ -186,6 +210,30 @@ export default {
 </script>
 
 <style scoped>
+
+.secret-controls {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 68, 68, 0.2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.secret-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 68, 68, 0.08);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.secret-warning svg { flex: 0 0 auto; margin-top: 1px; color: var(--color-red); }
+.secret-controls .btn-ghost { margin-top: 12px; }
+.secret-controls .btn-quiet { margin-top: 2px; }
 
 .secret-box {
   margin-top: 12px;

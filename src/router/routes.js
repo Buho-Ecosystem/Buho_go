@@ -49,16 +49,31 @@ const routes = [
       // identity tab, because the visitor is not the owner of the card.
       { path: '/p/:id', component: () => import('pages/PublicProfilePage.vue') },
 
-      // Identity. The tab itself is the card; everything configurable lives
-      // on its own pushed screen rather than in a stack of bottom sheets, so
-      // each one is addressable, has a back button, and can be deep-linked.
+      // Identity. The tab itself is the card. Larger configuration tasks use
+      // pushed screens; the quick Get paid action stays in a bottom sheet.
       { path: '/identity', component: () => import('pages/identity/IdentityHomePage.vue') },
       { path: '/identity/about', component: () => import('pages/identity/IdentityAboutPage.vue') },
       { path: '/identity/manage', component: () => import('pages/identity/IdentityManagePage.vue') },
       { path: '/identity/profile', component: () => import('pages/identity/IdentityProfilePage.vue') },
       { path: '/identity/username', component: () => import('pages/identity/IdentityUsernamePage.vue') },
-      { path: '/identity/get-paid', component: () => import('pages/identity/IdentityGetPaidPage.vue') },
-      { path: '/identity/sign-in', component: () => import('pages/identity/IdentitySignInPage.vue') },
+      // Keep old bookmarks/deep links working while presenting Get paid in
+      // context over the identity home rather than as a separate page.
+      {
+        path: '/identity/get-paid',
+        redirect: (to) => ({
+          path: '/identity',
+          query: { ...to.query, sheet: 'get-paid' },
+        }),
+      },
+      // Sign in is also a scoped action. Preserve old links while returning
+      // people to the identity card when they dismiss the sheet.
+      {
+        path: '/identity/sign-in',
+        redirect: (to) => ({
+          path: '/identity',
+          query: { ...to.query, sheet: 'sign-in' },
+        }),
+      },
       { path: '/identity/words', component: () => import('pages/identity/IdentityWordsPage.vue') },
       { path: '/identity/identities', component: () => import('pages/identity/IdentityListPage.vue') },
       { path: '/identity/advanced', component: () => import('pages/identity/IdentityAdvancedPage.vue') },

@@ -59,6 +59,8 @@ await test('lud16 -> lightning_address target + profile identity', async () => {
   assert.equal(t.npub, NPUB)
   assert.equal(t.profile.name, 'Alice')
   assert.equal(t.profile.picture, 'https://example.com/alice.png')
+  assert.equal(t.profileEvent.pubkey, PUBKEY)
+  assert.deepEqual(t.relayHints, [])
 })
 
 await test('no lud16 but lud06 -> lnurl target', async () => {

@@ -50,11 +50,14 @@
           <span class="id-verb-icon"><Icon icon="tabler:share-2" width="19" height="19" /></span>
           <span class="id-verb-label">{{ $t('Share') }}</span>
         </button>
-        <button type="button" class="id-verb" data-audit="identity-get-paid" @click="$router.push('/identity/get-paid')">
+        <button type="button" class="id-verb" data-audit="identity-get-paid" @click="showGetPaidSheet = true">
+          <span v-if="bucket.paymentCount > 0" class="id-verb-pill" aria-hidden="true">
+            {{ bucketPaymentBadge }}
+          </span>
           <span class="id-verb-icon"><Icon icon="tabler:arrow-bar-to-down" width="19" height="19" /></span>
           <span class="id-verb-label">{{ $t('Get paid') }}</span>
         </button>
-        <button type="button" class="id-verb" data-audit="identity-sign-in" @click="$router.push('/identity/sign-in')">
+        <button type="button" class="id-verb" data-audit="identity-sign-in" @click="showSignInSheet = true">
           <span class="id-verb-icon"><Icon icon="tabler:world" width="19" height="19" /></span>
           <span class="id-verb-label">{{ $t('Sign in') }}</span>
         </button>
@@ -111,6 +114,14 @@
     <!-- Share: one sheet, replacing the two competing ones the old page had. -->
     <IdentityShareSheet v-model="showShareSheet" />
 
+    <!-- Receiving is a quick action, so it stays over the card instead of
+         navigating away from it. The legacy URL still opens this same sheet. -->
+    <IdentityGetPaidSheet v-model="showGetPaidSheet" />
+
+    <!-- Website sign-in is a short, contextual task like Get paid. Keeping it
+         in a sheet preserves the user's place on their card. -->
+    <IdentitySignInSheet v-model="showSignInSheet" />
+
     <!-- Scan someone else's card. Same add-contact flow the address book
          uses, landed on its scan tab. -->
     <AddressBookModal
@@ -133,11 +144,14 @@ import PeopleStrip from '../../components/identity/PeopleStrip.vue';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import IdentityShareSheet from '../../components/identity/IdentityShareSheet.vue';
+import IdentityGetPaidSheet from '../../components/identity/IdentityGetPaidSheet.vue';
+import IdentitySignInSheet from '../../components/identity/IdentitySignInSheet.vue';
 import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useAddressBookStore } from '../../stores/addressBook';
+import { useSocialBucketStore } from '../../stores/socialBucket';
 import { usePayContact } from '../../composables/usePayContact';
-import { buildProfileLink } from '../../utils/profileLink.js';
+import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
 
 /** How many faces fit the strip before it needs scrolling on a small phone. */
 const PEOPLE_SHOWN = 8;
@@ -154,18 +168,23 @@ export default {
     IdentityGroup,
     IdentityRow,
     IdentityShareSheet,
+    IdentityGetPaidSheet,
+    IdentitySignInSheet,
     AddressBookModal,
   },
 
   setup() {
     const health = useIdentityHealth();
     const addressBook = useAddressBookStore();
-    return { ...health, addressBook };
+    const bucket = useSocialBucketStore();
+    return { ...health, addressBook, bucket };
   },
 
   data() {
     return {
       showShareSheet: false,
+      showGetPaidSheet: false,
+      showSignInSheet: false,
       showScanSheet: false,
       avatarBroken: false,
       canSwitch: false,
@@ -173,6 +192,11 @@ export default {
   },
 
   computed: {
+    bucketPaymentBadge() {
+      const count = this.bucket.paymentCount;
+      return count > 99 ? '99+' : `+${count}`;
+    },
+
     cardName() {
       if (this.needsName) return this.$t('Add your name');
       return this.profile.displayName || this.profile.name;
@@ -220,21 +244,9 @@ export default {
       return this.statusKey === 'ready' ? 'ok' : 'progress';
     },
 
-    /**
-     * The card's code carries the person's link.
-     *
-     * It used to be `nostr:npub…`, which only an app that already speaks
-     * Nostr can act on. A stranger holding up a phone camera got nothing.
-     * The link resolves for everyone: a plain camera opens the profile page,
-     * and BuhoGO's scanner reads it straight back to the identifier and goes
-     * to the add-contact flow, so scanning in-app is unchanged.
-     */
+    /** The physical card exchange is identity-to-identity, not a web share. */
     qrValue() {
-      return buildProfileLink({
-        username: this.identity.nip05ActiveEntry?.handle,
-        nip05: this.profile.nip05 || this.identity.nip05Address,
-        npub: this.identity.nostrNpub,
-      });
+      return buildNostrIdentityUri(this.identity.nostrNpub);
     },
 
     /**
@@ -263,6 +275,28 @@ export default {
   },
 
   watch: {
+    '$route.query.sheet': {
+      immediate: true,
+      handler(sheet, previousSheet) {
+        this.showGetPaidSheet = sheet === 'get-paid';
+        this.showSignInSheet = sheet === 'sign-in';
+      },
+    },
+
+    showGetPaidSheet(isOpen) {
+      if (isOpen || this.$route.query.sheet !== 'get-paid') return;
+      const query = { ...this.$route.query };
+      delete query.sheet;
+      this.$router.replace({ path: '/identity', query });
+    },
+
+    showSignInSheet(isOpen) {
+      if (isOpen || this.$route.query.sheet !== 'sign-in') return;
+      const query = { ...this.$route.query };
+      delete query.sheet;
+      this.$router.replace({ path: '/identity', query });
+    },
+
     'profile.picture'() {
       this.avatarBroken = false;
     },
@@ -278,6 +312,12 @@ export default {
     if (!this.identity.bootstrapped) {
       await this.identity.ensureIdentity();
     }
+
+    // The wallet-home badge leads here, so repeat the same live count on the
+    // exact action that explains and moves those payments.
+    this.bucket.hydrate({ pubkey: this.identity.nostrPubkeyHex }).then(() => (
+      this.bucket.sync({ identityStore: this.identity })
+    )).catch(() => {});
 
     // The card footer now reports on the wallet phrase too, and the wallet
     // store only reads its blob inside initialize(). Without this the card
@@ -406,6 +446,25 @@ export default {
   font-family: 'Manrope', sans-serif;
   color: var(--text-primary);
   min-height: 88px;
+  position: relative;
+}
+
+.id-verb-pill {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  min-width: 23px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #10b981;
+  color: #07140f;
+  border: 2px solid var(--bg-card);
+  font: 800 9px/1 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  pointer-events: none;
 }
 
 .id-verb:active { background: rgba(127, 127, 127, 0.06); }

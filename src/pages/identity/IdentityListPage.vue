@@ -8,6 +8,11 @@
         {{ $t('You can keep more than one account. They never see each other, and the same 12 words bring all of them back.') }}
       </p>
 
+      <button type="button" class="btn-primary add-account" :disabled="busy || bucket.isSweeping" @click="step = 'create'">
+        <Icon icon="tabler:plus" width="18" height="18" />
+        <span>{{ $t('Add an account') }}</span>
+      </button>
+
       <!--
         This screen IS the switcher.
         It used to be a list whose rows opened a sheet containing the same
@@ -16,6 +21,7 @@
         should do.
       -->
       <IdentityGroup
+        :title="$t('Accounts')"
         :footer="$t('Switching changes your card and your contacts everywhere in BuhoGO. Your wallets and your Bitcoin stay exactly as they are.')"
       >
         <IdentityRow
@@ -28,20 +34,11 @@
           :chip="row.active ? $t('In use') : ''"
           chip-tone="ok"
           :chevron="!row.active"
-          :interactive="!row.active && !busy"
+          :interactive="!row.active && !busy && !bucket.isSweeping"
           @click="onSwitch(row)"
         />
       </IdentityGroup>
 
-      <IdentityGroup class="id-block">
-        <IdentityRow
-          icon="tabler:plus"
-          :label="$t('Add an account')"
-          :caption="$t('For a shop, a stage name, a second life')"
-          :interactive="!busy"
-          @click="step = 'create'"
-        />
-      </IdentityGroup>
     </div>
 
     <!--
@@ -85,6 +82,7 @@
 
 <script>
 import IdentityNav from '../../components/identity/IdentityNav.vue';
+import { Icon } from '@iconify/vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
@@ -92,16 +90,18 @@ import IdentityRow from '../../components/identity/IdentityRow.vue';
 import { useIdentityStore } from '../../stores/identity';
 import { useProfileStore } from '../../stores/profile';
 import { useAddressBookStore } from '../../stores/addressBook';
+import { useSocialBucketStore } from '../../stores/socialBucket';
 
 export default {
   name: 'IdentityListPage',
 
-  components: { SettingsHubNav, IdentityNav, IdentityGroup, IdentityRow },
+  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow },
 
   setup() {
     return {
       identity: useIdentityStore(),
       addressBook: useAddressBookStore(),
+      bucket: useSocialBucketStore(),
     };
   },
 
@@ -178,7 +178,7 @@ export default {
     },
 
     onSwitch(row) {
-      if (row.active || this.busy) return;
+      if (row.active || this.busy || this.bucket.isSweeping) return;
       this.pending = row;
       this.step = 'switch';
     },
@@ -197,6 +197,9 @@ export default {
       const profile = useProfileStore();
       profile.reset();
       profile.recoverFromNostr({ identityStore: this.identity }).catch(() => {});
+      this.bucket.hydrate({ pubkey: this.identity.nostrPubkeyHex })
+        .then(() => this.bucket.sync({ identityStore: this.identity }))
+        .catch(() => {});
     },
 
     _notifyFailed(result, message) {
@@ -207,7 +210,7 @@ export default {
     },
 
     async confirmSwitch() {
-      if (!this.pending || this.busy) return;
+      if (!this.pending || this.busy || this.bucket.isSweeping) return;
       const target = this.pending;
       this.busy = true;
       try {
@@ -249,7 +252,7 @@ export default {
     },
 
     async onCreate(keepContacts) {
-      if (this.busy) return;
+      if (this.busy || this.bucket.isSweeping) return;
       this.busy = true;
       try {
         const result = await this.addressBook.switchContactsIdentity({
@@ -292,6 +295,8 @@ export default {
 </script>
 
 <style scoped>
+
+.add-account { margin-top: 0 !important; margin-bottom: 4px; }
 
 /* A question with an answer, so a centred card rather than a bottom sheet. */
 .ask-card {

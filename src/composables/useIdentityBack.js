@@ -19,7 +19,6 @@ const PARENTS = {
   '/identity/manage': ['/identity'],
   '/identity/sign-in': ['/identity'],
   '/identity/about': ['/identity', '/identity/manage'],
-  '/identity/get-paid': ['/identity', '/identity/manage'],
   '/identity/profile': ['/identity', '/identity/manage'],
   '/identity/identities': ['/identity', '/identity/manage'],
   '/identity/username': ['/identity/manage'],

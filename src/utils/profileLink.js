@@ -104,13 +104,10 @@ export function expandProfileSlug(raw) {
 }
 
 /**
- * Read a BuhoGO profile link back into the identifier it points at.
- *
- * The code on a card carries this link rather than a `nostr:` URI, because a
- * plain phone camera can open a link and can do nothing at all with a custom
- * scheme. That only works if our own scanner also understands it: without
- * this, BuhoGO would be the one app that could not read its own QR and would
- * sit there scanning while any other camera resolved it fine.
+ * Read a BuhoGO profile link back into the identifier it points at. The card
+ * QR uses a direct NIP-21 identity, but a public link can still reach the
+ * scanner through paste, another QR, or an Android intent and should resolve
+ * to the same add-contact flow.
  *
  * Returns the identifier to resolve (username, NIP-05 address, npub) or ''
  * for anything that is not one of our profile links.

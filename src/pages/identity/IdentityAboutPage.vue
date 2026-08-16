@@ -4,6 +4,7 @@
 
     <div class="id-sub-body">
       <h1 class="id-large-title">{{ $t('What is this card for') }}</h1>
+      <p class="id-lede">{{ $t('One profile for being recognized, paid and signed in—without mixing it with your wallets.') }}</p>
 
       <!--
         The three questions a person actually has, answered without a single
@@ -25,7 +26,6 @@
         <span>{{ $t('Your card holds your name, your photo and your contacts. Your wallet holds your money. They are two separate things with two separate sets of words.') }}</span>
       </div>
 
-      <button type="button" class="btn-ghost" @click="$router.back()">{{ $t('Got it') }}</button>
     </div>
 
       <SettingsHubNav />

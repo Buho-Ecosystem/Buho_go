@@ -39,8 +39,8 @@ function parseDeepLinkURI(url) {
 
   const input = url.trim()
 
-  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) — the profile-
-  // share QR and Nostr clients hand these over. Not a payment shape, so
+  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) — the identity-card
+  // QR and Nostr clients hand these over. Not a payment shape, so
   // parsePaymentDestination can't classify them; Wallet.onPaymentDetected
   // resolves the profile to its Lightning target and re-dispatches.
   const nostrKind = classifyIdentifier(input)
