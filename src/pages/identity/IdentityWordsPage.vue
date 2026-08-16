@@ -6,73 +6,33 @@
       <h1 class="id-large-title">{{ $t('Your 12 words') }}</h1>
 
       <!--
-        The signature screen of this redesign.
+        One subject: the card's words.
 
-        BuhoGO can hand a user two unrelated sets of 12 words and the old UI
-        called both of them "your recovery phrase", in two different parts of
-        the app. Someone who verified one in Settings believed they were
-        safe. They were not.
-
-        Two cards, side by side, with their real states, so the difference is
-        visual before it is verbal. Users with no seed-based wallet see one
-        card and a sentence that fits their case, rather than being taught
-        about a phrase they do not have.
+        This screen used to also list every wallet phrase the user holds.
+        Well-intentioned (saving one set is easily mistaken for saving all of
+        them) but wrong here: someone who tapped "Your 12 words" inside their
+        identity expects the identity's words, and being handed three sets to
+        choose from at that moment reads as a test they did not study for.
+        Wallet backups belong to Settings, next to the wallets; one quiet
+        sentence at the bottom points anyone who came for those.
       -->
       <p class="id-lede">
-        {{ phraseCount > 1
-          ? $t('You have {n} sets of 12 words. They are different words and they bring back different things.', { n: phraseCount })
-          : $t('These 12 words are the only way to bring your card back on another phone.') }}
+        {{ $t('These 12 words are the only way to bring your card back on another phone.') }}
       </p>
 
-      <div class="kit" :class="{ 'kit--single': phraseCount === 1 }">
-        <button type="button" class="kit-card" @click="openCardWords">
-          <span class="kit-icon" :class="cardWordsSaved ? 'kit-icon--ok' : 'kit-icon--warn'">
-            <Icon icon="tabler:user" width="17" height="17" />
-          </span>
-          <span class="kit-title">{{ $t('Card words') }}</span>
-          <span class="kit-body">{{ $t('Bring back your name, photo and contacts.') }}</span>
-          <span class="kit-state" :class="cardWordsSaved ? 'kit-state--ok' : 'kit-state--warn'">
-            <Icon v-if="cardWordsSaved" icon="tabler:check" width="12" height="12" />
-            {{ cardWordsSaved ? $t('Saved') : $t('Not saved yet') }}
-          </span>
-          <span class="kit-action">
-            {{ cardWordsSaved ? $t('View these words') : $t('Save these words') }}
-            <Icon icon="tabler:chevron-right" width="14" height="14" />
-          </span>
+      <section class="words-panel">
+        <span class="words-mark" :class="cardWordsSaved ? 'words-mark--ok' : 'words-mark--warn'">
+          <Icon icon="tabler:shield-lock" width="26" height="26" />
+        </span>
+        <p class="words-body">{{ $t('Bring back your name, photo and contacts.') }}</p>
+        <span class="words-state" :class="cardWordsSaved ? 'words-state--ok' : 'words-state--warn'">
+          <Icon v-if="cardWordsSaved" icon="tabler:check" width="12" height="12" />
+          {{ cardWordsSaved ? $t('Saved') : $t('Not saved yet') }}
+        </span>
+        <button type="button" class="btn-primary" @click="openCardWords">
+          {{ cardWordsSaved ? $t('View these words') : $t('Save these words') }}
         </button>
-
-        <button
-          v-for="phrase in walletPhrases"
-          :key="phrase.id"
-          type="button"
-          class="kit-card"
-          @click="openWalletWords(phrase)"
-        >
-          <span class="kit-icon" :class="phrase.saved ? 'kit-icon--ok' : 'kit-icon--warn'">
-            <Icon icon="tabler:wallet" width="17" height="17" />
-          </span>
-          <span class="kit-title">{{ $t('Wallet words') }}</span>
-          <span class="kit-body">{{ phraseBody(phrase) }}</span>
-          <span class="kit-state" :class="phrase.saved ? 'kit-state--ok' : 'kit-state--warn'">
-            <Icon v-if="phrase.saved" icon="tabler:check" width="12" height="12" />
-            {{ phrase.saved ? $t('Saved') : $t('Not saved yet') }}
-          </span>
-          <span class="kit-action">
-            {{ phrase.saved ? $t('View these words') : $t('Save these words') }}
-            <Icon icon="tabler:chevron-right" width="14" height="14" />
-          </span>
-        </button>
-      </div>
-
-      <!-- Only while it can still go wrong. Firing a warning at someone who
-           has two green Saved chips is how people learn to ignore warnings. -->
-      <div v-if="phraseCount > 1 && !allWordsSaved" class="kit-warn">
-        <Icon icon="tabler:alert-triangle" width="17" height="17" />
-        <span>{{ $t('Saving one does not save the others. Write each one down and label which is which.') }}</span>
-      </div>
-      <p v-else-if="phraseCount > 1" class="id-foot">
-        {{ $t('Every set is written down. Keep them apart from each other.') }}
-      </p>
+      </section>
 
       <IdentityGroup :title="$t('Coming back')">
         <IdentityRow
@@ -82,13 +42,19 @@
           @click="showRestoreChoice = true"
         />
       </IdentityGroup>
+
+      <!-- For whoever came here looking for a wallet backup: where it lives,
+           without putting it back on the screen as a competing set. -->
+      <p v-if="hasWalletWords" class="id-foot">
+        {{ $t('Your wallets keep their own recovery words. You will find those in Settings, next to your wallets.') }}
+      </p>
     </div>
 
     <!-- Card words: reveal, then the tap-in-order check that is the only
          thing proving the paper is right. Unchanged. -->
     <IdentitySeedPhraseDialog
-      :label-paper="phraseCount > 1"
       v-model="showSeedDialog"
+      :label-paper="hasWalletWords"
       :mode="seedDialogMode"
       @verified="onCardWordsVerified"
     />
@@ -97,7 +63,7 @@
          BIP-39, so the app genuinely cannot tell them apart and says so
          rather than pretending to detect it. -->
     <q-dialog v-model="showRestoreChoice" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="choice-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <q-card class="identity-surface choice-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <div class="sheet-grab" aria-hidden="true"><span></span></div>
         <div class="sheet-head">
           <div class="sheet-title">{{ $t('What are you bringing back?') }}</div>
@@ -170,7 +136,8 @@ export default {
 
   async created() {
     await this.identity.hydrate();
-    // The wallet half of the phrase count comes from the wallet store.
+    // Whether wallet phrases exist decides the label-the-paper hint and the
+    // Settings pointer, and that fact lives in the wallet store.
     await this.ensureWalletLoaded();
   },
 
@@ -184,41 +151,6 @@ export default {
       await this.identity.ensureIdentity();
       this.seedDialogMode = this.cardWordsSaved ? 'view' : 'backup';
       this.showSeedDialog = true;
-    },
-
-    /**
-     * The wallet phrase is owned by Settings, which already has the whole
-     * flow including the per-wallet picker. Deep-linking there beats
-     * duplicating it, and the query parameter is the one Settings already
-     * understands.
-     */
-    /**
-     * Names what this paper brings back, so two wallet cards on the same
-     * screen are told apart by what they restore rather than by position.
-     */
-    phraseBody(phrase) {
-      if (phrase.restores === 'sparkMany') {
-        return this.$t('Bring back the Bitcoin in your Spark wallets.');
-      }
-      if (phrase.restores === 'arkade') {
-        return phrase.name
-          ? this.$t('Bring back the Bitcoin in {wallet}.', { wallet: phrase.name })
-          : this.$t('Bring back the Bitcoin in your Arkade wallet.');
-      }
-      return this.$t('Bring back the Bitcoin in your wallet.');
-    },
-
-    /**
-     * The dialog reads whichever wallet it is given, so the id travels with
-     * the tap. Without it a user with two different wallet phrases opened
-     * whichever one Settings happened to consider active, and the other had
-     * no way in from the screen built to keep them apart.
-     */
-    openWalletWords(phrase) {
-      this.$router.push({
-        path: '/settings',
-        query: { section: 'backup', walletId: phrase?.walletId || undefined },
-      });
     },
 
     onCardWordsVerified() {
@@ -296,101 +228,51 @@ export default {
 </script>
 
 <style scoped>
-
-.kit {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.kit--single { grid-template-columns: 1fr; }
-
-.kit-card {
+/* One panel, one action. Centred because the screen has a single subject and
+   a single verb, which is the layout Settings-style rows are wrong for. */
+.words-panel {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-lg);
-  padding: 15px 13px;
-  text-align: left;
-  cursor: pointer;
-  font-family: 'Manrope', sans-serif;
-  color: var(--text-primary);
-  display: block;
+  padding: 26px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
-.kit-card:active { background: rgba(127, 127, 127, 0.06); }
-
-.kit-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-ms);
+.words-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
   display: grid;
   place-items: center;
-  margin-bottom: 11px;
 }
 
-.kit-icon--ok { background: var(--brand-accent-soft); color: var(--brand-accent); }
-.kit-icon--warn { background: var(--color-warn-soft); color: var(--color-warn); }
+.words-mark--ok   { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.words-mark--warn { background: var(--color-warn-soft); color: var(--color-warn); }
 
-.kit-title {
-  display: block;
-  font-size: 14.5px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
-}
-
-.kit-body {
-  display: block;
-  font-size: 12px;
+.words-body {
+  font-size: 14px;
   color: var(--text-secondary);
-  margin-top: 5px;
-  line-height: 1.4;
+  line-height: 1.5;
+  max-width: 300px;
+  margin: 12px 0 0;
 }
 
-.kit-state {
+.words-state {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 11.5px;
   font-weight: 650;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
-  margin-top: 11px;
-}
-
-.kit-state--ok { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
-
-/* The card is a button, so it says what pressing it does. Without this the
-   screen offered two panels and no visible verb. */
-.kit-action {
-  display: flex;
-  align-items: center;
-  gap: 3px;
   margin-top: 12px;
-  font-size: 12.5px;
-  font-weight: 640;
-  color: var(--brand-accent-text);
-}
-.kit-state--warn { background: var(--color-warn-soft); color: var(--color-warn); }
-
-.kit-warn {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  padding: 13px;
-  border-radius: var(--radius-md);
-  background: var(--color-warn-soft);
-  color: var(--color-warn);
-  font-size: 13px;
-  line-height: 1.5;
-  margin-top: 14px;
 }
 
-.kit-warn svg { margin-top: 1px; flex: 0 0 auto; }
-
-body.body--dark .kit-icon--warn,
-body.body--dark .kit-state--warn,
-
+.words-state--ok   { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.words-state--warn { background: var(--color-warn-soft); color: var(--color-warn); }
 
 /* Sheet */
 .choice-sheet {

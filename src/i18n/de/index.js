@@ -2594,6 +2594,7 @@ export default {
   "This device has no share menu, so we copied it instead.": "Dieses Gerät hat kein Teilen-Menü, deshalb haben wir ihn kopiert.",
 
   // ─── Identity: strings added with the bucket, erase and switch work ───
+  "Your wallets keep their own recovery words. You will find those in Settings, next to your wallets.": "Deine Wallets haben ihre eigenen Wiederherstellungswörter. Du findest sie in den Einstellungen, bei deinen Wallets.",
   "Send this to anyone, anywhere. It works whether or not they have BuhoGO.": "Schick das an alle, überall. Es funktioniert, ob sie BuhoGO haben oder nicht.",
   "Show this to get paid in person": "Zeig das, um vor Ort bezahlt zu werden",
   "If an app asks for an address": "Wenn eine App nach einer Adresse fragt",

@@ -8,15 +8,12 @@
  * how a user could see a green "Backed up" tile while their identity phrase
  * had never been written down.
  *
- * The two-phrase problem lives here too. BuhoGO can hand a user two unrelated
- * twelve word phrases:
- *
- *   card words    the identity seed, brings back name, photo and contacts
- *   wallet words  a seed-based wallet's phrase, brings back the money
- *
- * A user with only NWC or LNbits wallets has no wallet words at all, so the
- * UI must be able to say "one phrase" as naturally as "two". `phraseCount`
- * is what every screen keys off rather than assuming a pair.
+ * The identity surface reports the identity's words and nothing else. The
+ * one wallet-phrase fact still exported is `hasWalletWords`: whether any
+ * seed-based wallet exists at all, which decides whether the user is told to
+ * label the paper (two identical-looking phrases in one drawer) and whether
+ * the Words screen points at Settings. The state of those backups is
+ * Settings' story, not this surface's.
  */
 
 import { computed } from 'vue';
@@ -66,60 +63,6 @@ export function useIdentityHealth() {
 
   const hasWalletWords = computed(() => seedWallets.value.length > 0);
 
-  /**
-   * One entry per distinct set of wallet words, not per wallet.
-   *
-   * Spark wallets share a single mnemonic (`confirmBackup` marks them all
-   * together), so however many there are they are one paper. Arkade is a
-   * separate backend with its own phrase, and a user with both genuinely has
-   * three sets of words counting the card. The screen used to assume exactly
-   * one wallet phrase, so it showed two papers to someone holding three and
-   * gave them a single saved state covering both.
-   */
-  const walletPhrases = computed(() => {
-    const all = wallet.wallets || [];
-    const out = [];
-
-    const spark = all.filter((w) => w.type === 'spark');
-    if (spark.length) {
-      out.push({
-        id: 'spark',
-        walletId: spark[0].id,
-        restores: spark.length > 1 ? 'sparkMany' : 'sparkOne',
-        saved: spark.every((w) => w?.metadata?.hasBackedUp === true),
-      });
-    }
-
-    for (const ark of all.filter((w) => w.type === 'arkade')) {
-      out.push({
-        id: `arkade:${ark.id}`,
-        walletId: ark.id,
-        name: ark.name || '',
-        restores: 'arkade',
-        saved: ark?.metadata?.hasBackedUp === true,
-      });
-    }
-
-    return out;
-  });
-
-  /**
-   * Every seed-based wallet must be backed up for the wallet half to count as
-   * done. A user with a backed-up Personal and an untouched Business is not
-   * safe, and saying so is the entire point of this screen.
-   */
-  const walletWordsSaved = computed(() => {
-    if (!hasWalletWords.value) return false;
-    return walletPhrases.value.every((p) => p.saved);
-  });
-
-  /** The card words, plus one per distinct wallet phrase. */
-  const phraseCount = computed(() => 1 + walletPhrases.value.length);
-
-  /** True when every phrase the user has is written down. */
-  const allWordsSaved = computed(
-    () => cardWordsSaved.value && (!hasWalletWords.value || walletWordsSaved.value),
-  );
 
   /**
    * The setup ladder. Three steps, not four: buying a username and adding an
@@ -180,11 +123,10 @@ export function useIdentityHealth() {
       if (remaining === 1 && !cardWordsSaved.value) return 'words-missing';
       return 'steps-left';
     }
-    // "Ready" has to mean every phrase this user has is written down. Saying
-    // it while the wallet words are still outstanding is the exact false
-    // reassurance the two-phrase screen exists to prevent, and the card is
-    // the most visible place in the app to say it.
-    if (hasWalletWords.value && !walletWordsSaved.value) return 'wallet-words-missing';
+    // The card reports the card's own words and nothing else. Wallet backups
+    // keep their own pressure in the wallet context (the backup banner and
+    // Settings); repeating it here made the identity surface nag about money
+    // it explicitly promises never to touch.
     return 'ready';
   });
 
@@ -194,11 +136,7 @@ export function useIdentityHealth() {
     ensureWalletLoaded,
     hasNameOrPhoto,
     cardWordsSaved,
-    walletPhrases,
-    walletWordsSaved,
     hasWalletWords,
-    phraseCount,
-    allWordsSaved,
     steps,
     stepsDone,
     stepsTotal,

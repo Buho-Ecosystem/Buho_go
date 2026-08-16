@@ -203,8 +203,6 @@ export default {
           return this.$t('Setting up');
         case 'words-missing':
           return this.$t('12 words not saved');
-        case 'wallet-words-missing':
-          return this.$t('Wallet words not saved');
         case 'steps-left':
           return this.$t('{done} of {total} done', { done: this.stepsDone, total: this.stepsTotal });
         default:
@@ -218,9 +216,7 @@ export default {
      * finished or in progress, and neither is a fault.
      */
     statusTone() {
-      if (this.statusKey === 'words-missing' || this.statusKey === 'wallet-words-missing') {
-        return 'warn';
-      }
+      if (this.statusKey === 'words-missing') return 'warn';
       return this.statusKey === 'ready' ? 'ok' : 'progress';
     },
 

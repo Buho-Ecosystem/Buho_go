@@ -41,13 +41,12 @@
       <IdentityGroup :title="$t('Safety')">
         <IdentityRow
           icon="tabler:shield-lock"
-          :tone="allWordsSaved ? 'neutral' : 'warn'"
+          :tone="cardWordsSaved ? 'neutral' : 'warn'"
           :label="$t('Your 12 words')"
-          :caption="wordsCaption"
-          :chip="allWordsSaved ? $t('Done') : $t('To do')"
-          :chip-tone="allWordsSaved ? 'ok' : 'warn'"
-          :chip-icon="allWordsSaved ? 'tabler:check' : ''"
-          wrap
+          :caption="$t('Bring back your name, photo and contacts.')"
+          :chip="cardWordsSaved ? $t('Done') : $t('To do')"
+          :chip-tone="cardWordsSaved ? 'ok' : 'warn'"
+          :chip-icon="cardWordsSaved ? 'tabler:check' : ''"
           @click="$router.push('/identity/words')"
         />
         <IdentityRow
@@ -155,17 +154,6 @@ export default {
      * halves explicitly, because a user who saved one genuinely believes
      * they are done.
      */
-    wordsCaption() {
-      if (this.phraseCount === 1) {
-        return this.cardWordsSaved ? this.$t('Saved') : this.$t('Not saved yet');
-      }
-      if (this.cardWordsSaved && this.walletWordsSaved) {
-        return this.$t('Card words saved, wallet words saved');
-      }
-      if (this.cardWordsSaved) return this.$t('Wallet words still to save');
-      if (this.walletWordsSaved) return this.$t('Card words still to save');
-      return this.$t('Neither set is saved yet');
-    },
 
     biometricsEnabled() {
       return !!this.walletStore.biometricsEnabled;
