@@ -14,6 +14,7 @@ import test from 'node:test';
 import {
   buildProfileLink,
   parseProfileLink,
+  profileLinkRoute,
   profileSlug,
   expandProfileSlug,
   isKey,
@@ -113,4 +114,44 @@ await test('isKey only accepts the local-resolving forms', () => {
   assert.equal(isKey(''), false);
 });
 
-console.log('\n14 passed, 0 failed');
+// ── App Link routing ────────────────────────────────────────────────────────
+// Android hands the app the same https URL the browser would have opened.
+// These decide whether it lands on the card or falls through to the payment
+// parser, which would be the wrong screen entirely.
+
+await test('profileLinkRoute keeps the slug and the fallback key', () => {
+  const route = profileLinkRoute(`${PUBLIC_WEB_ORIGIN}/p/maria?k=${NPUB}`);
+  assert.deepEqual(route, { path: '/p/maria', query: { k: NPUB } });
+});
+
+await test('profileLinkRoute omits the query when there is no key', () => {
+  assert.deepEqual(profileLinkRoute(`${PUBLIC_WEB_ORIGIN}/p/${NPUB}`), {
+    path: `/p/${NPUB}`,
+    query: {},
+  });
+});
+
+await test('profileLinkRoute encodes a slug that is a full address', () => {
+  const route = profileLinkRoute(`${PUBLIC_WEB_ORIGIN}/p/maria@example.com`);
+  assert.equal(route.path, '/p/maria%40example.com');
+});
+
+await test('profileLinkRoute drops a fallback key that is not a key', () => {
+  const route = profileLinkRoute(`${PUBLIC_WEB_ORIGIN}/p/maria?k=not-a-key`);
+  assert.deepEqual(route.query, {});
+});
+
+await test('profileLinkRoute returns null for anything the payment parser owns', () => {
+  for (const value of [
+    'lightning:maria@npub.cash',
+    'bitcoin:bc1qexample',
+    'nostr:npub1abc',
+    `${PUBLIC_WEB_ORIGIN}/wallet`,
+    'https://example.com/settings',
+    '',
+  ]) {
+    assert.equal(profileLinkRoute(value), null, `should not route: ${value}`);
+  }
+});
+
+console.log('\n19 passed, 0 failed');

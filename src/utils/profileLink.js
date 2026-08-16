@@ -147,6 +147,33 @@ export function parseProfileLink(value) {
   return expandProfileSlug(slug);
 }
 
+/**
+ * The in-app route for one of our profile links.
+ *
+ * Android App Links hand BuhoGO the same https URL the browser would have
+ * opened, so the app shows the same page natively — where paying and saving
+ * the contact happen in-app instead of bouncing back out to a wallet chooser.
+ *
+ * The slug and the fallback key are passed through untouched: the page already
+ * knows how to resolve either, and re-deriving one here would be a second
+ * implementation of the thing that decides who this link is about.
+ *
+ * @param {string} value  the incoming URL
+ * @returns {{ path: string, query: Record<string, string> } | null}
+ */
+export function profileLinkRoute(value) {
+  if (!parseProfileLink(value)) return null;
+
+  const url = new URL(String(value).trim());
+  const slug = decodeURIComponent(url.pathname.slice(PROFILE_PATH.length)).trim();
+  const key = String(url.searchParams.get(KEY_PARAM) || '').trim();
+
+  return {
+    path: `${PROFILE_PATH}${encodeURIComponent(slug)}`,
+    query: isKey(key) ? { [KEY_PARAM]: key } : {},
+  };
+}
+
 /** True for the identifier forms that resolve locally, with no server involved. */
 export function isKey(value) {
   return /^(npub1|nprofile1)/i.test(String(value || '').trim());

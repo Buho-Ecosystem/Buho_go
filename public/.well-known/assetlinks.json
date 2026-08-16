@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "mybuho.buhogo",
+      "sha256_cert_fingerprints": [
+        "F7:3C:25:BD:0C:91:22:C9:EF:DD:83:88:7D:3B:9C:00:0E:4B:72:05:7E:8F:F8:53:31:19:D8:D3:90:F2:41:B8"
+      ]
+    }
+  }
+]
