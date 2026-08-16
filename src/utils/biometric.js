@@ -92,13 +92,6 @@ export async function authenticate ({
   }
 }
 
-/**
- * Register a listener for biometry availability changes on app resume.
- */
-export function addBiometryChangeListener (callback) {
-  return NativeBiometric.addListener('biometryChange', callback)
-}
-
 function mapBiometryType (type) {
   switch (type) {
     case BiometryType.TOUCH_ID:

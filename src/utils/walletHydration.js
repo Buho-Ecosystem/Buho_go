@@ -15,16 +15,24 @@
  * guards, so it is safe alongside Wallet.vue's own initialize() call.
  */
 
-function hasPersistedWalletConfig() {
+/**
+ * Raw persisted wallet-store snapshot, or null when absent/unreadable.
+ * The single place that knows the storage key and shape outside the store
+ * itself — boot guards that must answer before hydration read through
+ * this instead of hand-parsing localStorage.
+ */
+export function readPersistedWalletState() {
   try {
     const saved = localStorage.getItem('buhoGO_wallet_store')
-    if (!saved) return false
-
-    const parsed = JSON.parse(saved)
-    return Array.isArray(parsed.wallets) && parsed.wallets.length > 0
+    return saved ? JSON.parse(saved) : null
   } catch {
-    return false
+    return null
   }
+}
+
+function hasPersistedWalletConfig() {
+  const parsed = readPersistedWalletState()
+  return Array.isArray(parsed?.wallets) && parsed.wallets.length > 0
 }
 
 export function triggerWalletStoreHydration(walletStore) {

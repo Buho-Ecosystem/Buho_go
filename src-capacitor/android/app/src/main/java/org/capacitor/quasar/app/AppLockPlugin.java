@@ -74,7 +74,13 @@ public class AppLockPlugin extends Plugin {
         if (biometricEnrolled && deviceSecure) {
             authenticators = BiometricManager.Authenticators.BIOMETRIC_WEAK | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
         } else if (deviceSecure) {
-            authenticators = BiometricManager.Authenticators.DEVICE_CREDENTIAL;
+            // DEVICE_CREDENTIAL alone is rejected by androidx.biometric below
+            // API 30 (PromptInfo.Builder.build throws). The WEAK|CREDENTIAL
+            // combination is accepted on every version and falls through to
+            // the lockscreen credential when no biometric is enrolled.
+            authenticators = android.os.Build.VERSION.SDK_INT >= 30
+                ? BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                : BiometricManager.Authenticators.BIOMETRIC_WEAK | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
         } else {
             // Biometric enrolled without a secure lockscreen. The platform
             // normally requires a lockscreen before biometric enrollment,
