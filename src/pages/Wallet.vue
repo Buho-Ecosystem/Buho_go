@@ -3,9 +3,19 @@
     <!-- Header -->
     <q-toolbar>
 
-      <q-avatar square size="30px">
-        <img src="buho_logo.svg" alt="Logo" class="app-logo">
-      </q-avatar>
+      <button
+        type="button"
+        class="app-logo-button"
+        :aria-label="updateStore.hasUpdate ? $t('Update available. Open update details.') : $t('About BuhoGO')"
+        @click="onAppLogoClick"
+      >
+        <q-avatar square size="30px">
+          <img src="buho_logo.svg" alt="" class="app-logo">
+        </q-avatar>
+        <transition name="update-pill">
+          <span v-if="updateStore.showLogoBadge" class="app-logo-update-pill" aria-hidden="true">+1</span>
+        </transition>
+      </button>
 
       <!-- NFC-ready badge. Only shown on a device where NFC is actually
            available + enabled, so it honestly signals "tap a Bolt Card / NFC
@@ -840,6 +850,7 @@ import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../uti
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
 import {useWalletStore} from '../stores/wallet';
+import {useUpdateStore} from '../stores/update';
 import {useAddressBookStore} from '../stores/addressBook';
 import {useTransactionMetadataStore} from '../stores/transactionMetadata';
 import {normalizeTx} from '../services/txNormalizer.js';
@@ -897,7 +908,8 @@ export default {
     const transactionMetadataStore = useTransactionMetadataStore();
     const bitcoinPrefsStore = useBitcoinPreferencesStore();
     const identityStore = useIdentityStore();
-    return { walletStore, addressBookStore, transactionMetadataStore, bitcoinPrefsStore, identityStore };
+    const updateStore = useUpdateStore();
+    return { walletStore, addressBookStore, transactionMetadataStore, bitcoinPrefsStore, identityStore, updateStore };
   },
   data() {
     return {
@@ -2129,6 +2141,14 @@ export default {
     }
   },
   methods: {
+    onAppLogoClick() {
+      if (this.updateStore.hasUpdate) {
+        this.updateStore.openSheet();
+        return;
+      }
+      this.$router.push('/about');
+    },
+
     /**
      * Recognize the consumer wallet behind a Lightning Address / LNURL so the
      * confirm sheet can show its real logo + the username instead of a generic
@@ -6123,6 +6143,51 @@ export default {
 }
 
 /* Header */
+.app-logo-button {
+  all: unset;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  cursor: pointer;
+  overflow: visible;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-logo-button:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+.app-logo-button:active {
+  background: var(--brand-accent-soft);
+}
+
+.app-logo-update-pill {
+  position: absolute;
+  top: 0;
+  left: -2px;
+  min-width: 20px;
+  height: 17px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg-primary);
+  border-radius: 999px;
+  background: var(--brand-accent);
+  color: #08291a;
+  font: 800 9px/1 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  box-sizing: border-box;
+  box-shadow: 0 2px 7px rgba(5, 149, 115, 0.32);
+}
+
+.update-pill-enter-active { transition: opacity .18s ease, transform .22s cubic-bezier(.2, .8, .2, 1); }
+.update-pill-enter-from { opacity: 0; transform: scale(.55); }
+
 .wallet-header {
   padding: 1rem;
   flex-shrink: 0;
@@ -6166,6 +6231,10 @@ export default {
   background: linear-gradient(135deg, #059573, #10b981, #34d399, #06b6d4, #0891b2, #0284c7);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-pill-enter-active { transition: none; }
 }
 
 @keyframes gradientShift {

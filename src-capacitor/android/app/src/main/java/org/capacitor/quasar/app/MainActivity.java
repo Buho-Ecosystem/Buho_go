@@ -59,6 +59,7 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NfcPlugin.class);
         registerPlugin(SecureScreenPlugin.class);
+        registerPlugin(BuhoUpdatePlugin.class);
 
         if (SecureScreenPlugin.readPersistedPreference(this)) {
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);

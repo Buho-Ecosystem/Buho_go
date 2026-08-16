@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "publishedAt": "2026-08-16T00:00:00.000Z",
+  "channels": {
+    "web": {
+      "enabled": true,
+      "version": "1.9.1",
+      "build": null,
+      "minimumBuild": null,
+      "url": null,
+      "notes": {
+        "en-US": []
+      }
+    },
+    "play": {
+      "enabled": true,
+      "version": "1.9.1",
+      "build": 22,
+      "minimumBuild": 0,
+      "url": "https://play.google.com/store/apps/details?id=mybuho.buhogo",
+      "notes": {
+        "en-US": []
+      }
+    },
+    "zapstore": {
+      "enabled": true,
+      "version": "1.9.1",
+      "build": 22,
+      "minimumBuild": 0,
+      "url": "https://zapstore.dev/apps/naddr1qqxk67tzw45x7tnzw45x7em0qgs83nn04fezvsu89p8xg7axjwye2u67errat3dx2um725fs7qnrqlgrqsqqqlstrk2q4u",
+      "notes": {
+        "en-US": []
+      }
+    },
+    "apk": {
+      "enabled": true,
+      "version": "1.9.1",
+      "build": 22,
+      "minimumBuild": 0,
+      "url": "https://github.com/Buho-Ecosystem/Buho_go/releases/latest",
+      "notes": {
+        "en-US": []
+      }
+    },
+    "ios": {
+      "enabled": false,
+      "version": "1.9.1",
+      "build": 22,
+      "minimumBuild": 0,
+      "url": null,
+      "notes": {
+        "en-US": []
+      }
+    }
+  }
+}
