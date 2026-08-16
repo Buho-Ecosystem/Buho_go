@@ -124,7 +124,7 @@ export default {
 
   computed: {
     /** Back goes to whichever screen opened this one. */
-    backNav() { return identityBack(this.$router, '/identity'); },
+    backNav() { return identityBack(this.$router, this.$route.path); },
 
     username() {
       return this.identity.nip05ActiveEntry?.handle || '';

@@ -92,7 +92,10 @@ export default {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 8px 6px;
+  padding: calc(var(--safe-top, 0px) + 2px) 8px 2px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
   min-height: 44px;
   flex: 0 0 auto;
 }

@@ -124,7 +124,7 @@ export default {
 
   computed: {
     /** Back goes to whichever screen opened this one. */
-    backNav() { return identityBack(this.$router, '/identity/manage'); },
+    backNav() { return identityBack(this.$router, this.$route.path); },
 
     visibleAvatar() {
       if (!this.profile.picture || this.avatarBroken) return '';

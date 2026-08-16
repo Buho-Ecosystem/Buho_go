@@ -1,6 +1,7 @@
 <template>
   <q-page class="id-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
     <div class="id-topbar">
+      <h1 class="id-large-title id-topbar-title">{{ $t('You') }}</h1>
       <div class="id-topbar-spacer"></div>
       <button
         type="button"
@@ -23,8 +24,6 @@
     </div>
 
     <div class="id-body">
-      <h1 class="id-large-title">{{ $t('You') }}</h1>
-
       <!-- The card. Everything the user needs to recognise and hand over
            their identity is on one object: photo, name, username, health,
            and the code on its back. -->
@@ -348,13 +347,20 @@ export default {
   padding-top: 0;
 }
 
+/* One row: title left, actions right. Aligned to the body's content column
+   so nothing drifts to the screen edge on wide displays. */
 .id-topbar {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: calc(var(--safe-top, 0px) + 6px) 10px 2px;
+  padding: calc(var(--safe-top, 0px) + 6px) 16px 2px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
   flex: 0 0 auto;
 }
+
+.id-topbar-title { margin: 0; }
 
 .id-topbar-spacer { flex: 1; }
 

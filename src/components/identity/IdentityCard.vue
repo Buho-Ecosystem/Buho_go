@@ -73,10 +73,14 @@
         </span>
 
         <span class="id-card-foot">
-          <span class="id-card-status">
+          <!-- Progress and warnings only. "Ready, 12 words saved" forever is
+               a completed to-do pinned to the one object the user sees most;
+               done states earn silence. -->
+          <span v-if="statusTone !== 'ok'" class="id-card-status">
             <Icon :icon="statusIcon" width="13" height="13" />
             {{ status }}
           </span>
+          <span v-else class="id-card-status" aria-hidden="true"></span>
           <button type="button" class="id-card-flip-btn" @click.stop="flip">
             <Icon icon="tabler:qrcode" width="13" height="13" />
             {{ $t('Code') }}
@@ -195,9 +199,11 @@ export default {
 </script>
 
 <style scoped>
-/* The card is the one place in the identity surface with its own palette:
-   a dark green field that reads as a printed object rather than a UI
-   surface, in both themes. */
+/* The card is the one place in the identity surface with its own palette,
+   and it follows the theme's own logic: light mode is black-on-cream
+   everywhere in this app, so the card is the same near-black as the primary
+   buttons with the green kept to quiet accents; dark mode keeps the deep
+   green field, where it reads as a printed object against the black page. */
 .id-card-stage {
   perspective: 1500px;
   margin: 2px 0;
@@ -232,7 +238,7 @@ export default {
 .id-card-stage:not(.is-flipped) .id-card-back { opacity: 0; pointer-events: none; }
 
 .id-card-front {
-  background: linear-gradient(150deg, #12271F, #0B3B2E);
+  background: linear-gradient(150deg, #17171A, #232328);
   color: #F3F7F4;
   padding: 19px 20px 17px;
   position: relative;
@@ -244,6 +250,14 @@ export default {
   box-shadow: 0 22px 46px -26px rgba(0, 0, 0, 0.75);
 }
 
+body.body--dark .id-card-front {
+  background: linear-gradient(150deg, #12271F, #0B3B2E);
+}
+
+body.body--dark .id-card-front::after {
+  background: radial-gradient(circle at 42% 42%, rgba(21, 222, 114, 0.13), transparent 66%);
+}
+
 .id-card-front::after {
   content: "";
   position: absolute;
@@ -252,7 +266,7 @@ export default {
   width: 200px;
   height: 200px;
   border-radius: 50%;
-  background: radial-gradient(circle at 42% 42%, rgba(21, 222, 114, 0.13), transparent 66%);
+  background: radial-gradient(circle at 42% 42%, rgba(21, 222, 114, 0.07), transparent 66%);
   pointer-events: none;
 }
 

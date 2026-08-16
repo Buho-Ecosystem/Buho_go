@@ -1,39 +1,54 @@
 /**
- * Where "back" actually goes on the identity surface.
+ * Where "back" goes on the identity surface.
  *
- * Most identity screens have more than one door. Photo and name opens from
- * Manage and from the setup ladder on You; Get paid opens from three places.
- * A hardcoded back label is therefore wrong for whoever came the other way,
- * and the surface had three screens promising "Manage" to people who had
- * never been there.
+ * Back is the screen's PARENT in the hierarchy, never the browser history.
+ * An earlier version read the previous route out of history state, which
+ * built a trap: our back control navigates with push, so going
+ * Manage -> Words and tapping "Manage" made history say Words was the
+ * previous screen — and Manage's back then pointed at Words. Two screens
+ * each naming the other as the way out is a room with no exit.
  *
- * The previous route is read from history state, matched against the screens
- * we actually own, and turned into both the label and the route. Anything we
- * do not recognise (a deep link, an external referrer, a screen outside the
- * surface) falls back to the screen's parent, so back is never a guess and
- * never leaves the app.
+ * A screen reachable from more than one door lists every legitimate parent;
+ * the one place the history is consulted is to pick between THOSE, so back
+ * matches the door actually used when it can, and always goes somewhere
+ * shallower when it cannot. Every chain ends at /identity.
  */
 
-/** Route -> the title that screen shows. Keys are also the i18n keys. */
+/** Route -> acceptable parents, nearest-the-root first. First entry is the default. */
+const PARENTS = {
+  '/identity/manage': ['/identity'],
+  '/identity/sign-in': ['/identity'],
+  '/identity/about': ['/identity', '/identity/manage'],
+  '/identity/get-paid': ['/identity', '/identity/manage'],
+  '/identity/profile': ['/identity', '/identity/manage'],
+  '/identity/identities': ['/identity', '/identity/manage'],
+  '/identity/username': ['/identity/manage'],
+  '/identity/words': ['/identity/manage'],
+  '/identity/advanced': ['/identity/manage'],
+  '/identity/visible': ['/identity/manage'],
+  '/identity/erase': ['/identity/manage'],
+};
+
+/** Route -> the title its screen shows. Values are also the i18n keys. */
 const IDENTITY_TITLES = {
   '/identity': 'You',
   '/identity/manage': 'Manage',
-  '/identity/username': 'Username',
-  '/identity/get-paid': 'Get paid',
-  '/identity/identities': 'Your identities',
-  '/identity/words': '12 words',
 };
 
 /**
  * @param {import('vue-router').Router} router
- * @param {string} fallback Route to use when the referrer is not one of ours.
+ * @param {string} currentPath The calling screen's own route.
  * @returns {{ to: string, key: string }}
  */
-export function identityBack(router, fallback = '/identity/manage') {
-  const previous = String(router.options?.history?.state?.back || '');
-  // Hash mode still yields a plain path here, but a query or fragment on it
-  // would defeat a bare lookup.
-  const path = previous.split('?')[0].split('#')[0];
-  const to = IDENTITY_TITLES[path] ? path : fallback;
-  return { to, key: IDENTITY_TITLES[to] || IDENTITY_TITLES['/identity/manage'] };
+export function identityBack(router, currentPath) {
+  const allowed = PARENTS[currentPath] || ['/identity'];
+
+  // History only ever picks BETWEEN legitimate parents. Anything else it
+  // claims — a deeper screen, a foreign route, nothing at all — is ignored.
+  const previous = String(router.options?.history?.state?.back || '')
+    .split('?')[0]
+    .split('#')[0];
+  const to = allowed.includes(previous) ? previous : allowed[0];
+
+  return { to, key: IDENTITY_TITLES[to] || IDENTITY_TITLES['/identity'] };
 }
