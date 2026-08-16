@@ -1,6 +1,6 @@
 # Cloud Backup Setup (Google Drive, Android)
 
-BuhoGO's cloud backup uploads a passphrase-encrypted file with every wallet
+BuhoGO's cloud backup uploads an encrypted file with every wallet
 secret (Spark + Arkade recovery phrases, NWC connection strings, LNbits
 credentials, the Nostr identity seed) to the user's own Google Drive, into
 the hidden `appDataFolder` space. The file never appears in the user's
