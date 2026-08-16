@@ -272,6 +272,38 @@ await test('a contact payment link resolves the saved contact after its outgoing
   );
 });
 
+await test('a Social Bucket payout keeps the profile avatar on its incoming wallet transaction', async () => {
+  const store = freshStore();
+  const avatar = {
+    kind: 'nostr',
+    npub: 'npub1profile',
+    picture: 'https://example.test/profile.jpg',
+  };
+
+  await store.enqueuePendingContactLink({
+    amountSats: 492,
+    label: 'Profile payout',
+    source: 'social-bucket',
+    counterpartyAvatar: avatar,
+    perPayment: true,
+    direction: 'incoming',
+    walletId: 'wallet-a',
+  });
+
+  const matched = await store.consumePendingContactLinks(
+    [makeTx('social-bucket-payout', { type: 'incoming', amount: 492 })],
+    'wallet-a',
+  );
+
+  assert.equal(matched, 1);
+  assert.equal(store.getLabelForTransaction('social-bucket-payout', 'wallet-a'), 'Profile payout');
+  assert.equal(store.getSourceForTransaction('social-bucket-payout', 'wallet-a'), 'social-bucket');
+  assert.deepEqual(
+    store.getCounterpartyAvatarForTransaction('social-bucket-payout', 'wallet-a'),
+    avatar,
+  );
+});
+
 await test('two same-amount contact payments each retain their contact link', async () => {
   const store = freshStore();
   const addressBook = useAddressBookStore();

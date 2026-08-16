@@ -464,7 +464,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // recipient's post-payment message), a LUD-21 verify URL (so Tx Details
       // can re-confirm fiat delivery later), a label/source (batch, internal
       // transfer, kiosk), and/or a kiosk saleBreakdown.
-      if (!recipientAddress && !successAction && !verifyUrl && !label && !source && !merchantVerification && !saleBreakdown) return
+      if (!recipientAddress && !successAction && !verifyUrl && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown) return
       const now = Date.now()
       const normalisedAddress = recipientAddress
         ? String(recipientAddress).toLowerCase().trim()

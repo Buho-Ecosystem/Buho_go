@@ -2586,6 +2586,43 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - Wallet ID to connect
      * @returns {Promise<Object>} Provider instance
      */
+    /**
+     * Create a bolt11 invoice on one specific wallet.
+     *
+     * Extracted from the internal-transfer path, which had this inline, so the
+     * Social Bucket can ask a wallet to receive without duplicating the
+     * per-backend differences (NWC speaks makeInvoice, everything else speaks
+     * createInvoice).
+     *
+     * @param {string} walletId
+     * @param {number} amountSats
+     * @param {string} [description]
+     * @returns {Promise<string>} bolt11
+     */
+    async createInvoiceOnWallet(walletId, amountSats, description = '') {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet) throw new Error('Wallet not found');
+
+      await this.ensureWalletConnectedForTransfer(walletId);
+      const provider = this.providers[walletId];
+      if (!provider) throw new Error('Wallet is not connected');
+
+      const isNwc = wallet.type === WALLET_TYPES.NWC;
+      const result = isNwc
+        ? await provider.makeInvoice({ amount: amountSats, description })
+        : await provider.createInvoice({ amount: amountSats, description });
+
+      const invoice =
+        result?.paymentRequest ||
+        result?.payment_request ||
+        result?.invoice ||
+        result?.bolt11 ||
+        (typeof result === 'string' ? result : '');
+
+      if (!invoice) throw new Error('Wallet did not return an invoice');
+      return invoice;
+    },
+
     async ensureWalletConnectedForTransfer(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) {

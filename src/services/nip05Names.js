@@ -14,122 +14,78 @@
  * suffix appended at registration time (see `registerFreeHandle`), so two
  * identities sharing a word pair is fine and expected.
  *
+ * ── What belongs in these lists ──────────────────────────────────────────
+ *
+ * This is the name a person is handed before they have chosen one, and it is
+ * printed on their card and read aloud when they give it out. It has to be a
+ * name someone would keep, so the lists are deliberately small and hand-read
+ * rather than large and generated:
+ *
+ *   - Every adjective is an actual adjective. Nouns dressed as modifiers
+ *     ("sign", "valve", "spine", "sigma", "oxide") produced pairs that read
+ *     like part numbers.
+ *   - Every animal is one a person can picture and spell. Obscure species
+ *     ("yapok", "indri", "numbat", "dhole") are not memorable to anyone.
+ *   - Nothing unpleasant. Pests, parasites and things that bite are out, and
+ *     so is anything that could read as an insult when handed to a stranger.
+ *   - Both words stay short, so the pair fits on a card and survives being
+ *     read out over a phone.
+ *
+ * Combinations run to roughly ten thousand before the numeric suffix, which
+ * is far more than collision handling needs. Adding words to reach some count
+ * is not a reason to lower the bar above.
+ *
  * Pure module — no store/Pinia imports — so it can be unit-tested directly.
  */
 
 export const ADJECTIVES = [
-  // --- positive / energetic ---
-  'bold', 'brave', 'bright', 'calm', 'clear', 'cool', 'crisp', 'deft',
-  'eager', 'fair', 'fast', 'fine', 'firm', 'fond', 'free', 'fresh',
-  'glad', 'gold', 'good', 'grand', 'great', 'green', 'happy', 'keen',
-  'kind', 'light', 'live', 'lucky', 'mild', 'mint', 'neat', 'nice',
-  'noble', 'open', 'prime', 'proud', 'pure', 'quick', 'rapid', 'rare',
-  'rich', 'safe', 'sharp', 'sleek', 'smart', 'smooth', 'snug', 'solid',
-  'sonic', 'spark', 'steel', 'still', 'stone', 'storm', 'sunny', 'super',
-  'sure', 'sweet', 'swift', 'tall', 'tidy', 'true', 'trust', 'vast',
-  'vivid', 'warm', 'white', 'wide', 'wild', 'wise', 'young', 'zen',
-  // --- nature / elements ---
-  'agile', 'amber', 'azure', 'blaze', 'cedar', 'civic', 'coral', 'creek',
-  'dawn', 'deep', 'dune', 'echo', 'edge', 'elite', 'ember', 'epic',
-  'ever', 'frost', 'glow', 'grove', 'haven', 'ivory', 'jade', 'jewel',
-  'lunar', 'maple', 'neon', 'nova', 'ocean', 'onyx', 'opal', 'peak',
-  'pixel', 'polar', 'prism', 'quest', 'ridge', 'river', 'royal', 'ruby',
-  'sage', 'silk', 'silver', 'solar', 'terra', 'titan', 'ultra', 'unity',
-  'upper', 'valor', 'velvet', 'vigor', 'vital', 'north', 'south', 'west',
-  // --- expanded set ---
-  'able', 'acorn', 'adept', 'airy', 'alert', 'alive', 'ample', 'apt',
-  'arch', 'arid', 'astral', 'atlas', 'atom', 'avid', 'awake', 'aware',
-  'basic', 'birch', 'bloom', 'blue', 'bliss', 'blush', 'boreal', 'bound',
-  'brisk', 'broad', 'bronze', 'brook', 'built', 'burly', 'canny', 'cape',
-  'chief', 'cinch', 'clad', 'clan', 'clay', 'cliff', 'cloud', 'clove',
-  'coast', 'comet', 'core', 'cozy', 'craft', 'crest', 'crown', 'cubic',
-  'daily', 'daring', 'delta', 'dense', 'dewy', 'direct', 'dream', 'drift',
-  'dual', 'dusky', 'dusty', 'early', 'earth', 'easy', 'eight', 'elm',
-  'equal', 'even', 'exact', 'extra', 'fable', 'facet', 'faith', 'famed',
-  'fancy', 'fern', 'fiery', 'first', 'fixed', 'flame', 'flash', 'fleet',
-  'flint', 'flora', 'fluid', 'focal', 'forge', 'forte', 'found', 'frank',
-  'full', 'gamma', 'gaze', 'gem', 'giant', 'given', 'gleam',
-  'glide', 'globe', 'grace', 'grain', 'graph', 'grass', 'gray', 'grey',
-  'grind', 'guard', 'guide', 'gust', 'hale', 'hardy', 'hazel', 'heart',
-  'hefty', 'henna', 'hero', 'hilly', 'hive', 'holly', 'honey', 'honor',
-  'hope', 'humid', 'hyper', 'ideal', 'indie', 'inner', 'ionic', 'iron',
-  'isle', 'jet', 'jolly', 'jovial', 'jumbo', 'just', 'karma', 'kelp',
-  'knack', 'known', 'laced', 'lapis', 'latch', 'latte', 'leafy', 'lean',
-  'level', 'lilac', 'linen', 'lithe', 'lit', 'lofty', 'lone', 'lotus',
-  'lush', 'lyric', 'magic', 'major', 'mango', 'manor', 'march', 'marsh',
-  'matte', 'maven', 'max', 'meek', 'mega', 'mercy', 'merit', 'merry',
-  'mesa', 'metal', 'metro', 'micro', 'might', 'modal', 'mocha', 'modern',
-  'mood', 'moon', 'moral', 'mossy', 'motif', 'mover', 'much', 'muse',
-  'nano', 'navy', 'nerve', 'next', 'nimble', 'ninth', 'nitro', 'noted',
-  'novel', 'oaken', 'olive', 'omega', 'only', 'orbit', 'order', 'outer',
-  'oxide', 'pace', 'palm', 'panel', 'paper', 'patch', 'pearl', 'petal',
-  'phase', 'pilot', 'pine', 'pink', 'pivot', 'plain', 'plush', 'point',
-  'polite', 'poppy', 'port', 'power', 'prank', 'press', 'presto', 'price',
-  'primo', 'print', 'prize', 'proof', 'pulse', 'quartz', 'queen', 'quiet',
-  'quote', 'radial', 'rain', 'rally', 'ranch', 'range', 'ready', 'realm',
-  'reef', 'regal', 'relay', 'remix', 'retro', 'right', 'risen', 'roast',
-  'rocky', 'rogue', 'root', 'rosy', 'round', 'route', 'rover', 'rustic',
-  'sable', 'sandy', 'satin', 'savvy', 'scenic', 'scope', 'scout', 'seed',
-  'serene', 'seven', 'shade', 'shelf', 'shell', 'shield', 'shift', 'shore',
-  'sigma', 'sign', 'sixth', 'slate', 'slice', 'slim', 'slope', 'snow',
-  'sober', 'soft', 'soma', 'sound', 'space', 'span', 'spice', 'spine',
-  'spoke', 'sport', 'spray', 'sprig', 'spring', 'squad', 'stage', 'stamp',
-  'star', 'stark', 'stead', 'stem', 'step', 'stock', 'stoic', 'stout',
-  'straw', 'strip', 'stud', 'style', 'suave', 'sum', 'surge', 'swirl',
-  'tango', 'teal', 'tempo', 'tenth', 'theta', 'third', 'thorn', 'three',
-  'tide', 'timber', 'toast', 'token', 'tonic', 'topaz', 'torch', 'total',
-  'tower', 'trace', 'trail', 'trend', 'triad', 'tribe', 'trim', 'triple',
-  'tropic', 'tulip', 'tuned', 'turbo', 'twice', 'twin', 'typed', 'umbra',
-  'union', 'urban', 'valid', 'valve', 'vault', 'vegan', 'venus', 'verge',
-  'verse', 'vibe', 'view', 'vinyl', 'viola', 'vocal', 'volt',
-  'vortex', 'warp', 'watch', 'wave', 'wax', 'whole', 'windy', 'wired',
-  'witty', 'woven', 'xenon', 'yield', 'zero', 'zesty', 'zinc', 'zone', 'zonal',
+  // --- character ---
+  'bold', 'brave', 'bright', 'busy', 'calm', 'cheery', 'clever', 'clear',
+  'crisp', 'curious', 'daring', 'eager', 'easy', 'fair', 'fine', 'fond',
+  'free', 'fresh', 'gentle', 'glad', 'good', 'grand', 'great', 'happy',
+  'hardy', 'helpful', 'honest', 'jolly', 'joyful', 'keen', 'kind', 'lively',
+  'loyal', 'lucky', 'merry', 'mighty', 'mild', 'modest', 'neat', 'nimble',
+  'noble', 'patient', 'plucky', 'polite', 'proud', 'quick', 'quiet', 'ready',
+  'sharp', 'sincere', 'sleek', 'smart', 'smooth', 'snug', 'solid', 'spry',
+  'steady', 'sunny', 'sweet', 'swift', 'tidy', 'true', 'warm', 'wise',
+  'witty', 'young',
+
+  // --- colour and light ---
+  'amber', 'azure', 'coral', 'golden', 'green', 'hazel', 'ivory', 'jade',
+  'olive', 'opal', 'pearl', 'rosy', 'royal', 'ruby', 'sandy', 'silver',
+  'snowy', 'sunlit', 'teal', 'violet',
+
+  // --- weather and season ---
+  'autumn', 'breezy', 'dawn', 'dusk', 'frosty', 'misty', 'moonlit', 'rainy',
+  'spring', 'starry', 'stormy', 'summer', 'sunrise', 'winter',
+
+  // --- landscape ---
+  'cedar', 'forest', 'garden', 'harbor', 'hollow', 'island', 'lake', 'maple',
+  'meadow', 'ocean', 'orchard', 'river', 'sage', 'valley', 'willow',
 ];
 
 export const ANIMALS = [
-  // --- common / short ---
-  'ant', 'ape', 'bat', 'bear', 'bee', 'bird', 'bull', 'cat',
-  'colt', 'crab', 'crow', 'deer', 'dove', 'duck', 'eagle', 'elk',
-  'fawn', 'fish', 'fox', 'frog', 'goat', 'hawk', 'hare', 'hen',
-  'horse', 'ibis', 'jay', 'koi', 'lark', 'lion', 'lynx', 'mole',
-  'moth', 'mule', 'newt', 'orca', 'owl', 'panda', 'pike', 'pony',
-  'puma', 'ram', 'raven', 'robin', 'seal', 'shark', 'snake', 'stag',
-  'swan', 'tiger', 'toad', 'trout', 'viper', 'wasp', 'whale', 'wolf',
-  'wren', 'yak', 'zebra', 'cobra', 'crane', 'dingo', 'drake', 'egret',
-  'finch', 'gecko', 'grouse', 'gull', 'husky', 'iguana', 'jackal', 'koala',
-  'lemur', 'llama', 'macaw', 'moose', 'otter', 'parrot', 'quail', 'rhino',
-  'rook', 'snail', 'stoat', 'tern', 'toucan', 'turtle', 'chimp', 'bison',
-  'coyote', 'falcon', 'ferret', 'heron', 'mantis', 'osprey', 'panther',
-  'pelican', 'pigeon', 'python', 'salmon', 'squid', 'wombat', 'badger', 'beetle',
-  // --- expanded set ---
-  'adder', 'albatross', 'alpaca', 'anchovy', 'angelfish', 'antelope', 'armadillo',
-  'baboon', 'barb', 'bass', 'beagle', 'beaver', 'bluejay', 'bobcat',
-  'boar', 'bongo', 'bunny', 'camel', 'canary', 'cardinal', 'caribou', 'catfish',
-  'cheetah', 'cicada', 'clam', 'cockatoo', 'cod', 'condor', 'conch', 'corgi',
-  'cougar', 'coypu', 'cricket', 'curlew', 'darter', 'dhole', 'dodo',
-  'dolphin', 'donkey', 'dormouse', 'drongo', 'dugong', 'dunlin',
-  'eel', 'eland', 'ermine', 'flamingo', 'flounder', 'flybird',
-  'gannet', 'gar', 'gazelle', 'gerbil', 'gibbon', 'giraffe', 'goldfinch',
-  'goose', 'gopher', 'gorilla', 'grebe', 'grizzly', 'grouper', 'gryphon',
-  'guppy', 'hamster', 'harrier', 'hedgehog', 'hermit', 'hippo', 'hoopoe',
-  'hornet', 'hound', 'hummingbird', 'hyena', 'impala', 'indri', 'jackdaw',
-  'jaguar', 'jaybird', 'jellyfish', 'jerboa', 'junco', 'kestrel', 'kingbird',
-  'kingfish', 'kite', 'kiwi', 'kudu', 'limpet', 'lizard', 'lobster', 'locust',
-  'loon', 'loris', 'magpie', 'mamba', 'manatee', 'marlin', 'marmot', 'marten',
-  'meadowlark', 'meerkat', 'merlin', 'mink', 'minnow', 'mockingbird', 'monarch',
-  'mongoose', 'monitor', 'monkey', 'moorhen', 'mudlark', 'mullet', 'mustang',
-  'narwhal', 'nightjar', 'numbat', 'ocelot', 'octopus', 'okapi', 'opossum',
-  'oriole', 'ostrich', 'oyster', 'paddlefish', 'pangolin', 'parakeet', 'partridge',
-  'peacock', 'penguin', 'perch', 'pheasant', 'piranha', 'plover', 'polecat',
-  'poodle', 'porcupine', 'porpoise', 'possum', 'prawn', 'puffin', 'rabbit',
-  'raccoon', 'racer', 'raptor', 'rattler', 'redbird', 'reindeer', 'roadrunner',
-  'rooster', 'sailfish', 'sandpiper', 'sawfish', 'seahorse', 'serval', 'shrike',
-  'skipper', 'skylark', 'sloth', 'sparrow', 'spider', 'starfish', 'starling',
-  'stingray', 'stork', 'sturgeon', 'sunbird', 'sunfish', 'swallow', 'taipan',
-  'tamarin', 'tapir', 'tarpon', 'termite', 'thrush', 'titmouse', 'tortoise',
-  'treefrog', 'tuna', 'turnstone', 'urchin', 'vicuna', 'vole', 'vulture',
-  'wallaby', 'walrus', 'warbler', 'warthog', 'weasel', 'weaver', 'whippet',
-  'wildcat', 'wolverine', 'woodpecker', 'yapok', 'zebrafish',
+  // --- on land ---
+  'badger', 'bear', 'beaver', 'bison', 'bunny', 'camel', 'cat', 'cheetah',
+  'chipmunk', 'colt', 'corgi', 'cougar', 'deer', 'dingo', 'donkey', 'elk',
+  'fawn', 'ferret', 'fox', 'gazelle', 'giraffe', 'goat', 'gopher', 'hare',
+  'hedgehog', 'hippo', 'horse', 'husky', 'ibex', 'impala', 'jaguar', 'koala',
+  'lemur', 'leopard', 'lion', 'llama', 'lynx', 'marten', 'meerkat', 'mole',
+  'moose', 'mustang', 'ocelot', 'otter', 'panda', 'panther', 'pony', 'puma',
+  'rabbit', 'reindeer', 'rhino', 'sable', 'squirrel', 'stag', 'tiger',
+  'wolf', 'wombat', 'yak', 'zebra',
+
+  // --- in the air ---
+  'cardinal', 'condor', 'crane', 'dove', 'duck', 'eagle', 'egret', 'falcon',
+  'finch', 'goose', 'gull', 'hawk', 'heron', 'ibis', 'jay', 'kestrel',
+  'kite', 'kiwi', 'lark', 'macaw', 'magpie', 'oriole', 'osprey',
+  'owl', 'parrot', 'peacock', 'pelican', 'penguin', 'puffin', 'quail',
+  'raven', 'robin', 'sparrow', 'starling', 'stork', 'swallow', 'swan',
+  'toucan', 'wren',
+
+  // --- in the water ---
+  'dolphin', 'manatee', 'narwhal', 'orca', 'salmon', 'seal',
+  'seahorse', 'trout', 'turtle', 'walrus', 'whale',
 ];
 
 /**
@@ -156,13 +112,28 @@ function hash32(str) {
  * Returns `'buho'` when no npub is available so the caller always has a
  * registerable base.
  *
+ * The seam between the two words is checked: "swift" + "turtle" concatenates
+ * to `swiftturtle`, which nobody reads back correctly and nobody spells right
+ * from hearing it. When the words would collide the animal moves on by one,
+ * which stays deterministic and keeps the slug an exact adjective + animal.
+ *
  * @param {string} npub — bech32 `npub1…` string (any string works)
  * @returns {string} e.g. `bravefox`, lowercase `[a-z]` only
  */
 export function deriveMemorableSlug(npub) {
   const key = String(npub || '').trim();
   if (!key) return 'buho';
+
   const adjective = ADJECTIVES[hash32(key) % ADJECTIVES.length];
-  const animal = ANIMALS[hash32(`${key}#animal`) % ANIMALS.length];
+  const start = hash32(`${key}#animal`) % ANIMALS.length;
+
+  const last = adjective[adjective.length - 1];
+  let animal = ANIMALS[start];
+  // One step is enough in practice; the loop bounds it so a pathological list
+  // can never spin here.
+  for (let i = 0; i < ANIMALS.length && animal[0] === last; i += 1) {
+    animal = ANIMALS[(start + i + 1) % ANIMALS.length];
+  }
+
   return `${adjective}${animal}`;
 }

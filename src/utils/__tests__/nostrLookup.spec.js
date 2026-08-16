@@ -17,6 +17,7 @@
 import { strict as assert } from 'node:assert';
 import { getPublicKey, nip19 } from 'nostr-core';
 import {
+  buildNostrIdentityUri,
   classifyIdentifier,
   lookupIdentifier,
   LOOKUP_ERROR,
@@ -103,6 +104,13 @@ await test('classifyIdentifier: nostr: prefix is stripped before classifying', (
   assert.equal(classifyIdentifier(`nostr:${ALICE_NPUB}`), 'npub');
   assert.equal(classifyIdentifier(`nostr:${ALICE_NPROFILE}`), 'nprofile');
   assert.equal(classifyIdentifier(`NOSTR:${ALICE_PUBKEY}`), 'hex');
+});
+
+await test('buildNostrIdentityUri creates the card-exchange NIP-21 payload', () => {
+  assert.equal(buildNostrIdentityUri(ALICE_NPUB), `nostr:${ALICE_NPUB}`);
+  assert.equal(buildNostrIdentityUri(`nostr:${ALICE_NPUB}`), `nostr:${ALICE_NPUB}`);
+  assert.equal(buildNostrIdentityUri('not-an-npub'), '');
+  assert.equal(buildNostrIdentityUri(), '');
 });
 
 await test('classifyIdentifier: gibberish → null', () => {

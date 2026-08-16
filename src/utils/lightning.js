@@ -25,6 +25,37 @@ import {
  * LUD-17 URL scheme prefixes mapped to their LNURL type.
  * @see https://github.com/lnurl/luds/blob/luds/17.md
  */
+/**
+ * LNURL descriptions that identify nobody.
+ *
+ * LUD-06 says `text/plain` is what the payer is shown about this payment. A
+ * few providers send one fixed sentence to every payer of every one of their
+ * users, so it carries no information and simply occupies the line where the
+ * recipient's name belongs. npub.cash is the one that matters here, because
+ * it is the address BuhoGO hands to every new identity: without this filter a
+ * BuhoGO user paying another BuhoGO user reads "A cashu lightning address...
+ * Neat!" under the recipient's own name.
+ *
+ * Matched case-insensitively after trimming. Keep this list to descriptions
+ * that are genuinely constant per provider; anything that names the person,
+ * the shop or the item is real content and must survive.
+ */
+const GENERIC_LNURL_DESCRIPTIONS = new Set([
+  'a cashu lightning address... neat!',
+  'lnurl payment',
+  'lightning address',
+  'lightning payment',
+  'payment',
+  'invoice',
+]);
+
+/** True when a provider description tells the payer nothing about the payee. */
+export function isGenericLnurlDescription(text) {
+  const value = String(text || '').trim().toLowerCase();
+  if (!value) return true;
+  return GENERIC_LNURL_DESCRIPTIONS.has(value);
+}
+
 const LUD17_SCHEMES = {
   'lnurlp://': 'payRequest',
   'lnurlw://': 'withdrawRequest',
@@ -600,13 +631,26 @@ export class LightningPaymentService {
   parseMetadataDescription(metadata) {
     try {
       const parsed = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
-      if (!Array.isArray(parsed)) {
-        return 'LNURL payment';
-      }
+      if (!Array.isArray(parsed)) return '';
+
       const textEntry = parsed.find((entry) => entry[0] === 'text/plain');
-      return textEntry ? textEntry[1] : 'LNURL payment';
+      const text = textEntry ? String(textEntry[1] || '').trim() : '';
+      if (!text) return '';
+
+      // The description is meant to tell the payer something about who or
+      // what they are paying. Some providers send the same sentence to every
+      // payer of every user, which tells them nothing and pushes the useful
+      // line (the resolved name) out of the way. Better to say nothing and
+      // let the row fall back to its own label.
+      const identifier = parsed.find(
+        (entry) => entry[0] === 'text/identifier' || entry[0] === 'text/email',
+      );
+      const address = identifier ? String(identifier[1] || '').trim() : '';
+      if (address && text.toLowerCase() === address.toLowerCase()) return '';
+
+      return isGenericLnurlDescription(text) ? '' : text;
     } catch {
-      return 'LNURL payment';
+      return '';
     }
   }
 

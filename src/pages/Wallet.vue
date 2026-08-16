@@ -66,12 +66,17 @@
       <q-btn
         flat
         dense
-        class="float-right"
+        class="float-right profile-menu-btn"
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="$router.push('/identity')"
-        aria-label="Profile and settings"
+        :aria-label="profileButtonLabel"
       >
-        <Icon icon="tabler:user-circle" width="21" height="21" class="header-icon" />
+        <Icon icon="tabler:user" width="21" height="21" class="header-icon" />
+        <span
+          v-if="socialBucketStore.paymentCount > 0"
+          class="profile-money-pill"
+          aria-hidden="true"
+        >{{ bucketPaymentBadge }}</span>
       </q-btn>
     </q-toolbar>
 
@@ -750,14 +755,24 @@
         </q-card-section>
 
         <q-card-section class="save-contact-content">
-          <!-- Fiat-payout recipients (Bitzed/Tando) get the provider logo as
-               the contact picture, so the saved entry reads clearly as a
-               mobile-money number. Shown only when recognized. -->
-          <div v-if="saveContactServiceLogo" class="flex flex-center q-mb-sm">
+          <!-- Preserve the identity the user just confirmed. Nostr recipients
+               keep their fetched avatar (or the contact silhouette); fiat
+               payout recipients keep the provider mark. -->
+          <div
+            v-if="saveContactData.nostrIdentity || saveContactServiceLogo"
+            class="save-contact-avatar-wrap"
+          >
+            <ContactAvatar
+              v-if="saveContactData.nostrIdentity"
+              class="save-contact-avatar"
+              :picture="saveContactNostrPicture"
+              :name="saveContactData.name"
+            />
             <img
+              v-else
               :src="saveContactServiceLogo"
+              class="save-contact-avatar"
               alt=""
-              style="width: 56px; height: 56px; border-radius: 50%;"
             />
           </div>
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
@@ -862,6 +877,7 @@ import BackupBanner from '../components/BackupBanner.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {useIdentityStore} from '../stores/identity';
+import {useSocialBucketStore} from '../stores/socialBucket';
 import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
 import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
 import {
@@ -872,6 +888,19 @@ import {
 import { track as telemetryTrack } from '../utils/telemetry';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
+
+function emptySaveContactData() {
+  return {
+    address: '',
+    addressType: 'lightning',
+    name: '',
+    notes: '',
+    amountSats: 0,
+    // Present only when the payment carried a verified Nostr profile.
+    // Keeping it nested makes the manual-contact fallback explicit.
+    nostrIdentity: null,
+  };
+}
 
 export default {
   name: 'WalletPage',
@@ -899,7 +928,15 @@ export default {
     const transactionMetadataStore = useTransactionMetadataStore();
     const bitcoinPrefsStore = useBitcoinPreferencesStore();
     const identityStore = useIdentityStore();
-    return { walletStore, addressBookStore, transactionMetadataStore, bitcoinPrefsStore, identityStore };
+    const socialBucketStore = useSocialBucketStore();
+    return {
+      walletStore,
+      addressBookStore,
+      transactionMetadataStore,
+      bitcoinPrefsStore,
+      identityStore,
+      socialBucketStore,
+    };
   },
   data() {
     return {
@@ -994,17 +1031,9 @@ export default {
       isEstimatingFee: false,
       // Save-to-contacts after payment
       showSaveContactDialog: false,
-      saveContactData: {
-        address: '',
-        addressType: 'lightning',
-        name: '',
-        notes: '',
-        // Set when the save-as-contact dialog is offered right after a
-        // successful send — saveRecipientAsContact queues a pending
-        // link with this amount so the freshly created contact gets
-        // its first tx stamped on the next list refresh.
-        amountSats: 0,
-      },
+      // amountSats lets the post-save handler link the freshly created
+      // contact to the outgoing transaction on the next list refresh.
+      saveContactData: emptySaveContactData(),
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
       bitcoinDepositPollingInterval: null,
@@ -1064,6 +1093,17 @@ export default {
     };
   },
   computed: {
+    profileButtonLabel() {
+      const count = this.socialBucketStore.paymentCount;
+      if (!count) return this.$t('You');
+      return `${this.$t('You')}, ${this.$t('{n} payments waiting', { n: count })}`;
+    },
+
+    bucketPaymentBadge() {
+      const count = this.socialBucketStore.paymentCount;
+      return count > 99 ? '99+' : `+${count}`;
+    },
+
     activeWallet() {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
@@ -1152,6 +1192,7 @@ export default {
         if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
         if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
         if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+        if (source === 'social-bucket') return { icon: 'tabler:user-dollar', cls: 'tx-badge-aux' };
       } catch { /* metadata store not ready — direction still applies */ }
       return this.lastTxIsIncoming
         ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
@@ -1239,8 +1280,15 @@ export default {
       if (this.lastTxZap) {
         return zapperDisplayName(this.lastTxZap) || this.$t('Zap received');
       }
-      // Next best identity: the recipient address stamped at send time.
+      // Auxiliary payment paths provide a human label (for example a payout
+      // from this profile's Social Bucket). Keep it above the raw invoice memo
+      // so the home preview agrees with history and transaction details.
       const tx = this.lastTransaction;
+      if (tx?.id && this.transactionMetadataStore) {
+        const label = this.transactionMetadataStore.getLabelForTransaction(tx.id, this.activeWallet?.id);
+        if (label) return label;
+      }
+      // Next best identity: the recipient address stamped at send time.
       if (tx?.type === 'outgoing' && tx.id && this.transactionMetadataStore) {
         const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id, this.activeWallet?.id);
         if (meta?.recipientAddress) return meta.recipientAddress;
@@ -1441,6 +1489,10 @@ export default {
     // …). Null for any non-payout address, so the avatar simply doesn't show.
     saveContactServiceLogo() {
       return matchLnAddressService(this.saveContactData.address)?.logo || null;
+    },
+
+    saveContactNostrPicture() {
+      return sanitizeImageUrl(this.saveContactData.nostrIdentity?.profile?.picture);
     },
 
     paymentSheetProps() {
@@ -1960,7 +2012,13 @@ export default {
     // Hydrate the Identity store so the header avatar paints with the
     // right gradient (and the backup-pip with the right state) on first
     // mount. Idempotent and cheap.
-    this.identityStore.hydrate();
+    await this.identityStore.hydrate();
+    // A bucket balance is one actionable item, regardless of how many quotes
+    // made it up. Refresh it on the actual home screen so the small +1 cue is
+    // current before the user visits Identity or Get paid.
+    this.socialBucketStore.hydrate({ pubkey: this.identityStore.nostrPubkeyHex }).then(() => (
+      this.socialBucketStore.sync({ identityStore: this.identityStore })
+    )).catch(() => {});
 
     // NFC capability for the "NFC ready" badge. Fire-and-forget — never blocks
     // the wallet load, and stays false on web/PWA (no NFC there).
@@ -2221,7 +2279,7 @@ export default {
       const picture = (prof && prof.picture) || '';
       const usingBrandLogo = !picture && !!brand;
       return {
-        name: (prof && prof.name) || shortenNpub(npub),
+        name: profileDisplayName(prof) || shortenNpub(npub),
         color: '#3B82F6',
         addressType: 'lightning',
         logoUrl: picture || (brand ? brand.logo : '/nostr/nostr.png'),
@@ -2295,9 +2353,13 @@ export default {
             const profile = parseProfileContent(event);
             const name = profileDisplayName(profile);
             const picture = sanitizeImageUrl(profile.picture);
-            if (!name && !picture) return; // nothing worth upgrading to
-            // Reactive patch -> paymentSheetProps re-runs -> the person appears.
-            this.pendingPayment.nostrProfile = { name, picture };
+            // The sheet only reads profile fields, but post-payment contact
+            // saving also needs the verified event and canonical identity.
+            this.pendingPayment.nostrPubkey = ids.pubkey;
+            this.pendingPayment.nostrNpub = ids.npub;
+            this.pendingPayment.nostrProfileEvent = event;
+            this.pendingPayment.nostrRelayHints = [];
+            this.pendingPayment.nostrProfile = { ...profile, name, picture };
           })
           .catch(() => { /* never surfaces; baseline stays */ });
       } catch {
@@ -3511,6 +3573,9 @@ export default {
         // block, so we don't call loadLastTransaction separately here.
         await this.updateWalletBalance();
         await this.loadFiatRates();
+        // Keep the profile pill honest while the app remains open: a payment
+        // to the user's public name can arrive without touching a wallet.
+        await this.socialBucketStore.sync({ identityStore: this.identityStore });
       }, 30000);
     },
 
@@ -4500,7 +4565,7 @@ export default {
 
         if (paymentData.type === 'nostr_identifier' && paymentData.data) {
           // System-camera / deep-link entry for a Nostr identity
-          // (nostr:npub… from the profile-share QR, or another client).
+          // (nostr:npub… from the identity-card QR, or another client).
           // Resolve the profile to its Lightning target and re-dispatch —
           // the same rails the Send sheet uses for a typed npub, carrying
           // the person's identity onto the confirm sheet.
@@ -4519,6 +4584,8 @@ export default {
             nostrPubkey: target.pubkey,
             nostrNpub: target.npub,
             nostrProfile: target.profile,
+            nostrProfileEvent: target.profileEvent,
+            nostrRelayHints: target.relayHints,
           });
         }
 
@@ -4602,7 +4669,13 @@ export default {
               const lightningService = new LightningPaymentService(activeWallet.nwcString);
               const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
               console.log('LNURL processed:', processedLnurl);
-              this.pendingPayment = processedLnurl;
+              // The SDK result only contains payment mechanics. Preserve the
+              // source payload so resolved identity metadata is not dropped.
+              this.pendingPayment = {
+                ...paymentData,
+                ...processedLnurl,
+                lnurl: paymentData.data,
+              };
             }
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
@@ -4629,6 +4702,8 @@ export default {
                 nostrPubkey: rescued.pubkey,
                 nostrNpub: rescued.npub,
                 nostrProfile: rescued.profile,
+                nostrProfileEvent: rescued.profileEvent,
+                nostrRelayHints: rescued.relayHints,
               });
             }
           }
@@ -4985,9 +5060,28 @@ export default {
         // pending-link queue and the success modal depend on it.
         const recipientAddress = this.getRecipientAddress();
         const recipientAddressType = this.getRecipientAddressType();
-        const existingContact = recipientAddress
-          ? this.addressBookStore.findContactByAddress(recipientAddress)
-          : null;
+        const addressNostrIdentity = npubFromLightningAddress(
+          this.pendingPayment?.lightningAddress,
+        );
+        const recipientNostrPubkey = this.pendingPayment?.nostrPubkey
+          || addressNostrIdentity?.pubkey
+          || null;
+        const recipientNostrNpub = this.pendingPayment?.nostrNpub
+          || addressNostrIdentity?.npub
+          || null;
+        const isNostrSend = !!recipientNostrPubkey;
+        // Identity matching is canonical. An existing Nostr contact may use a
+        // different destination than the address paid today, so address-only
+        // matching would incorrectly offer a duplicate save.
+        const existingContact = (
+          recipientAddress
+            ? this.addressBookStore.findContactByAddress(recipientAddress)
+            : null
+        ) || (
+          recipientNostrPubkey
+            ? this.addressBookStore.findContactByPubkey(recipientNostrPubkey)
+            : null
+        );
         const shouldOfferSave = !!(recipientAddress && !existingContact);
         const recipientLabel = this.getRecipientDisplayLabel(existingContact);
 
@@ -5020,11 +5114,6 @@ export default {
         // payout provider is the phone-number rail; a send that resolved a
         // Nostr identity (bare npub/nprofile/NIP-05, or an npub-handle
         // address) is the Nostr rail. Plain Lightning sends carry none.
-        const isNostrSend = !!(
-          this.pendingPayment?.nostrPubkey ||
-          this.pendingPayment?.nostrNpub ||
-          npubFromLightningAddress(this.pendingPayment?.lightningAddress)?.pubkey
-        );
         const paymentSource = isPayoutProvider ? 'phone' : (isNostrSend ? 'nostr' : null);
 
         // A Branta-verified destination (see runBrantaVerification) carries
@@ -5045,9 +5134,7 @@ export default {
             let counterpartyAvatar = null;
             let nostrLabel = null;
             if (isNostrSend) {
-              const npub = this.pendingPayment?.nostrNpub
-                || npubFromLightningAddress(this.pendingPayment?.lightningAddress)?.npub
-                || null;
+              const npub = recipientNostrNpub;
               const picture = sanitizeImageUrl(this.pendingPayment?.nostrProfile?.picture) || null;
               counterpartyAvatar = { kind: 'nostr', npub, picture };
               nostrLabel = profileDisplayName(this.pendingPayment?.nostrProfile) || shortenNpub(npub) || null;
@@ -5087,15 +5174,31 @@ export default {
           // contact reads clearly as a mobile-money recipient. Empty for any
           // other address.
           const payoutService = matchLnAddressService(recipientAddress);
+          const profile = this.pendingPayment?.nostrProfile || null;
+          const profileEvent = this.pendingPayment?.nostrProfileEvent || null;
+          const nostrIdentity = recipientNostrPubkey && recipientNostrNpub && profileEvent
+            ? {
+                pubkey: recipientNostrPubkey,
+                npub: recipientNostrNpub,
+                profile,
+                profileEvent,
+                relayHints: Array.isArray(this.pendingPayment?.nostrRelayHints)
+                  ? this.pendingPayment.nostrRelayHints
+                  : [],
+              }
+            : null;
           this.saveContactData = {
             address: recipientAddress,
             addressType: recipientAddressType,
-            name: '',
+            name: nostrIdentity
+              ? (profileDisplayName(profile) || shortenNpub(recipientNostrNpub))
+              : '',
             notes: payoutService?.note ? this.$t(payoutService.note) : '',
             // Carry the amount so the post-save handler can queue a
             // pending contact link against the same outgoing tx the
             // existing-contact path uses.
             amountSats: amount,
+            nostrIdentity,
           };
         }
 
@@ -5547,13 +5650,7 @@ export default {
       // Reset any save payload that was pre-staged for the modal's
       // Save button. Users who wanted to save would have tapped it
       // already (see onSendSaveContactClicked).
-      this.saveContactData = {
-        address: '',
-        addressType: 'lightning',
-        name: '',
-        notes: '',
-        amountSats: 0,
-      };
+      this.saveContactData = emptySaveContactData();
     },
 
     /**
@@ -5601,12 +5698,37 @@ export default {
           return;
         }
 
-        const newContact = await this.addressBookStore.addEntry({
-          name: this.saveContactData.name.trim(),
-          address: this.saveContactData.address,
-          addressType: this.saveContactData.addressType,
-          notes: this.saveContactData.notes?.trim() || ''
-        });
+        const data = this.saveContactData;
+        const identity = data.nostrIdentity;
+        let newContact;
+        if (identity?.pubkey && identity?.npub && identity?.profileEvent) {
+          // This is the same verified kind:0 the payment confirmation used.
+          // Persist it as a Nostr contact and explicitly bind the destination
+          // that just succeeded, rather than flattening it into a manual row.
+          newContact = await this.addressBookStore.addNostrContact({
+            pubkey: identity.pubkey,
+            npub: identity.npub,
+            event: identity.profileEvent,
+            relayHints: identity.relayHints || [],
+            paymentAddress: data.address,
+            paymentAddressType: data.addressType,
+            notes: data.notes?.trim() || '',
+          });
+
+          const chosenName = data.name.trim();
+          if (chosenName !== newContact.name) {
+            newContact = await this.addressBookStore.updateEntry(newContact.id, {
+              name: chosenName,
+            });
+          }
+        } else {
+          newContact = await this.addressBookStore.addEntry({
+            name: data.name.trim(),
+            address: data.address,
+            addressType: data.addressType,
+            notes: data.notes?.trim() || '',
+          });
+        }
 
         // Queue the contact link for the outgoing tx that just landed
         // (or is about to land). The pending-link consumer matches by
@@ -5616,8 +5738,8 @@ export default {
           try {
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: newContact.id,
-              recipientAddress: this.saveContactData.address,
-              amountSats: this.saveContactData.amountSats,
+              recipientAddress: data.address,
+              amountSats: data.amountSats,
               // Same active-wallet assumption as the rest of this page: the
               // send this dialog follows happened on the wallet active right
               // now (the post-send "save as contact" dialog is shown before
@@ -5630,6 +5752,7 @@ export default {
         }
 
         this.showSaveContactDialog = false;
+        this.saveContactData = emptySaveContactData();
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact saved'),
@@ -5649,13 +5772,7 @@ export default {
     // Close save contact dialog
     closeSaveContactDialog() {
       this.showSaveContactDialog = false;
-      this.saveContactData = {
-        address: '',
-        addressType: 'lightning',
-        name: '',
-        notes: '',
-        amountSats: 0,
-      };
+      this.saveContactData = emptySaveContactData();
     },
 
     // Helper: Truncate address for display
@@ -6237,6 +6354,24 @@ export default {
   justify-content: center;
   transition: background-color 0.15s ease, transform 0.1s ease;
   position: relative;
+}
+
+.profile-money-pill {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 20px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #10b981;
+  color: #07140f;
+  border: 2px solid var(--bg-primary);
+  font: 800 9px/1 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  pointer-events: none;
 }
 
 .modern-menu-btn-dark {
@@ -8215,6 +8350,19 @@ export default {
 
 .save-contact-content {
   padding: 1.25rem;
+}
+
+.save-contact-avatar-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+.save-contact-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .save-contact-address {

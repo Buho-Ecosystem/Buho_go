@@ -22,6 +22,18 @@
           {{ headerTitle }}
         </div>
         <q-btn
+          v-if="step === 'browse'"
+          flat
+          round
+          dense
+          :aria-label="$t('View username pricing')"
+          class="sheet-price-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          @click="pricingOpen = !pricingOpen"
+        >
+          <Icon icon="tabler:receipt-2" width="18" height="18" />
+        </q-btn>
+        <q-btn
           flat
           round
           dense
@@ -34,6 +46,49 @@
           <Icon icon="tabler:x" width="18" height="18" />
         </q-btn>
       </div>
+
+      <template v-if="pricingOpen">
+        <button
+          type="button"
+          class="pricing-dismiss"
+          :aria-label="$t('Close pricing')"
+          @click="pricingOpen = false"
+        ></button>
+        <section
+          class="pricing-popover"
+          :class="$q.dark.isActive ? 'pricing-popover-dark' : 'pricing-popover-light'"
+          role="dialog"
+          :aria-label="$t('Username pricing')"
+        >
+          <header class="pricing-popover-header">
+            <span class="pricing-popover-icon" aria-hidden="true">
+              <Icon icon="tabler:coins" width="19" height="19" />
+            </span>
+            <span>
+              <strong>{{ $t('Username pricing') }}</strong>
+              <small>{{ $t('Current mybuho.de prices') }}</small>
+            </span>
+          </header>
+
+          <table class="pricing-table">
+            <tbody>
+              <tr v-for="tier in pricingRows" :key="tier.id">
+                <th scope="row">
+                  <span>{{ tier.label }}</span>
+                  <small v-if="tier.example">{{ tier.example }}</small>
+                </th>
+                <td :class="{ 'pricing-free': tier.priceSats === 0 }">
+                  {{ tier.priceSats === 0 ? $t('Free') : `${formatSats(tier.priceSats)} ${$t('sats')}` }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p class="pricing-note">
+            {{ $t('The exact price is always shown before you continue.') }}
+          </p>
+        </section>
+      </template>
 
       <!-- Scrollable body. Each step renders into the same shell so the
            sheet height feels intentional rather than jumping. -->
@@ -88,7 +143,7 @@
                 ref="nameInputEl"
                 v-model="nameInput"
                 type="text"
-                :placeholder="$t('your-name')"
+                :placeholder="$t('your-username')"
                 spellcheck="false"
                 autocomplete="off"
                 autocapitalize="none"
@@ -272,7 +327,7 @@
           <div class="centered-stage">
             <q-spinner color="grey" size="36px" />
             <div class="centered-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Activating your handle…') }}
+              {{ $t('Setting up your username…') }}
             </div>
             <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
               {{ $t('Waiting for the payment to settle. This is usually quick.') }}
@@ -368,6 +423,7 @@ import {
   registerExactFreeHandle,
   requestPaidHandle,
   waitForActivation,
+  NIP05_PRICE_TIERS,
 } from '../services/nip05';
 
 const SEARCH_DEBOUNCE_MS = 350;
@@ -432,6 +488,7 @@ export default {
       // (search-then-create, pay-then-poll, etc.). Disables the button so
       // the user can't double-tap their way into a duplicate registration.
       actionInflight: false,
+      pricingOpen: false,
 
       // The poll abort handle so closing the sheet during activation can
       // stop the network traffic and any unhandled rejections.
@@ -451,12 +508,33 @@ export default {
 
     domain() { return NIP05_DOMAIN; },
 
+    pricingRows() {
+      return NIP05_PRICE_TIERS.map((tier) => {
+        switch (tier.id) {
+          case 'two-to-three':
+            return { ...tier, label: this.$t('2–3 characters') };
+          case 'four':
+            return { ...tier, label: this.$t('4 characters') };
+          case 'five-to-six':
+            return { ...tier, label: this.$t('5–6 characters') };
+          case 'seven-plus':
+            return { ...tier, label: this.$t('7+ characters') };
+          default:
+            return {
+              ...tier,
+              label: this.$t('Free name'),
+              example: this.$t('With a .123456 ending'),
+            };
+        }
+      });
+    },
+
     headerTitle() {
       switch (this.step) {
         case 'paying':     return this.$t('Confirm purchase');
         case 'activating': return this.$t('Activating');
         case 'success':    return this.$t('Success');
-        default:           return this.$t('Choose a name');
+        default:           return this.$t('Choose a username');
       }
     },
 
@@ -502,7 +580,7 @@ export default {
     /** Live `<name>@mybuho.de` preview — the user's typed input or a
      *  faded placeholder while the field is empty. */
     previewName() {
-      return this.nameInput.trim().toLowerCase() || this.$t('your-name');
+      return this.nameInput.trim().toLowerCase() || this.$t('your-username');
     },
 
     /** True iff the preview is showing the placeholder text rather than
@@ -547,11 +625,11 @@ export default {
 
     statusText() {
       if (this.searchInflight) return this.$t('Checking…');
-      if (!this.nameInput) return this.$t('Type a name to check availability.');
+      if (!this.nameInput) return this.$t('Type a username to check availability.');
       if (this.hasLocalError) return this.localErrorMessage;
-      if (this.searchError) return this.$t("Couldn't reach the name server. Try again.");
-      if (!this.searchResult) return this.$t('Type a name to check availability.');
-      if (!this.searchResult.available) return this.$t('Taken. Pick another name.');
+      if (this.searchError) return this.$t("Couldn't check that username. Try again.");
+      if (!this.searchResult) return this.$t('Type a username to check availability.');
+      if (!this.searchResult.available) return this.$t('Taken. Pick another username.');
       const price = this.searchResult.priceSats;
       if (!price) return this.$t('Available.');
       return this.$t('Available · {sats} sats', { sats: this.formatSats(price) });
@@ -559,10 +637,10 @@ export default {
 
     localErrorMessage() {
       switch (this.localValidation.reason) {
-        case 'too-short':     return this.$t('At least 2 characters.');
+        case 'too-short':     return this.$t('A username needs at least 2 letters.');
         case 'too-long':      return this.$t('Too long. Keep it under 64 characters.');
         case 'invalid-chars': return this.$t('Letters, numbers, dot, hyphen and underscore only.');
-        default:              return this.$t('Pick a valid name.');
+        default:              return this.$t('Pick a valid username.');
       }
     },
 
@@ -590,7 +668,7 @@ export default {
     continueLabel() {
       if (!this.searchResult || !this.searchResult.available) return this.$t('Continue');
       const price = this.searchResult.priceSats;
-      if (!price) return this.$t('Add free name');
+      if (!price) return this.$t('Take the free username');
       return this.$t('Buy · {sats} sats', { sats: this.formatSats(price) });
     },
 
@@ -715,6 +793,7 @@ export default {
       this.clearTimers();
       this.activationController?.abort();
       this.activationController = null;
+      this.pricingOpen = false;
     },
 
     resetForNewSession() {
@@ -729,6 +808,7 @@ export default {
       this.qrExpanded = false;
       this.invoiceCopied = false;
       this.actionInflight = false;
+      this.pricingOpen = false;
       this.purchasedAddress = '';
       this.walletMenuOpen = false;
       this.selectedWalletId = this.walletStore.activeWalletId || null;
@@ -841,7 +921,7 @@ export default {
               result = await registerFreeHandle({ baseSlug: localPart, pubkeyHex });
             }
           } catch {
-            this.payError = this.$t("That name couldn't be created. Try a different one.");
+            this.payError = this.$t("That username couldn't be created. Try a different one.");
             return;
           }
           this.commitPurchase({
@@ -861,7 +941,7 @@ export default {
           this.invoice = await requestPaidHandle({ localPart, pubkeyHex });
         } catch (err) {
           if (err?.status === 409 || err?.status === 400) {
-            this.payError = this.$t('That name was just taken. Pick another.');
+            this.payError = this.$t('That username was just taken. Pick another.');
           } else {
             this.payError = this.$t("Couldn't create the invoice. Try again.");
           }
@@ -944,7 +1024,7 @@ export default {
         // invoice actually pays — but we shouldn't leave the user
         // staring at a spinner. Drop back to paying with a hint.
         this.step = 'paying';
-        this.payError = this.$t('Still waiting for the payment. The name will activate as soon as it settles.');
+        this.payError = this.$t('Still waiting for the payment. The username is yours as soon as it settles.');
         return;
       }
 
@@ -1030,6 +1110,123 @@ export default {
 }
 
 .sheet-close-btn { flex: 0 0 auto; }
+.sheet-price-btn { flex: 0 0 auto; color: var(--text-secondary); }
+
+.pricing-dismiss {
+  position: absolute !important;
+  inset: 0;
+  z-index: 4 !important;
+  width: 100%;
+  border: 0;
+  background: rgba(15, 23, 42, 0.12);
+  cursor: default;
+}
+
+body.body--dark .pricing-dismiss { background: rgba(0, 0, 0, 0.28); }
+
+.pricing-popover {
+  position: absolute !important;
+  top: 54px;
+  right: 16px;
+  z-index: 5 !important;
+  width: min(310px, calc(100% - 32px));
+  padding: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.24);
+}
+
+.pricing-popover-light { background: #fffdf8; color: #171719; }
+.pricing-popover-dark { background: #202124; color: #f6f6f2; border-color: rgba(255, 255, 255, 0.1); }
+
+.pricing-popover-header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 13px;
+}
+
+.pricing-popover-header > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pricing-popover-header strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.pricing-popover-header small {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.pricing-popover-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #08783e;
+  background: rgba(21, 222, 114, 0.13);
+}
+
+body.body--dark .pricing-popover-icon {
+  color: #71e8a7;
+  background: rgba(21, 222, 114, 0.15);
+}
+
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Manrope', sans-serif;
+}
+
+.pricing-table tr { border-top: 1px solid rgba(15, 23, 42, 0.075); }
+body.body--dark .pricing-table tr { border-top-color: rgba(255, 255, 255, 0.08); }
+
+.pricing-table th,
+.pricing-table td { padding: 10px 0; }
+
+.pricing-table th {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.pricing-table th small {
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.pricing-table td {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pricing-table td.pricing-free { color: #08783e; }
+body.body--dark .pricing-table td.pricing-free { color: #71e8a7; }
+
+.pricing-note {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
 
 .sheet-scroll {
   flex: 1 1 auto;

@@ -19,3 +19,11 @@ status = 200
 [build]
 command = "quasar build -m pwa"
 publish = "dist/pwa"
+
+# Shared card links get their own preview. Without this every /p/ link would
+# show the generic wallet title in a chat, so a shared card would arrive
+# looking like an advert rather than like a person. Scoped to /p/* so nothing
+# else in the app pays for it.
+[[edge_functions]]
+function = "profile-preview"
+path = "/p/*"

@@ -985,7 +985,6 @@
             v-model="dangerConfirmInput"
             outlined
             dense
-            :placeholder="dangerConfirmPhrase"
             class="confirm-input"
             :dark="$q.dark.isActive"
             @keyup.enter="executeDangerAction"
@@ -1866,6 +1865,7 @@
     <SparkSeedPhraseDialog
       v-model="showSeedPhraseDialog"
       :mode="seedPhraseMode"
+      :wallet-id="seedPhraseWalletId"
       @verified="onSeedPhraseVerified"
     />
 
@@ -2364,6 +2364,9 @@ export default {
       // Encrypted Google Drive backup sheet (Android only)
       showCloudBackupSheet: false,
       seedPhraseMode: 'view', // 'view' | 'backup'
+      // Set only by the identity surface's per-phrase deep link; null means
+      // "the active seed wallet", which is what this page's own rows want.
+      seedPhraseWalletId: null,
 
       // Spark reconnect dialog
       isSparkReconnecting: false,
@@ -2381,7 +2384,6 @@ export default {
       showDangerConfirmDialog: false,
       dangerConfirmTitle: '',
       dangerConfirmMessage: '',
-      dangerConfirmPhrase: 'I understand',
       dangerConfirmButtonText: '',
       dangerConfirmInput: '',
       dangerConfirmAction: null,
@@ -2500,6 +2502,17 @@ export default {
     }
   },
   computed: {
+    /**
+     * The phrase a destructive action makes you type. Translated: the gate
+     * exists so the user reads and understands what they are about to do,
+     * and asking a German or Spanish reader to copy English characters is
+     * transcription, not understanding. Built from one value so the label,
+     * the comparison and the translation can never drift apart.
+     */
+    dangerConfirmPhrase() {
+      return this.$t('I understand');
+    },
+
     ...mapState(useWalletStore, [
       'wallets',
       'activeWalletId',
@@ -3095,8 +3108,23 @@ export default {
     const needsSeedBackup =
       (this.hasSparkWallet && !this.activeSparkBackedUp) ||
       (this.arkadeWallet && !this.activeArkadeBackedUp);
-    if (this.$route.query.section === 'backup' && needsSeedBackup) {
-      this.$nextTick(() => this.openSeedPhraseDialog('backup'));
+    if (this.$route.query.section === 'backup') {
+      // The identity surface can name a specific wallet, because a user with
+      // Spark and Arkade has two different phrases and its screen shows one
+      // card per phrase. Without the id the dialog falls back to the active
+      // seed wallet, which is right for the rows on this page.
+      const walletId = String(this.$route.query.walletId || '') || null;
+      const target = walletId
+        ? this.walletStore.wallets.find((w) => w.id === walletId)
+        : null;
+      // Open in whichever mode fits: the identity surface links here to show
+      // the wallet words, and refusing to open once they are already saved
+      // made that a dead tap with no explanation.
+      const outstanding = target
+        ? target.metadata?.hasBackedUp !== true
+        : needsSeedBackup;
+      this.seedPhraseWalletId = target ? target.id : null;
+      this.$nextTick(() => this.openSeedPhraseDialog(outstanding ? 'backup' : 'view'));
     }
 
     // Handle deep link from wallet switcher "Manage Wallets" button
@@ -3810,7 +3838,6 @@ export default {
     confirmDisconnectNwc() {
       this.dangerConfirmTitle = this.$t('Remove NWC Connections');
       this.dangerConfirmMessage = this.$t('This will remove all NWC wallet connections. Your Spark wallet will not be affected. You can reconnect NWC wallets later using your connection strings.');
-      this.dangerConfirmPhrase = 'I understand';
       this.dangerConfirmButtonText = this.$t('Remove NWC');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'disconnectNwc';
@@ -3820,7 +3847,6 @@ export default {
     confirmDisconnectLNBits() {
       this.dangerConfirmTitle = this.$t('Remove LNbits Connections');
       this.dangerConfirmMessage = this.$t('This will remove all LNbits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNbits wallets later using your credentials.');
-      this.dangerConfirmPhrase = 'I understand';
       this.dangerConfirmButtonText = this.$t('Remove LNbits');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'disconnectLNBits';
@@ -4030,7 +4056,6 @@ export default {
       this.walletToRemove = wallet
       this.dangerConfirmTitle = this.$t('Remove Wallet')
       this.dangerConfirmMessage = this.$t('Are you sure you want to remove "{name}"? This action cannot be undone.', { name: wallet.name })
-      this.dangerConfirmPhrase = 'I understand'
       this.dangerConfirmButtonText = this.$t('Remove Wallet')
       this.dangerConfirmInput = ''
       this.dangerConfirmAction = 'removeWallet'
@@ -4427,8 +4452,11 @@ export default {
      *
      * @param {'view'|'backup'} mode
      */
-    openSeedPhraseDialog(mode) {
+    openSeedPhraseDialog(mode, walletId = null) {
       this.seedPhraseMode = mode;
+      // This page's own rows act on the active wallet; only the identity
+      // deep link names one, and it sets the field before calling.
+      if (walletId !== null) this.seedPhraseWalletId = walletId;
       this.showSeedPhraseDialog = true;
     },
 
@@ -4448,7 +4476,6 @@ export default {
       this.dangerConfirmMessage = count > 1
         ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
         : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
-      this.dangerConfirmPhrase = 'I understand';
       this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';
@@ -4460,7 +4487,6 @@ export default {
 
       this.dangerConfirmTitle = this.$t('Delete Arkade Wallet');
       this.dangerConfirmMessage = this.$t('This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.');
-      this.dangerConfirmPhrase = 'I understand';
       this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteArkadeWallet';
@@ -4751,16 +4777,6 @@ export default {
 
 .section-label-light {
   color: var(--text-muted);
-}
-
-/* Small inline count next to a section header (e.g. "Connected sites · 3").
-   Keeps the prominence on the label itself while still giving the user a
-   glanceable total. */
-.connected-count {
-  font-weight: 500;
-  text-transform: none;
-  font-size: 12px;
-  margin-left: 4px;
 }
 
 
@@ -7202,40 +7218,6 @@ export default {
 .badge-unverified {
   background: rgba(251, 191, 36, 0.12);
   color: #F59E0B;
-}
-
-/* "Experimental" corner tag — the profile / identity surface (Nostr,
-   NIP-05, recovery) is still maturing, so we mark it plainly. Neutral
-   greys only: it informs, it must not read as a warning the way the
-   amber backup badge does. */
-.settings-card--experimental {
-  position: relative;
-}
-
-.experimental-tag {
-  position: absolute;
-  top: 8px;
-  right: 14px;
-  z-index: 1;
-  pointer-events: none;
-  font-family: 'Manrope', sans-serif;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 3px 7px;
-  border-radius: 6px;
-  line-height: 1;
-}
-
-.experimental-tag-light {
-  background: rgba(0, 0, 0, 0.05);
-  color: rgba(0, 0, 0, 0.42);
-}
-
-.experimental-tag-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.42);
 }
 
 /* Accounts Dialog */

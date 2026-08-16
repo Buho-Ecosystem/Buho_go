@@ -8,11 +8,15 @@
     :style="fallbackStyle"
     :aria-label="domain"
   >
+    <span class="site-favicon-letter" :class="{ 'site-favicon-letter--hidden': loaded }">{{ initial }}</span>
     <img
       v-if="!failed && currentIconUrl"
       :src="currentIconUrl"
       class="site-favicon-img"
-      :class="shape === 'rounded-square' ? 'site-favicon-img--fill' : 'site-favicon-img--inset'"
+      :class="[
+        shape === 'rounded-square' ? 'site-favicon-img--fill' : 'site-favicon-img--inset',
+        { 'site-favicon-img--loaded': loaded },
+      ]"
       alt=""
       loading="lazy"
       decoding="async"
@@ -20,7 +24,6 @@
       @error="onImageError"
       @load="onImageLoad"
     />
-    <span v-else class="site-favicon-letter">{{ initial }}</span>
   </span>
 </template>
 
@@ -201,6 +204,7 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-weight: 600;
   user-select: none;
+  position: relative;
 }
 
 /* Circle wrap — default. The image sits inset so small/ragged
@@ -227,7 +231,12 @@ export default {
 .site-favicon-img {
   object-fit: contain;
   display: block;
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
+
+.site-favicon-img--loaded { opacity: 1; }
 
 /* Inset image — paired with the circle wrap. Leaves a colored
    ring around small favicons so they read as a deliberate avatar. */
@@ -246,4 +255,6 @@ export default {
 .site-favicon-letter {
   line-height: 1;
 }
+
+.site-favicon-letter--hidden { visibility: hidden; }
 </style>

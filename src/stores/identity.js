@@ -1072,10 +1072,21 @@ export const useIdentityStore = defineStore('identity', {
           try {
             npub = deriveNostrIdentity(mnemonic, entry.i).npub;
           } catch { /* row renders without an npub rather than not at all */ }
+
+          // The username is how the owner recognises a card: "Card 2" names
+          // nothing, "@maria" names the person it is. The active account's
+          // handles live in nip05Handles; every other account's wait in the
+          // per-account stash, so no row needs the network to get its name.
+          const handles = entry.i === this.nostrAccountIndex
+            ? this.nip05Handles
+            : this.nostrAccountNip05[entry.i] || [];
+          const named = handles.find((h) => h.isActive) || handles[0] || null;
+
           return {
             account: entry.i,
             npub,
             label: entry.label || null,
+            username: named?.handle || null,
             active: entry.i === this.nostrAccountIndex,
           };
         });

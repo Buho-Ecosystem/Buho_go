@@ -352,6 +352,36 @@ export const useProfileStore = defineStore('profile', {
     },
 
     /**
+     * Adopt the identity's own payment address (the Social Bucket) as `lud16`.
+     *
+     * Without a `lud16` a username is unpayable: a payer resolves the name to
+     * this profile and then to this field, and gives up when it is empty. New
+     * users cannot supply one, so the identity brings its own.
+     *
+     * A user's own address always wins. This only fills an empty field or
+     * refreshes the bucket address after a key change, and never touches an
+     * address the user typed in, because that is their money routing decision
+     * and not ours to override.
+     *
+     * Marks the profile dirty on purpose: the field is worthless until it is
+     * published, and `isDirty` is what tells the boot step to publish it.
+     *
+     * @returns {boolean} true when the value changed
+     */
+    adoptBucketAddress(address, { isBucketAddress }) {
+      const value = normaliseFieldValue('lud16', address);
+      if (!value) return false;
+      const current = this.lud16;
+      if (current === value) return false;
+      // Only ever replace nothing, or a stale bucket address of our own.
+      if (current && !isBucketAddress(current)) return false;
+      this.lud16 = value;
+      this.isDirty = true;
+      this._persistMetadata();
+      return true;
+    },
+
+    /**
      * Bulk-apply a set of edits (e.g. when the editor sheet saves all
      * fields at once). Marks dirty if any value changed.
      *

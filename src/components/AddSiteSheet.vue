@@ -20,25 +20,9 @@
           class="add-site-title"
           :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'"
         >
-          {{ $t('Sign in to a site') }}
+          {{ $t('Sign in somewhere new') }}
         </div>
         <div class="add-site-header-actions">
-          <!--
-            Help affordance. Opens a small bottom sheet with concrete
-            example sites so first-time users have a starting point.
-            Sits between the title and the close button so users
-            naturally scan past it but can find it when needed.
-          -->
-          <q-btn
-            flat
-            round
-            dense
-            @click="showExamplesSheet = true"
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-            :aria-label="$t('Where can I sign in?')"
-          >
-            <Icon icon="tabler:help-circle" width="18" height="18" />
-          </q-btn>
           <q-btn
             flat
             round
@@ -52,7 +36,6 @@
         </div>
       </q-card-section>
 
-      <SiteExamplesSheet v-model="showExamplesSheet" />
 
       <!-- SCAN mode (default) — camera preview, auto-submit on detect -->
       <template v-if="mode === 'scan'">
@@ -61,7 +44,7 @@
             class="add-site-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Point your camera at the Lightning login QR code.') }}
+            {{ $t('Point your camera at the code the website shows.') }}
           </p>
 
           <div
@@ -110,7 +93,7 @@
             @click="switchTo('paste')"
           >
             <Icon icon="tabler:clipboard" width="14" height="14" />
-            <span>{{ $t('Or paste a link instead') }}</span>
+            <span>{{ $t('Paste a link instead') }}</span>
           </button>
         </q-card-section>
       </template>
@@ -122,7 +105,7 @@
             class="add-site-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('On a site that supports sign-in with Lightning, tap the sign-in option and paste the copied link here.') }}
+            {{ $t('On a website that offers sign-in with your card, tap it and paste the copied link here.') }}
           </p>
 
           <div
@@ -143,7 +126,7 @@
               autocorrect="off"
               class="add-site-input"
               :class="$q.dark.isActive ? 'add-site-input-dark' : 'add-site-input-light'"
-              :placeholder="$t('Paste login link')"
+              :placeholder="$t('Paste the sign-in link')"
               @input="onInput"
               @keyup.enter="submit"
             />
@@ -179,7 +162,7 @@
             @click="switchTo('scan')"
           >
             <Icon icon="tabler:camera" width="14" height="14" />
-            <span>{{ $t('Or scan with camera') }}</span>
+            <span>{{ $t('Scan with the camera instead') }}</span>
           </button>
         </q-card-section>
 
@@ -190,7 +173,7 @@
             no-caps
             class="add-site-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :label="$t('Continue')"
+            :label="$t('Sign in')"
             :disable="!canSubmit"
             @click="submit"
           />
@@ -204,8 +187,8 @@
     <ScannerOverlay
       v-if="nativeScannerActive"
       :active="nativeScannerActive"
-      :title="$t('Scan QR Code')"
-      :prompt="$t('Point your camera at the Lightning login QR code.')"
+      :title="$t('Scan the code')"
+      :prompt="$t('Point your camera at the code the website shows.')"
       continuous
       @scanned="onQRDetect"
       @close="switchTo('paste')"
@@ -220,12 +203,11 @@ import { createQrScanner } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
 import ScannerOverlay from './ScannerOverlay.vue';
 import { LUD04_ERROR, looksLikeLud04, parseLud04Input } from '../utils/lud4';
-import SiteExamplesSheet from './SiteExamplesSheet.vue';
 
 export default {
   name: 'AddSiteSheet',
 
-  components: { Icon, SiteExamplesSheet, ScannerOverlay },
+  components: { Icon, ScannerOverlay },
 
   props: {
     modelValue: { type: Boolean, required: true },
@@ -255,7 +237,6 @@ export default {
       detected: false,
       // Help-sheet visibility. Opened by the (?) icon in the header,
       // shows curated example sites for first-time users.
-      showExamplesSheet: false,
     };
   },
 
@@ -348,9 +329,9 @@ export default {
         // can tell the user *why* the link won't work — they may have a
         // perfectly valid LUD-04 link that just happens to be http://.
         if (err?.code === LUD04_ERROR.INSECURE_SCHEME) {
-          this.errorText = this.$t('That link uses an insecure connection. Sign-in only works over HTTPS.');
+          this.errorText = this.$t('That link is not secure, so signing in was stopped.');
         } else {
-          this.errorText = this.$t('That link is not a Lightning login. Check the site and copy the link again.');
+          this.errorText = this.$t('That link is not a sign-in link. Check the website and copy it again.');
         }
         if (this.mode === 'scan') {
           // Surface the error inline by flipping back to paste so the

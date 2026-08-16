@@ -217,8 +217,8 @@ export default {
   white-space: nowrap;
 }
 .settings-row-badge--warning {
-  background: rgba(255, 168, 0, 0.14);
-  color: #FFB347;
+  background: var(--color-warn-soft);
+  color: var(--color-warn);
 }
 .settings-row-badge--success {
   background: var(--brand-accent-soft, rgba(21, 222, 114, 0.14));
@@ -233,7 +233,6 @@ export default {
   color: var(--color-red, #FF4444);
 }
 
-body.body--light .settings-row-badge--warning { color: #B8780E; }
 body.body--light .settings-row-badge--info { color: #1E63B8; }
 
 /* Destructive row */

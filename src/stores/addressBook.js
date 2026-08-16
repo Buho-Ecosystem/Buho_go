@@ -552,6 +552,12 @@ export const useAddressBookStore = defineStore('addressBook', {
           if (existingEntry) {
             throw new Error('This address already exists in your address book')
           }
+
+          if (currentEntry.source === CONTACT_SOURCES.NOSTR) {
+            // A destination selected by the user is now explicit and must not
+            // be replaced by a later kind:0 metadata refresh.
+            updatedEntry.nostr_payment_address_explicit = true
+          }
         }
 
         // Use splice for proper Vue reactivity
@@ -649,23 +655,30 @@ export const useAddressBookStore = defineStore('addressBook', {
      *   isFavorite?: boolean,
      *   notes?:     string,
      *   allowWithoutLightningAddress?: boolean,  // see below
+     *   paymentAddress?: string,                  // exact resolved/paid destination
+     *   paymentAddressType?: 'lightning'|'spark'|'arkade'|'bitcoin'|'lnurl',
      * }} input
      * @returns {Promise<object>} the newly stored entry
      *
+     * `paymentAddress` is reserved for flows that already resolved or paid a
+     * concrete destination while holding this verified Nostr identity. It lets
+     * an npub.cash-style address remain the saved destination even when the
+     * person's kind:0 publishes a different lud16 (or none at all). Such an
+     * address is marked explicit so profile refreshes never replace it.
+     *
      * `allowWithoutLightningAddress` decouples the contact's durability
-     * from its *current* payment metadata. The interactive add flows
-     * (search / scan) leave it false: there's no point saving someone
-     * you can't pay yet, so a missing lud16 is a hard error. Recovery
-     * passes it true — the canonical identity is the pubkey, and a
-     * contact who temporarily dropped their lud16 must still come back
-     * (as an identity-only entry, address `''`). `refreshContact`
-     * promotes it to payable the moment they re-publish a lud16.
+     * from its *current* payment metadata. Identity-aware add flows and
+     * recovery pass it true because the canonical identity is the pubkey;
+     * those entries carry address `''` until `refreshContact` promotes
+     * them to payable. Callers that specifically require a payment target
+     * leave it false and receive a hard error for a missing lud16.
      *
      * @throws Error('Invalid Nostr pubkey')                 — bad hex
      * @throws Error('Invalid Nostr identifier (npub)')      — bad bech32
      * @throws Error('Profile event is missing or invalid')  — event mismatch
      * @throws Error('Profile event signature is invalid')   — forged event
      * @throws Error('Profile event is too large')           — oversized content
+     * @throws Error('Invalid payment address')               — bad explicit destination
      * @throws Error('This Nostr profile does not have a Lightning address (lud16) yet')
      * @throws Error('This Nostr contact is already in your address book')
      * @throws Error('A contact with this Lightning address already exists')
@@ -678,6 +691,9 @@ export const useAddressBookStore = defineStore('addressBook', {
       const event = input?.event
       const relayHints = Array.isArray(input?.relayHints) ? input.relayHints : []
       const allowWithoutLn = input?.allowWithoutLightningAddress === true
+      const explicitAddress = typeof input?.paymentAddress === 'string'
+        ? input.paymentAddress.trim()
+        : ''
 
       if (!/^[0-9a-f]{64}$/.test(pubkey)) {
         throw new Error('Invalid Nostr pubkey')
@@ -692,13 +708,23 @@ export const useAddressBookStore = defineStore('addressBook', {
       const profile = parseProfileContent(event)
       const lud16Raw = typeof profile.lud16 === 'string' ? profile.lud16.trim() : ''
       const hasLightningAddress = !!lud16Raw && isLightningAddress(lud16Raw)
-      if (!hasLightningAddress && !allowWithoutLn) {
+      const explicitAddressType = explicitAddress
+        ? (input?.paymentAddressType || this.detectAddressType(explicitAddress))
+        : null
+      if (explicitAddress && (
+        !Object.values(ADDRESS_TYPES).includes(explicitAddressType)
+        || !this.isValidAddress(explicitAddress, explicitAddressType)
+      )) {
+        throw new Error('Invalid payment address')
+      }
+      if (!explicitAddress && !hasLightningAddress && !allowWithoutLn) {
         throw new Error('This Nostr profile does not have a Lightning address (lud16) yet')
       }
-      // Identity-only contacts carry an empty address until a refresh
-      // picks one up. Every downstream consumer gates on
-      // `isEntryPayable` rather than assuming the address is present.
-      const resolvedAddress = hasLightningAddress ? lud16Raw : ''
+      // A destination that was explicitly resolved/paid wins. Otherwise use
+      // the profile's lud16, or keep an identity-only contact empty until a
+      // refresh discovers one.
+      const resolvedAddress = explicitAddress || (hasLightningAddress ? lud16Raw : '')
+      const resolvedAddressType = explicitAddress ? explicitAddressType : 'lightning'
 
       // Dedupe — always by pubkey (the canonical identity). The
       // Lightning-address dedup only runs when we actually have one;
@@ -707,10 +733,11 @@ export const useAddressBookStore = defineStore('addressBook', {
       if (this.entries.some(entry => entry.nostr_pubkey === pubkey)) {
         throw new Error('This Nostr contact is already in your address book')
       }
-      if (hasLightningAddress && this.entries.some(
-        entry => this.getEntryAddress(entry).toLowerCase() === lud16Raw.toLowerCase(),
+      if (resolvedAddress && this.entries.some(
+        entry => this.getEntryAddress(entry).toLowerCase() === resolvedAddress.toLowerCase(),
       )) {
-        throw new Error('A contact with this Lightning address already exists')
+        const label = resolvedAddressType === 'lightning' ? 'Lightning address' : 'payment address'
+        throw new Error(`A contact with this ${label} already exists`)
       }
 
       const now = Date.now()
@@ -722,8 +749,8 @@ export const useAddressBookStore = defineStore('addressBook', {
         id: `addr-${now}-${Math.random().toString(36).substr(2, 9)}`,
         name: pickDisplayNameFromProfile(profile, npub),
         address: resolvedAddress,
-        addressType: 'lightning',
-        lightningAddress: resolvedAddress,
+        addressType: resolvedAddressType,
+        lightningAddress: resolvedAddressType === 'lightning' ? resolvedAddress : '',
         color: input?.color || this.getRandomColor(),
         notes: typeof input?.notes === 'string' ? input.notes.trim() : '',
         isFavorite: !!input?.isFavorite,
@@ -737,6 +764,9 @@ export const useAddressBookStore = defineStore('addressBook', {
         nostr_event: cloneEvent(event),
         nostr_profile: sanitizeProfileForStorage(profile),
         nostr_relay_hints: sanitizedHints,
+        // Exact destinations such as npub1…@npub.cash belong to the saved
+        // contact, not to kind:0, so metadata refreshes must preserve them.
+        nostr_payment_address_explicit: !!explicitAddress,
         last_synced_at: now,
         name_locally_edited: false,
       }
@@ -769,7 +799,8 @@ export const useAddressBookStore = defineStore('addressBook', {
      *     never blocks a payment.
      *   - When a newer kind:0 arrives:
      *       * `nostr_event` + `nostr_profile` replaced
-     *       * `address` refreshed from the new lud16 (kept if missing)
+     *       * profile-derived `address` refreshed from the new lud16
+     *         (kept if missing); explicit paid destinations stay fixed
      *       * `name` refreshed only when `name_locally_edited` is false
      *       * `last_synced_at` + `updatedAt` bumped
      *   - When the fetched event is not newer, only `last_synced_at`
@@ -854,13 +885,15 @@ export const useAddressBookStore = defineStore('addressBook', {
       updated.last_synced_at = now
       updated.updatedAt = now
 
-      // Always-derive the payment address from the latest lud16.
+      // Derive the payment address from the latest lud16 unless this contact
+      // was intentionally bound to a resolved/paid destination.
       // If the new event has no lud16, keep the previous one so the
       // contact stays payable from the last-known address instead of
       // silently disappearing from send flows.
       const newLud16 = typeof profile.lud16 === 'string' ? profile.lud16.trim() : ''
-      if (newLud16 && isLightningAddress(newLud16)) {
+      if (!entry.nostr_payment_address_explicit && newLud16 && isLightningAddress(newLud16)) {
         updated.address = newLud16
+        updated.addressType = 'lightning'
         updated.lightningAddress = newLud16
       }
 
@@ -1241,6 +1274,21 @@ export const useAddressBookStore = defineStore('addressBook', {
             next.isFavorite = dc.starred
             touched = true
           }
+          if (entry.source === CONTACT_SOURCES.NOSTR && dc.paymentAddress) {
+            const addressType = this.detectAddressType(dc.paymentAddress)
+            if (addressType && this.isValidAddress(dc.paymentAddress, addressType)) {
+              if (dc.paymentAddress !== this.getEntryAddress(entry)) {
+                next.address = dc.paymentAddress
+                next.addressType = addressType
+                next.lightningAddress = addressType === 'lightning' ? dc.paymentAddress : ''
+                touched = true
+              }
+              if (!entry.nostr_payment_address_explicit) {
+                next.nostr_payment_address_explicit = true
+                touched = true
+              }
+            }
+          }
           if (touched) {
             // Adopt the doc's clock, not "now" — the entry must not
             // suddenly look newer than the doc value it just copied.
@@ -1270,6 +1318,7 @@ export const useAddressBookStore = defineStore('addressBook', {
             name: dc.name,
             starred: dc.starred,
             docId: dc.docId,
+            paymentAddress: dc.paymentAddress,
             addedAt: dc.createdAtMs || undefined,
           })
         }
@@ -1389,6 +1438,14 @@ export const useAddressBookStore = defineStore('addressBook', {
         return 'deferred'
       }
 
+      const restoredAddressType = rec.paymentAddress
+        ? this.detectAddressType(rec.paymentAddress)
+        : null
+      const restoredPaymentAddress = restoredAddressType
+        && this.isValidAddress(rec.paymentAddress, restoredAddressType)
+        ? rec.paymentAddress
+        : undefined
+
       try {
         const entry = await this.addNostrContact({
           pubkey: rec.pubkey,
@@ -1396,6 +1453,8 @@ export const useAddressBookStore = defineStore('addressBook', {
           event,
           relayHints: rec.relays || [],
           isFavorite: !!rec.starred,
+          paymentAddress: restoredPaymentAddress,
+          paymentAddressType: restoredAddressType || undefined,
           // The canonical identity is the pubkey — a contact who
           // dropped their lud16 must still come back (identity-only).
           allowWithoutLightningAddress: true,
@@ -1702,6 +1761,7 @@ export const useAddressBookStore = defineStore('addressBook', {
      *   identityStore:  any,
      *   changeIdentity: () => Promise<unknown>,
      *   keepContacts?:  boolean,
+     *   discardUnsynced?: boolean,
      *   pool?: any, relays?: readonly string[], timeoutMs?: number,
      *   profileFetcher?: Function,
      * }} args
@@ -1709,7 +1769,7 @@ export const useAddressBookStore = defineStore('addressBook', {
      *          sync operation is already running
      */
     async switchContactsIdentity({
-      identityStore, changeIdentity, keepContacts = false,
+      identityStore, changeIdentity, keepContacts = false, discardUnsynced = false,
       pool, relays, timeoutMs, profileFetcher,
     } = {}) {
       await this.initialize()
@@ -1742,7 +1802,11 @@ export const useAddressBookStore = defineStore('addressBook', {
             console.warn('[addressBook] pre-switch flush failed:', err)
           }
         }
-        if (!keepContacts && this.syncDirty) {
+        //    `discardUnsynced` is the erase case: the user has asked for the
+        //    book to be destroyed, so unpublished changes are not data at
+        //    risk, they are part of what they asked to lose. Refusing to
+        //    proceed there would leave someone unable to start over offline.
+        if (!keepContacts && !discardUnsynced && this.syncDirty) {
           return { ok: false, reason: 'flush-failed', hadRemote: false, published: false,
             acceptedRelay: null, restored: 0, removed: 0, identityOnly: 0, deferred: 0, petnameUpdated: 0 }
         }

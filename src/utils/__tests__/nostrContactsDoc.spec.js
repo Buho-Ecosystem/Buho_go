@@ -146,6 +146,25 @@ await test('merge: adds a missing nostr entry with second-precision timestamps',
   assert.equal(links['addr-1'], c.id);
 });
 
+await test('merge/extract: an explicitly paid Nostr destination travels with the identity', () => {
+  const paidAddress = `${ALICE_NPUB}@npub.cash`;
+  const { doc } = mergeEntriesIntoDoc({
+    doc: emptyDoc(),
+    entries: [nostrEntry({
+      address: paidAddress,
+      lightningAddress: paidAddress,
+      nostr_payment_address_explicit: true,
+    })],
+  });
+  assert.equal(doc.contacts[0].npub, ALICE_NPUB);
+  assert.equal(doc.contacts[0].paymentAddress, paidAddress);
+
+  const { nostr, manual } = extractDocContacts(doc);
+  assert.equal(nostr[0].pubkey, ALICE_PUBKEY);
+  assert.equal(nostr[0].paymentAddress, paidAddress);
+  assert.equal(manual.length, 0);
+});
+
 await test('merge: adds a missing manual entry keyed by payment address', () => {
   const { doc, links } = mergeEntriesIntoDoc({
     doc: emptyDoc(),

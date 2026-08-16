@@ -160,12 +160,13 @@ function normStr(value) {
  * with a newer timestamp instead).
  *
  * Field ownership per doc contact:
- *   - on create:  id, name, npub/paymentAddress, nip05, picture,
+ *   - on create:  id, name, npub and/or paymentAddress, nip05, picture,
  *                 starred, createdAt, updatedAt
  *   - on update:  name (only when the user renamed the contact
  *                 locally — a kind:0 display name must never clobber
  *                 a rename made in another app), starred, updatedAt;
- *                 plus paymentAddress for manual entries.
+ *                 plus paymentAddress for manual entries and Nostr contacts
+ *                 explicitly bound to a resolved/paid destination.
  *     nip05/picture are seeded once and then left alone: another app
  *     may have set a custom contact photo, which a profile snapshot
  *     must not overwrite.
@@ -279,11 +280,18 @@ export function mergeEntriesIntoDoc({
     if (entry.source === 'nostr') {
       const npub = normStr(entry.nostr_npub).toLowerCase();
       if (!/^npub1[0-9a-z]+$/.test(npub)) continue;
+      const explicitPaymentAddress = entry.nostr_payment_address_explicit
+        ? normStr(entry.address || entry.lightningAddress).trim()
+        : undefined;
+      const explicitPaymentFields = explicitPaymentAddress
+        ? { paymentAddress: explicitPaymentAddress }
+        : {};
       const match = pickMatch(byNpub.get(npub));
       if (!match) {
         const profile = entry.nostr_profile || {};
         links[entry.id] = appendContact(entry, {
           npub: normStr(entry.nostr_npub),
+          ...explicitPaymentFields,
           nip05: normStr(profile.nip05),
           picture: normStr(profile.picture),
         }).id;
@@ -296,13 +304,14 @@ export function mergeEntriesIntoDoc({
           const profile = entry.nostr_profile || {};
           links[entry.id] = appendContact(entry, {
             npub: normStr(entry.nostr_npub),
+            ...explicitPaymentFields,
             nip05: normStr(profile.nip05),
             picture: normStr(profile.picture),
           }).id;
         }
       } else {
         links[entry.id] = normStr(match.id);
-        updateContact(match, entry);
+        updateContact(match, entry, explicitPaymentFields);
       }
       continue;
     }
@@ -397,6 +406,7 @@ export function mergeEntriesIntoDoc({
  * @param {object} doc  normalized doc
  * @returns {{
  *   nostr:  Array<{ docId: string, npub: string, pubkey: string, name: string,
+ *                   paymentAddress: string,
  *                   starred: boolean, trashed: boolean,
  *                   updatedAtMs: number, createdAtMs: number }>,
  *   manual: Array<{ docId: string, name: string, paymentAddress: string,
@@ -431,7 +441,12 @@ export function extractDocContacts(doc) {
       // An undecodable npub is treated as foreign data: preserved in
       // the doc, unusable locally.
       if (HEX_PUBKEY_RE.test(pubkey)) {
-        nostr.push({ ...base, npub, pubkey });
+        nostr.push({
+          ...base,
+          npub,
+          pubkey,
+          paymentAddress: normStr(contact.paymentAddress).trim(),
+        });
       }
       continue;
     }
