@@ -2611,10 +2611,17 @@ export default {
 
         const newDeposits = await provider.getPendingDeposits();
 
-        // Detect changes and show notifications
-        this.detectDepositChanges(newDeposits);
+        // An instantly-claimed deposit keeps showing in the SDK's pending
+        // list until its confirmations catch up. Filter it everywhere so
+        // no banner, chip, or handler ever acts on a UTXO we already swept.
+        const unclaimed = newDeposits.filter(
+          (d) => !this.walletStore.isDepositClaimed(d.txId)
+        );
 
-        this.pendingBitcoinDeposits = newDeposits;
+        // Detect changes and show notifications
+        this.detectDepositChanges(unclaimed);
+
+        this.pendingBitcoinDeposits = unclaimed;
       } catch (error) {
         // Silently ignore - wallet may be locked
       }
@@ -2649,11 +2656,14 @@ export default {
             // app was closed). Auto-claim sweeps it via the confirmed
             // handler — no toast.
             this.handleConfirmedDeposit(deposit);
+          } else {
+            // Brand-new unconfirmed deposit: try the instant (0-conf)
+            // path. When the SSP offers no instant plan this is a silent
+            // no-op and the existing flow stands — the header "Incoming"
+            // chip calls the deposit out and the 3-conf handler claims
+            // later, so we still fire no toast of our own here.
+            this.handleUnconfirmedDeposit(deposit);
           }
-          // Brand-new unconfirmed deposit: the header "Incoming" chip
-          // already calls this out + the receive sheet shows full
-          // progress, so we deliberately don't fire a toast. Avoids
-          // duplicate signals competing for attention.
         } else if (deposit.confirmed && !previousConfirmed.get(deposit.txId)) {
           this.handleConfirmedDeposit(deposit);
         }
@@ -2679,6 +2689,10 @@ export default {
      * legacy toast is shown as the safety net.
      */
     async handleConfirmedDeposit(deposit) {
+      // Already swept by the instant path (or a previous session): the
+      // pending list can lag behind reality, never claim twice.
+      if (this.walletStore.isDepositClaimed(deposit.txId)) return;
+
       if (!this.bitcoinPrefsStore.autoAddIncomingBitcoin) {
         this.notifyDepositReadyManual(deposit);
         return;
@@ -2809,6 +2823,10 @@ export default {
           transfer_id: result?.transferId || null
         });
 
+        // Durable double-claim guard — this UTXO must never be submitted
+        // again, in this session or the next.
+        this.walletStore.markDepositClaimed(deposit.txId);
+
         this.notifyAutoClaimSucceeded(credited, workingClassification.feeSats);
         if (this.walletStore.activeWalletId) {
           this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
@@ -2826,6 +2844,105 @@ export default {
         });
         console.warn('Auto-claim attempt failed, surfacing manual prompt:', error?.message || error);
         this.notifyDepositReadyManual(deposit);
+      } finally {
+        this.walletStore.clearDepositClaimInFlight(deposit.txId);
+      }
+    },
+
+    /**
+     * A brand-new unconfirmed deposit: ask the SSP for a 0-conf plan and
+     * take it when offered — the happy path is that the money is simply
+     * there, no progress bar. Every non-instant outcome is a silent
+     * no-op that leaves today's 3-conf pipeline untouched. Honors the
+     * same auto-add opt-out as the confirmed flow; with the toggle off,
+     * the claim sheet's "Add instantly" action covers the manual path.
+     */
+    async handleUnconfirmedDeposit(deposit) {
+      if (!this.bitcoinPrefsStore.autoAddIncomingBitcoin) return;
+      if (this.walletStore.isDepositClaimed(deposit.txId)) return;
+
+      let classification;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        if (!provider?.classifyUnconfirmedDeposit) return;
+        classification = await provider.classifyUnconfirmedDeposit(deposit);
+      } catch (error) {
+        console.warn('Instant-claim classification failed:', error?.message || error);
+        return;
+      }
+
+      if (classification.category !== 'instant') return;
+
+      telemetryTrack('bitcoin.deposit.classified', {
+        category: 'instant',
+        amount_sats: deposit.amount,
+        fee_sats: classification.feeSats
+      });
+      await this.attemptInstantClaim(deposit, classification, { source: 'auto' });
+    },
+
+    /**
+     * Submit an instant (0-conf) claim. Shares the coordination guards
+     * with attemptAutoClaim: the in-flight marker stops concurrent
+     * submissions, the claimed registry stops repeats across sessions.
+     * Auto-sourced failures stay silent — the deposit simply falls back
+     * to the existing 3-conf pipeline; sheet-sourced failures rethrow so
+     * the sheet can surface them.
+     */
+    async attemptInstantClaim(deposit, classification, options = { source: 'auto' }) {
+      const startedAt = Date.now();
+
+      if (this.walletStore.isDepositClaimInFlight(deposit.txId)
+          || this.walletStore.isDepositClaimed(deposit.txId)) {
+        telemetryTrack('bitcoin.deposit.claim_skipped', {
+          source: options.source,
+          reason: 'in_flight',
+          amount_sats: deposit.amount
+        });
+        return false;
+      }
+
+      this.walletStore.markDepositClaimInFlight(deposit.txId);
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        const result = await provider.claimInstantDeposit(
+          deposit.txId,
+          classification.quote,
+          classification.plan,
+          deposit.outputIndex || 0
+        );
+
+        this.walletStore.markDepositClaimed(deposit.txId);
+
+        telemetryTrack('bitcoin.deposit.claim_succeeded', {
+          source: options.source,
+          instant: true,
+          amount_sats: classification.creditSats,
+          fee_sats: classification.feeSats,
+          duration_ms: Date.now() - startedAt,
+          claim_id: result?.claimId || null
+        });
+
+        this.notifyAutoClaimSucceeded(classification.creditSats, classification.feeSats);
+        if (this.walletStore.activeWalletId) {
+          this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+        }
+        this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(
+          (d) => d.txId !== deposit.txId
+        );
+        this.walletStore.signalDepositsRefresh();
+        return true;
+      } catch (error) {
+        telemetryTrack('bitcoin.deposit.claim_failed', {
+          source: options.source,
+          instant: true,
+          amount_sats: deposit.amount,
+          duration_ms: Date.now() - startedAt,
+          error: error?.message || 'unknown'
+        });
+        if (options.source !== 'auto') throw error;
+        console.warn('Instant claim failed, falling back to the confirmation flow:', error?.message || error);
+        return false;
       } finally {
         this.walletStore.clearDepositClaimInFlight(deposit.txId);
       }

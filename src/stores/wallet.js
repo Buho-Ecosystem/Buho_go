@@ -15,6 +15,7 @@ import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKe
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
+import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
 import {
   buildPaymentError,
   getUnsupportedBolt12OfferCopy,
@@ -36,6 +37,13 @@ const STORAGE_KEYS = {
   LEGACY_STATE: 'buhoGO_wallet_state',
   DEVICE_KEY: 'buhoGO_device_key',
 };
+
+// Durable double-claim guard for L1 deposits. Module-level rather than
+// Pinia state: membership answers point-in-time questions and must
+// survive restarts, not drive reactivity.
+const claimedDepositRegistry = createClaimedDepositRegistry({
+  storage: typeof localStorage !== 'undefined' ? localStorage : null,
+});
 
 /**
  * Thin adapter exposing the device-key crypto under the historical
@@ -642,6 +650,22 @@ export const useWalletStore = defineStore('wallet', {
      */
     isDepositClaimInFlight(txId) {
       return !!this.inFlightDepositClaims[txId];
+    },
+
+    /**
+     * Durably record that this deposit txId has been claimed (instant or
+     * 3-conf). Unlike the in-flight marker above, this survives restarts:
+     * an instantly-claimed deposit keeps appearing in the SDK's pending
+     * list until its confirmations catch up, and without this record the
+     * confirmed handler would submit the same UTXO a second time.
+     */
+    markDepositClaimed(txId) {
+      claimedDepositRegistry.add(txId);
+    },
+
+    /** Has this deposit txId already been claimed by this device? */
+    isDepositClaimed(txId) {
+      return claimedDepositRegistry.has(txId);
     },
 
     /**
