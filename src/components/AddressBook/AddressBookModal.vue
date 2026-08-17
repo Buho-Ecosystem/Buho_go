@@ -140,7 +140,8 @@
               <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
                 <template v-if="addressShowsError">
                   <Icon icon="tabler:alert-circle" width="13" height="13" />
-                  <span>{{ $t("We don't recognize this as a Lightning, Spark, Bitcoin, or LNURL address") }}</span>
+                  <span v-if="addressIsSparkRequest">{{ $t('This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.') }}</span>
+                  <span v-else>{{ $t("We don't recognize this as a Lightning, Spark, Bitcoin, or LNURL address") }}</span>
                 </template>
                 <template v-else>
                   <span>{{ $t('Works with a Lightning, Spark, or Bitcoin address, or an LNURL link') }}</span>
@@ -206,6 +207,7 @@ import {
   isLnurl,
   isArkadeAddress,
 } from '../../utils/addressUtils.js'
+import { isSparkPaymentRequest } from '../../utils/sparkPayment.js'
 import AddContactSearch from './AddContactSearch.vue'
 import AddContactScan from './AddContactScan.vue'
 import ArkadeLogo from '../ArkadeLogo.vue'
@@ -216,7 +218,9 @@ function detectType(address) {
   if (!address || typeof address !== 'string') return null
   const v = address.trim()
   if (!v) return null
-  if (isSparkAddress(v)) return 'spark'
+  // A Spark invoice shares the spark1… prefix but is single-use — it must
+  // never become a contact. The helper text below names it specifically.
+  if (isSparkAddress(v)) return isSparkPaymentRequest(v) ? null : 'spark'
   if (isArkadeAddress(v)) return 'arkade'
   if (isBitcoinAddress(v)) return 'bitcoin'
   // LNURL static pay links — recognized as their own type for routing, but
@@ -333,6 +337,10 @@ export default {
 
     addressShowsError() {
       return this.formData.address.trim().length > 0 && !this.detectedType
+    },
+    addressIsSparkRequest() {
+      const v = this.formData.address.trim()
+      return v.length > 0 && isSparkPaymentRequest(v)
     },
 
     isFormValid() {

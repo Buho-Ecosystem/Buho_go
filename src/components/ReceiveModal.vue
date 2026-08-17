@@ -5,7 +5,7 @@
     transition-show="slide-up"
     transition-hide="slide-down"
     class="receive-modal"
-    @before-hide="stopPaymentMonitor"
+    @before-hide="stopPaymentMonitor(); stopSparkInvoicePoll();"
   >
     <q-card class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <!-- Header -->
@@ -102,14 +102,14 @@
           </div>
 
           <!-- Action Buttons -->
-          <div class="action-buttons">
+          <div class="action-buttons action-buttons-three">
             <button
               class="action-btn"
               :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
               @click="copySparkAddress"
             >
               <Icon icon="tabler:copy" width="18" height="18" />
-              <span>{{ $t('Copy Request') }}</span>
+              <span>{{ $t('Copy') }}</span>
             </button>
             <button
               class="action-btn"
@@ -117,13 +117,94 @@
               @click="shareSparkAddress"
             >
               <Icon icon="tabler:share" width="18" height="18" />
-              <span>{{ $t('Share Invoice') }}</span>
+              <span>{{ $t('Share') }}</span>
+            </button>
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="tapAmountButton"
+            >
+              <Icon icon="tabler:edit" width="18" height="18" />
+              <span>{{ $t('Amount') }}</span>
             </button>
           </div>
 
           <!-- User Hint -->
           <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             {{ $t('Share this address to receive zero-fee payments from other Spark wallets.') }}
+          </div>
+        </div>
+
+        <!-- Spark Payment Request View: a created amount request waiting to
+             be paid. Mirrors the specific-amount Lightning invoice view. -->
+        <div v-else-if="showSparkInvoiceView" class="spark-address-view">
+          <div class="ln-amount-section">
+            <span class="ln-amount" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
+              <template v-if="sparkInvoice.amountSats > 0">
+                {{ formatInvoiceAmount(sparkInvoice.amountSats) }}
+              </template>
+              <template v-else>{{ $t('Any amount') }}</template>
+            </span>
+            <span
+              v-if="sparkInvoice.amountSats > 0"
+              class="ln-fiat"
+              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+            >
+              {{ formatInvoiceFiat(sparkInvoice.amountSats) }}
+            </span>
+            <span
+              v-if="sparkInvoice.memo"
+              class="ln-memo"
+              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+            >
+              {{ sparkInvoice.memo }}
+            </span>
+          </div>
+
+          <div class="qr-section">
+            <div class="qr-card" @click="copySparkInvoice">
+              <div class="qr-frame">
+                <vue-qrcode
+                  ref="sparkInvoiceQr"
+                  :value="sparkInvoice.invoice"
+                  :options="sparkQrOptions"
+                  class="qr-code"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div
+            class="address-pill"
+            :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
+            @click="copySparkInvoice"
+          >
+            <img :src="sparkPillIcon" class="pill-icon-img" />
+            <span class="pill-address">{{ truncateSparkAddress(sparkInvoice.invoice) }}</span>
+            <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
+          </div>
+
+          <div class="action-buttons">
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="copySparkInvoice"
+            >
+              <Icon icon="tabler:copy" width="18" height="18" />
+              <span>{{ $t('Copy') }}</span>
+            </button>
+            <button
+              class="action-btn"
+              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
+              @click="shareSparkInvoice"
+            >
+              <Icon icon="tabler:share" width="18" height="18" />
+              <span>{{ $t('Share') }}</span>
+            </button>
+          </div>
+
+          <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Valid for 1 hour. The payment arrives instantly once it is paid from another Spark wallet.') }}
           </div>
         </div>
 
@@ -612,6 +693,10 @@ export default {
       isMintingDefaultZero: false,
       arkadeBoardingAddress: '', // on-chain boarding address (Arkade bitcoin tab)
       receiveMode: 'lightning', // 'lightning', 'spark', 'arkade', or 'bitcoin'
+      // A created Spark payment request waiting to be paid:
+      // { invoice, amountSats, memo, expiresAt } — null when none.
+      sparkInvoice: null,
+      sparkInvoicePollTimer: null,
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
@@ -746,7 +831,18 @@ export default {
       return this.walletStore.activeArkadeAddress;
     },
     showSparkAddressView() {
-      return this.isSparkWallet && this.receiveMode === 'spark' && !this.generatedInvoice;
+      return this.isSparkWallet
+        && this.receiveMode === 'spark'
+        && !this.generatedInvoice
+        && !this.sparkInvoice
+        && !this.showAmountInput;
+    },
+    // A user-created Spark payment request (amount + optional memo). Lives
+    // in its own state, not `generatedInvoice`, because that field is
+    // BOLT11-shaped (payment_hash, lightning: URI) and drives the Lightning
+    // monitor wiring.
+    showSparkInvoiceView() {
+      return this.isSparkWallet && this.receiveMode === 'spark' && !!this.sparkInvoice;
     },
     showArkadeAddressView() {
       return this.isArkadeWallet && this.receiveMode === 'arkade' && !this.generatedInvoice;
@@ -794,7 +890,7 @@ export default {
         ));
     },
     headerTitle() {
-      if (this.showSpecificInvoiceView || this.showAmountKeypadView) {
+      if (this.showSpecificInvoiceView || this.showAmountKeypadView || this.showSparkInvoiceView) {
         return this.$t('Invoice');
       }
       return this.$t('Receive');
@@ -806,6 +902,7 @@ export default {
     showAmountKeypadView() {
       if (this.showDefaultZeroLoading) return false;
       return !this.showSparkAddressView
+        && !this.showSparkInvoiceView
         && !this.showArkadeAddressView
         && !this.showArkadeBoardingView
         && !this.showBitcoinReceiveView
@@ -945,6 +1042,7 @@ export default {
         });
       } else {
         this.stopPaymentMonitor();
+        this.stopSparkInvoicePoll();
       }
     },
     // Spark wallets have a tab toggle. Mint when entering Lightning, tear
@@ -984,6 +1082,7 @@ export default {
   beforeUnmount() {
     // Cleanup on component destroy
     this.stopPaymentMonitor();
+    this.stopSparkInvoicePoll();
     window.removeEventListener('resize', this.handleResize);
   },
   methods: {
@@ -1004,6 +1103,8 @@ export default {
 
     resetForm() {
       this.stopPaymentMonitor();
+      this.stopSparkInvoicePoll();
+      this.sparkInvoice = null;
       this.keypadValue = '';
       this.isFiatMode = false;
       this.showDescriptionSheet = false;
@@ -1025,6 +1126,7 @@ export default {
 
     closeModal() {
       this.stopPaymentMonitor();
+      this.stopSparkInvoicePoll();
       this.show = false;
     },
 
@@ -1039,8 +1141,14 @@ export default {
         this.backFromInvoice();
         return;
       }
+      if (this.showSparkInvoiceView) {
+        this.backFromSparkInvoice();
+        return;
+      }
       const canReturnToDefault = this.hasLightningAddress
-        || (this.isSparkWallet && this.receiveMode === 'lightning');
+        || (this.isSparkWallet && this.receiveMode === 'lightning')
+        // Spark tab keypad returns to the Spark address view.
+        || (this.isSparkWallet && this.receiveMode === 'spark');
       if (this.showAmountInput && canReturnToDefault) {
         this.showAmountInput = false;
         this.keypadValue = '';
@@ -1756,6 +1864,11 @@ export default {
         return;
       }
 
+      // Spark tab: the keypad mints a Spark payment request, not a BOLT11.
+      if (this.walletStore.activeWalletType === 'spark' && this.receiveMode === 'spark') {
+        return this.createSparkAmountRequest();
+      }
+
       this.isCreatingInvoice = true;
       try {
         // LUD-09 note: `successAction` does not apply to a plain BOLT11 invoice.
@@ -2012,6 +2125,179 @@ export default {
       } else if (result.reason === 'error') {
         console.error('Failed to share Spark address:', result.error);
         await this.copySparkAddress();
+      }
+      // 'cancelled' → user closed the dialog, no action needed.
+    },
+
+    /**
+     * Mint a Spark payment request from the keypad amount + description.
+     * The Spark-tab sibling of the BOLT11 path in createInvoice: same
+     * entry (keypad + Create button), but the artifact is a spark1…
+     * invoice paid wallet-to-wallet with zero fees.
+     */
+    async createSparkAmountRequest() {
+      this.isCreatingInvoice = true;
+      try {
+        const provider = this.walletStore.getActiveProvider();
+        if (!provider) {
+          throw new Error('Spark wallet not unlocked. Please enter your PIN.');
+        }
+        const created = await provider.createSparkInvoice({
+          amountSats: this.amountInSats,
+          memo: this.description || '',
+        });
+
+        this.sparkInvoice = created;
+        this.showAmountInput = false;
+        this.keypadValue = '';
+        this.startSparkInvoicePoll();
+      } catch (error) {
+        console.error('Failed to create Spark payment request:', error);
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Failed to create invoice'),
+          caption: error?.message || '',
+        });
+      } finally {
+        this.isCreatingInvoice = false;
+      }
+    },
+
+    /**
+     * Watch a created Spark payment request until it is paid. Polling
+     * mirrors the cadence of the existing invoice monitor; FINALIZED is
+     * the only success state (paid AND matching what we issued — the
+     * mismatch statuses stay pending on purpose, per the proto docs).
+     */
+    startSparkInvoicePoll() {
+      this.stopSparkInvoicePoll();
+      this.sparkInvoicePollTimer = setInterval(async () => {
+        if (!this.sparkInvoice) {
+          this.stopSparkInvoicePoll();
+          return;
+        }
+
+        // Local expiry beats a network round trip.
+        const expiresAt = Date.parse(this.sparkInvoice.expiresAt || '');
+        if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+          this.stopSparkInvoicePoll();
+          this.$q.notify({
+            type: 'warning',
+            message: this.$t('Invoice expired'),
+            caption: this.$t('Please create a new invoice'),
+            timeout: 4000,
+          });
+          this.backFromSparkInvoice();
+          return;
+        }
+
+        try {
+          const provider = this.walletStore.getActiveProvider();
+          if (!provider?.querySparkInvoiceStatus) return;
+          const status = await provider.querySparkInvoiceStatus(this.sparkInvoice.invoice);
+
+          if (status === 'FINALIZED') {
+            // Idempotency guard — mirrors handlePaymentStatus(CONFIRMED).
+            if (this.isPaymentConfirmed) return;
+            this.isPaymentConfirmed = true;
+            this.stopSparkInvoicePoll();
+
+            const paidAmountSats = this.sparkInvoice.amountSats || 0;
+            this.sparkInvoice = null;
+
+            if (paidAmountSats > 0) {
+              this.confirmedAmount = paidAmountSats;
+              this.confirmedFiatAmount = this.formatInvoiceFiat(paidAmountSats);
+              this.show = false;
+              this.$nextTick(() => {
+                this.showPaymentConfirmation = true;
+              });
+            } else {
+              // A free-amount request: the status response doesn't carry
+              // what was paid, so a "+0" confirmation screen would lie.
+              // Toast the arrival and let the balance refresh tell the
+              // number.
+              this.$q.notify({
+                type: 'positive',
+                message: this.$t('Payment received!'),
+                timeout: 4000,
+              });
+              this.show = false;
+            }
+
+            if (this.walletStore.activeWalletId) {
+              this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+            }
+          } else if (status === 'RETURNED') {
+            this.stopSparkInvoicePoll();
+            this.$q.notify({
+              type: 'warning',
+              message: this.$t('The payment was returned'),
+              timeout: 4000,
+            });
+          }
+          // NOT_FOUND / PENDING / mismatches: keep waiting.
+        } catch (err) {
+          // Transient failures must not kill the watch; the next tick retries.
+          console.warn('Spark invoice status check failed:', err?.message);
+        }
+      }, 5000);
+    },
+
+    stopSparkInvoicePoll() {
+      if (this.sparkInvoicePollTimer) {
+        clearInterval(this.sparkInvoicePollTimer);
+        this.sparkInvoicePollTimer = null;
+      }
+    },
+
+    /** Back from the Spark payment request view to the Spark address view. */
+    backFromSparkInvoice() {
+      this.stopSparkInvoicePoll();
+      this.sparkInvoice = null;
+      this.keypadValue = '';
+      this.description = '';
+    },
+
+    async copySparkInvoice() {
+      if (!this.sparkInvoice?.invoice) return;
+
+      try {
+        await navigator.clipboard.writeText(this.sparkInvoice.invoice);
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Invoice copied'),
+        });
+      } catch (error) {
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('Couldn\'t copy'),
+        });
+      }
+    },
+
+    async shareSparkInvoice() {
+      if (!this.sparkInvoice?.invoice) return;
+
+      const qrBlob = await qrBlobFromRef(this.$refs.sparkInvoiceQr, { label: this.sparkInvoice.invoice });
+      const result = await shareContent({
+        title: this.$t('Payment request'),
+        // Pure invoice string so recipients can copy-paste cleanly. The
+        // BuhoGO wordmark is baked into the QR image by qrShare.
+        text: this.sparkInvoice.invoice,
+        files: qrBlob ? [{ blob: qrBlob, name: 'payment-request.png', mimeType: 'image/png' }] : undefined,
+      });
+
+      if (result.success) {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Shared'),
+        });
+      } else if (result.reason === 'unsupported' || result.reason === 'error') {
+        if (result.reason === 'error') {
+          console.error('Failed to share payment request:', result.error);
+        }
+        await this.copySparkInvoice();
       }
       // 'cancelled' → user closed the dialog, no action needed.
     },

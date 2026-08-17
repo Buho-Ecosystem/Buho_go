@@ -33,6 +33,7 @@ import { Invoice } from '@getalby/lightning-tools';
 import { parseSuccessAction } from '../utils/successAction.js';
 import { validateVerifyUrl } from '../utils/lnurlVerify.js';
 import { lnurlGetJson } from '../utils/lnurlHttp.js';
+import { normalizeSparkInvoiceStatus } from '../utils/sparkPayment.js';
 import { buildLnurlPayCallbackUrl } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
@@ -369,7 +370,7 @@ export class SparkWalletProvider extends WalletProvider {
     } finally {
       if (wallet) {
         try {
-          wallet.cleanupConnections();
+          wallet.cleanup();
         } catch (err) {
           console.warn('probeAccountActivity: cleanup failed', err);
         }
@@ -413,10 +414,10 @@ export class SparkWalletProvider extends WalletProvider {
   async disconnect() {
     if (this.wallet) {
       try {
-        // Await the teardown — cleanupConnections() is async (aborts the event
+        // Await the teardown — cleanup() is async (aborts the event
         // stream, closes gRPC connections, flushes logging). Not awaiting it
         // let a follow-up reconnect race a half-finished cleanup.
-        await this.wallet.cleanupConnections();
+        await this.wallet.cleanup();
       } catch (error) {
         console.warn('Error cleaning up Spark connections:', error);
       }
@@ -458,6 +459,32 @@ export class SparkWalletProvider extends WalletProvider {
 
       return {
         balance: Number(available), // Convert from bigint to number
+        pending: Number(result?.satsBalance?.incoming ?? 0n),
+        tokenBalances: result?.tokenBalances || []
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Balance from the SDK's in-memory cache — no network round trip. The
+   * cache is kept current by the wallet's event stream, but it starts
+   * empty on a fresh connection, so callers that need a number before the
+   * first sync must bring their own fallback. Shape-compatible with
+   * getBalance(); display use only — spend/max logic must keep reading
+   * getBalance().
+   */
+  async getCachedBalance() {
+    this._ensureConnected();
+
+    try {
+      const result = await this.wallet.getCachedBalance();
+      const available = result?.satsBalance?.available ?? result?.balance ?? 0n;
+
+      return {
+        balance: Number(available),
         pending: Number(result?.satsBalance?.incoming ?? 0n),
         tokenBalances: result?.tokenBalances || []
       };
@@ -1234,6 +1261,111 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Create a Spark invoice — a signed spark1… payment request for sats.
+   * Wraps createSatsInvoice; the 1h default expiry keeps requests
+   * short-lived like our BOLT11 invoices instead of the SDK's 30-day
+   * default.
+   *
+   * @param {object} [params]
+   * @param {number|null} [params.amountSats]  Omit/null for a free-amount request.
+   * @param {string} [params.memo]
+   * @param {number} [params.expirySeconds]
+   * @returns {Promise<{ invoice: string, amountSats: number|null, memo: string, expiresAt: string }>}
+   */
+  async createSparkInvoice({ amountSats = null, memo = '', expirySeconds = 3600 } = {}) {
+    this._ensureConnected();
+
+    try {
+      const expiresAt = new Date(Date.now() + expirySeconds * 1000);
+      const invoice = await this.wallet.createSatsInvoice({
+        amount: amountSats > 0 ? amountSats : undefined,
+        memo: memo || undefined,
+        expiryTime: expiresAt,
+      });
+
+      return {
+        invoice,
+        amountSats: amountSats > 0 ? amountSats : null,
+        memo: memo || '',
+        expiresAt: expiresAt.toISOString(),
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fulfill (pay) a Spark invoice. transfer() rejects invoice strings by
+   * design, so this is the only correct pay path for them.
+   *
+   * @param {string} invoice  The spark1… invoice string.
+   * @param {object} [opts]
+   * @param {number|null} [opts.amountSats]  Amount for invoices that carry
+   *   none. When the invoice encodes its own amount, that amount wins
+   *   SDK-side, so callers should only pass this for free-amount invoices.
+   * @returns {Promise<{ id: string|null, status: string }>}
+   */
+  async fulfillSparkInvoice(invoice, { amountSats = null } = {}) {
+    this._ensureConnected();
+
+    try {
+      const entry = { invoice };
+      if (amountSats != null && amountSats > 0) {
+        entry.amount = BigInt(Math.round(amountSats));
+      }
+      const res = await this.wallet.fulfillSparkInvoice([entry]);
+
+      // The batch API reports per-invoice outcomes instead of throwing;
+      // we submit exactly one, so exactly one bucket should hold it.
+      const invalid = res?.invalidInvoices?.[0];
+      if (invalid) {
+        throw new Error(
+          typeof invalid.error === 'string' ? invalid.error : 'Invalid Spark invoice'
+        );
+      }
+      const failure = res?.satsTransactionErrors?.[0];
+      if (failure) {
+        throw failure.error instanceof Error
+          ? failure.error
+          : new Error(String(failure.error || 'Spark invoice payment failed'));
+      }
+      const success = res?.satsTransactionSuccess?.[0];
+      if (!success) {
+        throw new Error('Spark invoice payment did not complete');
+      }
+
+      return {
+        id: success.transferResponse?.id || null,
+        status: success.transferResponse?.status || 'completed',
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Current status of a Spark invoice this wallet issued, normalized to
+   * the SPARK_INVOICE_STATUS names (FINALIZED means paid and matching).
+   * @param {string} invoice
+   * @returns {Promise<string>}
+   */
+  async querySparkInvoiceStatus(invoice) {
+    this._ensureConnected();
+
+    try {
+      const res = await this.wallet.querySparkInvoices([invoice]);
+      const row = res?.invoiceStatuses?.find((r) => r.invoice === invoice)
+        || res?.invoiceStatuses?.[0];
+      return normalizeSparkInvoiceStatus(row?.status);
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
    * Pay a Lightning address from Spark wallet
    * Fetches invoice from LNURL and pays it
    * @param {string} lightningAddress - Lightning address (user@domain.com)
@@ -1606,6 +1738,107 @@ export class SparkWalletProvider extends WalletProvider {
     } catch (error) {
       console.warn('Could not refresh claim quote, using prior:', error?.message || error);
       return previousClassification;
+    }
+  }
+
+  /**
+   * Classify a brand-new UNCONFIRMED deposit for the instant (0-conf)
+   * claim path — the sibling of classifyConfirmedDeposit for the other
+   * side of the confirmation threshold.
+   *
+   * Asks the SSP for an instant quote and looks for a fulfillment plan
+   * requiring zero confirmations. The deduction between deposit and
+   * credit is Spark's fee for absorbing confirmation risk, surfaced so
+   * the orchestrator can disclose it; the auto-claim fee caps in
+   * bitcoinPreferences deliberately do not apply here (the instant path
+   * is always taken when offered — see #227).
+   *
+   * Categories:
+   *   - instant          → a 0-conf plan exists: { quote, plan, creditSats, feeSats }
+   *   - no_instant_plan  → SSP offered no 0-conf plan; the 3-conf flow stays
+   *   - quote_failed     → quote fetch threw; the 3-conf flow stays
+   */
+  async classifyUnconfirmedDeposit(deposit) {
+    if (!deposit?.txId || deposit.confirmed) {
+      throw new Error('classifyUnconfirmedDeposit requires an unconfirmed deposit');
+    }
+
+    let quoteOutput;
+    try {
+      quoteOutput = await this.wallet.getInstantStaticDepositQuote(
+        deposit.txId,
+        deposit.outputIndex || 0
+      );
+    } catch (error) {
+      return { category: 'quote_failed', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now(), error };
+    }
+
+    const plan = (quoteOutput?.fulfillmentPlans || [])
+      .find((p) => Number(p?.confirmations) === 0) || null;
+
+    if (!quoteOutput?.quote || !plan) {
+      return { category: 'no_instant_plan', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now() };
+    }
+
+    const depositSats = SparkWalletProvider._currencyAmountToSats(quoteOutput.quote.depositAmount)
+      ?? Number(deposit.amount || 0);
+    const creditSats = SparkWalletProvider._currencyAmountToSats(plan.amount)
+      ?? SparkWalletProvider._currencyAmountToSats(quoteOutput.quote.creditAmount)
+      ?? 0;
+
+    return {
+      category: 'instant',
+      quote: quoteOutput.quote,
+      plan,
+      creditSats,
+      feeSats: Math.max(0, depositSats - creditSats),
+      classifiedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Claim a deposit through the instant path using the quote + plan from
+   * classifyUnconfirmedDeposit. The SDK signs and routes 0-conf vs 1-conf
+   * from the plan's confirmation requirement itself.
+   *
+   * @returns {Promise<{success: true, claimId: string|null}>}
+   */
+  async claimInstantDeposit(txId, quote, plan, outputIndex = 0) {
+    this._ensureConnected();
+
+    this.setSyncing(true, 'claiming_deposit');
+    try {
+      const result = await this.wallet.claimInstantStaticDeposit({
+        quote,
+        plan,
+        transactionId: txId,
+        outputIndex,
+      });
+      // The typings promise a {claimId}; a nullish resolve would mean the
+      // claim was NOT accepted, and callers mark the txid durably claimed
+      // on our success — so treat it as a failure, never a silent pass.
+      if (!result) {
+        throw new Error('Instant claim was not accepted');
+      }
+      return { success: true, claimId: result.claimId || null };
+    } finally {
+      this.setSyncing(false);
+    }
+  }
+
+  /**
+   * GraphQL CurrencyAmount → sats. The SSP declares the unit alongside
+   * the value; anything unrecognized returns null so callers fall back
+   * to a source they trust instead of mixing units.
+   */
+  static _currencyAmountToSats(amount) {
+    const value = Number(amount?.originalValue);
+    if (!Number.isFinite(value)) return null;
+    switch (amount?.originalUnit) {
+      case 'SATOSHI': return Math.round(value);
+      case 'MILLISATOSHI': return Math.floor(value / 1000);
+      case 'BITCOIN': return Math.round(value * 100_000_000);
+      default: return null;
     }
   }
 
