@@ -848,6 +848,11 @@ import {classifyTransportFailure} from '../utils/userErrors.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
+import {
+  decodeSparkDestination,
+  sparkInvoiceProblem,
+  identityPublicKeyFromSparkAddress,
+} from '../utils/sparkPayment.js';
 import {zapInfoFromTx} from '../utils/zaps.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
@@ -1429,10 +1434,11 @@ export default {
       // LNURL-withdraw has its own amount handling
       if (this.pendingPayment.type === 'lnurl_withdraw') return false;
 
-      // Spark / Arkade addresses always need amount input (no embedded amount)
+      // Spark / Arkade addresses need amount input — except a Spark invoice
+      // that carries its own amount, which locks the sheet.
       if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress ||
           this.pendingPayment.type === 'arkade_address' || this.pendingPayment.arkadeAddress) {
-        return true;
+        return !(this.pendingPayment.fixedAmountSats > 0);
       }
 
       // Bitcoin on-chain (Arkade offboard via the send sheet): a bare bc1
@@ -2343,6 +2349,27 @@ export default {
           route: dialogOpts.route || 'Payment dispatch',
           t: this.$t.bind(this),
         });
+      }
+    },
+
+    /**
+     * User-facing copy for a Spark invoice that cannot be paid. Shared by
+     * the resolve-time check (before the sheet opens) and the pay-time
+     * re-check (the sheet may have outlived the expiry, and sender pinning
+     * is only final against the connected wallet).
+     */
+    sparkInvoiceProblemMessage(problem) {
+      switch (problem) {
+        case 'expired':
+          return this.$t('This payment request has expired. Ask for a new one.');
+        case 'token_invoice':
+          return this.$t('This payment request is for a token, which BuhoGO does not support.');
+        case 'sender_mismatch':
+          return this.$t('This payment request is reserved for a different wallet.');
+        case 'sender_unknown':
+          return this.$t('Unlock your Spark wallet first, then try this payment request again.');
+        default:
+          return this.$t('This payment code cannot be read.');
       }
     },
 
@@ -4820,11 +4847,59 @@ export default {
             }
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
-          // Spark address payment
-          this.pendingPayment = {
-            ...paymentData,
-            sparkAddress: paymentData.data
-          };
+          // A spark-prefixed string is either a durable address or a signed
+          // one-time invoice; the prefix cannot tell them apart. Decode to
+          // route correctly — transfer() rejects invoice strings by design.
+          let dest;
+          try {
+            dest = decodeSparkDestination(paymentData.data);
+          } catch (decodeErr) {
+            console.warn('Spark destination decode failed:', decodeErr?.message);
+            resolved = false;
+            this.failSendResolution(this.$t('This payment code cannot be read.'), fromField);
+            return;
+          }
+
+          if (dest.kind === 'address') {
+            this.pendingPayment = {
+              ...paymentData,
+              sparkAddress: paymentData.data
+            };
+          } else {
+            // Refuse what can never be paid before the sheet opens. Sender
+            // pinning is only decided here when we know our own identity
+            // key; otherwise the check runs again at pay time against the
+            // connected wallet.
+            const ownAddress = this.walletStore.activeSparkAddress;
+            const problem = sparkInvoiceProblem(dest, {
+              ownIdentityPublicKey: ownAddress
+                ? identityPublicKeyFromSparkAddress(ownAddress)
+                : null,
+            });
+            if (problem && !(problem === 'sender_unknown' && !ownAddress)) {
+              resolved = false;
+              this.failSendResolution(this.sparkInvoiceProblemMessage(problem), fromField);
+              return;
+            }
+
+            if (dest.amountSats > 0 && dest.amountSats > this.walletState.balance) {
+              resolved = false;
+              this.failSendResolution(this.$t('Insufficient balance'), fromField);
+              return;
+            }
+
+            this.pendingPayment = {
+              ...paymentData,
+              // The durable receiver identity — what contacts, transaction
+              // linking, and the confirm sheet's recipient lookup use. The
+              // single-use invoice string never leaks into any of them.
+              sparkAddress: dest.receiverAddress,
+              sparkInvoice: dest.invoice,
+              sparkInvoiceExpiresAt: dest.expiresAt,
+              fixedAmountSats: dest.amountSats || 0,
+              description: dest.memo || paymentData.description || '',
+            };
+          }
         } else if (paymentData.type === 'arkade_address' && paymentData.data) {
           // Arkade address payment (instant ark1 → ark1, near-zero fee)
           this.pendingPayment = {
@@ -5371,6 +5446,29 @@ export default {
     async sendSparkPayment(amount, comment, payout = null) {
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected();
+
+      // Spark invoice — must go through fulfill; transfer() rejects invoice
+      // strings. Checked before the plain-address branch because invoice
+      // payments also carry the decoded receiver in `sparkAddress`.
+      if (this.pendingPayment.sparkInvoice) {
+        const invoice = this.pendingPayment.sparkInvoice;
+        // Re-evaluate refusal conditions at pay time: the sheet may have
+        // been open past the expiry, and sender pinning could only be
+        // finally decided now that the wallet is connected.
+        const dest = decodeSparkDestination(invoice);
+        const ownAddress = await provider.getSparkAddress();
+        const problem = sparkInvoiceProblem(dest, {
+          ownIdentityPublicKey: identityPublicKeyFromSparkAddress(ownAddress),
+        });
+        if (problem) {
+          throw new Error(this.sparkInvoiceProblemMessage(problem));
+        }
+        return await provider.fulfillSparkInvoice(invoice, {
+          // An encoded amount wins SDK-side; only free-amount invoices take
+          // the amount from the sheet.
+          amountSats: dest.amountSats > 0 ? null : amount,
+        });
+      }
 
       // Spark address transfer (zero-fee)
       if (this.pendingPayment.sparkAddress) {

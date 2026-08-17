@@ -2991,4 +2991,16 @@ export default {
   "Add one so people can find you more easily.": "Añade uno para que puedan encontrarte más fácilmente.",
   "Your public profile will update once BuhoGO can reach the network.": "Tu perfil público se actualizará cuando BuhoGO pueda conectarse a la red.",
   "{name} is now on your profile": "{name} aparece ahora en tu perfil",
+  // ─── Solicitudes de pago Spark ───
+  "Any amount": "Cualquier cantidad",
+  "Payment request": "Solicitud de pago",
+  "Failed to create invoice": "No se pudo crear la factura",
+  "The payment was returned": "El pago fue devuelto",
+  "Valid for 1 hour. The payment arrives instantly once it is paid from another Spark wallet.": "Válida durante 1 hora. El pago llega al instante en cuanto se paga desde otro wallet Spark.",
+  "This payment code cannot be read.": "Este código de pago no se puede leer.",
+  "This payment request has expired. Ask for a new one.": "Esta solicitud de pago ha expirado. Pide una nueva.",
+  "This payment request is for a token, which BuhoGO does not support.": "Esta solicitud de pago es de un token, y BuhoGO no lo admite.",
+  "This payment request is reserved for a different wallet.": "Esta solicitud de pago está reservada para otro wallet.",
+  "Unlock your Spark wallet first, then try this payment request again.": "Desbloquea primero tu wallet Spark y vuelve a intentar esta solicitud de pago.",
+  "This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.": "Es una solicitud de pago de un solo uso, no una dirección permanente. Págala y guarda el contacto desde la pantalla de pago.",
 }
