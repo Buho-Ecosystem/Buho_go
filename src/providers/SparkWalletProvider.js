@@ -1682,7 +1682,13 @@ export class SparkWalletProvider extends WalletProvider {
         transactionId: txId,
         outputIndex,
       });
-      return { success: true, claimId: result?.claimId || null };
+      // The typings promise a {claimId}; a nullish resolve would mean the
+      // claim was NOT accepted, and callers mark the txid durably claimed
+      // on our success — so treat it as a failure, never a silent pass.
+      if (!result) {
+        throw new Error('Instant claim was not accepted');
+      }
+      return { success: true, claimId: result.claimId || null };
     } finally {
       this.setSyncing(false);
     }
