@@ -2202,14 +2202,28 @@ export default {
             this.isPaymentConfirmed = true;
             this.stopSparkInvoicePoll();
 
-            this.confirmedAmount = this.sparkInvoice.amountSats || 0;
-            this.confirmedFiatAmount = this.formatInvoiceFiat(this.confirmedAmount);
+            const paidAmountSats = this.sparkInvoice.amountSats || 0;
             this.sparkInvoice = null;
 
-            this.show = false;
-            this.$nextTick(() => {
-              this.showPaymentConfirmation = true;
-            });
+            if (paidAmountSats > 0) {
+              this.confirmedAmount = paidAmountSats;
+              this.confirmedFiatAmount = this.formatInvoiceFiat(paidAmountSats);
+              this.show = false;
+              this.$nextTick(() => {
+                this.showPaymentConfirmation = true;
+              });
+            } else {
+              // A free-amount request: the status response doesn't carry
+              // what was paid, so a "+0" confirmation screen would lie.
+              // Toast the arrival and let the balance refresh tell the
+              // number.
+              this.$q.notify({
+                type: 'positive',
+                message: this.$t('Payment received!'),
+                timeout: 4000,
+              });
+              this.show = false;
+            }
 
             if (this.walletStore.activeWalletId) {
               this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
