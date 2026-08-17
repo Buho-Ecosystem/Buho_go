@@ -55,9 +55,11 @@ export async function qrBlobFromRef(ref, { label = '' } = {}) {
 
   const brandMark = await loadBrandMark();
   const branded = renderShareCard(source, { label, brandMark });
-  if (!branded) return null;
 
-  return canvasToPngBlob(branded);
+  // A failed card render must not cost the recipient the image: fall
+  // back to the plain QR canvas, so the share degrades card → plain QR
+  // → (in the caller) text-only, never straight to text.
+  return canvasToPngBlob(branded || source);
 }
 
 function resolveCanvas(ref) {
