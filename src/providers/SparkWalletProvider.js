@@ -33,6 +33,7 @@ import { Invoice } from '@getalby/lightning-tools';
 import { parseSuccessAction } from '../utils/successAction.js';
 import { validateVerifyUrl } from '../utils/lnurlVerify.js';
 import { lnurlGetJson } from '../utils/lnurlHttp.js';
+import { normalizeSparkInvoiceStatus } from '../utils/sparkPayment.js';
 import { buildLnurlPayCallbackUrl } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
@@ -458,6 +459,32 @@ export class SparkWalletProvider extends WalletProvider {
 
       return {
         balance: Number(available), // Convert from bigint to number
+        pending: Number(result?.satsBalance?.incoming ?? 0n),
+        tokenBalances: result?.tokenBalances || []
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Balance from the SDK's in-memory cache — no network round trip. The
+   * cache is kept current by the wallet's event stream, but it starts
+   * empty on a fresh connection, so callers that need a number before the
+   * first sync must bring their own fallback. Shape-compatible with
+   * getBalance(); display use only — spend/max logic must keep reading
+   * getBalance().
+   */
+  async getCachedBalance() {
+    this._ensureConnected();
+
+    try {
+      const result = await this.wallet.getCachedBalance();
+      const available = result?.satsBalance?.available ?? result?.balance ?? 0n;
+
+      return {
+        balance: Number(available),
         pending: Number(result?.satsBalance?.incoming ?? 0n),
         tokenBalances: result?.tokenBalances || []
       };
@@ -1227,6 +1254,111 @@ export class SparkWalletProvider extends WalletProvider {
         id: transfer.id,
         status: transfer.status || 'completed'
       };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a Spark invoice — a signed spark1… payment request for sats.
+   * Wraps createSatsInvoice; the 1h default expiry keeps requests
+   * short-lived like our BOLT11 invoices instead of the SDK's 30-day
+   * default.
+   *
+   * @param {object} [params]
+   * @param {number|null} [params.amountSats]  Omit/null for a free-amount request.
+   * @param {string} [params.memo]
+   * @param {number} [params.expirySeconds]
+   * @returns {Promise<{ invoice: string, amountSats: number|null, memo: string, expiresAt: string }>}
+   */
+  async createSparkInvoice({ amountSats = null, memo = '', expirySeconds = 3600 } = {}) {
+    this._ensureConnected();
+
+    try {
+      const expiresAt = new Date(Date.now() + expirySeconds * 1000);
+      const invoice = await this.wallet.createSatsInvoice({
+        amount: amountSats > 0 ? amountSats : undefined,
+        memo: memo || undefined,
+        expiryTime: expiresAt,
+      });
+
+      return {
+        invoice,
+        amountSats: amountSats > 0 ? amountSats : null,
+        memo: memo || '',
+        expiresAt: expiresAt.toISOString(),
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fulfill (pay) a Spark invoice. transfer() rejects invoice strings by
+   * design, so this is the only correct pay path for them.
+   *
+   * @param {string} invoice  The spark1… invoice string.
+   * @param {object} [opts]
+   * @param {number|null} [opts.amountSats]  Amount for invoices that carry
+   *   none. When the invoice encodes its own amount, that amount wins
+   *   SDK-side, so callers should only pass this for free-amount invoices.
+   * @returns {Promise<{ id: string|null, status: string }>}
+   */
+  async fulfillSparkInvoice(invoice, { amountSats = null } = {}) {
+    this._ensureConnected();
+
+    try {
+      const entry = { invoice };
+      if (amountSats != null && amountSats > 0) {
+        entry.amount = BigInt(Math.round(amountSats));
+      }
+      const res = await this.wallet.fulfillSparkInvoice([entry]);
+
+      // The batch API reports per-invoice outcomes instead of throwing;
+      // we submit exactly one, so exactly one bucket should hold it.
+      const invalid = res?.invalidInvoices?.[0];
+      if (invalid) {
+        throw new Error(
+          typeof invalid.error === 'string' ? invalid.error : 'Invalid Spark invoice'
+        );
+      }
+      const failure = res?.satsTransactionErrors?.[0];
+      if (failure) {
+        throw failure.error instanceof Error
+          ? failure.error
+          : new Error(String(failure.error || 'Spark invoice payment failed'));
+      }
+      const success = res?.satsTransactionSuccess?.[0];
+      if (!success) {
+        throw new Error('Spark invoice payment did not complete');
+      }
+
+      return {
+        id: success.transferResponse?.id || null,
+        status: success.transferResponse?.status || 'completed',
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Current status of a Spark invoice this wallet issued, normalized to
+   * the SPARK_INVOICE_STATUS names (FINALIZED means paid and matching).
+   * @param {string} invoice
+   * @returns {Promise<string>}
+   */
+  async querySparkInvoiceStatus(invoice) {
+    this._ensureConnected();
+
+    try {
+      const res = await this.wallet.querySparkInvoices([invoice]);
+      const row = res?.invoiceStatuses?.find((r) => r.invoice === invoice)
+        || res?.invoiceStatuses?.[0];
+      return normalizeSparkInvoiceStatus(row?.status);
     } catch (error) {
       this.setError(error);
       throw error;

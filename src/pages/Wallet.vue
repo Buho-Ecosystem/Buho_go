@@ -230,7 +230,10 @@
                 :prefix="balancePrefix"
                 :suffix="balanceSuffix"
                 class="amount-number"
-                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :class="[
+                  $q.dark.isActive ? 'amount-number-dark' : 'amount-number-light',
+                  { 'amount-number--provisional': balanceProvisional },
+                ]"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -242,6 +245,7 @@
               <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
                 <span class="secondary-value">••••</span>
               </span>
+              <span v-else-if="balanceProvisional" class="loading-secondary">{{ $t('Updating') }}...</span>
               <span v-else-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
@@ -848,6 +852,12 @@ import {classifyTransportFailure} from '../utils/userErrors.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
+import {
+  decodeSparkDestination,
+  sparkInvoiceProblem,
+  identityPublicKeyFromSparkAddress,
+} from '../utils/sparkPayment.js';
+import {readPersistedWalletState} from '../utils/walletHydration.js';
 import {zapInfoFromTx} from '../utils/zaps.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
@@ -970,7 +980,7 @@ export default {
       isMigrating: false,
 
       walletState: {
-        balance: 312,
+        balance: 0,
         connectedWallets: [],
         activeWalletId: null,
         currency: 'sats',
@@ -988,6 +998,12 @@ export default {
       // computed properties.
       lastTransaction: null,
       isLoadingLastTransaction: true,
+
+      // True while the shown balance is the persisted cache from the last
+      // session, before the first authoritative fetch lands. Drives the
+      // dimmed amount + "Updating..." secondary line. Display only — no
+      // spend/max logic ever reads walletState.balance while provisional.
+      balanceProvisional: false,
 
       showReceiveModal: false,
       showSendModal: false,
@@ -1429,10 +1445,11 @@ export default {
       // LNURL-withdraw has its own amount handling
       if (this.pendingPayment.type === 'lnurl_withdraw') return false;
 
-      // Spark / Arkade addresses always need amount input (no embedded amount)
+      // Spark / Arkade addresses need amount input — except a Spark invoice
+      // that carries its own amount, which locks the sheet.
       if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress ||
           this.pendingPayment.type === 'arkade_address' || this.pendingPayment.arkadeAddress) {
-        return true;
+        return !(this.pendingPayment.fixedAmountSats > 0);
       }
 
       // Bitcoin on-chain (Arkade offboard via the send sheet): a bare bc1
@@ -2343,6 +2360,27 @@ export default {
           route: dialogOpts.route || 'Payment dispatch',
           t: this.$t.bind(this),
         });
+      }
+    },
+
+    /**
+     * User-facing copy for a Spark invoice that cannot be paid. Shared by
+     * the resolve-time check (before the sheet opens) and the pay-time
+     * re-check (the sheet may have outlived the expiry, and sender pinning
+     * is only final against the connected wallet).
+     */
+    sparkInvoiceProblemMessage(problem) {
+      switch (problem) {
+        case 'expired':
+          return this.$t('This payment request has expired. Ask for a new one.');
+        case 'token_invoice':
+          return this.$t('This payment request is for a token, which BuhoGO does not support.');
+        case 'sender_mismatch':
+          return this.$t('This payment request is reserved for a different wallet.');
+        case 'sender_unknown':
+          return this.$t('Unlock your Spark wallet first, then try this payment request again.');
+        default:
+          return this.$t('This payment code cannot be read.');
       }
     },
 
@@ -3350,6 +3388,11 @@ export default {
     },
     async initializeWallet() {
       try {
+        // A returning user has a cached balance from the last session —
+        // paint it immediately (marked provisional) instead of holding the
+        // whole screen on a skeleton until the wallet has connected.
+        this.seedBalanceFromCache();
+
         await this.loadWalletState();
 
         // Initialize wallet store
@@ -3429,9 +3472,27 @@ export default {
         } catch (error) {
           console.error('Failed to load wallet state:', error);
         }
-      } else {
-        this.walletState.balance = 312;
       }
+    },
+
+    /**
+     * Seed the balance display from the wallet store's persisted
+     * `metadata.cachedBalance` of the active wallet, written on every
+     * successful balance fetch. When a value exists the skeleton is
+     * skipped and the amount renders provisionally until the first live
+     * fetch replaces it. A fresh install has no snapshot and keeps
+     * today's skeleton behaviour.
+     */
+    seedBalanceFromCache() {
+      const saved = readPersistedWalletState();
+      const active = saved?.wallets?.find?.((w) => w?.id === saved?.activeWalletId);
+      const cached = active?.metadata?.cachedBalance;
+      if (typeof cached !== 'number' || !Number.isFinite(cached)) return false;
+
+      this.walletState.balance = cached;
+      this.balanceProvisional = true;
+      this.showLoadingScreen = false;
+      return true;
     },
 
     /**
@@ -3443,7 +3504,7 @@ export default {
      * own fetch — so the last-transaction refresh lives in `finally` to
      * guarantee it runs for every wallet type, even when a branch throws.
      */
-    async updateWalletBalance() {
+    async updateWalletBalance(opts = {}) {
       try {
         if (this.showLoadingScreen) {
           // still initializing
@@ -3452,16 +3513,33 @@ export default {
         const awStore = useAutoWithdrawStore();
         const activeWalletId = this.walletStore.activeWalletId;
 
+        // The cached read is display-only by hard rule: it must never feed
+        // auto-withdraw (a money decision), so a wallet with auto-withdraw
+        // enabled keeps authoritative fetches even on the periodic tick.
+        const preferCached = Boolean(opts.preferCached)
+          && !awStore.getConfig(activeWalletId)?.enabled;
+
         // Check if active wallet is Spark
         if (this.walletStore.isActiveWalletSpark) {
           // Try to get connected provider, auto-reconnects if session PIN available
           try {
             const provider = await this.walletStore.ensureSparkConnected();
-            const balanceResult = await provider.getBalance();
+            let balanceResult = preferCached && typeof provider.getCachedBalance === 'function'
+              ? await provider.getCachedBalance()
+              : await provider.getBalance();
+            // The SDK cache starts empty until the event stream has synced;
+            // a cached zero while we are showing funds means "not warmed
+            // yet", not "empty wallet" — re-read authoritatively rather
+            // than flashing 0.
+            if (preferCached && balanceResult.balance === 0 && this.walletState.balance > 0) {
+              balanceResult = await provider.getBalance();
+            }
             this.walletState.balance = balanceResult.balance;
+            this.balanceProvisional = false;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-            // Auto-withdraw check
+            // Auto-withdraw check (never reachable from a cached read: an
+            // enabled config forces the authoritative branch above)
             if (balanceResult.balance > 0 && activeWalletId) {
               awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
             }
@@ -3498,6 +3576,7 @@ export default {
             const provider = await this.walletStore.ensureLNBitsConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
+            this.balanceProvisional = false;
 
             // Update wallet in store
             const activeWallet = this.walletState.connectedWallets.find(
@@ -3529,6 +3608,7 @@ export default {
             const provider = await this.walletStore.ensureArkadeConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
+            this.balanceProvisional = false;
 
             const activeWallet = this.walletState.connectedWallets.find(
               w => w.id === this.walletState.activeWalletId
@@ -3561,6 +3641,7 @@ export default {
           await nwc.enable();
           const balance = await nwc.getBalance();
           this.walletState.balance = balance.balance;
+          this.balanceProvisional = false;
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
@@ -3709,7 +3790,9 @@ export default {
       this.refreshInterval = setInterval(async () => {
         // updateWalletBalance refreshes the last-tx card in its finally
         // block, so we don't call loadLastTransaction separately here.
-        await this.updateWalletBalance();
+        // The tick prefers the SDK's event-stream-backed balance cache;
+        // authoritative fetches stay on the post-send/receive paths.
+        await this.updateWalletBalance({ preferCached: true });
         await this.loadFiatRates();
         // Keep the profile pill honest while the app remains open: a payment
         // to the user's public name can arrive without touching a wallet.
@@ -4937,11 +5020,59 @@ export default {
             }
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
-          // Spark address payment
-          this.pendingPayment = {
-            ...paymentData,
-            sparkAddress: paymentData.data
-          };
+          // A spark-prefixed string is either a durable address or a signed
+          // one-time invoice; the prefix cannot tell them apart. Decode to
+          // route correctly — transfer() rejects invoice strings by design.
+          let dest;
+          try {
+            dest = decodeSparkDestination(paymentData.data);
+          } catch (decodeErr) {
+            console.warn('Spark destination decode failed:', decodeErr?.message);
+            resolved = false;
+            this.failSendResolution(this.$t('This payment code cannot be read.'), fromField);
+            return;
+          }
+
+          if (dest.kind === 'address') {
+            this.pendingPayment = {
+              ...paymentData,
+              sparkAddress: paymentData.data
+            };
+          } else {
+            // Refuse what can never be paid before the sheet opens. Sender
+            // pinning is only decided here when we know our own identity
+            // key; otherwise the check runs again at pay time against the
+            // connected wallet.
+            const ownAddress = this.walletStore.activeSparkAddress;
+            const problem = sparkInvoiceProblem(dest, {
+              ownIdentityPublicKey: ownAddress
+                ? identityPublicKeyFromSparkAddress(ownAddress)
+                : null,
+            });
+            if (problem && !(problem === 'sender_unknown' && !ownAddress)) {
+              resolved = false;
+              this.failSendResolution(this.sparkInvoiceProblemMessage(problem), fromField);
+              return;
+            }
+
+            if (dest.amountSats > 0 && dest.amountSats > this.walletState.balance) {
+              resolved = false;
+              this.failSendResolution(this.$t('Insufficient balance'), fromField);
+              return;
+            }
+
+            this.pendingPayment = {
+              ...paymentData,
+              // The durable receiver identity — what contacts, transaction
+              // linking, and the confirm sheet's recipient lookup use. The
+              // single-use invoice string never leaks into any of them.
+              sparkAddress: dest.receiverAddress,
+              sparkInvoice: dest.invoice,
+              sparkInvoiceExpiresAt: dest.expiresAt,
+              fixedAmountSats: dest.amountSats || 0,
+              description: dest.memo || paymentData.description || '',
+            };
+          }
         } else if (paymentData.type === 'arkade_address' && paymentData.data) {
           // Arkade address payment (instant ark1 → ark1, near-zero fee)
           this.pendingPayment = {
@@ -5488,6 +5619,29 @@ export default {
     async sendSparkPayment(amount, comment, payout = null) {
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected();
+
+      // Spark invoice — must go through fulfill; transfer() rejects invoice
+      // strings. Checked before the plain-address branch because invoice
+      // payments also carry the decoded receiver in `sparkAddress`.
+      if (this.pendingPayment.sparkInvoice) {
+        const invoice = this.pendingPayment.sparkInvoice;
+        // Re-evaluate refusal conditions at pay time: the sheet may have
+        // been open past the expiry, and sender pinning could only be
+        // finally decided now that the wallet is connected.
+        const dest = decodeSparkDestination(invoice);
+        const ownAddress = await provider.getSparkAddress();
+        const problem = sparkInvoiceProblem(dest, {
+          ownIdentityPublicKey: identityPublicKeyFromSparkAddress(ownAddress),
+        });
+        if (problem) {
+          throw new Error(this.sparkInvoiceProblemMessage(problem));
+        }
+        return await provider.fulfillSparkInvoice(invoice, {
+          // An encoded amount wins SDK-side; only free-amount invoices take
+          // the amount from the sheet.
+          amountSats: dest.amountSats > 0 ? null : amount,
+        });
+      }
 
       // Spark address transfer (zero-fee)
       if (this.pendingPayment.sparkAddress) {
@@ -6802,6 +6956,12 @@ export default {
   font-weight: 800;
   line-height: 1;
   font-family: 'Manrope', sans-serif;
+  transition: opacity 0.3s ease;
+}
+
+/* Cached last-session figure shown before the first live fetch lands */
+.amount-number--provisional {
+  opacity: 0.55;
 }
 
 .amount-number-dark {

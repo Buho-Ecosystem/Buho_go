@@ -2996,4 +2996,16 @@ export default {
   "Add instantly": "Sofort hinzufügen",
   "Instant fee": "Sofort-Gebühr",
   "The deposit stays on the normal confirmation path.": "Die Einzahlung bleibt auf dem normalen Bestätigungsweg.",
+  // ─── Spark-Zahlungsanfragen ───
+  "Any amount": "Beliebiger Betrag",
+  "Payment request": "Zahlungsanfrage",
+  "Failed to create invoice": "Rechnung konnte nicht erstellt werden",
+  "The payment was returned": "Die Zahlung wurde zurückgegeben",
+  "Valid for 1 hour. The payment arrives instantly once it is paid from another Spark wallet.": "1 Stunde gültig. Die Zahlung kommt sofort an, sobald sie aus einem anderen Spark-Wallet bezahlt wird.",
+  "This payment code cannot be read.": "Dieser Zahlungscode kann nicht gelesen werden.",
+  "This payment request has expired. Ask for a new one.": "Diese Zahlungsanfrage ist abgelaufen. Bitte um eine neue.",
+  "This payment request is for a token, which BuhoGO does not support.": "Diese Zahlungsanfrage ist für einen Token, den BuhoGO nicht unterstützt.",
+  "This payment request is reserved for a different wallet.": "Diese Zahlungsanfrage ist für ein anderes Wallet reserviert.",
+  "Unlock your Spark wallet first, then try this payment request again.": "Entsperre zuerst dein Spark-Wallet und versuche die Zahlungsanfrage dann erneut.",
+  "This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.": "Das ist eine einmalige Zahlungsanfrage, keine dauerhafte Adresse. Bezahle sie und speichere den Kontakt stattdessen im Zahlungsbildschirm.",
 }
