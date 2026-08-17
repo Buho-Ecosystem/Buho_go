@@ -1934,7 +1934,7 @@ export default {
     async shareLightningAddress() {
       if (!this.lightningAddress) return;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.lightningAddressQr);
+      const qrBlob = await qrBlobFromRef(this.$refs.lightningAddressQr, { label: this.lightningAddress });
       const result = await shareContent({
         title: this.$t('Lightning Address'),
         text: this.lightningAddress,
@@ -1992,7 +1992,7 @@ export default {
     async shareSparkAddress() {
       if (!this.sparkAddress) return;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.sparkQr);
+      const qrBlob = await qrBlobFromRef(this.$refs.sparkQr, { label: this.sparkAddress });
       const result = await shareContent({
         title: this.$t('Spark Address'),
         // Pure address so recipients can copy-paste cleanly. The
@@ -2049,7 +2049,7 @@ export default {
 
     async shareArkadeBoardingAddress() {
       if (!this.arkadeBoardingAddress) return;
-      const qrBlob = await qrBlobFromRef(this.$refs.arkadeBoardingQr);
+      const qrBlob = await qrBlobFromRef(this.$refs.arkadeBoardingQr, { label: this.arkadeBoardingAddress });
       const result = await shareContent({
         title: this.$t('Bitcoin Address'),
         text: this.arkadeBoardingAddress,
@@ -2082,7 +2082,7 @@ export default {
     async shareArkadeAddress() {
       if (!this.arkadeAddress) return;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.arkadeQr);
+      const qrBlob = await qrBlobFromRef(this.$refs.arkadeQr, { label: this.arkadeAddress });
       const result = await shareContent({
         title: this.$t('Arkade Address'),
         text: this.arkadeAddress,
@@ -2124,7 +2124,7 @@ export default {
       // Lightning URI so every wallet we share to can open it directly.
       const lightningUri = `lightning:${this.generatedInvoice.payment_request}`;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.invoiceQr);
+      const qrBlob = await qrBlobFromRef(this.$refs.invoiceQr, { label: this.generatedInvoice?.payment_request || '' });
       const result = await shareContent({
         title: this.$t('Lightning Invoice'),
         // Pure invoice URI so recipients can copy-paste cleanly. The

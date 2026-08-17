@@ -707,7 +707,7 @@ export default {
     async shareAddress() {
       if (!this.depositAddress) return;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.depositQr);
+      const qrBlob = await qrBlobFromRef(this.$refs.depositQr, { label: this.depositAddress });
       const result = await shareContent({
         title: this.$t('Bitcoin Address'),
         // Pure address so recipients can copy-paste cleanly. The
