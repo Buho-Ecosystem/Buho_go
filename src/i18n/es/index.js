@@ -2991,4 +2991,8 @@ export default {
   "Add one so people can find you more easily.": "Añade uno para que puedan encontrarte más fácilmente.",
   "Your public profile will update once BuhoGO can reach the network.": "Tu perfil público se actualizará cuando BuhoGO pueda conectarse a la red.",
   "{name} is now on your profile": "{name} aparece ahora en tu perfil",
+  // ─── Depósitos Bitcoin instantáneos ───
+  "Add instantly": "Añadir al instante",
+  "Instant fee": "Comisión instantánea",
+  "The deposit stays on the normal confirmation path.": "El depósito sigue el proceso normal de confirmación.",
 }

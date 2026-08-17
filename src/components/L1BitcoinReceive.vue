@@ -165,7 +165,36 @@
             </div>
           </div>
 
+          <!-- Instant (0-conf) offer: only rendered when the SSP handed us
+               a zero-confirmation plan. Reuses the ready view's fee rows
+               so the deduction is disclosed before the tap. -->
+          <div
+            v-if="instantClassification"
+            class="fee-details"
+            :class="$q.dark.isActive ? 'details-dark' : 'details-light'"
+          >
+            <div class="fee-row">
+              <span class="fee-label">{{ $t('Deposit') }}</span>
+              <span class="fee-value">{{ formatAmount(claimingDeposit.amount || 0) }}</span>
+            </div>
+            <div class="fee-row deduct">
+              <span class="fee-label">{{ $t('Instant fee') }}</span>
+              <span class="fee-value">-{{ formatAmount(instantClassification.feeSats) }}</span>
+            </div>
+          </div>
+
           <div class="sheet-actions">
+            <q-btn
+              v-if="instantClassification"
+              unelevated
+              no-caps
+              class="confirm-btn"
+              :class="$q.dark.isActive ? 'confirm-btn-dark' : 'confirm-btn-light'"
+              :loading="isClaimingInstant || walletStore.isDepositClaimInFlight(claimingDeposit.txId)"
+              @click="confirmInstantClaim"
+            >
+              {{ $t('Add instantly') }}
+            </q-btn>
             <q-btn
               flat
               no-caps
@@ -278,6 +307,11 @@ export default {
       // the SSP fee quote arrives.
       showClaimDialog: false,
       claimingDeposit: null,
+      // Instant (0-conf) offer for the sheet's confirming view:
+      // a classification from classifyUnconfirmedDeposit with
+      // category 'instant', or null when the SSP offered none.
+      instantClassification: null,
+      isClaimingInstant: false,
       claimFeeQuote: null,
       isLoadingQuote: false,
       isClaimingDeposit: false,
@@ -401,7 +435,11 @@ export default {
         // Ensure Spark is connected (auto-reconnects with session PIN if needed)
         const provider = await this.walletStore.ensureSparkConnected();
         if (provider?.getPendingDeposits) {
-          this.pendingDeposits = await provider.getPendingDeposits();
+          // Instantly-claimed deposits linger in the SDK's pending list
+          // until confirmations catch up — never show them as claimable.
+          this.pendingDeposits = (await provider.getPendingDeposits()).filter(
+            (d) => !this.walletStore.isDepositClaimed(d.txId)
+          );
           this.$emit('deposits-updated', this.pendingDeposits);
 
           // If the sheet is open against a deposit that just promoted
@@ -415,6 +453,8 @@ export default {
               const justConfirmed = fresh.confirmed && !this.claimingDeposit.confirmed;
               this.claimingDeposit = fresh;
               if (justConfirmed && !this.claimFeeQuote) {
+                // The instant offer only makes sense pre-confirmation.
+                this.instantClassification = null;
                 this.openDepositSheet(fresh);
               }
             }
@@ -499,9 +539,17 @@ export default {
       this.isLoadingQuote = !!deposit.confirmed;
       this.claimingDeposit = deposit;
       this.claimFeeQuote = null;
+      this.instantClassification = null;
       this.showClaimDialog = true;
 
-      if (!deposit.confirmed) return;
+      if (!deposit.confirmed) {
+        // Confirming view: ask the SSP for a 0-conf plan in the
+        // background. When one exists, the sheet grows an "Add
+        // instantly" action with the fee disclosed; when none exists
+        // (or the quote fails) the view stays exactly as today.
+        this.loadInstantOffer(deposit);
+        return;
+      }
 
       try {
         const provider = await this.walletStore.ensureSparkConnected();
@@ -533,6 +581,98 @@ export default {
       this.claimingDeposit = null;
       this.claimFeeQuote = null;
       this.isLoadingQuote = false;
+      this.instantClassification = null;
+      this.isClaimingInstant = false;
+    },
+
+    /**
+     * Fetch the instant (0-conf) offer for an unconfirmed deposit.
+     * Best-effort: any failure leaves `instantClassification` null and
+     * the confirming view unchanged.
+     */
+    async loadInstantOffer(deposit) {
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        if (!provider?.classifyUnconfirmedDeposit) return;
+        const classification = await provider.classifyUnconfirmedDeposit(deposit);
+        // The sheet may have moved on (closed, or promoted to confirmed)
+        // while the quote was in flight.
+        if (this.claimingDeposit?.txId !== deposit.txId || this.claimingDeposit?.confirmed) return;
+        if (classification.category === 'instant') {
+          this.instantClassification = classification;
+        }
+      } catch (error) {
+        console.warn('Instant offer lookup failed:', error?.message || error);
+      }
+    },
+
+    /**
+     * "Add instantly" on the confirming view. Same coordination guards
+     * as the 3-conf claim; on success the deposit is durably marked
+     * claimed so the confirmation-window pipeline can never resubmit it.
+     */
+    async confirmInstantClaim() {
+      const deposit = this.claimingDeposit;
+      const classification = this.instantClassification;
+      if (!deposit || !classification) return;
+
+      const claimTxId = deposit.txId;
+      if (this.walletStore.isDepositClaimInFlight(claimTxId)
+          || this.walletStore.isDepositClaimed(claimTxId)) {
+        this.$q.notify({
+          type: 'info',
+          icon: 'sync',
+          message: this.$t('Already adding to wallet'),
+          caption: this.$t('Your balance will update shortly')
+        });
+        this.showClaimDialog = false;
+        return;
+      }
+
+      this.walletStore.markDepositClaimInFlight(claimTxId);
+      this.isClaimingInstant = true;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        await provider.claimInstantDeposit(
+          claimTxId,
+          classification.quote,
+          classification.plan,
+          deposit.outputIndex || 0
+        );
+
+        this.walletStore.markDepositClaimed(claimTxId);
+
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Bitcoin added to wallet'),
+          caption: `+${this.formatAmount(classification.creditSats)}`
+        });
+
+        this.pendingDeposits = this.pendingDeposits.filter(d => d.txId !== claimTxId);
+        if (this.walletStore.activeWalletId) {
+          await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+        }
+        this.$emit('deposit-claimed', { success: true, amount: classification.creditSats });
+        this.walletStore.signalDepositsRefresh();
+        this.showClaimDialog = false;
+        this.claimingDeposit = null;
+        this.instantClassification = null;
+      } catch (error) {
+        console.error('Instant claim failed:', error);
+        const userMessage = this.getUserFriendlyError(error, 'claim');
+        this.$q.notify({
+          type: 'negative',
+          message: userMessage.title,
+          caption: this.$t('The deposit stays on the normal confirmation path.'),
+          timeout: 5000
+        });
+        // Withdraw the offer — the SSP already refused it once, and the
+        // 3-conf pipeline remains the safe road for this deposit.
+        this.instantClassification = null;
+      } finally {
+        this.isClaimingInstant = false;
+        this.walletStore.clearDepositClaimInFlight(claimTxId);
+      }
     },
 
     async confirmClaim() {
@@ -564,6 +704,10 @@ export default {
           this.claimFeeQuote, // Pass the full quote with creditAmountSats and signature
           this.claimingDeposit.outputIndex
         );
+
+        // The claim was accepted (whether settled or still processing) —
+        // record it durably so no path resubmits this UTXO.
+        this.walletStore.markDepositClaimed(claimTxId);
 
         // Handle processing state (TRANSFER_LOCKED - claim is being processed in background)
         if (result.processing) {
@@ -626,7 +770,9 @@ export default {
         try {
           const provider = await this.walletStore.ensureSparkConnected();
           if (provider?.getPendingDeposits && claimedTxId) {
-            const stillPending = await provider.getPendingDeposits();
+            const stillPending = (await provider.getPendingDeposits()).filter(
+              (d) => !this.walletStore.isDepositClaimed(d.txId)
+            );
             alreadyClaimed = !stillPending.some(d => d.txId === claimedTxId);
             if (alreadyClaimed) {
               this.pendingDeposits = stillPending;

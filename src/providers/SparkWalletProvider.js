@@ -1610,6 +1610,101 @@ export class SparkWalletProvider extends WalletProvider {
   }
 
   /**
+   * Classify a brand-new UNCONFIRMED deposit for the instant (0-conf)
+   * claim path — the sibling of classifyConfirmedDeposit for the other
+   * side of the confirmation threshold.
+   *
+   * Asks the SSP for an instant quote and looks for a fulfillment plan
+   * requiring zero confirmations. The deduction between deposit and
+   * credit is Spark's fee for absorbing confirmation risk, surfaced so
+   * the orchestrator can disclose it; the auto-claim fee caps in
+   * bitcoinPreferences deliberately do not apply here (the instant path
+   * is always taken when offered — see #227).
+   *
+   * Categories:
+   *   - instant          → a 0-conf plan exists: { quote, plan, creditSats, feeSats }
+   *   - no_instant_plan  → SSP offered no 0-conf plan; the 3-conf flow stays
+   *   - quote_failed     → quote fetch threw; the 3-conf flow stays
+   */
+  async classifyUnconfirmedDeposit(deposit) {
+    if (!deposit?.txId || deposit.confirmed) {
+      throw new Error('classifyUnconfirmedDeposit requires an unconfirmed deposit');
+    }
+
+    let quoteOutput;
+    try {
+      quoteOutput = await this.wallet.getInstantStaticDepositQuote(
+        deposit.txId,
+        deposit.outputIndex || 0
+      );
+    } catch (error) {
+      return { category: 'quote_failed', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now(), error };
+    }
+
+    const plan = (quoteOutput?.fulfillmentPlans || [])
+      .find((p) => Number(p?.confirmations) === 0) || null;
+
+    if (!quoteOutput?.quote || !plan) {
+      return { category: 'no_instant_plan', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now() };
+    }
+
+    const depositSats = SparkWalletProvider._currencyAmountToSats(quoteOutput.quote.depositAmount)
+      ?? Number(deposit.amount || 0);
+    const creditSats = SparkWalletProvider._currencyAmountToSats(plan.amount)
+      ?? SparkWalletProvider._currencyAmountToSats(quoteOutput.quote.creditAmount)
+      ?? 0;
+
+    return {
+      category: 'instant',
+      quote: quoteOutput.quote,
+      plan,
+      creditSats,
+      feeSats: Math.max(0, depositSats - creditSats),
+      classifiedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Claim a deposit through the instant path using the quote + plan from
+   * classifyUnconfirmedDeposit. The SDK signs and routes 0-conf vs 1-conf
+   * from the plan's confirmation requirement itself.
+   *
+   * @returns {Promise<{success: true, claimId: string|null}>}
+   */
+  async claimInstantDeposit(txId, quote, plan, outputIndex = 0) {
+    this._ensureConnected();
+
+    this.setSyncing(true, 'claiming_deposit');
+    try {
+      const result = await this.wallet.claimInstantStaticDeposit({
+        quote,
+        plan,
+        transactionId: txId,
+        outputIndex,
+      });
+      return { success: true, claimId: result?.claimId || null };
+    } finally {
+      this.setSyncing(false);
+    }
+  }
+
+  /**
+   * GraphQL CurrencyAmount → sats. The SSP declares the unit alongside
+   * the value; anything unrecognized returns null so callers fall back
+   * to a source they trust instead of mixing units.
+   */
+  static _currencyAmountToSats(amount) {
+    const value = Number(amount?.originalValue);
+    if (!Number.isFinite(value)) return null;
+    switch (amount?.originalUnit) {
+      case 'SATOSHI': return Math.round(value);
+      case 'MILLISATOSHI': return Math.floor(value / 1000);
+      case 'BITCOIN': return Math.round(value * 100_000_000);
+      default: return null;
+    }
+  }
+
+  /**
    * Claim a Bitcoin deposit using quote data.
    *
    * The SDK's `claimStaticDeposit` returns `{ transferId } | null` — it does
