@@ -18,8 +18,8 @@ importers:
         specifier: 3.1.3
         version: 3.1.3
       '@buildonspark/spark-sdk':
-        specifier: ^0.7.15
-        version: 0.7.15(bare-buffer@3.6.0)(bare-events@2.8.2)(ws@8.20.0)
+        specifier: ^0.9.0
+        version: 0.9.0(bare-buffer@3.6.0)(bare-events@2.8.2)(ws@8.20.0)
       '@capacitor-mlkit/barcode-scanning':
         specifier: 8.0.1
         version: 8.0.1(@capacitor/core@8.3.1)
@@ -746,8 +746,8 @@ packages:
   '@bufbuild/protobuf@2.11.0':
     resolution: {integrity: sha512-sBXGT13cpmPR5BMgHE6UEEfEaShh5Ror6rfN3yEK5si7QVrtZg8LEPQb0VVhiLRUslD2yLnXtnRzG035J/mZXQ==}
 
-  '@buildonspark/spark-sdk@0.7.15':
-    resolution: {integrity: sha512-2fyQ/0EnKnzOqzdnaEmv9q/TNEvdgCzG8umojpgdc8ZaeNKjsa5tHpZNWSrRytYZvV10xnGqGxYl58xD2aWpcQ==}
+  '@buildonspark/spark-sdk@0.9.0':
+    resolution: {integrity: sha512-lG6Bh5wB4OFmm/AhvXyBMp84mw9BOPwCrOp/iJjP6vq2MYlCuWhAQERyKE+oPcPdAzNYKiqu455k5XI4zABBBw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       react: '>=18.2.0'
@@ -1986,8 +1986,16 @@ packages:
       bare-abort-controller:
         optional: true
 
-  bare-fetch@2.8.2:
-    resolution: {integrity: sha512-N0gZH8iuuC36Ygd4Kjfeo90aOKZ19cycbuZWVpm9W+f5v2ks/2qvgVIKp9hRDZSo5imqO097ynJcn4w24F8c/A==}
+  bare-events@2.9.1:
+    resolution: {integrity: sha512-Z0oHEHAFDZkffN8Qc39zNZjQlMDkPJRyyyZieU1VH7u8c5S+qHZ2S8ixdKIAxEjfHO7FJxXmJWgteOghVanIsg==}
+    peerDependencies:
+      bare-abort-controller: '*'
+    peerDependenciesMeta:
+      bare-abort-controller:
+        optional: true
+
+  bare-fetch@3.2.0:
+    resolution: {integrity: sha512-ijeXh8iSZb8QcGr8gMXbnoxQe/sWWsde4ofTolyiDH8GtLmqjj141QZDoYYMq0fmwp60oFgngmumQO2/tAytwg==}
     peerDependencies:
       bare-abort-controller: '*'
       bare-buffer: '*'
@@ -2023,12 +2031,15 @@ packages:
       bare-url:
         optional: true
 
-  bare-https@2.1.3:
-    resolution: {integrity: sha512-0TI/mJXQGYXmG7UUyWEG+KCJusayIAQLywUjFAskDoKuxfqVnGF+M/mTMrEV8J64DaIdU+5x761FvgmT7M68tA==}
+  bare-https@3.0.0:
+    resolution: {integrity: sha512-W1GRSCzn+xXKf5bMcPs/hg6Ga1bxPqb7owGfS+tvlBQfPe5Q2STcanRuKZrgU60v5uKrhXH5cgWwM+DLqvXZgQ==}
 
   bare-inspect@3.1.4:
     resolution: {integrity: sha512-jfW5KRA84o3REpI6Vr4nbvMn+hqVAw8GU1mMdRwUsY5yJovQamxYeKGVKGqdzs+8ZbG4jRzGUXP/3Ji/DnqfPg==}
     engines: {bare: '>=1.18.0'}
+
+  bare-mime@1.0.0:
+    resolution: {integrity: sha512-lUOswzBkfqham4zjLDueKOd4Qj3gS56BiZ3q2f0g0adoFhF+HFNupvTUfZBWoicl7fWJ7Hp2RUZjmkY47dxxOQ==}
 
   bare-net@2.3.1:
     resolution: {integrity: sha512-MypSqDKpDU2Xt7FIfazn5yGvRnV09gFcIPHGWstW0gxuzA4tucTcwJSZeos97C4F89vtU5oGwXDN/HrGN6Y4Jw==}
@@ -2039,6 +2050,10 @@ packages:
 
   bare-path@3.0.0:
     resolution: {integrity: sha512-tyfW2cQcB5NN8Saijrhqn0Zh7AnFNsnczRcuWODH0eYAXBsJ5gVxAUuNr7tsHSC6IZ77cA0SitzT+s47kot8Mw==}
+
+  bare-performance@2.1.1:
+    resolution: {integrity: sha512-nVlulswnYgXS2Fkbk4ZIKgfIWY/rmeG8ljM9aryPYClgPNzpOgOSLQzVSgU/K+ReLJHq7fEUQ9SBdjEs1QTIfw==}
+    engines: {bare: '>=1.27.0'}
 
   bare-pipe@4.1.5:
     resolution: {integrity: sha512-6OfxaG8JSkRh3Gc4hzHRsxNt+yu2PpN7lrv1V+T78GdknWQkVGwiEvu4m+1nbfk8cMVQ0TGxRvQ90XA4rhnTuw==}
@@ -2062,8 +2077,8 @@ packages:
     resolution: {integrity: sha512-rjpqNQ2cOCkNo3NeYA/W4GTK3DRkl8sDHO3uos+AEswUjLC8XXMQF8WrJCSjlIowCbS6NUVxKE92X5RGXjyefg==}
     engines: {bare: '>=1.16.0'}
 
-  bare-tls@2.2.3:
-    resolution: {integrity: sha512-dPYBGEXtgLceRFMfGaF2/rqR86/xMxMyrM9ootO/gaRKL/z2uNHJs7aP7IOBtnJF8eUCt5qwMzbKfrKgDIxPLg==}
+  bare-tls@3.1.8:
+    resolution: {integrity: sha512-NVQHioaEzmz6U2CLFRl34c9vTpf01BMkKCCTJWybF/eTKB97kapkZZTrd7bB11rG5W3uiwndsd7pcSPONVx4Ng==}
     engines: {bare: '>=1.7.0'}
 
   bare-type@1.1.0:
@@ -2153,10 +2168,6 @@ packages:
 
   caniuse-lite@1.0.30001788:
     resolution: {integrity: sha512-6q8HFp+lOQtcf7wBK+uEenxymVWkGKkjFpCvw5W25cmMwEDU45p1xQFBQv8JDlMMry7eNxyBaR+qxgmTUZkIRQ==}
-
-  case-anything@2.1.13:
-    resolution: {integrity: sha512-zlOQ80VrQ2Ue+ymH5OuM/DlDq64mEm+B9UTdHULv5osUMD6HalNTblf2b1u/m6QecjsnOkBpqVZ+XPwIVsy7Ng==}
-    engines: {node: '>=12.13'}
 
   chardet@2.1.1:
     resolution: {integrity: sha512-PsezH1rqdV9VvyNhxxOW32/d75r01NY7TQCmOqomRo15ZSOKbpTFVsfjghxo6JloQUCGnH4k1LGu0R4yCLlWQQ==}
@@ -2362,11 +2373,6 @@ packages:
   detect-europe-js@0.1.2:
     resolution: {integrity: sha512-lgdERlL3u0aUdHocoouzT10d9I89VVhk0qNRmll7mXdGfJT1/wqZ2ZLA4oJAjeACPY5fT1wsbq2AT+GkuInsow==}
 
-  detect-libc@1.0.3:
-    resolution: {integrity: sha512-pGjwhsmsp4kL2RTz08wcOlGN83otlqHeD/Z5T8GXZB+/YcpQ/dgo+lbU8ZsGxV0HIvqqxo9l7mqYwyYMD9bKDg==}
-    engines: {node: '>=0.10'}
-    hasBin: true
-
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
@@ -2392,9 +2398,6 @@ packages:
   dotenv@17.4.2:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
-
-  dprint-node@1.0.8:
-    resolution: {integrity: sha512-iVKnUtYfGrYcW1ZAlfR/F59cUVL8QIhWoBJoSjkkdua/dkWIgjZfiLMeTjiB06X0ZLkQ0M2C1VbUj/CxkIf1zg==}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -3965,16 +3968,6 @@ packages:
       typescript:
         optional: true
 
-  ts-poet@6.12.0:
-    resolution: {integrity: sha512-xo+iRNMWqyvXpFTaOAvLPA5QAWO6TZrSUs5s4Odaya3epqofBu/fMLHEWl8jPmjhA0s9sgj9sNvF1BmaQlmQkA==}
-
-  ts-proto-descriptors@2.0.0:
-    resolution: {integrity: sha512-wHcTH3xIv11jxgkX5OyCSFfw27agpInAd6yh89hKG6zqIXnjW9SYqSER2CVQxdPj4czeOhGagNvZBEbJPy7qkw==}
-
-  ts-proto@2.8.3:
-    resolution: {integrity: sha512-TdXInqG+61pj/TvORqITWjvjTTsL1EZxwX49iEj89+xFAcqPT8tjChpAGQXzfcF4MJwvNiuoCEbBOKqVf3ds3g==}
-    hasBin: true
-
   tslib@1.14.1:
     resolution: {integrity: sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg==}
 
@@ -5076,7 +5069,7 @@ snapshots:
 
   '@bufbuild/protobuf@2.11.0': {}
 
-  '@buildonspark/spark-sdk@0.7.15(bare-buffer@3.6.0)(bare-events@2.8.2)(ws@8.20.0)':
+  '@buildonspark/spark-sdk@0.9.0(bare-buffer@3.6.0)(bare-events@2.8.2)(ws@8.20.0)':
     dependencies:
       '@bufbuild/protobuf': 2.11.0
       '@lightsparkdev/core': 1.5.1
@@ -5090,7 +5083,7 @@ snapshots:
       abortcontroller-polyfill: 1.7.8
       async-mutex: 0.5.0
       bare-crypto: 1.13.4(bare-buffer@3.6.0)(bare-events@2.8.2)
-      bare-fetch: 2.8.2(bare-buffer@3.6.0)(bare-events@2.8.2)
+      bare-fetch: 3.2.0(bare-buffer@3.6.0)(bare-events@2.8.2)
       buffer: 6.0.3
       eventemitter3: 5.0.4
       js-base64: 3.7.8
@@ -5099,7 +5092,6 @@ snapshots:
       nice-grpc-client-middleware-retry: 3.1.14
       nice-grpc-common: 2.0.3
       nice-grpc-web: 3.3.10(ws@8.20.0)
-      ts-proto: 2.8.3
       ua-parser-js: 2.0.9
       uuidv7: 1.2.1
     transitivePeerDependencies:
@@ -6339,11 +6331,15 @@ snapshots:
 
   bare-events@2.8.2: {}
 
-  bare-fetch@2.8.2(bare-buffer@3.6.0)(bare-events@2.8.2):
+  bare-events@2.9.1: {}
+
+  bare-fetch@3.2.0(bare-buffer@3.6.0)(bare-events@2.8.2):
     dependencies:
       bare-form-data: 1.2.1(bare-events@2.8.2)
       bare-http1: 4.5.6(bare-buffer@3.6.0)(bare-url@2.4.1)
-      bare-https: 2.1.3(bare-buffer@3.6.0)(bare-events@2.8.2)(bare-url@2.4.1)
+      bare-https: 3.0.0(bare-buffer@3.6.0)(bare-events@2.8.2)(bare-url@2.4.1)
+      bare-mime: 1.0.0
+      bare-performance: 2.1.1
       bare-stream: 2.13.0(bare-buffer@3.6.0)(bare-events@2.8.2)
       bare-url: 2.4.1
       bare-zlib: 1.3.3(bare-buffer@3.6.0)(bare-events@2.8.2)
@@ -6390,11 +6386,11 @@ snapshots:
       - bare-abort-controller
       - react-native-b4a
 
-  bare-https@2.1.3(bare-buffer@3.6.0)(bare-events@2.8.2)(bare-url@2.4.1):
+  bare-https@3.0.0(bare-buffer@3.6.0)(bare-events@2.8.2)(bare-url@2.4.1):
     dependencies:
       bare-http1: 4.5.6(bare-buffer@3.6.0)(bare-url@2.4.1)
       bare-tcp: 2.2.7(bare-buffer@3.6.0)
-      bare-tls: 2.2.3(bare-buffer@3.6.0)(bare-events@2.8.2)
+      bare-tls: 3.1.8(bare-buffer@3.6.0)(bare-events@2.8.2)
     transitivePeerDependencies:
       - bare-abort-controller
       - bare-buffer
@@ -6412,6 +6408,8 @@ snapshots:
       - bare-events
       - react-native-b4a
 
+  bare-mime@1.0.0: {}
+
   bare-net@2.3.1(bare-buffer@3.6.0):
     dependencies:
       bare-events: 2.8.2
@@ -6428,6 +6426,12 @@ snapshots:
   bare-path@3.0.0:
     dependencies:
       bare-os: 3.8.7
+
+  bare-performance@2.1.1:
+    dependencies:
+      bare-events: 2.9.1
+    transitivePeerDependencies:
+      - bare-abort-controller
 
   bare-pipe@4.1.5(bare-buffer@3.6.0):
     dependencies:
@@ -6458,7 +6462,7 @@ snapshots:
       - bare-buffer
       - react-native-b4a
 
-  bare-tls@2.2.3(bare-buffer@3.6.0)(bare-events@2.8.2):
+  bare-tls@3.1.8(bare-buffer@3.6.0)(bare-events@2.8.2):
     dependencies:
       bare-net: 2.3.1(bare-buffer@3.6.0)
       bare-stream: 2.13.0(bare-buffer@3.6.0)(bare-events@2.8.2)
@@ -6568,8 +6572,6 @@ snapshots:
   camelcase@5.3.1: {}
 
   caniuse-lite@1.0.30001788: {}
-
-  case-anything@2.1.13: {}
 
   chardet@2.1.1: {}
 
@@ -6760,8 +6762,6 @@ snapshots:
 
   detect-europe-js@0.1.2: {}
 
-  detect-libc@1.0.3: {}
-
   detect-libc@2.1.2: {}
 
   dijkstrajs@1.0.3: {}
@@ -6782,10 +6782,6 @@ snapshots:
   dotenv@16.6.1: {}
 
   dotenv@17.4.2: {}
-
-  dprint-node@1.0.8:
-    dependencies:
-      detect-libc: 1.0.3
 
   dunder-proto@1.0.1:
     dependencies:
@@ -8457,21 +8453,6 @@ snapshots:
   ts-error@1.0.6: {}
 
   ts-essentials@10.1.1: {}
-
-  ts-poet@6.12.0:
-    dependencies:
-      dprint-node: 1.0.8
-
-  ts-proto-descriptors@2.0.0:
-    dependencies:
-      '@bufbuild/protobuf': 2.11.0
-
-  ts-proto@2.8.3:
-    dependencies:
-      '@bufbuild/protobuf': 2.11.0
-      case-anything: 2.1.13
-      ts-poet: 6.12.0
-      ts-proto-descriptors: 2.0.0
 
   tslib@1.14.1: {}
 

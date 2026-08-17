@@ -370,7 +370,7 @@ export class SparkWalletProvider extends WalletProvider {
     } finally {
       if (wallet) {
         try {
-          wallet.cleanupConnections();
+          wallet.cleanup();
         } catch (err) {
           console.warn('probeAccountActivity: cleanup failed', err);
         }
@@ -414,10 +414,10 @@ export class SparkWalletProvider extends WalletProvider {
   async disconnect() {
     if (this.wallet) {
       try {
-        // Await the teardown — cleanupConnections() is async (aborts the event
+        // Await the teardown — cleanup() is async (aborts the event
         // stream, closes gRPC connections, flushes logging). Not awaiting it
         // let a follow-up reconnect race a half-finished cleanup.
-        await this.wallet.cleanupConnections();
+        await this.wallet.cleanup();
       } catch (error) {
         console.warn('Error cleaning up Spark connections:', error);
       }
@@ -459,6 +459,32 @@ export class SparkWalletProvider extends WalletProvider {
 
       return {
         balance: Number(available), // Convert from bigint to number
+        pending: Number(result?.satsBalance?.incoming ?? 0n),
+        tokenBalances: result?.tokenBalances || []
+      };
+    } catch (error) {
+      this.setError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Balance from the SDK's in-memory cache — no network round trip. The
+   * cache is kept current by the wallet's event stream, but it starts
+   * empty on a fresh connection, so callers that need a number before the
+   * first sync must bring their own fallback. Shape-compatible with
+   * getBalance(); display use only — spend/max logic must keep reading
+   * getBalance().
+   */
+  async getCachedBalance() {
+    this._ensureConnected();
+
+    try {
+      const result = await this.wallet.getCachedBalance();
+      const available = result?.satsBalance?.available ?? result?.balance ?? 0n;
+
+      return {
+        balance: Number(available),
         pending: Number(result?.satsBalance?.incoming ?? 0n),
         tokenBalances: result?.tokenBalances || []
       };
