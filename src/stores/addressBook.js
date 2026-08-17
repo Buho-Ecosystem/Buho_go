@@ -7,6 +7,7 @@ import {
   isLightningAddress,
   isLnurl,
 } from '../utils/addressUtils.js'
+import { isSparkPaymentRequest } from '../utils/sparkPayment.js'
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js'
 // Legacy kind:30000 list — READ ONLY, for the one-time migration into
 // the shared contacts doc. The old event is never written again.
@@ -1929,7 +1930,10 @@ export const useAddressBookStore = defineStore('addressBook', {
     },
 
     isValidSparkAddress(address) {
-      return isSparkAddress(address)
+      // A Spark invoice shares the spark1… prefix but is a single-use
+      // payment request — the contact would break as soon as it is paid
+      // or expires. Only the durable plain address may be saved.
+      return isSparkAddress(address) && !isSparkPaymentRequest(address)
     },
 
     isValidArkadeAddress(address) {
