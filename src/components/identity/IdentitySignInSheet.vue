@@ -16,31 +16,9 @@
           type="button"
           class="sign-help-button"
           :aria-label="$t('Where does this work')"
+          @click="openHelp"
         >
           <Icon icon="tabler:info-circle" width="20" height="20" />
-          <q-menu
-            anchor="bottom right"
-            self="top right"
-            :offset="[0, 8]"
-            class="sign-help-menu"
-          >
-            <div class="sign-help-card identity-surface">
-              <strong>{{ $t('Where does this work') }}</strong>
-              <p>{{ $t('A few websites you can sign in to with your BuhoGO card. No password, no email.') }}</p>
-              <a
-                v-for="site in exampleSites"
-                :key="site.domain"
-                :href="site.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="sign-help-site"
-              >
-                <SiteFavicon :domain="site.domain" :size="28" shape="rounded-square" />
-                <span>{{ site.name }}</span>
-                <Icon icon="tabler:external-link" width="14" height="14" />
-              </a>
-            </div>
-          </q-menu>
         </button>
         <q-btn flat round class="sheet-close" :aria-label="$t('Close')" @click="open = false">
           <Icon icon="tabler:x" width="18" height="18" />
@@ -97,6 +75,33 @@
     </q-card>
   </q-dialog>
 
+  <q-dialog v-model="showHelp" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+    <q-card class="identity-surface sign-help-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <div class="sheet-grab" aria-hidden="true"><span></span></div>
+      <div class="sign-help-head">
+        <h2>{{ $t('Where does this work') }}</h2>
+        <q-btn flat round dense :aria-label="$t('Close')" @click="showHelp = false">
+          <Icon icon="tabler:x" width="18" height="18" />
+        </q-btn>
+      </div>
+      <div class="sign-help-body">
+        <p>{{ $t('A few websites you can sign in to with your BuhoGO card. No password, no email.') }}</p>
+        <a
+          v-for="site in exampleSites"
+          :key="site.domain"
+          :href="site.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="sign-help-site"
+        >
+          <SiteFavicon :domain="site.domain" :size="28" shape="rounded-square" />
+          <span>{{ site.name }}</span>
+          <Icon icon="tabler:external-link" width="14" height="14" />
+        </a>
+      </div>
+    </q-card>
+  </q-dialog>
+
   <!-- Each child task replaces this sheet instead of stacking above it.
        When the child closes, this scoped overview returns. -->
   <AddSiteSheet v-model="showAddSite" @submit="onAddSiteSubmitted" />
@@ -139,6 +144,7 @@ export default {
       showAuth: false,
       pendingChallenge: null,
       showSiteSheet: false,
+      showHelp: false,
       selectedDomain: null,
       returningFromChild: false,
       authHandoffPending: false,
@@ -190,6 +196,10 @@ export default {
     showSiteSheet(value, previous) {
       if (!value && previous) this.returnFromChild();
     },
+
+    showHelp(value, previous) {
+      if (!value && previous) this.returnFromChild();
+    },
   },
 
   methods: {
@@ -218,6 +228,10 @@ export default {
 
     openAddSite() {
       this.handOffTo(() => { this.showAddSite = true; });
+    },
+
+    openHelp() {
+      this.handOffTo(() => { this.showHelp = true; });
     },
 
     openSite(site) {
@@ -283,17 +297,11 @@ export default {
 
 .sign-help-button:active { background: var(--bg-input); }
 
-.sign-help-card {
-  width: min(320px, calc(100vw - 32px));
-  max-height: min(520px, 68dvh);
-  overflow-y: auto;
-  padding: 16px;
-  color: var(--text-primary);
-  background: var(--bg-card);
-}
-
-.sign-help-card > strong { font: 720 16px 'Manrope', sans-serif; }
-.sign-help-card > p { margin: 5px 0 12px; color: var(--text-secondary); font-size: 12.5px; line-height: 1.45; }
+.sign-help-sheet { width: 100%; max-width: 520px; max-height: min(78dvh, 680px); border-radius: var(--radius-xl) var(--radius-xl) 0 0; overflow: hidden; padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
+.sign-help-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 20px 10px; }
+.sign-help-head h2 { margin: 0; color: var(--text-primary); font: 720 21px 'Manrope', sans-serif; letter-spacing: -0.025em; }
+.sign-help-body { overflow-y: auto; padding: 0 20px 16px; }
+.sign-help-body > p { margin: 0 0 12px; color: var(--text-secondary); font-size: 13.5px; line-height: 1.45; }
 
 .sign-help-site {
   min-height: 46px;
@@ -304,6 +312,8 @@ export default {
   text-decoration: none;
   border-top: 1px solid var(--border-card);
 }
+
+.sign-help-site :deep(.site-favicon-wrap) { width: 28px !important; height: 28px !important; flex: 0 0 28px; }
 
 .sign-help-site span { flex: 1; font: 640 13px 'Manrope', sans-serif; }
 .sign-help-site > svg { color: var(--text-muted); }
