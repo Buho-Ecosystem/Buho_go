@@ -21,34 +21,6 @@
         <span class="profile-edit">{{ $t('Edit') }}</span>
       </button>
 
-      <IdentityGroup
-        :title="$t('Public profile')"
-        :footer="$t('Your photo, name and profile details are public. Your contacts, balance and 12 words stay private.')"
-      >
-        <IdentityRow
-          icon="tabler:at"
-          tone="accent"
-          :label="$t('Username')"
-          :caption="username ? '@' + username : $t('Being reserved')"
-          @click="$router.push('/identity/username')"
-        />
-        <IdentityRow
-          icon="tabler:arrow-bar-to-down"
-          :tone="lud16 ? 'neutral' : 'warn'"
-          :label="$t('Get paid')"
-          :caption="lud16 ? $t('Your code, your link, where money lands') : $t('Setting up')"
-          @click="$router.push({ path: '/identity', query: { sheet: 'get-paid' } })"
-        />
-        <IdentityRow
-          icon="tabler:cloud"
-          :label="$t('Public profile sharing')"
-          :caption="publishCaption"
-          :chip="publishChip"
-          :chip-tone="publishChipTone"
-          @click="$router.push('/identity/visible')"
-        />
-      </IdentityGroup>
-
       <IdentityGroup :title="$t('Recovery')">
         <IdentityRow
           icon="tabler:shield-lock"
@@ -68,6 +40,16 @@
           :label="$t('Your accounts')"
           :caption="identityCountCaption"
           @click="$router.push('/identity/identities')"
+        />
+      </IdentityGroup>
+
+      <IdentityGroup :title="$t('Advanced')">
+        <IdentityRow
+          icon="tabler:at"
+          tone="accent"
+          :label="$t('Username')"
+          :caption="username ? '@' + username : $t('Being reserved')"
+          @click="$router.push('/identity/username')"
         />
         <IdentityRow
           icon="tabler:key"
@@ -128,30 +110,12 @@ export default {
       return this.identity.nip05ActiveEntry?.handle || '';
     },
 
-    /** The payment destination behind the username. */
-    lud16() {
-      return this.profile.lud16 || '';
-    },
-
     profileCaption() {
       return this.profile.displayName || this.profile.name || this.$t('Not set yet');
     },
 
     profilePicture() {
       return this.avatarBroken ? '' : (this.profile.picture || '');
-    },
-
-    publishCaption() {
-      if (!this.profile.lastPublishedAt) return this.$t('Not shared yet');
-      return this.$t('Up to date');
-    },
-
-    publishChip() {
-      return this.profile.lastPublishedAt ? this.$t('On') : '';
-    },
-
-    publishChipTone() {
-      return 'ok';
     },
 
     identityCountCaption() {

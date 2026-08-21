@@ -68,8 +68,6 @@
         </label>
       </section>
 
-      <!-- Publish failures used to appear in a banner inside a sheet the
-           user had already closed. Here it sits where the save happened. -->
       <div v-if="publishError" class="publish-error" role="alert">
         <Icon icon="tabler:alert-circle" width="18" height="18" />
         <div>
@@ -130,17 +128,13 @@ export default {
       return this.profile.picture;
     },
 
-    /**
-     * Save stays enabled while the store carries an unsaved publish from a
-     * previous attempt, so a failed publish can be retried without editing
-     * the form again.
-     */
     canSave() {
       const dirty =
         this.form.displayName !== (this.profile.displayName || '') ||
         this.form.about !== (this.profile.about || '');
       return dirty || this.profile.isDirty;
     },
+
   },
 
   async created() {
@@ -288,4 +282,5 @@ body.body--dark .avatar-badge { background: #F4F4F4; color: #0C0C0C; }
 
 .publish-error-title { font-size: 13.5px; font-weight: 650; }
 .publish-error-body { font-size: 12.5px; margin-top: 2px; line-height: 1.45; opacity: 0.9; }
+
 </style>

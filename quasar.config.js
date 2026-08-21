@@ -35,6 +35,8 @@ export default defineConfig((ctx) => {
       // publishing it. Without this a new user's username resolves to a profile
       // with nothing to pay. Best-effort and idempotent, same as 'nip05'.
       'social-bucket',
+      // Keep profile changes synced quietly; publishing is not a user task.
+      'profile-sync',
       ctx.mode.capacitor ? 'deep-links' : '',
       ctx.mode.capacitor ? 'nfc' : '',
       ctx.dev ? 'audit' : ''
