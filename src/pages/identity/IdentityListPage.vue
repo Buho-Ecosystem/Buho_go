@@ -4,9 +4,6 @@
 
     <div class="id-sub-body">
       <h1 class="id-large-title">{{ $t('Your accounts') }}</h1>
-      <p class="id-lede">
-        {{ $t('You can keep more than one account. They never see each other, and the same 12 words bring all of them back.') }}
-      </p>
 
       <button type="button" class="btn-primary add-account" :disabled="busy || bucket.isSweeping" @click="step = 'create'">
         <Icon icon="tabler:plus" width="18" height="18" />
@@ -20,24 +17,40 @@
         row here switches, which is the only thing a row naming an identity
         should do.
       -->
-      <IdentityGroup
-        :title="$t('Accounts')"
-        :footer="$t('Switching changes your card and your contacts everywhere in BuhoGO. Your wallets and your Bitcoin stay exactly as they are.')"
-      >
+      <section class="current-account">
+        <span class="current-account-avatar">
+          <img v-if="currentPicture" :src="currentPicture" alt="" @error="avatarBroken = true" />
+          <Icon v-else icon="tabler:user" width="25" height="25" />
+        </span>
+        <span class="current-account-copy">
+          <span class="current-account-kicker">{{ $t('This account') }}</span>
+          <strong>{{ currentAccountName }}</strong>
+          <span v-if="currentUsername">@{{ currentUsername }}</span>
+        </span>
+        <span class="current-account-chip">{{ $t('In use') }}</span>
+      </section>
+
+      <IdentityGroup v-if="otherIdentities.length" :title="$t('Switch account')">
         <IdentityRow
-          v-for="row in identities"
+          v-for="row in otherIdentities"
           :key="row.account"
-          icon="tabler:user"
-          :tone="row.active ? 'accent' : 'neutral'"
+          icon=""
+          tone="neutral"
           :label="identityName(row)"
-          :caption="row.active ? $t('{n} contacts', { n: contactCount }) : ''"
-          :chip="row.active ? $t('In use') : ''"
-          chip-tone="ok"
-          :chevron="!row.active"
-          :interactive="!row.active && !busy && !bucket.isSweeping"
+          :caption="row.username ? '@' + row.username : $t('Separate profile')"
+          :interactive="!busy && !bucket.isSweeping"
           @click="onSwitch(row)"
-        />
+        >
+          <template #leading>
+            <span class="account-row-avatar">
+              <img v-if="row.picture" :src="row.picture" alt="" />
+              <Icon v-else icon="tabler:user" width="19" height="19" />
+            </span>
+          </template>
+        </IdentityRow>
       </IdentityGroup>
+
+      <p v-else class="accounts-empty">{{ $t('You have one account on this phone.') }}</p>
 
     </div>
 
@@ -123,10 +136,14 @@
 
           <template v-else>
             <div class="account-switch-target">
-              <span class="account-option-icon account-option-icon--accent" aria-hidden="true">
-                <Icon icon="tabler:user" width="21" height="21" />
+              <span class="account-switch-avatar" aria-hidden="true">
+                <img v-if="pending.picture" :src="pending.picture" alt="" />
+                <Icon v-else icon="tabler:user" width="21" height="21" />
               </span>
-              <strong>{{ pendingName }}</strong>
+              <span class="account-switch-copy">
+                <strong>{{ pendingName }}</strong>
+                <span v-if="pending.username">@{{ pending.username }}</span>
+              </span>
             </div>
             <button type="button" class="account-confirm" @click="confirmSwitch">
               {{ $t('Switch to {name}', { name: pendingName }) }}
@@ -135,6 +152,34 @@
         </div>
       </q-card>
     </q-dialog>
+      <q-dialog v-model="showProfileSetup" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+        <q-card class="profile-setup-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+          <div class="sheet-handle" aria-hidden="true"><span></span></div>
+          <div class="profile-setup-head">
+            <div>
+              <span class="account-sheet-kicker">{{ $t('New account') }}</span>
+              <h2>{{ $t('Make it yours') }}</h2>
+            </div>
+            <q-btn flat round dense :aria-label="$t('Close')" @click="showProfileSetup = false">
+              <Icon icon="tabler:x" width="18" height="18" />
+            </q-btn>
+          </div>
+          <div class="profile-setup-body">
+            <button type="button" class="setup-avatar" @click="showProfilePicker = true">
+              <img v-if="profile.picture" :src="profile.picture" alt="" />
+              <Icon v-else icon="tabler:camera-plus" width="25" height="25" />
+              <span>{{ profile.picture ? $t('Change photo') : $t('Add a photo') }}</span>
+            </button>
+            <label class="setup-field">
+              <span>{{ $t('Name') }}</span>
+              <input v-model="profileName" type="text" :placeholder="$t('Your name')" maxlength="200" autocomplete="off" />
+            </label>
+            <button type="button" class="account-confirm" @click="finishProfileSetup">{{ $t('Done') }}</button>
+          </div>
+        </q-card>
+      </q-dialog>
+      <ProfileAvatarPickerSheet v-model="showProfilePicker" />
+
       <SettingsHubNav />
 
   </q-page>
@@ -151,15 +196,18 @@ import { useIdentityStore } from '../../stores/identity';
 import { useProfileStore } from '../../stores/profile';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { useSocialBucketStore } from '../../stores/socialBucket';
+import ProfileAvatarPickerSheet from '../../components/ProfileAvatarPickerSheet.vue';
+import { fetchProfiles, parseProfileContent } from '../../utils/nostrFetch.js';
 
 export default {
   name: 'IdentityListPage',
 
-  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow },
+  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow, ProfileAvatarPickerSheet },
 
   setup() {
     return {
       identity: useIdentityStore(),
+      profile: useProfileStore(),
       addressBook: useAddressBookStore(),
       bucket: useSocialBucketStore(),
     };
@@ -172,6 +220,10 @@ export default {
       pending: null,
       busy: false,
       createChoice: null,
+      avatarBroken: false,
+      showProfileSetup: false,
+      showProfilePicker: false,
+      profileName: '',
     };
   },
 
@@ -188,6 +240,27 @@ export default {
       return this.contactCount === 1
         ? this.$t('Copy one contact into the new account.')
         : this.$t('Copy {n} contacts into the new account.', { n: this.contactCount });
+    },
+
+    activeIdentity() {
+      return this.identities.find((row) => row.active) || null;
+    },
+
+    otherIdentities() {
+      return this.identities.filter((row) => !row.active);
+    },
+
+    currentUsername() {
+      return this.activeIdentity?.username || '';
+    },
+
+    currentAccountName() {
+      return this.profile.displayName || this.profile.name ||
+        (this.activeIdentity ? this.identityName(this.activeIdentity) : this.$t('This account'));
+    },
+
+    currentPicture() {
+      return this.avatarBroken ? '' : (this.profile.picture || '');
     },
 
     showAsk: {
@@ -229,6 +302,7 @@ export default {
 
   async created() {
     await this.identity.hydrate();
+    await this.profile.hydrate();
     await this.refresh();
 
     // A stale pointer means another device cannot find these identities after
@@ -242,10 +316,45 @@ export default {
   methods: {
     async refresh() {
       try {
-        this.identities = await this.identity.listNostrIdentities();
+        const rows = await this.identity.listNostrIdentities();
+        const cachedRows = rows.map((row) => {
+          const cached = this.readCachedProfile(row.pubkeyHex);
+          return { ...row, displayName: cached.displayName || cached.name || '', picture: cached.picture || '' };
+        });
+        this.identities = cachedRows;
+        const pubkeys = rows.map((row) => row.pubkeyHex).filter(Boolean);
+        if (!pubkeys.length) return;
+        let profiles;
+        try {
+          profiles = await fetchProfiles(pubkeys);
+        } catch (err) {
+          console.warn('[identity-list] profile fetch failed:', err);
+          return;
+        }
+        this.identities = rows.map((row) => {
+          const event = profiles.get((row.pubkeyHex || '').toLowerCase());
+          const content = parseProfileContent(event);
+          const cached = this.readCachedProfile(row.pubkeyHex);
+          return {
+            ...row,
+            displayName: content.display_name || content.name || cached.displayName || '',
+            picture: content.picture || cached.picture || '',
+          };
+        });
       } catch (err) {
         console.warn('[identity-list] listing failed:', err);
         this.identities = [];
+      }
+    },
+
+    readCachedProfile(pubkeyHex) {
+      if (!pubkeyHex) return {};
+      try {
+        const raw = localStorage.getItem(`buhoGO_profile_v1_${pubkeyHex}`);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && parsed.version === 1 ? parsed : {};
+      } catch {
+        return {};
       }
     },
 
@@ -254,6 +363,7 @@ export default {
      * numbered fallback for a card that has neither yet.
      */
     identityName(row) {
+      if (row.displayName) return row.displayName;
       if (row.label) return row.label;
       if (row.username) return `@${row.username}`;
       return this.$t('Account {n}', { n: row.account + 1 });
@@ -276,9 +386,9 @@ export default {
      * The profile is scoped to a key, so a changed identity leaves it stale.
      * Reset and refetch, the same treatment a phrase restore gets.
      */
-    _refreshProfileForNewIdentity() {
+    async _refreshProfileForNewIdentity() {
       const profile = useProfileStore();
-      profile.reset();
+      await profile.hydrate({ force: true });
       profile.recoverFromNostr({ identityStore: this.identity }).catch(() => {});
       this.bucket.hydrate({ pubkey: this.identity.nostrPubkeyHex })
         .then(() => this.bucket.sync({ identityStore: this.identity }))
@@ -316,7 +426,7 @@ export default {
           return;
         }
 
-        this._refreshProfileForNewIdentity();
+        await this._refreshProfileForNewIdentity();
         await this.refresh();
         this.$q.notify({ type: 'positive', message: this.$t('Switched account'), timeout: 3000 });
         this.step = null;
@@ -358,10 +468,11 @@ export default {
           return;
         }
 
-        this._refreshProfileForNewIdentity();
+        await this._refreshProfileForNewIdentity();
         await this.refresh();
-        this.$q.notify({ type: 'positive', message: this.$t('New account created'), timeout: 3000 });
         this.step = null;
+        this.profileName = '';
+        this.showProfileSetup = true;
       } catch (err) {
         console.warn('[identity-list] create failed:', err);
         this.$q.notify({
@@ -374,6 +485,13 @@ export default {
         this.busy = false;
       }
     },
+
+    async finishProfileSetup() {
+      this.profile.setField('displayName', this.profileName.trim());
+      if (this.profile.isDirty) await this.profile.publish().catch(() => {});
+      this.showProfileSetup = false;
+      this.$q.notify({ type: 'positive', message: this.$t('New account created'), timeout: 2200 });
+    },
   },
 };
 </script>
@@ -381,6 +499,50 @@ export default {
 <style scoped>
 
 .add-account { margin-top: 0 !important; margin-bottom: 4px; }
+
+.current-account {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 92px;
+  padding: 14px 15px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  box-shadow: 0 14px 34px -30px rgba(0, 0, 0, 0.7);
+}
+
+.current-account-avatar {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent-text);
+}
+
+.current-account-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.account-row-avatar { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: var(--radius-ms); background: var(--bg-input); color: var(--text-secondary); }
+.account-row-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.current-account-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.current-account-kicker { color: var(--text-secondary); font-size: 11.5px; font-weight: 700; }
+.current-account-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 740; }
+.current-account-copy > span:last-child { color: var(--text-secondary); font-size: 12.5px; }
+.current-account-chip { flex: 0 0 auto; padding: 6px 9px; border-radius: var(--radius-pill); background: var(--brand-accent-soft); color: var(--brand-accent-text); font-size: 11.5px; font-weight: 700; }
+.accounts-empty { margin: 24px 4px 0; color: var(--text-secondary); font-size: 13px; text-align: center; }
+
+.profile-setup-sheet { width: 100%; max-width: 520px; border-radius: 24px 24px 0 0; padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+.profile-setup-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 20px 12px; }
+.profile-setup-head h2 { margin: 0; color: var(--text-primary); font-size: 21px; font-weight: 740; letter-spacing: -0.025em; }
+.profile-setup-body { padding: 4px 20px 12px; }
+.setup-avatar { display: flex; flex-direction: column; align-items: center; gap: 7px; width: 100%; padding: 4px 0 18px; border: 0; background: transparent; color: var(--brand-accent-text); font-size: 13px; font-weight: 650; }
+.setup-avatar img, .setup-avatar > svg { width: 76px; height: 76px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--brand-accent-soft); }
+.setup-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; color: var(--text-secondary); font-size: 12.5px; font-weight: 650; }
+.setup-field input { width: 100%; min-height: 48px; padding: 0 13px; border: 1px solid var(--border-card); border-radius: var(--radius-md); background: var(--bg-input); color: var(--text-primary); font: inherit; font-size: 15px; outline: none; }
+.setup-field input:focus { border-color: var(--brand-accent-text); }
 
 .account-sheet {
   width: 100%;
@@ -608,6 +770,12 @@ body.body--dark .account-option-icon { background: rgba(255, 255, 255, 0.07); }
   border-radius: 18px;
   color: var(--text-primary);
 }
+
+.account-switch-avatar { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 14px; color: var(--brand-accent-text); background: var(--brand-accent-soft); }
+.account-switch-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.account-switch-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.account-switch-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 700; }
+.account-switch-copy > span { color: var(--text-secondary); font-size: 12.5px; }
 
 .account-confirm {
   width: 100%;

@@ -35,8 +35,38 @@ export default boot(async () => {
 
   await identity.hydrate();
   await profile.hydrate();
+
+  // A restore on a new phone has no local profile blob. Recover the active
+  // account's public metadata from Nostr immediately; this is what makes the
+  // profile portable across devices instead of relying on local storage.
+  if (identity.bootstrapped && !profile.isDirty) {
+    await profile.recoverFromNostr({ identityStore: identity }).catch((err) => {
+      console.warn('[profile-sync] initial profile recovery failed:', err);
+    });
+  }
   profile.$subscribe((_mutation, state) => {
     if (state.isDirty) schedule();
+  });
+
+  // A Nostr account is a complete profile boundary. Load the target
+  // account's local metadata as soon as the identity store switches keys.
+  identity.$onAction(({ name, after }) => {
+    after(async () => {
+      if (
+        name === 'ensureIdentity' ||
+        name === 'createAnotherNostrIdentity' ||
+        name === 'switchNostrIdentity' ||
+        name === 'importMnemonic' ||
+        name === 'regenerate'
+      ) {
+        await profile.hydrate({ force: true });
+        if (!profile.isDirty) {
+          await profile.recoverFromNostr({ identityStore: identity }).catch((err) => {
+            console.warn('[profile-sync] account profile recovery failed:', err);
+          });
+        }
+      }
+    });
   });
 
   // Retry naturally after a reconnect or when the app returns to the front.

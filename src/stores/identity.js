@@ -1069,8 +1069,11 @@ export const useIdentityStore = defineStore('identity', {
       try {
         return this.nostrKnownAccounts.map((entry) => {
           let npub = '';
+          let pubkeyHex = '';
           try {
-            npub = deriveNostrIdentity(mnemonic, entry.i).npub;
+            const derived = deriveNostrIdentity(mnemonic, entry.i);
+            npub = derived.npub;
+            pubkeyHex = derived.publicKeyHex;
           } catch { /* row renders without an npub rather than not at all */ }
 
           // The username is how the owner recognises a card: "Card 2" names
@@ -1085,6 +1088,7 @@ export const useIdentityStore = defineStore('identity', {
           return {
             account: entry.i,
             npub,
+            pubkeyHex,
             label: entry.label || null,
             username: named?.handle || null,
             active: entry.i === this.nostrAccountIndex,

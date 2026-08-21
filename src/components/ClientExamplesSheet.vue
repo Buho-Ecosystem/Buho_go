@@ -45,7 +45,7 @@
 
       <div class="sheet-body examples-body">
         <p class="examples-lede">
-          {{ $t('These Nostr apps can use the same public profile. Only enter your secret key in an app you chose and trust.') }}
+          {{ $t('These Nostr apps can use the same public profile. Choose one you trust when you sign in.') }}
         </p>
 
         <div class="examples-section-label">{{ $t('Profile apps') }}</div>
@@ -100,13 +100,6 @@
           </li>
         </ul>
 
-        <div
-          class="examples-warn"
-          :class="$q.dark.isActive ? 'examples-warn-dark' : 'examples-warn-light'"
-        >
-          <Icon icon="tabler:shield" width="14" height="14" />
-          <span>{{ $t('Only paste your secret key into apps you trust. Anyone who has it controls your card.') }}</span>
-        </div>
       </div>
     </q-card>
   </q-dialog>
@@ -374,30 +367,4 @@ export default {
   color: rgba(255, 255, 255, 0.45);
 }
 
-/*
-  Closing safety note. Same visual weight as the warn callout
-  on the Advanced screen itself so the trust message is
-  consistent across surfaces a user might see private-key text.
-*/
-.examples-warn {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 14px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.examples-warn-light {
-  background: rgba(245, 158, 11, 0.08);
-  color: #92400e;
-}
-
-.examples-warn-dark {
-  background: rgba(245, 158, 11, 0.12);
-  color: #fde68a;
-}
 </style>

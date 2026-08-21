@@ -5,17 +5,16 @@
     <div class="id-sub-body">
       <h1 class="id-large-title">{{ $t('Keys and apps') }}</h1>
       <p class="id-lede">
-        {{ $t('Use your profile in other Nostr apps. Your public npub is safe to share; your secret key is not.') }}
+        {{ $t('Use your BuhoGO profile in other Nostr apps.') }}
       </p>
 
       <IdentityGroup
-        :title="$t('Publicly shareable npub')"
-        :footer="$t('Your npub helps people and apps find your public profile. It cannot reveal your secret key or spend your Bitcoin.')"
+        :title="$t('Public profile')"
       >
         <IdentityRow
           icon="tabler:world"
           tone="accent"
-          :label="publicCopied ? $t('Copied') : $t('Copy my npub')"
+          :label="publicCopied ? $t('Copied') : $t('Copy public ID')"
           :caption="shortNpub"
           mono
           :chevron="false"
@@ -24,47 +23,64 @@
       </IdentityGroup>
 
       <IdentityGroup
-        :title="$t('Secret access')"
-        :footer="$t('Your secret key gives full control of your profile. Only use it in an app you trust, never on a website that unexpectedly asks for it.')"
+        :title="$t('Use elsewhere')"
       >
         <IdentityRow
-          icon="tabler:key"
-          tone="danger"
-          :label="secretExpanded ? $t('Hide secret-key options') : $t('Use my secret key')"
-          :caption="$t('For signing in to another trusted Nostr app')"
-          :chevron="!secretExpanded"
-          @click="toggleSecretControls"
-        />
-        <IdentityRow
           icon="tabler:external-link"
-          :label="$t('Apps that use your profile')"
-          :caption="$t('See examples before sharing your secret key')"
+          :label="$t('Find a Nostr app')"
+          :caption="$t('See apps that work with your profile')"
           @click="showClients = true"
         />
       </IdentityGroup>
 
-      <section v-if="secretExpanded" class="secret-controls">
-        <div class="secret-warning">
-          <Icon icon="tabler:alert-triangle" width="19" height="19" />
-          <span>{{ $t('Anyone with this key can act as you. BuhoGO will never ask you to send it to someone.') }}</span>
-        </div>
-
-        <button type="button" class="btn-ghost" @click="copySecret">
-          <Icon icon="tabler:copy" width="18" height="18" />
-          <span>{{ secretCopied ? $t('Copied. Clipboard clears in 30 seconds') : $t('Copy secret key') }}</span>
-        </button>
-        <button type="button" class="btn-quiet" @click="toggleReveal">
-          <Icon :icon="revealed ? 'tabler:eye-off' : 'tabler:eye'" width="18" height="18" />
-          <span>{{ revealed ? $t('Hide it again') : $t('Show it on screen') }}</span>
-        </button>
-
-        <div v-if="revealed && nsec" class="secret-box">
-          <code class="secret-value">{{ nsec }}</code>
-        </div>
-      </section>
+      <IdentityGroup :title="$t('Private key')">
+        <IdentityRow
+          icon="tabler:key"
+          :label="$t('Use private key')"
+          :caption="$t('Only when connecting a trusted Nostr app')"
+          @click="showSecretSheet = true"
+        />
+      </IdentityGroup>
     </div>
 
     <ClientExamplesSheet v-model="showClients" />
+
+    <q-dialog
+      v-model="showSecretSheet"
+      position="bottom"
+      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+      @hide="closeSecretSheet"
+    >
+      <q-card class="identity-surface secret-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <div class="sheet-handle" aria-hidden="true"><span></span></div>
+        <div class="secret-sheet-head">
+          <div>
+            <span class="secret-sheet-kicker">{{ $t('Private key') }}</span>
+            <h2>{{ $t('Use it in another app') }}</h2>
+          </div>
+          <q-btn flat round dense :aria-label="$t('Close')" @click="showSecretSheet = false">
+            <Icon icon="tabler:x" width="18" height="18" />
+          </q-btn>
+        </div>
+
+        <div class="secret-sheet-body">
+          <p>{{ $t('Use this only when a trusted app asks to connect your profile.') }}</p>
+
+          <button type="button" class="btn-ghost" @click="copySecret">
+            <Icon icon="tabler:copy" width="18" height="18" />
+            <span>{{ secretCopied ? $t('Copied. Clipboard clears in 30 seconds') : $t('Copy private key') }}</span>
+          </button>
+          <button type="button" class="btn-quiet" @click="toggleReveal">
+            <Icon :icon="revealed ? 'tabler:eye-off' : 'tabler:eye'" width="18" height="18" />
+            <span>{{ revealed ? $t('Hide it again') : $t('Show private key') }}</span>
+          </button>
+
+          <div v-if="revealed && nsec" class="secret-box">
+            <code class="secret-value">{{ nsec }}</code>
+          </div>
+        </div>
+      </q-card>
+    </q-dialog>
 
       <SettingsHubNav />
 
@@ -100,7 +116,7 @@ export default {
       revealed: false,
       secretCopied: false,
       publicCopied: false,
-      secretExpanded: false,
+      showSecretSheet: false,
       showClients: false,
       _revealTimer: null,
       _copyTimer: null,
@@ -140,13 +156,11 @@ export default {
   },
 
   methods: {
-    toggleSecretControls() {
-      this.secretExpanded = !this.secretExpanded;
-      if (!this.secretExpanded) {
-        this.revealed = false;
-        this.nsec = '';
-        if (this._revealTimer) clearTimeout(this._revealTimer);
-      }
+    closeSecretSheet() {
+      this.showSecretSheet = false;
+      this.revealed = false;
+      this.nsec = '';
+      if (this._revealTimer) clearTimeout(this._revealTimer);
     },
 
     async loadSecret() {
@@ -211,29 +225,16 @@ export default {
 
 <style scoped>
 
-.secret-controls {
-  margin-top: 12px;
-  padding: 14px;
-  border: 1px solid rgba(255, 68, 68, 0.2);
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-}
-
-.secret-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border-radius: var(--radius-md);
-  background: rgba(255, 68, 68, 0.08);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.secret-warning svg { flex: 0 0 auto; margin-top: 1px; color: var(--color-red); }
-.secret-controls .btn-ghost { margin-top: 12px; }
-.secret-controls .btn-quiet { margin-top: 2px; }
+.secret-sheet { width: 100%; max-width: 520px; border-radius: 24px 24px 0 0; padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+.sheet-handle { display: flex; justify-content: center; padding: 8px 0 4px; }
+.sheet-handle span { width: 36px; height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--text-secondary) 28%, transparent); }
+.secret-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 20px 12px; }
+.secret-sheet-kicker { display: block; margin-bottom: 3px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.secret-sheet-head h2 { margin: 0; color: var(--text-primary); font-size: 21px; font-weight: 740; letter-spacing: -0.025em; }
+.secret-sheet-body { padding: 0 20px 10px; }
+.secret-sheet-body > p { margin: 0 0 14px; color: var(--text-secondary); font-size: 13.5px; line-height: 1.45; }
+.secret-sheet-body .btn-ghost { margin-top: 4px; }
+.secret-sheet-body .btn-quiet { margin-top: 2px; }
 
 .secret-box {
   margin-top: 12px;
