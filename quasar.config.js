@@ -15,6 +15,9 @@ export default defineConfig((ctx) => {
       // 'theme' runs first so the persisted light/dark choice is applied
       // before any component renders — avoids a flash of the wrong theme.
       'theme',
+      // 'chunk-recovery' installs the missing-chunk refresh as early as it can,
+      // so a tab left open across a deploy recovers rather than going blank.
+      'chunk-recovery',
       'axios',
       'i18n',
       'iconify',
