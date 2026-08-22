@@ -199,6 +199,21 @@ export default defineConfig((ctx) => {
       // instead of generated config. See that file for the reasoning.
       workboxMode: 'InjectManifest',
       manifestFilename: 'manifest.json',
+      extendPWACustomSWConf (esbuildConf) {
+        // esbuild refuses to compile for Safari 14: WebKit destructuring bugs
+        // make it a target that would need lowering, and esbuild has not
+        // implemented that lowering ("Transforming destructuring ... is not
+        // supported yet"). The Workbox modules the worker imports are full of
+        // destructuring, so the worker build hard-fails. Safari 14 never ran
+        // transpiled worker code anyway: the previously generated worker
+        // shipped these same patterns as-is. Lift only the worker's floor to
+        // Safari 15; the app bundle keeps the project-wide browser target.
+        if (Array.isArray(esbuildConf.target)) {
+          esbuildConf.target = esbuildConf.target.map(
+            target => (target === 'safari14' ? 'safari15' : target),
+          )
+        }
+      },
       extendInjectManifestOptions (cfg) {
         // Precache the app shell only: what the app needs to boot and render
         // offline. public/ also holds a large media library (store
