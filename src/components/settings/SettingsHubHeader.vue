@@ -25,12 +25,14 @@ import { Icon } from '@iconify/vue';
 import { haptics } from '../../utils/haptics';
 
 /**
- * Shared header for the Settings / Identity / Spend hub. All three tabs
- * are peers reached via SettingsHubNav, not a push-stack, so there is no
- * back chevron here - the home icon (always present, far right) is the
+ * Shared header for the Settings and Spend tabs. Identity is the third tab
+ * in the same hub but owns its own top bar, so it does not use this.
+ *
+ * The tabs are peers reached via SettingsHubNav, not a push-stack, so there
+ * is no back chevron here: the home icon (always present, far right) is the
  * one universal way out, back to the wallet. A tab that needs its own
- * contextual action (Identity's kebab menu) passes it through the
- * `actions` slot, rendered just left of the home icon.
+ * contextual action passes it through the `actions` slot, rendered just left
+ * of the home icon; no tab uses it today.
  */
 export default {
   name: 'SettingsHubHeader',
@@ -56,10 +58,9 @@ export default {
    rule (e.g. `padding-top: 0` on its own root class) since this header
    owns the safe-top inset itself; otherwise the inset is applied twice.
    Grid (not flex) so the title sits truly centered on the viewport no
-   matter how wide the actions slot ends up (Identity's kebab + Home vs.
-   the other tabs' Home-only) - both flanking 1fr columns are forced to
-   the same width by the grid algorithm, so the empty left column always
-   mirrors the actions column and the title never drifts off-center. */
+   matter how wide the actions slot ends up - both flanking 1fr columns are
+   forced to the same width by the grid algorithm, so the empty left column
+   always mirrors the actions column and the title never drifts off-center. */
 .hub-header {
   position: sticky;
   top: 0;

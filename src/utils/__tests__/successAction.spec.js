@@ -22,6 +22,7 @@ import {
   parseSuccessAction,
   resolveSuccessAction,
   decryptAesSuccessAction,
+  formatSuccessActionUrl,
   SUCCESS_ACTION_MAX_CHARS,
 } from '../successAction.js';
 
@@ -100,7 +101,7 @@ await test('parse: clamps message to the spec cap', () => {
   );
 });
 
-await test('parse: url accepts http(s) on the callback domain, rejects other schemes', () => {
+await test('parse: url accepts http(s), rejects other schemes', () => {
   const cb = 'https://ex.com/lnurlp/callback';
   assert.deepEqual(
     parseSuccessAction({ tag: 'url', description: 'Receipt', url: 'https://ex.com/r/1' }, cb),
@@ -109,24 +110,37 @@ await test('parse: url accepts http(s) on the callback domain, rejects other sch
   assert.equal(parseSuccessAction({ tag: 'url', url: 'ftp://x' }, cb), null);
   assert.equal(parseSuccessAction({ tag: 'url', url: 'not a url' }, cb), null);
   assert.equal(parseSuccessAction({ tag: 'url', url: 'javascript:alert(1)' }, cb), null);
+  assert.equal(parseSuccessAction({ tag: 'url', url: 'data:text/html,<script>' }, cb), null);
 });
 
-await test('parse: url enforces the LUD-09 same-domain rule', () => {
-  // Different domain than the callback → degrade to the description as a message.
+await test('parse: url off the callback domain survives as a link', () => {
+  // The real-world case this regressed on: a ticket paid at one host that
+  // links to the group chat it grants access to. LUD-09's same-domain line is
+  // not enforced — the UI shows the destination and requires a tap instead.
   assert.deepEqual(
     parseSuccessAction(
-      { tag: 'url', description: 'See details', url: 'https://evil.com/x' },
+      { tag: 'url', description: 'Join the group', url: 'https://t.me/somegroup' },
       'https://ex.com/cb',
     ),
-    { tag: 'message', message: 'See details' },
+    { tag: 'url', description: 'Join the group', url: 'https://t.me/somegroup' },
   );
-  // Different domain, no description → dropped entirely.
-  assert.equal(
-    parseSuccessAction({ tag: 'url', url: 'https://evil.com/x' }, 'https://ex.com/cb'),
-    null,
+  // No description and no callback are both fine; the link still stands alone.
+  assert.deepEqual(
+    parseSuccessAction({ tag: 'url', url: 'https://ex.com/x' }),
+    { tag: 'url', description: '', url: 'https://ex.com/x' },
   );
-  // No callback to validate against → fails closed.
-  assert.equal(parseSuccessAction({ tag: 'url', url: 'https://ex.com/x' }), null);
+});
+
+await test('format: url label drops the scheme and keeps the host visible', () => {
+  assert.equal(formatSuccessActionUrl('https://t.me/lnPoS_Kassenterminal'), 't.me/lnPoS_Kassenterminal');
+  assert.equal(formatSuccessActionUrl('https://shop.example.com/'), 'shop.example.com');
+  assert.equal(formatSuccessActionUrl(''), '');
+  assert.equal(formatSuccessActionUrl(null), '');
+
+  const long = formatSuccessActionUrl(`https://shop.example.com/orders/${'a'.repeat(120)}/receipt`);
+  assert.ok(long.startsWith('shop.example.com'), `host kept: ${long}`);
+  assert.ok(long.includes('…'), `ellipsized: ${long}`);
+  assert.ok(long.length <= 42, `within budget: ${long.length}`);
 });
 
 await test('parse: aes requires ciphertext + iv', () => {

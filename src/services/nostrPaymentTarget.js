@@ -47,6 +47,8 @@ function makeError(code, message, cause) {
  *   pubkey: string,
  *   npub: string,
  *   profile: { name: string, picture: string },
+ *   profileEvent: import('nostr-core').NostrEvent,
+ *   relayHints: string[],
  * }} NostrTarget
  */
 
@@ -86,12 +88,28 @@ export async function resolveNostrLightningTarget(input, opts = {}) {
   //    lud06 (a raw LNURL) is the fallback. Both validated before handoff.
   const lud16 = typeof content.lud16 === 'string' ? content.lud16.trim().toLowerCase() : ''
   if (lud16 && isLightningAddress(lud16)) {
-    return { kind: 'lightning_address', address: lud16, pubkey: resolved.pubkey, npub: resolved.npub, profile }
+    return {
+      kind: 'lightning_address',
+      address: lud16,
+      pubkey: resolved.pubkey,
+      npub: resolved.npub,
+      profile,
+      profileEvent: event,
+      relayHints: resolved.relays || [],
+    }
   }
 
   const lud06 = typeof content.lud06 === 'string' ? content.lud06.trim() : ''
   if (lud06 && isLnurl(lud06)) {
-    return { kind: 'lnurl', address: lud06, pubkey: resolved.pubkey, npub: resolved.npub, profile }
+    return {
+      kind: 'lnurl',
+      address: lud06,
+      pubkey: resolved.pubkey,
+      npub: resolved.npub,
+      profile,
+      profileEvent: event,
+      relayHints: resolved.relays || [],
+    }
   }
 
   throw makeError(NOSTR_TARGET_ERROR.NO_ADDRESS, `profile ${resolved.npub} has no Lightning address`)

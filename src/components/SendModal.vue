@@ -899,6 +899,8 @@ export default {
               nostrPubkey: target.pubkey,
               nostrNpub: target.npub,
               nostrProfile: target.profile,
+              nostrProfileEvent: target.profileEvent,
+              nostrRelayHints: target.relayHints,
             });
           } catch (err) {
             this.isProcessing = false;

@@ -35,6 +35,7 @@
       type="button"
       class="feature-card"
       :class="{ 'feature-card--active': f.active, 'feature-card--warn': f.warn && !f.active }"
+      :data-audit="f.audit || null"
       @click="$emit('select', f.id)"
     >
       <span class="feature-card-icon">
@@ -207,11 +208,8 @@ body.body--light .feature-card--active .feature-card-meta {
   border-color: rgba(255, 168, 0, 0.30);
 }
 .feature-card--warn .feature-card-meta {
-  color: #FFB347;
+  color: var(--color-warn);
   font-weight: 600;
-}
-body.body--light .feature-card--warn .feature-card-meta {
-  color: #B8780E;
 }
 .feature-card-dot--warn {
   background: #FFB347;

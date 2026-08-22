@@ -58,6 +58,19 @@ const HEX_RE = /^[0-9a-f]{64}$/i;
 const NIP21_PREFIX_RE = /^nostr:/i;
 
 /**
+ * Build the NIP-21 URI used when one BuhoGO user shows their card to
+ * another. Keep the QR payload as the identity itself; public web profile
+ * links are a separate remote-sharing concern.
+ *
+ * @param {string} npub canonical NIP-19 public key
+ * @returns {string} `nostr:npub…`, or an empty string for invalid input
+ */
+export function buildNostrIdentityUri(npub) {
+  const value = String(npub || '').trim().replace(NIP21_PREFIX_RE, '');
+  return /^npub1[0-9a-z]+$/i.test(value) ? `nostr:${value}` : '';
+}
+
+/**
  * Classify a string into one of the recognised identifier kinds
  * without performing any network resolution. Used by the search UI
  * to decide whether to debounce (NIP-05 needs a fetch) or resolve

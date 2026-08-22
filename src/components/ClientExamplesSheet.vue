@@ -3,11 +3,11 @@
 
   Surfaces concrete apps where the user can sign in with their
   BuhoGO profile's private key. Reached from the "Where can I use
-  this key?" link inside NostrIdentityDialog right after the user
+  this key?" row on the Advanced screen, right after the user
   reveals the key — the exact moment they're asking "ok, where do
   I take this?".
 
-  Pattern mirrors SiteExamplesSheet:
+  Pattern mirrors the other identity information sheets:
     - Bottom sheet, mobile-native, dismissible by swipe / tap-outside
     - Brand names stay untranslated
     - One-line tagline IS translatable
@@ -25,50 +25,33 @@
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
   >
     <q-card
-      class="examples-sheet"
+      class="identity-surface examples-sheet"
       :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
     >
-      <div class="sheet-handle" aria-hidden="true">
-        <span :class="$q.dark.isActive ? 'sheet-handle-bar-dark' : 'sheet-handle-bar-light'"></span>
-      </div>
+      <div class="sheet-grab" aria-hidden="true"><span></span></div>
 
-      <q-card-section class="examples-header">
-        <div
-          class="examples-title"
-          :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'"
-        >
-          {{ $t('Where can I use this key?') }}
-        </div>
+      <div class="sheet-head">
+        <div class="sheet-title">{{ $t('Use your profile elsewhere') }}</div>
         <q-btn
           flat
           round
-          dense
+          class="sheet-close"
           @click="open = false"
-          :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
           :aria-label="$t('Close')"
         >
           <Icon icon="tabler:x" width="18" height="18" />
         </q-btn>
-      </q-card-section>
+      </div>
 
-      <q-card-section class="examples-body">
-        <p
-          class="examples-lede"
-          :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-        >
-          {{ $t('Paste your private key into one of these apps to sign in as the same profile you have here.') }}
+      <div class="sheet-body examples-body">
+        <p class="examples-lede">
+          {{ $t('These Nostr apps can use the same public profile. Choose one you trust when you sign in.') }}
         </p>
 
-        <!-- Mobile apps -->
-        <div
-          class="examples-section-label"
-          :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-        >
-          {{ $t('On your phone') }}
-        </div>
+        <div class="examples-section-label">{{ $t('Profile apps') }}</div>
         <ul class="examples-list">
           <li
-            v-for="client in mobileClients"
+            v-for="client in clients"
             :key="client.name"
             class="examples-item-wrap"
           >
@@ -117,72 +100,7 @@
           </li>
         </ul>
 
-        <!-- Web -->
-        <div
-          class="examples-section-label"
-          :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-        >
-          {{ $t('In a browser') }}
-        </div>
-        <ul class="examples-list">
-          <li
-            v-for="client in webClients"
-            :key="client.name"
-            class="examples-item-wrap"
-          >
-            <a
-              :href="client.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="examples-item"
-              :class="$q.dark.isActive ? 'examples-item-dark' : 'examples-item-light'"
-            >
-              <SiteFavicon
-                :domain="client.domain"
-                :icon-url="client.icon || ''"
-                :size="36"
-                shape="rounded-square"
-              />
-              <div class="examples-item-meta">
-                <div
-                  class="examples-item-name"
-                  :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-                >
-                  {{ client.name }}
-                </div>
-                <div
-                  class="examples-item-tagline"
-                  :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-                >
-                  {{ client.tagline }}
-                </div>
-              </div>
-              <div class="examples-item-side">
-                <div
-                  class="examples-item-platforms"
-                  :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-                >
-                  {{ client.platforms }}
-                </div>
-                <Icon
-                  icon="tabler:external-link"
-                  width="14"
-                  height="14"
-                  :class="$q.dark.isActive ? 'examples-item-chev-dark' : 'examples-item-chev-light'"
-                />
-              </div>
-            </a>
-          </li>
-        </ul>
-
-        <div
-          class="examples-warn"
-          :class="$q.dark.isActive ? 'examples-warn-dark' : 'examples-warn-light'"
-        >
-          <Icon icon="tabler:shield" width="14" height="14" />
-          <span>{{ $t('Only paste your private key into apps you trust. Anyone with the key controls your profile.') }}</span>
-        </div>
-      </q-card-section>
+      </div>
     </q-card>
   </q-dialog>
 </template>
@@ -209,10 +127,8 @@ export default {
     },
 
     /**
-     * Phone-installable clients. Brand names stay untranslated;
-     * the tagline is translatable. `platforms` is a small text
-     * label (iOS / Android / both) that helps the user spot the
-     * right install link in their app store quickly.
+     * Profile apps in intentional display order. Lotus is the first-party
+     * path from BuhoGO and stays first; the remaining examples follow.
      */
     /*
      * Each entry may carry an optional `icon` path pointing to a
@@ -225,8 +141,16 @@ export default {
      * surface small and means new releases of those apps pick up
      * any rebrand automatically.
      */
-    mobileClients() {
+    clients() {
       return [
+        {
+          name: 'Lotus',
+          tagline: this.$t('One peaceful place for your day, your people and your ideas.'),
+          platforms: this.$t('Web app'),
+          url: 'https://lotus.mybuho.de/app',
+          domain: 'lotus.mybuho.de',
+          icon: '/clients/lotus_logo.png',
+        },
         {
           name: 'Primal',
           tagline: this.$t('Polished social app with built-in Bitcoin payments.'),
@@ -258,12 +182,6 @@ export default {
           domain: 'wisp.mobile',
           icon: '/clients/WISP_logo.png',
         },
-      ];
-    },
-
-    /** Web-only clients. Same shape, separated visually. */
-    webClients() {
-      return [
         {
           name: 'Jumble',
           tagline: this.$t('Browse and post from any browser. No install needed.'),
@@ -345,8 +263,8 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
   margin-top: 10px;
   margin-bottom: 6px;
 }
@@ -449,30 +367,4 @@ export default {
   color: rgba(255, 255, 255, 0.45);
 }
 
-/*
-  Closing safety note. Same visual weight as the warn callout
-  inside NostrIdentityDialog itself so the trust message is
-  consistent across surfaces a user might see private-key text.
-*/
-.examples-warn {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 14px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.examples-warn-light {
-  background: rgba(245, 158, 11, 0.08);
-  color: #92400e;
-}
-
-.examples-warn-dark {
-  background: rgba(245, 158, 11, 0.12);
-  color: #fde68a;
-}
 </style>

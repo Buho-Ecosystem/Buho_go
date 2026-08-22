@@ -5,6 +5,7 @@ import { App } from '@capacitor/app'
 import { parsePaymentDestination } from '../providers/WalletFactory'
 import { classifyIdentifier } from '../utils/nostrLookup'
 import { triggerWalletStoreHydration } from '../utils/walletHydration'
+import { profileLinkRoute } from '../utils/profileLink'
 import { redactPaymentInput } from '../utils/logRedaction'
 
 /**
@@ -12,7 +13,9 @@ import { redactPaymentInput } from '../utils/logRedaction'
  *
  * Only loaded in Capacitor builds (see quasar.config.js).
  * Registers BuhoGO as a handler for lightning:, bitcoin:, lnurlp://, lnurlw://
- * URI schemes so it appears in the Android app chooser alongside other Lightning wallets.
+ * URI schemes so it appears in the Android app chooser alongside other Lightning wallets,
+ * and as an App Link handler for https://go.mybuho.de/p/… so a shared card opens
+ * the card instead of the browser.
  *
  * The flow:
  *   1. Android receives an intent matching our URI schemes (AndroidManifest.xml)
@@ -36,8 +39,8 @@ function parseDeepLinkURI(url) {
 
   const input = url.trim()
 
-  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) — the profile-
-  // share QR and Nostr clients hand these over. Not a payment shape, so
+  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) — the identity-card
+  // QR and Nostr clients hand these over. Not a payment shape, so
   // parsePaymentDestination can't classify them; Wallet.onPaymentDetected
   // resolves the profile to its Lightning target and re-dispatches.
   const nostrKind = classifyIdentifier(input)
@@ -73,6 +76,16 @@ function handleDeepLink(url, router, walletStore) {
   // Block deep links while kiosk mode is locked
   if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
     console.log('[deep-links] Blocked - kiosk mode active')
+    return
+  }
+
+  // A shared card is not a payment. It opens the same page the browser would
+  // have shown, natively, where paying and saving the contact both work in
+  // app. Checked before the wallet guard below on purpose: someone with no
+  // wallet yet can still be handed a card and save the person.
+  const profileRoute = profileLinkRoute(url)
+  if (profileRoute) {
+    router.push(profileRoute).catch(() => { /* navigation rejection is non-fatal */ })
     return
   }
 

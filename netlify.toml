@@ -19,3 +19,29 @@ status = 200
 [build]
 command = "quasar build -m pwa"
 publish = "dist/pwa"
+
+# Update discovery must always reach the latest release metadata. Quasar also
+# recommends preventing the generated worker itself from being cached, or a
+# browser can miss subsequent deployments.
+[[headers]]
+for = "/update-manifest.json"
+  [headers.values]
+  Cache-Control = "no-store, max-age=0"
+  # Capacitor loads the canonical manifest from its local WebView origin.
+  # The document is public, read-only release metadata and sends no credentials.
+  Access-Control-Allow-Origin = "*"
+  Access-Control-Allow-Methods = "GET, OPTIONS"
+  Access-Control-Allow-Headers = "Accept"
+
+[[headers]]
+for = "/sw.js"
+  [headers.values]
+  Cache-Control = "no-cache, max-age=0, must-revalidate"
+
+# Shared card links get their own preview. Without this every /p/ link would
+# show the generic wallet title in a chat, so a shared card would arrive
+# looking like an advert rather than like a person. Scoped to /p/* so nothing
+# else in the app pays for it.
+[[edge_functions]]
+function = "profile-preview"
+path = "/p/*"

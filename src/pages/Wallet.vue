@@ -3,9 +3,19 @@
     <!-- Header -->
     <q-toolbar>
 
-      <q-avatar square size="30px">
-        <img src="buho_logo.svg" alt="Logo" class="app-logo">
-      </q-avatar>
+      <button
+        type="button"
+        class="app-logo-button"
+        :aria-label="updateStore.hasUpdate ? $t('Update available. Open update details.') : $t('About BuhoGO')"
+        @click="onAppLogoClick"
+      >
+        <q-avatar square size="30px">
+          <img src="buho_logo.svg" alt="" class="app-logo">
+        </q-avatar>
+        <transition name="update-pill">
+          <span v-if="updateStore.showLogoBadge" class="app-logo-update-pill" aria-hidden="true">+1</span>
+        </transition>
+      </button>
 
       <!-- NFC-ready badge. Only shown on a device where NFC is actually
            available + enabled, so it honestly signals "tap a Bolt Card / NFC
@@ -66,12 +76,17 @@
       <q-btn
         flat
         dense
-        class="float-right"
+        class="float-right profile-menu-btn"
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
         @click="$router.push('/identity')"
-        aria-label="Profile and settings"
+        :aria-label="profileButtonLabel"
       >
-        <Icon icon="tabler:user-circle" width="21" height="21" class="header-icon" />
+        <Icon icon="tabler:user" width="21" height="21" class="header-icon" />
+        <span
+          v-if="socialBucketStore.paymentCount > 0"
+          class="profile-money-pill"
+          aria-hidden="true"
+        >{{ bucketPaymentBadge }}</span>
       </q-btn>
     </q-toolbar>
 
@@ -215,7 +230,10 @@
                 :prefix="balancePrefix"
                 :suffix="balanceSuffix"
                 class="amount-number"
-                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :class="[
+                  $q.dark.isActive ? 'amount-number-dark' : 'amount-number-light',
+                  { 'amount-number--provisional': balanceProvisional },
+                ]"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -227,6 +245,7 @@
               <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
                 <span class="secondary-value">••••</span>
               </span>
+              <span v-else-if="balanceProvisional" class="loading-secondary">{{ $t('Updating') }}...</span>
               <span v-else-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
@@ -305,7 +324,7 @@
               class="last-tx-avatar"
               :picture="lastTxAvatarPicture"
               :entry="{ address: lastTxAvatarAddress }"
-              :name="lastTxTitle"
+              :name="lastTxHeading.kind === 'message' ? '' : lastTxHeading.text"
             />
             <ContactAvatar
               v-else
@@ -321,8 +340,17 @@
             </span>
           </span>
           <span class="last-tx-info">
-            <span class="last-tx-title" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              {{ lastTxTitle }}
+            <!-- A message is quoted and unbolded so it reads as something
+                 someone wrote, never as a contact the user saved. -->
+            <span
+              class="last-tx-title"
+              :class="[
+                $q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light',
+                { 'last-tx-title-message': lastTxHeading.kind === 'message' }
+              ]"
+            >
+              <template v-if="lastTxHeading.kind === 'message'">&#8220;{{ lastTxHeading.text }}&#8221;</template>
+              <template v-else>{{ lastTxHeading.text }}</template>
             </span>
             <span class="last-tx-time" :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'">
               {{ lastTxTimeAgo }}
@@ -750,14 +778,24 @@
         </q-card-section>
 
         <q-card-section class="save-contact-content">
-          <!-- Fiat-payout recipients (Bitzed/Tando) get the provider logo as
-               the contact picture, so the saved entry reads clearly as a
-               mobile-money number. Shown only when recognized. -->
-          <div v-if="saveContactServiceLogo" class="flex flex-center q-mb-sm">
+          <!-- Preserve the identity the user just confirmed. Nostr recipients
+               keep their fetched avatar (or the contact silhouette); fiat
+               payout recipients keep the provider mark. -->
+          <div
+            v-if="saveContactData.nostrIdentity || saveContactServiceLogo"
+            class="save-contact-avatar-wrap"
+          >
+            <ContactAvatar
+              v-if="saveContactData.nostrIdentity"
+              class="save-contact-avatar"
+              :picture="saveContactNostrPicture"
+              :name="saveContactData.name"
+            />
             <img
+              v-else
               :src="saveContactServiceLogo"
+              class="save-contact-avatar"
               alt=""
-              style="width: 56px; height: 56px; border-radius: 50%;"
             />
           </div>
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
@@ -818,10 +856,19 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
+import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
+import {classifyTransportFailure} from '../utils/userErrors.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
 import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
+import {
+  decodeSparkDestination,
+  sparkInvoiceProblem,
+  identityPublicKeyFromSparkAddress,
+} from '../utils/sparkPayment.js';
+import {readPersistedWalletState} from '../utils/walletHydration.js';
 import {zapInfoFromTx} from '../utils/zaps.js';
+import {getTxMessage} from '../utils/txMessage.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
@@ -840,6 +887,7 @@ import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../uti
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
 import {useWalletStore} from '../stores/wallet';
+import {useUpdateStore} from '../stores/update';
 import {useAddressBookStore} from '../stores/addressBook';
 import {useTransactionMetadataStore} from '../stores/transactionMetadata';
 import {normalizeTx} from '../services/txNormalizer.js';
@@ -860,6 +908,7 @@ import BackupBanner from '../components/BackupBanner.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {useIdentityStore} from '../stores/identity';
+import {useSocialBucketStore} from '../stores/socialBucket';
 import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
 import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
 import {
@@ -870,6 +919,19 @@ import {
 import { track as telemetryTrack } from '../utils/telemetry';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
+
+function emptySaveContactData() {
+  return {
+    address: '',
+    addressType: 'lightning',
+    name: '',
+    notes: '',
+    amountSats: 0,
+    // Present only when the payment carried a verified Nostr profile.
+    // Keeping it nested makes the manual-contact fallback explicit.
+    nostrIdentity: null,
+  };
+}
 
 export default {
   name: 'WalletPage',
@@ -897,7 +959,17 @@ export default {
     const transactionMetadataStore = useTransactionMetadataStore();
     const bitcoinPrefsStore = useBitcoinPreferencesStore();
     const identityStore = useIdentityStore();
-    return { walletStore, addressBookStore, transactionMetadataStore, bitcoinPrefsStore, identityStore };
+    const updateStore = useUpdateStore();
+    const socialBucketStore = useSocialBucketStore();
+    return {
+      walletStore,
+      addressBookStore,
+      transactionMetadataStore,
+      bitcoinPrefsStore,
+      identityStore,
+      socialBucketStore,
+      updateStore,
+    };
   },
   data() {
     return {
@@ -918,7 +990,7 @@ export default {
       isMigrating: false,
 
       walletState: {
-        balance: 312,
+        balance: 0,
         connectedWallets: [],
         activeWalletId: null,
         currency: 'sats',
@@ -936,6 +1008,12 @@ export default {
       // computed properties.
       lastTransaction: null,
       isLoadingLastTransaction: true,
+
+      // True while the shown balance is the persisted cache from the last
+      // session, before the first authoritative fetch lands. Drives the
+      // dimmed amount + "Updating..." secondary line. Display only — no
+      // spend/max logic ever reads walletState.balance while provisional.
+      balanceProvisional: false,
 
       showReceiveModal: false,
       showSendModal: false,
@@ -992,17 +1070,9 @@ export default {
       isEstimatingFee: false,
       // Save-to-contacts after payment
       showSaveContactDialog: false,
-      saveContactData: {
-        address: '',
-        addressType: 'lightning',
-        name: '',
-        notes: '',
-        // Set when the save-as-contact dialog is offered right after a
-        // successful send — saveRecipientAsContact queues a pending
-        // link with this amount so the freshly created contact gets
-        // its first tx stamped on the next list refresh.
-        amountSats: 0,
-      },
+      // amountSats lets the post-save handler link the freshly created
+      // contact to the outgoing transaction on the next list refresh.
+      saveContactData: emptySaveContactData(),
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
       bitcoinDepositPollingInterval: null,
@@ -1062,6 +1132,17 @@ export default {
     };
   },
   computed: {
+    profileButtonLabel() {
+      const count = this.socialBucketStore.paymentCount;
+      if (!count) return this.$t('You');
+      return `${this.$t('You')}, ${this.$t('{n} payments waiting', { n: count })}`;
+    },
+
+    bucketPaymentBadge() {
+      const count = this.socialBucketStore.paymentCount;
+      return count > 99 ? '99+' : `+${count}`;
+    },
+
     activeWallet() {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
@@ -1150,6 +1231,7 @@ export default {
         if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
         if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
         if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+        if (source === 'social-bucket') return { icon: 'tabler:user-dollar', cls: 'tx-badge-aux' };
       } catch { /* metadata store not ready — direction still applies */ }
       return this.lastTxIsIncoming
         ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
@@ -1228,24 +1310,60 @@ export default {
       }
     },
 
-    lastTxTitle() {
+    /**
+     * The preview's top line, and what kind of thing it is. Same
+     * priority chain as the history list's resolveTxTitle(), so the two
+     * surfaces never disagree about the same payment: contact → zap
+     * sender → auxiliary label → recipient address (sends) → the
+     * payment's own message → a generic direction label.
+     *
+     * `kind: 'message'` is counterparty-written text, which the template
+     * renders quoted and unbolded so it can never pass for a contact.
+     *
+     * @returns {{ text: string, kind: 'name'|'address'|'message'|'generic' }}
+     */
+    lastTxHeading() {
       // Prefer the linked contact's name so the home-screen preview
       // reads as "DrShift" instead of the generic direction label.
-      if (this.lastTxContact?.name) return this.lastTxContact.name;
+      if (this.lastTxContact?.name) return { text: this.lastTxContact.name, kind: 'name' };
       // A zap is about WHO zapped — resolved profile name, shortened
       // npub until the relays answer. Same rule as the history list.
       if (this.lastTxZap) {
-        return zapperDisplayName(this.lastTxZap) || this.$t('Zap received');
+        return { text: zapperDisplayName(this.lastTxZap) || this.$t('Zap received'), kind: 'name' };
+      }
+      // Auxiliary payment paths provide a human label (for example a payout
+      // from this profile's Social Bucket). Keep it above the raw invoice memo
+      // so the home preview agrees with history and transaction details.
+      const tx = this.lastTransaction;
+      if (tx?.id && this.transactionMetadataStore) {
+        const label = this.transactionMetadataStore.getLabelForTransaction(tx.id, this.activeWallet?.id);
+        if (label) return { text: label, kind: 'name' };
       }
       // Next best identity: the recipient address stamped at send time.
-      const tx = this.lastTransaction;
       if (tx?.type === 'outgoing' && tx.id && this.transactionMetadataStore) {
         const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id, this.activeWallet?.id);
-        if (meta?.recipientAddress) return meta.recipientAddress;
+        if (meta?.recipientAddress) return { text: meta.recipientAddress, kind: 'address' };
       }
-      return this.lastTxIsIncoming
-        ? this.$t('Payment Received')
-        : this.$t('Payment Sent');
+      // Nothing identifies the counterparty, which is the normal case on
+      // a receive: let what they wrote speak instead of a placeholder.
+      const message = this.lastTxMessage;
+      if (message) return { text: message, kind: 'message' };
+
+      // Nothing identified this payment. Direction already rides the
+      // signed amount and the badge, so the line says what it is, not
+      // which way it went. Same wording as the transaction list.
+      return { text: this.$t('Bitcoin payment'), kind: 'generic' };
+    },
+
+    /**
+     * The human message on the previewed transaction: a zap's note, else
+     * the payer's comment, else the invoice description — never one of
+     * the placeholder memos BuhoGO writes on the user's behalf. '' when
+     * the payment carries no text at all.
+     */
+    lastTxMessage() {
+      if (this.lastTxZap) return this.lastTxZap.note || '';
+      return getTxMessage(this.lastTransaction);
     },
 
     lastTxTimeAgo() {
@@ -1258,13 +1376,11 @@ export default {
         this.lastTransaction.createdTime ??
         null;
       const time = this.formatRelativeTime(ts);
-      // Same message rule as the history list: for a zap, the zapper's
-      // note (the raw kind-9734 JSON must never leak as text); otherwise
-      // the payer's comment, else the invoice memo — quoted human text.
-      const tx = this.lastTransaction;
-      const message = this.lastTxZap
-        ? (this.lastTxZap.note || '')
-        : String(tx?.comment || tx?.description || tx?.memo || '').trim();
+      // Same rule as the history list: the message rides here in quotes,
+      // unless the top line is already carrying it — the same text must
+      // never appear twice in one preview.
+      if (this.lastTxHeading.kind === 'message') return time;
+      const message = this.lastTxMessage;
       return message ? `“${message}” · ${time}` : time;
     },
 
@@ -1366,10 +1482,11 @@ export default {
       // LNURL-withdraw has its own amount handling
       if (this.pendingPayment.type === 'lnurl_withdraw') return false;
 
-      // Spark / Arkade addresses always need amount input (no embedded amount)
+      // Spark / Arkade addresses need amount input — except a Spark invoice
+      // that carries its own amount, which locks the sheet.
       if (this.pendingPayment.type === 'spark_address' || this.pendingPayment.sparkAddress ||
           this.pendingPayment.type === 'arkade_address' || this.pendingPayment.arkadeAddress) {
-        return true;
+        return !(this.pendingPayment.fixedAmountSats > 0);
       }
 
       // Bitcoin on-chain (Arkade offboard via the send sheet): a bare bc1
@@ -1439,6 +1556,10 @@ export default {
     // …). Null for any non-payout address, so the avatar simply doesn't show.
     saveContactServiceLogo() {
       return matchLnAddressService(this.saveContactData.address)?.logo || null;
+    },
+
+    saveContactNostrPicture() {
+      return sanitizeImageUrl(this.saveContactData.nostrIdentity?.profile?.picture);
     },
 
     paymentSheetProps() {
@@ -1958,7 +2079,13 @@ export default {
     // Hydrate the Identity store so the header avatar paints with the
     // right gradient (and the backup-pip with the right state) on first
     // mount. Idempotent and cheap.
-    this.identityStore.hydrate();
+    await this.identityStore.hydrate();
+    // A bucket balance is one actionable item, regardless of how many quotes
+    // made it up. Refresh it on the actual home screen so the small +1 cue is
+    // current before the user visits Identity or Get paid.
+    this.socialBucketStore.hydrate({ pubkey: this.identityStore.nostrPubkeyHex }).then(() => (
+      this.socialBucketStore.sync({ identityStore: this.identityStore })
+    )).catch(() => {});
 
     // NFC capability for the "NFC ready" badge. Fire-and-forget — never blocks
     // the wallet load, and stays false on web/PWA (no NFC there).
@@ -2129,6 +2256,14 @@ export default {
     }
   },
   methods: {
+    onAppLogoClick() {
+      if (this.updateStore.hasUpdate) {
+        this.updateStore.openSheet();
+        return;
+      }
+      this.$router.push('/about');
+    },
+
     /**
      * Recognize the consumer wallet behind a Lightning Address / LNURL so the
      * confirm sheet can show its real logo + the username instead of a generic
@@ -2219,7 +2354,7 @@ export default {
       const picture = (prof && prof.picture) || '';
       const usingBrandLogo = !picture && !!brand;
       return {
-        name: (prof && prof.name) || shortenNpub(npub),
+        name: profileDisplayName(prof) || shortenNpub(npub),
         color: '#3B82F6',
         addressType: 'lightning',
         logoUrl: picture || (brand ? brand.logo : '/nostr/nostr.png'),
@@ -2266,6 +2401,27 @@ export default {
     },
 
     /**
+     * User-facing copy for a Spark invoice that cannot be paid. Shared by
+     * the resolve-time check (before the sheet opens) and the pay-time
+     * re-check (the sheet may have outlived the expiry, and sender pinning
+     * is only final against the connected wallet).
+     */
+    sparkInvoiceProblemMessage(problem) {
+      switch (problem) {
+        case 'expired':
+          return this.$t('This payment request has expired. Ask for a new one.');
+        case 'token_invoice':
+          return this.$t('This payment request is for a token, which BuhoGO does not support.');
+        case 'sender_mismatch':
+          return this.$t('This payment request is reserved for a different wallet.');
+        case 'sender_unknown':
+          return this.$t('Unlock your Spark wallet first, then try this payment request again.');
+        default:
+          return this.$t('This payment code cannot be read.');
+      }
+    },
+
+    /**
      * Resolve the real Nostr profile (name + avatar) behind an npub.cash-style
      * address and patch it onto the live payment, so the confirm sheet upgrades
      * from "Cashu + npub1abc…" to the actual person a moment after it opens.
@@ -2293,9 +2449,13 @@ export default {
             const profile = parseProfileContent(event);
             const name = profileDisplayName(profile);
             const picture = sanitizeImageUrl(profile.picture);
-            if (!name && !picture) return; // nothing worth upgrading to
-            // Reactive patch -> paymentSheetProps re-runs -> the person appears.
-            this.pendingPayment.nostrProfile = { name, picture };
+            // The sheet only reads profile fields, but post-payment contact
+            // saving also needs the verified event and canonical identity.
+            this.pendingPayment.nostrPubkey = ids.pubkey;
+            this.pendingPayment.nostrNpub = ids.npub;
+            this.pendingPayment.nostrProfileEvent = event;
+            this.pendingPayment.nostrRelayHints = [];
+            this.pendingPayment.nostrProfile = { ...profile, name, picture };
           })
           .catch(() => { /* never surfaces; baseline stays */ });
       } catch {
@@ -2488,10 +2648,17 @@ export default {
 
         const newDeposits = await provider.getPendingDeposits();
 
-        // Detect changes and show notifications
-        this.detectDepositChanges(newDeposits);
+        // An instantly-claimed deposit keeps showing in the SDK's pending
+        // list until its confirmations catch up. Filter it everywhere so
+        // no banner, chip, or handler ever acts on a UTXO we already swept.
+        const unclaimed = newDeposits.filter(
+          (d) => !this.walletStore.isDepositClaimed(d.txId)
+        );
 
-        this.pendingBitcoinDeposits = newDeposits;
+        // Detect changes and show notifications
+        this.detectDepositChanges(unclaimed);
+
+        this.pendingBitcoinDeposits = unclaimed;
       } catch (error) {
         // Silently ignore - wallet may be locked
       }
@@ -2526,11 +2693,14 @@ export default {
             // app was closed). Auto-claim sweeps it via the confirmed
             // handler — no toast.
             this.handleConfirmedDeposit(deposit);
+          } else {
+            // Brand-new unconfirmed deposit: try the instant (0-conf)
+            // path. When the SSP offers no instant plan this is a silent
+            // no-op and the existing flow stands — the header "Incoming"
+            // chip calls the deposit out and the 3-conf handler claims
+            // later, so we still fire no toast of our own here.
+            this.handleUnconfirmedDeposit(deposit);
           }
-          // Brand-new unconfirmed deposit: the header "Incoming" chip
-          // already calls this out + the receive sheet shows full
-          // progress, so we deliberately don't fire a toast. Avoids
-          // duplicate signals competing for attention.
         } else if (deposit.confirmed && !previousConfirmed.get(deposit.txId)) {
           this.handleConfirmedDeposit(deposit);
         }
@@ -2556,6 +2726,10 @@ export default {
      * legacy toast is shown as the safety net.
      */
     async handleConfirmedDeposit(deposit) {
+      // Already swept by the instant path (or a previous session): the
+      // pending list can lag behind reality, never claim twice.
+      if (this.walletStore.isDepositClaimed(deposit.txId)) return;
+
       if (!this.bitcoinPrefsStore.autoAddIncomingBitcoin) {
         this.notifyDepositReadyManual(deposit);
         return;
@@ -2686,6 +2860,10 @@ export default {
           transfer_id: result?.transferId || null
         });
 
+        // Durable double-claim guard — this UTXO must never be submitted
+        // again, in this session or the next.
+        this.walletStore.markDepositClaimed(deposit.txId);
+
         this.notifyAutoClaimSucceeded(credited, workingClassification.feeSats);
         if (this.walletStore.activeWalletId) {
           this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
@@ -2703,6 +2881,105 @@ export default {
         });
         console.warn('Auto-claim attempt failed, surfacing manual prompt:', error?.message || error);
         this.notifyDepositReadyManual(deposit);
+      } finally {
+        this.walletStore.clearDepositClaimInFlight(deposit.txId);
+      }
+    },
+
+    /**
+     * A brand-new unconfirmed deposit: ask the SSP for a 0-conf plan and
+     * take it when offered — the happy path is that the money is simply
+     * there, no progress bar. Every non-instant outcome is a silent
+     * no-op that leaves today's 3-conf pipeline untouched. Honors the
+     * same auto-add opt-out as the confirmed flow; with the toggle off,
+     * the claim sheet's "Add instantly" action covers the manual path.
+     */
+    async handleUnconfirmedDeposit(deposit) {
+      if (!this.bitcoinPrefsStore.autoAddIncomingBitcoin) return;
+      if (this.walletStore.isDepositClaimed(deposit.txId)) return;
+
+      let classification;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        if (!provider?.classifyUnconfirmedDeposit) return;
+        classification = await provider.classifyUnconfirmedDeposit(deposit);
+      } catch (error) {
+        console.warn('Instant-claim classification failed:', error?.message || error);
+        return;
+      }
+
+      if (classification.category !== 'instant') return;
+
+      telemetryTrack('bitcoin.deposit.classified', {
+        category: 'instant',
+        amount_sats: deposit.amount,
+        fee_sats: classification.feeSats
+      });
+      await this.attemptInstantClaim(deposit, classification, { source: 'auto' });
+    },
+
+    /**
+     * Submit an instant (0-conf) claim. Shares the coordination guards
+     * with attemptAutoClaim: the in-flight marker stops concurrent
+     * submissions, the claimed registry stops repeats across sessions.
+     * Auto-sourced failures stay silent — the deposit simply falls back
+     * to the existing 3-conf pipeline; sheet-sourced failures rethrow so
+     * the sheet can surface them.
+     */
+    async attemptInstantClaim(deposit, classification, options = { source: 'auto' }) {
+      const startedAt = Date.now();
+
+      if (this.walletStore.isDepositClaimInFlight(deposit.txId)
+          || this.walletStore.isDepositClaimed(deposit.txId)) {
+        telemetryTrack('bitcoin.deposit.claim_skipped', {
+          source: options.source,
+          reason: 'in_flight',
+          amount_sats: deposit.amount
+        });
+        return false;
+      }
+
+      this.walletStore.markDepositClaimInFlight(deposit.txId);
+      try {
+        const provider = await this.walletStore.ensureSparkConnected();
+        const result = await provider.claimInstantDeposit(
+          deposit.txId,
+          classification.quote,
+          classification.plan,
+          deposit.outputIndex || 0
+        );
+
+        this.walletStore.markDepositClaimed(deposit.txId);
+
+        telemetryTrack('bitcoin.deposit.claim_succeeded', {
+          source: options.source,
+          instant: true,
+          amount_sats: classification.creditSats,
+          fee_sats: classification.feeSats,
+          duration_ms: Date.now() - startedAt,
+          claim_id: result?.claimId || null
+        });
+
+        this.notifyAutoClaimSucceeded(classification.creditSats, classification.feeSats);
+        if (this.walletStore.activeWalletId) {
+          this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+        }
+        this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(
+          (d) => d.txId !== deposit.txId
+        );
+        this.walletStore.signalDepositsRefresh();
+        return true;
+      } catch (error) {
+        telemetryTrack('bitcoin.deposit.claim_failed', {
+          source: options.source,
+          instant: true,
+          amount_sats: deposit.amount,
+          duration_ms: Date.now() - startedAt,
+          error: error?.message || 'unknown'
+        });
+        if (options.source !== 'auto') throw error;
+        console.warn('Instant claim failed, falling back to the confirmation flow:', error?.message || error);
+        return false;
       } finally {
         this.walletStore.clearDepositClaimInFlight(deposit.txId);
       }
@@ -3148,6 +3425,11 @@ export default {
     },
     async initializeWallet() {
       try {
+        // A returning user has a cached balance from the last session —
+        // paint it immediately (marked provisional) instead of holding the
+        // whole screen on a skeleton until the wallet has connected.
+        this.seedBalanceFromCache();
+
         await this.loadWalletState();
 
         // Initialize wallet store
@@ -3227,9 +3509,27 @@ export default {
         } catch (error) {
           console.error('Failed to load wallet state:', error);
         }
-      } else {
-        this.walletState.balance = 312;
       }
+    },
+
+    /**
+     * Seed the balance display from the wallet store's persisted
+     * `metadata.cachedBalance` of the active wallet, written on every
+     * successful balance fetch. When a value exists the skeleton is
+     * skipped and the amount renders provisionally until the first live
+     * fetch replaces it. A fresh install has no snapshot and keeps
+     * today's skeleton behaviour.
+     */
+    seedBalanceFromCache() {
+      const saved = readPersistedWalletState();
+      const active = saved?.wallets?.find?.((w) => w?.id === saved?.activeWalletId);
+      const cached = active?.metadata?.cachedBalance;
+      if (typeof cached !== 'number' || !Number.isFinite(cached)) return false;
+
+      this.walletState.balance = cached;
+      this.balanceProvisional = true;
+      this.showLoadingScreen = false;
+      return true;
     },
 
     /**
@@ -3241,7 +3541,7 @@ export default {
      * own fetch — so the last-transaction refresh lives in `finally` to
      * guarantee it runs for every wallet type, even when a branch throws.
      */
-    async updateWalletBalance() {
+    async updateWalletBalance(opts = {}) {
       try {
         if (this.showLoadingScreen) {
           // still initializing
@@ -3250,16 +3550,33 @@ export default {
         const awStore = useAutoWithdrawStore();
         const activeWalletId = this.walletStore.activeWalletId;
 
+        // The cached read is display-only by hard rule: it must never feed
+        // auto-withdraw (a money decision), so a wallet with auto-withdraw
+        // enabled keeps authoritative fetches even on the periodic tick.
+        const preferCached = Boolean(opts.preferCached)
+          && !awStore.getConfig(activeWalletId)?.enabled;
+
         // Check if active wallet is Spark
         if (this.walletStore.isActiveWalletSpark) {
           // Try to get connected provider, auto-reconnects if session PIN available
           try {
             const provider = await this.walletStore.ensureSparkConnected();
-            const balanceResult = await provider.getBalance();
+            let balanceResult = preferCached && typeof provider.getCachedBalance === 'function'
+              ? await provider.getCachedBalance()
+              : await provider.getBalance();
+            // The SDK cache starts empty until the event stream has synced;
+            // a cached zero while we are showing funds means "not warmed
+            // yet", not "empty wallet" — re-read authoritatively rather
+            // than flashing 0.
+            if (preferCached && balanceResult.balance === 0 && this.walletState.balance > 0) {
+              balanceResult = await provider.getBalance();
+            }
             this.walletState.balance = balanceResult.balance;
+            this.balanceProvisional = false;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-            // Auto-withdraw check
+            // Auto-withdraw check (never reachable from a cached read: an
+            // enabled config forces the authoritative branch above)
             if (balanceResult.balance > 0 && activeWalletId) {
               awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
             }
@@ -3296,6 +3613,7 @@ export default {
             const provider = await this.walletStore.ensureLNBitsConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
+            this.balanceProvisional = false;
 
             // Update wallet in store
             const activeWallet = this.walletState.connectedWallets.find(
@@ -3327,6 +3645,7 @@ export default {
             const provider = await this.walletStore.ensureArkadeConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
+            this.balanceProvisional = false;
 
             const activeWallet = this.walletState.connectedWallets.find(
               w => w.id === this.walletState.activeWalletId
@@ -3359,6 +3678,7 @@ export default {
           await nwc.enable();
           const balance = await nwc.getBalance();
           this.walletState.balance = balance.balance;
+          this.balanceProvisional = false;
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
@@ -3507,8 +3827,13 @@ export default {
       this.refreshInterval = setInterval(async () => {
         // updateWalletBalance refreshes the last-tx card in its finally
         // block, so we don't call loadLastTransaction separately here.
-        await this.updateWalletBalance();
+        // The tick prefers the SDK's event-stream-backed balance cache;
+        // authoritative fetches stay on the post-send/receive paths.
+        await this.updateWalletBalance({ preferCached: true });
         await this.loadFiatRates();
+        // Keep the profile pill honest while the app remains open: a payment
+        // to the user's public name can arrive without touching a wallet.
+        await this.socialBucketStore.sync({ identityStore: this.identityStore });
       }, 30000);
     },
 
@@ -4034,13 +4359,18 @@ export default {
         callbackUrl.searchParams.set('pin', pin);
       }
 
-      // Wrap the fetch so any network-layer error (DNS, CORS, TLS,
+      // Wrap the request so any network-layer error (DNS, CORS, TLS,
       // offline) gets its message scrubbed of `pin=` before it
       // propagates to console.error, Sentry, or the notify surface.
       // Some platforms include the full URL in fetch error strings.
       let response;
       try {
-        response = await fetch(callbackUrl.toString());
+        // Generous 90s bound: withdraw services can be slow to pay out,
+        // and a premature client-side timeout would show a failure for a
+        // withdraw that still completes (the k1 is single-use, so the
+        // user can't meaningfully retry). Only a genuinely hung server
+        // should trip this.
+        response = await lnurlGetJson(callbackUrl.toString(), { timeoutMs: 90000 });
       } catch (networkError) {
         const safeMessage = this.redactPinFromString(
           networkError?.message || 'Network error contacting withdraw service'
@@ -4049,10 +4379,10 @@ export default {
       }
 
       if (!response.ok) {
-        throw new Error(`Withdraw callback failed: ${response.status} ${response.statusText}`);
+        throw new Error(`Withdraw callback failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = response.data || {};
       if (data.status === 'ERROR') {
         // Translate the two spec-defined PIN error reasons so the
         // sheet-level error surface shows them in the user's language.
@@ -4493,7 +4823,7 @@ export default {
 
         if (paymentData.type === 'nostr_identifier' && paymentData.data) {
           // System-camera / deep-link entry for a Nostr identity
-          // (nostr:npub… from the profile-share QR, or another client).
+          // (nostr:npub… from the identity-card QR, or another client).
           // Resolve the profile to its Lightning target and re-dispatch —
           // the same rails the Send sheet uses for a typed npub, carrying
           // the person's identity onto the confirm sheet.
@@ -4512,6 +4842,8 @@ export default {
             nostrPubkey: target.pubkey,
             nostrNpub: target.npub,
             nostrProfile: target.profile,
+            nostrProfileEvent: target.profileEvent,
+            nostrRelayHints: target.relayHints,
           });
         }
 
@@ -4595,7 +4927,13 @@ export default {
               const lightningService = new LightningPaymentService(activeWallet.nwcString);
               const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
               console.log('LNURL processed:', processedLnurl);
-              this.pendingPayment = processedLnurl;
+              // The SDK result only contains payment mechanics. Preserve the
+              // source payload so resolved identity metadata is not dropped.
+              this.pendingPayment = {
+                ...paymentData,
+                ...processedLnurl,
+                lnurl: paymentData.data,
+              };
             }
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
@@ -4622,6 +4960,8 @@ export default {
                 nostrPubkey: rescued.pubkey,
                 nostrNpub: rescued.npub,
                 nostrProfile: rescued.profile,
+                nostrProfileEvent: rescued.profileEvent,
+                nostrRelayHints: rescued.relayHints,
               });
             }
           }
@@ -4630,10 +4970,23 @@ export default {
           // rescue found nothing either — fail early, in the field, rather than
           // open a confirm sheet that can only fail at send time. (SA-retail
           // merchants are curated and keep their existing handling below.)
+          // A transport failure (timeout, DNS, CORS on web) carries its own
+          // reason: the address may be perfectly valid, so don't claim it
+          // doesn't exist — mirror the bech32-LNURL branch above.
           if (!lnurlInfo.minSendable && paymentData.source !== SA_RETAIL_SOURCE) {
             resolved = false;
-            this.failSendResolution(this.$t("We couldn't find this Lightning address"), fromField);
+            const reason = lnurlInfo.error && lnurlInfo.reason
+              ? lnurlInfo.reason
+              : this.$t("We couldn't find this Lightning address");
+            this.failSendResolution(reason, fromField);
             return;
+          }
+
+          // Past the guard the info is spread into pendingPayment; strip the
+          // failure markers so a curated SA-retail miss doesn't carry them.
+          if (lnurlInfo.error) {
+            delete lnurlInfo.error;
+            delete lnurlInfo.reason;
           }
 
           const walletType = this.walletStore.activeWalletType;
@@ -4704,11 +5057,59 @@ export default {
             }
           }
         } else if (paymentData.type === 'spark_address' && paymentData.data) {
-          // Spark address payment
-          this.pendingPayment = {
-            ...paymentData,
-            sparkAddress: paymentData.data
-          };
+          // A spark-prefixed string is either a durable address or a signed
+          // one-time invoice; the prefix cannot tell them apart. Decode to
+          // route correctly — transfer() rejects invoice strings by design.
+          let dest;
+          try {
+            dest = decodeSparkDestination(paymentData.data);
+          } catch (decodeErr) {
+            console.warn('Spark destination decode failed:', decodeErr?.message);
+            resolved = false;
+            this.failSendResolution(this.$t('This payment code cannot be read.'), fromField);
+            return;
+          }
+
+          if (dest.kind === 'address') {
+            this.pendingPayment = {
+              ...paymentData,
+              sparkAddress: paymentData.data
+            };
+          } else {
+            // Refuse what can never be paid before the sheet opens. Sender
+            // pinning is only decided here when we know our own identity
+            // key; otherwise the check runs again at pay time against the
+            // connected wallet.
+            const ownAddress = this.walletStore.activeSparkAddress;
+            const problem = sparkInvoiceProblem(dest, {
+              ownIdentityPublicKey: ownAddress
+                ? identityPublicKeyFromSparkAddress(ownAddress)
+                : null,
+            });
+            if (problem && !(problem === 'sender_unknown' && !ownAddress)) {
+              resolved = false;
+              this.failSendResolution(this.sparkInvoiceProblemMessage(problem), fromField);
+              return;
+            }
+
+            if (dest.amountSats > 0 && dest.amountSats > this.walletState.balance) {
+              resolved = false;
+              this.failSendResolution(this.$t('Insufficient balance'), fromField);
+              return;
+            }
+
+            this.pendingPayment = {
+              ...paymentData,
+              // The durable receiver identity — what contacts, transaction
+              // linking, and the confirm sheet's recipient lookup use. The
+              // single-use invoice string never leaks into any of them.
+              sparkAddress: dest.receiverAddress,
+              sparkInvoice: dest.invoice,
+              sparkInvoiceExpiresAt: dest.expiresAt,
+              fixedAmountSats: dest.amountSats || 0,
+              description: dest.memo || paymentData.description || '',
+            };
+          }
         } else if (paymentData.type === 'arkade_address' && paymentData.data) {
           // Arkade address payment (instant ark1 → ark1, near-zero fee)
           this.pendingPayment = {
@@ -4965,9 +5366,28 @@ export default {
         // pending-link queue and the success modal depend on it.
         const recipientAddress = this.getRecipientAddress();
         const recipientAddressType = this.getRecipientAddressType();
-        const existingContact = recipientAddress
-          ? this.addressBookStore.findContactByAddress(recipientAddress)
-          : null;
+        const addressNostrIdentity = npubFromLightningAddress(
+          this.pendingPayment?.lightningAddress,
+        );
+        const recipientNostrPubkey = this.pendingPayment?.nostrPubkey
+          || addressNostrIdentity?.pubkey
+          || null;
+        const recipientNostrNpub = this.pendingPayment?.nostrNpub
+          || addressNostrIdentity?.npub
+          || null;
+        const isNostrSend = !!recipientNostrPubkey;
+        // Identity matching is canonical. An existing Nostr contact may use a
+        // different destination than the address paid today, so address-only
+        // matching would incorrectly offer a duplicate save.
+        const existingContact = (
+          recipientAddress
+            ? this.addressBookStore.findContactByAddress(recipientAddress)
+            : null
+        ) || (
+          recipientNostrPubkey
+            ? this.addressBookStore.findContactByPubkey(recipientNostrPubkey)
+            : null
+        );
         const shouldOfferSave = !!(recipientAddress && !existingContact);
         const recipientLabel = this.getRecipientDisplayLabel(existingContact);
 
@@ -5000,11 +5420,6 @@ export default {
         // payout provider is the phone-number rail; a send that resolved a
         // Nostr identity (bare npub/nprofile/NIP-05, or an npub-handle
         // address) is the Nostr rail. Plain Lightning sends carry none.
-        const isNostrSend = !!(
-          this.pendingPayment?.nostrPubkey ||
-          this.pendingPayment?.nostrNpub ||
-          npubFromLightningAddress(this.pendingPayment?.lightningAddress)?.pubkey
-        );
         const paymentSource = isPayoutProvider ? 'phone' : (isNostrSend ? 'nostr' : null);
 
         // A Branta-verified destination (see runBrantaVerification) carries
@@ -5025,9 +5440,7 @@ export default {
             let counterpartyAvatar = null;
             let nostrLabel = null;
             if (isNostrSend) {
-              const npub = this.pendingPayment?.nostrNpub
-                || npubFromLightningAddress(this.pendingPayment?.lightningAddress)?.npub
-                || null;
+              const npub = recipientNostrNpub;
               const picture = sanitizeImageUrl(this.pendingPayment?.nostrProfile?.picture) || null;
               counterpartyAvatar = { kind: 'nostr', npub, picture };
               nostrLabel = profileDisplayName(this.pendingPayment?.nostrProfile) || shortenNpub(npub) || null;
@@ -5067,15 +5480,31 @@ export default {
           // contact reads clearly as a mobile-money recipient. Empty for any
           // other address.
           const payoutService = matchLnAddressService(recipientAddress);
+          const profile = this.pendingPayment?.nostrProfile || null;
+          const profileEvent = this.pendingPayment?.nostrProfileEvent || null;
+          const nostrIdentity = recipientNostrPubkey && recipientNostrNpub && profileEvent
+            ? {
+                pubkey: recipientNostrPubkey,
+                npub: recipientNostrNpub,
+                profile,
+                profileEvent,
+                relayHints: Array.isArray(this.pendingPayment?.nostrRelayHints)
+                  ? this.pendingPayment.nostrRelayHints
+                  : [],
+              }
+            : null;
           this.saveContactData = {
             address: recipientAddress,
             addressType: recipientAddressType,
-            name: '',
+            name: nostrIdentity
+              ? (profileDisplayName(profile) || shortenNpub(recipientNostrNpub))
+              : '',
             notes: payoutService?.note ? this.$t(payoutService.note) : '',
             // Carry the amount so the post-save handler can queue a
             // pending contact link against the same outgoing tx the
             // existing-contact path uses.
             amountSats: amount,
+            nostrIdentity,
           };
         }
 
@@ -5227,6 +5656,29 @@ export default {
     async sendSparkPayment(amount, comment, payout = null) {
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected();
+
+      // Spark invoice — must go through fulfill; transfer() rejects invoice
+      // strings. Checked before the plain-address branch because invoice
+      // payments also carry the decoded receiver in `sparkAddress`.
+      if (this.pendingPayment.sparkInvoice) {
+        const invoice = this.pendingPayment.sparkInvoice;
+        // Re-evaluate refusal conditions at pay time: the sheet may have
+        // been open past the expiry, and sender pinning could only be
+        // finally decided now that the wallet is connected.
+        const dest = decodeSparkDestination(invoice);
+        const ownAddress = await provider.getSparkAddress();
+        const problem = sparkInvoiceProblem(dest, {
+          ownIdentityPublicKey: identityPublicKeyFromSparkAddress(ownAddress),
+        });
+        if (problem) {
+          throw new Error(this.sparkInvoiceProblemMessage(problem));
+        }
+        return await provider.fulfillSparkInvoice(invoice, {
+          // An encoded amount wins SDK-side; only free-amount invoices take
+          // the amount from the sheet.
+          amountSats: dest.amountSats > 0 ? null : amount,
+        });
+      }
 
       // Spark address transfer (zero-fee)
       if (this.pendingPayment.sparkAddress) {
@@ -5463,7 +5915,7 @@ export default {
         this.sendDeliveryStatus = { settled: false, delivered: false, done: false };
         pollVerify(verifyUrl, (s) => {
           if (this._deliveryToken === token) this.sendDeliveryStatus = { ...s, done: false };
-        }, { signal: controller?.signal }).then((final) => {
+        }, { signal: controller?.signal, fetchImpl: lnurlFetch }).then((final) => {
           // `done` marks the poll terminal, so the UI can distinguish "still
           // confirming" from "settled but not yet delivered" (M-Pesa lag).
           if (this._deliveryToken === token) {
@@ -5527,13 +5979,7 @@ export default {
       // Reset any save payload that was pre-staged for the modal's
       // Save button. Users who wanted to save would have tapped it
       // already (see onSendSaveContactClicked).
-      this.saveContactData = {
-        address: '',
-        addressType: 'lightning',
-        name: '',
-        notes: '',
-        amountSats: 0,
-      };
+      this.saveContactData = emptySaveContactData();
     },
 
     /**
@@ -5581,12 +6027,37 @@ export default {
           return;
         }
 
-        const newContact = await this.addressBookStore.addEntry({
-          name: this.saveContactData.name.trim(),
-          address: this.saveContactData.address,
-          addressType: this.saveContactData.addressType,
-          notes: this.saveContactData.notes?.trim() || ''
-        });
+        const data = this.saveContactData;
+        const identity = data.nostrIdentity;
+        let newContact;
+        if (identity?.pubkey && identity?.npub && identity?.profileEvent) {
+          // This is the same verified kind:0 the payment confirmation used.
+          // Persist it as a Nostr contact and explicitly bind the destination
+          // that just succeeded, rather than flattening it into a manual row.
+          newContact = await this.addressBookStore.addNostrContact({
+            pubkey: identity.pubkey,
+            npub: identity.npub,
+            event: identity.profileEvent,
+            relayHints: identity.relayHints || [],
+            paymentAddress: data.address,
+            paymentAddressType: data.addressType,
+            notes: data.notes?.trim() || '',
+          });
+
+          const chosenName = data.name.trim();
+          if (chosenName !== newContact.name) {
+            newContact = await this.addressBookStore.updateEntry(newContact.id, {
+              name: chosenName,
+            });
+          }
+        } else {
+          newContact = await this.addressBookStore.addEntry({
+            name: data.name.trim(),
+            address: data.address,
+            addressType: data.addressType,
+            notes: data.notes?.trim() || '',
+          });
+        }
 
         // Queue the contact link for the outgoing tx that just landed
         // (or is about to land). The pending-link consumer matches by
@@ -5596,8 +6067,8 @@ export default {
           try {
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: newContact.id,
-              recipientAddress: this.saveContactData.address,
-              amountSats: this.saveContactData.amountSats,
+              recipientAddress: data.address,
+              amountSats: data.amountSats,
               // Same active-wallet assumption as the rest of this page: the
               // send this dialog follows happened on the wallet active right
               // now (the post-send "save as contact" dialog is shown before
@@ -5610,6 +6081,7 @@ export default {
         }
 
         this.showSaveContactDialog = false;
+        this.saveContactData = emptySaveContactData();
         this.$q.notify({
           type: 'positive',
           message: this.$t('Contact saved'),
@@ -5629,13 +6101,7 @@ export default {
     // Close save contact dialog
     closeSaveContactDialog() {
       this.showSaveContactDialog = false;
-      this.saveContactData = {
-        address: '',
-        addressType: 'lightning',
-        name: '',
-        notes: '',
-        amountSats: 0,
-      };
+      this.saveContactData = emptySaveContactData();
     },
 
     // Helper: Truncate address for display
@@ -5652,11 +6118,11 @@ export default {
       const url = this.decodeLNURL(lnurl);
 
       // Fetch LNURL endpoint
-      const response = await fetch(url);
+      const response = await lnurlGetJson(url);
       if (!response.ok) throw new Error('Failed to fetch LNURL');
 
-      const data = await response.json();
-      if (data.status === 'ERROR') throw new Error(data.reason || 'LNURL error');
+      const data = response.data;
+      if (!data || data.status === 'ERROR') throw new Error(data?.reason || 'LNURL error');
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
       // is bounded by the provider in its own units (validated in the sheet).
@@ -5669,11 +6135,11 @@ export default {
       }
       const callbackUrl = buildLnurlPayCallbackUrl({ callback: data.callback, amountSats, payout });
 
-      const invoiceResponse = await fetch(callbackUrl);
+      const invoiceResponse = await lnurlGetJson(callbackUrl);
       if (!invoiceResponse.ok) throw new Error('Failed to get invoice');
 
-      const invoiceData = await invoiceResponse.json();
-      if (invoiceData.status === 'ERROR') throw new Error(invoiceData.reason || 'Invoice error');
+      const invoiceData = invoiceResponse.data;
+      if (!invoiceData || invoiceData.status === 'ERROR') throw new Error(invoiceData?.reason || 'Invoice error');
 
       // Return the invoice together with any LUD-09 successAction (recipient's
       // post-payment message) and LUD-21 `verify` URL the callback included.
@@ -5687,43 +6153,53 @@ export default {
     },
 
     /**
-     * fetch() bounded by a timeout so a hung LNURL / Lightning-address server
-     * can't leave the Send sheet spinning forever. On timeout it aborts; the
-     * caller's try/catch then treats it as "not found" (same as any failure).
-     * Manual AbortController keeps it working on the older WebKit we still
-     * target (AbortSignal.timeout isn't available there).
+     * Translate a transport-level LNURL fetch failure into a reason the
+     * send field / error dialog can show. Timeouts and network failures
+     * (browser fetch strings and the native HTTP plugin's platform
+     * messages alike, via the shared classifier) map to existing
+     * translated copy; anything else keeps its message for the
+     * technical-details pane.
      */
-    async fetchWithTimeout(url, ms = 10000) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), ms);
-      try {
-        return await fetch(url, { signal: controller.signal });
-      } finally {
-        clearTimeout(timer);
+    describeLnurlTransportError(error) {
+      const kind = error?.name === 'AbortError'
+        ? 'timeout'
+        : classifyTransportFailure(error?.message);
+      if (kind === 'timeout') {
+        return this.$t('The server did not respond or the link is no longer valid');
       }
+      if (kind === 'offline') {
+        return this.$t("Couldn't reach the network. Please check your internet and try again.");
+      }
+      return error?.message
+        || this.$t('The server did not respond or the link is no longer valid');
     },
 
     /**
      * Fetch LNURL info from a Lightning address
-     * Returns min/max amounts and whether it's a fixed amount
+     * Returns min/max amounts and whether it's a fixed amount.
+     * A server that answers but doesn't serve the address yields {} ("not
+     * found"); a transport failure (timeout, DNS, CORS on web) yields
+     * { error: true, reason } so the caller doesn't misreport a reachable
+     * address as nonexistent. Bounded to 10s so a hung server can't leave
+     * the Send sheet spinning forever.
      */
     async fetchLightningAddressInfo(address) {
-      try {
-        const [username, domain] = address.split('@');
-        if (!username || !domain) {
-          return {};
-        }
+      const [username, domain] = address.split('@');
+      if (!username || !domain) {
+        return {};
+      }
 
+      try {
         const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-        const response = await this.fetchWithTimeout(endpoint);
+        const response = await lnurlGetJson(endpoint, { timeoutMs: 10000 });
 
         if (!response.ok) {
           return {};
         }
 
-        const data = await response.json();
+        const data = response.data;
 
-        if (data.status === 'ERROR') {
+        if (!data || data.status === 'ERROR') {
           return {};
         }
 
@@ -5747,7 +6223,7 @@ export default {
         };
       } catch (error) {
         console.warn('Failed to fetch Lightning address info:', error.message);
-        return {};
+        return { error: true, reason: this.describeLnurlTransportError(error) };
       }
     },
 
@@ -5804,13 +6280,20 @@ export default {
     async fetchLNURLInfo(lnurl) {
       try {
         const url = this.decodeLNURL(lnurl);
-        const response = await this.fetchWithTimeout(url);
+        const response = await lnurlGetJson(url, { timeoutMs: 10000 });
 
         if (!response.ok) {
           return { error: true, reason: `Server returned ${response.status}` };
         }
 
-        const data = await response.json();
+        const data = response.data;
+
+        if (!data) {
+          return {
+            error: true,
+            reason: this.$t('The server did not respond or the link is no longer valid'),
+          };
+        }
 
         if (data.status === 'ERROR') {
           return { error: true, reason: data.reason || 'This link is no longer valid' };
@@ -5867,13 +6350,10 @@ export default {
         };
       } catch (error) {
         console.warn('Failed to fetch LNURL info:', error.message);
-        // Surface the underlying error so the caller's error dialog can
-        // translate it via `translateTechJargon` (network/DNS issues
-        // become "Couldn't reach the network..."; anything else falls
-        // through to the standard generic). Returning {} would have
-        // dropped the diagnostic and forced the caller into a misleading
-        // upstream-attributed message.
-        return { error: true, reason: error?.message || 'Network error' };
+        // Surface the underlying failure so the send field / error dialog
+        // shows what actually happened (timeout, offline) instead of a
+        // misleading upstream-attributed message.
+        return { error: true, reason: this.describeLnurlTransportError(error) };
       }
     },
 
@@ -5892,15 +6372,15 @@ export default {
 
       // Fetch LNURL endpoint info
       const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-      const response = await fetch(endpoint);
+      const response = await lnurlGetJson(endpoint);
 
       if (!response.ok) {
         throw new Error('Failed to resolve Lightning address');
       }
 
-      const data = await response.json();
-      if (data.status === 'ERROR') {
-        throw new Error(data.reason || 'Lightning address error');
+      const data = response.data;
+      if (!data || data.status === 'ERROR') {
+        throw new Error(data?.reason || 'Lightning address error');
       }
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
@@ -5921,14 +6401,14 @@ export default {
       });
 
       // Request the invoice
-      const invoiceResponse = await fetch(callbackUrl);
+      const invoiceResponse = await lnurlGetJson(callbackUrl);
       if (!invoiceResponse.ok) {
         throw new Error('Failed to get invoice from Lightning address');
       }
 
-      const invoiceData = await invoiceResponse.json();
-      if (invoiceData.status === 'ERROR') {
-        throw new Error(invoiceData.reason || 'Invoice generation failed');
+      const invoiceData = invoiceResponse.data;
+      if (!invoiceData || invoiceData.status === 'ERROR') {
+        throw new Error(invoiceData?.reason || 'Invoice generation failed');
       }
 
       // Return the invoice together with any LUD-09 successAction (recipient's
@@ -6123,6 +6603,51 @@ export default {
 }
 
 /* Header */
+.app-logo-button {
+  all: unset;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  cursor: pointer;
+  overflow: visible;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-logo-button:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+.app-logo-button:active {
+  background: var(--brand-accent-soft);
+}
+
+.app-logo-update-pill {
+  position: absolute;
+  top: 0;
+  left: -2px;
+  min-width: 20px;
+  height: 17px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg-primary);
+  border-radius: 999px;
+  background: var(--brand-accent);
+  color: #08291a;
+  font: 800 9px/1 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  box-sizing: border-box;
+  box-shadow: 0 2px 7px rgba(5, 149, 115, 0.32);
+}
+
+.update-pill-enter-active { transition: opacity .18s ease, transform .22s cubic-bezier(.2, .8, .2, 1); }
+.update-pill-enter-from { opacity: 0; transform: scale(.55); }
+
 .wallet-header {
   padding: 1rem;
   flex-shrink: 0;
@@ -6168,6 +6693,10 @@ export default {
   -webkit-text-fill-color: transparent;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .update-pill-enter-active { transition: none; }
+}
+
 @keyframes gradientShift {
   0% {
     background-position: 0% 0%;
@@ -6203,6 +6732,24 @@ export default {
   justify-content: center;
   transition: background-color 0.15s ease, transform 0.1s ease;
   position: relative;
+}
+
+.profile-money-pill {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 20px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #10b981;
+  color: #07140f;
+  border: 2px solid var(--bg-primary);
+  font: 800 9px/1 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  pointer-events: none;
 }
 
 .modern-menu-btn-dark {
@@ -6446,6 +6993,12 @@ export default {
   font-weight: 800;
   line-height: 1;
   font-family: 'Manrope', sans-serif;
+  transition: opacity 0.3s ease;
+}
+
+/* Cached last-session figure shown before the first live fetch lands */
+.amount-number--provisional {
+  opacity: 0.55;
 }
 
 .amount-number-dark {
@@ -6713,6 +7266,20 @@ export default {
 
 .last-tx-title-dark {
   color: #f1f5f9;
+}
+
+/* Counterparty-written text never wears contact typography — see the
+   matching rule on the transaction list's .tx-row-title-message. */
+.last-tx-title-message {
+  font-weight: 400;
+}
+
+.last-tx-title-message.last-tx-title-light {
+  color: #334155;
+}
+
+.last-tx-title-message.last-tx-title-dark {
+  color: #cbd5e1;
 }
 
 .last-tx-time,
@@ -8181,6 +8748,19 @@ export default {
 
 .save-contact-content {
   padding: 1.25rem;
+}
+
+.save-contact-avatar-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+.save-contact-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .save-contact-address {

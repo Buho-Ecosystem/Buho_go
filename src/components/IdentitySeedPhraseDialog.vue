@@ -39,7 +39,7 @@
             class="context-heading"
             :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'"
           >
-            {{ $t('Anyone who sees these words can take over your profile.') }}
+            {{ $t('Anyone who reads these words becomes you.') }}
           </h2>
 
           <div
@@ -53,6 +53,12 @@
               <div class="seed-callout-heading">{{ $t('Keep it offline') }}</div>
               <div class="seed-callout-text">
                 {{ $t('Write it on paper. Never screenshot or save it online.') }}
+              </div>
+              <!-- The Words screen tells people to label the paper. This is
+                   the only screen where they are holding the pen, so it is
+                   the only place that can say what to write. -->
+              <div v-if="labelPaper" class="seed-callout-text">
+                {{ $t('These are your card words. Write "card" on the paper so you can tell them from your wallet words.') }}
               </div>
             </div>
           </div>
@@ -224,6 +230,12 @@ export default {
   components: { Icon, MnemonicDisplay, MnemonicOrderVerify },
 
   props: {
+    /**
+     * True when this user also has wallet words. The two sets look identical
+     * on paper and restore completely different things, so the paper has to
+     * say which is which.
+     */
+    labelPaper: { type: Boolean, default: false },
     modelValue: {
       type: Boolean,
       required: true,
@@ -268,12 +280,12 @@ export default {
     },
 
     headerTitle() {
-      if (this.step === 'verify') return this.$t('Verify your backup');
-      if (this.step === 'phrase') return this.$t('Your recovery phrase');
+      if (this.step === 'verify') return this.$t('Check you wrote them down');
+      if (this.step === 'phrase') return this.$t('Your card words');
       if (this.step === 'authExplain') return this.$t('Verify it is you');
       return this.mode === 'backup'
-        ? this.$t('Back up your profile')
-        : this.$t('View recovery phrase');
+        ? this.$t('Save your card words')
+        : this.$t('Your card words');
     },
 
     authMethodCopy() {
@@ -292,7 +304,7 @@ export default {
     },
 
     authBody() {
-      return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can see your recovery phrase, even if they have your unlocked phone.')}`;
+      return `${this.authMethodCopy.actionPhrase} ${this.$t('so nobody else can see your card words, even if they have your unlocked phone.')}`;
     },
 
     authPrivacyText() {
@@ -382,9 +394,9 @@ export default {
       this.isAuthenticating = true;
       try {
         const ok = await authenticate({
-          reason: this.$t('Verify it is you to reveal your recovery phrase'),
+          reason: this.$t('Verify it is you to see your card words'),
           title: 'BuhoGO',
-          subtitle: this.$t('Recovery phrase'),
+          subtitle: this.$t('Card words'),
           useFallback: true,
         });
         if (!this.modelValue) return;
@@ -435,7 +447,7 @@ export default {
         console.error('Failed to load identity seed phrase', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("We couldn't show your recovery phrase"),
+          message: this.$t("We couldn't show your card words"),
           caption: this.$t('Please try again.'),
         });
         this.close();
@@ -489,15 +501,15 @@ export default {
         await this.identity.confirmBackup();
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Backup confirmed'),
-          caption: this.$t('Your recovery phrase is safe as long as you stored it somewhere secure.'),
+          message: this.$t('Card words saved'),
+          caption: this.$t('Your card words are safe as long as you kept the paper somewhere safe.'),
         });
         this.$emit('verified');
       } catch (error) {
         console.error('Failed to confirm identity backup', error);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("We couldn't save your backup status"),
+          message: this.$t("We couldn't record that you saved them"),
           caption: this.$t('Please try again.'),
         });
       } finally {

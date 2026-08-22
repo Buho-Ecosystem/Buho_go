@@ -57,6 +57,14 @@ import {
   computeIdentityFingerprint,
   bytesToHex,
 } from '../utils/identityCrypto.js';
+import {
+  buildPointerEvent,
+  fetchPointer,
+  publishPointer,
+  sanitizeRoster,
+} from '../utils/nostrIdentityPointer.js';
+import { fetchOwnWriteRelays } from '../utils/nostrContactsDoc.js';
+import { DEFAULT_RELAYS } from '../utils/nostrRelays.js';
 
 const STORAGE_KEYS = Object.freeze({
   METADATA: 'buhoGO_identity_v1',
@@ -190,6 +198,36 @@ export const useIdentityStore = defineStore('identity', {
      * the intro again.
      */
     profileIntroSeenAt: null,
+    /**
+     * Every NIP-06 account this identity is known to use, sorted by
+     * index: [{ i, label?, createdAt? }]. Always contains account 0.
+     * "Create another identity" appends here; the roster is what the
+     * Change-identity sheet lists and what the published pointer
+     * carries so a fresh restore can find every identity again from
+     * the same 12 words.
+     */
+    nostrKnownAccounts: [],
+    /**
+     * True while the published pointer is known to lag local state (a
+     * create/switch whose publish did not land). The Change-identity
+     * sheet surfaces a retry; a stale pointer only costs restore
+     * accuracy on OTHER devices, so nothing blocks on it locally.
+     */
+    pointerDirty: false,
+    /**
+     * Per-account stash of NIP-05 handles keyed by account index.
+     * Handles are bound to a pubkey, so switching identities must not
+     * drag them along — the active account's handles live in
+     * `nip05Handles` (every existing consumer keeps working) and the
+     * inactive accounts' handles wait here for the switch back.
+     */
+    nostrAccountNip05: {},
+    /**
+     * In-flight pointer discovery, or null. Single-flight so the
+     * restore flow can await the same lookup `importMnemonic`'s
+     * caller kicked off. Never persisted.
+     */
+    _pointerResolve: null,
   }),
 
   getters: {
@@ -274,6 +312,25 @@ export const useIdentityStore = defineStore('identity', {
             this.nip05Handles = sanitiseNip05Handles(parsed.nip05Handles)
               ?? legacyToHandleArray(parsed);
             this.profileIntroSeenAt = parsed.profileIntroSeenAt ?? null;
+            // Multi-identity fields are newer than the metadata schema;
+            // older blobs simply lack them. The roster is re-seeded from
+            // the active index so a pre-roster install that already
+            // rotated still lists its current identity.
+            this.nostrKnownAccounts = sanitizeRoster(
+              parsed.nostrKnownAccounts,
+              this.nostrAccountIndex,
+            );
+            this.pointerDirty = !!parsed.pointerDirty;
+            this.nostrAccountNip05 = {};
+            if (parsed.nostrAccountNip05 && typeof parsed.nostrAccountNip05 === 'object') {
+              for (const [key, value] of Object.entries(parsed.nostrAccountNip05)) {
+                const idx = Number.parseInt(key, 10);
+                const handles = sanitiseNip05Handles(value);
+                if (Number.isInteger(idx) && idx >= 0 && handles) {
+                  this.nostrAccountNip05[idx] = handles;
+                }
+              }
+            }
           }
         }
 
@@ -302,6 +359,13 @@ export const useIdentityStore = defineStore('identity', {
         nostrNpub: this.nostrNpub,
         nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
         profileIntroSeenAt: this.profileIntroSeenAt,
+        nostrKnownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
+        pointerDirty: this.pointerDirty,
+        nostrAccountNip05: Object.fromEntries(
+          Object.entries(this.nostrAccountNip05).map(
+            ([i, handles]) => [i, handles.map((h) => ({ ...h }))],
+          ),
+        ),
       };
       localStorage.setItem(STORAGE_KEYS.METADATA, JSON.stringify(payload));
     },
@@ -366,6 +430,9 @@ export const useIdentityStore = defineStore('identity', {
       this.backupConfirmed = false;
       this.fingerprint = computeIdentityFingerprint(mnemonic);
       this.nostrAccountIndex = 0;
+      this.nostrKnownAccounts = [{ i: 0, createdAt: Date.now() }];
+      this.pointerDirty = false;
+      this.nostrAccountNip05 = {};
       // Nostr cache is best-effort here: a derivation failure must not
       // prevent the user from getting a working LUD-04 identity.
       this._tryCacheNostrPublic(mnemonic);
@@ -398,12 +465,17 @@ export const useIdentityStore = defineStore('identity', {
       this.fingerprint = computeIdentityFingerprint(normalised);
       this.connectedSites = [];
       this.backupBannerDismissedUntil = null;
-      // Restored identity starts at the canonical NIP-06 account 0 — the
-      // Nostr key the user is most likely to be importing from another
-      // client. Rotation history from a previous device isn't recoverable
-      // anyway since we never publish it. Best-effort cache: a derivation
-      // failure must not block the restore.
+      // Restored identity lands on the canonical NIP-06 account 0 first —
+      // fast, deterministic, works offline, and matches what any other
+      // Nostr client derives from the same words. Identities created via
+      // the account-index climb are recovered afterwards by the restore
+      // orchestrator awaiting `resolveActiveNostrAccount()`, which reads
+      // the published pointer and silently upgrades the active account.
+      // Best-effort cache: a derivation failure must not block the restore.
       this.nostrAccountIndex = 0;
+      this.nostrKnownAccounts = [{ i: 0, createdAt: Date.now() }];
+      this.pointerDirty = false;
+      this.nostrAccountNip05 = {};
       this._tryCacheNostrPublic(normalised);
       this._persistMetadata();
     },
@@ -464,6 +536,10 @@ export const useIdentityStore = defineStore('identity', {
       this.nostrNpub = null;
       this.nip05Handles = [];
       this.profileIntroSeenAt = null;
+      this.nostrKnownAccounts = [];
+      this.pointerDirty = false;
+      this.nostrAccountNip05 = {};
+      this._pointerResolve = null;
     },
 
     /**
@@ -769,6 +845,7 @@ export const useIdentityStore = defineStore('identity', {
           pubkey: this.nostrPubkeyHex,
           npub: this.nostrNpub,
           nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
+          knownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
         };
         this.nostrAccountIndex = nextAccount;
         this.nostrPubkeyHex = publicKeyHex;
@@ -778,6 +855,17 @@ export const useIdentityStore = defineStore('identity', {
         // Premium handles bought under the old key stay valid server-side
         // but are no longer this app's to manage.
         this.nip05Handles = [];
+        // Rotation is the forget-my-key flow, but the account still
+        // joins the roster: the index is in use, and the Change-identity
+        // sheet must never offer a "next" index that collides with it.
+        this.nostrKnownAccounts = sanitizeRoster(
+          [...this.nostrKnownAccounts, { i: nextAccount, createdAt: Date.now() }],
+          nextAccount,
+        );
+        // This dormant path publishes no pointer itself; flag the lag
+        // so the Change-identity sheet's retry surface picks it up.
+        const prevPointerDirty = this.pointerDirty;
+        this.pointerDirty = true;
         try {
           this._persistMetadata();
         } catch (persistErr) {
@@ -785,6 +873,8 @@ export const useIdentityStore = defineStore('identity', {
           this.nostrPubkeyHex = prev.pubkey;
           this.nostrNpub = prev.npub;
           this.nip05Handles = prev.nip05Handles;
+          this.nostrKnownAccounts = prev.knownAccounts;
+          this.pointerDirty = prevPointerDirty;
           throw persistErr;
         }
 
@@ -792,6 +882,395 @@ export const useIdentityStore = defineStore('identity', {
       } finally {
         // eslint-disable-next-line no-unused-vars
         const _drop = mnemonic;
+      }
+    },
+
+    // -------------------------------------------------------------------
+    // Multiple identities — the account-index climb
+    //
+    // Another identity NEVER means another mnemonic. It is the next
+    // NIP-06 account under the SAME 12 words, so the one recovery
+    // phrase the user already backed up covers every identity forever.
+    // The roster (`nostrKnownAccounts`) plus the published pointer
+    // (utils/nostrIdentityPointer.js) make the climb restorable on a
+    // fresh device; without the pointer a restore would silently land
+    // on account 0 and lose sight of everything above it.
+    // -------------------------------------------------------------------
+
+    /**
+     * Internal: park the active account's NIP-05 handles and load the
+     * target account's. Handles are bound to a pubkey — they must not
+     * travel across a switch, and they must still be there when the
+     * user switches back.
+     */
+    _stashAndLoadNip05(fromAccount, toAccount) {
+      this.nostrAccountNip05[fromAccount] = this.nip05Handles.map((h) => ({ ...h }));
+      this.nip05Handles = (this.nostrAccountNip05[toAccount] || []).map((h) => ({ ...h }));
+    },
+
+    /**
+     * Create the next identity: derive at the lowest index above every
+     * roster entry, make it active, and publish the pointer so the new
+     * identity survives a fresh restore.
+     *
+     * Pointer publish failure never rolls the creation back — the new
+     * identity is real the moment the metadata is durable; the pointer
+     * only affects OTHER devices' restores, so it degrades to
+     * `pointerDirty` plus a retry surface in the sheet.
+     *
+     * @param {{
+     *   label?:   string,
+     *   pointer?: object,   // injection for tests / relay overrides —
+     *                       // forwarded to republishNostrPointer()
+     * }} [opts]
+     * @returns {Promise<{ pubkeyHex: string, npub: string, account: number }>}
+     */
+    async createAnotherNostrIdentity({ label, pointer } = {}) {
+      if (!this.bootstrapped) {
+        const err = new Error('No identity seed');
+        err.code = 'IDENTITY_NOT_BOOTSTRAPPED';
+        throw err;
+      }
+
+      const highest = this.nostrKnownAccounts.reduce(
+        (max, a) => Math.max(max, a.i),
+        this.nostrAccountIndex,
+      );
+      const nextAccount = highest + 1;
+      if (nextAccount >= NOSTR_MAX_ACCOUNT) {
+        const err = new Error('Nostr account index exhausted');
+        err.code = 'NOSTR_ACCOUNT_EXHAUSTED';
+        throw err;
+      }
+
+      const mnemonic = await this.getMnemonic();
+      try {
+        const { publicKeyHex, npub } = deriveNostrIdentity(mnemonic, nextAccount);
+
+        // Persist-then-commit, same contract as rotateNostrIdentity: if
+        // localStorage rejects, the user stays on the old identity
+        // instead of seeing a new npub that vanishes on reload.
+        const prev = {
+          account: this.nostrAccountIndex,
+          pubkey: this.nostrPubkeyHex,
+          npub: this.nostrNpub,
+          nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
+          knownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
+          accountNip05: { ...this.nostrAccountNip05 },
+        };
+        this._stashAndLoadNip05(this.nostrAccountIndex, nextAccount);
+        this.nostrAccountIndex = nextAccount;
+        this.nostrPubkeyHex = publicKeyHex;
+        this.nostrNpub = npub;
+        const entry = { i: nextAccount, createdAt: Date.now() };
+        if (typeof label === 'string' && label.trim()) entry.label = label.trim();
+        this.nostrKnownAccounts = sanitizeRoster(
+          [...this.nostrKnownAccounts, entry],
+          nextAccount,
+        );
+        // The published pointer lags local truth until the publish
+        // below lands — flag it now so a crash in between still shows
+        // the retry surface on next launch.
+        this.pointerDirty = true;
+        try {
+          this._persistMetadata();
+        } catch (persistErr) {
+          this.nostrAccountIndex = prev.account;
+          this.nostrPubkeyHex = prev.pubkey;
+          this.nostrNpub = prev.npub;
+          this.nip05Handles = prev.nip05Handles;
+          this.nostrKnownAccounts = prev.knownAccounts;
+          this.nostrAccountNip05 = prev.accountNip05;
+          throw persistErr;
+        }
+
+        await this.republishNostrPointer(pointer);
+        return { pubkeyHex: publicKeyHex, npub, account: nextAccount };
+      } finally {
+        // eslint-disable-next-line no-unused-vars
+        const _drop = mnemonic;
+      }
+    },
+
+    /**
+     * Switch the active identity to another roster account. Cheap and
+     * reversible by design — no confirmation ceremony belongs here.
+     *
+     * @param {number} account  a roster index (from `nostrKnownAccounts`)
+     * @param {{ pointer?: object }} [opts]
+     * @returns {Promise<{ pubkeyHex: string, npub: string, account: number }>}
+     */
+    async switchNostrIdentity(account, { pointer } = {}) {
+      if (!this.bootstrapped) {
+        const err = new Error('No identity seed');
+        err.code = 'IDENTITY_NOT_BOOTSTRAPPED';
+        throw err;
+      }
+      if (!this.nostrKnownAccounts.some((a) => a.i === account)) {
+        const err = new Error('Unknown identity account');
+        err.code = 'NOSTR_ACCOUNT_UNKNOWN';
+        throw err;
+      }
+      if (account === this.nostrAccountIndex) {
+        return {
+          pubkeyHex: this.nostrPubkeyHex,
+          npub: this.nostrNpub,
+          account,
+        };
+      }
+
+      const mnemonic = await this.getMnemonic();
+      try {
+        const { publicKeyHex, npub } = deriveNostrIdentity(mnemonic, account);
+
+        const prev = {
+          account: this.nostrAccountIndex,
+          pubkey: this.nostrPubkeyHex,
+          npub: this.nostrNpub,
+          nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
+          accountNip05: { ...this.nostrAccountNip05 },
+        };
+        this._stashAndLoadNip05(this.nostrAccountIndex, account);
+        this.nostrAccountIndex = account;
+        this.nostrPubkeyHex = publicKeyHex;
+        this.nostrNpub = npub;
+        this.pointerDirty = true;
+        try {
+          this._persistMetadata();
+        } catch (persistErr) {
+          this.nostrAccountIndex = prev.account;
+          this.nostrPubkeyHex = prev.pubkey;
+          this.nostrNpub = prev.npub;
+          this.nip05Handles = prev.nip05Handles;
+          this.nostrAccountNip05 = prev.accountNip05;
+          throw persistErr;
+        }
+
+        await this.republishNostrPointer(pointer);
+        return { pubkeyHex: publicKeyHex, npub, account };
+      } finally {
+        // eslint-disable-next-line no-unused-vars
+        const _drop = mnemonic;
+      }
+    },
+
+    /**
+     * Derive the display material for every roster identity in one
+     * mnemonic decrypt. Read-only — nothing is cached or persisted;
+     * the Change-identity sheet calls this when it opens.
+     *
+     * @returns {Promise<Array<{
+     *   account: number, npub: string, label: string | null, active: boolean,
+     * }>>}
+     */
+    async listNostrIdentities() {
+      if (!this.bootstrapped) return [];
+      const mnemonic = await this.getMnemonic();
+      try {
+        return this.nostrKnownAccounts.map((entry) => {
+          let npub = '';
+          let pubkeyHex = '';
+          try {
+            const derived = deriveNostrIdentity(mnemonic, entry.i);
+            npub = derived.npub;
+            pubkeyHex = derived.publicKeyHex;
+          } catch { /* row renders without an npub rather than not at all */ }
+
+          // The username is how the owner recognises a card: "Card 2" names
+          // nothing, "@maria" names the person it is. The active account's
+          // handles live in nip05Handles; every other account's wait in the
+          // per-account stash, so no row needs the network to get its name.
+          const handles = entry.i === this.nostrAccountIndex
+            ? this.nip05Handles
+            : this.nostrAccountNip05[entry.i] || [];
+          const named = handles.find((h) => h.isActive) || handles[0] || null;
+
+          return {
+            account: entry.i,
+            npub,
+            pubkeyHex,
+            label: entry.label || null,
+            username: named?.handle || null,
+            active: entry.i === this.nostrAccountIndex,
+          };
+        });
+      } finally {
+        // eslint-disable-next-line no-unused-vars
+        const _drop = mnemonic;
+      }
+    },
+
+    /**
+     * Publish the pointer from current local truth (active account +
+     * roster), signed by the account-0 key. Clears `pointerDirty` on
+     * an accepted publish, sets it on failure. Never throws for
+     * network reasons — a stale pointer is a retryable condition, not
+     * an error state.
+     *
+     * @param {{
+     *   pool?:      any,
+     *   relays?:    readonly string[],
+     *   timeoutMs?: number,
+     *   fetcher?:   typeof fetchPointer,    // injected in tests
+     *   publisher?: typeof publishPointer,  // injected in tests
+     * }} [opts]
+     * @returns {Promise<{ ok: boolean, acceptedRelay: string | null }>}
+     */
+    async republishNostrPointer({ pool, relays, timeoutMs, fetcher, publisher } = {}) {
+      if (!this.bootstrapped) return { ok: false, acceptedRelay: null };
+      const doFetch = typeof fetcher === 'function' ? fetcher : fetchPointer;
+      const doPublish = typeof publisher === 'function' ? publisher : publishPointer;
+
+      let secretKey0 = null;
+      try {
+        const mnemonic = await this.getMnemonic();
+        const account0 = deriveNostrIdentity(mnemonic, 0);
+        secretKey0 = account0.privateKey;
+        const pubkey0 = account0.publicKeyHex;
+
+        // The pointer's relay home is account 0's: that is the key a
+        // fresh restore derives first and queries with.
+        let relaySet = relays;
+        if (!Array.isArray(relaySet) || relaySet.length === 0) {
+          const own = await fetchOwnWriteRelays({ pool, pubkey: pubkey0, timeoutMs });
+          relaySet = [...new Set([...DEFAULT_RELAYS, ...own])];
+        }
+
+        // Replaceable event: strictly outbid whatever is out there so
+        // this publish wins even against a skewed clock. The fetched
+        // pointer is more than a clock floor — its roster may know
+        // identities this device does not (created elsewhere, never
+        // hydrated here). Publishing only the local roster would
+        // orphan them for every future restore, so the rosters merge
+        // and the store learns the union too. The ACTIVE index stays
+        // local: this publish exists to broadcast the user's latest
+        // action on this device.
+        let floorCreatedAt = 0;
+        try {
+          const existing = await doFetch({
+            pool, relays: relaySet, pubkey0, secretKey0, timeoutMs,
+          });
+          if (existing) {
+            floorCreatedAt = existing.eventCreatedAt;
+            this.nostrKnownAccounts = sanitizeRoster(
+              [...this.nostrKnownAccounts, ...existing.accounts],
+              this.nostrAccountIndex,
+            );
+          }
+        } catch { /* best-effort floor; now() still wins the common case */ }
+
+        const event = buildPointerEvent({
+          secretKey0,
+          pubkey0,
+          active: this.nostrAccountIndex,
+          accounts: this.nostrKnownAccounts,
+          createdAt: Math.max(Math.floor(Date.now() / 1000), floorCreatedAt + 1),
+        });
+        const fanout = doPublish({ pool, relays: relaySet, event, timeoutMs });
+        const firstAccept = await fanout.firstAccept;
+
+        this.pointerDirty = !firstAccept;
+        this._persistMetadata();
+        return { ok: !!firstAccept, acceptedRelay: firstAccept ? firstAccept.relay : null };
+      } catch (err) {
+        console.warn('[identity] pointer publish failed:', err);
+        this.pointerDirty = true;
+        try { this._persistMetadata(); } catch { /* keep the in-memory flag */ }
+        return { ok: false, acceptedRelay: null };
+      } finally {
+        if (secretKey0) secretKey0.fill(0);
+      }
+    },
+
+    /**
+     * Discover the active identity from the published pointer — the
+     * restore path's account-climb recovery. Lands silently on the
+     * pointer's account when it is above the current one and merges
+     * its roster; finding nothing means account 0 stays, which is
+     * exactly today's behavior and always safe.
+     *
+     * Single-flight: the restore orchestrators (ProfilePage's phrase
+     * restore and the cloud-backup Drive restore) await this BEFORE
+     * contact recovery so contacts are pulled for the right identity,
+     * and a second caller during that window shares the same lookup.
+     *
+     * @param {{
+     *   pool?:      any,
+     *   relays?:    readonly string[],
+     *   timeoutMs?: number,
+     *   fetcher?:   typeof fetchPointer,   // injected in tests
+     * }} [opts]
+     * @returns {Promise<{ found: boolean, active: number, upgraded: boolean }>}
+     */
+    async resolveActiveNostrAccount({ pool, relays, timeoutMs = 4000, fetcher } = {}) {
+      if (!this.bootstrapped) {
+        return { found: false, active: this.nostrAccountIndex, upgraded: false };
+      }
+      if (this._pointerResolve) return this._pointerResolve;
+
+      const doFetch = typeof fetcher === 'function' ? fetcher : fetchPointer;
+      const run = (async () => {
+        let secretKey0 = null;
+        try {
+          const mnemonic = await this.getMnemonic();
+          const account0 = deriveNostrIdentity(mnemonic, 0);
+          secretKey0 = account0.privateKey;
+
+          // Query the same relay set the publish targets (defaults
+          // union account 0's NIP-65 write relays) — a pointer that
+          // only landed on the user's own relays must still be found
+          // by a restore. Skipped for injected fetchers: a stub
+          // ignores relays and the NIP-65 lookup would hit the
+          // network from unit tests.
+          let relaySet = relays;
+          if ((!Array.isArray(relaySet) || relaySet.length === 0) && doFetch === fetchPointer) {
+            const own = await fetchOwnWriteRelays({
+              pool, pubkey: account0.publicKeyHex, timeoutMs,
+            });
+            relaySet = [...new Set([...DEFAULT_RELAYS, ...own])];
+          }
+
+          const pointer = await doFetch({
+            pool,
+            relays: relaySet,
+            pubkey0: account0.publicKeyHex,
+            secretKey0,
+            timeoutMs,
+          });
+          if (!pointer) {
+            return { found: false, active: this.nostrAccountIndex, upgraded: false };
+          }
+
+          this.nostrKnownAccounts = sanitizeRoster(
+            [...this.nostrKnownAccounts, ...pointer.accounts],
+            Math.max(pointer.active, this.nostrAccountIndex),
+          );
+          let upgraded = false;
+          if (pointer.active > this.nostrAccountIndex) {
+            const derived = deriveNostrIdentity(mnemonic, pointer.active);
+            this._stashAndLoadNip05(this.nostrAccountIndex, pointer.active);
+            this.nostrAccountIndex = pointer.active;
+            this.nostrPubkeyHex = derived.publicKeyHex;
+            this.nostrNpub = derived.npub;
+            upgraded = true;
+          }
+          this._persistMetadata();
+          return { found: true, active: this.nostrAccountIndex, upgraded };
+        } catch (err) {
+          // Discovery is strictly additive; any failure means "stay
+          // where we are", never a broken restore.
+          console.warn('[identity] pointer discovery failed:', err);
+          return { found: false, active: this.nostrAccountIndex, upgraded: false };
+        } finally {
+          if (secretKey0) secretKey0.fill(0);
+        }
+      })();
+
+      this._pointerResolve = run;
+      try {
+        return await run;
+      } finally {
+        this._pointerResolve = null;
       }
     },
 

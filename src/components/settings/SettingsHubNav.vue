@@ -48,7 +48,7 @@ export default {
     return {
       tabs: [
         { id: 'settings', icon: 'tabler:settings', label: 'Settings', route: '/settings' },
-        { id: 'identity', icon: 'tabler:user', label: 'Identity', route: '/identity' },
+        { id: 'identity', icon: 'tabler:user', label: 'You', route: '/identity' },
         { id: 'spend', icon: 'tabler:shopping-bag', label: 'Spend', route: '/spend' },
       ],
     };
@@ -56,7 +56,10 @@ export default {
   computed: {
     activeTab() {
       const path = this.$route.path;
-      if (path === '/identity' || path === '/profile') return 'identity';
+      // Prefix match, not equality: the identity tab now has child routes
+      // (/identity/manage, /identity/words …) and an exact comparison
+      // silently dropped the highlight the moment a user pushed one.
+      if (path === '/profile' || path === '/identity' || path.startsWith('/identity/')) return 'identity';
       if (path === '/spend') return 'spend';
       return 'settings';
     },

@@ -67,6 +67,7 @@ import { uploadAvatar as uploadAvatarToBlossom } from '../utils/blossomProfileMe
 // ----------------------------------------------------------------------------
 
 const STORAGE_KEY = 'buhoGO_profile_v1';
+const LEGACY_STORAGE_KEY = STORAGE_KEY;
 
 /** Schema version for the persisted blob. Bump on breaking change. */
 const METADATA_VERSION = 1;
@@ -171,6 +172,8 @@ export const useProfileStore = defineStore('profile', {
   state: () => ({
     /** True once persisted state has been loaded from disk. */
     hydrated: false,
+    /** Storage namespace currently loaded into this store. */
+    hydratedProfileKey: '',
 
     // ---- Profile content (camelCase locally) ----
     displayName: '',
@@ -247,11 +250,42 @@ export const useProfileStore = defineStore('profile', {
      * Read persisted state from localStorage. Idempotent. Should be
      * called once on the Profile route mount.
      */
-    async hydrate() {
-      if (this.hydrated) return;
+    _profileStorageKey() {
+      const identity = useIdentityStore();
+      const key = identity.nostrPubkeyHex || `account-${identity.nostrAccountIndex ?? 0}`;
+      return `${STORAGE_KEY}_${key}`;
+    },
+
+    _clearFields() {
+      for (const field of PROFILE_FIELDS) this[field] = '';
+      this.isDirty = false;
+      this.isPublishing = false;
+      this.lastPublishedAt = null;
+      this.lastPublishResult = null;
+      this.isUploadingAvatar = false;
+      this.lastAvatarUploadResult = null;
+    },
+
+    async hydrate({ force = false } = {}) {
+      const storageKey = this._profileStorageKey();
+      if (this.hydrated && !force && this.hydratedProfileKey === storageKey) return;
+
+      if (this.hydratedProfileKey && this.hydratedProfileKey !== storageKey) {
+        this._clearFields();
+      }
 
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        let raw = localStorage.getItem(storageKey);
+        // Migrate the pre-multi-account profile exactly once to the account
+        // that was active when the app first adopts per-account storage.
+        if (!raw && !localStorage.getItem(`${STORAGE_KEY}_migrated`)) {
+          raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+          if (raw) {
+            localStorage.setItem(storageKey, raw);
+            localStorage.setItem(`${STORAGE_KEY}_migrated`, '1');
+            localStorage.removeItem(LEGACY_STORAGE_KEY);
+          }
+        }
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed?.version === METADATA_VERSION) {
@@ -278,6 +312,7 @@ export const useProfileStore = defineStore('profile', {
       }
 
       this.hydrated = true;
+      this.hydratedProfileKey = storageKey;
     },
 
     /**
@@ -300,7 +335,13 @@ export const useProfileStore = defineStore('profile', {
       if (this.lastPublishedAt !== null) {
         payload.lastPublishedAt = this.lastPublishedAt;
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      const encoded = JSON.stringify(payload);
+      localStorage.setItem(this._profileStorageKey(), encoded);
+      // Keep the legacy key as a compatibility mirror for older builds. It
+      // is never used to load a profile after migration, so it cannot merge
+      // account state; it only prevents an upgrade from looking empty.
+      localStorage.setItem(LEGACY_STORAGE_KEY, encoded);
+      localStorage.setItem(`${STORAGE_KEY}_migrated`, '1');
     },
 
     // -------------------------------------------------------------------
@@ -349,6 +390,36 @@ export const useProfileStore = defineStore('profile', {
       if (!oursOrEmpty || current === value) return;
       this.nip05 = value;
       this._persistMetadata();
+    },
+
+    /**
+     * Adopt the identity's own payment address (the Social Bucket) as `lud16`.
+     *
+     * Without a `lud16` a username is unpayable: a payer resolves the name to
+     * this profile and then to this field, and gives up when it is empty. New
+     * users cannot supply one, so the identity brings its own.
+     *
+     * A user's own address always wins. This only fills an empty field or
+     * refreshes the bucket address after a key change, and never touches an
+     * address the user typed in, because that is their money routing decision
+     * and not ours to override.
+     *
+     * Marks the profile dirty on purpose: the field is worthless until it is
+     * published, and `isDirty` is what tells the boot step to publish it.
+     *
+     * @returns {boolean} true when the value changed
+     */
+    adoptBucketAddress(address, { isBucketAddress }) {
+      const value = normaliseFieldValue('lud16', address);
+      if (!value) return false;
+      const current = this.lud16;
+      if (current === value) return false;
+      // Only ever replace nothing, or a stale bucket address of our own.
+      if (current && !isBucketAddress(current)) return false;
+      this.lud16 = value;
+      this.isDirty = true;
+      this._persistMetadata();
+      return true;
     },
 
     /**
@@ -765,7 +836,9 @@ export const useProfileStore = defineStore('profile', {
       this.lastPublishResult = null;
       this.isUploadingAvatar = false;
       this.lastAvatarUploadResult = null;
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(this._profileStorageKey());
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      this.hydratedProfileKey = this._profileStorageKey();
     },
   },
 });

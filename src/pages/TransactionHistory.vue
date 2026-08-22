@@ -474,7 +474,7 @@
                       class="tx-row-avatar"
                       :picture="getTxAvatarPicture(tx)"
                       :entry="{ address: getTxCounterparty(tx) }"
-                      :name="getTxTitle(tx)"
+                      :name="txTitle(tx).kind === 'message' ? '' : txTitle(tx).full"
                       :initial-length="2"
                     />
                     <!-- Status rows (awaiting / expired) keep the icon
@@ -512,8 +512,33 @@
                   <!-- Text column -->
                   <span class="tx-row-body">
                     <span class="tx-row-title-row">
-                      <span class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                        {{ getTxTitle(tx) }}
+                      <!-- Names and memos shorten at the end, where the
+                           least meaning sits. An address shortens in the
+                           middle instead, so both the person and the
+                           service they were paid at stay readable. Both
+                           halves stay in the DOM, so screen readers and
+                           the details view still get the whole string. -->
+                      <span
+                        v-if="txTitle(tx).parts"
+                        class="tx-row-title tx-row-title-split"
+                        :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'"
+                      >
+                        <span class="tx-row-title-head">{{ txTitle(tx).parts.head }}</span
+                        ><span class="tx-row-title-tail">{{ txTitle(tx).parts.tail }}</span>
+                      </span>
+                      <!-- A message is quoted and unbolded so it reads as
+                           something someone wrote, never as a contact the
+                           user saved. See resolveTxTitle(). -->
+                      <span
+                        v-else
+                        class="tx-row-title"
+                        :class="[
+                          $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
+                          { 'tx-row-title-message': txTitle(tx).kind === 'message' }
+                        ]"
+                      >
+                        <template v-if="txTitle(tx).kind === 'message'">&#8220;{{ txTitle(tx).full }}&#8221;</template>
+                        <template v-else>{{ txTitle(tx).full }}</template>
                       </span>
                       <!-- L1 badge — calls out on-chain transactions
                            (deposits + cooperative-exit withdrawals) so a
@@ -728,12 +753,15 @@ import { EARN_BRAND, isEarnRewardTx, earnRewardKind } from '../services/earnBran
 import { zapInfoFromTx } from '../utils/zaps';
 import { zapperDisplayName, zapperPicture } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
+import { splitAddressForDisplay } from '../utils/addressUtils.js';
+import { getTxDescription, getTxMessage as resolveTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
 // (e.g. 'nostr', 'phone') and only need a new entry here, no logic change.
 const TX_SOURCE_CHIP_KEYS = {
   'internal-transfer': 'Transfer',
+  'social-bucket': 'Profile payout',
   batch: 'Batch',
   kiosk: 'Kiosk',
   nostr: 'Nostr',
@@ -745,6 +773,7 @@ const TX_SOURCE_CHIP_KEYS = {
 // avatar or arrow already tells the story).
 const TX_SOURCE_ICONS = {
   'internal-transfer': 'tabler:arrows-exchange',
+  'social-bucket': 'tabler:user-dollar',
   kiosk: 'tabler:building-store',
 };
 
@@ -848,6 +877,20 @@ export default {
             return true;
         }
       });
+    },
+
+    /**
+     * Row titles, resolved once per list pass. resolveTxTitle() reaches into the
+     * metadata store and the address book for every row, so the template must
+     * not call it again for each half of a middle-truncated address.
+     */
+    txTitles() {
+      const map = new Map();
+      for (const tx of this.filteredTransactions || []) {
+        if (!tx || !tx.id) continue;
+        map.set(tx.id, this.decorateTxTitle(this.resolveTxTitle(tx)));
+      }
+      return map;
     },
 
     groupedTransactions() {
@@ -1080,19 +1123,6 @@ export default {
       }
     },
 
-    shouldShowDescription(tx) {
-      if (!tx) return false;
-      const desc = tx.description || tx.memo;
-      if (!desc) return false;
-      // Skip generic default descriptions
-      if (desc === 'Lightning transaction') return false;
-      // A zap's description is the raw kind-9734 JSON — machine payload,
-      // never row text. The zap branches surface the human parts
-      // (zapper name, note) instead.
-      if (this.getTxZap(tx)) return false;
-      return true;
-    },
-
     // ------------------------------------------------------------------
     // Row presentation helpers. Kept small and explicit so the row
     // template stays declarative: each row asks the method for a title,
@@ -1125,15 +1155,11 @@ export default {
     getTxMessage(tx) {
       if (!tx) return '';
       // A zap's human message is the request's content — the note the
-      // zapper attached ("Great note! ⚡").
+      // zapper attached ("Great note! ⚡"). Its description is machine
+      // payload, so the shared resolver must not see it.
       const zap = this.getTxZap(tx);
       if (zap) return zap.note || '';
-      const comment = String(tx.comment || '').trim();
-      if (comment) return comment;
-      if (this.shouldShowDescription(tx)) {
-        return String(tx.description || tx.memo || '').trim();
-      }
-      return '';
+      return resolveTxMessage(tx);
     },
 
     /**
@@ -1209,31 +1235,56 @@ export default {
     },
 
     /**
-     * The identity line for a transaction row.
-     * Priority: pending/expired status → contact name → metadata label
-     * (internal transfer / batch / kiosk) → auto-withdraw note
-     * → recipient address (sends) → user description → fallback to
-     * the type label.
+     * The top line of a transaction row, plus what kind of thing it is.
+     *
+     * Priority, first hit wins: pending/expired status → contact name →
+     * metadata label (internal transfer / batch / kiosk) → Learn & Earn
+     * reward → auto-withdraw note → zap sender → recipient address
+     * (sends only) → the payment's own message → a generic direction
+     * label.
+     *
+     * The `kind` matters as much as the text. It decides two things the
+     * caller cannot infer from the string:
+     *
+     *   - `address` is the only kind that shortens in the middle. A
+     *     message that happens to contain no spaces must not be sliced
+     *     like a Lightning address.
+     *   - `message` is counterparty-written text. It earns the top line
+     *     when nothing identifies the sender — which is almost every
+     *     receive, since a recipient address is stamped on sends only —
+     *     but it is rendered quoted and unbolded so it can never pass
+     *     for a contact the user saved. A stranger who pays with the
+     *     comment "Mom" must not read as Mom.
+     *
+     * @param {object} tx
+     * @returns {{ full: string, kind: 'status'|'name'|'address'|'message'|'generic' }}
      */
-    getTxTitle(tx) {
-      if (!tx) return '';
+    resolveTxTitle(tx) {
+      if (!tx) return { full: '', kind: 'generic' };
       if (tx.status === 'pending') {
-        return tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending...');
+        return {
+          full: tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending...'),
+          kind: 'status'
+        };
       }
-      if (tx.status === 'expired') return this.$t('Invoice expired');
+      if (tx.status === 'expired') return { full: this.$t('Invoice expired'), kind: 'status' };
+
       const contact = this.getContactForTransaction(tx);
-      if (contact) return contact.name;
+      if (contact) return { full: contact.name, kind: 'name' };
+
       const label = this.getTxMetadataLabel(tx);
-      if (label) return label;
-      // Below anything the user assigned, but above the description fallback:
+      if (label) return { full: label, kind: 'name' };
+
+      // Below anything the user assigned, but above the message fallback:
       // otherwise the row leaks the raw, untranslated invoice memo.
       const earnTitle = this.getEarnRewardTitle(tx);
-      if (earnTitle) return earnTitle;
+      if (earnTitle) return { full: earnTitle, kind: 'name' };
+
       if (this.isAutoWithdraw(tx)) {
         const note = this.getAutoWithdrawNote(tx);
-        if (note) return note;
-        return this.$t('Auto-Transfer');
+        return { full: note || this.$t('Auto-Transfer'), kind: 'name' };
       }
+
       // Zap: the row is about WHO zapped. Resolved profile name when the
       // relays have answered, a shortened npub until then — reactive, so
       // the row upgrades in place the moment the profile lands. Sits
@@ -1241,25 +1292,80 @@ export default {
       // every generic fallback.
       const zap = this.getTxZap(tx);
       if (zap) {
-        return zapperDisplayName(zap) || this.$t('Zap received');
+        return { full: zapperDisplayName(zap) || this.$t('Zap received'), kind: 'name' };
       }
+
+      // Sends answer "who did I pay", so the address outranks the memo.
       const counterparty = this.getTxCounterparty(tx);
-      if (counterparty) return counterparty;
-      if (this.shouldShowDescription(tx)) {
-        return tx.description || tx.memo;
-      }
+      if (counterparty) return { full: counterparty, kind: 'address' };
+
+      const message = this.getTxMessage(tx);
+      if (message) return { full: message, kind: 'message' };
+
       if (this.isBitcoinTransaction(tx)) {
-        return tx.type === 'incoming' ? this.$t('Bitcoin received') : this.$t('Bitcoin sent');
+        return {
+          full: tx.type === 'incoming' ? this.$t('Bitcoin received') : this.$t('Bitcoin sent'),
+          kind: 'generic'
+        };
       }
-      return tx.type === 'incoming' ? this.$t('Payment received') : this.$t('Payment sent');
+      // Nothing identified this payment: no contact, no address, no text.
+      // Direction is already carried three ways — the signed amount, its
+      // colour, and the arrow badge on the avatar — so naming it again
+      // here would spend the row's most prominent line on a fact the
+      // reader has already read.
+      return { full: this.$t('Bitcoin payment'), kind: 'generic' };
+    },
+
+    /**
+     * The resolved row title: `full` and `kind`, plus `parts` when it is
+     * an address that should shorten in the middle rather than at the
+     * end (null otherwise). Reads the cached pass above; falls back for
+     * any row the cache misses, such as a transaction reached from
+     * outside the filtered list.
+     */
+    txTitle(tx) {
+      const cached = tx && tx.id ? this.txTitles.get(tx.id) : null;
+      if (cached) return cached;
+      return this.decorateTxTitle(this.resolveTxTitle(tx));
+    },
+
+    /**
+     * Add the display-only `parts` split to a resolved title. Only an
+     * address is ever split: it is the one kind whose tail (the domain,
+     * or a token's last characters) carries as much meaning as its head.
+     *
+     * @param {{ full: string, kind: string }} title
+     */
+    decorateTxTitle(title) {
+      return {
+        ...title,
+        parts: title.kind === 'address' ? splitAddressForDisplay(title.full) : null
+      };
+    },
+
+    /**
+     * The text that did not fit in the title, when the title is already
+     * carrying this payment's message.
+     *
+     * A payment can hold both a payer comment and an invoice
+     * description. The comment leads, because a comment is always
+     * something a person chose to write, while a description is often
+     * whatever the receiving app filled in. The description then keeps
+     * the caption instead of being dropped. '' when there is no second,
+     * distinct piece of text.
+     */
+    getTxSecondaryMessage(tx) {
+      if (!tx || this.getTxZap(tx)) return '';
+      const description = getTxDescription(tx);
+      if (!description || description === this.getTxMessage(tx)) return '';
+      return description;
     },
 
     /**
      * The secondary caption: the transaction's message in quotes,
-     * separated from the time HH:MM. When the title already shows the
-     * description (no contact/recipient available), only a distinct
-     * LUD-12 comment earns the quote slot — the same text must never
-     * appear twice in one row.
+     * separated from the time HH:MM. The same text never appears twice
+     * in one row — when the title already carries the message, only a
+     * second, distinct piece of text earns the quote slot.
      */
     getTxSubtitle(tx) {
       if (!tx) return '';
@@ -1280,11 +1386,9 @@ export default {
         return comment ? `“${comment}” · ${time}` : time;
       }
 
-      const titleShowsDescription = !this.getContactForTransaction(tx)
-        && !this.isAutoWithdraw(tx)
-        && !this.getTxCounterparty(tx)
-        && this.shouldShowDescription(tx);
-      const message = titleShowsDescription ? comment : this.getTxMessage(tx);
+      const message = this.txTitle(tx).kind === 'message'
+        ? this.getTxSecondaryMessage(tx)
+        : this.getTxMessage(tx);
 
       return message ? `“${message}” · ${time}` : time;
     },
@@ -1335,6 +1439,7 @@ export default {
       if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
       if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
       if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      if (source === 'social-bucket') return { icon: 'tabler:user-dollar', cls: 'tx-badge-aux' };
       return tx.type === 'incoming'
         ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
         : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };
@@ -1449,10 +1554,12 @@ export default {
           return group.recipient;
         }
 
-        // 3. If it's a hash or too long, use description instead
+        // 4. If it's a hash or too long, use the description instead —
+        // unless the description is one of the placeholder memos, which
+        // names nobody and would read as "3 payments from BuhoGO Payment".
         let recipient = group.recipient || '';
         if (!recipient || recipient.length > 20 || recipient.startsWith('lnbc')) {
-          recipient = group.description || 'unknown';
+          recipient = isPlaceholderDescription(group.description) ? '' : group.description;
         }
 
         // Truncate if still too long
@@ -2842,6 +2949,22 @@ export default {
   background: #F6F6F6;
 }
 
+/*
+  QScrollArea positions its content box absolutely, which leaves the box
+  shrink-to-fit: it takes the width its content asks for. What .tx-row asks
+  for is its full width — a nowrap flex row reports the same min-content and
+  max-content size, so min-width:0 and overflow:hidden on the title only
+  govern how it divides a width it has been given, never how much it asks
+  for. One long unbreakable title (a Lightning address) therefore sized the
+  whole list to that title and carried the amount column off the right edge
+  of the screen, with nothing to scroll it back into view. Capping the box
+  at the viewport gives the rows a definite width to divide up, which is
+  what the ellipsis rules below need in order to fire at all.
+*/
+.transaction-content :deep(.q-scrollarea__content) {
+  max-width: 100%;
+}
+
 /* ==================================================================
    Transaction list — redesigned, neutral palette.
    Shares colour tokens with the Wallet page's last-tx preview so the
@@ -3087,10 +3210,11 @@ export default {
 
 /* L1 badge — small pill next to the title for on-chain transactions */
 .tx-row-title-row {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .tx-l1-badge {
@@ -3125,7 +3249,16 @@ export default {
   overflow: hidden;
 }
 
+/*
+  The title is the only part of the row allowed to give way. Without
+  `min-width: 0` a nowrap text node refuses to shrink below its content,
+  so a long name pushes the source chip out of the clipped title row
+  instead of ellipsing itself — the chip is short, fixed, and says what
+  kind of payment this was, so it holds its ground and the name yields.
+*/
 .tx-row-title {
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.25;
@@ -3134,12 +3267,61 @@ export default {
   text-overflow: ellipsis;
 }
 
+/*
+  Middle truncation, in two halves: the head gives way first, the tail
+  (a domain, or the last characters of a token) holds its ground until
+  there is nothing left to give. The head keeps a few characters at any
+  width so the row never shows the end alone. The two spans are written
+  without whitespace between them in the template — a newline there
+  would render as a space in the middle of the address.
+*/
+.tx-row-title-split {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.tx-row-title-head {
+  flex: 1 1 auto;
+  min-width: 4ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-row-title-tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tx-row-title-light {
   color: #0f172a;
 }
 
 .tx-row-title-dark {
   color: #f1f5f9;
+}
+
+/*
+  A message is text the counterparty wrote. It earns the top line when
+  nothing else identifies them, but it must never wear the typography of
+  a contact the user saved: regular weight here, quotation marks in the
+  template, and the plain direction avatar beside it. Someone paying
+  with the comment "Mom" then reads as a quote, not as Mom.
+*/
+.tx-row-title-message {
+  font-weight: 400;
+}
+
+.tx-row-title-message.tx-row-title-light {
+  color: #334155;
+}
+
+.tx-row-title-message.tx-row-title-dark {
+  color: #cbd5e1;
 }
 
 .tx-row-sub,

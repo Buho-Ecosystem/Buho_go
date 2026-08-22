@@ -15,6 +15,10 @@
 
   <router-view />
 
+  <!-- Shared, channel-aware update UI. Soft updates stay nonmodal until the
+       user opens them; required updates wait until biometric UI is gone. -->
+  <UpdateExperience :suspended="locked" />
+
   <!-- Global payment-error dialog. Wired to walletStore.paymentError so
        any page or store can surface a failure via showPaymentError(). -->
   <PaymentErrorDialog />
@@ -25,22 +29,58 @@ import { defineComponent, ref, onMounted, onUnmounted } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from 'src/stores/wallet'
-import { authenticate as biometricAuth } from 'src/utils/biometric'
+import { authenticate as biometricAuth, isBiometricAvailable } from 'src/utils/biometric'
+import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils/walletHydration'
+import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
+import UpdateExperience from 'src/components/UpdateExperience.vue'
 
 export default defineComponent({
   name: 'App',
 
-  components: { PaymentErrorDialog },
+  components: { PaymentErrorDialog, UpdateExperience },
 
   setup () {
     const store = useWalletStore()
     const $q = useQuasar()
+
+    // Shared-contacts sync driver. App-level so contacts added from
+    // any surface publish, whether or not the Address Book page is
+    // ever opened. No-ops on kiosk devices.
+    useAddressBookSync()
+
     const locked = ref(false)
     const isDark = ref($q.dark.isActive)
     let stateListener = null
     let isPrompting = false
     let lastPromptEnd = 0
+
+    // The wallet store hydrates lazily (the first page that needs it calls
+    // initialize()), while this component mounts before any route component
+    // exists. On a cold start store.biometricsEnabled therefore still holds
+    // its default `false` here, and the lock would never engage. Kick off
+    // hydration (its synchronous prefix patches persisted state before the
+    // first await) and read the store; the raw snapshot only remains as the
+    // fallback for pre-hydration states the helper skips.
+    function appLockEnabled () {
+      if (store.isInitialized) return store.biometricsEnabled === true
+      triggerWalletStoreHydration(store)
+      if (store.biometricsEnabled) return true
+      return readPersistedWalletState()?.biometricsEnabled === true
+    }
+
+    // A kiosk device boots straight into the cashier screen; painting the
+    // owner's lock over it would block taking payments until the owner
+    // returns. The lock applies again once owner access is unlocked.
+    function kioskActive () {
+      if (store.kioskEnabled) return !store.kioskOwnerAccess
+      if (store.isInitialized) return false
+      return readPersistedWalletState()?.kioskEnabled === true
+    }
+
+    function appLockActive () {
+      return appLockEnabled() && !kioskActive()
+    }
 
     async function promptUnlock () {
       if (isPrompting) return
@@ -54,6 +94,13 @@ export default defineComponent({
         })
         if (passed) {
           locked.value = false
+        } else {
+          // A lock that can never be satisfied must not brick the wallet:
+          // if every device auth method is gone (screen lock removed,
+          // biometric enrollment wiped), there is nothing left to verify
+          // against and the overlay would otherwise be permanent.
+          const { available } = await isBiometricAvailable()
+          if (!available) locked.value = false
         }
       } finally {
         lastPromptEnd = Date.now()
@@ -69,7 +116,7 @@ export default defineComponent({
       const { App: CapApp } = await import('@capacitor/app')
 
       // Prompt biometric on cold start if enabled
-      if (store.biometricsEnabled) {
+      if (appLockActive()) {
         locked.value = true
         setTimeout(() => promptUnlock(), 300)
       }
@@ -78,7 +125,7 @@ export default defineComponent({
       // The biometric dialog itself causes a brief inactive->active cycle;
       // suppress it with isPrompting flag + 1.5s cooldown after last prompt.
       stateListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
-        if (!store.biometricsEnabled) return
+        if (!appLockActive()) return
 
         // Sync dark mode state for the lock overlay
         isDark.value = $q.dark.isActive

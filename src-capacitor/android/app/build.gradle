@@ -5,16 +5,16 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
     
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
-    
+
     defaultConfig {
         applicationId "mybuho.buhogo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 21
-        versionName "1.9.0"
+        versionCode 22
+        versionName "1.9.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -39,10 +39,17 @@ repositories {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    // App lock (AppLockPlugin) — biometric prompt with device-credential fallback
+    implementation "androidx.biometric:biometric:$androidxBiometricVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "com.google.android.gms:play-services-base:$playServicesVersion"
+    // Cloud backup — Google sign-in + on-demand Drive tokens (CloudBackupPlugin).
+    // No google-services.json needed: the OAuth Android client is registered
+    // server-side by package name + signing SHA-1.
+    implementation "com.google.android.gms:play-services-auth:21.2.0"
     implementation project(':capacitor-android')
+    implementation 'com.google.android.play:app-update:2.1.0'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

@@ -65,6 +65,28 @@
                 <data android:scheme="NOSTR" />
             </intent-filter>
 
+            <!-- App Link: a shared card link opens the card in BuhoGO.
+                 https://go.mybuho.de/p/<name-or-key>
+
+                 Its own filter, not merged with the schemes above: autoVerify
+                 applies to the whole filter, and a filter that also carries
+                 custom schemes fails verification outright. Scoped to /p/ so
+                 BuhoGO never claims the rest of the site — the web wallet has
+                 to keep opening in a browser.
+
+                 Verification reads
+                 https://go.mybuho.de/.well-known/assetlinks.json and needs the
+                 signing certificate of the INSTALLED build listed there. Add a
+                 fingerprint with the "assetlinks" npm script, then deploy the
+                 web build; until the deployed file lists it, these links keep
+                 opening in the browser and nothing reports an error. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="go.mybuho.de" android:pathPrefix="/p/" />
+            </intent-filter>
+
             <!-- MainActivity itself deliberately declares NO NFC intent
                  filters: it is the launcher / deep-link activity, and NFC
                  system dispatch is owned exclusively by NfcDispatchActivity

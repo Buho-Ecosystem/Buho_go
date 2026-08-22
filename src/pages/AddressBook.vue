@@ -33,6 +33,7 @@
           dense
           class="header-side-btn overflow-btn"
           :aria-label="$t('More options')"
+          data-audit="address-book-menu"
         >
           <Icon icon="tabler:dots-vertical" width="18" height="18" />
           <q-menu
@@ -103,11 +104,15 @@
       v-model="showBatchSend"
       @batch-completed="handleBatchCompleted"
     />
+
+    <!-- Identity switcher: each identity owns its own contact list,
+         so the entry point lives here next to the restore action. -->
   </q-page>
 </template>
 
 <script>
 import { useAddressBookStore } from '../stores/addressBook'
+import { usePayContact } from '../composables/usePayContact'
 import { useIdentityStore } from '../stores/identity'
 import { mapActions, mapState } from 'pinia'
 
@@ -115,13 +120,6 @@ import { mapActions, mapState } from 'pinia'
 // them. Locked decision #2: only on tap, never periodic, so a stale
 // avatar / lud16 corrects itself the next time the user opens the
 // payment flow without ever blocking the tap on a network call.
-const RESYNC_COOLDOWN_MS = 60 * 1000
-
-// Debounce window between a local contact mutation and the silent
-// NIP-51 publish. Long enough that a burst of edits (add three
-// contacts in a row) collapses to one publish; short enough that the
-// backup feels current.
-const AUTO_SYNC_DEBOUNCE_MS = 1500
 
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
@@ -132,14 +130,13 @@ export default {
   components: {
     AddressBookList,
     AddressBookModal,
-    BatchSendModal
+    BatchSendModal,
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
       showBatchSend: false,
-      _autoSyncTimer: null,
     }
   },
   computed: {
@@ -147,32 +144,15 @@ export default {
     // the status component directly off the store.
     ...mapState(useAddressBookStore, ['isRecovering', 'syncDirty']),
   },
-  watch: {
-    /**
-     * The store flips `syncDirty` after every nostr-contact mutation
-     * — add via Search/Scan, delete, petname edit — regardless of
-     * which child component triggered it. Watching the flag here is
-     * the single, gap-free hook: the page never has to wire a
-     * `@saved` / `@deleted` event per mutation path.
-     */
-    syncDirty(isDirty) {
-      if (isDirty) this._scheduleAutoSync()
-    },
-  },
+  // Automatic publishing is owned by the app-level driver
+  // (useAddressBookSync) so contacts added from ANY surface sync,
+  // not only while this page is mounted. This page keeps just the
+  // explicit actions: manual sync and kebab restore.
   async created() {
     await this.initializeAddressBook()
-    // Catch-up: a contact added in a previous session (the dirty
-    // flag persists to localStorage) syncs the moment the page opens.
-    if (this.syncDirty) this._scheduleAutoSync()
-  },
-  beforeUnmount() {
-    if (this._autoSyncTimer) {
-      clearTimeout(this._autoSyncTimer)
-      this._autoSyncTimer = null
-    }
   },
   methods: {
-    ...mapActions(useAddressBookStore, ['initialize', 'syncToNostr', 'recoverFromNostr', 'isEntryPayable']),
+    ...mapActions(useAddressBookStore, ['initialize', 'recoverFromNostr']),
 
     async initializeAddressBook() {
       try {
@@ -183,42 +163,6 @@ export default {
           type: 'negative',
           message: this.$t('Couldn\'t load contacts'),
 
-        })
-      }
-    },
-
-    /**
-     * Debounced, silent auto-sync. Fires after the dirty flag settles.
-     * `getMnemonic()` is a device-key decrypt — no biometric prompt —
-     * so this is genuinely invisible in the happy path. Failures are
-     * NOT toasted here: the status row already shows the error state
-     * and offers a tap-to-retry. Toasting an automatic background
-     * action the user didn't initiate would be noise.
-     */
-    _scheduleAutoSync() {
-      if (this._autoSyncTimer) clearTimeout(this._autoSyncTimer)
-      this._autoSyncTimer = setTimeout(() => {
-        this._autoSyncTimer = null
-        this.runSync({ silent: true })
-      }, AUTO_SYNC_DEBOUNCE_MS)
-    },
-
-    /**
-     * Publish the contact list to the user's private NIP-51 event.
-     * `silent` distinguishes the automatic debounced path (no toast)
-     * from the explicit status-row tap (toast on hard failure so the
-     * user knows their deliberate action didn't land).
-     */
-    async runSync({ silent = false } = {}) {
-      const identityStore = useIdentityStore()
-      if (!identityStore.bootstrapped) return
-      const result = await this.syncToNostr({ identityStore })
-      if (!silent && result && result.ok === false) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t sync contacts'),
-          caption: this.$t('Check your connection and try again.'),
-          timeout: 4000,
         })
       }
     },
@@ -241,6 +185,17 @@ export default {
         return
       }
       const result = await this.recoverFromNostr({ identityStore })
+      if (result === null) {
+        // Another sync (the app-level driver's, usually) is already in
+        // flight — that is busy, not broken.
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('Still finishing the last change'),
+          caption: this.$t('Try again in a moment.'),
+          timeout: 3500,
+        })
+        return
+      }
       if (!result || result.ok === false) {
         this.$q.notify({
           type: 'negative',
@@ -267,8 +222,8 @@ export default {
         })
         return
       }
-      const caption = result.unpayable > 0
-        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.unpayable })
+      const caption = result.identityOnly > 0
+        ? this.$t('{n} couldn\'t be restored. They have no Lightning address right now.', { n: result.identityOnly })
         : undefined
       this.$q.notify({
         type: 'positive',
@@ -288,70 +243,13 @@ export default {
       this.showModal = true
     },
 
-    payContact(contact) {
-      // Kick off a silent profile re-sync before we even decide the
-      // routing — fire-and-forget so it never blocks the tap. The
-      // refresh updates the avatar / lud16 in place; if it errors,
-      // the user still pays with the last-known data.
-      this.maybeRefreshContact(contact)
-
-      // Identity-only Nostr contact — restored (or saved) without a
-      // current Lightning address. We don't route into a payment flow
-      // it can't finish; instead we explain, and the silent refresh
-      // fired above will promote them to payable the moment they
-      // publish a lud16.
-      if (contact.source === 'nostr' && !this.isEntryPayable(contact)) {
-        this.$q.notify({
-          type: 'info',
-          message: this.$t('No Lightning address yet'),
-          caption: this.$t(
-            "{name} hasn't published a Lightning address. We'll use it automatically once they do.",
-            { name: contact.name },
-          ),
-          timeout: 4500,
-        })
-        return
-      }
-
-      // Hand the contact to the wallet page — its dispatcher is the one
-      // send pipeline (LNURL metadata, Branta, branding, fee estimates,
-      // capability gate), so a contact paid from here behaves exactly
-      // like one paid from the Send sheet.
-      this.navigateToWalletPayment(contact)
-    },
-
     /**
-     * Silent re-sync hook for Nostr-sourced contacts. Skips:
-     *   - manual contacts (nothing to sync against)
-     *   - contacts we've re-synced within the cooldown window
-     *     (defends a rage-tap from hammering the relays)
-     *
-     * Errors are swallowed by `refreshContact` itself (it returns a
-     * typed result, never throws) so this stays fire-and-forget.
+     * Lives in usePayContact now, because the identity tab's People strip
+     * pays the same contacts and its own copy of this had dropped both the
+     * identity-only guard and the silent re-sync.
      */
-    maybeRefreshContact(contact) {
-      if (!contact || contact.source !== 'nostr' || !contact.nostr_pubkey) return
-      const last = Number(contact.last_synced_at) || 0
-      if (Date.now() - last < RESYNC_COOLDOWN_MS) return
-      const store = useAddressBookStore()
-      store.refreshContact(contact.id).catch((err) => {
-        // refreshContact never throws — this is purely defensive in
-        // case a future change drops that invariant.
-        console.warn('[addressBook] silent refresh threw:', err)
-      })
-    },
-
-    navigateToWalletPayment(contact) {
-      const address = contact.address || contact.lightningAddress
-      this.$router.push({
-        path: '/wallet',
-        query: {
-          action: 'pay_contact',
-          address: address,
-          addressType: contact.addressType || 'lightning',
-          contactName: contact.name
-        }
-      })
+    payContact(contact) {
+      usePayContact(this).payContact(contact)
     },
 
     handleEntrySaved() {

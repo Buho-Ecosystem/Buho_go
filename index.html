@@ -1,10 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<!--    <title><%= productName %></title>-->
-
     <meta charset="utf-8">
-<!--    <meta name="description" content="<%= productDescription %>">-->
     <meta name="format-detection" content="telephone=no">
     <meta name="msapplication-tap-highlight" content="no">
     <meta name="viewport"
@@ -26,24 +23,60 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BuhoGO">
 
-    <!-- Primary Meta Tags -->
-    <title>BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone</title>
-    <meta name="title" content="BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone"/>
-    <meta name="description" content="BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone"/>
+    <!--
+      Link previews.
 
-    <!-- Open Graph / Facebook -->
+      These are the site-wide defaults: what a pasted go.mybuho.de link looks
+      like in a chat. Shared profile links (/p/*) get their own person-specific
+      tags, rewritten at the edge by netlify/edge-functions/profile-preview.js,
+      which string-replaces the tags below — keep names and shapes stable or
+      update its patterns with them.
+
+      Images live in public/og/ at 1200x630 and must stay under ~300 KB:
+      WhatsApp silently drops larger og:images and shows no picture at all.
+      URLs are absolute because preview scrapers do not resolve relative ones.
+    -->
+    <title>BuhoGO</title>
+    <meta name="title" content="BuhoGO"/>
+    <meta name="description" content="The simple Bitcoin wallet. Pay people by name, share your card, and keep your keys."/>
+
+    <!-- Open Graph -->
     <meta property="og:type" content="website"/>
-    <meta property="og:url" content="https://buho-go.netlify.app/"/>
-    <meta property="og:title" content="BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone"/>
-    <meta property="og:description" content="BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone"/>
-    <meta property="og:image" content="https://buho-go.netlify.app/dark_img.png"/>
+    <meta property="og:site_name" content="BuhoGO"/>
+    <meta property="og:url" content="https://go.mybuho.de/"/>
+    <meta property="og:title" content="BuhoGO"/>
+    <meta property="og:description" content="The simple Bitcoin wallet. Pay people by name, share your card, and keep your keys."/>
+    <meta property="og:image" content="https://go.mybuho.de/og/site-card.jpg"/>
+    <meta property="og:image:width" content="1200"/>
+    <meta property="og:image:height" content="630"/>
+    <meta property="og:image:alt" content="BuhoGO. The simple Bitcoin wallet."/>
 
     <!-- X (Twitter) -->
     <meta property="twitter:card" content="summary_large_image"/>
-    <meta property="twitter:url" content="https://buho-go.netlify.app/"/>
-    <meta property="twitter:title" content="BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone"/>
-    <meta property="twitter:description" content="BuhoGO - NWC, LNBits and Spark ready wallet app that makes payments simple and accessible for everyone"/>
-    <meta property="twitter:image" content="https://buho-go.netlify.app/dark_img.png"/>
+    <meta property="twitter:url" content="https://go.mybuho.de/"/>
+    <meta property="twitter:title" content="BuhoGO"/>
+    <meta property="twitter:description" content="The simple Bitcoin wallet. Pay people by name, share your card, and keep your keys."/>
+    <meta property="twitter:image" content="https://go.mybuho.de/og/site-card.jpg"/>
+
+    <!--
+      Clean links for shared profile cards.
+
+      The app routes on the hash, but a link a person hands to a friend
+      should read as `go.mybuho.de/p/maria`, not `go.mybuho.de/#/p/maria`.
+      Netlify serves index.html for any path, so this rewrites the path form
+      into the hash form before the router ever runs. It fires only for /p/
+      and only in a browser, so the packaged Android build (whose path is
+      always /) is untouched.
+    -->
+    <script>
+      (function () {
+        var path = window.location.pathname || '';
+        if (path.indexOf('/p/') !== 0) return;
+        if (window.location.hash) return;
+        var target = path + window.location.search;
+        window.location.replace('/#' + target);
+      })();
+    </script>
 
 </head>
 <body>
