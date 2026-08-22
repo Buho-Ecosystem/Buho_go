@@ -24,6 +24,7 @@ import {
   isLightningAddress,
   normalizePaymentAddress,
   stripWrapperScheme,
+  splitAddressForDisplay,
 } from '../addressUtils.js';
 
 // A real LNURL-withdraw voucher (LNbits) reported from the field. It must be
@@ -239,6 +240,44 @@ test('defensive: non-strings and empties → empty string', () => {
   assert.equal(normalizePaymentAddress(undefined), '');
   assert.equal(normalizePaymentAddress(42), '');
   assert.equal(normalizePaymentAddress('   '), '');
+});
+
+test('splitAddressForDisplay: a Lightning address keeps its domain', () => {
+  assert.deepEqual(
+    splitAddressForDisplay('grandtapir425@coinsnap.app'),
+    { head: 'grandtapir425', tail: '@coinsnap.app' }
+  );
+  // Only the last @ separates; a local part may legally contain one.
+  assert.deepEqual(
+    splitAddressForDisplay('a@b@example.com'),
+    { head: 'a@b', tail: '@example.com' }
+  );
+});
+
+test('splitAddressForDisplay: an opaque token keeps its last characters', () => {
+  const npub = 'npub1' + 'q'.repeat(30) + 'abcd1234';
+  assert.deepEqual(splitAddressForDisplay(npub), {
+    head: npub.slice(0, -8),
+    tail: 'abcd1234',
+  });
+});
+
+test('splitAddressForDisplay: prose and short labels shorten at the end instead', () => {
+  assert.equal(splitAddressForDisplay('Pratik Patel'), null);
+  assert.equal(splitAddressForDisplay('Payment sent'), null);
+  assert.equal(splitAddressForDisplay('rainyba'), null);
+  // Short enough to render whole — no need to carve it up.
+  assert.equal(splitAddressForDisplay('bc1qshort'), null);
+  // A memo that happens to hold an address is still prose.
+  assert.equal(splitAddressForDisplay('pay me at alice@example.com'), null);
+});
+
+test('splitAddressForDisplay: defensive against empties and non-strings', () => {
+  assert.equal(splitAddressForDisplay(null), null);
+  assert.equal(splitAddressForDisplay(undefined), null);
+  assert.equal(splitAddressForDisplay('   '), null);
+  assert.equal(splitAddressForDisplay('@nolocalpart.com'), null);
+  assert.equal(splitAddressForDisplay('nodomain@'), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

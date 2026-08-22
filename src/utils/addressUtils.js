@@ -320,3 +320,35 @@ export function truncateAddress(address, startChars = 10, endChars = 8) {
   if (address.length <= minLength) return address;
   return `${address.slice(0, startChars)}...${address.slice(-endChars)}`;
 }
+
+/**
+ * Split an address-like string into a part that may be shortened and a part
+ * that has to survive, so a list row can middle-truncate it in CSS instead of
+ * cutting the identifying end off.
+ *
+ * A Lightning address keeps its domain (that is what says *which* wallet paid
+ * out); an opaque token — npub, invoice, on-chain or Spark address — keeps its
+ * last characters, which is the part people compare against.
+ *
+ * Returns null for anything that reads as prose (a contact name, a memo).
+ * Those tail-truncate like any other label, the beginning being the part that
+ * identifies them.
+ *
+ * @param {string} value
+ * @returns {{ head: string, tail: string } | null}
+ */
+export function splitAddressForDisplay(value) {
+  const text = String(value || '').trim();
+  if (!text || /\s/.test(text)) return null;
+
+  const at = text.lastIndexOf('@');
+  if (at > 0 && at < text.length - 1) {
+    return { head: text.slice(0, at), tail: text.slice(at) };
+  }
+
+  if (text.length > 24 && /^[a-z0-9]+$/i.test(text)) {
+    return { head: text.slice(0, -8), tail: text.slice(-8) };
+  }
+
+  return null;
+}

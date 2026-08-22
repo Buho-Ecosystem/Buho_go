@@ -474,7 +474,7 @@
                       class="tx-row-avatar"
                       :picture="getTxAvatarPicture(tx)"
                       :entry="{ address: getTxCounterparty(tx) }"
-                      :name="getTxTitle(tx)"
+                      :name="txTitle(tx).full"
                       :initial-length="2"
                     />
                     <!-- Status rows (awaiting / expired) keep the icon
@@ -512,8 +512,22 @@
                   <!-- Text column -->
                   <span class="tx-row-body">
                     <span class="tx-row-title-row">
-                      <span class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
-                        {{ getTxTitle(tx) }}
+                      <!-- Names and memos shorten at the end, where the
+                           least meaning sits. An address shortens in the
+                           middle instead, so both the person and the
+                           service they were paid at stay readable. Both
+                           halves stay in the DOM, so screen readers and
+                           the details view still get the whole string. -->
+                      <span
+                        v-if="txTitle(tx).parts"
+                        class="tx-row-title tx-row-title-split"
+                        :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'"
+                      >
+                        <span class="tx-row-title-head">{{ txTitle(tx).parts.head }}</span
+                        ><span class="tx-row-title-tail">{{ txTitle(tx).parts.tail }}</span>
+                      </span>
+                      <span v-else class="tx-row-title" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
+                        {{ txTitle(tx).full }}
                       </span>
                       <!-- L1 badge — calls out on-chain transactions
                            (deposits + cooperative-exit withdrawals) so a
@@ -728,6 +742,7 @@ import { EARN_BRAND, isEarnRewardTx, earnRewardKind } from '../services/earnBran
 import { zapInfoFromTx } from '../utils/zaps';
 import { zapperDisplayName, zapperPicture } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
+import { splitAddressForDisplay } from '../utils/addressUtils.js';
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
@@ -850,6 +865,21 @@ export default {
             return true;
         }
       });
+    },
+
+    /**
+     * Row titles, resolved once per list pass. getTxTitle() reaches into the
+     * metadata store and the address book for every row, so the template must
+     * not call it again for each half of a middle-truncated address.
+     */
+    txTitles() {
+      const map = new Map();
+      for (const tx of this.filteredTransactions || []) {
+        if (!tx || !tx.id) continue;
+        const full = this.getTxTitle(tx);
+        map.set(tx.id, { full, parts: splitAddressForDisplay(full) });
+      }
+      return map;
     },
 
     groupedTransactions() {
@@ -1254,6 +1284,19 @@ export default {
         return tx.type === 'incoming' ? this.$t('Bitcoin received') : this.$t('Bitcoin sent');
       }
       return tx.type === 'incoming' ? this.$t('Payment received') : this.$t('Payment sent');
+    },
+
+    /**
+     * The resolved row title: `full`, plus `parts` when it is an address that
+     * should shorten in the middle rather than at the end (null otherwise).
+     * Reads the cached pass above; falls back for any row the cache misses,
+     * such as a transaction reached from outside the filtered list.
+     */
+    txTitle(tx) {
+      const cached = tx && tx.id ? this.txTitles.get(tx.id) : null;
+      if (cached) return cached;
+      const full = this.getTxTitle(tx);
+      return { full, parts: splitAddressForDisplay(full) };
     },
 
     /**
@@ -2845,6 +2888,22 @@ export default {
   background: #F6F6F6;
 }
 
+/*
+  QScrollArea positions its content box absolutely, which leaves the box
+  shrink-to-fit: it takes the width its content asks for. What .tx-row asks
+  for is its full width — a nowrap flex row reports the same min-content and
+  max-content size, so min-width:0 and overflow:hidden on the title only
+  govern how it divides a width it has been given, never how much it asks
+  for. One long unbreakable title (a Lightning address) therefore sized the
+  whole list to that title and carried the amount column off the right edge
+  of the screen, with nothing to scroll it back into view. Capping the box
+  at the viewport gives the rows a definite width to divide up, which is
+  what the ellipsis rules below need in order to fire at all.
+*/
+.transaction-content :deep(.q-scrollarea__content) {
+  max-width: 100%;
+}
+
 /* ==================================================================
    Transaction list — redesigned, neutral palette.
    Shares colour tokens with the Wallet page's last-tx preview so the
@@ -3090,10 +3149,11 @@ export default {
 
 /* L1 badge — small pill next to the title for on-chain transactions */
 .tx-row-title-row {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .tx-l1-badge {
@@ -3135,6 +3195,36 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/*
+  Middle truncation, in two halves: the head gives way first, the tail
+  (a domain, or the last characters of a token) holds its ground until
+  there is nothing left to give. The head keeps a few characters at any
+  width so the row never shows the end alone. The two spans are written
+  without whitespace between them in the template — a newline there
+  would render as a space in the middle of the address.
+*/
+.tx-row-title-split {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.tx-row-title-head {
+  flex: 1 1 auto;
+  min-width: 4ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-row-title-tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tx-row-title-light {
