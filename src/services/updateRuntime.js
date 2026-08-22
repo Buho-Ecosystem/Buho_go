@@ -71,7 +71,3 @@ export async function openUpdateDestination(url) {
   if (!url) throw new Error('This update channel is not available yet')
   await openInAppBrowser(url)
 }
-
-export function reloadPwa() {
-  window.location.reload()
-}

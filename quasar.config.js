@@ -194,15 +194,36 @@ export default defineConfig((ctx) => {
 
     // https://v2.quasar.dev/quasar-cli-vite/developing-pwa/configuring-pwa
     pwa: {
-      workboxMode: 'GenerateSW', // 'GenerateSW' or 'InjectManifest'
-      // swFilename: 'sw.js',
+      // The worker is hand-authored source (src-pwa/custom-service-worker.js)
+      // so its update lifecycle and caching strategies are reviewable code
+      // instead of generated config. See that file for the reasoning.
+      workboxMode: 'InjectManifest',
       manifestFilename: 'manifest.json',
-      // extendManifestJson (json) {},
-      // useCredentialsForManifestTag: true,
-      // injectPwaMetaTags: false,
-      // extendPWACustomSWConf (esbuildConf) {},
-      // extendGenerateSWOptions (cfg) {},
-      // extendInjectManifestOptions (cfg) {}
+      extendInjectManifestOptions (cfg) {
+        // Precache the app shell only: what the app needs to boot and render
+        // offline. public/ also holds a large media library (store
+        // screenshots, onboarding art, partner kits); precaching it made
+        // every worker update a ~44 MB download that phones often never
+        // finished, stranding them on stale builds. Those images now cache at
+        // runtime as they are viewed (see the worker's image route).
+        cfg.globPatterns = [
+          'index.html',
+          'assets/**',
+          'fonts/**',
+          'icons/**',
+          'favicon/**',
+          '*.svg',
+          'manifest.json',
+        ]
+        // Everything in assets/ is content-hashed, so the URL itself is the
+        // version; skip the revision query parameter on those fetches.
+        cfg.dontCacheBustURLsMatching = /^assets\//
+        // Workbox silently drops files over 2 MiB from the precache, which
+        // left the largest (boot-critical) chunk as a mandatory network fetch
+        // and blanked stale clients after every deploy. Raise the cap well
+        // clear of the current worst case.
+        cfg.maximumFileSizeToCacheInBytes = 12 * 1024 * 1024
+      },
     },
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-cordova-apps/configuring-cordova
