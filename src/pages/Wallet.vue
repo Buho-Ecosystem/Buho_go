@@ -1349,10 +1349,10 @@ export default {
       const message = this.lastTxMessage;
       if (message) return { text: message, kind: 'message' };
 
-      return {
-        text: this.lastTxIsIncoming ? this.$t('Payment Received') : this.$t('Payment Sent'),
-        kind: 'generic'
-      };
+      // Nothing identified this payment. Direction already rides the
+      // signed amount and the badge, so the line says what it is, not
+      // which way it went. Same wording as the transaction list.
+      return { text: this.$t('Bitcoin payment'), kind: 'generic' };
     },
 
     /**

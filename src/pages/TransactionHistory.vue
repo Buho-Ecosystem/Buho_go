@@ -1308,10 +1308,12 @@ export default {
           kind: 'generic'
         };
       }
-      return {
-        full: tx.type === 'incoming' ? this.$t('Payment received') : this.$t('Payment sent'),
-        kind: 'generic'
-      };
+      // Nothing identified this payment: no contact, no address, no text.
+      // Direction is already carried three ways — the signed amount, its
+      // colour, and the arrow badge on the avatar — so naming it again
+      // here would spend the row's most prominent line on a fact the
+      // reader has already read.
+      return { full: this.$t('Bitcoin payment'), kind: 'generic' };
     },
 
     /**
