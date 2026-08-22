@@ -134,6 +134,21 @@
         </div>
       </div>
 
+      <!--
+        The message that came with the payment, directly under the amount.
+
+        The list shortens this to one line; this is where the reader
+        comes to see all of it, so it gets room to wrap rather than a
+        slot in the data table between Network and Settled. Quoted,
+        because it is someone else's words.
+      -->
+      <div v-if="txMessage" class="details-section">
+        <div class="section-label">{{ $t('Message') }}</div>
+        <div class="settings-card detail-card">
+          <div class="tx-message-text">&#8220;{{ txMessage }}&#8221;</div>
+        </div>
+      </div>
+
       <!-- Transaction Info -->
       <div class="details-section">
         <div class="tx-table">
@@ -186,21 +201,19 @@
             <div class="tx-row-value">{{ $t('Bitcoin L1 (on-chain)') }}</div>
           </div>
 
-          <!-- A reward's description is the untranslated brand memo, which
-               the Type row above already states in the user's language. -->
-          <div v-if="getTransactionDescription() && !isEarnReward" class="tx-row">
+          <!-- The message itself sits above, under the amount. These two
+               rows exist only for the uncommon case where the provider
+               sent text that is genuinely a second fact — an invoice
+               description behind a payer's comment, or a raw memo that
+               matches neither. -->
+          <div v-if="txDescriptionDetail" class="tx-row">
             <div class="tx-row-label">{{ $t('Description') }}</div>
-            <div class="tx-row-value">{{ getTransactionDescription() }}</div>
+            <div class="tx-row-value">{{ txDescriptionDetail }}</div>
           </div>
 
-          <div v-if="transaction.memo && transaction.memo !== getTransactionDescription()" class="tx-row">
+          <div v-if="txMemoDetail" class="tx-row">
             <div class="tx-row-label">{{ $t('Memo') }}</div>
-            <div class="tx-row-value">{{ transaction.memo }}</div>
-          </div>
-
-          <div v-if="getExtraComment()" class="tx-row">
-            <div class="tx-row-label">{{ $t('Comment') }}</div>
-            <div class="tx-row-value">&#8220;{{ getExtraComment() }}&#8221;</div>
+            <div class="tx-row-value">{{ txMemoDetail }}</div>
           </div>
 
           <!--
@@ -301,10 +314,13 @@
         </div>
       </div>
 
-      <!-- LUD-09 message from the recipient, persisted from the send. -->
+      <!-- LUD-09 message from the recipient, persisted from the send.
+           Labelled apart from the Message block above: that one is the
+           text that rode along with the payment, this one is what the
+           recipient's server sent back afterwards. -->
       <div v-if="currentSuccessAction" class="details-section">
         <div class="section-label">
-          {{ $t('Message from recipient') }}
+          {{ $t('From the recipient') }}
         </div>
         <div class="settings-card detail-card">
           <div class="success-action-detail">
@@ -695,6 +711,7 @@ import { lnurlFetch } from '../utils/lnurlHttp.js';
 import { Icon } from '@iconify/vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import { zapInfoFromTx } from '../utils/zaps';
+import { getTxDescription, getTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
 import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
@@ -1018,6 +1035,53 @@ export default {
 
     isEarnReward() {
       return this.earnRewardLabel !== '';
+    },
+
+    /**
+     * Whether this transaction's own text belongs on the page at all.
+     *
+     * A zap's description is the raw kind-9734 payload; the zapper
+     * section above already surfaces its human parts as a name and a
+     * quoted note, so repeating the payload here would be noise at best.
+     * A Learn & Earn reward's memo is the untranslated brand string that
+     * the Type row already states in the user's language.
+     */
+    showsOwnText() {
+      return !this.zapInfo && !this.isEarnReward;
+    },
+
+    /**
+     * The message attached to this payment: the payer's comment when the
+     * rails carried one, otherwise the invoice description. '' when the
+     * payment carries nothing a person wrote — the placeholder memos
+     * BuhoGO stamps on undescribed invoices resolve to '' here, so the
+     * page stays silent rather than echoing our own filler.
+     */
+    txMessage() {
+      return this.showsOwnText ? getTxMessage(this.transaction) : '';
+    },
+
+    /**
+     * The invoice description, when it is a second, distinct fact rather
+     * than the same text the message block is already showing.
+     */
+    txDescriptionDetail() {
+      if (!this.showsOwnText) return '';
+      const description = getTxDescription(this.transaction);
+      return description && description !== this.txMessage ? description : '';
+    },
+
+    /**
+     * The raw memo, when the provider sent one that matches neither the
+     * message nor the description. Rare, and technical when it happens,
+     * so it stays in the detail table rather than being promoted.
+     */
+    txMemoDetail() {
+      if (!this.showsOwnText) return '';
+      const memo = String(this.transaction?.memo || '').trim();
+      if (isPlaceholderDescription(memo)) return '';
+      if (memo === this.txMessage || memo === this.txDescriptionDetail) return '';
+      return memo;
     },
 
     /**
@@ -1493,33 +1557,6 @@ export default {
       return this.transaction.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
 
-    getTransactionDescription() {
-      if (this.transaction.description && this.transaction.description.trim() !== '') {
-        return this.transaction.description;
-      }
-      if (this.transaction.memo && this.transaction.memo.trim() !== '') {
-        return this.transaction.memo;
-      }
-      return null;
-    },
-
-    getExtraComment() {
-      // The normalizer already lifted the LUD-12 comment onto the
-      // canonical shape when the provider had one.
-      if (this.transaction?.comment) return this.transaction.comment;
-      if (!this.transaction?.extra) return null;
-      const extra = this.transaction.extra;
-      // LNbits stores LNURL comments in extra.comment
-      if (typeof extra === 'object' && extra.comment) return extra.comment;
-      if (typeof extra === 'string') {
-        try {
-          const parsed = JSON.parse(extra);
-          return parsed.comment || null;
-        } catch { return null; }
-      }
-      return null;
-    },
-
     /**
      * The counterparty line: for sends, the recipient address stamped at
      * send time; for receives, the Lightning address that was paid when
@@ -1758,7 +1795,7 @@ export default {
       const amount = this.getFormattedAmount();
       const fiat = this.getFiatAmount();
       const date = this.formatDateTime(this.transaction.settled_at);
-      const desc = this.getTransactionDescription();
+      const desc = this.txMessage;
 
       let text = `${direction} ${amount}`;
       if (fiat && fiat !== '--' && fiat !== '...') text += ` (${fiat})`;
@@ -2254,6 +2291,17 @@ export default {
 .details-section {
   padding: 0 1rem;
   margin-bottom: 1rem;
+}
+
+/* The message is reading matter, not a data field: full size, free to
+   wrap over as many lines as it needs, and never truncated here. */
+.tx-message-text {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  padding: 14px 16px;
+  overflow-wrap: anywhere;
 }
 
 .section-label {

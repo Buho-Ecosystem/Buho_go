@@ -123,6 +123,65 @@ export function computeAmounts(walletType, amount, fee) {
 }
 
 /**
+ * An `extra` bag that arrived as a JSON string, parsed into an object.
+ * Returns null for anything that is not parseable object JSON — a
+ * malformed bag costs us one optional field, never a rendered row.
+ *
+ * @param {unknown} raw
+ * @returns {object|null}
+ */
+function parseExtraBag(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the payer's LUD-12 comment from wherever the provider put it.
+ *
+ * Two explicit, typed sources, in order of how directly they name the
+ * thing:
+ *
+ *   - NIP-47's `metadata` object (NWC). The spec gives the comment its
+ *     own key alongside `payer_data`, `recipient_data` and `nostr`; see
+ *     `Nip47TransactionMetadata` in @getalby/sdk. The SDK spreads the
+ *     whole record through `mapNip47TransactionToTransaction`, and our
+ *     NWC provider spreads it again, so it arrives here untouched.
+ *   - `extra.comment` (LNbits), written by the lnurlp extension for the
+ *     Lightning address we create with a comment allowance. Accepted
+ *     both as an object and as the JSON string some LNbits deployments
+ *     return, so the comment survives either shape.
+ *
+ * A bare `description` is still never read as a comment. Some NWC
+ * backends do put one there, but others put the invoice memo there, and
+ * guessing between them would attribute text to a payer who never wrote
+ * it. The typed field above removes any need to guess.
+ *
+ * @param {object} tx - raw provider transaction
+ * @param {object|null} extra - the record's `extra` bag when it is already an object
+ * @returns {string|null}
+ */
+function resolveComment(tx, extra) {
+  const metadata = (tx.metadata && typeof tx.metadata === 'object') ? tx.metadata : null;
+  const bag = extra || parseExtraBag(tx.extra);
+  const candidates = [
+    metadata && metadata.comment,
+    bag && bag.comment,
+    tx.comment
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+/**
  * Turn a provider's raw transaction row into the canonical shape.
  *
  * @param {object} rawTx - whatever the wallet provider's getTransactions()
@@ -189,10 +248,8 @@ export function normalizeTx(rawTx, options = {}) {
     paymentHash: tx.paymentHash || tx.payment_hash || null,
     preimage: tx.preimage || null,
     bolt11: tx.bolt11 || tx.payment_request || null,
-    // LUD-12 comment. Only ever read from an explicit field — NWC surfaces
-    // it as `description` on some backends, but we must not guess that a
-    // description IS the comment, so it stays unset there.
-    comment: (extra && extra.comment) || tx.comment || null,
+    // LUD-12 comment, from an explicit typed field only. See resolveComment.
+    comment: resolveComment(tx, extra),
     tag: tx.tag || null,
     lnaddress: (extra && extra.lnaddress) || null,
 

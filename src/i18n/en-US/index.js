@@ -134,8 +134,11 @@ export default {
   "Sending to a Bitcoin address didn't go through. Please try again.": "Sending to a Bitcoin address didn't go through. Please try again.",
   "Switch to a Spark or Arkade wallet to send Bitcoin": "Switch to a Spark or Arkade wallet to send Bitcoin",
   "You receive about {n} sats after the network fee": "You receive about {n} sats after the network fee",
+  // The text that rode along with the payment (payer comment or invoice
+  // description), kept distinct from the recipient's reply below.
+  "Message": "Message",
   // --- LUD-09 successAction (recipient's post-payment message) ---
-  "Message from recipient": "Message from recipient",
+  "From the recipient": "From the recipient",
   "Delivered": "Delivered",
   "Delivery": "Delivery",
   "Delivery in progress": "Delivery in progress",
@@ -602,7 +605,6 @@ export default {
   "We've replaced the in-app PIN with biometric security. Enter your PIN one last time to complete the upgrade.": "We've replaced the in-app PIN with biometric security. Enter your PIN one last time to complete the upgrade.",
   // Transactions
   "Network": "Network",
-  "Comment": "Comment",
   "Bitcoin L1 (on-chain)": "Bitcoin L1 (on-chain)",
   "No transactions yet": "No transactions yet",
   "Send or receive your first payment and it will show up here.": "Send or receive your first payment and it will show up here.",
