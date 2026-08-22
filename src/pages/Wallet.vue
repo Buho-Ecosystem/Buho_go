@@ -324,7 +324,7 @@
               class="last-tx-avatar"
               :picture="lastTxAvatarPicture"
               :entry="{ address: lastTxAvatarAddress }"
-              :name="lastTxTitle"
+              :name="lastTxHeading.kind === 'message' ? '' : lastTxHeading.text"
             />
             <ContactAvatar
               v-else
@@ -340,8 +340,17 @@
             </span>
           </span>
           <span class="last-tx-info">
-            <span class="last-tx-title" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              {{ lastTxTitle }}
+            <!-- A message is quoted and unbolded so it reads as something
+                 someone wrote, never as a contact the user saved. -->
+            <span
+              class="last-tx-title"
+              :class="[
+                $q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light',
+                { 'last-tx-title-message': lastTxHeading.kind === 'message' }
+              ]"
+            >
+              <template v-if="lastTxHeading.kind === 'message'">&#8220;{{ lastTxHeading.text }}&#8221;</template>
+              <template v-else>{{ lastTxHeading.text }}</template>
             </span>
             <span class="last-tx-time" :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'">
               {{ lastTxTimeAgo }}
@@ -859,6 +868,7 @@ import {
 } from '../utils/sparkPayment.js';
 import {readPersistedWalletState} from '../utils/walletHydration.js';
 import {zapInfoFromTx} from '../utils/zaps.js';
+import {getTxMessage} from '../utils/txMessage.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
@@ -1300,14 +1310,26 @@ export default {
       }
     },
 
-    lastTxTitle() {
+    /**
+     * The preview's top line, and what kind of thing it is. Same
+     * priority chain as the history list's resolveTxTitle(), so the two
+     * surfaces never disagree about the same payment: contact → zap
+     * sender → auxiliary label → recipient address (sends) → the
+     * payment's own message → a generic direction label.
+     *
+     * `kind: 'message'` is counterparty-written text, which the template
+     * renders quoted and unbolded so it can never pass for a contact.
+     *
+     * @returns {{ text: string, kind: 'name'|'address'|'message'|'generic' }}
+     */
+    lastTxHeading() {
       // Prefer the linked contact's name so the home-screen preview
       // reads as "DrShift" instead of the generic direction label.
-      if (this.lastTxContact?.name) return this.lastTxContact.name;
+      if (this.lastTxContact?.name) return { text: this.lastTxContact.name, kind: 'name' };
       // A zap is about WHO zapped — resolved profile name, shortened
       // npub until the relays answer. Same rule as the history list.
       if (this.lastTxZap) {
-        return zapperDisplayName(this.lastTxZap) || this.$t('Zap received');
+        return { text: zapperDisplayName(this.lastTxZap) || this.$t('Zap received'), kind: 'name' };
       }
       // Auxiliary payment paths provide a human label (for example a payout
       // from this profile's Social Bucket). Keep it above the raw invoice memo
@@ -1315,16 +1337,33 @@ export default {
       const tx = this.lastTransaction;
       if (tx?.id && this.transactionMetadataStore) {
         const label = this.transactionMetadataStore.getLabelForTransaction(tx.id, this.activeWallet?.id);
-        if (label) return label;
+        if (label) return { text: label, kind: 'name' };
       }
       // Next best identity: the recipient address stamped at send time.
       if (tx?.type === 'outgoing' && tx.id && this.transactionMetadataStore) {
         const meta = this.transactionMetadataStore.getMetadataForTransaction(tx.id, this.activeWallet?.id);
-        if (meta?.recipientAddress) return meta.recipientAddress;
+        if (meta?.recipientAddress) return { text: meta.recipientAddress, kind: 'address' };
       }
-      return this.lastTxIsIncoming
-        ? this.$t('Payment Received')
-        : this.$t('Payment Sent');
+      // Nothing identifies the counterparty, which is the normal case on
+      // a receive: let what they wrote speak instead of a placeholder.
+      const message = this.lastTxMessage;
+      if (message) return { text: message, kind: 'message' };
+
+      // Nothing identified this payment. Direction already rides the
+      // signed amount and the badge, so the line says what it is, not
+      // which way it went. Same wording as the transaction list.
+      return { text: this.$t('Bitcoin payment'), kind: 'generic' };
+    },
+
+    /**
+     * The human message on the previewed transaction: a zap's note, else
+     * the payer's comment, else the invoice description — never one of
+     * the placeholder memos BuhoGO writes on the user's behalf. '' when
+     * the payment carries no text at all.
+     */
+    lastTxMessage() {
+      if (this.lastTxZap) return this.lastTxZap.note || '';
+      return getTxMessage(this.lastTransaction);
     },
 
     lastTxTimeAgo() {
@@ -1337,13 +1376,11 @@ export default {
         this.lastTransaction.createdTime ??
         null;
       const time = this.formatRelativeTime(ts);
-      // Same message rule as the history list: for a zap, the zapper's
-      // note (the raw kind-9734 JSON must never leak as text); otherwise
-      // the payer's comment, else the invoice memo — quoted human text.
-      const tx = this.lastTransaction;
-      const message = this.lastTxZap
-        ? (this.lastTxZap.note || '')
-        : String(tx?.comment || tx?.description || tx?.memo || '').trim();
+      // Same rule as the history list: the message rides here in quotes,
+      // unless the top line is already carrying it — the same text must
+      // never appear twice in one preview.
+      if (this.lastTxHeading.kind === 'message') return time;
+      const message = this.lastTxMessage;
       return message ? `“${message}” · ${time}` : time;
     },
 
@@ -7229,6 +7266,20 @@ export default {
 
 .last-tx-title-dark {
   color: #f1f5f9;
+}
+
+/* Counterparty-written text never wears contact typography — see the
+   matching rule on the transaction list's .tx-row-title-message. */
+.last-tx-title-message {
+  font-weight: 400;
+}
+
+.last-tx-title-message.last-tx-title-light {
+  color: #334155;
+}
+
+.last-tx-title-message.last-tx-title-dark {
+  color: #cbd5e1;
 }
 
 .last-tx-time,

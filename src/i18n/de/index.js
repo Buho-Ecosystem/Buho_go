@@ -140,8 +140,11 @@ export default {
   "Sending to a Bitcoin address didn't go through. Please try again.": "Das Senden an eine Bitcoin Adresse hat nicht geklappt. Bitte versuche es erneut.",
   "Switch to a Spark or Arkade wallet to send Bitcoin": "Wechsle zu einem Spark oder Arkade Wallet, um Bitcoin zu senden",
   "You receive about {n} sats after the network fee": "Du erhältst etwa {n} Sats nach Abzug der Netzwerkgebühr",
+  // The text that rode along with the payment (payer comment or invoice
+  // description), kept distinct from the recipient's reply below.
+  "Message": "Nachricht",
   // --- LUD-09 successAction (recipient's post-payment message) ---
-  "Message from recipient": "Nachricht vom Empfänger",
+  "From the recipient": "Vom Empfänger",
   "Delivered": "Zugestellt",
   "Delivery": "Zustellung",
   "Delivery in progress": "Zustellung läuft",
@@ -637,7 +640,6 @@ export default {
   "We've replaced the in-app PIN with biometric security. Enter your PIN one last time to complete the upgrade.": "Wir haben die In-App-PIN durch biometrische Sicherheit ersetzt. Gib deine PIN ein letztes Mal ein, um das Upgrade abzuschließen.",
   // Transactions
   "Network": "Netzwerk",
-  "Comment": "Kommentar",
   "Bitcoin L1 (on-chain)": "Bitcoin L1 (On-Chain)",
   "No transactions yet": "Noch keine Transaktionen",
   "Send or receive your first payment and it will show up here.": "Sende oder empfange deine erste Zahlung und sie erscheint hier.",
@@ -1445,7 +1447,6 @@ export default {
   "Invoice expired": "Rechnung abgelaufen",
   "Invoice ready": "Rechnung bereit",
   "No description": "Keine Beschreibung",
-  "Payment received": "Zahlung erhalten",
   "PIN updated": "PIN aktualisiert",
   "Please enter your 6-digit PIN": "Bitte gib deine 6-stellige PIN ein",
   "Reconnected": "Neu verbunden",
@@ -1796,7 +1797,6 @@ export default {
   "Paste into the input field": "In das Eingabefeld einfügen",
   "Pay anyone": "An jeden senden",
   "Payment address or invoice": "Zahlungsadresse oder Rechnung",
-  "Payment sent": "Zahlung gesendet",
   "Payment timed out": "Zeitüberschreitung bei der Zahlung",
   "Please connect a wallet first": "Bitte verbinde zuerst eine Wallet",
   "Please enter a name": "Bitte gib einen Namen ein",

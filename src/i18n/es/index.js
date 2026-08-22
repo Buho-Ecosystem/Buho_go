@@ -140,8 +140,11 @@ export default {
   "Sending to a Bitcoin address didn't go through. Please try again.": "El envío a una dirección de Bitcoin no se completó. Inténtalo de nuevo.",
   "Switch to a Spark or Arkade wallet to send Bitcoin": "Cambia a una cartera Spark o Arkade para enviar Bitcoin",
   "You receive about {n} sats after the network fee": "Recibes alrededor de {n} sats después de la comisión de red",
+  // The text that rode along with the payment (payer comment or invoice
+  // description), kept distinct from the recipient's reply below.
+  "Message": "Mensaje",
   // --- LUD-09 successAction (recipient's post-payment message) ---
-  "Message from recipient": "Mensaje del destinatario",
+  "From the recipient": "Del destinatario",
   "Delivered": "Entregado",
   "Delivery": "Entrega",
   "Delivery in progress": "Entrega en curso",
@@ -638,7 +641,6 @@ export default {
   "We've replaced the in-app PIN with biometric security. Enter your PIN one last time to complete the upgrade.": "Hemos reemplazado el PIN de la app con seguridad biométrica. Introduce tu PIN una última vez para completar la actualización.",
   // Transactions
   "Network": "Red",
-  "Comment": "Comentario",
   "Bitcoin L1 (on-chain)": "Bitcoin L1 (en cadena)",
   "No transactions yet": "Aún no hay transacciones",
   "Send or receive your first payment and it will show up here.": "Envía o recibe tu primer pago y aparecerá aquí.",
@@ -1446,7 +1448,6 @@ export default {
   "Invoice expired": "Factura expirada",
   "Invoice ready": "Factura lista",
   "No description": "Sin descripción",
-  "Payment received": "Pago recibido",
   "PIN updated": "PIN actualizado",
   "Please enter your 6-digit PIN": "Por favor ingresa tu PIN de 6 dígitos",
   "Reconnected": "Reconectado",
@@ -1796,7 +1797,6 @@ export default {
   "Paste into the input field": "Pega en el campo de entrada",
   "Pay anyone": "Paga a cualquiera",
   "Payment address or invoice": "Dirección de pago o factura",
-  "Payment sent": "Pago enviado",
   "Payment timed out": "El pago expiró",
   "Please connect a wallet first": "Conecta primero una cartera",
   "Please enter a name": "Introduce un nombre",

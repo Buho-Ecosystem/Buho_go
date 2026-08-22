@@ -105,7 +105,7 @@
               class="success-action-label"
               :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
             >
-              {{ $t('Message from recipient') }}
+              {{ $t('From the recipient') }}
             </div>
 
             <!-- message: plain text -->

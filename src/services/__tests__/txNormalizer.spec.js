@@ -7,8 +7,9 @@
  *   - per-provider amount semantics (Spark includes the fee in `amount`,
  *     LNbits/NWC exclude it, Arkade reports total only with no fee split)
  *   - LNbits fiatAtSettlement extraction straight from `extra`
- *   - LUD-12 comment extraction (explicit field only — never guessed from
- *     description)
+ *   - LUD-12 comment extraction (explicit typed fields only — NIP-47
+ *     `metadata.comment` and LNbits `extra.comment`, never guessed from
+ *     a description)
  *   - payment hash / preimage / bolt11 passthrough
  *   - incoming vs outgoing direction resolution, including legacy
  *     'receive'/'send' raw types
@@ -179,6 +180,60 @@ test('NWC: description is NOT promoted to comment, even though some backends put
   assert.equal(tx.comment, null)
   // The description itself is untouched and still readable as before.
   assert.equal(tx.description, 'NWC send with comment')
+})
+
+test('LNbits: comment survives an extra bag that arrived as a JSON string', () => {
+  const tx = normalizeTx(
+    { id: 'lnbits-3b', type: 'receive', amount: 20, extra: '{"comment":"Parsed from a string bag"}' },
+    { walletType: 'lnbits' },
+  )
+  assert.equal(tx.comment, 'Parsed from a string bag')
+})
+
+test('NWC: the NIP-47 metadata.comment field IS read — it names the comment explicitly', () => {
+  const tx = normalizeTx(
+    {
+      id: 'nwc-3a',
+      type: 'incoming',
+      amount: 200,
+      description: 'BuhoGO Payment',
+      metadata: { comment: 'Have a beer on me', payer_data: { name: 'anon' } },
+    },
+    { walletType: 'nwc' },
+  )
+  assert.equal(tx.comment, 'Have a beer on me')
+  // The description is untouched: it is a separate field, not the comment.
+  assert.equal(tx.description, 'BuhoGO Payment')
+})
+
+test('metadata.comment outranks extra.comment when a provider somehow sends both', () => {
+  const tx = normalizeTx(
+    {
+      id: 'nwc-3b',
+      type: 'incoming',
+      amount: 200,
+      metadata: { comment: 'typed field' },
+      extra: { comment: 'legacy bag' },
+    },
+    { walletType: 'nwc' },
+  )
+  assert.equal(tx.comment, 'typed field')
+})
+
+test('a whitespace-only comment is not a comment', () => {
+  const tx = normalizeTx(
+    { id: 'nwc-3c', type: 'incoming', amount: 10, metadata: { comment: '   ' } },
+    { walletType: 'nwc' },
+  )
+  assert.equal(tx.comment, null)
+})
+
+test('a non-object metadata field never throws and never invents a comment', () => {
+  const tx = normalizeTx(
+    { id: 'nwc-3d', type: 'incoming', amount: 10, metadata: 'not an object' },
+    { walletType: 'nwc' },
+  )
+  assert.equal(tx.comment, null)
 })
 
 test('Arkade: no extra, no comment field -> comment stays null (no invented text)', () => {
