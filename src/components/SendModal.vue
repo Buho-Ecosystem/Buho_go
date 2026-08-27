@@ -109,7 +109,11 @@
               <span>{{ capabilityBlocked }}</span>
             </template>
             <template v-else-if="mobileMoneyMode">
-              <span v-if="mmCountryOption">{{ countryName(mmCountryOption.code) }} · +{{ mmCountryOption.callingCode }}</span>
+              <span v-if="mmCountryOption">
+                {{ countryName(mmCountryOption.code) }} · +{{ mmCountryOption.callingCode }}<template
+                  v-if="mmCountryOption.networkNote"
+                > · {{ $t(mmCountryOption.networkNote) }}</template>
+              </span>
               <span v-else>{{ $t('Type the number, or pick the country first') }}</span>
             </template>
           </div>
@@ -137,7 +141,11 @@
            own. Picking a country locks recognition to it — which also lets
            us accept the bare local number and removes the KE/ZM 07x
            ambiguity before it can appear. -->
-      <div v-if="mobileMoneyMode" class="mm-countries">
+      <div
+        v-if="mobileMoneyMode"
+        class="mm-countries"
+        :style="{ gridTemplateColumns: `repeat(${mmCountryColumns}, 1fr)` }"
+      >
         <button
           v-for="c in payoutCountries"
           :key="c.code"
@@ -574,6 +582,21 @@ export default {
 
     mmCountryOption() {
       return this.payoutCountries.find((c) => c.code === this.mmCountry) || null;
+    },
+
+    /**
+     * How many country tiles sit on a row.
+     *
+     * Fixed at three, a fourth country made a second row holding one orphan
+     * tile. CSS cannot count its own children, so the column count is chosen
+     * here: up to three fit on one row, four go two by two, and five or more
+     * fall back to three across with the row itself scrolling.
+     */
+    mmCountryColumns() {
+      const n = this.payoutCountries.length;
+      if (n <= 3) return Math.max(1, n);
+      if (n === 4) return 2;
+      return 3;
     },
 
     // True when the number is valid in more than one country (075-078 KE/ZM
@@ -1210,7 +1233,12 @@ export default {
     },
 
     countryName(code) {
-      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia'), TZ: this.$t('Tanzania') }[code] || code;
+      return {
+        KE: this.$t('Kenya'),
+        ZM: this.$t('Zambia'),
+        TZ: this.$t('Tanzania'),
+        GH: this.$t('Ghana'),
+      }[code] || code;
     },
 
     // Ambiguous-number chooser: emit the picked country's constructed address
@@ -1619,8 +1647,14 @@ export default {
    ───────────────────────────────────────────────────────────── */
 .mm-countries {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Column count is set inline from mmCountryColumns: CSS cannot count its
+     own children, and a fixed three left a fourth country alone on a row. */
   gap: 10px;
+  /* With enough countries the tiles would push the field and the keyboard
+     apart, so the row carries its own scroll rather than growing the sheet. */
+  max-height: 42vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   /* Bottom inset carries the safe area for the (footer-less) resting
      Mobile Money state, so the sheet ends cleanly at the chips. */
   padding: 14px 20px max(16px, var(--safe-bottom, 16px));

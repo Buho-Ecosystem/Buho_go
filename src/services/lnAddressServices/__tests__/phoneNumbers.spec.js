@@ -20,6 +20,7 @@
 import { strict as assert } from 'node:assert'
 import {
   recognizePhoneNumber,
+  recognizePhoneNumberForCountry,
   buildLightningAddress,
   formatInternational,
   formatE164,
@@ -334,6 +335,98 @@ test('formatPhoneHandle: normalizes a known-country handle to international', ()
   assert.equal(formatPhoneHandle('XX', '0777491011'), '0777491011')
   assert.equal(formatPhoneHandle('ZM', 'not-a-number'), 'not-a-number')
   assert.equal(formatPhoneHandle('ZM', null), null)
+})
+
+// ── Ghana (BitSpenda) ──────────────────────────────────────────────────────
+
+test('Ghana: a typed number resolves to the address BitSpenda names back', () => {
+  // Unlike the other three, BitSpenda's own text/identifier metadata answers
+  // in the LOCAL form ("0246341938@bitspenda.app"), so that is what we build:
+  // the address we show is then the one the provider calls it.
+  for (const typed of ['0246341938', '233246341938', '+233 24 634 1938', '+233 246 341 938']) {
+    const r = recognizePhoneNumber(typed)
+    assert.ok(r, `${typed}: no match`)
+    assert.equal(r.country.code, 'GH', typed)
+    assert.equal(r.lightningAddress, '0246341938@bitspenda.app', typed)
+    assert.equal(r.display, '+233 246 341 938', typed)
+  }
+})
+
+test('Ghana: every MTN block BitSpenda actually pays', () => {
+  // Probed live on 2026-08-27 against bitspenda.app: these five return a
+  // payRequest. The table is the provider's, not the regulator's.
+  for (const prefix of ['24', '53', '54', '55', '59']) {
+    const r = recognizePhoneNumber(`0${prefix}6341938`)
+    assert.ok(r, `0${prefix}...: no match`)
+    assert.equal(r.country.code, 'GH')
+    assert.equal(r.operator, 'MTN')
+  }
+})
+
+test('Ghana: a number BitSpenda will not pay never resolves to Ghana', () => {
+  // Two different live rejections, and both have to stop here rather than at
+  // resolution: 020/026/027/050/056/057 are real Ghanaian numbers on other
+  // networks ("only MTN Mobile Money supported"), and 023/025/028/029/051/
+  // 052/058 are not Ghanaian mobile prefixes at all ("unsupported phone
+  // prefix"). Reaching an address that always fails is worse than no match.
+  for (const prefix of ['20', '26', '27', '50', '56', '57', '23', '25', '28', '29', '51', '52', '58']) {
+    assert.notEqual(recognizePhoneNumber(`0${prefix}6341938`)?.country?.code, 'GH', `0${prefix}...`)
+  }
+})
+
+test('Ghana: tapping the country chip refuses a non-MTN Ghanaian number', () => {
+  // The chip is what a Ghanaian on another network will use, and it is where
+  // the refusal has to be honest. 057 is a real AirtelTigo block, and it is
+  // also a Zambian Airtel block, so untapped it resolves to Zambia (see the
+  // collision test below). Locked to Ghana it must simply not match.
+  for (const prefix of ['20', '26', '27', '50', '56', '57']) {
+    assert.equal(recognizePhoneNumberForCountry('GH', `0${prefix}6341938`), null, `0${prefix}...`)
+  }
+  assert.ok(recognizePhoneNumberForCountry('GH', '0246341938'), 'MTN still resolves')
+})
+
+test('the one prefix Ghana shares with a country already served is 057', () => {
+  // Ghana does not create this: 057 resolved to Zambian Airtel before Ghana
+  // existed. But Ghana brings users who will type it, so it is pinned here.
+  // BitSpenda would refuse 057 anyway, and the country chip refuses it above.
+  // If a future country changes this set, this test says so out loud.
+  const collisions = []
+  for (const prefix of ['20', '23', '24', '25', '26', '27', '28', '29',
+    '50', '51', '52', '53', '54', '55', '56', '57', '58', '59']) {
+    const r = recognizePhoneNumber(`0${prefix}6341938`)
+    if (r && r.country.code !== 'GH') collisions.push(`0${prefix}->${r.country.code}`)
+  }
+  assert.deepEqual(collisions, ['057->ZM'])
+})
+
+test('Ghana: the restriction is stated on the country, not buried in code', () => {
+  // The operators table is also the validity rule, so a Telecel customer
+  // would be told their own number is invalid. The UI reads this field to say
+  // so before the first keystroke.
+  const gh = PAYOUT_COUNTRIES.find((c) => c.code === 'GH')
+  assert.equal(gh.networkNote, 'MTN Mobile Money only')
+})
+
+test('Ghana adds no ambiguity to the countries already served', () => {
+  // GH blocks are 2-digit (24/53/54/55/59); ZM and TZ are 2-digit but
+  // disjoint, and KE's are 3-digit. Nothing typed for Ghana may resolve
+  // anywhere else, and nothing already served may start resolving to Ghana.
+  for (const prefix of ['24', '53', '54', '55', '59']) {
+    const r = recognizePhoneNumber(`0${prefix}6341938`)
+    assert.equal(r.ambiguous, false, `0${prefix}... became ambiguous`)
+    assert.equal(r.candidates, undefined)
+  }
+  const gh = PAYOUT_COUNTRIES.find((c) => c.code === 'GH')
+  for (const other of PAYOUT_COUNTRIES.filter((c) => c.code !== 'GH')) {
+    for (const op of gh.operators) {
+      for (const prefix of op.prefixes) {
+        assert.ok(
+          !isValidMobile(other, `${prefix}6341938`.slice(0, other.nsnLength)),
+          `GH ${prefix} also validates in ${other.code}`,
+        )
+      }
+    }
+  }
 })
 
 console.log(`\n  ${passed} passed, ${failed} failed`)
