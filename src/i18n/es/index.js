@@ -1,5 +1,16 @@
 export default {
   // --- transaction report (tax export) ---
+  "Find a wallet": "Buscar cartera",
+  "No wallet by that name.": "Ninguna cartera con ese nombre.",
+  "No wallets chosen": "Ninguna cartera elegida",
+  "Your wallet": "Tu cartera",
+  "All {n} wallets": "Las {n} carteras",
+  "{n} of {m} wallets": "{n} de {m} carteras",
+  "Choose at least one": "Elige al menos una",
+  "{names} and {n} more": "{names} y {n} más",
+  "{n} of {m} selected": "{n} de {m} seleccionadas",
+  "Could not be read": "No se pudo leer",
+  "Not read": "Sin leer",
   "This year": "Este año",
   "Last year": "El año pasado",
   "Everything": "Todo",

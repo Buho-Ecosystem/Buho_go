@@ -165,7 +165,125 @@ async function run() {
     assert.equal(all.toMs, null)
   })
 
-  console.log(`\n  ${passed} passed, ${failed} failed`)
+  // ── providers that do not page the way we ask ──────────────────────────────
+
+await test('a provider that ignores limit and offset is read once, not twenty times', async () => {
+  // Arkade's getTransactions() takes no arguments and returns the whole
+  // history every call. Paging it appended the same rows twenty times, which
+  // in a tax document is every amount counted twenty times.
+  const history = Array.from({ length: 250 }, (_, i) => ({
+    id: `ark-${i}`, status: 'completed', amount: 100 + i, settled_at: 1787774933 - i * 60,
+  }))
+  let calls = 0
+  const out = await collectTransactions({
+    wallets: [{ id: 'w1', name: 'Ark', type: 'arkade' }],
+    providers: { w1: { getTransactions: async () => { calls += 1; return history } } },
+  })
+
+  assert.equal(calls, 1, 'asked once')
+  assert.equal(out.rows.length, 250, 'every transaction, each of them once')
+  assert.equal(out.truncatedWallets.length, 0)
+})
+
+await test('a page we have already seen never lands twice', async () => {
+  // LNbits offsets shift when a payment settles mid-read, so the same
+  // transaction can come back on the next page.
+  const page = (start) => Array.from({ length: 100 }, (_, i) => ({
+    id: `tx-${start + i}`, status: 'completed', amount: 10, settled_at: 1787774933 - i,
+  }))
+  let call = 0
+  const out = await collectTransactions({
+    wallets: [{ id: 'w1', name: 'Shop', type: 'lnbits' }],
+    // Second page overlaps the first by half.
+    providers: { w1: { getTransactions: async () => (call++ === 0 ? page(0) : page(50)) } },
+  })
+
+  assert.equal(out.rows.length, 150, 'the union, not the sum')
+  assert.equal(new Set(out.rows.map((r) => r.id)).size, 150)
+})
+
+await test('a provider stuck on one page stops instead of spinning', async () => {
+  let calls = 0
+  const page = Array.from({ length: 100 }, (_, i) => ({
+    id: `tx-${i}`, status: 'completed', amount: 10, settled_at: 1787774933 - i,
+  }))
+  const out = await collectTransactions({
+    wallets: [{ id: 'w1', name: 'Stuck', type: 'lnbits' }],
+    providers: { w1: { getTransactions: async () => { calls += 1; return page } } },
+  })
+  assert.equal(out.rows.length, 100)
+  assert.ok(calls <= 2, `asked ${calls} times`)
+})
+
+// ── connecting wallets that are not live ───────────────────────────────────
+
+await test('a wallet with no live provider is connected rather than skipped', async () => {
+  // The app keeps one wallet live. Without this, a report over five wallets
+  // read one and called the other four unreadable.
+  const opened = []
+  const out = await collectTransactions({
+    wallets: [
+      { id: 'live', name: 'Active', type: 'lnbits' },
+      { id: 'cold', name: 'Other', type: 'nwc' },
+    ],
+    providers: { live: { getTransactions: async () => [{ id: 'a', status: 'completed', settled_at: 1787774933 }] } },
+    connect: async (w) => {
+      opened.push(w.id)
+      return { getTransactions: async () => [{ id: 'b', status: 'completed', settled_at: 1787774900 }] }
+    },
+  })
+
+  assert.deepEqual(opened, ['cold'], 'only the one that was not already open')
+  assert.equal(out.rows.length, 2)
+  assert.deepEqual(out.readWallets, ['Active', 'Other'])
+})
+
+await test('a wallet that will not open is named, and the rest still run', async () => {
+  const out = await collectTransactions({
+    wallets: [
+      { id: 'ok', name: 'Shop', type: 'lnbits' },
+      { id: 'bad', name: 'Old phone', type: 'nwc' },
+    ],
+    connect: async (w) => {
+      if (w.id === 'bad') throw new Error('unreachable')
+      return { getTransactions: async () => [{ id: 'a', status: 'completed', settled_at: 1787774933 }] }
+    },
+  })
+
+  assert.deepEqual(out.readWallets, ['Shop'])
+  assert.deepEqual(out.failedWallets, ['Old phone'])
+  assert.equal(out.rows.length, 1)
+  assert.deepEqual(
+    out.walletResults.map((r) => `${r.name}:${r.status}`),
+    ['Shop:read', 'Old phone:failed'],
+  )
+})
+
+await test('cancelling says which wallets it never reached', async () => {
+  const controller = new AbortController()
+  const out = await collectTransactions({
+    wallets: [
+      { id: 'a', name: 'One', type: 'lnbits' },
+      { id: 'b', name: 'Two', type: 'lnbits' },
+      { id: 'c', name: 'Three', type: 'lnbits' },
+    ],
+    connect: async () => ({
+      getTransactions: async () => {
+        controller.abort()
+        return [{ id: 'x', status: 'completed', settled_at: 1787774933 }]
+      },
+    }),
+    signal: controller.signal,
+  })
+
+  assert.deepEqual(
+    out.walletResults.map((r) => r.status),
+    ['read', 'skipped', 'skipped'],
+    'a short list is never presented as a complete one',
+  )
+})
+
+console.log(`\n  ${passed} passed, ${failed} failed`)
   process.exit(failed ? 1 : 0)
 }
 

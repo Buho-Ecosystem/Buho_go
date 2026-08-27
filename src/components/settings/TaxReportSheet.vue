@@ -6,12 +6,27 @@
     @show="onShow"
     @hide="onHide"
   >
-    <q-card class="tr-sheet report-surface" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+    <q-card
+      class="tr-sheet report-surface"
+      :class="[$q.dark.isActive ? 'card_dark_style' : 'card_light_style', { 'tr-sheet--tall': view === 'wallets' }]"
+    >
       <div class="sheet-handle" aria-hidden="true">
         <span :class="$q.dark.isActive ? 'sheet-handle-bar-dark' : 'sheet-handle-bar-light'"></span>
       </div>
 
       <div class="sheet-header">
+        <!-- Back, not a second sheet: a picker stacked on top of this one
+             would leave the user closing two things to get out of one. -->
+        <q-btn
+          v-if="view === 'wallets'"
+          flat round dense
+          :aria-label="$t('Back')"
+          class="sheet-close-btn"
+          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+          @click="view = 'main'"
+        >
+          <Icon icon="tabler:chevron-left" width="20" height="20" />
+        </q-btn>
         <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
           {{ headerTitle }}
         </div>
@@ -27,11 +42,73 @@
       </div>
 
       <div class="sheet-scroll">
+        <!-- ── Wallets ─────────────────────────────────────────────── -->
+        <div v-if="view === 'wallets'" class="step-body">
+          <div class="group-head group-head--sticky" :class="$q.dark.isActive ? 'sticky-dark' : 'sticky-light'">
+            <span class="group-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">{{ walletCountLabel }}</span>
+            <button v-if="wallets.length > 1" type="button" class="group-action" @click="toggleAll">
+              {{ allSelected ? $t('Clear') : $t('Select all') }}
+            </button>
+          </div>
+
+          <!-- A filter only earns its place once the list stops fitting. -->
+          <div v-if="wallets.length > 8" class="finder" :class="$q.dark.isActive ? 'finder-dark' : 'finder-light'">
+            <Icon icon="tabler:search" width="16" height="16" />
+            <input
+              v-model="walletFilter"
+              type="text"
+              class="finder-input"
+              :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
+              :placeholder="$t('Find a wallet')"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button v-if="walletFilter" type="button" class="finder-clear" :aria-label="$t('Clear')" @click="walletFilter = ''">
+              <Icon icon="tabler:x" width="14" height="14" />
+            </button>
+          </div>
+
+          <div class="group">
+            <button
+              v-for="w in filteredWallets"
+              :key="w.id"
+              type="button"
+              class="pick"
+              :class="$q.dark.isActive ? 'pick-dark' : 'pick-light'"
+              role="checkbox"
+              :aria-checked="selectedWallets.includes(w.id) ? 'true' : 'false'"
+              @click="toggleWallet(w.id)"
+            >
+              <span class="pick-body">
+                <span class="pick-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">{{ w.name || $t('Wallet') }}</span>
+                <span class="pick-meta" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">{{ walletKind(w) }}</span>
+              </span>
+              <Icon
+                v-if="selectedWallets.includes(w.id)"
+                icon="tabler:circle-check-filled"
+                width="20" height="20"
+                class="pick-check"
+              />
+              <span v-else class="pick-empty" :class="$q.dark.isActive ? 'pick-empty-dark' : 'pick-empty-light'"></span>
+            </button>
+
+            <p v-if="!filteredWallets.length" class="lede" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('No wallet by that name.') }}
+            </p>
+          </div>
+        </div>
+
         <!-- ── Working ─────────────────────────────────────────────── -->
-        <div v-if="phase === 'working'" class="step-body">
-          <div class="stage" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'" aria-live="polite">
-            <q-spinner color="grey" size="30px" />
-            <span class="stage-text">{{ progressText }}</span>
+        <div v-else-if="phase === 'working'" class="step-body">
+          <div class="stage stage--work" aria-live="polite">
+            <!-- Determinate from the first frame: the number of wallets is
+                 known before anything is read, and a bar that starts as a
+                 spinner cannot become one without changing shape. -->
+            <div class="meter" :class="$q.dark.isActive ? 'meter-dark' : 'meter-light'"
+                 role="progressbar" :aria-valuenow="Math.round(fraction * 100)" aria-valuemin="0" aria-valuemax="100">
+              <span class="meter-fill" :style="{ width: `${Math.round(fraction * 100)}%` }"></span>
+            </div>
+            <span class="stage-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">{{ progressText }}</span>
           </div>
         </div>
 
@@ -49,6 +126,28 @@
                 {{ resultDetail }}
               </span>
             </div>
+
+            <!-- What each wallet actually gave. A single sentence covering
+                 all of them is the thing a user skims past. -->
+            <section v-if="walletResults.length > 1" class="group">
+              <div class="group-head">
+                <span class="group-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">{{ $t('Wallets') }}</span>
+              </div>
+              <div
+                v-for="r in walletResults"
+                :key="r.id || r.name"
+                class="tally"
+                :class="$q.dark.isActive ? 'tally-dark' : 'tally-light'"
+              >
+                <Icon
+                  :icon="r.status === 'read' ? 'tabler:circle-check-filled' : 'tabler:alert-circle'"
+                  width="17" height="17"
+                  :class="r.status === 'read' ? 'tally-ok' : 'tally-warn'"
+                />
+                <span class="tally-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">{{ r.name }}</span>
+                <span class="tally-count" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">{{ tallyLabel(r) }}</span>
+              </div>
+            </section>
 
             <!-- Anything the document does not cover is said here as well as
                  on the document, because this is where it can still be acted
@@ -75,40 +174,23 @@
             <span>{{ $t('Historical prices are not available for {currency}, so the report will list amounts in sats without a {currency} value. Switch your currency to euro, dollar, pound, franc, yen or an Australian or Canadian dollar to include values.', { currency }) }}</span>
           </div>
 
-          <!-- Wallets -->
+          <!-- Wallets: one row whatever the count, so the period and the
+               format stay visible for someone with fifteen of them. -->
           <section class="group">
             <div class="group-head">
               <span class="group-title" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">{{ $t('Wallets') }}</span>
-              <button
-                v-if="wallets.length > 1"
-                type="button"
-                class="group-action"
-                @click="toggleAll"
-              >
-                {{ allSelected ? $t('Clear') : $t('Select all') }}
-              </button>
             </div>
             <button
-              v-for="w in wallets"
-              :key="w.id"
               type="button"
               class="pick"
               :class="$q.dark.isActive ? 'pick-dark' : 'pick-light'"
-              role="checkbox"
-              :aria-checked="selectedWallets.includes(w.id) ? 'true' : 'false'"
-              @click="toggleWallet(w.id)"
+              @click="view = 'wallets'"
             >
               <span class="pick-body">
-                <span class="pick-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">{{ w.name || $t('Wallet') }}</span>
-                <span class="pick-meta" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">{{ walletKind(w) }}</span>
+                <span class="pick-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">{{ walletSummary }}</span>
+                <span class="pick-meta" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">{{ walletNames }}</span>
               </span>
-              <Icon
-                v-if="selectedWallets.includes(w.id)"
-                icon="tabler:circle-check-filled"
-                width="20" height="20"
-                class="pick-check"
-              />
-              <span v-else class="pick-empty" :class="$q.dark.isActive ? 'pick-empty-dark' : 'pick-empty-light'"></span>
+              <Icon icon="tabler:chevron-right" width="18" height="18" class="pick-more" />
             </button>
           </section>
 
@@ -167,7 +249,27 @@
 
       <div class="sheet-actions" :class="$q.dark.isActive ? 'sheet-actions-dark' : 'sheet-actions-light'">
         <button
-          v-if="phase === 'done'"
+          v-if="view === 'wallets'"
+          type="button"
+          class="primary-cta"
+          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+          :disabled="!selectedWallets.length"
+          @click="view = 'main'"
+        >
+          <span>{{ $t('Done') }}</span>
+        </button>
+        <template v-else-if="phase === 'working'">
+          <button
+            type="button"
+            class="primary-cta primary-cta--quiet"
+            :class="$q.dark.isActive ? 'quiet-dark' : 'quiet-light'"
+            @click="cancel"
+          >
+            <span>{{ $t('Cancel') }}</span>
+          </button>
+        </template>
+        <button
+          v-else-if="phase === 'done'"
           type="button"
           class="primary-cta"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -183,8 +285,7 @@
           :disabled="!canCreate"
           @click="create"
         >
-          <q-spinner v-if="phase === 'working'" size="18px" />
-          <span>{{ phase === 'working' ? $t('Working…') : $t('Create report') }}</span>
+          <span>{{ $t('Create report') }}</span>
         </button>
       </div>
     </q-card>
@@ -199,6 +300,7 @@ import { normalizeTx } from '../../services/txNormalizer.js';
 import {
   buildReport, exportReport, standardPeriods, supportsCurrency,
 } from '../../services/taxReport';
+import { createReportConnector } from '../../services/taxReport/connect.js';
 
 /**
  * "Transaction report" — the tax-record export.
@@ -212,6 +314,15 @@ import {
  * (the report is worthless if it covers the wrong money), then the period,
  * then the file format, which is the only one that can be changed after the
  * fact without redoing the work.
+ *
+ * Wallets are ONE ROW, not a list. Listing them inline held while people had
+ * three; at fifteen the list is around 990px on its own and pushes the period
+ * and the format entirely off the screen, so the two questions that decide
+ * what the file contains become invisible behind the one that usually has the
+ * same answer every time. The row opens a full-height list in place — the
+ * sheet's own content swapping, with a Back button, rather than a second sheet
+ * stacked on this one, which would leave someone closing two things to get out
+ * of one.
  */
 export default {
   name: 'TaxReportSheet',
@@ -231,6 +342,9 @@ export default {
   data() {
     return {
       phase: 'choose',
+      view: 'main',
+      walletFilter: '',
+      walletResults: [],
       selectedWallets: [],
       periodId: 'thisYear',
       format: 'pdf',
@@ -239,6 +353,7 @@ export default {
       result: null,
       warnings: [],
       controller: null,
+      connector: null,
     };
   },
 
@@ -276,11 +391,61 @@ export default {
       return this.wallets.length > 0 && this.selectedWallets.length === this.wallets.length;
     },
 
+    filteredWallets() {
+      const q = this.walletFilter.trim().toLowerCase();
+      if (!q) return this.wallets;
+      return this.wallets.filter((w) => (w.name || '').toLowerCase().includes(q)
+        || this.walletKind(w).toLowerCase().includes(q));
+    },
+
+    /** The headline on the row: what is covered, not how many boxes are ticked. */
+    walletSummary() {
+      const n = this.selectedWallets.length;
+      if (!n) return this.$t('No wallets chosen');
+      if (this.allSelected) {
+        return this.wallets.length === 1
+          ? this.$t('Your wallet')
+          : this.$t('All {n} wallets', { n: this.wallets.length });
+      }
+      return this.$t('{n} of {m} wallets', { n, m: this.wallets.length });
+    },
+
+    /** Names underneath, so the row says which money without opening it. */
+    walletNames() {
+      const chosen = this.wallets.filter((w) => this.selectedWallets.includes(w.id));
+      if (!chosen.length) return this.$t('Choose at least one');
+      const names = chosen.map((w) => w.name || this.$t('Wallet'));
+      if (names.length <= 3) return names.join(', ');
+      return this.$t('{names} and {n} more', { names: names.slice(0, 2).join(', '), n: names.length - 2 });
+    },
+
+    walletCountLabel() {
+      return this.$t('{n} of {m} selected', { n: this.selectedWallets.length, m: this.wallets.length });
+    },
+
+    /**
+     * One bar from start to finish.
+     *
+     * Reading the wallets is the slow half and its size is known up front, so
+     * the bar is determinate from the first frame rather than starting as a
+     * spinner: a spinner that becomes a bar changes shape mid-task, which
+     * reads as a different operation starting.
+     */
+    fraction() {
+      const p = this.progress;
+      if (!p) return 0.02;
+      const share = (done, total) => (total > 0 ? Math.min(1, done / total) : 0);
+      if (p.phase === 'collecting') return 0.02 + share(p.done, p.total) * 0.53;
+      if (p.phase === 'pricing') return 0.55 + share(p.done, p.total) * 0.40;
+      return 0.97;
+    },
+
     canCreate() {
       return this.phase === 'choose' && this.selectedWallets.length > 0;
     },
 
     headerTitle() {
+      if (this.view === 'wallets') return this.$t('Wallets');
       if (this.phase === 'working') return this.$t('One moment');
       if (this.phase === 'done') return this.$t('Done');
       return this.$t('Transaction report');
@@ -325,6 +490,9 @@ export default {
   methods: {
     reset() {
       this.phase = 'choose';
+      this.view = 'main';
+      this.walletFilter = '';
+      this.walletResults = [];
       // Every wallet by default: a report that quietly covers one of three is
       // the failure mode worth designing against, and unticking is easier
       // than remembering to tick.
@@ -344,7 +512,24 @@ export default {
     onHide() {
       this.controller?.abort();
       this.controller = null;
+      // Closing mid-report must still hand the app back the connection it had.
+      this.connector?.restore();
+      this.connector = null;
       this.phase = 'choose';
+      this.view = 'main';
+    },
+
+    /** Stop a report that is taking longer than the user wants to wait. */
+    cancel() {
+      this.controller?.abort();
+      this.phase = 'choose';
+      this.progress = null;
+    },
+
+    tallyLabel(r) {
+      if (r.status === 'failed') return this.$t('Could not be read');
+      if (r.status === 'skipped') return this.$t('Not read');
+      return this.$t('{n} transactions', { n: r.count });
     },
 
     walletKind(w) {
@@ -375,13 +560,21 @@ export default {
       this.controller?.abort();
       this.controller = new AbortController();
 
+      // The app keeps one wallet live at a time, so a report covering several
+      // has to open them itself. The connector does that in the order the
+      // report reads them and puts the user's own connection back afterwards.
+      this.connector = createReportConnector(this.walletStore);
+
       try {
         const period = this.periods.find((p) => p.id === this.periodId) || {};
-        const chosen = this.wallets.filter((w) => this.selectedWallets.includes(w.id));
+        const chosen = this.connector.order(
+          this.wallets.filter((w) => this.selectedWallets.includes(w.id)),
+        );
 
         const report = await buildReport({
           wallets: chosen,
           providers: this.walletStore.providers || {},
+          connect: (w) => this.connector.connect(w),
           normalize: (raw, ctx) => normalizeTx(raw, ctx),
           snapshotFor: (txId, walletId) =>
             this.metadataStore.getFiatAtSettlementForTransaction(txId, walletId),
@@ -392,8 +585,13 @@ export default {
           signal: this.controller.signal,
         });
 
+        // Cancelled between the last read and the file being written: say
+        // nothing was produced rather than hand over a partial report.
+        if (this.controller.signal.aborted) return;
+
         const out = await exportReport(report, this.format);
 
+        this.walletResults = report.meta.walletResults || [];
         this.warnings = [
           report.meta.failedNote,
           report.meta.truncatedNote,
@@ -405,10 +603,16 @@ export default {
         this.result = { ...out, count: report.summary.count };
         this.phase = 'done';
       } catch (err) {
+        if (this.controller.signal.aborted) return;
         this.error = err?.message
           ? this.$t("The report couldn't be created: {msg}", { msg: err.message })
           : this.$t("The report couldn't be created. Try again.");
         this.phase = 'choose';
+      } finally {
+        // Whether it worked, failed or was cancelled: the wallet the user was
+        // on is the wallet they get back.
+        await this.connector?.restore();
+        this.connector = null;
       }
     },
   },
@@ -511,6 +715,75 @@ body.body--dark .notice--error { background: rgba(239, 68, 68, 0.14); color: #fc
 }
 .primary-cta:disabled { opacity: 0.45; cursor: default; }
 .primary-cta:not(:disabled):active { transform: scale(0.98); }
+
+/* The wallet list is the one view that wants the whole sheet: a list that
+   ends halfway up the screen reads as a short list rather than a scrollable
+   one. */
+.tr-sheet--tall { height: 92vh; height: 92dvh; }
+
+/* A filter, once the list stops fitting. */
+.finder {
+  display: flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 12px; border-radius: 12px;
+}
+.finder-light { background: rgba(15, 23, 42, 0.05); color: #64748b; }
+.finder-dark { background: rgba(255, 255, 255, 0.06); color: #94a3b8; }
+.finder-input {
+  all: unset; flex: 1 1 auto; min-width: 0;
+  font-family: 'Manrope', sans-serif; font-size: 14.5px; font-weight: 500;
+}
+.finder-clear {
+  all: unset; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer; flex-shrink: 0;
+}
+
+/* The count and Select all stay put while the list moves under them, so the
+   way to tick everything is not somewhere above a fifteen-item scroll. */
+.group-head--sticky {
+  position: sticky; top: 0; z-index: 1;
+  padding: 4px 0 8px; margin-bottom: -4px;
+}
+/* Must match the card exactly or the list shows through the gap. */
+.sticky-light { background: var(--bg-card); }
+.sticky-dark { background: #0C0C0C; }
+
+/* The row that opens the list. */
+.pick-more { flex-shrink: 0; opacity: 0.4; }
+
+/* Determinate from the first frame. */
+.stage--work { gap: 18px; width: 100%; }
+.meter {
+  width: 100%; max-width: 320px; height: 6px; border-radius: 999px; overflow: hidden;
+}
+.meter-light { background: rgba(15, 23, 42, 0.08); }
+.meter-dark { background: rgba(255, 255, 255, 0.10); }
+.meter-fill {
+  display: block; height: 100%; border-radius: 999px; background: #15a35b;
+  transition: width 240ms ease;
+}
+body.body--dark .meter-fill { background: #2bd17f; }
+@media (prefers-reduced-motion: reduce) { .meter-fill { transition: none; } }
+
+/* What each wallet gave. */
+.tally { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 11px; }
+.tally-light { background: rgba(15, 23, 42, 0.035); }
+.tally-dark { background: rgba(255, 255, 255, 0.045); }
+.tally-name {
+  flex: 1 1 auto; min-width: 0; font-family: 'Manrope', sans-serif;
+  font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tally-count { flex-shrink: 0; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 500; }
+.tally-ok { flex-shrink: 0; color: #15a35b; }
+body.body--dark .tally-ok { color: #2bd17f; }
+.tally-warn { flex-shrink: 0; color: #b45309; }
+body.body--dark .tally-warn { color: #fbbf24; }
+
+/* Cancel: present and reachable, without competing with a primary action
+   that is not on screen while it is. */
+.primary-cta--quiet { font-weight: 600; }
+.quiet-light { background: rgba(15, 23, 42, 0.06); color: #334155; }
+.quiet-dark { background: rgba(255, 255, 255, 0.08); color: #e2e8f0; }
 
 .item-label-light { color: #0f172a; }
 .item-label-dark  { color: #f8fafc; }

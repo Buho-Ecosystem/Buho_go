@@ -67,7 +67,8 @@ function filenameFor(meta, extension) {
  *
  * @param {object} input
  * @param {object[]} input.wallets    the wallets the user picked
- * @param {Record<string, object>} input.providers
+ * @param {Record<string, object>} [input.providers] already-live, by wallet id
+ * @param {(wallet) => Promise<object|null>} [input.connect] opens one that is not
  * @param {(raw, ctx) => object} input.normalize
  * @param {(txId: string, walletId: string) => object|null} [input.snapshotFor]
  *   the rate the app recorded at settlement, when it has one
@@ -82,6 +83,7 @@ function filenameFor(meta, extension) {
 export async function buildReport({
   wallets,
   providers,
+  connect,
   normalize,
   snapshotFor,
   counterpartyFor,
@@ -95,7 +97,7 @@ export async function buildReport({
 
   onProgress?.({ phase: 'collecting', done: 0, total: 1 });
   const collected = await collectTransactions({
-    wallets, providers, normalize, signal,
+    wallets, providers, connect, normalize, signal,
     onProgress: (p) => onProgress?.({ phase: 'collecting', ...p }),
   });
 
@@ -140,10 +142,13 @@ export async function buildReport({
       readWallets: collected.readWallets,
       failedWallets: collected.failedWallets,
       truncatedWallets: collected.truncatedWallets,
+      // Per wallet, so the sheet can show what each one actually gave rather
+      // than a single sentence covering all of them.
+      walletResults: collected.walletResults,
       // Stated on the document itself, not just in the UI: whoever reads the
       // file later has no other way to know the picture is partial.
       failedNote: collected.failedWallets.length
-        ? `${collected.failedWallets.join(', ')} could not be read, so no transactions from it appear here.`
+        ? `${collected.failedWallets.join(', ')} could not be read, so no transactions from ${collected.failedWallets.length > 1 ? 'them' : 'it'} appear here.`
         : '',
       truncatedNote: collected.truncatedWallets.length
         ? `${collected.truncatedWallets.join(', ')} has more history than this report covers; the oldest transactions are not included.`
