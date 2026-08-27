@@ -1736,6 +1736,7 @@ export default {
   "kiosk.addTip": "Trinkgeld hinzufügen",
   "kiosk.noTip": "Kein Trinkgeld",
   "kiosk.roundUpPrompt": "Aufrunden?",
+  "kiosk.roundUpTo": "Aufrunden auf {amount}",
   "kiosk.exactAmount": "Genauer Betrag",
   "kiosk.total": "Gesamt",
   "kiosk.waitingForPayment": "Warte auf Zahlung",

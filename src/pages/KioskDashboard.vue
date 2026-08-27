@@ -67,7 +67,7 @@
           </div>
           <button v-if="offersRoundUp" class="tip-roundup" :class="{ 'tip-roundup-on': useRoundUp }" :disabled="!tipInteractive" @click.stop="useRoundUp = !useRoundUp; selectedTipPercent = 0">
             <div class="tip-roundup-icon"><q-icon name="keyboard_double_arrow_up" size="16px" /></div>
-            <span class="tip-roundup-label">{{ $t('kiosk.roundUp') }}</span><span class="tip-roundup-val">{{ displaySats(roundUpValue) }}</span>
+            <span class="tip-roundup-label">{{ $t('kiosk.roundUpTo', { amount: displaySats(roundUpValue) }) }}</span><span class="tip-roundup-val">+{{ displaySats(roundUpValue - totalBeforeRoundUp) }}</span>
           </button>
           <button class="tip-skip" :disabled="!tipInteractive" @click.stop="selectedTipPercent = 0; useRoundUp = false; confirmTip()">{{ extrasSkipLabel }}</button>
         </div>
@@ -165,6 +165,7 @@
 import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWalletStore } from 'stores/wallet'
+import { roundUpTargetSats } from 'src/utils/roundUp'
 import { useTransactionMetadataStore } from 'stores/transactionMetadata'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
@@ -236,34 +237,18 @@ export default defineComponent({
     const tipOptions = computed(() => store.kioskTipValues.map(pct => ({ percent: pct, amount: Math.round(baseAmountSats.value * pct / 100) })))
     const selectedTipAmount = computed(() => selectedTipPercent.value === 0 ? 0 : Math.round(baseAmountSats.value * selectedTipPercent.value / 100))
     const totalBeforeRoundUp = computed(() => baseAmountSats.value + selectedTipAmount.value)
-    const roundUpValue = computed(() => {
-      if (!store.kioskRoundUpEnabled) return null
-      const amtSats = totalBeforeRoundUp.value
-      if (amtSats <= 0) return null
+    /**
+     * What the sale would round up to, or null when there is nothing to
+     * offer. The arithmetic lives in utils/roundUp.js so it can be tested on
+     * its own; the rule is the next convenient amount, with the step scaled
+     * to the size of the bill.
+     */
+    const roundUpValue = computed(() => roundUpTargetSats({
+      amountSats: totalBeforeRoundUp.value,
+      isFiat: isFiatMode.value,
+      rate: fiatRate.value,
+    }))
 
-      if (isFiatMode.value && fiatRate.value > 0) {
-        // Round to the next whole fiat unit (1 EUR, 1 USD, ...), decided in
-        // INTEGER CENTS.
-        //
-        // The amount reaches here as sats, having been converted from what
-        // the cashier typed, and converting back lands a hair either side of
-        // the whole number. Comparing that float against Math.ceil made the
-        // offer depend on the BTC price rather than on the bill: at one rate
-        // a flat $960 sale correctly offered nothing, at another it offered
-        // to add $1 to an already-round total. Rounding to cents first
-        // collapses that noise, so the same bill behaves the same way at
-        // every price.
-        const cents = Math.round((amtSats / 100_000_000) * fiatRate.value * 100)
-        if (cents <= 0 || cents % 100 === 0) return null // already whole
-        const nextCents = (Math.floor(cents / 100) + 1) * 100
-        const nextSats = Math.round(((nextCents / 100) / fiatRate.value) * 100_000_000)
-        return nextSats > amtSats ? nextSats : null
-      } else {
-        // Round to next 1000 sats
-        const next = Math.ceil(amtSats / 1000) * 1000
-        return next > amtSats ? next : null
-      }
-    })
     const finalAmountSats = computed(() => (useRoundUp.value && roundUpValue.value) ? roundUpValue.value : totalBeforeRoundUp.value)
 
     /**

@@ -1737,6 +1737,7 @@ export default {
   "kiosk.addTip": "Añadir Propina",
   "kiosk.noTip": "Sin Propina",
   "kiosk.roundUpPrompt": "¿Redondear?",
+  "kiosk.roundUpTo": "Redondear a {amount}",
   "kiosk.exactAmount": "Importe exacto",
   "kiosk.total": "Total",
   "kiosk.waitingForPayment": "Esperando Pago",

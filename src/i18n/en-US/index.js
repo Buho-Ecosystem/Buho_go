@@ -1726,6 +1726,7 @@ export default {
   "kiosk.addTip": "Add a Tip",
   "kiosk.noTip": "No Tip",
   "kiosk.roundUpPrompt": "Round up?",
+  "kiosk.roundUpTo": "Round up to {amount}",
   "kiosk.exactAmount": "Exact amount",
   "kiosk.total": "Total",
   "kiosk.waitingForPayment": "Waiting for Payment",
