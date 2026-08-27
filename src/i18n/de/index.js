@@ -2577,6 +2577,7 @@ export default {
   "BitSpenda Ghanaian Lightning address": "BitSpenda Lightning-Adresse (Ghana)",
   "Ghana": "Ghana",
   "MTN Mobile Money only": "Nur MTN Mobile Money",
+  "Vodacom M-Pesa only": "Nur Vodacom M-Pesa",
   "Phone number": "Telefonnummer",
   "Which country?": "Welches Land?",
   "Kenya": "Kenia",

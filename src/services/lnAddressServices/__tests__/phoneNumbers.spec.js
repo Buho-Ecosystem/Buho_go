@@ -339,16 +339,25 @@ test('formatPhoneHandle: normalizes a known-country handle to international', ()
 
 // ── Ghana (BitSpenda) ──────────────────────────────────────────────────────
 
-test('Ghana: a typed number resolves to the address BitSpenda names back', () => {
-  // Unlike the other three, BitSpenda's own text/identifier metadata answers
-  // in the LOCAL form ("0246341938@bitspenda.app"), so that is what we build:
-  // the address we show is then the one the provider calls it.
+test('Ghana: a typed number is built the same way as the other three', () => {
+  // bitspenda.app resolves both local and international local-parts to the
+  // same payout, so Ghana constructs the international form like Kenya,
+  // Zambia and Tanzania rather than inventing a fourth convention.
   for (const typed of ['0246341938', '233246341938', '+233 24 634 1938', '+233 246 341 938']) {
     const r = recognizePhoneNumber(typed)
     assert.ok(r, `${typed}: no match`)
     assert.equal(r.country.code, 'GH', typed)
-    assert.equal(r.lightningAddress, '0246341938@bitspenda.app', typed)
+    assert.equal(r.lightningAddress, '233246341938@bitspenda.app', typed)
     assert.equal(r.display, '+233 246 341 938', typed)
+  }
+})
+
+test('every country builds its address the same way', () => {
+  // A fourth country is a row in the registry, not a fourth convention.
+  for (const country of PAYOUT_COUNTRIES) {
+    assert.equal(country.localPartFormat, 'international', country.code)
+    assert.equal(country.trunkPrefix, '0', country.code)
+    assert.equal(country.nsnLength, 9, country.code)
   }
 })
 
@@ -399,12 +408,18 @@ test('the one prefix Ghana shares with a country already served is 057', () => {
   assert.deepEqual(collisions, ['057->ZM'])
 })
 
-test('Ghana: the restriction is stated on the country, not buried in code', () => {
-  // The operators table is also the validity rule, so a Telecel customer
-  // would be told their own number is invalid. The UI reads this field to say
-  // so before the first keystroke.
-  const gh = PAYOUT_COUNTRIES.find((c) => c.code === 'GH')
-  assert.equal(gh.networkNote, 'MTN Mobile Money only')
+test('a partial-network country says so, and it is not a Ghana special case', () => {
+  // `operators` is also the validity rule, so where a provider pays only some
+  // of a country's networks a customer on another one is told their own
+  // number is invalid. Tanzania has had that problem since ChapSmart shipped
+  // (Vodacom only); the field is shared, and the UI reads it before the first
+  // keystroke.
+  const noted = PAYOUT_COUNTRIES.filter((c) => c.networkNote).map((c) => c.code)
+  assert.deepEqual(noted, ['TZ', 'GH'])
+  for (const code of noted) {
+    const country = PAYOUT_COUNTRIES.find((c) => c.code === code)
+    assert.equal(country.operators.length, 1, `${code}: a note implies one paid network`)
+  }
 })
 
 test('Ghana adds no ambiguity to the countries already served', () => {

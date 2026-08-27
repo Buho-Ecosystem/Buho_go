@@ -127,6 +127,9 @@ export const PAYOUT_COUNTRIES = [
     logoFile: 'logos/chapsmart.png', // ChapSmart is the sole TZ provider -> brand with its logo.
     hint: 'You are about to pay a Tanzanian phone number',
     note: 'ChapSmart Tanzanian Lightning address', // prefilled when saving as a contact
+    // Same reason as Ghana: `operators` below is also the validity rule, so an
+    // Airtel or Yas customer would be told their own number is not a number.
+    networkNote: 'Vodacom M-Pesa only',
     currency: 'TZS',
     domains: ['chapsmart.com'],
     sendDomain: 'chapsmart.com',
@@ -169,13 +172,11 @@ export const PAYOUT_COUNTRIES = [
     callingCode: '233',
     trunkPrefix: '0',
     nsnLength: 9,
-    // Verified live 2026-08-27: bitspenda.app resolves both 0... (local) and
-    // 233... (international) local-parts to the same payout. Unlike the other
-    // three, its own text/identifier metadata answers in the LOCAL form
-    // ("0246341938@bitspenda.app"), so we construct that: the address we show
-    // then matches the one the provider names back to us. Display is still
-    // international (+233 24 634 1938) via formatPhoneHandle.
-    localPartFormat: 'national0',
+    // Verified live 2026-08-27: bitspenda.app resolves both 233... (international)
+    // and 0... (local) local-parts to the same payout (callback .../0246341938).
+    // We construct the international form for consistent, readable display,
+    // the same as the other three.
+    localPartFormat: 'international',
     localPartVerified: true,
     // MTN ONLY, and this is not a numbering-plan fact — it is what BitSpenda
     // will actually pay. Probed live across every Ghanaian mobile prefix on
