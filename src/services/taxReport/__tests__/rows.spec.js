@@ -32,7 +32,7 @@ function test(name, fn) {
 const EUR = { currency: 'EUR', rate: 62960, source: 'mempool.space/historical-price', at: 1787774900000 }
 const tx = (over = {}) => ({
   id: 'tx1', type: 'outgoing', status: 'completed',
-  amount: 2418, fee: 11, timestamp: 1787774933, ...over,
+  amount: 2418, fee: 11, settled_at: 1787774933, ...over,
 })
 
 // ── the rule the whole module exists for ───────────────────────────────────
@@ -156,8 +156,8 @@ test('the summary says how much of itself it could not price', () => {
 
 test('the summary reports the span it actually covers', () => {
   const rows = [
-    toReportRow(tx({ id: 'a', timestamp: 1700000000 }), {}),
-    toReportRow(tx({ id: 'b', timestamp: 1787774933 }), {}),
+    toReportRow(tx({ id: 'a', settled_at: 1700000000 }), {}),
+    toReportRow(tx({ id: 'b', settled_at: 1787774933 }), {}),
   ]
   const s = summarise(rows)
   assert.equal(s.firstUtc, new Date(1700000000000).toISOString())

@@ -31,7 +31,7 @@ async function test(name, fn) {
 function fakeProvider(count, prefix = 't') {
   const all = Array.from({ length: count }, (_, i) => ({
     id: `${prefix}${i}`, type: 'outgoing', status: 'completed',
-    amount: 100 + i, timestamp: 1787774933 - i * 60,
+    amount: 100 + i, settled_at: 1787774933 - i * 60,
   }))
   return {
     calls: 0,
@@ -107,7 +107,7 @@ async function run() {
     assert.equal(out.rows.length, 6)
     assert.ok(out.rows.every((r) => r.walletName))
     for (let i = 1; i < out.rows.length; i += 1) {
-      assert.ok(out.rows[i - 1].timestamp >= out.rows[i].timestamp, 'newest first')
+      assert.ok(out.rows[i - 1].settled_at >= out.rows[i].settled_at, 'newest first')
     }
   })
 
@@ -125,10 +125,10 @@ async function run() {
 
   await test('only completed transactions count as money that moved', async () => {
     const rows = [
-      { id: 'a', status: 'completed', timestamp: 1000 },
-      { id: 'b', status: 'pending', timestamp: 1000 },
-      { id: 'c', status: 'expired', timestamp: 1000 },
-      { id: 'd', timestamp: 1000 }, // absent status defaults to completed
+      { id: 'a', status: 'completed', settled_at: 1000 },
+      { id: 'b', status: 'pending', settled_at: 1000 },
+      { id: 'c', status: 'expired', settled_at: 1000 },
+      { id: 'd', settled_at: 1000 }, // absent status defaults to completed
     ]
     const kept = filterForReport(rows)
     assert.deepEqual(kept.map((r) => r.id), ['a', 'd'])
@@ -136,15 +136,15 @@ async function run() {
 
   await test('a transaction without a usable time cannot be placed in a period', async () => {
     const kept = filterForReport([
-      { id: 'a', status: 'completed', timestamp: 0 },
+      { id: 'a', status: 'completed', settled_at: 0 },
       { id: 'b', status: 'completed' },
-      { id: 'c', status: 'completed', timestamp: 1787774933 },
+      { id: 'c', status: 'completed', settled_at: 1787774933 },
     ])
     assert.deepEqual(kept.map((r) => r.id), ['c'])
   })
 
   await test('the period bounds are inclusive at both ends', async () => {
-    const at = (ms) => ({ id: String(ms), status: 'completed', timestamp: ms / 1000 })
+    const at = (ms) => ({ id: String(ms), status: 'completed', settled_at: ms / 1000 })
     const kept = filterForReport(
       [at(999), at(1000), at(2000), at(2001)],
       { fromMs: 1000, toMs: 2000 },

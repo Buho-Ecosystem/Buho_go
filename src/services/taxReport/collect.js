@@ -21,6 +21,8 @@
  * logic is testable with fakes.
  */
 
+import { txTimeMs } from './time.js';
+
 /** Rows per request. Large enough to keep the round trips down, small enough
  *  that a provider with a cap still answers. */
 const PAGE_SIZE = 100;
@@ -125,7 +127,7 @@ export async function collectTransactions({
     onProgress?.({ done, total: wallets.length, wallet: name });
   }
 
-  rows.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+  rows.sort((a, b) => (txTimeMs(b) || 0) - (txTimeMs(a) || 0));
   return { rows, readWallets, failedWallets, truncatedWallets };
 }
 
@@ -142,8 +144,8 @@ export async function collectTransactions({
 export function filterForReport(rows, { fromMs = null, toMs = null } = {}) {
   return (rows || []).filter((tx) => {
     if ((tx?.status || 'completed') !== 'completed') return false;
-    const ms = Number(tx?.timestamp) * 1000;
-    if (!Number.isFinite(ms) || ms <= 0) return false;
+    const ms = txTimeMs(tx);
+    if (ms === null) return false;
     if (fromMs !== null && ms < fromMs) return false;
     if (toMs !== null && ms > toMs) return false;
     return true;

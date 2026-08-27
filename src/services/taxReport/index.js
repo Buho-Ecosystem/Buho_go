@@ -14,6 +14,7 @@
  */
 
 import { collectTransactions, filterForReport } from './collect.js';
+import { txTimeMs } from './time.js';
 import { createRateLookup, rateFromSnapshot, supportsCurrency } from './rates.js';
 import { toReportRow, toCsv, toXml, summarise } from './rows.js';
 import { deliverReport } from './delivery.js';
@@ -107,7 +108,7 @@ export async function buildReport({
   let done = 0;
   for (const tx of kept) {
     if (signal?.aborted) break;
-    const ms = Number(tx.timestamp) * 1000;
+    const ms = txTimeMs(tx);
     const rate = rateFromSnapshot(snapshotFor?.(tx.id, tx.walletId), cur)
       || await lookup.at(ms);
     rows.push(toReportRow(tx, {
