@@ -144,9 +144,17 @@
               <span>{{ tab === 'active' ? $t('Nothing active right now.') : $t('Nothing here yet.') }}</span>
             </div>
 
-            <div v-if="refreshing" class="refresh-note" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" aria-live="polite">
-              <q-spinner size="12px" />
-              <span>{{ $t('Updating…') }}</span>
+            <!-- Background refresh over cards that already show their last
+                 known figures. A spinner alone, no label: a word standing in
+                 for content is not the app's loading language, and there is
+                 nothing missing here to describe. -->
+            <div
+              v-if="refreshing"
+              class="refresh-note"
+              role="status"
+              :aria-label="$t('Updating…')"
+            >
+              <q-spinner size="14px" color="grey" />
             </div>
           </section>
 
@@ -550,7 +558,7 @@ body.body--dark .mp-tab--active { background: rgba(255, 255, 255, 0.12); color: 
 
 .cards { display: flex; flex-direction: column; gap: 10px; }
 
-.refresh-note { display: inline-flex; align-items: center; gap: 6px; font-family: 'Manrope', sans-serif; font-size: 11.5px; align-self: center; }
+.refresh-note { display: inline-flex; align-items: center; justify-content: center; align-self: center; padding: 2px 0; }
 
 .info-state { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 22px 16px; font-family: 'Manrope', sans-serif; font-size: 14px; line-height: 1.45; }
 .info-state--empty { padding: 34px 16px; }
