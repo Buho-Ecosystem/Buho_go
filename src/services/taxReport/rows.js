@@ -24,6 +24,8 @@
  * Pure module: rows in, text out. No stores, no network, no clock.
  */
 
+import { txTimeMs } from './time.js';
+
 /** Sats in one bitcoin. */
 const SATS_PER_BTC = 100000000;
 
@@ -36,13 +38,55 @@ const SATS_PER_BTC = 100000000;
  * true here.
  */
 function feeSatsOf(tx) {
-  // `??` alone is not enough: it falls through undefined to a `fee` of null,
-  // and Number(null) is 0. A fee nobody measured would then be reported as
-  // free, which is a different fact and not the true one.
-  const raw = tx?.feeSats ?? tx?.fee;
+  if (!tx || typeof tx !== 'object') return null;
+
+  // A normalised transaction always carries `feeSats`, and its value of null
+  // is a statement: Arkade reports no fee figure at all, so the fee is
+  // UNKNOWN. Falling through to the raw `fee` here would answer that with 0,
+  // which claims the payment was free — a different fact, and not the true
+  // one. So the key being present settles it, whatever it holds.
+  const raw = 'feeSats' in tx ? tx.feeSats : tx.fee;
   if (raw === null || raw === undefined || raw === '') return null;
   const fee = Number(raw);
   return Number.isFinite(fee) && fee >= 0 ? fee : null;
+}
+
+/**
+ * A positive sats figure, or null when the field is absent or unusable.
+ *
+ * Zero sats is treated as no figure on purpose: no provider in this app
+ * settles a zero-value payment, so a zero here means a field that was never
+ * populated, and printing "0" would state something the record does not know.
+ */
+function satsOrNull(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Math.abs(Number(raw));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * What the other side of the payment received (or sent).
+ *
+ * Deliberately `recipientSats` rather than the raw `amount`, because `amount`
+ * does not mean the same thing across providers: Spark's includes the fee,
+ * LNbits' and NWC's exclude it, and Arkade reports only a single total. The
+ * normaliser has already reconciled those into one meaning; reading `amount`
+ * here would undo that and quietly overstate what a Spark send delivered by
+ * the size of its fee.
+ */
+function amountSatsOf(tx) {
+  return satsOrNull(tx?.recipientSats) ?? satsOrNull(tx?.amount);
+}
+
+/**
+ * What the wallet actually moved: the amount plus whatever the fee was.
+ *
+ * The figure someone reconciling a balance needs, and the one that differs
+ * from the amount by exactly the fee — stated as its own column so neither
+ * has to be inferred by adding two others together.
+ */
+function totalSatsOf(tx) {
+  return satsOrNull(tx?.totalSats) ?? satsOrNull(tx?.amount);
 }
 
 /** ISO 8601 in UTC: unambiguous, fixed-width, and it sorts lexicographically. */
@@ -101,10 +145,11 @@ function money(value) {
 export function toReportRow(tx, ctx = {}) {
   const { walletName = '', rate = null, counterparty = '', locale = '' } = ctx;
 
-  const ms = Number(tx?.timestamp) * 1000;
-  const sats = Math.abs(Number(tx?.amount));
-  const hasSats = Number.isFinite(sats) && sats > 0;
+  const ms = txTimeMs(tx);
+  const sats = amountSatsOf(tx);
+  const hasSats = sats !== null;
   const fee = feeSatsOf(tx);
+  const total = totalSatsOf(tx);
 
   // The fiat value is only ever the amount multiplied by the rate that
   // applied THEN. No rate, no value — the column stays empty and the summary
@@ -128,6 +173,7 @@ export function toReportRow(tx, ctx = {}) {
     amountSats: hasSats ? sats : null,
     amountBtc: hasSats ? (sats / SATS_PER_BTC).toFixed(8) : '',
     feeSats: fee,
+    totalSats: total,
 
     // What it was worth then
     fiatCurrency: rate?.currency || '',
@@ -160,6 +206,7 @@ export const REPORT_COLUMNS = Object.freeze([
   ['amountSats', 'Amount (sats)'],
   ['amountBtc', 'Amount (BTC)'],
   ['feeSats', 'Fee (sats)'],
+  ['totalSats', 'Total incl. fee (sats)'],
   ['fiatCurrency', 'Currency'],
   ['fiatValueAtTime', 'Value at time'],
   ['btcPriceAtTime', 'BTC price at time'],
@@ -261,6 +308,7 @@ export function summarise(rows) {
   let receivedSats = 0;
   let sentSats = 0;
   let feeSats = 0;
+  let unknownFees = 0;
   let receivedFiat = 0;
   let sentFiat = 0;
   let missingRates = 0;
@@ -273,7 +321,12 @@ export function summarise(rows) {
     const isReceived = row.direction === 'Received';
     if (isReceived) receivedSats += sats;
     else sentSats += sats;
-    feeSats += Number(row.feeSats) || 0;
+    // A fee nobody measured is not a fee of zero. Folding it in as one is how
+    // a summary comes to state "Fees 0 sats" above a table whose every fee
+    // cell is blank, which is the "this payment was free" claim these rows are
+    // written to avoid.
+    if (row.feeSats === null || row.feeSats === undefined || row.feeSats === '') unknownFees += 1;
+    else feeSats += Number(row.feeSats) || 0;
 
     const fiat = row.fiatValueAtTime === '' ? null : Number(row.fiatValueAtTime);
     if (fiat === null || !Number.isFinite(fiat)) {
@@ -297,6 +350,8 @@ export function summarise(rows) {
     sentSats,
     netSats: receivedSats - sentSats,
     feeSats,
+    /** How many rows had no fee figure at all. Arkade reports none. */
+    unknownFees,
     receivedFiat: receivedFiat.toFixed(2),
     sentFiat: sentFiat.toFixed(2),
     netFiat: (receivedFiat - sentFiat).toFixed(2),

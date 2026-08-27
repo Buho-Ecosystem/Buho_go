@@ -199,6 +199,18 @@ function printable(canDraw, text) {
  * column. Measuring and positioning is deterministic, and a table is exactly
  * the place that guarantee is worth the extra line.
  */
+/**
+ * The Fees cell of the summary block.
+ *
+ * With no measured fee anywhere, "0 sats" would assert that the payments were
+ * free. Arkade reports no fee figure at all, so that is an ordinary case, not
+ * an edge one.
+ */
+function feesLabel(summary) {
+  if (summary.unknownFees > 0 && !summary.feeSats) return 'not reported';
+  return `${group(summary.feeSats)} sats`;
+}
+
 function cell(doc, text, x, y, width, align) {
   const s = String(text ?? '');
   if (!s) return;
@@ -343,7 +355,7 @@ export async function renderReportPdf(data, { fonts, logo, now = new Date() } = 
   const cells = [
     ['Received', `${group(summary.receivedSats)} sats`, currency ? money(summary.receivedFiat) : ''],
     ['Sent', `${group(summary.sentSats)} sats`, currency ? money(summary.sentFiat) : ''],
-    ['Fees', `${group(summary.feeSats)} sats`, ''],
+    ['Fees', feesLabel(summary), ''],
     ['Net', `${group(summary.netSats)} sats`, currency ? money(summary.netFiat) : ''],
   ];
   const cellWidth = CONTENT_WIDTH / cells.length;
@@ -364,6 +376,9 @@ export async function renderReportPdf(data, { fonts, logo, now = new Date() } = 
   const caveats = [];
   if (summary.missingRates > 0) {
     caveats.push(`${summary.missingRates} of ${summary.count} transactions have no recorded exchange rate, so no value is stated for them and they are excluded from the ${currency || 'fiat'} totals.`);
+  }
+  if (summary.unknownFees > 0) {
+    caveats.push(`${summary.unknownFees} of ${summary.count} transactions report no fee figure, so the fee total covers only the rest.`);
   }
   if (meta.truncatedNote) caveats.push(meta.truncatedNote);
   if (meta.failedNote) caveats.push(meta.failedNote);
@@ -452,7 +467,7 @@ export async function renderReportPdf(data, { fonts, logo, now = new Date() } = 
     let x = netX;
     const totals = {
       sats: group(summary.netSats),
-      fee: group(summary.feeSats),
+      fee: summary.unknownFees > 0 && !summary.feeSats ? '' : group(summary.feeSats),
       rate: '',
       value: currency ? money(summary.netFiat) : '',
     };

@@ -1,5 +1,18 @@
 export default {
   // --- transaction report (tax export) ---
+  "1 transaction": "1 Transaktion",
+  "One transaction has no recorded exchange rate, so no value is stated for it.": "Für eine Transaktion ist kein Wechselkurs erfasst, daher wird dafür kein Wert angegeben.",
+  "Find a wallet": "Wallet suchen",
+  "No wallet by that name.": "Kein Wallet mit diesem Namen.",
+  "No wallets chosen": "Keine Wallets ausgewählt",
+  "Your wallet": "Dein Wallet",
+  "All {n} wallets": "Alle {n} Wallets",
+  "{n} of {m} wallets": "{n} von {m} Wallets",
+  "Choose at least one": "Wähle mindestens eines aus",
+  "{names} and {n} more": "{names} und {n} weitere",
+  "{n} of {m} selected": "{n} von {m} ausgewählt",
+  "Could not be read": "Konnte nicht gelesen werden",
+  "Not read": "Nicht gelesen",
   "This year": "Dieses Jahr",
   "Last year": "Letztes Jahr",
   "Everything": "Alles",
