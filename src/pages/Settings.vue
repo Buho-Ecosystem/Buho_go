@@ -247,6 +247,18 @@
         />
 
         <!--
+          Transaction report. Wallet-level because it reads across the
+          wallets rather than belonging to any one of them, which is also
+          why it sits next to Manage Wallets.
+        -->
+        <SettingsRow
+          icon="tabler:file-text"
+          :label="$t('Transaction report')"
+          :caption="$t('PDF, CSV or XML for your accountant')"
+          @click="showTaxReportSheet = true"
+        />
+
+        <!--
           Encrypted cloud backup (Android only — Drive via the native
           plugin). Complements the seed-phrase rows above: the phrase is
           still THE backup a user should verify; this puts an encrypted
@@ -1012,6 +1024,8 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <TaxReportSheet v-model="showTaxReportSheet" />
 
     <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
 
@@ -2244,6 +2258,7 @@ import ArkadeLogo from '../components/ArkadeLogo.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import GetAppDialog from '../components/GetAppDialog.vue'
+import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
@@ -2281,6 +2296,7 @@ export default {
     KioskPinPad,
     LNBitsLightningAddressDialog,
     GetAppDialog,
+    TaxReportSheet,
     SettingsSection,
     SettingsRow,
     SettingsAttentionStrip,
@@ -2408,6 +2424,7 @@ export default {
       // describes the specific feature being requested.
       showGetAppDialog: false,
       getAppDialogMessage: '',
+      showTaxReportSheet: false,
 
       // Enable-flow explanation dialog state
       showBiometricEnableDialog: false,
