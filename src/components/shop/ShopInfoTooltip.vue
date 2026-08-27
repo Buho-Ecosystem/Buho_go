@@ -36,10 +36,7 @@
         :class="$q.dark.isActive ? 'info-tooltip-dark' : 'info-tooltip-light'"
       >
         <div class="info-tooltip-head">
-          <span
-            class="info-tooltip-icon"
-            :class="tone === 'bolt' ? 'info-tooltip-icon--bolt' : 'info-tooltip-icon--check'"
-          >
+          <span class="info-tooltip-icon" :class="`info-tooltip-icon--${toneClass}`">
             <Icon :icon="icon" width="16" height="16" />
           </span>
           <span
@@ -77,10 +74,16 @@ import { Icon } from '@iconify/vue';
  * @prop {string[]} steps     3-5 short step strings, rendered as an ordered list.
  * @prop {string} lede        Optional one-line summary above the steps.
  * @prop {string} icon        Iconify name for the tinted head chip.
- * @prop {'brand'|'bolt'} tone  Head-chip tint (green or amber).
+ * @prop {'brand'|'bolt'|'toolbox'} tone  Head-chip tint (green, amber, neutral).
  * @prop {string} ariaLabel   Trigger accessible name (falls back to "How it works").
  * @prop {string} triggerIcon Glyph inside the trigger button.
+ *
+ * The `toolbox` tone with a `tabler:tools` trigger is the app's one signal for
+ * "here is a plain-language explanation of what is happening" — kept distinct
+ * from the info glyph so the two never blur into each other.
  */
+const TONES = { brand: 'check', bolt: 'bolt', toolbox: 'toolbox' };
+
 export default {
   name: 'ShopInfoTooltip',
   components: { Icon },
@@ -96,6 +99,9 @@ export default {
   data() {
     // Per-instance id so multiple tooltips on one screen don't collide.
     return { open: false, titleId: `shop-info-${Math.random().toString(36).slice(2, 9)}` };
+  },
+  computed: {
+    toneClass() { return TONES[this.tone] || TONES.brand; },
   },
 };
 </script>
@@ -156,6 +162,10 @@ export default {
 .info-tooltip-icon--bolt { background: rgba(247, 147, 26, 0.14); color: #f7931a; }
 .info-tooltip-icon--check { background: rgba(21, 222, 114, 0.16); color: #15a35b; }
 body.body--dark .info-tooltip-icon--check { color: #2bd17f; }
+/* Toolbox: deliberately neutral. It marks an explanation, not a status, so it
+   must not read as a success or a warning. */
+.info-tooltip-icon--toolbox { background: rgba(100, 116, 139, 0.16); color: #475569; }
+body.body--dark .info-tooltip-icon--toolbox { background: rgba(148, 163, 184, 0.18); color: #cbd5e1; }
 .info-tooltip-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
 .info-tooltip-lede { font-size: 14px; font-weight: 600; line-height: 1.4; letter-spacing: -0.005em; margin: 0 0 8px 0; }
 

@@ -97,7 +97,14 @@
       @dismiss="walletStore.dismissBackupPrompt()"
     />
 
-    <!-- Skeleton Loading State -->
+    <!--
+      Loading state. One language across the app: a skeleton where content
+      will land, never a word standing in for it. It holds until the balance
+      is authoritative, for a returning user as much as a fresh install — a
+      figure carried over from the last session is a claim about someone's
+      money, and a cached zero would read as an empty wallet rather than as
+      "not fetched yet". A skeleton claims nothing.
+    -->
     <div v-if="showLoadingScreen" class="main-content">
       <!-- Wallet Chip skeleton -->
       <q-skeleton type="QChip" width="90px" height="28px" animation="wave" style="margin-bottom: 1rem; border-radius: 20px;" />
@@ -230,10 +237,7 @@
                 :prefix="balancePrefix"
                 :suffix="balanceSuffix"
                 class="amount-number"
-                :class="[
-                  $q.dark.isActive ? 'amount-number-dark' : 'amount-number-light',
-                  { 'amount-number--provisional': balanceProvisional },
-                ]"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -245,7 +249,6 @@
               <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
                 <span class="secondary-value">••••</span>
               </span>
-              <span v-else-if="balanceProvisional" class="loading-secondary">{{ $t('Updating') }}...</span>
               <span v-else-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
@@ -866,7 +869,6 @@ import {
   sparkInvoiceProblem,
   identityPublicKeyFromSparkAddress,
 } from '../utils/sparkPayment.js';
-import {readPersistedWalletState} from '../utils/walletHydration.js';
 import {zapInfoFromTx} from '../utils/zaps.js';
 import {getTxMessage} from '../utils/txMessage.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
@@ -1008,12 +1010,6 @@ export default {
       // computed properties.
       lastTransaction: null,
       isLoadingLastTransaction: true,
-
-      // True while the shown balance is the persisted cache from the last
-      // session, before the first authoritative fetch lands. Drives the
-      // dimmed amount + "Updating..." secondary line. Display only — no
-      // spend/max logic ever reads walletState.balance while provisional.
-      balanceProvisional: false,
 
       showReceiveModal: false,
       showSendModal: false,
@@ -3425,11 +3421,6 @@ export default {
     },
     async initializeWallet() {
       try {
-        // A returning user has a cached balance from the last session —
-        // paint it immediately (marked provisional) instead of holding the
-        // whole screen on a skeleton until the wallet has connected.
-        this.seedBalanceFromCache();
-
         await this.loadWalletState();
 
         // Initialize wallet store
@@ -3513,26 +3504,6 @@ export default {
     },
 
     /**
-     * Seed the balance display from the wallet store's persisted
-     * `metadata.cachedBalance` of the active wallet, written on every
-     * successful balance fetch. When a value exists the skeleton is
-     * skipped and the amount renders provisionally until the first live
-     * fetch replaces it. A fresh install has no snapshot and keeps
-     * today's skeleton behaviour.
-     */
-    seedBalanceFromCache() {
-      const saved = readPersistedWalletState();
-      const active = saved?.wallets?.find?.((w) => w?.id === saved?.activeWalletId);
-      const cached = active?.metadata?.cachedBalance;
-      if (typeof cached !== 'number' || !Number.isFinite(cached)) return false;
-
-      this.walletState.balance = cached;
-      this.balanceProvisional = true;
-      this.showLoadingScreen = false;
-      return true;
-    },
-
-    /**
      * Refresh the active wallet's balance and the last-transaction preview.
      *
      * Called from the 30s periodic tick, after every send/receive, on wallet
@@ -3572,7 +3543,6 @@ export default {
               balanceResult = await provider.getBalance();
             }
             this.walletState.balance = balanceResult.balance;
-            this.balanceProvisional = false;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
             // Auto-withdraw check (never reachable from a cached read: an
@@ -3613,7 +3583,6 @@ export default {
             const provider = await this.walletStore.ensureLNBitsConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
-            this.balanceProvisional = false;
 
             // Update wallet in store
             const activeWallet = this.walletState.connectedWallets.find(
@@ -3645,7 +3614,6 @@ export default {
             const provider = await this.walletStore.ensureArkadeConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
-            this.balanceProvisional = false;
 
             const activeWallet = this.walletState.connectedWallets.find(
               w => w.id === this.walletState.activeWalletId
@@ -3678,7 +3646,6 @@ export default {
           await nwc.enable();
           const balance = await nwc.getBalance();
           this.walletState.balance = balance.balance;
-          this.balanceProvisional = false;
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
@@ -6994,11 +6961,6 @@ export default {
   line-height: 1;
   font-family: 'Manrope', sans-serif;
   transition: opacity 0.3s ease;
-}
-
-/* Cached last-session figure shown before the first live fetch lands */
-.amount-number--provisional {
-  opacity: 0.55;
 }
 
 .amount-number-dark {
