@@ -361,10 +361,10 @@ test('every country builds its address the same way', () => {
   }
 })
 
-test('Ghana: every MTN block BitSpenda actually pays', () => {
-  // Probed live on 2026-08-27 against bitspenda.app: these five return a
-  // payRequest. The table is the provider's, not the regulator's.
-  for (const prefix of ['24', '53', '54', '55', '59']) {
+test('Ghana: every MTN block BitSpenda documents', () => {
+  // Their docs: "Only MTN Ghana numbers 024 054 055 059 prefixes are
+  // currently supported". The table is the provider's, not the regulator's.
+  for (const prefix of ['24', '54', '55', '59']) {
     const r = recognizePhoneNumber(`0${prefix}6341938`)
     assert.ok(r, `0${prefix}...: no match`)
     assert.equal(r.country.code, 'GH')
@@ -381,6 +381,14 @@ test('Ghana: a number BitSpenda will not pay never resolves to Ghana', () => {
   for (const prefix of ['20', '26', '27', '50', '56', '57', '23', '25', '28', '29', '51', '52', '58']) {
     assert.notEqual(recognizePhoneNumber(`0${prefix}6341938`)?.country?.code, 'GH', `0${prefix}...`)
   }
+})
+
+test('Ghana: 053 is left out even though the live endpoint takes it', () => {
+  // Their LNURL layer is more permissive than their documentation. Resolving
+  // is not paying, and a settled invoice cannot be refunded, so we follow the
+  // documented set until BitSpenda confirms 053 in writing.
+  assert.notEqual(recognizePhoneNumber('0536341938')?.country?.code, 'GH')
+  assert.equal(recognizePhoneNumberForCountry('GH', '0536341938'), null)
 })
 
 test('Ghana: tapping the country chip refuses a non-MTN Ghanaian number', () => {
@@ -426,7 +434,7 @@ test('Ghana adds no ambiguity to the countries already served', () => {
   // GH blocks are 2-digit (24/53/54/55/59); ZM and TZ are 2-digit but
   // disjoint, and KE's are 3-digit. Nothing typed for Ghana may resolve
   // anywhere else, and nothing already served may start resolving to Ghana.
-  for (const prefix of ['24', '53', '54', '55', '59']) {
+  for (const prefix of ['24', '54', '55', '59']) {
     const r = recognizePhoneNumber(`0${prefix}6341938`)
     assert.equal(r.ambiguous, false, `0${prefix}... became ambiguous`)
     assert.equal(r.candidates, undefined)

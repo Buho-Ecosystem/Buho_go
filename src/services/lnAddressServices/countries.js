@@ -178,16 +178,26 @@ export const PAYOUT_COUNTRIES = [
     localPartFormat: 'international',
     localPartVerified: true,
     // MTN ONLY, and this is not a numbering-plan fact — it is what BitSpenda
-    // will actually pay. Probed live across every Ghanaian mobile prefix on
-    // 2026-08-27: 024/053/054/055/059 return a payRequest; 020/026/027/050/
-    // 056/057 are real Ghanaian numbers that come back "only MTN Mobile Money
-    // supported"; 023/025/028/029/051/052/058 come back "unsupported phone
-    // prefix". Since this table is also the validity rule, listing a
-    // non-MTN block would let a user reach a resolution that always fails.
-    // Re-probe before adding one: the set is the provider's, not the
-    // regulator's.
+    // will actually pay. Their docs enumerate it under Best Practices:
+    // "Only MTN Ghana numbers 024 054 055 059 prefixes are currently
+    // supported" (developer.bitspenda.app/lightning-address).
+    //
+    // 053 is deliberately NOT here even though the live endpoint accepts it.
+    // Probed 2026-08-27: 0531234567 returns a payRequest labelled "via MTN
+    // Mobile Money", so their LNURL layer is more permissive than their
+    // documentation. Resolving is not the same as paying, and there is no
+    // refund path once an invoice is settled, so the documented set is the
+    // safe one: a Ghanaian who cannot pay a 053 number is inconvenienced,
+    // one whose payment resolves and then fails has lost the money. Add it
+    // when BitSpenda confirms 053 in writing.
+    //
+    // The rest, probed the same day: 020/026/027/050/056/057 are real
+    // Ghanaian numbers that come back "only MTN Mobile Money supported", and
+    // 023/025/028/029/051/052/058 come back "unsupported phone prefix".
+    // Since this table is also the validity rule, listing a block BitSpenda
+    // will not pay would let a user reach a resolution that always fails.
     operators: [
-      { name: 'MTN', prefixes: ['24', '53', '54', '55', '59'] },
+      { name: 'MTN', prefixes: ['24', '54', '55', '59'] },
     ],
   },
 ]
