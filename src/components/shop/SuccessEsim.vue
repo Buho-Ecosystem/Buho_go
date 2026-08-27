@@ -80,6 +80,14 @@
       </p>
     </div>
 
+    <!-- The provider sent nothing installable. Never leave the user staring at
+         an empty screen for something they paid for: say what happened and
+         point at the receipt that can get it sorted. -->
+    <div v-if="!hasInstallData" class="no-codes" :class="$q.dark.isActive ? 'no-codes-dark' : 'no-codes-light'">
+      <Icon icon="tabler:alert-triangle" width="16" height="16" />
+      <span>{{ $t('The install code has not come through. Your receipt below has everything the provider needs to send it.') }}</span>
+    </div>
+
     <button type="button" class="done-link" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'" @click="$emit('done')">
       {{ $t('Done') }}
     </button>
@@ -128,6 +136,10 @@ export default {
     inst() { return this.receipt?.installation || {}; },
     lpa() { return buildLpaString(this.inst); },
     installUrl() { return esimInstallUrl(this.inst); },
+    /** Whether there is anything the user can actually install with. */
+    hasInstallData() {
+      return !!(this.lpa || this.installUrl || this.inst.smdpAddress || this.inst.matchingId || this.inst.manualCode);
+    },
     subtitle() {
       const parts = [];
       const flagName = [this.receipt?.flag, this.receipt?.countryName].filter(Boolean).join(' ');
@@ -179,7 +191,7 @@ body.body--dark .success-check { color: #2bd17f; }
 .primary-cta { width: 100%; height: 48px; border-radius: 16px; border: 0; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: filter 0.18s ease, transform 0.1s ease; }
 .primary-cta:active { transform: scale(0.98); }
 
-.disclosure-toggle { all: unset; display: inline-flex; align-items: center; gap: 6px; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 600; cursor: pointer; align-self: center; -webkit-tap-highlight-color: transparent; }
+.disclosure-toggle { all: unset; display: inline-flex; align-items: center; min-height: 44px; gap: 6px; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 600; cursor: pointer; align-self: center; -webkit-tap-highlight-color: transparent; }
 
 .manual-block { display: flex; flex-direction: column; gap: 12px; }
 .qr-stage { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0; }
@@ -195,8 +207,12 @@ body.body--dark .success-check { color: #2bd17f; }
 .copy-row-value { font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .copy-btn { border: 0; background: transparent; cursor: pointer; padding: 6px; border-radius: 8px; display: inline-flex; color: inherit; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
 
+.no-codes { display: flex; align-items: flex-start; gap: 8px; padding: 11px 13px; border-radius: 12px; font-family: 'Manrope', sans-serif; font-size: 12.5px; line-height: 1.45; }
+.no-codes-light { background: rgba(247, 147, 26, 0.1); color: #92400e; }
+.no-codes-dark { background: rgba(247, 147, 26, 0.14); color: #fbbf24; }
+.no-codes :deep(svg) { flex-shrink: 0; margin-top: 1px; }
 .install-note { font-family: 'Manrope', sans-serif; font-size: 12.5px; line-height: 1.45; margin: 0; text-align: center; }
-.done-link { all: unset; align-self: center; padding: 6px 12px; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.done-link { all: unset; display: inline-flex; align-items: center; min-height: 44px; align-self: center; padding: 0 12px; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 
 .item-label-light { color: #0f172a; }
 .item-label-dark  { color: #f8fafc; }

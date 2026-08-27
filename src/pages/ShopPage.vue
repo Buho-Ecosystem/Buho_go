@@ -1,16 +1,43 @@
 <template>
-  <q-page class="shop-page" :class="$q.dark.isActive ? 'shop-dark' : 'shop-light'">
-    <!-- Header -->
+  <q-page class="shop-page shop-surface" :class="$q.dark.isActive ? 'shop-dark' : 'shop-light'">
+    <!-- Header. It owns the top safe-area inset itself and sticks at top: 0 —
+         a non-zero sticky top would displace it into the content at rest on
+         Android, because the page already carries the global --safe-top pad. -->
     <div class="shop-header">
       <q-btn flat round dense class="shop-back" :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'" :aria-label="$t('Back')" @click="$router.back()">
         <Icon icon="tabler:chevron-left" width="20" height="20" />
       </q-btn>
       <div class="shop-header-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">{{ $t('Shop') }}</div>
-      <q-btn flat round dense class="shop-back" :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'" :aria-label="$t('My purchases')" @click="myPurchasesOpen = true">
+      <q-btn
+        flat round dense
+        class="shop-back"
+        :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+        :aria-label="productsLabel"
+        @click="myProductsOpen = true"
+      >
         <Icon icon="tabler:receipt" width="20" height="20" />
-        <span v-if="store.totalCount" class="mp-badge">{{ store.totalCount }}</span>
+        <span
+          v-if="store.totalCount"
+          class="mp-badge"
+          :class="{ 'mp-badge--alert': store.attentionCount > 0 }"
+        >{{ store.totalCount }}</span>
       </q-btn>
     </div>
+
+    <!-- Standing notice for anything paid but not delivered. It is the first
+         thing on the page because it is the only thing here that costs money
+         if it is missed. -->
+    <button
+      v-if="store.attentionCount"
+      type="button"
+      class="attention-banner"
+      :class="$q.dark.isActive ? 'attention-banner-dark' : 'attention-banner-light'"
+      @click="myProductsOpen = true"
+    >
+      <Icon icon="tabler:clock-exclamation" width="18" height="18" class="attention-icon" />
+      <span class="attention-text">{{ attentionText }}</span>
+      <Icon icon="tabler:chevron-right" width="16" height="16" class="attention-go" />
+    </button>
 
     <!-- Segmented tabs -->
     <div class="shop-tabs" :class="$q.dark.isActive ? 'shop-tabs-dark' : 'shop-tabs-light'">
@@ -41,8 +68,9 @@
         <div class="shop-help-row">
           <span class="shop-help-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">{{ $t('Mobile data for 200+ countries') }}</span>
           <ShopInfoTooltip
-            tone="brand"
-            icon="tabler:world"
+            tone="toolbox"
+            trigger-icon="tabler:tools"
+            icon="tabler:tools"
             :aria-label="$t('How eSIM works')"
             :title="$t('How you get your eSIM')"
             :lede="$t('A data-only plan that installs as a QR code.')"
@@ -82,7 +110,7 @@
       </div>
     </div>
 
-    <!-- eSIM bundle sheet -->
+    <!-- eSIM bundle sheet (new purchase) -->
     <CountryBundlesSheet
       v-model="bundleSheetOpen"
       :country="activeCountry"
@@ -92,48 +120,96 @@
       @select="onBundleSelect"
     />
 
+    <!-- eSIM bundle sheet (top-up of an eSIM already owned) -->
+    <CountryBundlesSheet
+      v-model="topupSheetOpen"
+      :country="topup.country"
+      :subtitle="$t('Added to the eSIM you already have')"
+      :bundles="topup.list"
+      :loading="topup.loading"
+      :error="topup.error"
+      @select="onTopupBundleSelect"
+    />
+
+    <!-- VPN extension sheet -->
+    <VpnExtendSheet
+      v-model="extendSheetOpen"
+      :durations="vpn.durations"
+      :subtitle="extend.subtitle"
+      :loading="vpn.loading"
+      :error="vpn.error"
+      @select="onExtendDurationSelect"
+    />
+
     <!-- Shared purchase sheet -->
     <PurchaseSheet
       v-model="purchaseSheetOpen"
       :descriptor="activeDescriptor"
       @purchased="onPurchased"
+      @backgrounded="onBackgrounded"
     />
 
-    <!-- My purchases -->
-    <MyPurchases v-model="myPurchasesOpen" />
+    <!-- Your products -->
+    <MyProducts
+      ref="myProducts"
+      v-model="myProductsOpen"
+      @topup="onTopupRequest"
+      @extend="onExtendRequest"
+      @recover="recoverOpen = true"
+    />
+
+    <!-- Recovery for purchases made before the order ledger existed -->
+    <RecoverPurchasesSheet v-model="recoverOpen" @restored="onRestored" />
   </q-page>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
-import { useNadanadaPurchasesStore } from '../stores/nadanadaPurchases';
+import { useNadanadaOrdersStore } from '../stores/nadanadaOrders';
+import { useWalletStore } from '../stores/wallet';
 import {
-  fetchEsimCountries, fetchEsimBundles, purchaseEsim, waitForEsim,
-  fetchVpnCatalog, requestVpn, waitForVpnConfig,
+  fetchEsimCountries, fetchEsimBundles, purchaseEsim, purchaseEsimTopup,
+  fetchVpnCatalog, requestVpn, requestVpnExtension,
   generateWireGuardKeypair, generatePresharedKey,
+  redeemAll, ORDER_KIND,
+  collectOutgoingPayments, findOrphanPayments,
 } from '../services/nadanada';
+import { normalizeTx } from '../services/txNormalizer.js';
 import DestinationGrid from '../components/shop/DestinationGrid.vue';
 import CountryBundlesSheet from '../components/shop/CountryBundlesSheet.vue';
 import VpnConfigurator from '../components/shop/VpnConfigurator.vue';
+import VpnExtendSheet from '../components/shop/VpnExtendSheet.vue';
 import PurchaseSheet from '../components/shop/PurchaseSheet.vue';
-import MyPurchases from '../components/shop/MyPurchases.vue';
+import MyProducts from '../components/shop/MyProducts.vue';
+import RecoverPurchasesSheet from '../components/shop/RecoverPurchasesSheet.vue';
 import ShopInfoTooltip from '../components/shop/ShopInfoTooltip.vue';
 
 /**
  * Shop landing. One route, two tabs (Mobile data / VPN). All purchasing
- * happens in bottom sheets so the back stack stays flat. Builds the
- * product-agnostic purchase descriptors the PurchaseSheet consumes; persists
- * completed purchases to the local store (the only record, since nadanada has
- * no accounts).
+ * happens in bottom sheets so the back stack stays flat.
+ *
+ * This page builds the purchase descriptors the PurchaseSheet consumes and
+ * owns the four ways money can leave: a new eSIM, a top-up for one already
+ * owned, a new VPN, and an extension of one already owned. All four go through
+ * the same sheet and therefore the same order ledger, so none of them can
+ * strand a payment.
+ *
+ * It also retries anything left pending as soon as the shop opens, because a
+ * user who comes back after a stuck purchase should find it finished rather
+ * than have to know to press something.
  */
 export default {
   name: 'ShopPage',
-  components: { Icon, DestinationGrid, CountryBundlesSheet, VpnConfigurator, PurchaseSheet, MyPurchases, ShopInfoTooltip },
+  components: {
+    Icon, DestinationGrid, CountryBundlesSheet, VpnConfigurator, VpnExtendSheet,
+    PurchaseSheet, MyProducts, RecoverPurchasesSheet, ShopInfoTooltip,
+  },
 
   setup() {
-    const store = useNadanadaPurchasesStore();
-    return { store };
+    const store = useNadanadaOrdersStore();
+    const walletStore = useWalletStore();
+    return { store, walletStore };
   },
 
   data() {
@@ -142,25 +218,49 @@ export default {
       esim: { loading: false, error: '', countries: [], regions: [] },
       bundles: { loading: false, error: '', list: [] },
       vpn: { loading: false, error: '', durations: [], countries: [], loaded: false },
+      topup: { order: null, country: null, list: [], loading: false, error: '' },
+      extend: { order: null, subtitle: '' },
       activeCountry: null,
       activeDescriptor: null,
       bundleSheetOpen: false,
+      topupSheetOpen: false,
+      extendSheetOpen: false,
       purchaseSheetOpen: false,
-      myPurchasesOpen: false,
+      myProductsOpen: false,
+      recoverOpen: false,
+      // A top-up or extension renews something already in Your products, so
+      // that is where the user should land once the sheet closes.
+      reopenProductsAfterPurchase: false,
+      resumeController: null,
     };
+  },
+
+  watch: {
+    purchaseSheetOpen(open) {
+      if (open || !this.reopenProductsAfterPurchase) return;
+      this.reopenProductsAfterPurchase = false;
+      this.myProductsOpen = true;
+    },
   },
 
   computed: {
     recentCountries() {
-      const seen = new Set();
-      const out = [];
-      for (const e of this.store.esims) {
-        if (!e.slug || seen.has(e.slug)) continue;
-        seen.add(e.slug);
-        out.push({ slug: e.slug, name: e.countryName || e.slug, flag: e.flag || '' });
-        if (out.length >= 5) break;
-      }
-      return out;
+      return this.store.recentDestinations;
+    },
+
+    /** Two keys rather than a plural rule: the app runs vue-i18n in legacy
+     *  mode and uses no pipe-separated plurals anywhere else. */
+    attentionText() {
+      const n = this.store.attentionCount;
+      return n === 1
+        ? this.$t('1 order is waiting to be delivered')
+        : this.$t('{n} orders are waiting to be delivered', { n });
+    },
+
+    productsLabel() {
+      return this.store.attentionCount
+        ? this.$t('Your products, {n} waiting', { n: this.store.attentionCount })
+        : this.$t('Your products');
     },
 
     esimHelpSteps() {
@@ -176,9 +276,74 @@ export default {
 
   created() {
     this.loadEsimCatalog();
+    // Finish anything the last visit left hanging, quietly and in the
+    // background. Idempotent server-side, so it is always safe to run.
+    this.resumePending();
+    // Once, ever: look for purchases made before the ledger existed. Someone
+    // whose money went missing should not have to know a recovery feature
+    // exists in order to get it back.
+    this.autoFindLostPurchases();
+  },
+
+  beforeUnmount() {
+    this.resumeController?.abort();
   },
 
   methods: {
+    // ── recovery ─────────────────────────────────────────────────────
+    /**
+     * Retry every paid-but-undelivered order. Runs on entering the shop so a
+     * user who was stranded last time finds the product waiting rather than
+     * having to discover a button.
+     */
+    async resumePending() {
+      // Clear orders whose invoice lapsed unpaid first: they can never settle,
+      // so retrying them would be noise on the user's attention list.
+      this.store.pruneSettledUnpaid();
+      const pending = this.store.pendingOrders;
+      if (!pending.length) return;
+      this.resumeController?.abort();
+      this.resumeController = new AbortController();
+      try {
+        await redeemAll(
+          pending,
+          (id, patch) => { if (patch) this.store.patchOrder(id, patch); },
+          { signal: this.resumeController.signal, maxMs: 20000 },
+        );
+      } catch { /* offline: the orders stay pending and visible */ }
+    },
+
+    /**
+     * One-time search of the wallet history for purchases the ledger never
+     * recorded, from before it existed. Silent unless it finds something: the
+     * recovery sheet only appears when there is actually money to hand back.
+     *
+     * It costs one transaction fetch per connected wallet, once per install.
+     */
+    async autoFindLostPurchases() {
+      if (this.store.recoveryScannedAt) return;
+      try {
+        const { transactions, scannedWallets } = await collectOutgoingPayments({
+          wallets: this.walletStore.wallets || [],
+          providers: this.walletStore.providers || {},
+          normalize: (raw, ctx) => normalizeTx(raw, ctx),
+        });
+        if (findOrphanPayments(transactions, this.store.orders).length) {
+          // The sheet does the work; it searches again on open and takes it
+          // from there.
+          this.recoverOpen = true;
+          return;
+        }
+        // Only a search that actually read a wallet counts as having happened.
+        // No wallet connected yet is not the same as nothing to find, and the
+        // user may connect one tomorrow.
+        if (scannedWallets > 0) this.store.markRecoveryScanned();
+      } catch {
+        // Offline or an unreadable wallet. Leave the flag unset so the next
+        // visit tries again rather than writing off a purchase unseen.
+      }
+    },
+
     // ── catalog loading ──────────────────────────────────────────────
     async loadEsimCatalog() {
       this.esim.loading = true;
@@ -186,9 +351,12 @@ export default {
       try {
         const { countries } = await fetchEsimCountries();
         this.esim.countries = countries;
-        // Regions are hidden for now: their purchase SKU differs from the
-        // country `fixed_ -> esim_..._V2` transform and is not yet verified.
-        // Re-enable by restoring `regions` here once confirmed with nadanada.
+        // Regions are hidden because they are not purchasable UPSTREAM, not
+        // because of anything on our side. Verified live: every region bundle
+        // the catalog lists (e.g. fixed_1GB_7D_EUROPE) is rejected by
+        // /esim/purchase with `bundle_slug_mismatch` for its own slug, and no
+        // slug variant is accepted either. Re-enable once nadanada configures
+        // fixed pricing for region slugs.
         this.esim.regions = [];
       } catch {
         this.esim.error = this.$t("Couldn't load destinations. Check your connection and try again.");
@@ -217,7 +385,7 @@ export default {
       }
     },
 
-    // ── eSIM flow ────────────────────────────────────────────────────
+    // ── eSIM: new purchase ───────────────────────────────────────────
     async onDestinationSelect(item) {
       const isRegion = item._kind === 'region';
       this.activeCountry = {
@@ -249,51 +417,96 @@ export default {
     buildEsimDescriptor(country, bundle) {
       const planLabel = this.esimPlanLabel(bundle);
       const flagName = [country.flag, country.name].filter(Boolean).join(' ');
-      const buildReceipt = (esim) => ({
-        kind: 'esim',
-        iccid: esim.iccid,
-        bundleName: esim.bundleName || bundle.bundleName,
-        orderReference: esim.orderReference,
-        installation: esim.installation,
-        countryName: country.name,
-        flag: country.isRegion ? '' : country.flag,
-        slug: country.slug,
-        dataInGB: bundle.dataInGB,
-        durationInDays: bundle.durationInDays,
-        priceUsd: bundle.priceUsd,
-        planLabel,
-        purchasedAt: Date.now(),
-      });
       return {
-        kind: 'esim',
+        kind: ORDER_KIND.ESIM,
         title: flagName,
         meta: planLabel,
-        createInvoice: async () => {
-          const inv = await purchaseEsim({ bundleName: bundle.bundleName, slug: country.slug });
-          return {
-            paymentRequest: inv.paymentRequest,
-            paymentHash: inv.paymentHash,
-            priceUsd: inv.priceUsd,
-            originalPriceUsd: inv.originalPriceUsd,
-            expiresAt: inv.expiresAt,
-            ctx: { country, bundle },
-          };
-        },
-        fulfill: async ({ paymentHash, signal, expiresAt }) => {
-          const deadline = expiresAt ? Date.parse(expiresAt) : NaN;
-          const res = await waitForEsim({ paymentHash, signal, deadline: Number.isFinite(deadline) ? deadline : undefined });
-          return res.ok ? { ok: true, receipt: buildReceipt(res.esim) } : { ok: false };
-        },
-        // Single-shot settlement check (one attempt), used after a payInvoice
-        // error to catch the errored-yet-settled case without re-paying.
-        probeSettled: async ({ paymentHash }) => {
-          const res = await waitForEsim({ paymentHash, maxMs: 1 });
-          return res.ok ? { ok: true, receipt: buildReceipt(res.esim) } : { ok: false };
-        },
+        createInvoice: () => purchaseEsim({ bundleName: bundle.bundleName, slug: country.slug }),
+        // Everything the success screen and the product card will need later,
+        // stored alongside the redemption keys so a recovered order renders
+        // exactly like one that completed first time.
+        orderFields: (inv) => ({
+          countryName: country.name,
+          countryCode: country.code || '',
+          flag: country.isRegion ? '' : country.flag,
+          slug: country.slug,
+          bundleName: bundle.bundleName,
+          providerBundleName: inv.providerBundleName || '',
+          dataInGB: bundle.dataInGB,
+          durationInDays: bundle.durationInDays,
+          planLabel,
+        }),
       };
     },
 
-    // ── VPN flow ─────────────────────────────────────────────────────
+    // ── eSIM: top-up of an existing eSIM ─────────────────────────────
+    async onTopupRequest(order) {
+      this.myProductsOpen = false;
+      this.topup = { order, country: null, list: [], loading: true, error: '' };
+      this.topupSheetOpen = true;
+
+      // The country code was not stored before the ledger existed; fall back to
+      // resolving it from the catalog by slug so older eSIMs can still top up.
+      let code = order.countryCode || '';
+      if (!code && order.slug) {
+        if (!this.esim.countries.length) {
+          try { this.esim.countries = (await fetchEsimCountries()).countries; } catch { /* handled below */ }
+        }
+        code = this.esim.countries.find((c) => c.slug === order.slug)?.code || '';
+      }
+      this.topup.country = {
+        name: order.countryName || this.$t('Your eSIM'),
+        slug: order.slug || '',
+        code,
+        flag: order.flag || '',
+      };
+
+      if (!code || !order.slug) {
+        this.topup.loading = false;
+        this.topup.error = this.$t("We can't look up plans for this eSIM. Buy a new one instead.");
+        return;
+      }
+      try {
+        const list = await fetchEsimBundles({ country: code });
+        this.topup.list = await this.augmentSats(list);
+      } catch {
+        this.topup.error = this.$t("Couldn't load plans. Try again.");
+      } finally {
+        this.topup.loading = false;
+      }
+    },
+
+    onTopupBundleSelect(bundle) {
+      const order = this.topup.order;
+      const country = this.topup.country;
+      if (!order?.iccid || !country) return;
+      const planLabel = this.esimPlanLabel(bundle);
+      this.activeDescriptor = {
+        kind: ORDER_KIND.ESIM_TOPUP,
+        title: [country.flag, country.name].filter(Boolean).join(' '),
+        meta: this.$t('{plan} added to your eSIM', { plan: planLabel }),
+        createInvoice: () => purchaseEsimTopup({
+          iccid: order.iccid,
+          bundleName: bundle.bundleName,
+          slug: country.slug,
+        }),
+        orderFields: (inv) => ({
+          targetIccid: inv.iccid || order.iccid,
+          countryName: country.name,
+          countryCode: country.code,
+          flag: country.flag,
+          slug: country.slug,
+          bundleName: bundle.bundleName,
+          dataInGB: bundle.dataInGB,
+          durationInDays: bundle.durationInDays,
+          planLabel,
+        }),
+      };
+      this.topupSheetOpen = false;
+      this.purchaseSheetOpen = true;
+    },
+
+    // ── VPN: new purchase ────────────────────────────────────────────
     onVpnContinue({ duration, location }) {
       this.activeDescriptor = this.buildVpnDescriptor(duration, location);
       this.purchaseSheetOpen = true;
@@ -301,59 +514,116 @@ export default {
 
     buildVpnDescriptor(duration, location) {
       // Generate the WireGuard keypair once, up front, so it is stable across
-      // config-poll retries and can be persisted with the finished config.
+      // retries and is persisted with the order BEFORE the config is requested
+      // — the server issues a config exactly once per payment, and a config
+      // whose private key we never stored would be worthless.
       const keypair = generateWireGuardKeypair();
       const presharedKey = generatePresharedKey();
+      const durationLabel = this.durationLabel(duration);
       const flagName = [location.flag, location.name].filter(Boolean).join(' ');
-      const buildReceipt = (res) => ({
-        kind: 'vpn',
-        publicKey: res.publicKey,
-        privateKey: res.privateKey,
-        presharedKey: res.presharedKey,
-        config: res.config,
-        country: location.code,
-        countryName: location.name,
-        flag: location.flag,
-        durationLabel: duration.label,
-        priceUsd: duration.priceUsd,
-        purchasedAt: Date.now(),
-      });
-      // `location.code` is nadanada's internal server id. Verify on a live VPN
-      // purchase whether the config endpoint wants this or the ISO code.
       return {
-        kind: 'vpn',
+        kind: ORDER_KIND.VPN,
         title: flagName,
-        meta: duration.label,
-        createInvoice: async () => {
-          const inv = await requestVpn({ duration: duration.value });
-          return {
-            paymentRequest: inv.paymentRequest,
-            paymentHash: inv.paymentHash,
-            priceUsd: inv.priceUsd,
-            expiresAt: inv.expiresAt,
-            ctx: { location, duration },
-          };
-        },
-        fulfill: async ({ paymentHash, signal, expiresAt }) => {
-          const deadline = expiresAt ? Date.parse(expiresAt) : NaN;
-          const res = await waitForVpnConfig({
-            paymentHash, country: location.code, keypair, presharedKey, signal,
-            deadline: Number.isFinite(deadline) ? deadline : undefined,
-          });
-          return res.ok ? { ok: true, receipt: buildReceipt(res) } : { ok: false };
-        },
-        probeSettled: async ({ paymentHash }) => {
-          const res = await waitForVpnConfig({ paymentHash, country: location.code, keypair, presharedKey, maxMs: 1 });
-          return res.ok ? { ok: true, receipt: buildReceipt(res) } : { ok: false };
-        },
+        meta: durationLabel,
+        createInvoice: () => requestVpn({ duration: duration.value }),
+        orderFields: () => ({
+          // nadanada's own server id, which is what /vpn/config expects as
+          // `country` (their spec's example value is this same id form).
+          country: location.code,
+          countryName: location.name,
+          flag: location.flag,
+          durationLabel,
+          durationValue: duration.value,
+          publicKey: keypair.publicKey,
+          privateKey: keypair.privateKey,
+          presharedKey,
+        }),
       };
     },
 
+    // ── VPN: extend an existing subscription ─────────────────────────
+    onExtendRequest(order) {
+      this.myProductsOpen = false;
+      this.extend = {
+        order,
+        subtitle: [order.flag, order.countryName].filter(Boolean).join(' '),
+      };
+      this.extendSheetOpen = true;
+      if (!this.vpn.loaded) this.loadVpnCatalog();
+    },
+
+    onExtendDurationSelect(duration) {
+      const order = this.extend.order;
+      if (!order?.publicKey) return;
+      const durationLabel = this.durationLabel(duration);
+      this.activeDescriptor = {
+        kind: ORDER_KIND.VPN_EXTEND,
+        title: [order.flag, order.countryName].filter(Boolean).join(' '),
+        meta: this.$t('{duration} more', { duration: durationLabel }),
+        createInvoice: () => requestVpnExtension({
+          publicKey: order.publicKey,
+          duration: duration.value,
+        }),
+        // The extension reuses the subscription's existing keys and server:
+        // a new keypair here would create a second, unrelated tunnel. The
+        // server names the country it is renewing, which beats our copy.
+        orderFields: (inv) => ({
+          country: inv.country || order.country,
+          countryName: inv.countryName || order.countryName,
+          flag: order.flag,
+          durationLabel,
+          durationValue: duration.value,
+          publicKey: order.publicKey,
+          privateKey: order.privateKey,
+          presharedKey: order.presharedKey,
+          extendsOrderId: order.id,
+        }),
+      };
+      this.extendSheetOpen = false;
+      this.purchaseSheetOpen = true;
+    },
+
     // ── shared ───────────────────────────────────────────────────────
-    onPurchased(receipt) {
-      if (!receipt) return;
-      if (receipt.kind === 'esim') this.store.addEsim(receipt);
-      else if (receipt.kind === 'vpn') this.store.addVpn(receipt);
+    /** The order is already in the ledger; this only closes the loop in the
+     *  UI. A top-up or extension folds back into the product it renewed. */
+    onPurchased(order) {
+      if (!order) return;
+      if (order.kind === ORDER_KIND.ESIM_TOPUP || order.kind === ORDER_KIND.VPN_EXTEND) {
+        this.reopenProductsAfterPurchase = true;
+      }
+      if (order.kind === ORDER_KIND.ESIM_TOPUP && order.targetIccid) {
+        // Force the target eSIM to re-fetch its usage next time it is shown.
+        const target = this.store.esims.find((o) => o.iccid === order.targetIccid);
+        if (target) this.store.patchOrder(target.id, { liveFetchedAt: null });
+      }
+      if (order.kind === ORDER_KIND.VPN_EXTEND && order.extendsOrderId) {
+        this.store.patchOrder(order.extendsOrderId, { liveFetchedAt: null });
+      }
+    },
+
+    /** A pre-ledger purchase was found and imported. Hand it to Your products
+     *  so a product that came back is shown, not just filed away. */
+    onRestored(order) {
+      this.myProductsOpen = true;
+      this.$nextTick(() => this.$refs.myProducts?.showRestored?.(order));
+    },
+
+    /** The user left a paid order behind. Point them at where it lives now,
+     *  rather than letting it go quiet. */
+    onBackgrounded(order) {
+      if (!order) return;
+      this.$q.notify?.({
+        message: this.$t('Saved to Your products. We will keep trying.'),
+        color: this.$q.dark.isActive ? 'grey-9' : 'grey-10',
+        textColor: 'white',
+        position: 'bottom',
+        timeout: 3500,
+        actions: [{
+          label: this.$t('View'),
+          color: 'green-4',
+          handler: () => { this.myProductsOpen = true; },
+        }],
+      });
     },
 
     /** Attach a sats estimate (USD -> sats at the live rate) for display. The
@@ -378,22 +648,58 @@ export default {
       const days = bundle.durationInDays != null ? this.$t('{n} days', { n: bundle.durationInDays }) : '';
       return [gb, days].filter(Boolean).join(' · ');
     },
+
+    /** Localised "1 month" / "3 months" from the API's amount + unit pair.
+     *  The API's own `duration` field is a price, not a length of time. */
+    durationLabel(d) {
+      const n = d?.amount ?? 1;
+      switch (d?.unit) {
+        case 'day': return this.$t('{n} days', { n });
+        case 'week': return this.$t('{n} weeks', { n });
+        case 'month': return this.$t('{n} months', { n });
+        case 'year': return this.$t('{n} years', { n });
+        default: return d?.label || '';
+      }
+    },
   },
 };
 </script>
 
 <style scoped>
-.shop-page { min-height: 100vh; padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); }
+/* The page cancels the global .q-page top inset so the header can own it —
+   see the header comment. The bottom inset uses var(--safe-bottom), not a bare
+   env(), because Android WebViews report env(safe-area-inset-bottom) as 0 even
+   with a nav bar present; boot/safe-area.js patches the variable. */
+.shop-page { min-height: 100vh; padding-top: 0; padding-bottom: max(24px, var(--safe-bottom, 24px)); }
 .shop-light { background: #FAF7EF; }
 .shop-dark { background: #0C0C0C; }
 
-.shop-header { display: flex; align-items: center; gap: 8px; padding: max(8px, env(safe-area-inset-top, 0px)) 12px 8px; position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px); }
+.shop-header { display: flex; align-items: center; gap: 8px; padding: calc(8px + var(--safe-top, 0px)) 12px 8px; position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px); }
 .shop-light .shop-header { background: rgba(250, 247, 239, 0.82); }
 .shop-dark .shop-header { background: rgba(12, 12, 12, 0.82); }
 .shop-header-title { flex: 1 1 auto; text-align: center; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 .shop-back { flex: 0 0 auto; position: relative; }
 .mp-badge { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #15a35b; color: #fff; font-family: 'Manrope', sans-serif; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 body.body--dark .mp-badge { background: #15DE72; color: #0c0c0c; }
+.mp-badge--alert { background: #d97706; color: #fff; }
+body.body--dark .mp-badge--alert { background: #fbbf24; color: #0c0c0c; }
+
+/* Standing notice for undelivered orders. */
+.attention-banner {
+  all: unset;
+  box-sizing: border-box;
+  display: flex; align-items: center; gap: 10px;
+  width: calc(100% - 32px); margin: 4px 16px 4px;
+  min-height: 48px; padding: 10px 14px; border-radius: 14px;
+  font-family: 'Manrope', sans-serif; font-size: 13.5px; font-weight: 600;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.attention-banner-light { background: rgba(247, 147, 26, 0.1); color: #92400e; box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.26); }
+.attention-banner-dark { background: rgba(247, 147, 26, 0.14); color: #fbbf24; box-shadow: inset 0 0 0 1px rgba(247, 147, 26, 0.3); }
+.attention-banner:active { transform: scale(0.995); }
+.attention-banner:focus-visible { outline: 2px solid #15DE72; outline-offset: 2px; }
+.attention-icon, .attention-go { flex-shrink: 0; }
+.attention-text { flex: 1 1 auto; min-width: 0; line-height: 1.35; }
 
 .shop-tabs { display: flex; gap: 4px; margin: 4px 16px 8px; padding: 4px; border-radius: 999px; }
 .shop-tabs-light { background: rgba(15, 23, 42, 0.05); }

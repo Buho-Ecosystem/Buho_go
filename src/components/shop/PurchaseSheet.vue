@@ -2,13 +2,12 @@
   <q-dialog
     v-model="open"
     position="bottom"
-    :persistent="step === 'activating'"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
     @show="onShow"
     @hide="onHide"
   >
     <q-card
-      class="shop-sheet"
+      class="shop-sheet shop-surface"
       :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
     >
       <!-- Drag handle -->
@@ -16,7 +15,10 @@
         <span :class="$q.dark.isActive ? 'sheet-handle-bar-dark' : 'sheet-handle-bar-light'"></span>
       </div>
 
-      <!-- Header -->
+      <!-- Header. The close control is NEVER disabled: once a payment has been
+           made the order lives in the ledger, so leaving can no longer lose
+           anything, and a spinner the user cannot escape is how a slow
+           fulfilment turned into a lost purchase. -->
       <div class="sheet-header">
         <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
           {{ headerTitle }}
@@ -26,7 +28,6 @@
           :aria-label="$t('Close')"
           class="sheet-close-btn"
           :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-          :disable="step === 'activating'"
           @click="open = false"
         >
           <Icon icon="tabler:x" width="18" height="18" />
@@ -46,6 +47,9 @@
               </div>
               <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
                 {{ prepareError }}
+              </div>
+              <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                {{ $t('Nothing was charged.') }}
               </div>
             </template>
             <template v-else>
@@ -81,6 +85,15 @@
               <span v-if="discountPct" class="summary-discount">
                 {{ $t('{pct}% off', { pct: discountPct }) }}
               </span>
+              <ShopInfoTooltip
+                tone="toolbox"
+                trigger-icon="tabler:tools"
+                icon="tabler:tools"
+                :aria-label="$t('What happens when I pay')"
+                :title="$t('What happens when you pay')"
+                :lede="$t('The price is fixed on the invoice. No extra fees are added.')"
+                :steps="payHelpSteps"
+              />
             </div>
           </div>
 
@@ -93,7 +106,7 @@
             aria-live="polite"
           >
             <Icon icon="tabler:circle-check" width="16" height="16" />
-            <span>{{ $t('Paid. Confirming with the provider…') }}</span>
+            <span>{{ $t('Paid. Waiting for the provider to hand it over.') }}</span>
           </div>
 
           <!-- Pay source (internal balance, invisible affiliate) -->
@@ -163,9 +176,13 @@
             <span>{{ payError }}</span>
           </div>
 
+          <!-- The receipt. Shown the moment money is at stake, because it is
+               the only thing that can redeem this order later. -->
+          <ReceiptRow v-if="paid && order" :order="order" />
+
           <!-- External pay: collapsed unless no wallet can cover. Keeps the
                purchase alive from another wallet without stranding the user. -->
-          <div class="external-pay">
+          <div v-if="!paid" class="external-pay">
             <button
               type="button"
               class="external-pay-toggle"
@@ -208,44 +225,111 @@
         </section>
 
         <!-- ─────────── STEP: activating ─────────── -->
-        <section v-else-if="step === 'activating'" class="step-body step-body--centered">
+        <section v-else-if="step === 'activating'" class="step-body">
           <div class="centered-stage">
             <q-spinner color="grey" size="36px" />
             <div class="centered-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
               {{ activatingTitle }}
             </div>
             <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('This is usually quick.') }}
+              {{ $t('This usually takes a few seconds.') }}
             </div>
           </div>
+
+          <!-- The escape hatch, stated plainly. Closing here is safe and the
+               user is told so before they need to guess. -->
+          <div class="safe-note" :class="$q.dark.isActive ? 'safe-note-dark' : 'safe-note-light'">
+            <Icon icon="tabler:shield-check" width="16" height="16" />
+            <span>{{ $t('You can close this. Your order is saved and will be waiting in Your products.') }}</span>
+          </div>
+
+          <ReceiptRow v-if="order" :order="order" />
         </section>
 
         <!-- ─────────── STEP: success ─────────── -->
         <section v-else-if="step === 'success'" class="step-body">
-          <SuccessEsim v-if="receipt && receipt.kind === 'esim'" :receipt="receipt" @done="open = false" />
-          <SuccessVpn v-else-if="receipt && receipt.kind === 'vpn'" :receipt="receipt" @done="open = false" />
+          <!-- A top-up or an extension renews something the user already has,
+               so there is nothing new to install. Saying so plainly beats
+               re-showing an install code they do not need to scan again. -->
+          <template v-if="order && successView === 'renewal'">
+            <div class="centered-stage">
+              <div class="success-check">
+                <Icon icon="tabler:circle-check-filled" width="48" height="48" />
+              </div>
+              <div class="centered-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+                {{ renewalCopy.title }}
+              </div>
+              <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ renewalCopy.body }}
+              </div>
+            </div>
+            <ReceiptRow :order="order" />
+            <button
+              type="button"
+              class="primary-cta"
+              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+              @click="open = false"
+            >
+              <span>{{ $t('Done') }}</span>
+            </button>
+          </template>
+          <SuccessEsim v-else-if="order && successView === 'esim'" :receipt="order" @done="open = false" />
+          <SuccessVpn v-else-if="order" :receipt="order" @done="open = false" />
+        </section>
+
+        <!-- ─────────── STEP: problem (terminal) ─────────── -->
+        <section v-else-if="step === 'problem'" class="step-body">
+          <div class="centered-stage">
+            <div class="error-icon">
+              <Icon icon="tabler:alert-triangle" width="40" height="40" />
+            </div>
+            <div class="centered-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+              {{ problemCopy.title }}
+            </div>
+            <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ problemCopy.body }}
+            </div>
+          </div>
+
+          <div class="help-row">
+            <ShopInfoTooltip
+              tone="toolbox"
+              trigger-icon="tabler:tools"
+              icon="tabler:tools"
+              :aria-label="$t('What can I do now')"
+              :title="$t('What you can do now')"
+              :lede="$t('Your payment is not lost. It just needs a person to look at it.')"
+              :steps="problemHelpSteps"
+            />
+            <span class="help-row-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+              {{ $t('What you can do now') }}
+            </span>
+          </div>
+
+          <ReceiptRow v-if="order" :order="order" expanded />
         </section>
       </div>
 
-      <!-- Sticky action bar. Hidden on success (the success body owns its
-           own single primary action). -->
+      <!-- Sticky action bar. One primary action per step. -->
       <div
-        v-if="step === 'paying'"
+        v-if="actionBarVisible"
         class="sheet-actions"
         :class="$q.dark.isActive ? 'sheet-actions-dark' : 'sheet-actions-light'"
       >
         <!-- Paid, or external-only (no internal wallet): re-poll, never re-pay. -->
         <button
-          v-if="showCheckAgain"
+          v-if="step === 'paying' && showCheckAgain"
           type="button"
           class="primary-cta"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+          :disabled="actionInflight"
           @click="reCheck"
         >
+          <q-spinner v-if="actionInflight" size="18px" />
           <span>{{ $t('Check again') }}</span>
         </button>
         <button
-          v-else
+          v-else-if="step === 'paying'"
           type="button"
           class="primary-cta"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -255,21 +339,26 @@
           <q-spinner v-if="actionInflight" size="18px" />
           <span>{{ payLabel }}</span>
         </button>
-      </div>
 
-      <!-- Prepare-error retry bar -->
-      <div
-        v-else-if="step === 'preparing' && prepareError"
-        class="sheet-actions"
-        :class="$q.dark.isActive ? 'sheet-actions-dark' : 'sheet-actions-light'"
-      >
         <button
+          v-else-if="step === 'preparing' && prepareError"
           type="button"
           class="primary-cta"
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           @click="prepare"
         >
           <span>{{ $t('Try again') }}</span>
+        </button>
+
+        <button
+          v-else-if="step === 'problem'"
+          type="button"
+          class="primary-cta"
+          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+          @click="copyReceipt"
+        >
+          <Icon :icon="receiptCopied ? 'tabler:check' : 'tabler:copy'" width="18" height="18" />
+          <span>{{ receiptCopied ? $t('Copied') : $t('Copy my receipt') }}</span>
         </button>
       </div>
     </q-card>
@@ -281,58 +370,69 @@ import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { Invoice } from '@getalby/lightning-tools';
 import { useWalletStore } from '../../stores/wallet';
+import { useNadanadaOrdersStore } from '../../stores/nadanadaOrders';
+import {
+  redeemOrder, orderReceiptText, ORDER_KIND, ORDER_STATE,
+  REDEEM_ATTEMPT_MS, PROBE_ATTEMPT_MS,
+} from '../../services/nadanada/orders.js';
 import SuccessEsim from './SuccessEsim.vue';
 import SuccessVpn from './SuccessVpn.vue';
+import ShopInfoTooltip from './ShopInfoTooltip.vue';
+import ReceiptRow from './ReceiptRow.vue';
+
+import { writeClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 
 const INVOICE_TRUNCATE_HEAD = 16;
 const INVOICE_TRUNCATE_TAIL = 8;
 
 /**
  * Generic purchase sheet for the nadanada shop. Product-agnostic: it is
- * driven entirely by a `descriptor` so eSIM and VPN share one payment
- * surface (the affiliate, fees, and earnings are invisible — there is only
- * a single all-in sats price).
+ * driven by a `descriptor` so eSIM, eSIM top-up, VPN and VPN extension all
+ * share one payment surface (the affiliate, fees, and earnings are invisible
+ * — there is only a single all-in sats price).
  *
  * Descriptor contract:
  *   {
- *     kind: 'esim' | 'vpn',
+ *     kind: 'esim' | 'esim_topup' | 'vpn' | 'vpn_extend',
  *     title: string,          // summary line 1, e.g. "🇯🇵 Japan"
  *     meta: string,           // summary line 2, e.g. "5 GB · 30 days"
- *     createInvoice: async () => ({
- *       paymentRequest, paymentHash, priceUsd?, originalPriceUsd?, ctx?
- *     }),
- *     fulfill: async ({ paymentHash, signal, ctx }) => ({ ok, receipt }),
- *       // receipt is the persisted record + what the success body renders;
- *       // it MUST carry `kind`.
+ *     createInvoice: async () => ({ paymentRequest, paymentHash, checkoutId, priceUsd?, originalPriceUsd?, expiresAt? }),
+ *     orderFields: (invoice) => object,   // product context stored on the order
  *   }
  *
- * Reuses the proven internal-payment pattern from Nip05MarketplaceSheet:
- * `payableWallets` (connected + can cover, active first), the pay branching
- * (nwc -> sendPayment, else payInvoice), and an Abortable activation poll.
+ * THE ORDERING RULE THIS COMPONENT EXISTS TO ENFORCE: an order is written to
+ * the ledger the moment an invoice exists, and marked paid the instant the
+ * wallet returns — both before fulfilment is attempted. Every later step
+ * (polling, closing the sheet, the app being killed) is then recoverable,
+ * because the keys that redeem the order are already on disk. See
+ * services/nadanada/orders.js.
  */
 export default {
   name: 'PurchaseSheet',
-  components: { Icon, VueQrcode, SuccessEsim, SuccessVpn },
+  components: { Icon, VueQrcode, SuccessEsim, SuccessVpn, ShopInfoTooltip, ReceiptRow },
 
   props: {
     modelValue: { type: Boolean, default: false },
     descriptor: { type: Object, default: null },
   },
 
-  emits: ['update:modelValue', 'purchased'],
+  emits: ['update:modelValue', 'purchased', 'backgrounded'],
 
   setup() {
     const walletStore = useWalletStore();
-    return { walletStore };
+    const ordersStore = useNadanadaOrdersStore();
+    return { walletStore, ordersStore };
   },
 
   data() {
     return {
       step: 'preparing',
-      invoice: null,            // { paymentRequest, paymentHash, priceUsd, originalPriceUsd, ctx }
+      invoice: null,            // { paymentRequest, paymentHash, checkoutId, priceUsd, ... }
+      orderId: null,            // ledger key — the receipt lives here, not in this component
       priceSats: null,
       prepareError: null,
       payError: null,
+      problem: null,            // { error, code } for the terminal step
       selectedWalletId: null,
       walletMenuOpen: false,
       actionInflight: false,
@@ -344,9 +444,10 @@ export default {
       qrExpanded: false,
       invoiceCopied: false,
       invoiceCopiedTimer: null,
+      receiptCopied: false,
+      receiptCopiedTimer: null,
       waitingExternal: false,
       activationController: null,
-      receipt: null,
     };
   },
 
@@ -356,22 +457,97 @@ export default {
       set(v) { this.$emit('update:modelValue', v); },
     },
 
+    /** Live view of the ledger record, so the receipt and success body always
+     *  render what is actually persisted rather than a local copy. */
+    order() {
+      return this.orderId ? this.ordersStore.orderById(this.orderId) : null;
+    },
+
+    isEsimKind() {
+      return this.descriptor?.kind === ORDER_KIND.ESIM || this.descriptor?.kind === ORDER_KIND.ESIM_TOPUP;
+    },
+
+    /** Which success body to render: a fresh product, or a renewal of one the
+     *  user already holds. */
+    successView() {
+      const k = this.descriptor?.kind;
+      if (k === ORDER_KIND.ESIM_TOPUP || k === ORDER_KIND.VPN_EXTEND) return 'renewal';
+      return k === ORDER_KIND.ESIM ? 'esim' : 'vpn';
+    },
+
+    renewalCopy() {
+      if (this.descriptor?.kind === ORDER_KIND.ESIM_TOPUP) {
+        return {
+          title: this.$t('Data added'),
+          body: this.$t('Your eSIM has the new plan on it. Nothing to install, nothing to scan.'),
+        };
+      }
+      return {
+        title: this.$t('Time added'),
+        body: this.$t('Your VPN runs for longer now. Keep using the same connection.'),
+      };
+    },
+
     headerTitle() {
       switch (this.step) {
         case 'activating': return this.$t('Almost there');
         case 'success': return this.$t('Success');
+        case 'problem': return this.$t('This order needs a hand');
         default: return this.$t('Confirm purchase');
       }
     },
 
     kindIcon() {
-      return this.descriptor?.kind === 'vpn' ? 'tabler:shield-lock' : 'tabler:world';
+      return this.isEsimKind ? 'tabler:world' : 'tabler:shield-lock';
     },
 
     activatingTitle() {
-      return this.descriptor?.kind === 'vpn'
-        ? this.$t('Building your VPN config…')
-        : this.$t('Getting your eSIM ready…');
+      switch (this.descriptor?.kind) {
+        case ORDER_KIND.VPN:
+        case ORDER_KIND.VPN_EXTEND:
+          return this.$t('Building your VPN config…');
+        case ORDER_KIND.ESIM_TOPUP:
+          return this.$t('Adding the data to your eSIM…');
+        default:
+          return this.$t('Getting your eSIM ready…');
+      }
+    },
+
+    payHelpSteps() {
+      return [
+        this.$t('The sats leave the wallet you picked. Nothing else is charged.'),
+        this.$t('We save your receipt before you pay, so the order can always be found again.'),
+        this.$t('The provider hands over your product, usually within seconds.'),
+        this.$t('If it takes longer, you can close this screen. The order waits for you in Your products.'),
+      ];
+    },
+
+    problemHelpSteps() {
+      return [
+        this.$t('Copy your receipt with the button below. It holds every reference the provider needs.'),
+        this.$t('Email it to info{\'@\'}nadanada.me and tell them what you bought.'),
+        this.$t('The order also stays in Your products, so you can copy it again any time.'),
+      ];
+    },
+
+    problemCopy() {
+      const code = this.problem?.code || '';
+      if (code === 'CONFIG_ALREADY_GENERATED') {
+        return {
+          title: this.$t('This VPN was already set up once'),
+          body: this.$t('The provider only hands over a VPN config a single time, and this one has already been issued. Your receipt below has everything they need to re-issue it.'),
+        };
+      }
+      if (this.problem?.status === 404 || /not found/i.test(this.problem?.error || '')) {
+        return {
+          title: this.$t("We can't find this order"),
+          body: this.$t("The provider has no record of this payment reference. If the sats did leave your wallet, your receipt below is the proof."),
+        };
+      }
+      return {
+        title: this.$t("This order didn't go through"),
+        body: this.problem?.error || this.$t('The provider could not complete it. Your receipt below has everything they need.'),
+      };
     },
 
     priceUsd() {
@@ -429,6 +605,11 @@ export default {
       return this.paid || this.payableWallets.length === 0;
     },
 
+    actionBarVisible() {
+      if (this.step === 'paying' || this.step === 'problem') return true;
+      return this.step === 'preparing' && !!this.prepareError;
+    },
+
     payLabel() {
       if (!this.priceSats) return this.$t('Pay');
       return this.$t('Pay · {sats} sats', { sats: this.formatSats(this.priceSats) });
@@ -451,6 +632,7 @@ export default {
   beforeUnmount() {
     this.activationController?.abort();
     clearTimeout(this.invoiceCopiedTimer);
+    clearTimeout(this.receiptCopiedTimer);
   },
 
   methods: {
@@ -475,20 +657,26 @@ export default {
     },
 
     resetForNewSession() {
+      // A poll from a previous session may still be in flight; stop it before
+      // this one starts, or its result would land on the wrong order.
+      this.activationController?.abort();
+      this.activationController = null;
       this.step = 'preparing';
       this.invoice = null;
+      this.orderId = null;
       this.priceSats = null;
       this.prepareError = null;
       this.payError = null;
+      this.problem = null;
       this.selectedWalletId = this.walletStore.activeWalletId || null;
       this.walletMenuOpen = false;
       this.actionInflight = false;
       this.showExternalPay = false;
       this.qrExpanded = false;
       this.invoiceCopied = false;
+      this.receiptCopied = false;
       this.waitingExternal = false;
       this.paid = false;
-      this.receipt = null;
       this.prepare();
     },
 
@@ -502,6 +690,16 @@ export default {
       this.activationController?.abort();
       this.activationController = null;
       clearTimeout(this.invoiceCopiedTimer);
+      clearTimeout(this.receiptCopiedTimer);
+      // An invoice that was never paid is not an order — drop it so the ledger
+      // stays a list of real commitments. A paid one is left exactly where it
+      // is; that is the whole point.
+      if (this.orderId && !this.paid) this.ordersStore.discardUnpaid(this.orderId);
+      // Tell the shop when the user walks away from something still owed, so
+      // it can point them at Your products rather than letting it go quiet.
+      if (this.paid && this.order?.state === ORDER_STATE.PAID) {
+        this.$emit('backgrounded', this.order);
+      }
     },
 
     async prepare() {
@@ -513,11 +711,30 @@ export default {
       this.prepareError = null;
       try {
         const inv = await this.descriptor.createInvoice();
-        if (!inv?.paymentRequest || !inv?.paymentHash) {
+        if (!inv?.paymentRequest || (!inv?.paymentHash && !inv?.checkoutId)) {
           throw new Error('no invoice');
         }
         this.invoice = inv;
         this.priceSats = this.decodeSats(inv.paymentRequest);
+
+        // Write the order BEFORE anything payable is shown. From here on there
+        // is no state the app can reach in which a payment exists without a
+        // record of how to redeem it.
+        const fields = this.descriptor.orderFields ? this.descriptor.orderFields(inv) : {};
+        const created = this.ordersStore.createOrder({
+          kind: this.descriptor.kind,
+          title: this.descriptor.title,
+          meta: this.descriptor.meta,
+          paymentHash: inv.paymentHash || null,
+          checkoutId: inv.checkoutId || null,
+          paymentRequest: inv.paymentRequest,
+          expiresAt: inv.expiresAt || null,
+          priceUsd: inv.priceUsd ?? null,
+          priceSats: this.priceSats || null,
+          ...fields,
+        });
+        this.orderId = created.id;
+
         this.step = 'paying';
         // Auto-offer external pay only when no internal wallet can cover it.
         if (this.payableWallets.length === 0) {
@@ -525,10 +742,31 @@ export default {
           this.startExternalWait();
         }
       } catch (err) {
-        this.prepareError = err?.message && err.message !== 'no invoice'
-          ? err.message
-          : this.$t("Couldn't reach the store. Check your connection and try again.");
+        this.prepareError = this.friendlyPrepareError(err);
       }
+    },
+
+    /**
+     * Turn a create-invoice failure into something a person can act on.
+     *
+     * The provider's own strings are written for developers ("Access denied",
+     * "bundleName does not match slug pricing") and would only make a user
+     * wonder what they did wrong. Nothing has been charged at this point, so
+     * the useful information is always "what now", not "what broke".
+     */
+    friendlyPrepareError(err) {
+      const code = err?.code || '';
+      const status = err?.status;
+      if (['unparseable_bundle', 'bundle_slug_mismatch', 'invalid_slug'].includes(code)) {
+        return this.$t("This plan isn't available right now. Pick another one.");
+      }
+      if (this.descriptor?.kind === ORDER_KIND.VPN_EXTEND && status === 404) {
+        return this.$t('This VPN has already ended, so it cannot be extended. Buy a new one instead.');
+      }
+      if (this.descriptor?.kind === ORDER_KIND.ESIM_TOPUP && status && status < 500) {
+        return this.$t("This eSIM can't take a top-up. Buy a new one instead.");
+      }
+      return this.$t("Couldn't reach the store. Check your connection and try again.");
     },
 
     async copyInvoice() {
@@ -540,6 +778,16 @@ export default {
         clearTimeout(this.invoiceCopiedTimer);
         this.invoiceCopiedTimer = setTimeout(() => { this.invoiceCopied = false; }, 1400);
       } catch { /* clipboard denied — QR still works */ }
+    },
+
+    async copyReceipt() {
+      if (!this.order) return;
+      try {
+        await writeClipboardCrossPlatform(orderReceiptText(this.order));
+        this.receiptCopied = true;
+        clearTimeout(this.receiptCopiedTimer);
+        this.receiptCopiedTimer = setTimeout(() => { this.receiptCopied = false; }, 1600);
+      } catch { /* clipboard denied — the receipt is still on screen to read */ }
     },
 
     toggleExternalPay() {
@@ -557,7 +805,7 @@ export default {
 
     startExternalWait() {
       this.waitingExternal = true;
-      this.runFulfill({ background: true });
+      this.runRedeem({ background: true });
     },
 
     async onPay() {
@@ -571,6 +819,20 @@ export default {
 
       this.actionInflight = true;
       this.payError = null;
+
+      // Belt and braces against a double charge: if a previous attempt errored,
+      // ask the provider whether that one actually settled before sending
+      // anything else. A wallet can report failure on a payment that landed.
+      if (this.order?.paymentAttempted) {
+        if (await this.probeSettled()) return;
+      }
+
+      // Record the attempt BEFORE handing the invoice to the wallet. From this
+      // moment the order can no longer be discarded, so dismissing the sheet
+      // mid-send, or the app dying mid-send, cannot delete the keys that would
+      // redeem a payment we are about to lose sight of.
+      this.ordersStore.markPaymentAttempted(this.orderId);
+
       try {
         const pr = this.invoice.paymentRequest;
         // Mirror the wallet store's cross-wallet transfer branching:
@@ -578,43 +840,56 @@ export default {
         if (wallet.type === 'nwc') await provider.sendPayment(pr);
         else await provider.payInvoice({ invoice: pr });
       } catch (err) {
-        // payInvoice threw. Usually nothing was sent (no route / insufficient
-        // balance), but an errored-yet-settled timeout is possible — probe
-        // settlement ONCE before offering a retry, so we never re-pay a settled
-        // invoice and never falsely report failure on a payment that landed.
-        if (await this.probeSettled()) return; // moved to success
+        // The wallet threw. Usually nothing was sent, but an errored-yet-settled
+        // timeout is possible — probe settlement before offering a retry, so we
+        // never re-pay a settled invoice and never falsely report failure on a
+        // payment that landed. Either way the order stays in the ledger.
+        if (await this.probeSettled()) return; // moved on; payment had landed
         const msg = err?.message || '';
         this.payError = msg
           ? this.$t('Payment didn’t go through: {msg}', { msg })
-          : this.$t('Payment didn’t go through. Your balance was not charged. Try again.');
+          : this.$t('Payment didn’t go through. Try again.');
         this.actionInflight = false;
         return;
       }
-      // Payment is on the wire. From here we never re-pay this invoice; if
-      // confirmation is slow the user re-polls via "Check again".
+
+      // Payment is on the wire. Record it before fulfilment is even attempted:
+      // a crash from here on leaves a recoverable order, not a hole.
+      this.ordersStore.markPaid(this.orderId, {
+        walletId: wallet.id,
+        walletName: wallet.name || '',
+        priceSats: this.priceSats,
+      });
       this.paid = true;
       this.actionInflight = false;
-      this.runFulfill({ background: false });
+      this.runRedeem({ background: false });
     },
 
     /**
-     * Single-shot settlement check (no re-pay). Used after a payInvoice error
-     * to catch the errored-yet-settled case. Returns true (and transitions to
-     * success) if the purchase actually settled, false otherwise.
+     * Single short settlement check (no re-pay). Used before a retry and after
+     * a payInvoice error to catch the errored-yet-settled case. Returns true
+     * (and moves the sheet on) if the order actually completed.
      */
     async probeSettled() {
-      if (!this.descriptor?.probeSettled || !this.invoice) return false;
+      if (!this.order) return false;
       let res = null;
       try {
-        res = await this.descriptor.probeSettled({ paymentHash: this.invoice.paymentHash });
+        res = await redeemOrder(
+          { ...this.order, state: ORDER_STATE.PAID },
+          { maxMs: PROBE_ATTEMPT_MS },
+        );
       } catch {
         res = null;
       }
-      if (res && res.ok && res.receipt) {
+      if (res?.ok && res.patch) {
+        this.ordersStore.markPaid(this.orderId, {
+          walletId: this.selectedWalletId,
+          priceSats: this.priceSats,
+        });
+        this.ordersStore.patchOrder(this.orderId, res.patch);
         this.paid = true;
-        this.receipt = res.receipt;
         this.actionInflight = false;
-        this.$emit('purchased', res.receipt);
+        this.$emit('purchased', this.order);
         this.step = 'success';
         return true;
       }
@@ -625,50 +900,81 @@ export default {
      *  for both internal-paid and external-pay flows). */
     reCheck() {
       this.payError = null;
-      this.runFulfill({ background: false });
+      this.runRedeem({ background: false });
     },
 
     /**
-     * Poll the product fulfilment (eSIM provisioning / VPN config) until the
-     * payment settles server-side. In `background` mode (external pay) we
-     * stay on the paying step until it lands; otherwise we show the
-     * activating step.
+     * Redeem the order: poll the provider until the product is handed over.
+     * In `background` mode (external pay) we stay on the paying step until it
+     * lands; otherwise we show the activating step.
+     *
+     * Three outcomes, all of them a place the user can act from:
+     *   delivered  -> success
+     *   not yet    -> back to paying, with "Check again" and the receipt
+     *   terminal   -> the problem step, with the receipt and what to do
      */
-    async runFulfill({ background = false } = {}) {
-      if (!this.invoice) return;
+    async runRedeem({ background = false } = {}) {
+      if (!this.order) return;
       if (!background) this.step = 'activating';
-      // One controller per fulfilment; closing the sheet aborts it.
+      this.actionInflight = background ? this.actionInflight : true;
+      // One controller per attempt; closing the sheet aborts it.
       this.activationController?.abort();
       this.activationController = new AbortController();
+      const signal = this.activationController.signal;
+      const idAtStart = this.orderId;
 
       let res = null;
       try {
-        res = await this.descriptor.fulfill({
-          paymentHash: this.invoice.paymentHash,
-          signal: this.activationController.signal,
-          expiresAt: this.invoice.expiresAt,
-          ctx: this.invoice.ctx,
-        });
+        res = await redeemOrder(this.order, { signal, maxMs: REDEEM_ATTEMPT_MS });
       } catch (err) {
-        if (err?.name === 'AbortError') return; // sheet closed
+        if (err?.name === 'AbortError') return; // sheet closed — order stays put
+        res = { ok: false, error: err?.message || '' };
       }
 
-      if (!res || res.ok === false || !res.receipt) {
-        // Cap hit without settlement. Don't strand on a spinner. When already
-        // paid, the calm "confirming" note + "Check again" convey the state;
-        // the red banner is only for the not-yet-paid (external) case.
-        this.step = 'paying';
+      // The sheet may have been reset onto a different order while we waited.
+      // The ledger still gets its answer; only the UI is skipped.
+      const sameOrder = this.orderId === idAtStart;
+      if (sameOrder) this.actionInflight = false;
+
+      if (res?.ok && res.patch) {
+        // An externally paid invoice never went through markPaid, so stamp the
+        // payment time here rather than leaving the receipt without one.
+        const patch = this.ordersStore.orderById(idAtStart)?.paidAt
+          ? res.patch
+          : { ...res.patch, paidAt: Date.now() };
+        this.ordersStore.patchOrder(idAtStart, patch);
+        if (!sameOrder) return;
+        this.paid = true;
         this.waitingExternal = false;
-        if (!this.paid) {
-          this.payError = this.$t('Still waiting for the payment. It will complete as soon as it settles.');
-        }
+        this.$emit('purchased', this.order);
+        this.step = 'success';
         return;
       }
 
-      this.receipt = res.receipt;
+      if (res?.fatal) {
+        if (res.patch) this.ordersStore.patchOrder(idAtStart, res.patch);
+        this.ordersStore.markFailed(idAtStart, { error: res.error, code: res.code });
+        if (!sameOrder) return;
+        this.problem = { error: res.error, code: res.code, status: res.status };
+        this.waitingExternal = false;
+        this.step = 'problem';
+        return;
+      }
+
+      if (!sameOrder) return;
+
+      // Not settled yet. Don't strand on a spinner: come back to a screen with
+      // a receipt and a button. When already paid the calm note carries the
+      // state; the red banner is only for the not-yet-paid (external) case.
+      this.ordersStore.patchOrder(this.orderId, {
+        attempts: (this.order.attempts || 0) + 1,
+        lastTriedAt: Date.now(),
+      });
+      this.step = 'paying';
       this.waitingExternal = false;
-      this.$emit('purchased', res.receipt);
-      this.step = 'success';
+      if (!this.paid) {
+        this.payError = this.$t('Still waiting for the payment. It will complete as soon as it settles.');
+      }
     },
   },
 };
@@ -683,7 +989,10 @@ export default {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
   overflow: hidden;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  /* var(--safe-bottom), not a bare env(): Android WebViews report
+     env(safe-area-inset-bottom) as 0 even with a nav bar, and boot/safe-area.js
+     patches the variable to the real inset. */
+  padding-bottom: max(16px, var(--safe-bottom, 16px));
   display: flex;
   flex-direction: column;
   max-height: 92vh;
@@ -724,7 +1033,9 @@ body.body--dark .shop-sheet::before {
 
 .centered-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px 16px; text-align: center; }
 .centered-title { font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 600; letter-spacing: -0.005em; }
-.centered-caption { font-family: 'Manrope', sans-serif; font-size: 13px; line-height: 1.45; max-width: 280px; }
+.centered-caption { font-family: 'Manrope', sans-serif; font-size: 13px; line-height: 1.45; max-width: 300px; }
+.success-check { color: #15a35b; }
+body.body--dark .success-check { color: #2bd17f; }
 .error-icon { color: #b45309; }
 body.body--dark .error-icon { color: #fbbf24; }
 
@@ -765,9 +1076,19 @@ body.body--dark .summary-discount { color: #6ee7a8; background: rgba(21, 222, 11
 .paid-note-light { background: rgba(21, 222, 114, 0.10); color: #0e7b3f; }
 .paid-note-dark { background: rgba(21, 222, 114, 0.16); color: #6ee7a8; }
 
+/* "You can close this" reassurance on the activating step. */
+.safe-note { display: flex; align-items: flex-start; gap: 8px; padding: 11px 13px; border-radius: 12px; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 500; line-height: 1.45; }
+.safe-note-light { background: rgba(15, 23, 42, 0.045); color: #475569; }
+.safe-note-dark { background: rgba(255, 255, 255, 0.05); color: #cbd5e1; }
+.safe-note :deep(svg) { flex-shrink: 0; margin-top: 1px; }
+
+/* Help row on the problem step */
+.help-row { display: flex; align-items: center; gap: 8px; }
+.help-row-label { font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 600; }
+
 /* External pay */
 .external-pay { display: flex; flex-direction: column; gap: 10px; margin-top: 2px; }
-.external-pay-toggle { all: unset; display: inline-flex; align-items: center; gap: 6px; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; cursor: pointer; align-self: flex-start; -webkit-tap-highlight-color: transparent; }
+.external-pay-toggle { all: unset; display: inline-flex; align-items: center; min-height: 44px; gap: 6px; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; cursor: pointer; align-self: flex-start; -webkit-tap-highlight-color: transparent; }
 .invoice-row-wrap { display: flex; align-items: stretch; gap: 8px; }
 .invoice-row { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 0; border-radius: 12px; font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace; font-size: 12.5px; cursor: pointer; -webkit-tap-highlight-color: transparent; text-align: left; }
 .invoice-row-light { background: rgba(15, 23, 42, 0.05); color: #334155; }
