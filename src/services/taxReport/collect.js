@@ -1,10 +1,12 @@
 /**
  * Gathering the transactions a report is built from.
  *
- * A report can span several wallets, and each wallet is a different backend
- * behind the same `getTransactions({ limit, offset })` contract. This module
- * pages each one to exhaustion, tags every row with the wallet it came from,
- * and hands back a single list in time order.
+ * A report can span several wallets, each a different backend. They are NOT
+ * behind one paging contract, whatever their shared method signature suggests:
+ * LNbits and NWC page by limit and offset, Spark pages, and Arkade takes no
+ * arguments at all and returns its whole history on every call. This module
+ * reads each of them to exhaustion in spite of that, tags every row with the
+ * wallet it came from, and hands back a single list in time order.
  *
  * Three rules it holds to:
  *
@@ -57,16 +59,23 @@ async function collectWallet({ wallet, provider, normalize, signal }) {
   let truncated = false;
 
   /**
-   * Providers disagree about paging, so identity is what makes a page safe to
-   * append rather than the page number.
+   * Identity, for recognising a row we have already taken.
    *
-   * Arkade's `getTransactions()` takes no arguments and returns the whole
-   * history every call; LNbits' offsets shift under us if a payment settles
-   * mid-read. Both put the same transaction in the list twice, which in a tax
-   * document is a duplicated amount.
+   * Not the id alone. The Arkade provider flattens the SDK's three-part key
+   * (boardingTxid : commitmentTxid : arkTxid) into one field, so two separate
+   * boarding deposits swept by the same settlement transaction arrive with the
+   * SAME id — and dropping one of those would quietly understate what the
+   * wallet received. Everything that distinguishes two real transactions goes
+   * into the key, so only a row that is identical in every respect is treated
+   * as one we already have.
    */
-  const keyOf = (tx) => tx?.id || tx?.paymentHash || tx?.payment_hash
-    || `${tx?.settled_at || tx?.created_at || ''}:${tx?.amount ?? ''}:${tx?.description || ''}`;
+  const keyOf = (tx) => [
+    tx?.id || tx?.paymentHash || tx?.payment_hash || '',
+    tx?.settled_at ?? tx?.created_at ?? '',
+    tx?.amount ?? '',
+    tx?.type || '',
+    tx?.description || '',
+  ].join('|');
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
     if (signal?.aborted) break;
@@ -82,9 +91,13 @@ async function collectWallet({ wallet, provider, normalize, signal }) {
     for (const item of raw) {
       const tx = normalize ? normalize(item, { walletType: wallet.type }) : item;
       const key = keyOf(tx);
-      if (seen.has(key)) continue;
+      const known = seen.has(key);
       seen.add(key);
-      fresh += 1;
+      // Only ever skip a row that a PREVIOUS page already gave us. Within one
+      // page, whatever the provider handed over is what the wallet holds, and
+      // second-guessing it there is how a real transaction goes missing.
+      if (known && page > 0) continue;
+      if (!known) fresh += 1;
       rows.push({ ...tx, walletId: wallet.id, walletName: wallet.name || '' });
     }
 

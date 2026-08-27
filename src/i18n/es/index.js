@@ -1,5 +1,7 @@
 export default {
   // --- transaction report (tax export) ---
+  "1 transaction": "1 transacción",
+  "One transaction has no recorded exchange rate, so no value is stated for it.": "Una transacción no tiene tipo de cambio registrado, por lo que no se indica ningún valor.",
   "Find a wallet": "Buscar cartera",
   "No wallet by that name.": "Ninguna cartera con ese nombre.",
   "No wallets chosen": "Ninguna cartera elegida",

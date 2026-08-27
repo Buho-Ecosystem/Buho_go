@@ -60,6 +60,7 @@
               class="finder-input"
               :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
               :placeholder="$t('Find a wallet')"
+              :aria-label="$t('Find a wallet')"
               autocomplete="off"
               spellcheck="false"
             />
@@ -105,7 +106,8 @@
                  known before anything is read, and a bar that starts as a
                  spinner cannot become one without changing shape. -->
             <div class="meter" :class="$q.dark.isActive ? 'meter-dark' : 'meter-light'"
-                 role="progressbar" :aria-valuenow="Math.round(fraction * 100)" aria-valuemin="0" aria-valuemax="100">
+                 role="progressbar" :aria-label="progressText"
+                 :aria-valuenow="Math.round(fraction * 100)" aria-valuemin="0" aria-valuemax="100">
               <span class="meter-fill" :style="{ width: `${Math.round(fraction * 100)}%` }"></span>
             </div>
             <span class="stage-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">{{ progressText }}</span>
@@ -305,10 +307,10 @@ import { createReportConnector } from '../../services/taxReport/connect.js';
 /**
  * "Transaction report" — the tax-record export.
  *
- * One screen, three choices, one action. The alternative shape was a wizard,
- * and a wizard for three questions is ceremony: the whole configuration fits
- * above the fold, so the user can see what they are about to get before they
- * ask for it.
+ * Three choices and one action, all of them on one screen, so the user can see
+ * what they are about to get before they ask for it. Only the wallet list
+ * moves off that screen, and only because it is the one part that has no fixed
+ * size.
  *
  * The choices are ordered by what changes the answer most: which wallets
  * (the report is worthless if it covers the wrong money), then the period,
@@ -352,8 +354,15 @@ export default {
       error: '',
       result: null,
       warnings: [],
-      controller: null,
-      connector: null,
+      /**
+       * The report currently in flight, or null.
+       *
+       * One object rather than a controller field and a connector field,
+       * because the two only ever make sense together: every method that
+       * touches one has to touch the other, and holding them separately is
+       * what let a second run adopt half of the first run's state.
+       */
+      run: null,
     };
   },
 
@@ -387,8 +396,16 @@ export default {
       ];
     },
 
+    /**
+     * Whether everything CURRENTLY LISTED is ticked.
+     *
+     * Against the filtered list, not the whole set: the button sits above the
+     * list the user is looking at, and "Select all" reaching wallets they have
+     * filtered out is a silent change to what the report covers.
+     */
     allSelected() {
-      return this.wallets.length > 0 && this.selectedWallets.length === this.wallets.length;
+      const shown = this.filteredWallets;
+      return shown.length > 0 && shown.every((w) => this.selectedWallets.includes(w.id));
     },
 
     filteredWallets() {
@@ -470,7 +487,7 @@ export default {
     resultDetail() {
       if (!this.result) return '';
       const { filename, shared, count } = this.result;
-      const covered = this.$t('{n} transactions', { n: count });
+      const covered = this.countLabel(count);
       return shared
         ? `${covered} · ${filename}`
         : this.$t('{covered}. Saved as {filename}.', { covered, filename });
@@ -484,7 +501,7 @@ export default {
   },
 
   beforeUnmount() {
-    this.controller?.abort();
+    this.stopRun();
   },
 
   methods: {
@@ -510,26 +527,52 @@ export default {
     },
 
     onHide() {
-      this.controller?.abort();
-      this.controller = null;
-      // Closing mid-report must still hand the app back the connection it had.
-      this.connector?.restore();
-      this.connector = null;
+      this.stopRun();
       this.phase = 'choose';
       this.view = 'main';
     },
 
     /** Stop a report that is taking longer than the user wants to wait. */
     cancel() {
-      this.controller?.abort();
+      this.stopRun();
       this.phase = 'choose';
       this.progress = null;
+    },
+
+    /**
+     * Abort the run in flight, if there is one.
+     *
+     * The run's own `finally` is what restores the wallet connection, and it
+     * cannot do that until the awaits it is sitting on unwind. So this only
+     * signals; it never restores here and never clears `this.run`, because
+     * doing either would take the state away from the code that still has to
+     * clean up with it.
+     */
+    async stopRun() {
+      const run = this.run;
+      if (!run) return;
+      run.controller.abort();
+      // Wait for its `finally` to restore the connection, so the next report
+      // never starts opening wallets while this one is still putting one back.
+      await run.settled.catch(() => {});
     },
 
     tallyLabel(r) {
       if (r.status === 'failed') return this.$t('Could not be read');
       if (r.status === 'skipped') return this.$t('Not read');
-      return this.$t('{n} transactions', { n: r.count });
+      return this.countLabel(r.count);
+    },
+
+    /** vue-i18n runs in legacy mode here, so the singular is its own key. */
+    countLabel(n) {
+      return n === 1 ? this.$t('1 transaction') : this.$t('{n} transactions', { n });
+    },
+
+    missingRatesNote(n) {
+      if (!n) return '';
+      return n === 1
+        ? this.$t('One transaction has no recorded exchange rate, so no value is stated for it.')
+        : this.$t('{n} transactions have no recorded exchange rate, so no value is stated for them.', { n });
     },
 
     walletKind(w) {
@@ -549,61 +592,94 @@ export default {
     },
 
     toggleAll() {
-      this.selectedWallets = this.allSelected ? [] : this.wallets.map((w) => w.id);
+      const shown = this.filteredWallets.map((w) => w.id);
+      if (this.allSelected) {
+        this.selectedWallets = this.selectedWallets.filter((id) => !shown.includes(id));
+        return;
+      }
+      const merged = new Set(this.selectedWallets);
+      for (const id of shown) merged.add(id);
+      this.selectedWallets = [...merged];
     },
 
     async create() {
       if (!this.canCreate) return;
+      // Claim the working phase before the first await. `canCreate` requires
+      // the choose phase, so this is what stops a second tap during the wait
+      // below from starting a run of its own.
+      this.phase = 'working';
+
+      // Never two reports at once. They would fight over the same single live
+      // wallet connection, and each one's cleanup would put back a wallet the
+      // other had just opened.
+      await this.stopRun();
+
+      const run = {
+        controller: new AbortController(),
+        // The app keeps one wallet live at a time, so a report covering
+        // several has to open them itself. The connector does that in the
+        // order the report reads them and puts the user's own connection back
+        // afterwards.
+        connector: createReportConnector(this.walletStore),
+      };
+      run.settled = this.runReport(run);
+      this.run = run;
+      await run.settled;
+    },
+
+    /**
+     * One report, start to finish.
+     *
+     * Every piece of per-run state is an argument or a local. Reading
+     * `this.controller` back after an await was how a cancelled run went on to
+     * write a file, and how one run's cleanup reached into another's: by the
+     * time the await resolved, the field no longer held the run that started.
+     */
+    async runReport({ controller, connector }) {
+      const { signal } = controller;
       this.phase = 'working';
       this.error = '';
       this.progress = null;
-      this.controller?.abort();
-      this.controller = new AbortController();
-
-      // The app keeps one wallet live at a time, so a report covering several
-      // has to open them itself. The connector does that in the order the
-      // report reads them and puts the user's own connection back afterwards.
-      this.connector = createReportConnector(this.walletStore);
 
       try {
         const period = this.periods.find((p) => p.id === this.periodId) || {};
-        const chosen = this.connector.order(
+        const chosen = connector.order(
           this.wallets.filter((w) => this.selectedWallets.includes(w.id)),
         );
 
         const report = await buildReport({
           wallets: chosen,
           providers: this.walletStore.providers || {},
-          connect: (w) => this.connector.connect(w),
+          connect: (w) => connector.connect(w),
           normalize: (raw, ctx) => normalizeTx(raw, ctx),
           snapshotFor: (txId, walletId) =>
             this.metadataStore.getFiatAtSettlementForTransaction(txId, walletId),
           currency: this.currency,
           period: { fromMs: period.fromMs ?? null, toMs: period.toMs ?? null },
           locale: this.$i18n?.locale,
-          onProgress: (p) => { this.progress = p; },
-          signal: this.controller.signal,
+          onProgress: (p) => { if (!signal.aborted) this.progress = p; },
+          signal,
         });
 
-        // Cancelled between the last read and the file being written: say
-        // nothing was produced rather than hand over a partial report.
-        if (this.controller.signal.aborted) return;
+        // A cancelled read RESOLVES rather than throwing (the wallets it never
+        // reached come back marked skipped), so this is the path a cancelled
+        // report actually takes. Producing a file here would hand someone a
+        // partial record they had just asked us not to make.
+        if (signal.aborted) return;
 
         const out = await exportReport(report, this.format);
 
-        this.walletResults = report.meta.walletResults || [];
+        this.walletResults = report.walletResults || [];
         this.warnings = [
           report.meta.failedNote,
           report.meta.truncatedNote,
-          report.summary.missingRates > 0
-            ? this.$t('{n} transactions have no recorded exchange rate, so no value is stated for them.', { n: report.summary.missingRates })
-            : '',
+          this.missingRatesNote(report.summary.missingRates),
         ].filter(Boolean);
 
         this.result = { ...out, count: report.summary.count };
         this.phase = 'done';
       } catch (err) {
-        if (this.controller.signal.aborted) return;
+        if (signal.aborted) return;
         this.error = err?.message
           ? this.$t("The report couldn't be created: {msg}", { msg: err.message })
           : this.$t("The report couldn't be created. Try again.");
@@ -611,8 +687,10 @@ export default {
       } finally {
         // Whether it worked, failed or was cancelled: the wallet the user was
         // on is the wallet they get back.
-        await this.connector?.restore();
-        this.connector = null;
+        await connector.restore();
+        // Only if this run is still the current one. A later run owns the slot
+        // now and is entitled to finish.
+        if (this.run?.controller === controller) this.run = null;
       }
     },
   },

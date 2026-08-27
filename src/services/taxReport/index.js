@@ -78,7 +78,7 @@ function filenameFor(meta, extension) {
  * @param {string} [input.locale]
  * @param {(p: object) => void} [input.onProgress]
  * @param {AbortSignal} [input.signal]
- * @returns {Promise<{ rows, summary, meta }>}
+ * @returns {Promise<{ rows, summary, walletResults, meta }>}
  */
 export async function buildReport({
   wallets,
@@ -102,6 +102,19 @@ export async function buildReport({
   });
 
   const kept = filterForReport(collected.rows, period);
+
+  // Per wallet, counted AFTER the period and status filters, so the figures
+  // beside each wallet add up to the figure on the report. Counting what was
+  // read instead put "500 transactions" next to a wallet in a report whose
+  // own header said 214.
+  const keptPerWallet = new Map();
+  for (const tx of kept) {
+    keptPerWallet.set(tx.walletId, (keptPerWallet.get(tx.walletId) || 0) + 1);
+  }
+  const walletResults = (collected.walletResults || []).map((r) => ({
+    ...r,
+    count: r.status === 'read' ? (keptPerWallet.get(r.id) || 0) : 0,
+  }));
 
   // Rates second, and only for what survived the filter: looking one up for a
   // transaction outside the period would be work nobody asked for.
@@ -130,6 +143,11 @@ export async function buildReport({
   return {
     rows,
     summary,
+    // Deliberately beside `meta` rather than inside it: `toXml` writes one
+    // element per meta entry and stringifies the value, so an array of objects
+    // in there becomes the literal text "[object Object]" in the file a user
+    // hands to their bookkeeping software.
+    walletResults,
     meta: {
       title: 'Transaction report',
       subtitle: 'BuhoGO',
@@ -142,9 +160,6 @@ export async function buildReport({
       readWallets: collected.readWallets,
       failedWallets: collected.failedWallets,
       truncatedWallets: collected.truncatedWallets,
-      // Per wallet, so the sheet can show what each one actually gave rather
-      // than a single sentence covering all of them.
-      walletResults: collected.walletResults,
       // Stated on the document itself, not just in the UI: whoever reads the
       // file later has no other way to know the picture is partial.
       failedNote: collected.failedWallets.length

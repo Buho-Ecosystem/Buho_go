@@ -7,29 +7,38 @@
  * auth channel. A report over several wallets therefore has to open them
  * itself, one at a time, and leave the app as it found it.
  *
- * Two rules this module exists to hold:
+ * Three rules this module exists to hold:
  *
  *   - SPARK IS EXCLUSIVE. Two live Spark providers is the state that costs the
  *     active wallet its session on Android. So before opening a Spark wallet
  *     that is not the active one, the live Spark provider is torn down first,
  *     and when the report is finished the app's own invariant is restored.
- *   - THE USER'S WALLET COMES BACK. Generating a report must not leave someone
- *     on a different connection than the one they were using. `restore()` is
- *     called whether the report succeeded, failed or was cancelled.
+ *   - WHAT WE OPEN, WE CLOSE. Every connection this module makes is closed by
+ *     `restore()`, with one deliberate exception: the wallet the user is
+ *     actually on. Closing that would leave someone staring at a disconnected
+ *     wallet because they generated a report.
+ *   - THE USER'S WALLET COMES BACK. `restore()` runs whether the report
+ *     succeeded, failed or was cancelled.
  *
- * NWC needs a provider of its own. The store connects an NWC wallet by keeping
- * a raw `NostrWebLNProvider` on its connection state and never files anything
- * under `providers`, so there is nothing there with a `getTransactions` on it.
- * The class that has one (`providers/NWCWalletProvider.js`) already exists and
- * is simply not wired into the store, so this opens one for the length of the
- * report and closes it afterwards rather than reimplementing `listTransactions`
- * for a third time.
+ * NWC is opened directly rather than through the store. The store connects an
+ * NWC wallet by keeping a raw `NostrWebLNProvider` on its connection state and
+ * files nothing under `providers`, so asking it to connect would open a second
+ * relay connection that nothing closes and that still could not be read from.
+ * The class that can be read (`providers/NWCWalletProvider.js`) already exists
+ * and simply is not wired into the store.
  *
  * Takes the wallet store rather than importing it, so the sequencing can be
  * tested against a fake.
  */
 
 const SPARK = 'spark';
+
+/**
+ * Wallet types the store connects without filing anything readable under
+ * `providers`. For these the report builds its own provider and owns its
+ * lifetime.
+ */
+const STORE_FILES_NO_PROVIDER = new Set(['nwc']);
 
 /** Builds a standalone provider for a wallet the store files nowhere. */
 const defaultCreateProvider = async (wallet) => {
@@ -38,18 +47,27 @@ const defaultCreateProvider = async (wallet) => {
 };
 
 /**
- * @param {object} store the wallet store (needs `providers`, `activeWalletId`,
- *   `connectWallet`, and for Spark `_disconnectSparkProvider` +
- *   `connectAllSparkWallets`)
+ * @param {object} store the wallet store. `providers`, `wallets`,
+ *   `activeWalletId` and `connectWallet` are required. `disconnectWallet`,
+ *   `_disconnectSparkProvider` and `connectAllSparkWallets` are called
+ *   defensively: a store without them can still produce a report, it just
+ *   cannot tidy up after one, and failing the report over that would be worse
+ *   than the untidiness.
  * @param {object} [deps]
  * @param {(wallet) => Promise<object>} [deps.createProvider] injected for tests
- * @returns {{ connect: (wallet) => Promise<object|null>, restore: () => Promise<void>, order: (wallets) => object[] }}
+ * @returns {{
+ *   connect: (wallet) => Promise<object|null>,
+ *   restore: () => Promise<void>,
+ *   order: (wallets: object[]) => object[],
+ * }}
  */
 export function createReportConnector(store, { createProvider = defaultCreateProvider } = {}) {
   /** Whether we moved the Spark connection off where the user left it. */
   let sparkMoved = false;
-  /** Providers this report opened itself and therefore has to close. */
+  /** Providers this report built itself and therefore has to close. */
   const borrowed = [];
+  /** Wallet ids we asked the STORE to connect, so we can ask it to disconnect. */
+  const opened = new Set();
 
   const isLive = (walletId) =>
     typeof store?.providers?.[walletId]?.getTransactions === 'function';
@@ -72,10 +90,21 @@ export function createReportConnector(store, { createProvider = defaultCreatePro
     return [...live, ...rest];
   }
 
+  /** Build and open a provider this module owns. */
+  async function openOwnProvider(wallet) {
+    const own = await createProvider(wallet);
+    if (typeof own?.getTransactions !== 'function') return null;
+    await own.connect?.();
+    borrowed.push(own);
+    return own;
+  }
+
   async function connect(wallet) {
     const id = wallet?.id;
     if (!id) return null;
     if (isLive(id)) return store.providers[id];
+
+    if (STORE_FILES_NO_PROVIDER.has(wallet.type)) return openOwnProvider(wallet);
 
     // A Spark wallet that is not the live one can only be opened after the
     // live one is closed; the SDK holds a single authenticated channel.
@@ -91,28 +120,23 @@ export function createReportConnector(store, { createProvider = defaultCreatePro
     }
 
     await store.connectWallet(id);
-    const filed = store.providers?.[id];
-    if (typeof filed?.getTransactions === 'function') return filed;
+    opened.add(id);
 
-    // NWC lands here: connected, but with nothing that can be read from.
-    const own = await createProvider(wallet);
-    if (typeof own?.getTransactions !== 'function') return null;
-    await own.connect?.();
-    borrowed.push(own);
-    return own;
+    const filed = store.providers?.[id];
+    return typeof filed?.getTransactions === 'function' ? filed : null;
   }
 
   /**
-   * Put the app back on the connection the user was using.
+   * Close everything this report opened and put the app back on the
+   * connection the user was using.
    *
-   * Only Spark needs it: `connectAllSparkWallets()` is the store's own way of
-   * asserting the single-session invariant, so calling it here means the
-   * report restores the app exactly the way a wallet switch does, rather than
-   * inventing a second way to do the same thing.
+   * Safe to call more than once and from more than one place: the sheet calls
+   * it from the run's own `finally`, and the run may already have been
+   * abandoned by a dismissal.
    */
   async function restore() {
-    // Close anything this report opened for itself before touching Spark, so
-    // a relay connection is not left running behind a finished report.
+    // Providers we built ourselves, first: an NWC relay connection left
+    // running behind a finished report is the one that keeps costing.
     while (borrowed.length) {
       try {
         await borrowed.pop().disconnect?.();
@@ -121,9 +145,25 @@ export function createReportConnector(store, { createProvider = defaultCreatePro
       }
     }
 
+    // Wallets the store opened for us. Never the active one: the user is
+    // looking at it, and disconnecting it to tidy up after a report they
+    // asked for would be a worse outcome than leaving it connected.
+    for (const id of opened) {
+      if (id === store?.activeWalletId) continue;
+      try {
+        await store.disconnectWallet?.(id);
+      } catch {
+        // Same reasoning: the report is written, this is housekeeping.
+      }
+    }
+    opened.clear();
+
     if (!sparkMoved) return;
     sparkMoved = false;
     try {
+      // The store's own way of asserting the single-session invariant, so the
+      // report restores the app exactly the way a wallet switch does rather
+      // than inventing a second way to do the same thing.
       await store.connectAllSparkWallets?.();
     } catch {
       // The report is already written by this point. A failed restore is a

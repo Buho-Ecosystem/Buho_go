@@ -308,6 +308,7 @@ export function summarise(rows) {
   let receivedSats = 0;
   let sentSats = 0;
   let feeSats = 0;
+  let unknownFees = 0;
   let receivedFiat = 0;
   let sentFiat = 0;
   let missingRates = 0;
@@ -320,7 +321,12 @@ export function summarise(rows) {
     const isReceived = row.direction === 'Received';
     if (isReceived) receivedSats += sats;
     else sentSats += sats;
-    feeSats += Number(row.feeSats) || 0;
+    // A fee nobody measured is not a fee of zero. Folding it in as one is how
+    // a summary comes to state "Fees 0 sats" above a table whose every fee
+    // cell is blank, which is the "this payment was free" claim these rows are
+    // written to avoid.
+    if (row.feeSats === null || row.feeSats === undefined || row.feeSats === '') unknownFees += 1;
+    else feeSats += Number(row.feeSats) || 0;
 
     const fiat = row.fiatValueAtTime === '' ? null : Number(row.fiatValueAtTime);
     if (fiat === null || !Number.isFinite(fiat)) {
@@ -344,6 +350,8 @@ export function summarise(rows) {
     sentSats,
     netSats: receivedSats - sentSats,
     feeSats,
+    /** How many rows had no fee figure at all. Arkade reports none. */
+    unknownFees,
     receivedFiat: receivedFiat.toFixed(2),
     sentFiat: sentFiat.toFixed(2),
     netFiat: (receivedFiat - sentFiat).toFixed(2),

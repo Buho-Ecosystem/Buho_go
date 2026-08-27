@@ -29,7 +29,14 @@ async function test(name, fn) {
   }
 }
 
-/** A fake of the wallet store, faithful to the parts that matter. */
+/**
+ * A fake of the wallet store, faithful to the parts that matter.
+ *
+ * The fidelity that counts here: the real store files a provider under
+ * `providers` for Spark, LNbits and Arkade, and files NOTHING for NWC (it
+ * keeps a raw NostrWebLNProvider on its connection state instead). A fake that
+ * gets that wrong would prove the opposite of what these tests claim.
+ */
 function fakeStore(wallets, activeWalletId) {
   const store = {
     wallets,
@@ -41,7 +48,11 @@ function fakeStore(wallets, activeWalletId) {
       if (!w) throw new Error('no such wallet')
       if (w.broken) throw new Error('unreachable')
       store.log.push(`connect:${id}`)
-      store.providers[id] = { getTransactions: async () => [] }
+      if (w.type !== 'nwc') store.providers[id] = { getTransactions: async () => [] }
+    },
+    async disconnectWallet(id) {
+      store.log.push(`close:${id}`)
+      delete store.providers[id]
     },
     async _disconnectSparkProvider(id) {
       store.log.push(`disconnect:${id}`)
@@ -61,10 +72,27 @@ function fakeStore(wallets, activeWalletId) {
   return store
 }
 
+/** A provider the report builds for itself, with its lifetime observable. */
+function fakeOwnProvider(record) {
+  return async (w) => {
+    const p = {
+      wallet: w,
+      connected: false,
+      closed: false,
+      async connect() { this.connected = true },
+      async disconnect() { this.closed = true },
+      async getTransactions() { return [] },
+    }
+    record.push(p)
+    return p
+  }
+}
+
 const W = {
   sparkA: { id: 'sA', name: 'Business', type: 'spark' },
   sparkB: { id: 'sB', name: 'Personal', type: 'spark' },
   lnbits: { id: 'ln', name: 'Shop', type: 'lnbits' },
+  arkade: { id: 'ark', name: 'Ark', type: 'arkade' },
   nwc: { id: 'nw', name: 'Alby', type: 'nwc' },
 }
 
@@ -72,7 +100,7 @@ const W = {
 
 await test('a second Spark wallet is opened only after the first is closed', async () => {
   const store = fakeStore([W.sparkA, W.sparkB], 'sA')
-  const c = createReportConnector(store)
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   await c.connect(W.sparkA)   // already live, must cost nothing
   await c.connect(W.sparkB)
@@ -83,7 +111,7 @@ await test('a second Spark wallet is opened only after the first is closed', asy
 
 await test('the wallet the user was on comes back', async () => {
   const store = fakeStore([W.sparkA, W.sparkB], 'sA')
-  const c = createReportConnector(store)
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   await c.connect(W.sparkB)
   await c.restore()
@@ -93,22 +121,21 @@ await test('the wallet the user was on comes back', async () => {
   assert.ok(!store.providers.sB, 'the one we borrowed is not')
 })
 
-await test('restore does nothing when Spark was never moved', async () => {
-  const store = fakeStore([W.sparkA, W.lnbits, W.nwc], 'sA')
-  const c = createReportConnector(store)
+await test('restore does not reconnect Spark when Spark was never moved', async () => {
+  const store = fakeStore([W.sparkA, W.lnbits], 'sA')
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   await c.connect(W.lnbits)
-  await c.connect(W.nwc)
   await c.restore()
 
   assert.ok(!store.log.includes('restore'), 'no reconnect the user did not need')
-  assert.ok(store.providers.sA && store.providers.ln && store.providers.nw)
+  assert.ok(store.providers.sA, 'the active Spark wallet was never touched')
 })
 
 await test('restore survives a store that throws', async () => {
   const store = fakeStore([W.sparkA, W.sparkB], 'sA')
   store.connectAllSparkWallets = async () => { throw new Error('sdk down') }
-  const c = createReportConnector(store)
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   await c.connect(W.sparkB)
   await c.restore() // must not reject: the report is already written
@@ -118,7 +145,7 @@ await test('restore survives a store that throws', async () => {
 
 await test('a live wallet is handed back without reconnecting', async () => {
   const store = fakeStore([W.lnbits], 'ln')
-  const c = createReportConnector(store)
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   const p = await c.connect(W.lnbits)
   assert.equal(store.log.length, 0, 'no handshake for a wallet already open')
@@ -127,7 +154,7 @@ await test('a live wallet is handed back without reconnecting', async () => {
 
 await test('the live wallet is read first', async () => {
   const store = fakeStore([W.sparkA, W.sparkB, W.lnbits], 'ln')
-  const c = createReportConnector(store)
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   // Its rows are in hand before anything that has to be opened can fail.
   assert.deepEqual(c.order([W.sparkA, W.sparkB, W.lnbits]).map((w) => w.id), ['ln', 'sA', 'sB'])
@@ -136,54 +163,114 @@ await test('the live wallet is read first', async () => {
 // ── failure is a null, not an explosion ────────────────────────────────────
 
 await test('a wallet that will not open throws for the caller to name', async () => {
-  const store = fakeStore([W.lnbits, { ...W.nwc, broken: true }], 'ln')
-  const c = createReportConnector(store)
+  const broken = { ...W.arkade, broken: true }
+  const store = fakeStore([W.lnbits, broken], 'ln')
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
-  await assert.rejects(() => c.connect({ ...W.nwc, broken: true }))
+  await assert.rejects(() => c.connect(broken))
 })
 
 await test('a wallet with no id is nothing, not a crash', async () => {
   const store = fakeStore([W.lnbits], 'ln')
-  const c = createReportConnector(store)
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
   assert.equal(await c.connect({}), null)
   assert.equal(await c.connect(null), null)
 })
 
-// ── NWC, which the store connects but files nowhere ────────────────────────
+// ── NWC: opened directly, never through the store ──────────────────────────
 
 await test('an NWC wallet gets a provider that can actually be read', async () => {
-  // The store connects NWC by keeping a raw NostrWebLNProvider on its
-  // connection state; nothing lands in `providers`. Without this, every NWC
-  // wallet in a report would be listed as unreadable.
+  // The store files nothing readable for NWC, so the report builds the
+  // provider that has a getTransactions and owns its lifetime.
   const store = fakeStore([W.lnbits, W.nwc], 'ln')
-  store.connectWallet = async (id) => { store.log.push(`connect:${id}`) } // files nothing
-
-  let built = null
-  const c = createReportConnector(store, {
-    createProvider: async (w) => {
-      built = { wallet: w, connected: false, closed: false,
-        async connect() { this.connected = true },
-        async disconnect() { this.closed = true },
-        async getTransactions() { return [] } }
-      return built
-    },
-  })
+  const built = []
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider(built) })
 
   const p = await c.connect(W.nwc)
   assert.equal(typeof p.getTransactions, 'function')
-  assert.equal(built.wallet.id, 'nw')
-  assert.ok(built.connected, 'opened before it is read')
+  assert.equal(built[0].wallet.id, 'nw')
+  assert.ok(built[0].connected, 'opened before it is read')
+})
 
-  await c.restore()
-  assert.ok(built.closed, 'a relay connection is not left running')
+await test('opening NWC never asks the store to connect it as well', async () => {
+  // Asking the store would open a SECOND relay connection, filed on the
+  // connection state, that nothing ever closes and that still could not be
+  // read from.
+  const store = fakeStore([W.lnbits, W.nwc], 'ln')
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
+
+  await c.connect(W.nwc)
+  assert.deepEqual(store.log, [], 'the store was not involved')
 })
 
 await test('a provider we cannot build is null, not a thrown report', async () => {
   const store = fakeStore([W.nwc], 'nw')
   store.providers = {}
-  store.connectWallet = async () => {}
   const c = createReportConnector(store, { createProvider: async () => ({}) })
   assert.equal(await c.connect(W.nwc), null)
+})
+
+// ── what we open, we close ─────────────────────────────────────────────────
+
+await test('every connection the report opened is closed again', async () => {
+  const store = fakeStore([W.lnbits, W.nwc, W.arkade], 'ln')
+  const built = []
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider(built) })
+
+  await c.connect(W.lnbits)  // already live, not ours
+  await c.connect(W.nwc)     // ours
+  await c.connect(W.arkade)  // the store's, but opened at our request
+  await c.restore()
+
+  assert.ok(built[0].closed, 'the NWC relay connection is not left running')
+  assert.ok(!store.providers.ark, 'the Arkade provider is not left live with its background callbacks wired')
+  assert.ok(store.providers.ln, 'the wallet the user is on stays connected')
+})
+
+await test('the wallet the user is looking at is never closed to tidy up', async () => {
+  // Its provider is missing (a failed auto-connect at boot), so the report
+  // opens it. Closing it afterwards would leave the user staring at a
+  // disconnected wallet because they made a report.
+  const store = fakeStore([W.lnbits], 'ln')
+  delete store.providers.ln
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
+
+  await c.connect(W.lnbits)
+  await c.restore()
+
+  assert.ok(store.providers.ln, 'still connected')
+  assert.ok(!store.log.includes('close:ln'))
+})
+
+await test('restore can be called twice without closing anything twice', async () => {
+  // The sheet calls it from the run's own finally, and the run may already
+  // have been abandoned by a dismissal.
+  const store = fakeStore([W.lnbits, W.arkade], 'ln')
+  const built = []
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider(built) })
+
+  await c.connect(W.arkade)
+  await c.restore()
+  const after = [...store.log]
+  await c.restore()
+  assert.deepEqual(store.log, after, 'the second call did nothing')
+})
+
+// ── the Spark failure path, which is where restore matters most ────────────
+
+await test('a Spark wallet that will not open still hands the user theirs back', async () => {
+  // The live Spark provider has already been torn down by the time the open
+  // fails, so without a restore the user is left on no Spark wallet at all.
+  const broken = { ...W.sparkB, broken: true }
+  const store = fakeStore([W.sparkA, broken], 'sA')
+  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
+
+  await assert.rejects(() => c.connect(broken))
+  assert.ok(!store.providers.sA, 'torn down, as the exclusivity rule requires')
+
+  await c.restore()
+  assert.equal(store.log.at(-1), 'restore')
+  assert.ok(store.providers.sA, 'the user is back on their own wallet')
 })
 
 console.log(`\n  ${passed} passed, ${failed} failed`)

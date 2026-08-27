@@ -185,12 +185,34 @@ await test('a provider that ignores limit and offset is read once, not twenty ti
   assert.equal(out.truncatedWallets.length, 0)
 })
 
+await test('two real transactions that share an id both survive', async () => {
+  // The Arkade provider flattens the SDK's three-part key into one field, so
+  // two boarding deposits swept by the same settlement transaction arrive with
+  // the same id. Keying the dedupe on the id alone dropped one of them and
+  // understated what the wallet received.
+  const out = await collectTransactions({
+    wallets: [{ id: 'w1', name: 'Ark', type: 'arkade' }],
+    providers: {
+      w1: {
+        getTransactions: async () => [
+          { id: 'commitment-C', type: 'incoming', amount: 100000, status: 'completed', settled_at: 1787774933 },
+          { id: 'commitment-C', type: 'incoming', amount: 200000, status: 'completed', settled_at: 1787774900 },
+        ],
+      },
+    },
+  })
+
+  assert.equal(out.rows.length, 2)
+  assert.equal(out.rows.reduce((n, r) => n + r.amount, 0), 300000, 'nothing was silently dropped')
+})
+
 await test('a page we have already seen never lands twice', async () => {
   // LNbits offsets shift when a payment settles mid-read, so the same
   // transaction can come back on the next page.
-  const page = (start) => Array.from({ length: 100 }, (_, i) => ({
-    id: `tx-${start + i}`, status: 'completed', amount: 10, settled_at: 1787774933 - i,
-  }))
+  // The SAME payment on two pages is identical in every field, which is what
+  // makes it recognisable as one we already have.
+  const row = (n) => ({ id: `tx-${n}`, status: 'completed', amount: 10, settled_at: 1787774933 - n })
+  const page = (start) => Array.from({ length: 100 }, (_, i) => row(start + i))
   let call = 0
   const out = await collectTransactions({
     wallets: [{ id: 'w1', name: 'Shop', type: 'lnbits' }],
