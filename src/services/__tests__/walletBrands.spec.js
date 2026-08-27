@@ -14,7 +14,7 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { matchWalletBrand, WALLET_BRANDS } from '../walletBrands.js'
+import { matchWalletBrand, matchWalletBrandByAddress, WALLET_BRANDS } from '../walletBrands.js'
 
 let passed = 0
 let failed = 0
@@ -35,6 +35,16 @@ test('Wallet of Satoshi: resolves name + logo from walletofsatoshi.com', () => {
   const b = matchWalletBrand('walletofsatoshi.com')
   assert.equal(b.name, 'Wallet of Satoshi')
   assert.equal(b.logo, '/Social_Wallet_logos/walletofsatoshi-icon.svg')
+})
+
+test('Coinsnap: resolves from coinsnap.app and is contained, not cropped', () => {
+  const b = matchWalletBrand('coinsnap.app')
+  assert.equal(b.name, 'Coinsnap')
+  assert.equal(b.logo, '/Social_Wallet_logos/coinsnap.svg')
+  // A bare logomark taller than it is wide: cropping it edge-to-edge in the
+  // circular avatar would slice the top and bottom off the mark.
+  assert.equal(b.logoContain, true)
+  assert.equal(b.logoInset, '10%')
 })
 
 test('Plate-less marks (Wallet of Satoshi, Alby) are contained, not cropped', () => {
@@ -126,6 +136,47 @@ test('every registered logo is an absolute /public URL', () => {
   for (const [domain, entry] of Object.entries(WALLET_BRANDS)) {
     assert.ok(entry.name, `${domain} has a name`)
     assert.match(entry.logo, /^\/[\w./-]+\.(svg|png)$/, `${domain} logo is an absolute asset path`)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Address-level lookup — what the tx list, tx details and address book use
+// ---------------------------------------------------------------------------
+
+test('matchWalletBrandByAddress resolves a whole Lightning Address', () => {
+  assert.equal(matchWalletBrandByAddress('satoshi@coinsnap.app').name, 'Coinsnap')
+  assert.equal(matchWalletBrandByAddress('feudaltribe162@walletofsatoshi.com').name, 'Wallet of Satoshi')
+  // Splits on the LAST "@", as a Lightning Address does.
+  assert.equal(matchWalletBrandByAddress('a@b@strike.me').name, 'Strike')
+  assert.equal(matchWalletBrandByAddress('  Satoshi@CoinSnap.App  ').name, 'Coinsnap')
+})
+
+test('matchWalletBrandByAddress misses cleanly on anything that is not an address', () => {
+  // A miss must be null, never a half-built row: the avatar then renders the
+  // silhouette instead of an <img> pointing at nothing.
+  for (const input of [
+    'someone@example.com',   // unknown host
+    'coinsnap.app',          // a bare domain is not an address
+    '@coinsnap.app',         // no handle
+    'satoshi@',              // no domain
+    '', null, undefined, 42, {},
+  ]) {
+    assert.equal(matchWalletBrandByAddress(input), null, JSON.stringify(input))
+  }
+})
+
+test('fit hints only ever qualify contained art', () => {
+  // These logos now render on four surfaces at once (send sheet, tx list, tx
+  // details, address book), so a stray inset or backdrop would be wrong in
+  // four places rather than one.
+  for (const [domain, brand] of Object.entries(WALLET_BRANDS)) {
+    if (brand.logoInset) {
+      assert.equal(brand.logoContain, true, `${domain}: an inset only applies to contained art`)
+      assert.match(brand.logoInset, /^\d+(\.\d+)?%$/, `${domain}: inset should be a percentage`)
+    }
+    if (brand.logoBg) {
+      assert.equal(brand.logoContain, true, `${domain}: a backdrop only applies to contained art`)
+    }
   }
 })
 
