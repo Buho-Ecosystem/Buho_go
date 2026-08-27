@@ -479,12 +479,14 @@ body.body--light .q-page-container {
     backdrop-filter: blur(6px) !important;
 }
 
-/* Keyboard focus ring for the transaction report.
-   The sheet carries `.report-surface`, so one rule covers every control
-   inside it, including ones added later. It is full of custom `all: unset`
-   buttons, which have no focus indicator of their own, and a control nobody
-   can see they have selected is unusable with a keyboard or with Android
-   switch access. */
+/* Keyboard focus ring for the shop and the transaction report.
+   Both carry a marker class on their outermost surface, so one rule covers
+   every control inside them, including ones added later. Both are full of
+   custom `all: unset` buttons, which have no focus indicator of their own, and
+   a control nobody can see they have selected is unusable with a keyboard or
+   with Android switch access. Scoped rather than applied app-wide, because the
+   rest of the app has its own per-component treatments. */
+.shop-surface :focus-visible,
 .report-surface :focus-visible {
     outline: 2px solid #15DE72;
     outline-offset: 2px;
