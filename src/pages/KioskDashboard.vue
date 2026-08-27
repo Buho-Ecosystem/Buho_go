@@ -242,11 +242,21 @@ export default defineComponent({
       if (amtSats <= 0) return null
 
       if (isFiatMode.value && fiatRate.value > 0) {
-        // Round to next whole fiat unit (1 EUR, 1 USD, etc.)
-        const fiat = (amtSats / 100_000_000) * fiatRate.value
-        const nextFiat = Math.ceil(fiat)
-        if (nextFiat <= fiat) return null // already whole number
-        const nextSats = Math.round((nextFiat / fiatRate.value) * 100_000_000)
+        // Round to the next whole fiat unit (1 EUR, 1 USD, ...), decided in
+        // INTEGER CENTS.
+        //
+        // The amount reaches here as sats, having been converted from what
+        // the cashier typed, and converting back lands a hair either side of
+        // the whole number. Comparing that float against Math.ceil made the
+        // offer depend on the BTC price rather than on the bill: at one rate
+        // a flat $960 sale correctly offered nothing, at another it offered
+        // to add $1 to an already-round total. Rounding to cents first
+        // collapses that noise, so the same bill behaves the same way at
+        // every price.
+        const cents = Math.round((amtSats / 100_000_000) * fiatRate.value * 100)
+        if (cents <= 0 || cents % 100 === 0) return null // already whole
+        const nextCents = (Math.floor(cents / 100) + 1) * 100
+        const nextSats = Math.round(((nextCents / 100) / fiatRate.value) * 100_000_000)
         return nextSats > amtSats ? nextSats : null
       } else {
         // Round to next 1000 sats
