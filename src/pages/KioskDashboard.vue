@@ -56,30 +56,30 @@
       <!-- ═══ Tipping ═══ -->
       <div v-else-if="state === 'tipping'" class="tip-screen" :class="{ 'tip-ready': tipInteractive }">
         <div class="tip-header">
-          <span class="tip-prompt">{{ $t('kiosk.addTip') }}</span>
+          <span class="tip-prompt">{{ extrasTitle }}</span>
           <div class="tip-subtotal-pill"><span class="tip-subtotal-label">{{ $t('kiosk.subtotal') || 'Subtotal' }}</span><span class="tip-subtotal-val">{{ displaySats(baseAmountSats) }}</span></div>
         </div>
         <div class="tip-body">
-          <div class="tip-options">
+          <div v-if="offersTip" class="tip-options">
             <button v-for="tip in tipOptions" :key="tip.percent" class="tip-opt" :class="{ 'tip-opt-on': selectedTipPercent === tip.percent }" :disabled="!tipInteractive" @click.stop="selectedTipPercent = tip.percent; useRoundUp = false">
               <span class="tip-opt-pct">{{ tip.percent }}%</span><span class="tip-opt-amt">+{{ displaySats(tip.amount) }}</span>
             </button>
           </div>
-          <button v-if="roundUpValue && roundUpValue > totalBeforeRoundUp" class="tip-roundup" :class="{ 'tip-roundup-on': useRoundUp }" :disabled="!tipInteractive" @click.stop="useRoundUp = !useRoundUp; selectedTipPercent = 0">
+          <button v-if="offersRoundUp" class="tip-roundup" :class="{ 'tip-roundup-on': useRoundUp }" :disabled="!tipInteractive" @click.stop="useRoundUp = !useRoundUp; selectedTipPercent = 0">
             <div class="tip-roundup-icon"><q-icon name="keyboard_double_arrow_up" size="16px" /></div>
             <span class="tip-roundup-label">{{ $t('kiosk.roundUp') }}</span><span class="tip-roundup-val">{{ displaySats(roundUpValue) }}</span>
           </button>
-          <button class="tip-skip" :disabled="!tipInteractive" @click.stop="selectedTipPercent = 0; useRoundUp = false; confirmTip()">{{ $t('kiosk.noTip') }}</button>
+          <button class="tip-skip" :disabled="!tipInteractive" @click.stop="selectedTipPercent = 0; useRoundUp = false; confirmTip()">{{ extrasSkipLabel }}</button>
         </div>
         <div class="tip-footer">
           <div class="tip-breakdown">
             <div class="tip-break-row"><span>{{ $t('kiosk.subtotal') || 'Subtotal' }}</span><span>{{ displaySats(baseAmountSats) }}</span></div>
-            <div v-if="selectedTipAmount > 0 || useRoundUp" class="tip-break-row tip-break-tip"><span>{{ $t('kiosk.tipLabel') || 'Tip' }}</span><span class="tip-break-val">+{{ displaySats(finalAmountSats - baseAmountSats) }}</span></div>
+            <div v-if="selectedTipAmount > 0 || useRoundUp" class="tip-break-row tip-break-tip"><span>{{ extraLabel }}</span><span class="tip-break-val">+{{ displaySats(finalAmountSats - baseAmountSats) }}</span></div>
             <div class="tip-break-divider"></div>
             <div class="tip-break-row tip-break-total"><span>{{ $t('kiosk.total') }}</span><span>{{ displaySats(finalAmountSats) }}</span></div>
           </div>
           <button class="pos-primary-btn" :disabled="!tipInteractive" @click.stop="confirmTip"><span>{{ $t('Confirm') }}</span><q-icon name="arrow_forward" size="18px" /></button>
-          <button class="pos-text-btn" @click.stop="state = 'input'">{{ $t('Back') }}</button>
+          <button class="pos-secondary-btn" @click.stop="state = 'input'">{{ $t('Back') }}</button>
         </div>
       </div>
 
@@ -256,6 +256,50 @@ export default defineComponent({
     })
     const finalAmountSats = computed(() => (useRoundUp.value && roundUpValue.value) ? roundUpValue.value : totalBeforeRoundUp.value)
 
+    /**
+     * Tipping and rounding up are two independent settings, so they are two
+     * independent offers here.
+     *
+     * They used to be one: the extras screen was reached only when tipping
+     * was on, which left a merchant who wanted rounding alone with a switch
+     * that did nothing at all. Each now answers for itself, and the screen
+     * shows whichever of them has something to offer.
+     */
+    const offersTip = computed(() => store.kioskTipEnabled && tipOptions.value.length > 0)
+
+    // Rounding is only an offer when it would actually change the total. On a
+    // sum that is already whole there is nothing to round, and a button that
+    // adds zero is worse than no button.
+    const offersRoundUp = computed(() => store.kioskRoundUpEnabled && !!roundUpValue.value)
+
+    /** Whether the extras screen has any reason to exist for this sale. */
+    const offersExtras = computed(() => offersTip.value || offersRoundUp.value)
+
+    /**
+     * What the screen is asking for, which decides its wording. Rounding up
+     * is not a tip, and calling it one in front of a paying customer is both
+     * wrong and, where tips are taxed differently, misleading.
+     */
+    const extrasMode = computed(() => {
+      if (offersTip.value && offersRoundUp.value) return 'both'
+      return offersTip.value ? 'tip' : 'roundUp'
+    })
+
+    const extrasTitle = computed(() => (
+      extrasMode.value === 'roundUp' ? t('kiosk.roundUpPrompt') : t('kiosk.addTip')
+    ))
+
+    const extrasSkipLabel = computed(() => (
+      extrasMode.value === 'roundUp' ? t('kiosk.exactAmount') : t('kiosk.noTip')
+    ))
+
+    /** The added amount is a tip or a rounding, never labelled as both. */
+    const extraLabel = computed(() => (
+      useRoundUp.value && selectedTipPercent.value === 0
+        ? t('kiosk.roundUp')
+        : t('kiosk.tipLabel')
+    ))
+
     function handleNumpad(btn) {
       if (btn === 'delete') { rawInput.value = rawInput.value.length <= 1 ? '0' : rawInput.value.slice(0, -1); return }
       if (btn === '.') { if (!isFiatMode.value || rawInput.value.includes('.')) return; rawInput.value += '.'; return }
@@ -282,8 +326,15 @@ export default defineComponent({
       if (totalSatsForCharge.value <= 0) return
       baseAmountSats.value = totalSatsForCharge.value
       selectedTipPercent.value = 0; useRoundUp.value = false
-      if (store.kioskTipEnabled) { tipInteractive.value = false; state.value = 'tipping'; setTimeout(() => { tipInteractive.value = true }, 300) }
-      else createCharge()
+      // Either setting alone is enough to earn the screen. Reading only
+      // kioskTipEnabled here is what made the round-up switch inert.
+      if (offersExtras.value) {
+        tipInteractive.value = false
+        state.value = 'tipping'
+        setTimeout(() => { tipInteractive.value = true }, 300)
+      } else {
+        createCharge()
+      }
     }
     function confirmTip() { createCharge() }
 
@@ -527,6 +578,7 @@ export default defineComponent({
       handleNumpad, addToAccumulated, removeAccumulatedItem, clearAll, proceedToTipOrCharge,
       tipOptions, selectedTipPercent, selectedTipAmount, tipInteractive,
       totalBeforeRoundUp, roundUpValue, useRoundUp, finalAmountSats,
+      offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel,
       baseAmountSats, formatSats, displaySats, createCharge, confirmTip,
       invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, parkedInvoice, resetToInput,
       showCartSheet, showUnlockDialog, showPinStep, unlockPinRef, unlockError,
@@ -565,6 +617,14 @@ export default defineComponent({
 .pos-btn-disabled { background: #2a2a2a !important; color: #555 !important; box-shadow: none !important; cursor: default; }
 .pos-btn-disabled:active { transform: none !important; }
 .kiosk-light .pos-btn-disabled { background: var(--border-card) !important; color: var(--text-muted) !important; }
+
+/* A secondary action that sits UNDER a full-width primary rather than beside
+   a sibling. It shares the primary's width and alignment so the pair reads as
+   one stack; `.pos-text-btn` is shaped for the inline Park / Cancel row and
+   became a small chip marooned in the corner when it was used here. */
+.pos-secondary-btn { width: 100%; height: 48px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(107,114,128,0.3); border-radius: 14px; color: #9ca3af; font-family: 'Manrope', sans-serif; font-size: 0.9375rem; font-weight: 600; cursor: pointer; margin-top: 10px; -webkit-tap-highlight-color: transparent; transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease; }
+.pos-secondary-btn:active { transform: scale(0.98); background: rgba(107,114,128,0.08); border-color: rgba(107,114,128,0.45); }
+.kiosk-light .pos-secondary-btn { border-color: var(--border-card); color: var(--text-muted); }
 
 /* Text btn */
 .pos-text-btn { background: transparent; border: 1px solid rgba(107,114,128,0.45); border-radius: 10px; color: #6b7280; font-size: 14px; font-family: 'Manrope', sans-serif; font-weight: 600; cursor: pointer; padding: 10px 22px; margin-top: 4px; -webkit-tap-highlight-color: transparent; transition: transform 0.08s ease, background 0.12s ease, border-color 0.12s ease; }

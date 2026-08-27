@@ -1736,6 +1736,8 @@ export default {
   "kiosk.charge": "Cobrar",
   "kiosk.addTip": "Añadir Propina",
   "kiosk.noTip": "Sin Propina",
+  "kiosk.roundUpPrompt": "¿Redondear?",
+  "kiosk.exactAmount": "Importe exacto",
   "kiosk.total": "Total",
   "kiosk.waitingForPayment": "Esperando Pago",
   "kiosk.paymentReceived": "¡Pago Recibido!",
