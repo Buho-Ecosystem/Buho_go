@@ -2595,7 +2595,6 @@ export default {
   "What is shared: your photo, your name, your line about you, and your payment name. What is never shared: your contacts, your balance, your payments and your 12 words.": "Se comparte: tu foto, tu nombre, tu línea sobre ti y tu nombre de pago. Nunca se comparte: tus contactos, tu saldo, tus pagos y tus 12 palabras.",
   "Last updated {when}": "Actualizado {when}",
   "Save your card to share it": "Guarda tu tarjeta para compartirla",
-  "Updating": "Actualizando",
   "Update now": "Actualizar ahora",
   "If another app still shows an old photo": "Si otra app aún muestra una foto antigua",
   "{n} minutes ago": "hace {n} minutos",
