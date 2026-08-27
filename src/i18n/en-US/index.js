@@ -2592,6 +2592,7 @@ export default {
   "BitSpenda Ghanaian Lightning address": "BitSpenda Ghanaian Lightning address",
   "Ghana": "Ghana",
   "MTN Mobile Money only": "MTN Mobile Money only",
+  "This payout service can only be reached from the BuhoGO app, not from a browser.": "This payout service can only be reached from the BuhoGO app, not from a browser.",
   "Vodacom M-Pesa only": "Vodacom M-Pesa only",
   "Phone number": "Phone number",
   "Which country?": "Which country?",

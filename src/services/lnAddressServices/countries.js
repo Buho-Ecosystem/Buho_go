@@ -28,6 +28,12 @@
  *                the logo instead of the flag (Zambia -> Bitzed). null falls
  *                back to the flag.
  *   hint         Flat i18n key, resolved by the caller.
+ *   webUnsupported  Set when the provider serves no Access-Control-Allow-Origin
+ *                header. On device the app uses the native HTTP stack and CORS
+ *                does not apply, but the WEB build is a browser and cannot
+ *                reach the address at all. Verified per provider, not assumed:
+ *                bitcoin.co.ke, bitzed.xyz and chapsmart.com all send `*`.
+ *                Delete the flag the day the provider adds the header.
  *   networkNote  Optional flat i18n key naming a network restriction, shown
  *                under the number field once the country is chosen. Set it
  *                whenever the provider pays only some of the country's
@@ -165,8 +171,19 @@ export const PAYOUT_COUNTRIES = [
     // validity rule, so without this a Telecel or AirtelTigo customer types a
     // number that is perfectly valid in Ghana and is told it is not a number.
     networkNote: 'MTN Mobile Money only',
+    // Verified 2026-08-27: bitspenda.app, www.bitspenda.app and
+    // api.bitspenda.app all answer without an Access-Control-Allow-Origin
+    // header, while the other three providers send `*`. So Ghana resolves on
+    // Android and iOS, where the request goes through the native HTTP stack,
+    // and is unreachable from the web build. Without this flag the browser's
+    // opaque failure is classified as "offline" and the user is told to check
+    // an internet connection that is working perfectly.
+    webUnsupported: true,
     currency: 'GHS',
-    domains: ['bitspenda.app'],
+    // bitspenda.app 308-redirects to www.bitspenda.app, which both HTTP
+    // stacks follow, so we construct the canonical bare form their docs use
+    // and recognise the redirected one if it is ever pasted back to us.
+    domains: ['bitspenda.app', 'www.bitspenda.app'],
     sendDomain: 'bitspenda.app',
     callingCode: '233',
     trunkPrefix: '0',

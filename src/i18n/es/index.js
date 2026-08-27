@@ -2576,6 +2576,7 @@ export default {
   "BitSpenda Ghanaian Lightning address": "Dirección Lightning de BitSpenda (Ghana)",
   "Ghana": "Ghana",
   "MTN Mobile Money only": "Solo MTN Mobile Money",
+  "This payout service can only be reached from the BuhoGO app, not from a browser.": "Este servicio de pago solo se puede usar desde la app BuhoGO, no desde un navegador.",
   "Vodacom M-Pesa only": "Solo Vodacom M-Pesa",
   "Phone number": "Número de teléfono",
   "Which country?": "¿Qué país?",

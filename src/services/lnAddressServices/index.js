@@ -42,6 +42,7 @@ export function matchLnAddressService(lightningAddress) {
     hint: country.hint,
     note: country.note,
     networkNote: country.networkNote || null,
+    webUnsupported: country.webUnsupported === true,
     currency: country.currency,
     handle: trimmed.slice(0, at),
   }
