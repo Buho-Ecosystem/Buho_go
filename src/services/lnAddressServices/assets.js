@@ -17,6 +17,7 @@ import ghFlag from '../../assets/lnAddressServices/flags/circle-flags--gh.svg?ur
 import bitzedLogo from '../../assets/lnAddressServices/logos/bitzed.svg?url'
 import tandoLogo from '../../assets/lnAddressServices/logos/tando.png?url'
 import chapsmartLogo from '../../assets/lnAddressServices/logos/chapsmart.png?url'
+import bitspendaLogo from '../../assets/lnAddressServices/logos/bitspenda.png?url'
 
 const ASSET_URLS = {
   'flags/circle-flags--ke.svg': keFlag,
@@ -26,6 +27,7 @@ const ASSET_URLS = {
   'logos/bitzed.svg': bitzedLogo,
   'logos/tando.png': tandoLogo,
   'logos/chapsmart.png': chapsmartLogo,
+  'logos/bitspenda.png': bitspendaLogo,
 }
 
 /**

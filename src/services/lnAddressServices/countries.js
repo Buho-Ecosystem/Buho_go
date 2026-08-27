@@ -158,8 +158,7 @@ export const PAYOUT_COUNTRIES = [
   {
     code: 'GH',
     flagFile: 'flags/circle-flags--gh.svg',
-    // BitSpenda has no round logo asset yet, so Ghana brands with the flag.
-    logoFile: null,
+    logoFile: 'logos/bitspenda.png', // BitSpenda is the sole GH provider -> brand with the logo.
     hint: 'You are about to pay a Ghanaian phone number',
     note: 'BitSpenda Ghanaian Lightning address', // prefilled when saving as a contact
     // Said BEFORE the first keystroke. The operators table below is also the
