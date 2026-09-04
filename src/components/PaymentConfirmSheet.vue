@@ -29,8 +29,8 @@
       <div class="grab-bar"></div>
 
       <header class="top-row">
-        <q-btn flat round dense @click="onTopAction" class="top-btn">
-          <Icon icon="tabler:x" width="20" height="20" />
+        <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :aria-label="$t('Back')">
+          <Icon icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
         <div class="top-title">{{ topTitle }}</div>
         <!-- Verification sits in the top-right corner (Blitz-style): a single
@@ -1025,7 +1025,7 @@ export default {
   padding: 4px 12px 8px;
   flex-shrink: 0;
 }
-.top-btn { width: 36px; height: 36px; color: var(--text-secondary); }
+.top-btn { /* size + glass come from .glass-back-btn (app.css) */ }
 .top-title {
   flex: 1;
   text-align: center;
@@ -1037,7 +1037,7 @@ export default {
 /* Mirrors the left button's width so the title stays optically centered;
    holds the top-right verification seal when present. */
 .top-action {
-  width: 36px;
+  width: 40px;
   display: flex;
   align-items: center;
   justify-content: flex-end;

@@ -42,10 +42,11 @@
     <q-card class="send-sheet" :class="$q.dark.isActive ? 'send-sheet-dark' : 'send-sheet-light'">
       <div class="grab-bar"></div>
 
-      <!-- Always-reachable close. While busy it cancels the whole Send flow
-           (the backdrop is persistent then, so this is the one exit). -->
-      <q-btn flat round dense class="sheet-close" :aria-label="$t('Close')" @click="closeModal">
-        <Icon icon="tabler:x" width="18" height="18" />
+      <!-- Always-reachable way out. While busy it cancels the whole Send
+           flow (the backdrop is persistent then, so this is the one exit).
+           Hidden in Mobile Money mode, whose header owns the back slot. -->
+      <q-btn v-if="!mobileMoneyMode" flat round dense class="sheet-close glass-back-btn" :aria-label="$t('Back')" @click="closeModal">
+        <Icon icon="tabler:chevron-left" width="20" height="20" />
       </q-btn>
 
       <!-- Mobile Money mode header: back arrow + label. The field below
@@ -1387,11 +1388,8 @@ export default {
 
 .sheet-close {
   position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 30px;
-  height: 30px;
-  color: var(--text-muted);
+  top: 12px;
+  left: 12px;
   z-index: 2;
 }
 
@@ -1421,9 +1419,9 @@ export default {
    Entry field
    ───────────────────────────────────────────────────────────── */
 .entry-block {
-  /* Top padding clears the floating close button — the sheet is
-     deliberately headerless (grab bar + field, no title noise). */
-  padding: 30px 20px 0;
+  /* Top padding clears the floating glass back button — the sheet is
+     deliberately headerless (grab bar + back + field, no title noise). */
+  padding: 58px 20px 0;
   flex-shrink: 0;
 }
 

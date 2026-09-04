@@ -17,8 +17,7 @@
             round
             dense
             @click="handleHeaderBack"
-            class="back-btn"
-            :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+            class="back-btn glass-back-btn"
           >
             <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"
                  fill="none">
@@ -1993,26 +1992,8 @@ export default {
   height: 44px;
 }
 
-/* Glass circle: translucent fill, backdrop blur, hairline ring. */
-.back-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-}
-
-.back-btn.back_btn_light {
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  color: #212121;
-}
-
-.back-btn.back_btn_dark {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #FFF;
-}
+/* The back circle itself comes from the shared .glass-back-btn utility
+   (src/css/app.css); the inline SVG keeps its per-theme fill. */
 
 .header-title {
   flex: 1;

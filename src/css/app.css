@@ -1103,3 +1103,23 @@ body.body--light .iform-scan {
 }
 
 
+
+/* ─── Glass back button ──────────────────────────────────────────────
+   The circular back affordance on sheet headers (receive + send flows):
+   translucent fill, backdrop blur, hairline ring. Themed via body class. */
+.glass-back-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  color: #212121;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+body.body--dark .glass-back-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #FFF;
+}
