@@ -45,7 +45,7 @@
          on-chain only. -->
     <div v-if="depositAddress" class="rail-stack" aria-hidden="true">
       <span class="rail-badge rail-badge-btc" :class="$q.dark.isActive ? 'rail-ring-dark' : 'rail-ring-light'">
-        <Icon icon="tabler:currency-bitcoin" width="15" height="15" />
+        <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
       </span>
       <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
         <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
@@ -1201,21 +1201,21 @@ export default {
 
 .rail-badge {
   display: flex;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 2px solid transparent;
+  border: 2.5px solid transparent;
 }
 
 .rail-badge + .rail-badge {
-  margin-left: -7px;
+  margin-left: -9px;
 }
 
 .rail-badge img {
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   object-fit: contain;
 }
 
@@ -1224,11 +1224,13 @@ export default {
   color: #FFFFFF;
 }
 
-.rail-badge-light { background: rgba(0, 0, 0, 0.06); }
-.rail-badge-dark  { background: rgba(255, 255, 255, 0.14); }
+.rail-badge-light { background: #FFFFFF; }
+.rail-badge-dark  { background: #2A2A2A; }
 
-.rail-ring-light { border-color: #FFFFFF; }
-.rail-ring-dark  { border-color: #1C1C1E; }
+/* The ring wears the sheet's own surface color, so where badges overlap
+   the joint reads as a clean cutout instead of a stray white halo. */
+.rail-ring-light { border-color: var(--bg-card, #FAF7EF); }
+.rail-ring-dark  { border-color: var(--bg-card, #1A1A1A); }
 
 /* ==========================================
    CTA row - equal, labeled actions on 52pt circular targets.

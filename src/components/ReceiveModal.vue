@@ -1,15 +1,16 @@
 <template>
   <q-dialog
     v-model="show"
-    maximized
+    position="bottom"
     transition-show="slide-up"
     transition-hide="slide-down"
     class="receive-modal"
     @before-hide="stopPaymentMonitor();"
   >
     <q-card class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
       <!-- Header -->
-      <q-card-section class="receive-header" :class="$q.dark.isActive ? 'header-dark' : 'header-light'">
+      <q-card-section class="receive-header">
         <div class="header-content">
           <q-btn
             flat
@@ -105,7 +106,7 @@
                  only. -->
             <div v-if="arkadeBoardingAddress" class="rail-stack" aria-hidden="true">
               <span class="rail-badge rail-badge-btc" :class="$q.dark.isActive ? 'rail-ring-dark' : 'rail-ring-light'">
-                <Icon icon="tabler:currency-bitcoin" width="15" height="15" />
+                <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
               </span>
               <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
                 <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
@@ -1953,27 +1954,36 @@ export default {
   padding: 0;
 }
 
+/* Full-height bottom sheet: rounded top, a sliver of the wallet left
+   visible above so it reads as a sheet, not a page. */
 .receive-card {
   width: 100%;
-  height: 100%;
+  max-width: 100%;
+  height: calc(100dvh - var(--safe-top, 0px) - 10px);
   display: flex;
   flex-direction: column;
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+}
+
+.sheet-grabber {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+  flex-shrink: 0;
+}
+
+.grabber-bar {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.35);
 }
 
 /* Header */
 .receive-header {
-  border-bottom: 1px solid;
-  padding: 0.75rem 1rem;
-  padding-top: calc(var(--safe-top, 0px) + 0.75rem);
+  padding: 0.25rem 1rem 0.5rem;
   flex-shrink: 0;
-}
-
-.header-dark {
-  border-bottom-color: #2A342A;
-}
-
-.header-light {
-  border-bottom-color: var(--border-card);
 }
 
 .header-content {
@@ -1983,12 +1993,25 @@ export default {
   height: 44px;
 }
 
-.back-btn-dark {
-  color: #FFF;
+/* Glass circle: translucent fill, backdrop blur, hairline ring. */
+.back-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 
-.back-btn-light {
+.back-btn.back_btn_light {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.07);
   color: #212121;
+}
+
+.back-btn.back_btn_dark {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #FFF;
 }
 
 .header-title {
@@ -2688,21 +2711,21 @@ export default {
 
 .rail-badge {
   display: flex;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 2px solid transparent;
+  border: 2.5px solid transparent;
 }
 
 .rail-badge + .rail-badge {
-  margin-left: -7px;
+  margin-left: -9px;
 }
 
 .rail-badge img {
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   object-fit: contain;
 }
 
@@ -2711,11 +2734,13 @@ export default {
   color: #FFFFFF;
 }
 
-.rail-badge-light { background: rgba(0, 0, 0, 0.06); }
-.rail-badge-dark  { background: rgba(255, 255, 255, 0.14); }
+.rail-badge-light { background: #FFFFFF; }
+.rail-badge-dark  { background: #2A2A2A; }
 
-.rail-ring-light { border-color: #FFFFFF; }
-.rail-ring-dark  { border-color: #1C1C1E; }
+/* The ring wears the sheet's own surface color, so where badges overlap
+   the joint reads as a clean cutout instead of a stray white halo. */
+.rail-ring-light { border-color: var(--bg-card, #FAF7EF); }
+.rail-ring-dark  { border-color: var(--bg-card, #1A1A1A); }
 
 /* Centers the badge + code + rails in whatever space the header and the
    bottom action row leave - the natural focus point on a phone. */
