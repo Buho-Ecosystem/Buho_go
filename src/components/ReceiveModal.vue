@@ -46,153 +46,148 @@
              A wallet that knows none of the extras still reads a plain
              bitcoin: URI (BIP21 requires ignoring unknown params). -->
         <div v-if="showArkadeUnifiedView" class="spark-address-view">
-          <div v-if="arkadeBoardingAddress" class="qr-section">
-            <div class="qr-card" @click="copyArkadeBoardingAddress">
-              <div class="qr-frame">
-                <vue-qrcode
-                  ref="arkadeBoardingQr"
-                  :value="arkadeUnifiedQrValue"
-                  :options="sparkQrOptions"
-                  class="qr-code"
-                />
-                <!-- One mark on every code: this is a BuhoGO code,
-                     whatever rail ends up paying it. -->
-                <span class="qr-logo" aria-hidden="true">
-                  <img src="/buho_logo.svg" alt="" />
-                </span>
+          <!-- Hero: badge, code and rails centered in the space the header
+               and the bottom action row leave. -->
+          <div class="unified-hero">
+            <template v-if="arkadeBoardingAddress">
+              <!-- The request the QR currently carries; tapping edits it. -->
+              <button
+                v-if="generatedInvoice && generatedInvoice.amount > 0"
+                type="button"
+                class="invoice-badge"
+                :class="$q.dark.isActive ? 'invoice-badge-dark' : 'invoice-badge-light'"
+                @click="tapAmountButton"
+              >
+                <span class="invoice-badge-amount">{{ formatInvoiceAmount(generatedInvoice.amount) }}</span>
+                <span v-if="formatInvoiceFiat(generatedInvoice.amount)" class="invoice-badge-fiat">{{ formatInvoiceFiat(generatedInvoice.amount) }}</span>
+                <span v-if="description" class="invoice-badge-note">{{ description }}</span>
+                <Icon icon="tabler:edit" width="14" height="14" />
+              </button>
+
+              <!-- The Lightning rail rides a swap; disclose the net amount. -->
+              <div
+                v-if="generatedInvoice && generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
+                class="address-hint hero-subhint"
+                :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+              >
+                {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
+              </div>
+            </template>
+
+            <div v-if="arkadeBoardingAddress" class="qr-section">
+              <div class="qr-card" @click="copyArkadeBoardingAddress">
+                <div class="qr-frame">
+                  <vue-qrcode
+                    ref="arkadeBoardingQr"
+                    :value="arkadeUnifiedQrValue"
+                    :options="sparkQrOptions"
+                    class="qr-code"
+                  />
+                  <!-- One mark on every code: this is a BuhoGO code,
+                       whatever rail ends up paying it. -->
+                  <span class="qr-logo" aria-hidden="true">
+                    <img src="/buho_logo.svg" alt="" />
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div v-else class="default-zero-loading">
-            <q-spinner-dots size="40px" :color="$q.dark.isActive ? 'white' : 'grey-7'" />
-            <div class="default-zero-loading-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('Preparing address...') }}
-            </div>
-          </div>
-
-          <template v-if="arkadeBoardingAddress">
-            <!-- The request the QR currently carries; tapping edits it. -->
-            <button
-              v-if="generatedInvoice && generatedInvoice.amount > 0"
-              type="button"
-              class="invoice-badge"
-              :class="$q.dark.isActive ? 'invoice-badge-dark' : 'invoice-badge-light'"
-              @click="tapAmountButton"
-            >
-              <span class="invoice-badge-amount">{{ formatInvoiceAmount(generatedInvoice.amount) }}</span>
-              <span v-if="formatInvoiceFiat(generatedInvoice.amount)" class="invoice-badge-fiat">{{ formatInvoiceFiat(generatedInvoice.amount) }}</span>
-              <span v-if="description" class="invoice-badge-note">{{ description }}</span>
-              <Icon icon="tabler:edit" width="14" height="14" />
-            </button>
-
-            <!-- The Lightning rail rides a swap; disclose the net amount. -->
-            <div
-              v-if="generatedInvoice && generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
-              class="address-hint"
-              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-            >
-              {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
+            <div v-else class="default-zero-loading">
+              <q-spinner-dots size="40px" :color="$q.dark.isActive ? 'white' : 'grey-7'" />
+              <div class="default-zero-loading-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                {{ $t('Preparing address...') }}
+              </div>
             </div>
 
             <!-- The rails this one code carries, stacked like profile
                  avatars. The address strings live behind Copy on purpose -
                  showing one under the QR made the code read as on-chain
                  only. -->
-            <div class="rail-stack" aria-hidden="true">
+            <div v-if="arkadeBoardingAddress" class="rail-stack" aria-hidden="true">
               <span class="rail-badge rail-badge-btc" :class="$q.dark.isActive ? 'rail-ring-dark' : 'rail-ring-light'">
                 <Icon icon="tabler:currency-bitcoin" width="15" height="15" />
               </span>
               <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
                 <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
               </span>
+              <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
+                <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
+              </span>
             </div>
-
-            <!-- One row of equal, labeled actions. Copy asks which identity
-                 instead of guessing; Share hands out the full unified
-                 string - exactly what the QR encodes. -->
-            <div class="cta-row">
-              <button class="cta" @click="tapAmountButton">
-                <span class="cta-circle cta-circle-accent" :class="$q.dark.isActive ? 'cta-accent-dark' : 'cta-accent-light'">
-                  <Icon icon="tabler:edit" width="20" height="20" />
-                </span>
-                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Amount') }}</span>
-              </button>
-              <button class="cta">
-                <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
-                  <Icon icon="tabler:copy" width="20" height="20" />
-                </span>
-                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
-                <q-menu anchor="top middle" self="bottom middle" :offset="[0, 6]">
-                  <q-list class="copy-menu">
-                    <q-item v-if="generatedInvoice && generatedInvoice.amount > 0" v-close-popup clickable @click="copyInvoice">
-                      <div class="copy-item">
-                        <span>{{ $t('Lightning invoice') }}</span>
-                        <small>{{ truncateArkadeAddress(generatedInvoice.payment_request) }}</small>
-                      </div>
-                    </q-item>
-                    <q-item v-close-popup clickable @click="copyArkadeBoardingAddress">
-                      <div class="copy-item">
-                        <span>{{ $t('Bitcoin address') }}</span>
-                        <small>{{ truncateArkadeAddress(arkadeBoardingAddress) }}</small>
-                      </div>
-                    </q-item>
-                    <q-item v-if="arkadeAddress" v-close-popup clickable @click="copyArkadeAddress">
-                      <div class="copy-item">
-                        <span>{{ $t('Arkade address') }}</span>
-                        <small>{{ truncateArkadeAddress(arkadeAddress) }}</small>
-                      </div>
-                    </q-item>
-                  </q-list>
-                </q-menu>
-              </button>
-              <button class="cta" @click="shareArkadeBoardingAddress">
-                <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
-                  <Icon icon="tabler:share" width="20" height="20" />
-                </span>
-                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Share') }}</span>
-              </button>
-              <button class="cta" @click="$emit('scan-withdraw')">
-                <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
-                  <Icon icon="tabler:scan" width="20" height="20" />
-                </span>
-                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
-              </button>
-            </div>
-          </template>
+          </div>
 
           <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             {{ $t('Arkade pays instantly - set an amount to also receive over Lightning') }}
+          </div>
+
+          <!-- One row of equal, labeled actions in the thumb zone. Copy asks
+               which identity instead of guessing; Share hands out the full
+               unified string - exactly what the QR encodes. -->
+          <div v-if="arkadeBoardingAddress" class="cta-row">
+            <button class="cta" @click="tapAmountButton">
+              <span class="cta-circle cta-circle-accent" :class="$q.dark.isActive ? 'cta-accent-dark' : 'cta-accent-light'">
+                <Icon icon="tabler:edit" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Amount') }}</span>
+            </button>
+            <button class="cta">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                <Icon icon="tabler:copy" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
+              <q-menu anchor="top middle" self="bottom middle" :offset="[0, 6]">
+                <q-list class="copy-menu">
+                  <q-item v-if="generatedInvoice && generatedInvoice.amount > 0" v-close-popup clickable @click="copyInvoice">
+                    <div class="copy-item">
+                      <span>{{ $t('Lightning invoice') }}</span>
+                      <small>{{ truncateArkadeAddress(generatedInvoice.payment_request) }}</small>
+                    </div>
+                  </q-item>
+                  <q-item v-close-popup clickable @click="copyArkadeBoardingAddress">
+                    <div class="copy-item">
+                      <span>{{ $t('Bitcoin address') }}</span>
+                      <small>{{ truncateArkadeAddress(arkadeBoardingAddress) }}</small>
+                    </div>
+                  </q-item>
+                  <q-item v-if="arkadeAddress" v-close-popup clickable @click="copyArkadeAddress">
+                    <div class="copy-item">
+                      <span>{{ $t('Arkade address') }}</span>
+                      <small>{{ truncateArkadeAddress(arkadeAddress) }}</small>
+                    </div>
+                  </q-item>
+                </q-list>
+              </q-menu>
+            </button>
+            <button class="cta" @click="shareArkadeBoardingAddress">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                <Icon icon="tabler:share" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Share') }}</span>
+            </button>
+            <button class="cta" @click="$emit('scan-withdraw')">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                <Icon icon="tabler:scan" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
+            </button>
           </div>
         </div>
 
         <!-- Unified Bitcoin receive view (Spark): the component owns the
              QR + deposit tracking; the modal owns the invoice the QR's
              lightning= rail carries, and the amount badge above it. -->
-        <template v-if="showUnifiedBitcoinView">
-          <div v-if="generatedInvoice && generatedInvoice.amount > 0" class="invoice-badge-slot">
-            <button
-              type="button"
-              class="invoice-badge"
-              :class="$q.dark.isActive ? 'invoice-badge-dark' : 'invoice-badge-light'"
-              @click="tapAmountButton"
-            >
-              <span class="invoice-badge-amount">{{ formatInvoiceAmount(generatedInvoice.amount) }}</span>
-              <span v-if="formatInvoiceFiat(generatedInvoice.amount)" class="invoice-badge-fiat">{{ formatInvoiceFiat(generatedInvoice.amount) }}</span>
-              <span v-if="description" class="invoice-badge-note">{{ description }}</span>
-              <Icon icon="tabler:edit" width="14" height="14" />
-            </button>
-          </div>
-          <L1BitcoinReceive
-            :qr-options="qrOptions"
-            :lightning-invoice="generatedInvoice ? generatedInvoice.payment_request : ''"
-            :amount-sats="generatedInvoice ? generatedInvoice.amount : 0"
-            @deposit-claimed="handleBitcoinDepositClaimed"
-            @deposits-updated="handleBitcoinDepositsUpdated"
-            @request-amount="tapAmountButton"
-            @scan-withdraw="$emit('scan-withdraw')"
-          />
-        </template>
+        <L1BitcoinReceive
+          v-if="showUnifiedBitcoinView"
+          :qr-options="qrOptions"
+          :lightning-invoice="generatedInvoice ? generatedInvoice.payment_request : ''"
+          :amount-sats="generatedInvoice ? generatedInvoice.amount : 0"
+          :amount-fiat="generatedInvoice ? formatInvoiceFiat(generatedInvoice.amount) : ''"
+          :note="description"
+          @deposit-claimed="handleBitcoinDepositClaimed"
+          @deposits-updated="handleBitcoinDepositsUpdated"
+          @request-amount="tapAmountButton"
+          @scan-withdraw="$emit('scan-withdraw')"
+        />
 
         <!-- Specific-amount Lightning Invoice Display -->
         <div class="lightning-receive" v-if="showSpecificInvoiceView">
@@ -2722,12 +2717,29 @@ export default {
 .rail-ring-light { border-color: #FFFFFF; }
 .rail-ring-dark  { border-color: #1C1C1E; }
 
+/* Centers the badge + code + rails in whatever space the header and the
+   bottom action row leave - the natural focus point on a phone. */
+.unified-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-height: 0;
+}
+
+.hero-subhint {
+  margin-bottom: 10px;
+}
+
 .cta-row {
   display: flex;
   justify-content: center;
   gap: 20px;
   align-self: stretch;
-  margin-top: 21px;
+  margin-top: 13px;
+  padding-bottom: max(10px, var(--safe-bottom, 0px));
 }
 
 .cta {
@@ -2818,11 +2830,6 @@ export default {
   opacity: 0.55;
 }
 
-.invoice-badge-slot {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 10px;
-}
 
 .invoice-badge {
   display: inline-flex;
@@ -2830,6 +2837,7 @@ export default {
   justify-content: center;
   gap: 8px;
   max-width: 100%;
+  margin-bottom: 13px;
   padding: 8px 14px;
   border: 0;
   border-radius: 999px;

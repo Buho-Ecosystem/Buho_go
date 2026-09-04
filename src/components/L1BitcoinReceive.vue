@@ -1,5 +1,23 @@
 <template>
   <div class="l1-bitcoin-receive">
+    <!-- Hero: amount badge, the code and its rail badges, vertically
+         centered in the space between header and the bottom action row -
+         the natural focus point on a phone. -->
+    <div class="unified-hero">
+      <!-- The request the QR currently carries; tapping edits it. -->
+      <button
+        v-if="amountSats > 0"
+        type="button"
+        class="invoice-badge"
+        :class="$q.dark.isActive ? 'invoice-badge-dark' : 'invoice-badge-light'"
+        @click="$emit('request-amount')"
+      >
+        <span class="invoice-badge-amount">{{ formatAmount(amountSats) }}</span>
+        <span v-if="amountFiat" class="invoice-badge-fiat">{{ amountFiat }}</span>
+        <span v-if="note" class="invoice-badge-note">{{ note }}</span>
+        <Icon icon="tabler:edit" width="14" height="14" />
+      </button>
+
     <!-- QR Code Section -->
     <div class="qr-section">
       <div class="qr-card" @click="copyAddress">
@@ -30,8 +48,66 @@
         <Icon icon="tabler:currency-bitcoin" width="15" height="15" />
       </span>
       <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
+        <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
+      </span>
+      <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
         <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
       </span>
+    </div>
+    </div>
+
+    <!--
+      Pending Deposits
+      Polished incoming-deposit tracker. Surfaces directly under the
+      address card so a user who just scanned the QR sees the
+      confirmation progress without scrolling. Card uses Bitcoin orange
+      as the accent (matches the asset colour) instead of the legacy
+      green tint, with a subtle progress bar that fills 1/3 → 2/3 → 3/3
+      so the wait is legible at a glance.
+    -->
+    <!--
+      Pending Deposits — slim, single-line chips. The chip is just a
+      tap target; the bottom sheet below carries the full picture
+      (progress while confirming, fee + Add to Wallet when ready).
+      That keeps the receive screen scannable when nothing is
+      happening yet, and gives users one consistent surface to learn.
+    -->
+    <div v-if="pendingDeposits.length > 0" class="deposits-list">
+      <button
+        v-for="deposit in pendingDeposits"
+        :key="deposit.txId"
+        class="deposit-chip"
+        :class="$q.dark.isActive ? 'chip-dark' : 'chip-light'"
+        @click="openDepositSheet(deposit)"
+      >
+        <div class="chip-indicator" :class="$q.dark.isActive ? 'indicator-dark' : 'indicator-light'">
+          <Icon icon="tabler:currency-bitcoin" width="16" height="16" />
+        </div>
+        <span class="chip-amount" :class="$q.dark.isActive ? 'amount-dark' : 'amount-light'">
+          +{{ formatAmount(deposit.amount) }}
+        </span>
+        <span
+          class="chip-status"
+          :class="[
+            deposit.confirmed ? 'chip-status-ready' : 'chip-status-pending',
+            $q.dark.isActive ? 'chip-status-dark' : 'chip-status-light'
+          ]"
+        >
+          <span class="chip-dot" :class="deposit.confirmed ? 'chip-dot-ready' : 'chip-dot-pending'" aria-hidden="true"></span>
+          <span v-if="deposit.confirmed">{{ walletStore.isDepositClaimInFlight(deposit.txId) ? $t('Adding') : $t('Ready') }}</span>
+          <span v-else>{{ deposit.confirmations }}/3</span>
+        </span>
+        <Icon icon="tabler:chevron-right" width="14" height="14" class="chip-chevron" />
+      </button>
+    </div>
+
+    <!-- End cap: what this code can do, in small quiet type. Last on
+         purpose, so its per-language height can never push a control out
+         of view. Deposits need no manual check: the 30s poll here, the
+         wallet home's 60s poll and the store's refresh signal already
+         cover detection - chips appear above when something arrives. -->
+    <div class="unified-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+      {{ $t('Lightning and Spark pay instantly - on-chain needs 3 confirmations') }}
     </div>
 
     <!-- One row of equal, labeled actions (52pt targets): shape the
@@ -91,59 +167,6 @@
       </button>
     </div>
 
-    <!--
-      Pending Deposits
-      Polished incoming-deposit tracker. Surfaces directly under the
-      address card so a user who just scanned the QR sees the
-      confirmation progress without scrolling. Card uses Bitcoin orange
-      as the accent (matches the asset colour) instead of the legacy
-      green tint, with a subtle progress bar that fills 1/3 → 2/3 → 3/3
-      so the wait is legible at a glance.
-    -->
-    <!--
-      Pending Deposits — slim, single-line chips. The chip is just a
-      tap target; the bottom sheet below carries the full picture
-      (progress while confirming, fee + Add to Wallet when ready).
-      That keeps the receive screen scannable when nothing is
-      happening yet, and gives users one consistent surface to learn.
-    -->
-    <div v-if="pendingDeposits.length > 0" class="deposits-list">
-      <button
-        v-for="deposit in pendingDeposits"
-        :key="deposit.txId"
-        class="deposit-chip"
-        :class="$q.dark.isActive ? 'chip-dark' : 'chip-light'"
-        @click="openDepositSheet(deposit)"
-      >
-        <div class="chip-indicator" :class="$q.dark.isActive ? 'indicator-dark' : 'indicator-light'">
-          <Icon icon="tabler:currency-bitcoin" width="16" height="16" />
-        </div>
-        <span class="chip-amount" :class="$q.dark.isActive ? 'amount-dark' : 'amount-light'">
-          +{{ formatAmount(deposit.amount) }}
-        </span>
-        <span
-          class="chip-status"
-          :class="[
-            deposit.confirmed ? 'chip-status-ready' : 'chip-status-pending',
-            $q.dark.isActive ? 'chip-status-dark' : 'chip-status-light'
-          ]"
-        >
-          <span class="chip-dot" :class="deposit.confirmed ? 'chip-dot-ready' : 'chip-dot-pending'" aria-hidden="true"></span>
-          <span v-if="deposit.confirmed">{{ walletStore.isDepositClaimInFlight(deposit.txId) ? $t('Adding') : $t('Ready') }}</span>
-          <span v-else>{{ deposit.confirmations }}/3</span>
-        </span>
-        <Icon icon="tabler:chevron-right" width="14" height="14" class="chip-chevron" />
-      </button>
-    </div>
-
-    <!-- End cap: what this code can do, in small quiet type. Last on
-         purpose, so its per-language height can never push a control out
-         of view. Deposits need no manual check: the 30s poll here, the
-         wallet home's 60s poll and the store's refresh signal already
-         cover detection - chips appear above when something arrives. -->
-    <div class="unified-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-      {{ $t('Lightning and Spark pay instantly - on-chain needs 3 confirmations') }}
-    </div>
 
     <!--
       Deposit Sheet — single bottom sheet that handles every state of
@@ -338,6 +361,16 @@ export default {
     amountSats: {
       type: Number,
       default: 0
+    },
+    /** Preformatted fiat equivalent for the amount badge ('' hides it). */
+    amountFiat: {
+      type: String,
+      default: ''
+    },
+    /** The note attached to the request, shown truncated on the badge. */
+    note: {
+      type: String,
+      default: ''
     }
   },
 
@@ -1047,11 +1080,62 @@ export default {
 /* ==========================================
    QR Code Section - Clean & Centered
    ========================================== */
+/* Centers the badge + code + rails in whatever space the header and the
+   bottom action row leave - the natural focus point on a phone. */
+.unified-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-height: 0;
+}
+
 .qr-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 8px;
+}
+
+.invoice-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  margin-bottom: 13px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.invoice-badge:active { transform: scale(0.98); }
+
+.invoice-badge-light { background: rgba(0, 0, 0, 0.05); color: rgba(0, 0, 0, 0.85); }
+.invoice-badge-dark  { background: rgba(255, 255, 255, 0.10); color: rgba(255, 255, 255, 0.9); }
+
+.invoice-badge-amount {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.invoice-badge-fiat {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.invoice-badge-note {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.7;
 }
 
 .qr-card {
@@ -1155,7 +1239,8 @@ export default {
   justify-content: center;
   gap: 20px;
   align-self: stretch;
-  margin-top: 21px;
+  margin-top: 13px;
+  padding-bottom: max(10px, var(--safe-bottom, 0px));
 }
 
 .cta {
@@ -1234,7 +1319,7 @@ export default {
    End cap - quiet capability sentence
    ========================================== */
 .unified-hint {
-  margin-top: 21px;
+  margin-top: 13px;
   padding: 0 12px;
   font-size: 11px;
   line-height: 1.4;
