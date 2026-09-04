@@ -25,6 +25,7 @@ import {
   normalizePaymentAddress,
   stripWrapperScheme,
   splitAddressForDisplay,
+  nativeRailsFromBip21,
 } from '../addressUtils.js';
 
 // A real LNURL-withdraw voucher (LNbits) reported from the field. It must be
@@ -278,6 +279,20 @@ test('splitAddressForDisplay: defensive against empties and non-strings', () => 
   assert.equal(splitAddressForDisplay('   '), null);
   assert.equal(splitAddressForDisplay('@nolocalpart.com'), null);
   assert.equal(splitAddressForDisplay('nodomain@'), null);
+});
+
+test('nativeRailsFromBip21: valid spark/ark params surface, junk is dropped', () => {
+  assert.deepEqual(
+    nativeRailsFromBip21({ params: { spark: 'spark1pgssqabc', ark: 'ark1qqelabc' } }),
+    { spark: 'spark1pgssqabc', ark: 'ark1qqelabc' }
+  );
+  // A stray value that is not an address of the right family never hijacks.
+  assert.deepEqual(
+    nativeRailsFromBip21({ params: { spark: 'bc1qnotspark', ark: 'lnbc1notark' } }),
+    { spark: null, ark: null }
+  );
+  assert.deepEqual(nativeRailsFromBip21({ params: {} }), { spark: null, ark: null });
+  assert.deepEqual(nativeRailsFromBip21(null), { spark: null, ark: null });
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

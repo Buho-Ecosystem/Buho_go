@@ -15,30 +15,21 @@
       </div>
 
       <div class="sheet-header">
-        <!-- Back, not a second sheet: a picker stacked on top of this one
-             would leave the user closing two things to get out of one. -->
+        <!-- One contextual way back: the wallet picker steps back to the
+             main view (never a second stacked sheet to close), everywhere
+             else the arrow leaves the sheet. -->
         <q-btn
-          v-if="view === 'wallets'"
           flat round dense
           :aria-label="$t('Back')"
-          class="sheet-close-btn"
-          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-          @click="view = 'main'"
+          class="sheet-back-btn glass-back-btn"
+          @click="view === 'wallets' ? (view = 'main') : (open = false)"
         >
           <Icon icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
         <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
           {{ headerTitle }}
         </div>
-        <q-btn
-          flat round dense
-          :aria-label="$t('Close')"
-          class="sheet-close-btn"
-          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-          @click="open = false"
-        >
-          <Icon icon="tabler:x" width="18" height="18" />
-        </q-btn>
+        <div class="sheet-header-spacer" aria-hidden="true"></div>
       </div>
 
       <div class="sheet-scroll">
@@ -713,9 +704,12 @@ export default {
 .sheet-handle-bar-light { background: rgba(15, 23, 42, 0.18); }
 .sheet-handle-bar-dark { background: rgba(255, 255, 255, 0.22); }
 
-.sheet-header { display: flex; align-items: center; padding: 4px 18px 8px; gap: 8px; flex-shrink: 0; }
-.sheet-title { flex: 1 1 auto; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 600; letter-spacing: -0.005em; }
-.sheet-close-btn { flex: 0 0 auto; }
+.sheet-header { display: flex; align-items: center; padding: 6px 16px 10px; gap: 8px; flex-shrink: 0; }
+.sheet-title { flex: 1 1 auto; text-align: center; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-back-btn { flex: 0 0 auto; }
+/* Mirrors the back button's width so the centered title stays optically
+   centered (HIG: balance the nav bar's leading and trailing slots). */
+.sheet-header-spacer { flex: 0 0 auto; width: 40px; }
 
 .sheet-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .step-body { display: flex; flex-direction: column; gap: 18px; padding: 6px 18px 18px; }

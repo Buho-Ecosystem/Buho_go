@@ -123,6 +123,67 @@ export function selectBip21Destination(parsed) {
 }
 
 /**
+ * Compose a unified BIP21 receive URI: the on-chain address as the base,
+ * the BOLT11 invoice as `lightning=` (the industry convention), the Spark
+ * address as `spark=` and the Ark address as `ark=`.
+ *
+ * BIP21 requires wallets to ignore query params they do not understand
+ * (only `req-` prefixed params may invalidate a URI), so the extra rails
+ * are safe everywhere and readable back via `parseBip21().params`. BIP321,
+ * the draft successor, standardizes exactly this shape: a payment
+ * instruction's bech32 HRP becomes its parameter key — `ark=` is the Ark
+ * ecosystem's key (used by bark), `spark=` mirrors it for Spark.
+ *
+ * The amount rides twice on purpose: `amount=` in BTC for on-chain payers,
+ * and inside the embedded invoice for Lightning/Spark payers. Rails are
+ * only emitted when they have a value, so the URI degrades gracefully —
+ * with nothing but an address it is a plain `bitcoin:` URI, and with no
+ * address at all it is nothing (never fabricate a destination).
+ *
+ * @param {{
+ *   address: string,
+ *   lightning?: string,
+ *   spark?: string,
+ *   ark?: string,
+ *   amountSats?: number|null,
+ * }} parts
+ * @returns {string} The URI, or '' without an address.
+ */
+export function composeUnifiedBip21({ address, lightning = '', spark = '', ark = '', amountSats = null }) {
+  if (!address) return '';
+  const params = [];
+  const sats = Number(amountSats);
+  if (Number.isFinite(sats) && sats > 0) {
+    params.push('amount=' + (sats / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, ''));
+  }
+  if (lightning) params.push('lightning=' + lightning);
+  if (spark) params.push('spark=' + spark);
+  if (ark) params.push('ark=' + ark);
+  return 'bitcoin:' + address + (params.length ? '?' + params.join('&') : '');
+}
+
+/**
+ * Convert a BIP21 `amount=` value (BTC, decimal string) to integer sats.
+ *
+ * Parsed digit-by-digit rather than via float multiplication so
+ * `0.00016667` can never come back as `16666.999…`. Returns null for
+ * anything that is not a positive, sat-precise BTC amount — including
+ * sub-sat precision, which no rail here can pay.
+ *
+ * @param {string|number} amount
+ * @returns {number|null} integer sats, or null when unusable
+ */
+export function bip21AmountToSats(amount) {
+  if (typeof amount !== 'string' && typeof amount !== 'number') return null;
+  const str = String(amount).trim();
+  if (!/^\d+(\.\d+)?$/.test(str)) return null;
+  const [whole, frac = ''] = str.split('.');
+  if (frac.length > 8) return null;
+  const sats = Number(whole) * 1e8 + Number((frac + '00000000').slice(0, 8));
+  return Number.isSafeInteger(sats) && sats > 0 ? sats : null;
+}
+
+/**
  * Cheap shape check for the `lightning=` BIP21 param. We intentionally do
  * not fully decode BOLT11 here — a prefix check is enough to avoid routing
  * obviously-corrupt values as the preferred destination (which would drop

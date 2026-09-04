@@ -158,6 +158,34 @@ export function isArkadeAddress(address) {
 }
 
 /**
+ * Extract the native-rail destinations a unified BIP21 URI offers.
+ *
+ * A unified receive QR can carry a `spark=` and/or `ark=` param next to the
+ * on-chain address and `lightning=` invoice (see composeUnifiedBip21 in
+ * bip21.js). A payer whose wallet speaks one of those rails natively can
+ * settle over it at zero / near-zero fee instead of paying the Lightning
+ * route. Values that do not look like an address of the right family are
+ * dropped — a stray param must never hijack the destination, only offer a
+ * cheaper road to it.
+ *
+ * Lives here (not bip21.js) because the address validators are this
+ * module's single source of truth, and bip21.js must stay import-free of
+ * us — addressUtils already imports extractLnFallbackParam from there.
+ *
+ * @param {{ params?: Record<string, string> } | null} parsed - parseBip21() result
+ * @returns {{ spark: string|null, ark: string|null }}
+ */
+export function nativeRailsFromBip21(parsed) {
+  const params = parsed?.params || {};
+  const spark = typeof params.spark === 'string' ? params.spark.trim() : '';
+  const ark = typeof params.ark === 'string' ? params.ark.trim() : '';
+  return {
+    spark: spark && isSparkAddress(spark) ? spark : null,
+    ark: ark && isArkadeAddress(ark) ? ark : null,
+  };
+}
+
+/**
  * True if the input looks like a BOLT11 Lightning invoice.
  * Accepts a leading `lightning:` URI prefix since real-world inputs often
  * carry it (QR scans, deep links).
