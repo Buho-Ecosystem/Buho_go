@@ -1249,38 +1249,16 @@
               <div
                 class="wallet-card"
                 :class="{
-                  'wallet-card-active': wallet.id === activeWalletId,
                   'wallet-card-disconnected': !connectionStates[wallet.id]?.connected,
                   'wallet-card-dark': $q.dark.isActive,
                   'wallet-card-light': !$q.dark.isActive
                 }"
+                @click="openWalletDetail(wallet.id)"
               >
                 <!-- Wallet Avatar -->
                 <div class="wallet-avatar">
                   <div class="wallet-avatar-circle wallet-avatar-black">
-                    <!-- Spark Logo -->
-                    <svg v-if="wallet.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
-                    </svg>
-                    <!-- NWC Logo -->
-                    <svg v-else-if="wallet.type === 'nwc'" width="20" height="20" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_settings_grad)"/>
-                      <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
-                      <defs>
-                        <linearGradient id="nwc_settings_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
-                          <stop stop-color="#FFCA4A"/>
-                          <stop offset="1" stop-color="#F7931A"/>
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                    <!-- LNbits Logo -->
-                    <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
-                    </svg>
-                    <!-- Arkade brand mark -->
-                    <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="orange" :size="20" />
-                    <!-- Default wallet icon -->
-                    <Icon v-else icon="tabler:wallet" width="20" height="20" style="color: white;" />
+                    <WalletBrandMark :type="wallet.type" :size="20" />
                   </div>
                   <div
                     class="wallet-status-dot"
@@ -1288,94 +1266,23 @@
                   ></div>
                 </div>
 
-                <!-- Wallet Details -->
+                <!-- Wallet Details: name + one status line. -->
                 <div class="wallet-details">
-                  <div class="wallet-header-row">
-                    <q-input
-                      v-model="wallet.name"
-                      dense
-                      borderless
-                      class="wallet-name-field"
-                      :class="$q.dark.isActive ? 'wallet-name-field-dark' : 'wallet-name-field-light'"
-                      input-class="wallet-name-input-inner"
-                    />
+                  <div class="wallet-row-name" :class="$q.dark.isActive ? 'row-name-dark' : 'row-name-light'">
+                    {{ wallet.name }}
                   </div>
-                  <div class="wallet-meta-row">
-                    <div class="wallet-type-badge" :class="getTypeBadgeClass(wallet.type)">
-                      <!-- Spark mini logo -->
-                      <svg v-if="wallet.type === 'spark'" width="10" height="10" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
-                      </svg>
-                      <!-- NWC mini logo -->
-                      <svg v-else-if="wallet.type === 'nwc'" width="10" height="10" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
-                        <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
-                      </svg>
-                      <!-- LNbits mini logo -->
-                      <svg v-else-if="wallet.type === 'lnbits'" width="9" height="10" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
-                      </svg>
-                      <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="white" :size="10" />
-                      <Icon v-else icon="tabler:wallet" width="10" height="10" />
-                      <span>{{ getWalletTypeLabel(wallet) }}</span>
-                    </div>
-                    <div v-if="wallet.id === activeWalletId" class="wallet-tag" :class="$q.dark.isActive ? 'tag-active-dark' : 'tag-active-light'">{{ $t('Active') }}</div>
-                  </div>
-                  <div class="wallet-balance-row" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
-                    <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
-                  </div>
-                  <div v-if="connectionStates[wallet.id]?.error" class="wallet-error-msg">
-                    {{ connectionStates[wallet.id].error }}
+                  <div class="wallet-row-sub" :class="$q.dark.isActive ? 'row-sub-dark' : 'row-sub-light'">
+                    <span>{{ getWalletTypeLabel(wallet) }}</span>
+                    <span v-if="wallet.id === activeWalletId" class="row-sub-active" :class="$q.dark.isActive ? 'sub-active-dark' : 'sub-active-light'"> · {{ $t('Active') }}</span>
+                    <span v-else-if="!connectionStates[wallet.id]?.connected"> · {{ $t('Offline') }}</span>
                   </div>
                 </div>
 
-                <!-- Wallet Actions -->
-                <div class="wallet-card-actions">
-                  <!-- Reconnect only makes sense for a wallet that's meant to be
-                       live: any non-Spark wallet, or the ACTIVE Spark wallet.
-                       Inactive Spark wallets are intentionally offline (single
-                       live connection) — use the switch button to activate them. -->
-                  <q-btn
-                    v-if="!connectionStates[wallet.id]?.connected && (wallet.type !== 'spark' || wallet.id === activeWalletId)"
-                    flat
-                    round
-                    dense
-                    @click="reconnectWallet(wallet.id)"
-                    :loading="isReconnecting[wallet.id]"
-                    class="wallet-action-btn"
-                    :class="$q.dark.isActive ? 'wallet-action-btn-dark' : 'wallet-action-btn-light'"
-                    size="sm"
-                  >
-                    <Icon icon="tabler:refresh" width="16" height="16" />
-                    <q-tooltip>{{ $t('Reconnect') }}</q-tooltip>
-                  </q-btn>
-
-                  <q-btn
-                    v-if="wallet.id !== activeWalletId"
-                    flat
-                    round
-                    dense
-                    @click="handleSwitchWallet(wallet.id)"
-                    class="wallet-action-btn"
-                    :class="$q.dark.isActive ? 'wallet-action-btn-dark' : 'wallet-action-btn-light'"
-                    size="sm"
-                  >
-                    <Icon icon="tabler:transfer" width="16" height="16" />
-                    <q-tooltip>{{ $t('Switch') }}</q-tooltip>
-                  </q-btn>
-
-                  <q-btn
-                    flat
-                    round
-                    dense
-                    @click="confirmRemoveWallet(wallet.id)"
-                    class="wallet-action-btn wallet-action-danger"
-                    size="sm"
-                  >
-                    <Icon icon="tabler:trash" width="16" height="16" />
-                    <q-tooltip>{{ $t('Remove') }}</q-tooltip>
-                  </q-btn>
+                <!-- Trailing value + disclosure -->
+                <div class="wallet-row-value" :class="$q.dark.isActive ? 'row-value-dark' : 'row-value-light'">
+                  <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
                 </div>
+                <Icon icon="tabler:chevron-right" width="16" height="16" class="wallet-row-chevron" />
               </div>
 
               </div>
@@ -1395,6 +1302,99 @@
             <Icon icon="tabler:plus" width="20" height="20" class="q-mr-sm" />
             {{ $t('Add Wallet') }}
           </q-btn>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Wallet Detail Sheet: everything a row used to cram into icon
+         buttons, behind one tap - identity + rename up top, plainly
+         labeled actions below, the destructive one last and alone. -->
+    <q-dialog
+      v-model="showWalletDetail"
+      position="bottom"
+      transition-show="slide-up"
+      transition-hide="slide-down"
+      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    >
+      <q-card v-if="detailWallet" class="wallet-detail-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
+
+        <q-card-section class="wallet-detail-hero">
+          <div class="wallet-avatar">
+            <div class="wallet-avatar-circle wallet-avatar-black wallet-detail-avatar">
+              <WalletBrandMark :type="detailWallet.type" :size="26" />
+            </div>
+            <div
+              class="wallet-status-dot"
+              :class="connectionStates[detailWallet.id]?.connected ? 'status-connected' : 'status-disconnected'"
+            ></div>
+          </div>
+
+          <q-input
+            v-model="detailWallet.name"
+            dense
+            borderless
+            :label="$t('Wallet Name')"
+            class="wallet-detail-name"
+            :class="$q.dark.isActive ? 'detail-name-dark' : 'detail-name-light'"
+            input-class="wallet-detail-name-inner"
+          >
+            <template #append>
+              <Icon icon="tabler:edit" width="16" height="16" class="wallet-detail-name-pen" />
+            </template>
+          </q-input>
+
+          <div class="wallet-detail-sub" :class="$q.dark.isActive ? 'row-sub-dark' : 'row-sub-light'">
+            {{ getWalletTypeLabel(detailWallet) }}
+            · {{ connectionStates[detailWallet.id]?.connected ? $t('Online') : $t('Offline') }}
+            <template v-if="detailWallet.id === activeWalletId"> · {{ $t('Active') }}</template>
+          </div>
+
+          <div class="wallet-detail-balance" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
+            <HiddenAmount>{{ formatBalance(balances[detailWallet.id] || 0) }}</HiddenAmount>
+          </div>
+
+          <div v-if="connectionStates[detailWallet.id]?.error" class="wallet-error-msg">
+            {{ connectionStates[detailWallet.id].error }}
+          </div>
+        </q-card-section>
+
+        <q-card-section class="wallet-detail-actions">
+          <div class="wallet-detail-group" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
+            <button
+              v-if="detailWallet.id !== activeWalletId"
+              type="button"
+              class="wallet-detail-action"
+              :class="$q.dark.isActive ? 'detail-action-dark' : 'detail-action-light'"
+              :disabled="walletSwitching"
+              @click="handleSwitchWallet(detailWallet.id)"
+            >
+              <Icon icon="tabler:circle-check" width="20" height="20" />
+              <span>{{ $t('Use this wallet') }}</span>
+            </button>
+            <button
+              v-if="!connectionStates[detailWallet.id]?.connected && (detailWallet.type !== 'spark' || detailWallet.id === activeWalletId)"
+              type="button"
+              class="wallet-detail-action"
+              :class="$q.dark.isActive ? 'detail-action-dark' : 'detail-action-light'"
+              :disabled="isReconnecting[detailWallet.id]"
+              @click="reconnectWallet(detailWallet.id)"
+            >
+              <Icon icon="tabler:refresh" width="20" height="20" />
+              <span>{{ isReconnecting[detailWallet.id] ? $t('Reconnecting...') : $t('Reconnect') }}</span>
+            </button>
+          </div>
+
+          <div class="wallet-detail-group wallet-detail-danger-group" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
+            <button
+              type="button"
+              class="wallet-detail-action wallet-detail-danger"
+              @click="confirmRemoveWallet(detailWallet.id)"
+            >
+              <Icon icon="tabler:trash" width="20" height="20" />
+              <span>{{ $t('Remove Wallet') }}</span>
+            </button>
+          </div>
         </q-card-section>
       </q-card>
     </q-dialog>
@@ -2236,6 +2236,7 @@ import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
+import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import GetAppDialog from '../components/GetAppDialog.vue'
@@ -2271,6 +2272,7 @@ export default {
   components: {
     VueQrcode,
     ArkadeLogo,
+    WalletBrandMark,
     SparkSeedPhraseDialog,
     CloudBackupSheet,
     BiometricEnableDialog,
@@ -2295,6 +2297,9 @@ export default {
     return {
       showWalletsDialog: false,
       showAddWalletDialog: false,
+      // Per-wallet detail sheet (opened from a Manage Wallets row).
+      showWalletDetail: false,
+      detailWalletId: null,
       showCurrencyDialog: false,
       showLanguageDialog: false,
       showMissingLanguageDialog: false,
@@ -2500,6 +2505,11 @@ export default {
     }
   },
   computed: {
+    /** The wallet the detail sheet is showing; null once it is removed. */
+    detailWallet() {
+      return this.wallets.find((w) => w.id === this.detailWalletId) || null;
+    },
+
     /**
      * The phrase a destructive action makes you type. Translated: the gate
      * exists so the user reads and understands what they are about to do,
@@ -3006,6 +3016,10 @@ export default {
     }
   },
   watch: {
+    detailWallet(wallet) {
+      if (!wallet && this.showWalletDetail) this.showWalletDetail = false;
+    },
+
     /**
      * Replay the kiosk intro animation every time the user lands on
      * the intro step with the dialog visible. Covers both (a) a fresh
@@ -4366,14 +4380,9 @@ export default {
       }
     },
 
-    getTypeBadgeClass(type) {
-      switch (type) {
-        case 'spark': return 'type-spark';
-        case 'arkade': return 'type-arkade';
-        case 'lnbits': return 'type-lnbits';
-        case 'nwc':
-        default: return 'type-nwc';
-      }
+    openWalletDetail(walletId) {
+      this.detailWalletId = walletId;
+      this.showWalletDetail = true;
     },
 
     async copyToClipboard(text, successMessage) {
@@ -6054,6 +6063,185 @@ export default {
 .wallets-group-light { background: #FFFFFF; }
 .wallets-group-dark  { background: #2C2C2E; }
 
+/* Two-line disclosure row: identity left, value trailing, chevron as the
+   affordance. All management lives one tap deeper. */
+.wallet-card {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wallet-row-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-name-dark { color: #F6F6F6; }
+.row-name-light { color: #212121; }
+
+.wallet-row-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-sub-dark { color: rgba(255, 255, 255, 0.5); }
+.row-sub-light { color: rgba(0, 0, 0, 0.45); }
+
+.row-sub-active.sub-active-light { color: #1A1A1A; font-weight: 600; }
+.row-sub-active.sub-active-dark { color: #15DE72; font-weight: 600; }
+
+.wallet-row-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.row-value-dark { color: rgba(255, 255, 255, 0.75); }
+.row-value-light { color: rgba(0, 0, 0, 0.65); }
+
+.wallet-row-chevron {
+  flex-shrink: 0;
+  opacity: 0.35;
+}
+
+/* ── Wallet detail sheet ── */
+.wallet-detail-card {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+}
+
+.wallet-detail-card .sheet-grabber {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+}
+
+.wallet-detail-card .grabber-bar {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.35);
+}
+
+.wallet-detail-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 1.5rem 0.75rem;
+  text-align: center;
+}
+
+.wallet-detail-avatar {
+  width: 56px;
+  height: 56px;
+}
+
+.wallet-detail-name {
+  width: min(280px, 100%);
+  margin-top: 0.25rem;
+}
+
+.wallet-detail-name :deep(.q-field__native) {
+  font-family: 'Manrope', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.detail-name-dark :deep(.q-field__native) { color: #F6F6F6; }
+.detail-name-light :deep(.q-field__native) { color: #212121; }
+
+.wallet-detail-name-pen {
+  opacity: 0.4;
+}
+
+.wallet-detail-sub {
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.wallet-detail-balance {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
+.wallet-detail-actions {
+  padding: 0.25rem 1rem;
+  padding-bottom: max(1rem, var(--safe-bottom, 0px));
+}
+
+.wallet-detail-group {
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-detail-group:empty {
+  display: none;
+}
+
+.wallet-detail-danger-group {
+  margin-top: 0.75rem;
+}
+
+.wallet-detail-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 1rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wallet-detail-action + .wallet-detail-action {
+  position: relative;
+}
+
+.wallet-detail-action + .wallet-detail-action::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 48px;
+  right: 0;
+  height: 1px;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.wallet-detail-action:disabled {
+  opacity: 0.5;
+}
+
+.detail-action-light { color: #1A1A1A; }
+.detail-action-light:hover { background: rgba(0, 0, 0, 0.045); }
+.detail-action-dark { color: #F6F6F6; }
+.detail-action-dark:hover { background: rgba(255, 255, 255, 0.06); }
+
+.wallet-detail-danger { color: #E5484D; }
+.wallet-detail-danger:hover { background: rgba(229, 72, 77, 0.08); }
+
 .no-wallets {
   text-align: center;
   padding: 2rem;
@@ -6186,122 +6374,6 @@ export default {
   overflow: hidden;
 }
 
-.wallet-header-row {
-  margin-bottom: 0.125rem;
-}
-
-.wallet-name-field {
-  max-width: 180px;
-}
-
-.wallet-name-field :deep(.q-field__control) {
-  min-height: 0;
-  padding: 0;
-  height: 24px;
-}
-
-.wallet-name-field :deep(.q-field__native) {
-  padding: 0 0.25rem;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 24px;
-  border-radius: 4px;
-  transition: background 0.15s ease;
-}
-
-.wallet-name-field-dark :deep(.q-field__native) {
-  color: #F6F6F6;
-}
-
-.wallet-name-field-light :deep(.q-field__native) {
-  color: #212121;
-}
-
-.wallet-name-field-dark :deep(.q-field__native:hover),
-.wallet-name-field-dark :deep(.q-field__native:focus) {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.wallet-name-field-light :deep(.q-field__native:hover),
-.wallet-name-field-light :deep(.q-field__native:focus) {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-/* Wallet Meta Row */
-.wallet-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-bottom: 0.25rem;
-  flex-wrap: wrap;
-}
-
-.wallet-type-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.125rem 0.4rem;
-  border-radius: 6px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: white;
-}
-
-.type-spark {
-  background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
-}
-
-.type-arkade {
-  background: linear-gradient(135deg, #F14317, #C0360F);
-}
-
-.type-nwc {
-  background: linear-gradient(135deg, #FFCA4A, #F7931A);
-}
-
-.type-lnbits {
-  background: linear-gradient(135deg, #FF1FE1, #C919B0);
-}
-
-.wallet-tag {
-  font-family: 'Manrope', sans-serif;
-  font-size: 9px;
-  font-weight: 600;
-  padding: 0.1rem 0.35rem;
-  border-radius: 5px;
-  text-transform: capitalize;
-  letter-spacing: 0.02em;
-}
-
-.tag-active-light {
-  background: rgba(0, 0, 0, 0.08);
-  color: #1A1A1A;
-}
-
-.tag-active-dark {
-  background: rgba(21, 222, 114, 0.15);
-  color: #15DE72;
-}
-
-/* Wallet Balance */
-.wallet-balance-row {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.wallet-balance-dark {
-  color: #777;
-}
-
-.wallet-balance-light {
-  color: var(--text-muted);
-}
-
 .wallet-error-msg {
   font-family: 'Manrope', sans-serif;
   font-size: 10px;
@@ -6311,45 +6383,7 @@ export default {
 }
 
 /* Wallet Card Actions */
-.wallet-card-actions {
-  display: flex;
-  gap: 0.25rem;
-  flex-shrink: 0;
-}
 
-.wallet-action-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  transition: all 0.15s ease;
-}
-
-.wallet-action-btn-dark {
-  color: #666;
-}
-
-.wallet-action-btn-light {
-  color: var(--text-muted);
-}
-
-.wallet-action-btn-dark:hover {
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
-}
-
-.wallet-action-btn-light:hover {
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
-}
-
-.wallet-action-danger {
-  color: #777;
-}
-
-.wallet-action-danger:hover {
-  background: rgba(239, 68, 68, 0.1) !important;
-  color: #EF4444 !important;
-}
 
 .connect-wallet-btn {
   width: 100%;
