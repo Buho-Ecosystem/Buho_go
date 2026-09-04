@@ -1198,7 +1198,7 @@
         <!-- Scrollable Content -->
         <q-card-section class="wallets-dialog-content">
           <!-- Wallet Statistics -->
-          <div class="wallet-stats" :class="$q.dark.isActive ? 'stats-dark' : 'stats-light'" v-if="wallets.length > 0">
+          <div class="wallet-stats" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'" v-if="wallets.length > 0">
             <div class="stat-item">
               <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
                 {{ wallets.length }}
@@ -5881,35 +5881,31 @@ export default {
 }
 
 /* Wallet Statistics */
+/* Summary strip: three equal, centered columns on the same grouped
+   surface as the list below - a reading, not a bordered widget. */
 .wallet-stats {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   border-radius: 16px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.stats-dark {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-card);
-}
-
-.stats-light {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-card);
+  padding: 0.875rem 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .stat-item {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  min-width: 0;
 }
 
-.stat-value {
+.wallet-stats .stat-value {
   font-family: 'Manrope', sans-serif;
-  margin-bottom: 0.25rem;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: 0.15rem;
 }
 
 .stat-value.online-value.online-light { color: #1A1A1A; }
@@ -5917,23 +5913,25 @@ export default {
 
 .stat-label {
   font-family: 'Manrope', sans-serif;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: capitalize;
   letter-spacing: 0.025em;
+  opacity: 0.55;
 }
 
 .stat-divider {
   width: 1px;
-  height: 32px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .divider-dark {
-  background: var(--border-card);
+  background: rgba(128, 128, 128, 0.25);
 }
 
 .divider-light {
-  background: var(--border-card);
+  background: rgba(128, 128, 128, 0.22);
 }
 
 /* Wallets List */
@@ -5968,6 +5966,11 @@ export default {
   border-bottom: none;
   padding-top: 0.25rem;
   padding-bottom: 0.5rem;
+}
+
+.wallets-dialog-header .dialog-title {
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* Pinned footer + its one CTA: dark ink in light mode, the app's credit
