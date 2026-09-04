@@ -1469,7 +1469,6 @@ export default {
   "Spark address": "Dirección Spark",
   "Arkade address": "Dirección Arkade",
   "Lightning invoice": "Factura Lightning",
-  "Amount / Note": "Importe / Nota",
   "Lightning and Spark pay instantly - on-chain needs 3 confirmations": "Lightning y Spark pagan al instante - on-chain necesita 3 confirmaciones",
   "Arkade pays instantly - set an amount to also receive over Lightning": "Arkade paga al instante - define un importe para recibir también por Lightning",
   "Minimum": "Mínimo",

@@ -702,7 +702,6 @@
       :amount="withdrawConfirmedAmount"
       :fiat-amount="withdrawConfirmedFiat"
       label="Sats Received"
-      :auto-close-delay="5"
       @closed="onWithdrawSuccessClosed"
     />
 
@@ -749,7 +748,6 @@
       :show-save-contact="sendSuccessShowSaveContact"
       :success-action="sendSuccessAction"
       :delivery-status="sendDeliveryStatus"
-      :auto-close-delay="5"
       @closed="onSendSuccessClosed"
       @save-contact-clicked="onSendSaveContactClicked"
     />

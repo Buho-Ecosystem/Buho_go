@@ -21,46 +21,35 @@
       </div>
     </div>
 
-    <!-- Identity line: the string people paste. The wallet has no Lightning
-         address, so the on-chain address is the identity; a small label
-         names what a tap copies. -->
-    <div
-      v-if="depositAddress"
-      class="identity-line"
-      @click="copyAddress"
-    >
-      <span class="identity-value" :class="$q.dark.isActive ? 'text-grey-3' : 'text-grey-8'">
-        {{ truncateAddress(depositAddress) }}
-        <Icon icon="tabler:copy" width="14" height="14" class="identity-copy" />
+    <!-- The rails this one code carries, stacked like profile avatars:
+         any of these networks can pay it. The address strings live behind
+         Copy on purpose - showing one under the QR made the code read as
+         on-chain only. -->
+    <div v-if="depositAddress" class="rail-stack" aria-hidden="true">
+      <span class="rail-badge rail-badge-btc" :class="$q.dark.isActive ? 'rail-ring-dark' : 'rail-ring-light'">
+        <Icon icon="tabler:currency-bitcoin" width="15" height="15" />
       </span>
-      <span class="identity-label" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-        {{ $t('Bitcoin address') }}
+      <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
+        <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
       </span>
     </div>
 
-    <!-- The one accented action (set what to charge) sits before the quiet
-         Copy/Share pair so it can never fall below the fold on a small
-         phone: primary before secondary, metadata last. -->
-    <button
-      v-if="depositAddress"
-      class="amount-note-btn"
-      :class="$q.dark.isActive ? 'amount-note-dark' : 'amount-note-light'"
-      @click="$emit('request-amount')"
-    >
-      <Icon icon="tabler:edit" width="18" height="18" />
-      <span>{{ $t('Amount / Note') }}</span>
-    </button>
-
-    <!-- Quiet secondary actions. The QR holds three copyable identities, so
-         Copy asks which one instead of guessing; Share hands out the full
-         unified string - exactly what the QR encodes. -->
-    <div v-if="depositAddress" class="action-buttons">
-      <button
-        class="action-btn"
-        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-      >
-        <Icon icon="tabler:copy" width="18" height="18" />
-        <span>{{ $t('Copy') }}</span>
+    <!-- One row of equal, labeled actions (52pt targets): shape the
+         request, hand out an identity, hand out the code, pull in a
+         voucher. Copy asks which identity instead of guessing; Share
+         hands out the full unified string - exactly what the QR encodes. -->
+    <div v-if="depositAddress" class="cta-row">
+      <button class="cta" @click="$emit('request-amount')">
+        <span class="cta-circle cta-circle-accent" :class="$q.dark.isActive ? 'cta-accent-dark' : 'cta-accent-light'">
+          <Icon icon="tabler:edit" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Amount') }}</span>
+      </button>
+      <button class="cta">
+        <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+          <Icon icon="tabler:copy" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
         <q-menu
           anchor="top middle"
           self="bottom middle"
@@ -88,13 +77,17 @@
           </q-list>
         </q-menu>
       </button>
-      <button
-        class="action-btn"
-        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-        @click="shareAddress"
-      >
-        <Icon icon="tabler:share" width="18" height="18" />
-        <span>{{ $t('Share') }}</span>
+      <button class="cta" @click="shareAddress">
+        <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+          <Icon icon="tabler:share" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Share') }}</span>
+      </button>
+      <button class="cta" @click="$emit('scan-withdraw')">
+        <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+          <Icon icon="tabler:scan" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
       </button>
     </div>
 
@@ -348,7 +341,7 @@ export default {
     }
   },
 
-  emits: ['deposit-claimed', 'deposits-updated', 'request-amount'],
+  emits: ['deposit-claimed', 'deposits-updated', 'request-amount', 'scan-withdraw'],
 
   data() {
     return {
@@ -1113,74 +1106,104 @@ export default {
 }
 
 /* ==========================================
-   Identity line - the string a tap copies, with a quiet label under it
+   Rail stack - the networks this one code carries, overlapped like
+   profile avatars. Informational; the strings live behind Copy.
    ========================================== */
-.identity-line {
+.rail-stack {
+  display: flex;
+  justify-content: center;
+  margin-top: 13px;
+}
+
+.rail-badge {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.rail-badge + .rail-badge {
+  margin-left: -7px;
+}
+
+.rail-badge img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.rail-badge-btc {
+  background: #F7931A;
+  color: #FFFFFF;
+}
+
+.rail-badge-light { background: rgba(0, 0, 0, 0.06); }
+.rail-badge-dark  { background: rgba(255, 255, 255, 0.14); }
+
+.rail-ring-light { border-color: #FFFFFF; }
+.rail-ring-dark  { border-color: #1C1C1E; }
+
+/* ==========================================
+   CTA row - equal, labeled actions on 52pt circular targets.
+   Amount wears the accent; the rest stay quiet.
+   ========================================== */
+.cta-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  align-self: stretch;
+  margin-top: 21px;
+}
+
+.cta {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  margin-top: 13px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.identity-line:active {
-  transform: scale(0.98);
-}
-
-.identity-value {
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 0.02em;
-}
-
-.identity-copy {
-  opacity: 0.4;
-}
-
-.identity-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* ==========================================
-   Amount / Note - the one accented action on the page
-   ========================================== */
-.amount-note-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  align-self: stretch;
-  margin-top: 21px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: transparent;
+  min-width: 56px;
+  padding: 0;
+  border: 0;
+  background: none;
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  transition: background-color 0.18s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.amount-note-light {
-  border: 1px solid rgba(247, 147, 26, 0.5);
-  color: #B86E0F;
+.cta:active .cta-circle {
+  transform: scale(0.94);
 }
-.amount-note-light:hover { background: rgba(247, 147, 26, 0.06); }
 
-.amount-note-dark {
-  border: 1px solid rgba(247, 147, 26, 0.45);
-  color: #FBBF77;
+.cta-circle {
+  display: flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.12s ease, background-color 0.18s ease;
 }
-.amount-note-dark:hover { background: rgba(247, 147, 26, 0.10); }
+
+.cta-circle-light { background: rgba(0, 0, 0, 0.05); color: rgba(0, 0, 0, 0.75); }
+.cta-circle-light:hover { background: rgba(0, 0, 0, 0.08); }
+.cta-circle-dark { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.85); }
+.cta-circle-dark:hover { background: rgba(255, 255, 255, 0.12); }
+
+.cta-accent-light { background: rgba(247, 147, 26, 0.14); color: #B86E0F; }
+.cta-accent-light:hover { background: rgba(247, 147, 26, 0.20); }
+.cta-accent-dark { background: rgba(247, 147, 26, 0.18); color: #FBBF77; }
+.cta-accent-dark:hover { background: rgba(247, 147, 26, 0.24); }
+
+.cta-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.cta-label-light { color: rgba(0, 0, 0, 0.65); }
+.cta-label-dark  { color: rgba(255, 255, 255, 0.7); }
 
 /* ==========================================
    Copy chooser - three identities, each with its value
@@ -1218,52 +1241,10 @@ export default {
   text-align: center;
 }
 
-/* ==========================================
-   Action Buttons
-   ========================================== */
-.action-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 12px;
-}
 
-/* Action button styles intentionally mirror ReceiveModal.vue's Spark view
-   so the Bitcoin receive screen matches the Spark receive screen pixel-
-   for-pixel. Keep these in sync if either side changes. */
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
 
-.action-btn-dark {
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.08);
-}
 
-.action-btn-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
 
-.action-btn-light {
-  color: rgba(0, 0, 0, 0.7);
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.action-btn-light:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
 
 /* ==========================================
    Pending Deposits — slim chip list. Each row is a single tap

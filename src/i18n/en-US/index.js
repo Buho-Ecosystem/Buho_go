@@ -1413,7 +1413,6 @@ export default {
   "Spark address": "Spark address",
   "Arkade address": "Arkade address",
   "Lightning invoice": "Lightning invoice",
-  "Amount / Note": "Amount / Note",
   "Lightning and Spark pay instantly - on-chain needs 3 confirmations": "Lightning and Spark pay instantly - on-chain needs 3 confirmations",
   "Arkade pays instantly - set an amount to also receive over Lightning": "Arkade pays instantly - set an amount to also receive over Lightning",
   "Minimum": "Minimum",

@@ -370,7 +370,6 @@
       :amount="claimSuccessAmount"
       :label="$t('Bitcoin Claimed')"
       accent-color="orange"
-      :auto-close-delay="4"
       @closed="onClaimSuccessClosed"
     />
 

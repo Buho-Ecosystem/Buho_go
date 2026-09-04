@@ -271,8 +271,11 @@ export default {
       default: ''
     },
     autoCloseDelay: {
+      // Seconds. Long enough to read the amount, short enough that the
+      // screen leaves on its own before it becomes a wall. Fractions are
+      // honored by the close timer; the visible countdown rounds up.
       type: Number,
-      default: 5
+      default: 2.8
     },
     accentColor: {
       type: String,
@@ -425,7 +428,7 @@ export default {
       if (holdOpen) {
         this.clearCountdown()
       } else {
-        this.countdown = this.autoCloseDelay
+        this.countdown = Math.ceil(this.autoCloseDelay)
         this.startCountdown()
       }
     }
@@ -435,7 +438,7 @@ export default {
   },
   methods: {
     startAnimationSequence() {
-      this.countdown = this.autoCloseDelay
+      this.countdown = Math.ceil(this.autoCloseDelay)
       this.showAnimation = false
       this.showAmount = false
       this.showCountdown = false
@@ -463,12 +466,17 @@ export default {
 
     startCountdown() {
       this.clearCountdown()
+      // Wall-clock based so a fractional delay (2.8s) closes on time and a
+      // stalled timer can never freeze the screen open at "1s".
+      const startedAt = Date.now()
+      const totalMs = this.autoCloseDelay * 1000
       this.countdownInterval = setInterval(() => {
-        this.countdown--
-        if (this.countdown <= 0) {
+        const remainingMs = totalMs - (Date.now() - startedAt)
+        this.countdown = Math.max(0, Math.ceil(remainingMs / 1000))
+        if (remainingMs <= 0) {
           this.closeNow()
         }
-      }, 1000)
+      }, 250)
     },
 
     clearCountdown() {

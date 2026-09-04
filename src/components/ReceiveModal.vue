@@ -34,20 +34,7 @@
           <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
             {{ headerTitle }}
           </div>
-          <div class="header-actions">
-            <q-btn
-              flat
-              round
-              dense
-              class="header-redeem-btn"
-              :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-              :aria-label="$t('Redeem')"
-              @click="$emit('scan-withdraw')"
-            >
-              <Icon icon="tabler:scan" width="20" height="20" />
-              <q-tooltip>{{ $t('Scan to redeem') }}</q-tooltip>
-            </q-btn>
-          </div>
+          <div class="header-actions"></div>
         </div>
       </q-card-section>
 
@@ -108,31 +95,34 @@
               {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
             </div>
 
-            <div class="identity-line" @click="copyArkadeBoardingAddress">
-              <span class="identity-value" :class="$q.dark.isActive ? 'text-grey-3' : 'text-grey-8'">
-                {{ truncateArkadeAddress(arkadeBoardingAddress) }}
-                <Icon icon="tabler:copy" width="14" height="14" class="identity-copy" />
+            <!-- The rails this one code carries, stacked like profile
+                 avatars. The address strings live behind Copy on purpose -
+                 showing one under the QR made the code read as on-chain
+                 only. -->
+            <div class="rail-stack" aria-hidden="true">
+              <span class="rail-badge rail-badge-btc" :class="$q.dark.isActive ? 'rail-ring-dark' : 'rail-ring-light'">
+                <Icon icon="tabler:currency-bitcoin" width="15" height="15" />
               </span>
-              <span class="identity-label" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-                {{ $t('Bitcoin address') }}
+              <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
+                <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
               </span>
             </div>
 
-            <button
-              class="amount-note-btn"
-              :class="$q.dark.isActive ? 'amount-note-dark' : 'amount-note-light'"
-              @click="tapAmountButton"
-            >
-              <Icon icon="tabler:edit" width="18" height="18" />
-              <span>{{ $t('Amount / Note') }}</span>
-            </button>
-
-            <!-- Copy asks which identity; Share hands out the full unified
+            <!-- One row of equal, labeled actions. Copy asks which identity
+                 instead of guessing; Share hands out the full unified
                  string - exactly what the QR encodes. -->
-            <div class="action-buttons">
-              <button class="action-btn" :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'">
-                <Icon icon="tabler:copy" width="18" height="18" />
-                <span>{{ $t('Copy') }}</span>
+            <div class="cta-row">
+              <button class="cta" @click="tapAmountButton">
+                <span class="cta-circle cta-circle-accent" :class="$q.dark.isActive ? 'cta-accent-dark' : 'cta-accent-light'">
+                  <Icon icon="tabler:edit" width="20" height="20" />
+                </span>
+                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Amount') }}</span>
+              </button>
+              <button class="cta">
+                <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                  <Icon icon="tabler:copy" width="20" height="20" />
+                </span>
+                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
                 <q-menu anchor="top middle" self="bottom middle" :offset="[0, 6]">
                   <q-list class="copy-menu">
                     <q-item v-if="generatedInvoice && generatedInvoice.amount > 0" v-close-popup clickable @click="copyInvoice">
@@ -156,9 +146,17 @@
                   </q-list>
                 </q-menu>
               </button>
-              <button class="action-btn" :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'" @click="shareArkadeBoardingAddress">
-                <Icon icon="tabler:share" width="18" height="18" />
-                <span>{{ $t('Share') }}</span>
+              <button class="cta" @click="shareArkadeBoardingAddress">
+                <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                  <Icon icon="tabler:share" width="20" height="20" />
+                </span>
+                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Share') }}</span>
+              </button>
+              <button class="cta" @click="$emit('scan-withdraw')">
+                <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                  <Icon icon="tabler:scan" width="20" height="20" />
+                </span>
+                <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
               </button>
             </div>
           </template>
@@ -192,6 +190,7 @@
             @deposit-claimed="handleBitcoinDepositClaimed"
             @deposits-updated="handleBitcoinDepositsUpdated"
             @request-amount="tapAmountButton"
+            @scan-withdraw="$emit('scan-withdraw')"
           />
         </template>
 
@@ -282,30 +281,30 @@
             </div>
           </div>
 
-          <div class="action-buttons action-buttons-three">
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="copyLightningAddress"
-            >
-              <Icon icon="tabler:copy" width="18" height="18" />
-              <span>{{ $t('Copy') }}</span>
+          <div class="cta-row">
+            <button class="cta" @click="tapAmountButton">
+              <span class="cta-circle cta-circle-accent" :class="$q.dark.isActive ? 'cta-accent-dark' : 'cta-accent-light'">
+                <Icon icon="tabler:edit" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Amount') }}</span>
             </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="shareLightningAddress"
-            >
-              <Icon icon="tabler:share" width="18" height="18" />
-              <span>{{ $t('Share') }}</span>
+            <button class="cta" @click="copyLightningAddress">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                <Icon icon="tabler:copy" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
             </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="tapAmountButton"
-            >
-              <Icon icon="tabler:edit" width="18" height="18" />
-              <span>{{ $t('Amount / Note') }}</span>
+            <button class="cta" @click="shareLightningAddress">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                <Icon icon="tabler:share" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Share') }}</span>
+            </button>
+            <button class="cta" @click="$emit('scan-withdraw')">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+                <Icon icon="tabler:scan" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
             </button>
           </div>
         </div>
@@ -377,6 +376,17 @@
       <q-card-section class="receive-footer" v-if="showAmountKeypadView">
         <div class="receive-footer-buttons">
           <q-btn
+            v-if="!showAmountInput"
+            flat
+            no-caps
+            class="footer-redeem-btn"
+            :class="$q.dark.isActive ? 'footer-redeem-dark' : 'footer-redeem-light'"
+            @click="$emit('scan-withdraw')"
+          >
+            <Icon icon="tabler:scan" width="18" height="18" class="q-mr-xs" />
+            {{ $t('Redeem') }}
+          </q-btn>
+          <q-btn
             class="create-invoice-btn"
             :class="$q.dark.isActive ? 'create-invoice-btn-dark' : 'create-invoice-btn-light'"
             :loading="isCreatingInvoice"
@@ -436,7 +446,6 @@
     :amount="confirmedAmount"
     :fiat-amount="confirmedFiatAmount"
     :description="generatedInvoice?.description"
-    :auto-close-delay="5"
     @closed="handleConfirmationClosed"
   />
 </template>
@@ -2672,73 +2681,120 @@ export default {
 }
 
 /* ==========================================
-   Unified receive: identity line, one accented Amount / Note action,
-   copy chooser and the amount badge. Kept visually in sync with
-   L1BitcoinReceive.vue (the Spark unified view).
+   Unified receive: rail stack, CTA row, copy chooser and the amount
+   badge. Kept visually in sync with L1BitcoinReceive.vue (the Spark
+   unified view).
    ========================================== */
-.identity-line {
+.rail-stack {
+  display: flex;
+  justify-content: center;
+  margin-top: 13px;
+}
+
+.rail-badge {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.rail-badge + .rail-badge {
+  margin-left: -7px;
+}
+
+.rail-badge img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.rail-badge-btc {
+  background: #F7931A;
+  color: #FFFFFF;
+}
+
+.rail-badge-light { background: rgba(0, 0, 0, 0.06); }
+.rail-badge-dark  { background: rgba(255, 255, 255, 0.14); }
+
+.rail-ring-light { border-color: #FFFFFF; }
+.rail-ring-dark  { border-color: #1C1C1E; }
+
+.cta-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  align-self: stretch;
+  margin-top: 21px;
+}
+
+.cta {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  margin-top: 10px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.identity-line:active {
-  transform: scale(0.98);
-}
-
-.identity-value {
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 0.02em;
-}
-
-.identity-copy {
-  opacity: 0.4;
-}
-
-.identity-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.amount-note-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  align-self: stretch;
-  margin-top: 12px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: transparent;
+  min-width: 56px;
+  padding: 0;
+  border: 0;
+  background: none;
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  transition: background-color 0.18s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.amount-note-light {
-  border: 1px solid rgba(247, 147, 26, 0.5);
-  color: #B86E0F;
+.cta:active .cta-circle {
+  transform: scale(0.94);
 }
-.amount-note-light:hover { background: rgba(247, 147, 26, 0.06); }
 
-.amount-note-dark {
-  border: 1px solid rgba(247, 147, 26, 0.45);
-  color: #FBBF77;
+.cta-circle {
+  display: flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.12s ease, background-color 0.18s ease;
 }
-.amount-note-dark:hover { background: rgba(247, 147, 26, 0.10); }
+
+.cta-circle-light { background: rgba(0, 0, 0, 0.05); color: rgba(0, 0, 0, 0.75); }
+.cta-circle-light:hover { background: rgba(0, 0, 0, 0.08); }
+.cta-circle-dark { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.85); }
+.cta-circle-dark:hover { background: rgba(255, 255, 255, 0.12); }
+
+.cta-accent-light { background: rgba(247, 147, 26, 0.14); color: #B86E0F; }
+.cta-accent-light:hover { background: rgba(247, 147, 26, 0.20); }
+.cta-accent-dark { background: rgba(247, 147, 26, 0.18); color: #FBBF77; }
+.cta-accent-dark:hover { background: rgba(247, 147, 26, 0.24); }
+
+.cta-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.cta-label-light { color: rgba(0, 0, 0, 0.65); }
+.cta-label-dark  { color: rgba(255, 255, 255, 0.7); }
+
+/* Keypad footer's Redeem - the labeled sibling of the primary action. */
+.footer-redeem-btn {
+  height: 52px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.footer-redeem-light {
+  color: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.footer-redeem-dark {
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+}
 
 .copy-menu {
   min-width: 230px;
