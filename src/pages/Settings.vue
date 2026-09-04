@@ -60,23 +60,6 @@
             </template>
           </SettingsRow>
 
-          <SettingsRow
-            icon="tabler:qrcode"
-            :label="$t('Spark Address')"
-            :caption="truncateAddress(activeSparkAddress) || $t('Not available')"
-            caption-mono
-            :interactive="false"
-          >
-            <template #right>
-              <q-btn flat round dense size="sm" @click="copySparkAddress">
-                <Icon icon="tabler:copy" width="16" height="16" />
-              </q-btn>
-              <q-btn flat round dense size="sm" @click="shareSparkAddress">
-                <Icon icon="tabler:share" width="16" height="16" />
-              </q-btn>
-            </template>
-          </SettingsRow>
-
           <!--
             Backup row: presents the same affordance in two states — the
             CTA-flavoured "Backup Seed Phrase" before verification and
@@ -4411,30 +4394,6 @@ export default {
       }
     },
 
-    async copySparkAddress() {
-      await this.copyToClipboard(this.activeSparkAddress, this.$t('Spark address copied'));
-    },
-
-    async shareSparkAddress() {
-      if (!this.activeSparkAddress) return;
-
-      const result = await shareContent({
-        title: this.$t('Spark Address'),
-        text: this.activeSparkAddress
-      });
-
-      if (result.success) {
-        // Share was successful - no notification needed, native share UI provides feedback
-      } else if (result.reason === 'unsupported' || result.reason === 'error') {
-        if (result.reason === 'error') {
-          console.error('Failed to share Spark address:', result.error);
-        }
-        // Fallback to copy if share is not supported or failed
-        await this.copySparkAddress();
-      }
-      // Don't do anything for 'cancelled' - user just closed the dialog
-    },
-
     async copyArkadeAddress() {
       await this.copyToClipboard(this.activeArkadeAddress, this.$t('Arkade address copied'));
     },
@@ -5350,13 +5309,6 @@ export default {
 
 .danger-action-btn:disabled {
   opacity: 0.4;
-}
-
-/* Spark Address Actions */
-.spark-address-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 4px;
 }
 
 .action-icon-dark {

@@ -504,7 +504,7 @@
         </q-card-section>
 
         <q-card-section class="switcher-content">
-          <div class="wallet-switch-list">
+          <div class="wallet-switch-list" :class="$q.dark.isActive ? 'switch-list-dark' : 'switch-list-light'">
             <template
               v-for="wallet in storeWallets"
               :key="wallet.id"
@@ -575,7 +575,6 @@
                     <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
-                  <div v-if="wallet.id === storeActiveWalletId" class="switch-tag" :class="$q.dark.isActive ? 'tag-active-dark' : 'tag-active-light'">{{ $t('Active') }}</div>
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
@@ -8468,55 +8467,49 @@ export default {
   display: none;
 }
 
+/* Inset grouped list: one rounded surface, hairline separators inset past
+   the leading mark, rows that highlight on press - selection is the
+   trailing checkmark, the platform-native reading. */
 .wallet-switch-list {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  border-radius: 16px;
+  overflow: hidden;
 }
+
+.switch-list-light { background: #FFFFFF; }
+.switch-list-dark  { background: #2C2C2E; }
 
 /* Wallet row */
 .wallet-switch-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.875rem;
   padding: 0.875rem 1rem;
-  border-radius: 14px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.wallet-switch-card-dark {
-  background: transparent;
+.wallet-switch-card:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 74px;
+  right: 0;
+  height: 1px;
+  background: rgba(128, 128, 128, 0.18);
 }
 
-.wallet-switch-card-light {
-  background: transparent;
+.wallet-switch-card-light:hover,
+.wallet-switch-card-light:active {
+  background: rgba(0, 0, 0, 0.045);
 }
 
-.wallet-switch-card-dark:hover {
-  background: #222;
-}
-
-.wallet-switch-card-light:hover {
-  background: #F3F4F6;
-}
-
-.wallet-switch-card-active.wallet-switch-card-light {
-  box-shadow: inset 0 0 0 1.5px #1A1A1A;
-  background: rgba(0, 0, 0, 0.03) !important;
-}
-
-.wallet-switch-card-active.wallet-switch-card-light:hover {
-  background: rgba(0, 0, 0, 0.05) !important;
-}
-
-.wallet-switch-card-active.wallet-switch-card-dark {
-  box-shadow: inset 0 0 0 1.5px #15DE72;
-  background: rgba(21, 222, 114, 0.05) !important;
-}
-
-.wallet-switch-card-active.wallet-switch-card-dark:hover {
-  background: rgba(21, 222, 114, 0.08) !important;
+.wallet-switch-card-dark:hover,
+.wallet-switch-card-dark:active {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* Switch Avatar */
@@ -8570,7 +8563,7 @@ export default {
 }
 
 .wallet-switch-card-dark .switch-status-dot {
-  border-color: #0C0C0C;
+  border-color: #2C2C2E;
 }
 
 .wallet-switch-card-light .switch-status-dot {
@@ -8668,16 +8661,6 @@ export default {
   border-radius: 4px;
   text-transform: capitalize;
   letter-spacing: 0.02em;
-}
-
-.tag-active-light {
-  background: rgba(0, 0, 0, 0.08);
-  color: #1A1A1A;
-}
-
-.tag-active-dark {
-  background: rgba(21, 222, 114, 0.15);
-  color: #15DE72;
 }
 
 /* Switch Balance */
