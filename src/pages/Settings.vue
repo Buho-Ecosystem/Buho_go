@@ -1190,9 +1190,13 @@
         <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
         <!-- Fixed Header -->
         <q-card-section class="dialog-header wallets-dialog-header">
+          <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" v-close-popup>
+            <Icon icon="tabler:chevron-left" width="20" height="20" />
+          </q-btn>
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Manage Wallets') }}
           </div>
+          <div class="wallets-header-spacer" aria-hidden="true"></div>
         </q-card-section>
 
         <!-- Scrollable Content -->
@@ -1318,6 +1322,14 @@
     >
       <q-card v-if="detailWallet" class="wallet-detail-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
+        <q-btn
+          flat round dense
+          class="glass-back-btn wallet-detail-back"
+          :aria-label="$t('Back')"
+          @click="showWalletDetail = false"
+        >
+          <Icon icon="tabler:chevron-left" width="20" height="20" />
+        </q-btn>
 
         <q-card-section class="wallet-detail-hero">
           <div class="wallet-avatar">
@@ -5962,15 +5974,29 @@ export default {
 
 .wallets-dialog-header {
   flex-shrink: 0;
-  justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   border-bottom: none;
   padding-top: 0.25rem;
   padding-bottom: 0.5rem;
 }
 
 .wallets-dialog-header .dialog-title {
+  flex: 1;
+  text-align: center;
   font-size: 16px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mirrors the back button so the title stays optically centered. */
+.wallets-header-spacer {
+  flex: 0 0 auto;
+  width: 40px;
 }
 
 /* Pinned footer + its one CTA: dark ink in light mode, the app's credit
@@ -6135,6 +6161,13 @@ export default {
   height: 5px;
   border-radius: 3px;
   background: rgba(128, 128, 128, 0.35);
+}
+
+.wallet-detail-back {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
 }
 
 .wallet-detail-hero {
