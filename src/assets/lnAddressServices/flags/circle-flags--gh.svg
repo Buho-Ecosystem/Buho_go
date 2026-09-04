@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+	<mask id="SVGghanaCircle">
+		<circle cx="256" cy="256" r="256" fill="#fff" />
+	</mask>
+	<g mask="url(#SVGghanaCircle)">
+		<path fill="#ce1126" d="M0 0h512v170.7H0z" />
+		<path fill="#fcd116" d="M0 170.7h512v170.6H0z" />
+		<path fill="#006b3f" d="M0 341.3h512V512H0z" />
+		<path fill="#000" d="M256.0 172.0 274.9 230.0 335.9 230.0 286.5 265.9 305.4 324.0 256.0 288.1 206.6 324.0 225.5 265.9 176.1 230.0 237.1 230.0z" />
+	</g>
+</svg>

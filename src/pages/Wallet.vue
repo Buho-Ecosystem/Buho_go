@@ -873,6 +873,7 @@ import {zapInfoFromTx} from '../utils/zaps.js';
 import {getTxMessage} from '../utils/txMessage.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
+import { Capacitor } from '@capacitor/core';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
 import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
@@ -6154,6 +6155,20 @@ export default {
       const [username, domain] = address.split('@');
       if (!username || !domain) {
         return {};
+      }
+
+      // A payout provider that serves no Access-Control-Allow-Origin cannot be
+      // reached from a browser at all. On device the request goes through the
+      // native HTTP stack and CORS never applies, so this is only ever the web
+      // build. Said here rather than after the attempt, because the browser
+      // reports a blocked request as an indistinguishable "Failed to fetch"
+      // and the user gets told to check an internet connection that is fine.
+      const payoutService = matchLnAddressService(address);
+      if (payoutService?.webUnsupported && !Capacitor.isNativePlatform()) {
+        return {
+          error: true,
+          reason: this.$t('This payout service can only be reached from the BuhoGO app, not from a browser.'),
+        };
       }
 
       try {
