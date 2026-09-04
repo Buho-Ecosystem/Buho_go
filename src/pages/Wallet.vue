@@ -862,7 +862,7 @@ import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
 import {classifyTransportFailure} from '../utils/userErrors.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
-import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
+import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme, nativeRailsFromBip21} from '../utils/addressUtils.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
 import {
   decodeSparkDestination,
@@ -900,7 +900,7 @@ import QrScanSheet from '../components/QrScanSheet.vue';
 import {parsePaymentDestination} from '../providers/WalletFactory';
 import OnchainFeePanel from '../components/OnchainFeePanel.vue';
 import {describeL1WithdrawError} from '../utils/l1WithdrawErrors.js';
-import {parseBip21} from '../utils/bip21.js';
+import {parseBip21, bip21AmountToSats} from '../utils/bip21.js';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import ArkadeLogo from '../components/ArkadeLogo.vue';
@@ -4131,7 +4131,13 @@ export default {
         return;
       }
       const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || value;
-      void this.onPaymentDetected({ data, type: parsed.type });
+      // Carry the BIP21 metadata so a scanned unified QR can take the
+      // native-rail shortcut in onPaymentDetected, same as the Send field.
+      void this.onPaymentDetected({
+        data,
+        type: parsed.type,
+        ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}),
+      });
     },
 
     // ========================================================================
@@ -4757,6 +4763,40 @@ export default {
       this.paymentAmount = '';
     },
 
+    /**
+     * Re-route a BIP21-resolved destination onto a native rail the active
+     * wallet can settle for free (Spark transfer) or near-free (ark1 → ark1).
+     *
+     * Only destinations that came out of the URI itself are re-routed
+     * (lightning_invoice / bitcoin_address / bolt12_offer); a payload that is
+     * already on a native rail, or that never was a BIP21 URI, passes through
+     * untouched. The rail values are pre-validated by nativeRailsFromBip21 —
+     * a malformed spark=/ark= param can never hijack the destination.
+     *
+     * Main send flow only, on purpose: batch send, auto-withdraw, internal
+     * transfer and kiosk keep their existing rails.
+     */
+    preferNativeBip21Rail(paymentData) {
+      const bip21 = paymentData?.bip21;
+      if (!bip21) return paymentData;
+      const reroutable = paymentData.type === 'lightning_invoice'
+        || paymentData.type === 'bitcoin_address'
+        || paymentData.type === 'bolt12_offer';
+      if (!reroutable) return paymentData;
+
+      const rails = nativeRailsFromBip21(bip21);
+      const amountSats = bip21AmountToSats(bip21.amount);
+      const withAmount = amountSats ? { fixedAmountSats: amountSats } : {};
+
+      if (this.walletStore.isActiveWalletSpark && rails.spark) {
+        return { ...paymentData, type: 'spark_address', data: rails.spark, ...withAmount };
+      }
+      if (this.walletStore.isActiveWalletArkade && rails.ark) {
+        return { ...paymentData, type: 'arkade_address', data: rails.ark, ...withAmount };
+      }
+      return paymentData;
+    },
+
     async onPaymentDetected(paymentData) {
       console.log('Payment detected:', paymentData);
 
@@ -4776,6 +4816,14 @@ export default {
       this.pendingWithdrawTargetSats = null;
 
       try {
+        // A unified receive QR (bitcoin:addr?lightning=...&spark=...&ark=...)
+        // may offer a rail this wallet speaks natively at zero / near-zero
+        // fee. Take that road before anything else: the resolved Lightning /
+        // on-chain destination is swapped for the native address from the
+        // same URI, and a BIP21 amount= carries over as the fixed amount so
+        // every rail asks the payer for the same number.
+        paymentData = this.preferNativeBip21Rail(paymentData);
+
         // Transform the payment data to match expected structure
         if (paymentData.type === 'bolt12_offer' && paymentData.data) {
           // This is a recognized payment request, but none of our wallet

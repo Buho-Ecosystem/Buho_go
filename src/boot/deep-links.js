@@ -58,7 +58,9 @@ function parseDeepLinkURI(url) {
   // (same shape as SendModal's payment-detected emit)
   const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || input
 
-  return { data, type: parsed.type }
+  // Keep the BIP21 metadata: a unified QR's spark=/ark= rails and amount=
+  // let onPaymentDetected route the payment over the wallet's native rail.
+  return { data, type: parsed.type, ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}) }
 }
 
 function handleDeepLink(url, router, walletStore) {
