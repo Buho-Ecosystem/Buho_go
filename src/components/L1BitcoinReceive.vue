@@ -19,28 +19,72 @@
       </div>
     </div>
 
-    <!-- Address Display - Compact -->
+    <!-- Identity line: the string people paste. The wallet has no Lightning
+         address, so the on-chain address is the identity; a small label
+         names what a tap copies. -->
     <div
       v-if="depositAddress"
-      class="address-pill"
-      :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
+      class="identity-line"
       @click="copyAddress"
     >
-      <Icon icon="tabler:currency-bitcoin" width="16" height="16" class="pill-icon" />
-      <span class="pill-address">{{ truncateAddress(depositAddress) }}</span>
-      <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
+      <span class="identity-value" :class="$q.dark.isActive ? 'text-grey-3' : 'text-grey-8'">
+        {{ truncateAddress(depositAddress) }}
+        <Icon icon="tabler:copy" width="14" height="14" class="identity-copy" />
+      </span>
+      <span class="identity-label" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+        {{ $t('Bitcoin address') }}
+      </span>
     </div>
 
-    <!-- Action Buttons — markup and styling intentionally mirror the Spark
-         receive view (ReceiveModal.vue) so both flows feel identical. -->
+    <!-- The one accented action (set what to charge) sits before the quiet
+         Copy/Share pair so it can never fall below the fold on a small
+         phone: primary before secondary, metadata last. -->
+    <button
+      v-if="depositAddress"
+      class="amount-note-btn"
+      :class="$q.dark.isActive ? 'amount-note-dark' : 'amount-note-light'"
+      @click="$emit('request-amount')"
+    >
+      <Icon icon="tabler:edit" width="18" height="18" />
+      <span>{{ $t('Amount / Note') }}</span>
+    </button>
+
+    <!-- Quiet secondary actions. The QR holds three copyable identities, so
+         Copy asks which one instead of guessing; Share hands out the full
+         unified string - exactly what the QR encodes. -->
     <div v-if="depositAddress" class="action-buttons">
       <button
         class="action-btn"
         :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-        @click="copyAddress"
       >
         <Icon icon="tabler:copy" width="18" height="18" />
         <span>{{ $t('Copy') }}</span>
+        <q-menu
+          anchor="top middle"
+          self="bottom middle"
+          :offset="[0, 6]"
+        >
+          <q-list class="copy-menu" :class="$q.dark.isActive ? 'copy-menu-dark' : 'copy-menu-light'">
+            <q-item v-if="lightningInvoice" v-close-popup clickable @click="copyValue(lightningInvoice, $t('Invoice copied'))">
+              <div class="copy-item">
+                <span>{{ $t('Lightning invoice') }}</span>
+                <small>{{ truncateAddress(lightningInvoice) }}</small>
+              </div>
+            </q-item>
+            <q-item v-close-popup clickable @click="copyAddress">
+              <div class="copy-item">
+                <span>{{ $t('Bitcoin address') }}</span>
+                <small>{{ truncateAddress(depositAddress) }}</small>
+              </div>
+            </q-item>
+            <q-item v-if="sparkAddress" v-close-popup clickable @click="copyValue(sparkAddress, $t('Spark address copied'))">
+              <div class="copy-item">
+                <span>{{ $t('Spark address') }}</span>
+                <small>{{ truncateAddress(sparkAddress) }}</small>
+              </div>
+            </q-item>
+          </q-list>
+        </q-menu>
       </button>
       <button
         class="action-btn"
@@ -110,6 +154,13 @@
         <Icon icon="tabler:refresh" width="16" height="16" class="q-mr-xs" />
         {{ $t('Check for deposits') }}
       </q-btn>
+    </div>
+
+    <!-- End cap: what this code can do, in small quiet type. Last on
+         purpose, so its per-language height can never push a control out
+         of view. -->
+    <div class="unified-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+      {{ $t('Lightning and Spark pay instantly - on-chain needs 3 confirmations') }}
     </div>
 
     <!--
@@ -275,6 +326,7 @@ import { shareContent } from 'src/utils/share';
 import { qrBlobFromRef } from 'src/utils/qrShare';
 import { truncateAddress } from 'src/utils/addressUtils';
 import { getQrOptions } from 'src/utils/qrConfig';
+import { composeUnifiedBip21 } from 'src/utils/bip21';
 import { AUTO_CLAIM_THRESHOLDS } from 'src/stores/bitcoinPreferences';
 
 export default {
@@ -288,10 +340,26 @@ export default {
     qrOptions: {
       type: Object,
       default: () => getQrOptions()
+    },
+    /**
+     * The wallet's current BOLT11 (zero-amount by default, amount-carrying
+     * after the user sets one). Minted and monitored by ReceiveModal; here
+     * it only rides inside the unified QR as its lightning= param. Empty
+     * while minting or after a mint failure - the QR then degrades to the
+     * rails that still work.
+     */
+    lightningInvoice: {
+      type: String,
+      default: ''
+    },
+    /** Requested amount in sats (0 = amountless). Becomes amount= in BTC. */
+    amountSats: {
+      type: Number,
+      default: 0
     }
   },
 
-  emits: ['deposit-claimed', 'deposits-updated'],
+  emits: ['deposit-claimed', 'deposits-updated', 'request-amount'],
 
   data() {
     return {
@@ -327,9 +395,26 @@ export default {
   },
 
   computed: {
+    /** The wallet's static Spark address - the spark= rail of the QR. */
+    sparkAddress() {
+      return this.walletStore.activeSparkAddress || '';
+    },
+
+    /**
+     * ONE code that carries every rail: the on-chain address as the base,
+     * the BOLT11 as lightning= (which itself embeds a Spark fallback for
+     * Spark-aware payers) and the bare Spark address as spark=. Rails that
+     * are missing (invoice mint failed, no Spark address yet) simply drop
+     * out - the QR degrades to exactly what still works.
+     */
     qrValue() {
-      // Use bitcoin: URI scheme for better wallet compatibility
-      return this.depositAddress ? `bitcoin:${this.depositAddress}` : '';
+      if (!this.depositAddress) return '';
+      return composeUnifiedBip21({
+        address: this.depositAddress,
+        lightning: this.lightningInvoice,
+        spark: this.sparkAddress,
+        amountSats: this.amountSats > 0 ? this.amountSats : null,
+      });
     },
 
     /**
@@ -832,13 +917,18 @@ export default {
     },
 
     async copyAddress() {
-      if (!this.depositAddress) return;
+      await this.copyValue(this.depositAddress, this.$t('Address copied'));
+    },
+
+    /** Copy one of the QR's identities with its own confirmation toast. */
+    async copyValue(value, message) {
+      if (!value) return;
 
       try {
-        await navigator.clipboard.writeText(this.depositAddress);
+        await navigator.clipboard.writeText(value);
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Address copied'),
+          message,
 
         });
       } catch (error) {
@@ -856,9 +946,10 @@ export default {
       const qrBlob = await qrBlobFromRef(this.$refs.depositQr, { label: this.depositAddress });
       const result = await shareContent({
         title: this.$t('Bitcoin Address'),
-        // Pure address so recipients can copy-paste cleanly. The
-        // BuhoGO wordmark is baked into the QR image by qrShare.
-        text: this.depositAddress,
+        // The full unified string - exactly what the QR encodes, so the
+        // recipient's wallet gets every rail. The BuhoGO wordmark is baked
+        // into the QR image by qrShare.
+        text: this.qrValue,
         files: qrBlob ? [{ blob: qrBlob, name: 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
       });
 
@@ -1024,51 +1115,109 @@ export default {
 }
 
 /* ==========================================
-   Address Pill - Compact & Tappable
+   Identity line - the string a tap copies, with a quiet label under it
    ========================================== */
-.address-pill {
-  display: inline-flex;
+.identity-line {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 20px;
+  gap: 3px;
+  margin-top: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  margin: 12px auto 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.address-pill:active {
+.identity-line:active {
   transform: scale(0.98);
 }
 
-.pill-dark {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.pill-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.pill-light {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.pill-light:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.pill-icon {
-  color: #F7931A;
-}
-
-.pill-address {
+.identity-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.02em;
 }
 
-.pill-copy {
+.identity-copy {
   opacity: 0.4;
+}
+
+.identity-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ==========================================
+   Amount / Note - the one accented action on the page
+   ========================================== */
+.amount-note-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  align-self: stretch;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.amount-note-light {
+  border: 1px solid rgba(247, 147, 26, 0.5);
+  color: #B86E0F;
+}
+.amount-note-light:hover { background: rgba(247, 147, 26, 0.06); }
+
+.amount-note-dark {
+  border: 1px solid rgba(247, 147, 26, 0.45);
+  color: #FBBF77;
+}
+.amount-note-dark:hover { background: rgba(247, 147, 26, 0.10); }
+
+/* ==========================================
+   Copy chooser - three identities, each with its value
+   ========================================== */
+.copy-menu {
+  min-width: 230px;
+  padding: 4px 0;
+}
+
+.copy-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.copy-item span {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.copy-item small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+/* ==========================================
+   End cap - quiet capability sentence
+   ========================================== */
+.unified-hint {
+  margin-top: 14px;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 /* ==========================================

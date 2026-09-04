@@ -5,7 +5,7 @@
     transition-show="slide-up"
     transition-hide="slide-down"
     class="receive-modal"
-    @before-hide="stopPaymentMonitor(); stopSparkInvoicePoll();"
+    @before-hide="stopPaymentMonitor();"
   >
     <q-card class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <!-- Header -->
@@ -40,238 +40,18 @@
 
       <!-- Content -->
       <q-card-section class="receive-content">
-        <!-- Receive Mode Toggle (Spark + Arkade wallets) -->
-        <div v-if="(isSparkWallet || isArkadeWallet) && !showSpecificInvoiceView && !showAmountInput" class="receive-type-toggle">
-          <q-btn-toggle
-            v-model="receiveMode"
-            :options="receiveModeOptions"
-            class="type-toggle"
-            :class="$q.dark.isActive ? 'toggle-dark' : 'toggle-light'"
-            :toggle-text-color="$q.dark.isActive ? 'white' : 'dark'"
-            no-caps
-            unelevated
-            spread
-          />
-          <div class="mode-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            <template v-if="receiveMode === 'spark'">
-              {{ $t('Spark-to-Spark only, zero fees') }}
-            </template>
-            <template v-else-if="receiveMode === 'arkade'">
-              {{ $t('Arkade-to-Arkade only, instant and near zero fees') }}
-            </template>
-            <template v-else-if="receiveMode === 'bitcoin'">
-              {{ $t('From any Bitcoin wallet (takes ~10-60 min)') }}
-            </template>
-            <template v-else-if="isArkadeWallet">
-              {{ $t('Receive over Lightning (a small fee applies)') }}
-            </template>
-            <template v-else>
-              {{ $t('One-time request with amount') }}
-            </template>
-          </div>
-        </div>
-
-        <!-- Spark Address View -->
-        <div v-if="showSparkAddressView && sparkAddress" class="spark-address-view">
-          <!-- QR Code Section -->
-          <div class="qr-section">
-            <div class="qr-card" @click="copySparkAddress">
-              <div class="qr-frame">
-                <vue-qrcode
-                  ref="sparkQr"
-                  :value="sparkAddress"
-                  :options="sparkQrOptions"
-                  class="qr-code"
-                />
-              </div>
-            </div>
-            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('Tap QR to copy address') }}
-            </div>
-          </div>
-
-          <!-- Address Display - Compact Pill -->
-          <div
-            class="address-pill"
-            :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
-            @click="copySparkAddress"
-          >
-            <img :src="sparkPillIcon" class="pill-icon-img" />
-            <span class="pill-address">{{ truncateSparkAddress(sparkAddress) }}</span>
-            <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
-          </div>
-
-          <!-- Action Buttons -->
-          <div class="action-buttons action-buttons-three">
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="copySparkAddress"
-            >
-              <Icon icon="tabler:copy" width="18" height="18" />
-              <span>{{ $t('Copy') }}</span>
-            </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="shareSparkAddress"
-            >
-              <Icon icon="tabler:share" width="18" height="18" />
-              <span>{{ $t('Share') }}</span>
-            </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="tapAmountButton"
-            >
-              <Icon icon="tabler:edit" width="18" height="18" />
-              <span>{{ $t('Amount') }}</span>
-            </button>
-          </div>
-
-          <!-- User Hint -->
-          <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Share this address to receive zero-fee payments from other Spark wallets.') }}
-          </div>
-        </div>
-
-        <!-- Spark Payment Request View: a created amount request waiting to
-             be paid. Mirrors the specific-amount Lightning invoice view. -->
-        <div v-else-if="showSparkInvoiceView" class="spark-address-view">
-          <div class="ln-amount-section">
-            <span class="ln-amount" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
-              <template v-if="sparkInvoice.amountSats > 0">
-                {{ formatInvoiceAmount(sparkInvoice.amountSats) }}
-              </template>
-              <template v-else>{{ $t('Any amount') }}</template>
-            </span>
-            <span
-              v-if="sparkInvoice.amountSats > 0"
-              class="ln-fiat"
-              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-            >
-              {{ formatInvoiceFiat(sparkInvoice.amountSats) }}
-            </span>
-            <span
-              v-if="sparkInvoice.memo"
-              class="ln-memo"
-              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-            >
-              {{ sparkInvoice.memo }}
-            </span>
-          </div>
-
-          <div class="qr-section">
-            <div class="qr-card" @click="copySparkInvoice">
-              <div class="qr-frame">
-                <vue-qrcode
-                  ref="sparkInvoiceQr"
-                  :value="sparkInvoice.invoice"
-                  :options="sparkQrOptions"
-                  class="qr-code"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div
-            class="address-pill"
-            :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
-            @click="copySparkInvoice"
-          >
-            <img :src="sparkPillIcon" class="pill-icon-img" />
-            <span class="pill-address">{{ truncateSparkAddress(sparkInvoice.invoice) }}</span>
-            <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
-          </div>
-
-          <div class="action-buttons">
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="copySparkInvoice"
-            >
-              <Icon icon="tabler:copy" width="18" height="18" />
-              <span>{{ $t('Copy') }}</span>
-            </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="shareSparkInvoice"
-            >
-              <Icon icon="tabler:share" width="18" height="18" />
-              <span>{{ $t('Share') }}</span>
-            </button>
-          </div>
-
-          <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Valid for 1 hour. The payment arrives instantly once it is paid from another Spark wallet.') }}
-          </div>
-        </div>
-
-        <!-- Arkade Address View -->
-        <div v-if="showArkadeAddressView && arkadeAddress" class="spark-address-view">
-          <!-- QR Code Section -->
-          <div class="qr-section">
-            <div class="qr-card" @click="copyArkadeAddress">
-              <div class="qr-frame">
-                <vue-qrcode
-                  ref="arkadeQr"
-                  :value="arkadeAddress"
-                  :options="sparkQrOptions"
-                  class="qr-code"
-                />
-              </div>
-            </div>
-            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('Tap QR to copy address') }}
-            </div>
-          </div>
-
-          <!-- Address Display - Compact Pill -->
-          <div
-            class="address-pill"
-            :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
-            @click="copyArkadeAddress"
-          >
-            <img :src="arkadePillIcon" class="pill-icon-img" />
-            <span class="pill-address">{{ truncateArkadeAddress(arkadeAddress) }}</span>
-            <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
-          </div>
-
-          <!-- Action Buttons -->
-          <div class="action-buttons">
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="copyArkadeAddress"
-            >
-              <Icon icon="tabler:copy" width="18" height="18" />
-              <span>{{ $t('Copy Request') }}</span>
-            </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="shareArkadeAddress"
-            >
-              <Icon icon="tabler:share" width="18" height="18" />
-              <span>{{ $t('Share Invoice') }}</span>
-            </button>
-          </div>
-
-          <!-- User Hint -->
-          <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Share this address to receive instant, near zero fee payments from other Arkade wallets.') }}
-          </div>
-        </div>
-
-        <!-- Arkade Boarding (on-chain receive) View -->
-        <div v-if="showArkadeBoardingView" class="spark-address-view">
+        <!-- Arkade unified Bitcoin view: ONE code carrying the on-chain
+             boarding address as its base, the ark1 address as ark= and,
+             once an amount is set, the Lightning invoice as lightning=.
+             A wallet that knows none of the extras still reads a plain
+             bitcoin: URI (BIP21 requires ignoring unknown params). -->
+        <div v-if="showArkadeUnifiedView" class="spark-address-view">
           <div v-if="arkadeBoardingAddress" class="qr-section">
             <div class="qr-card" @click="copyArkadeBoardingAddress">
               <div class="qr-frame">
                 <vue-qrcode
                   ref="arkadeBoardingQr"
-                  :value="arkadeBoardingAddress"
+                  :value="arkadeUnifiedQrValue"
                   :options="sparkQrOptions"
                   class="qr-code"
                 />
@@ -290,50 +70,118 @@
           </div>
 
           <template v-if="arkadeBoardingAddress">
-            <div
-              class="address-pill"
-              :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
-              @click="copyArkadeBoardingAddress"
+            <!-- The request the QR currently carries; tapping edits it. -->
+            <button
+              v-if="generatedInvoice && generatedInvoice.amount > 0"
+              type="button"
+              class="invoice-badge"
+              :class="$q.dark.isActive ? 'invoice-badge-dark' : 'invoice-badge-light'"
+              @click="tapAmountButton"
             >
-              <span class="pill-address">{{ truncateArkadeAddress(arkadeBoardingAddress) }}</span>
-              <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
+              <span class="invoice-badge-amount">{{ formatInvoiceAmount(generatedInvoice.amount) }}</span>
+              <span v-if="formatInvoiceFiat(generatedInvoice.amount)" class="invoice-badge-fiat">{{ formatInvoiceFiat(generatedInvoice.amount) }}</span>
+              <span v-if="description" class="invoice-badge-note">{{ description }}</span>
+              <Icon icon="tabler:edit" width="14" height="14" />
+            </button>
+
+            <!-- The Lightning rail rides a swap; disclose the net amount. -->
+            <div
+              v-if="generatedInvoice && generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
+              class="address-hint"
+              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
+            >
+              {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
             </div>
 
+            <div class="identity-line" @click="copyArkadeBoardingAddress">
+              <span class="identity-value" :class="$q.dark.isActive ? 'text-grey-3' : 'text-grey-8'">
+                {{ truncateArkadeAddress(arkadeBoardingAddress) }}
+                <Icon icon="tabler:copy" width="14" height="14" class="identity-copy" />
+              </span>
+              <span class="identity-label" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+                {{ $t('Bitcoin address') }}
+              </span>
+            </div>
+
+            <button
+              class="amount-note-btn"
+              :class="$q.dark.isActive ? 'amount-note-dark' : 'amount-note-light'"
+              @click="tapAmountButton"
+            >
+              <Icon icon="tabler:edit" width="18" height="18" />
+              <span>{{ $t('Amount / Note') }}</span>
+            </button>
+
+            <!-- Copy asks which identity; Share hands out the full unified
+                 string - exactly what the QR encodes. -->
             <div class="action-buttons">
-              <button class="action-btn" :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'" @click="copyArkadeBoardingAddress">
+              <button class="action-btn" :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'">
                 <Icon icon="tabler:copy" width="18" height="18" />
-                <span>{{ $t('Copy Request') }}</span>
+                <span>{{ $t('Copy') }}</span>
+                <q-menu anchor="top middle" self="bottom middle" :offset="[0, 6]">
+                  <q-list class="copy-menu">
+                    <q-item v-if="generatedInvoice && generatedInvoice.amount > 0" v-close-popup clickable @click="copyInvoice">
+                      <div class="copy-item">
+                        <span>{{ $t('Lightning invoice') }}</span>
+                        <small>{{ truncateArkadeAddress(generatedInvoice.payment_request) }}</small>
+                      </div>
+                    </q-item>
+                    <q-item v-close-popup clickable @click="copyArkadeBoardingAddress">
+                      <div class="copy-item">
+                        <span>{{ $t('Bitcoin address') }}</span>
+                        <small>{{ truncateArkadeAddress(arkadeBoardingAddress) }}</small>
+                      </div>
+                    </q-item>
+                    <q-item v-if="arkadeAddress" v-close-popup clickable @click="copyArkadeAddress">
+                      <div class="copy-item">
+                        <span>{{ $t('Arkade address') }}</span>
+                        <small>{{ truncateArkadeAddress(arkadeAddress) }}</small>
+                      </div>
+                    </q-item>
+                  </q-list>
+                </q-menu>
               </button>
               <button class="action-btn" :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'" @click="shareArkadeBoardingAddress">
                 <Icon icon="tabler:share" width="18" height="18" />
-                <span>{{ $t('Share Invoice') }}</span>
+                <span>{{ $t('Share') }}</span>
               </button>
             </div>
           </template>
 
           <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Send Bitcoin to this address. It will arrive in your wallet shortly.') }}
+            {{ $t('Arkade pays instantly - set an amount to also receive over Lightning') }}
           </div>
         </div>
 
-        <!-- Bitcoin (L1) Receive View -->
-        <L1BitcoinReceive
-          v-if="showBitcoinReceiveView"
-          :qr-options="qrOptions"
-          @deposit-claimed="handleBitcoinDepositClaimed"
-          @deposits-updated="handleBitcoinDepositsUpdated"
-        />
-
-        <!-- Loading: minting default zero-amount Spark invoice -->
-        <div v-if="showDefaultZeroLoading" class="default-zero-loading">
-          <q-spinner-dots size="40px" :color="$q.dark.isActive ? 'white' : 'grey-7'" />
-          <div class="default-zero-loading-text" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Preparing invoice...') }}
+        <!-- Unified Bitcoin receive view (Spark): the component owns the
+             QR + deposit tracking; the modal owns the invoice the QR's
+             lightning= rail carries, and the amount badge above it. -->
+        <template v-if="showUnifiedBitcoinView">
+          <div v-if="generatedInvoice && generatedInvoice.amount > 0" class="invoice-badge-slot">
+            <button
+              type="button"
+              class="invoice-badge"
+              :class="$q.dark.isActive ? 'invoice-badge-dark' : 'invoice-badge-light'"
+              @click="tapAmountButton"
+            >
+              <span class="invoice-badge-amount">{{ formatInvoiceAmount(generatedInvoice.amount) }}</span>
+              <span v-if="formatInvoiceFiat(generatedInvoice.amount)" class="invoice-badge-fiat">{{ formatInvoiceFiat(generatedInvoice.amount) }}</span>
+              <span v-if="description" class="invoice-badge-note">{{ description }}</span>
+              <Icon icon="tabler:edit" width="14" height="14" />
+            </button>
           </div>
-        </div>
+          <L1BitcoinReceive
+            :qr-options="qrOptions"
+            :lightning-invoice="generatedInvoice ? generatedInvoice.payment_request : ''"
+            :amount-sats="generatedInvoice ? generatedInvoice.amount : 0"
+            @deposit-claimed="handleBitcoinDepositClaimed"
+            @deposits-updated="handleBitcoinDepositsUpdated"
+            @request-amount="tapAmountButton"
+          />
+        </template>
 
         <!-- Specific-amount Lightning Invoice Display -->
-        <div class="lightning-receive" v-else-if="showSpecificInvoiceView">
+        <div class="lightning-receive" v-if="showSpecificInvoiceView">
           <!-- Amount Section -->
           <div class="ln-amount-section">
             <span class="ln-amount" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
@@ -388,56 +236,6 @@
             >
               <Icon icon="tabler:share" width="18" height="18" />
               <span>{{ $t('Share Invoice') }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Default Zero-amount Spark Lightning Invoice -->
-        <div class="lightning-receive" v-else-if="showDefaultZeroInvoiceView">
-          <div class="qr-section">
-            <div class="qr-card" @click="copyInvoice">
-              <div class="qr-frame">
-                <vue-qrcode
-                  ref="invoiceQr"
-                  :value="'lightning:' + generatedInvoice.payment_request.toUpperCase()"
-                  :options="invoiceQrOptions"
-                  class="qr-code"
-                />
-              </div>
-            </div>
-            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('Any amount · tap QR to copy') }}
-            </div>
-            <div class="ln-status" :class="paymentStatusClass">
-              <div class="ln-status-dot"></div>
-              <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
-            </div>
-          </div>
-
-          <div class="action-buttons action-buttons-three">
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="$emit('scan-withdraw')"
-            >
-              <Icon icon="tabler:download" width="18" height="18" />
-              <span>{{ $t('Redeem') }}</span>
-            </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="shareInvoice"
-            >
-              <Icon icon="tabler:share" width="18" height="18" />
-              <span>{{ $t('Share') }}</span>
-            </button>
-            <button
-              class="action-btn"
-              :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="tapAmountButton"
-            >
-              <Icon icon="tabler:edit" width="18" height="18" />
-              <span>{{ $t('Amount') }}</span>
             </button>
           </div>
         </div>
@@ -650,6 +448,7 @@ import { shareContent } from '../utils/share';
 import { qrBlobFromRef } from '../utils/qrShare';
 import { truncateAddress } from '../utils/addressUtils';
 import { getQrOptions } from '../utils/qrConfig';
+import { composeUnifiedBip21 } from '../utils/bip21';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
 
@@ -691,12 +490,7 @@ export default {
       // Guard so we don't fire two parallel mints if the modal-open and
       // tab-change paths both trigger.
       isMintingDefaultZero: false,
-      arkadeBoardingAddress: '', // on-chain boarding address (Arkade bitcoin tab)
-      receiveMode: 'lightning', // 'lightning', 'spark', 'arkade', or 'bitcoin'
-      // A created Spark payment request waiting to be paid:
-      // { invoice, amountSats, memo, expiresAt } — null when none.
-      sparkInvoice: null,
-      sparkInvoicePollTimer: null,
+      arkadeBoardingAddress: '', // on-chain boarding address (Arkade unified view)
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
@@ -830,44 +624,38 @@ export default {
     arkadeAddress() {
       return this.walletStore.activeArkadeAddress;
     },
-    showSparkAddressView() {
-      return this.isSparkWallet
-        && this.receiveMode === 'spark'
-        && !this.generatedInvoice
-        && !this.sparkInvoice
-        && !this.showAmountInput;
+    // The unified Bitcoin view (Spark): ONE QR carrying the deposit
+    // address, the current BOLT11 (zero-amount by default, amount-carrying
+    // after the keypad) and the Spark address. Everything except the keypad
+    // happens on this one page.
+    showUnifiedBitcoinView() {
+      return this.isSparkWallet && !this.showAmountInput;
     },
-    // A user-created Spark payment request (amount + optional memo). Lives
-    // in its own state, not `generatedInvoice`, because that field is
-    // BOLT11-shaped (payment_hash, lightning: URI) and drives the Lightning
-    // monitor wiring.
-    showSparkInvoiceView() {
-      return this.isSparkWallet && this.receiveMode === 'spark' && !!this.sparkInvoice;
+    // The Arkade sibling: boarding address as the base, the ark1 address as
+    // ark=, and the Lightning invoice as lightning= once an amount is set.
+    showArkadeUnifiedView() {
+      return this.isArkadeWallet && !this.showAmountInput;
     },
-    showArkadeAddressView() {
-      return this.isArkadeWallet && this.receiveMode === 'arkade' && !this.generatedInvoice;
+    /** The Arkade unified code - every rail the wallet can receive on. */
+    arkadeUnifiedQrValue() {
+      if (!this.arkadeBoardingAddress) return '';
+      const invoice = this.generatedInvoice?.amount > 0
+        ? this.generatedInvoice.payment_request
+        : '';
+      return composeUnifiedBip21({
+        address: this.arkadeBoardingAddress,
+        lightning: invoice,
+        ark: this.arkadeAddress || '',
+        amountSats: this.generatedInvoice?.amount || null,
+      });
     },
-    showArkadeBoardingView() {
-      return this.isArkadeWallet && this.receiveMode === 'bitcoin' && !this.generatedInvoice;
-    },
-    showBitcoinReceiveView() {
-      return this.isSparkWallet && this.receiveMode === 'bitcoin' && !this.generatedInvoice;
-    },
-    // The user-created specific-amount invoice screen. Distinct from the
-    // default zero-amount view, which also lives in `generatedInvoice` but
-    // with `amount === 0`.
+    // The user-created specific-amount invoice screen (LNbits / NWC). The
+    // unified views show their amount on their own QR instead.
     showSpecificInvoiceView() {
-      return !!this.generatedInvoice && this.generatedInvoice.amount > 0;
-    },
-    // Spark Lightning tab default: a zero-amount BOLT11 we mint lazily so
-    // the user can be paid without typing anything. Re-uses `generatedInvoice`
-    // as storage so the existing payment monitor wiring works unchanged.
-    showDefaultZeroInvoiceView() {
       return !!this.generatedInvoice
-        && this.generatedInvoice.amount === 0
-        && this.isSparkWallet
-        && this.receiveMode === 'lightning'
-        && !this.showAmountInput;
+        && this.generatedInvoice.amount > 0
+        && !this.isSparkWallet
+        && !this.isArkadeWallet;
     },
     // LN-address-capable wallets (NWC/LNbits with an address attached) open
     // straight to this view. Spark is excluded because it has its own zero-
@@ -876,21 +664,11 @@ export default {
       return !this.showAmountInput
         && !this.generatedInvoice
         && !this.isSparkWallet
+        && !this.isArkadeWallet
         && this.hasLightningAddress;
     },
-    // True when the wallet has any default QR view to fall back to. Drives
-    // back-arrow behavior: with a default view, back returns there; without
-    // one, back closes the modal.
-    hasDefaultView() {
-      return this.showLightningAddressView
-        || this.showDefaultZeroInvoiceView
-        || (this.showAmountInput && (
-          this.hasLightningAddress
-          || (this.isSparkWallet && this.receiveMode === 'lightning')
-        ));
-    },
     headerTitle() {
-      if (this.showSpecificInvoiceView || this.showAmountKeypadView || this.showSparkInvoiceView) {
+      if (this.showSpecificInvoiceView || this.showAmountKeypadView) {
         return this.$t('Invoice');
       }
       return this.$t('Receive');
@@ -900,24 +678,10 @@ export default {
     // by default; users with a default view land here only after tapping
     // the "Amount" button.
     showAmountKeypadView() {
-      if (this.showDefaultZeroLoading) return false;
-      return !this.showSparkAddressView
-        && !this.showSparkInvoiceView
-        && !this.showArkadeAddressView
-        && !this.showArkadeBoardingView
-        && !this.showBitcoinReceiveView
+      return !this.showUnifiedBitcoinView
+        && !this.showArkadeUnifiedView
         && !this.showSpecificInvoiceView
-        && !this.showDefaultZeroInvoiceView
         && !this.showLightningAddressView;
-    },
-    // Brief loading state while we mint the Spark zero-amount default. Without
-    // this, the user would see the keypad flash before the QR appears.
-    showDefaultZeroLoading() {
-      return this.isSparkWallet
-        && this.receiveMode === 'lightning'
-        && this.isMintingDefaultZero
-        && !this.generatedInvoice
-        && !this.showAmountInput;
     },
     /**
      * Public accessor — the sats amount the user currently intends to
@@ -984,37 +748,6 @@ export default {
         color: { dark: '#000000', light: '#ffffff' }
       };
     },
-    receiveModeOptions() {
-      if (this.isArkadeWallet) {
-        const arkadeIcon = this.$q.dark.isActive
-          ? 'img:/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg'
-          : 'img:/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg';
-        // Arkade address first — instant, near-zero fee is the primary path.
-        return [
-          { label: this.$t('Arkade'), value: 'arkade', icon: arkadeIcon },
-          { label: this.$t('Lightning'), value: 'lightning', icon: 'bolt' },
-          { label: this.$t('Bitcoin'), value: 'bitcoin', icon: 'currency_bitcoin' },
-        ];
-      }
-      const sparkIcon = this.$q.dark.isActive
-        ? 'img:/Spark/Spark Asterisk White.svg'
-        : 'img:/Spark/Spark Asterisk Black.svg';
-      return [
-        { label: this.$t('Lightning'), value: 'lightning', icon: 'bolt' },
-        { label: this.$t('Spark'), value: 'spark', icon: sparkIcon },
-        { label: this.$t('Bitcoin'), value: 'bitcoin', icon: 'currency_bitcoin' }
-      ];
-    },
-    sparkPillIcon() {
-      return this.$q.dark.isActive
-        ? '/Spark/Spark Asterisk White.svg'
-        : '/Spark/Spark Asterisk Black.svg';
-    },
-    arkadePillIcon() {
-      return this.$q.dark.isActive
-        ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg'
-        : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg';
-    },
     sparkQrOptions() {
       return getQrOptions();
     },
@@ -1027,51 +760,20 @@ export default {
       if (newVal) {
         this.loadWalletState();
         this.resetForm();
-        // Mint the default zero-amount Spark Lightning invoice on open so
-        // the user lands on a scannable QR with no taps. Skipped for
-        // non-Spark wallets and for Spark when the active tab is Spark or
-        // Bitcoin (the receiveMode watcher handles tab-driven mints).
+        // Land on a scannable code with no taps: Spark mints the default
+        // zero-amount invoice for the unified QR's lightning= rail; Arkade
+        // loads its boarding address and arms the live incoming-funds
+        // monitor so an ark1 receipt shows the in-modal success.
         this.$nextTick(() => {
-          if (this.isSparkWallet && this.receiveMode === 'lightning') {
+          if (this.isSparkWallet) {
             this.mintDefaultZeroInvoice();
-          } else if (this.isArkadeWallet && this.receiveMode === 'arkade') {
-            // Arkade opens on its native ark1 tab — start a best-effort live
-            // monitor so an incoming ark1 receipt shows the in-modal success.
+          } else if (this.isArkadeWallet) {
+            this.loadArkadeBoardingAddress();
             this.startArkadeNativeMonitor();
           }
         });
       } else {
         this.stopPaymentMonitor();
-        this.stopSparkInvoicePoll();
-      }
-    },
-    // Spark wallets have a tab toggle. Mint when entering Lightning, tear
-    // down when leaving — but only for the *default zero-amount* invoice.
-    // A user-created specific-amount invoice (`amount > 0`) is left alone
-    // so switching tabs while waiting for a fixed-amount payment doesn't
-    // silently kill the monitor.
-    receiveMode(newMode, oldMode) {
-      if (newMode === oldMode) return;
-      const isDefaultZero = !!this.generatedInvoice && this.generatedInvoice.amount === 0;
-      if (oldMode === 'lightning' && newMode !== 'lightning' && isDefaultZero) {
-        this.stopPaymentMonitor();
-        this.generatedInvoice = null;
-        this.paymentStatus = PaymentStatus.PENDING;
-        this.paymentStatusMessage = '';
-      } else if (newMode === 'lightning' && oldMode !== 'lightning') {
-        if (this.isSparkWallet && !this.generatedInvoice && !this.showAmountInput) {
-          this.mintDefaultZeroInvoice();
-        }
-      } else if (newMode === 'bitcoin' && this.isArkadeWallet && !this.arkadeBoardingAddress) {
-        // Fetch the on-chain boarding address lazily when the tab is opened.
-        this.loadArkadeBoardingAddress();
-      }
-      // Arkade native ark1 tab has no generatedInvoice, so the lightning
-      // teardown above doesn't cover it — start/stop its monitor explicitly.
-      if (oldMode === 'arkade' && newMode !== 'arkade') {
-        this.stopPaymentMonitor();
-      } else if (newMode === 'arkade' && oldMode !== 'arkade') {
-        this.startArkadeNativeMonitor();
       }
     }
   },
@@ -1082,7 +784,6 @@ export default {
   beforeUnmount() {
     // Cleanup on component destroy
     this.stopPaymentMonitor();
-    this.stopSparkInvoicePoll();
     window.removeEventListener('resize', this.handleResize);
   },
   methods: {
@@ -1103,8 +804,6 @@ export default {
 
     resetForm() {
       this.stopPaymentMonitor();
-      this.stopSparkInvoicePoll();
-      this.sparkInvoice = null;
       this.keypadValue = '';
       this.isFiatMode = false;
       this.showDescriptionSheet = false;
@@ -1113,9 +812,6 @@ export default {
       this.showAmountInput = false;
       this.isMintingDefaultZero = false;
       this.arkadeBoardingAddress = '';
-      // Arkade opens on its instant, near-zero-fee address tab; everyone else
-      // defaults to Lightning.
-      this.receiveMode = this.isArkadeWallet ? 'arkade' : 'lightning';
       this.paymentStatus = PaymentStatus.PENDING;
       this.paymentStatusMessage = '';
       this.isPaymentConfirmed = false;
@@ -1126,7 +822,6 @@ export default {
 
     closeModal() {
       this.stopPaymentMonitor();
-      this.stopSparkInvoicePoll();
       this.show = false;
     },
 
@@ -1141,21 +836,20 @@ export default {
         this.backFromInvoice();
         return;
       }
-      if (this.showSparkInvoiceView) {
-        this.backFromSparkInvoice();
-        return;
-      }
+      // Spark and Arkade always have the unified view to return to; other
+      // wallets return to their Lightning-address view when they have one.
       const canReturnToDefault = this.hasLightningAddress
-        || (this.isSparkWallet && this.receiveMode === 'lightning')
-        // Spark tab keypad returns to the Spark address view.
-        || (this.isSparkWallet && this.receiveMode === 'spark');
+        || this.isSparkWallet
+        || this.isArkadeWallet;
       if (this.showAmountInput && canReturnToDefault) {
         this.showAmountInput = false;
         this.keypadValue = '';
-        if (this.isSparkWallet
-            && this.receiveMode === 'lightning'
-            && !this.generatedInvoice) {
+        if (this.isSparkWallet && !this.generatedInvoice) {
           this.mintDefaultZeroInvoice();
+        } else if (this.isArkadeWallet && !this.generatedInvoice) {
+          // The unified view's live incoming-funds monitor was stopped when
+          // the keypad took over - re-arm it.
+          this.startArkadeNativeMonitor();
         }
         return;
       }
@@ -1168,13 +862,21 @@ export default {
      * keypad.
      */
     tapAmountButton() {
-      const wasDefaultZero = !!this.generatedInvoice
-        && this.generatedInvoice.amount === 0;
-      if (wasDefaultZero) {
+      // On the unified views the QR's invoice belongs to the amount being
+      // replaced - tear its monitor down and clear it. Other wallets only
+      // clear the default zero-amount invoice; their specific-amount screen
+      // owns its own back path.
+      const clearInvoice = !!this.generatedInvoice
+        && (this.generatedInvoice.amount === 0 || this.isSparkWallet || this.isArkadeWallet);
+      if (clearInvoice) {
         this.stopPaymentMonitor();
         this.generatedInvoice = null;
         this.paymentStatus = PaymentStatus.PENDING;
         this.paymentStatusMessage = '';
+      } else if (this.isArkadeWallet) {
+        // The native ark1 monitor runs without an invoice; stop it so the
+        // upcoming invoice's monitor is the only listener.
+        this.stopPaymentMonitor();
       }
       this.showAmountInput = true;
       this.keypadValue = '';
@@ -1194,10 +896,13 @@ export default {
       this.keypadValue = '';
       this.description = '';
 
-      if (this.isSparkWallet && this.receiveMode === 'lightning') {
+      if (this.isSparkWallet) {
         this.showAmountInput = false;
         this.mintDefaultZeroInvoice();
-      } else if (!this.isSparkWallet && this.hasLightningAddress) {
+      } else if (this.isArkadeWallet) {
+        this.showAmountInput = false;
+        this.startArkadeNativeMonitor();
+      } else if (this.hasLightningAddress) {
         this.showAmountInput = false;
       } else {
         // No default view — close out.
@@ -1206,8 +911,8 @@ export default {
     },
 
     /**
-     * Mint a zero-amount BOLT11 for the Spark Lightning tab and start the
-     * payment monitor. No-op on non-Spark wallets, on non-Lightning tabs, or
+     * Mint a zero-amount BOLT11 for the Spark unified view's lightning=
+     * rail and start the payment monitor. No-op on non-Spark wallets or
      * if a mint is already in flight / cached.
      *
      * The invoice is stored in `generatedInvoice` (with `amount === 0`) so
@@ -1218,7 +923,7 @@ export default {
     async mintDefaultZeroInvoice() {
       if (this.isMintingDefaultZero) return;
       if (this.generatedInvoice) return;
-      if (!this.isSparkWallet || this.receiveMode !== 'lightning') return;
+      if (!this.isSparkWallet) return;
       if (this.showAmountInput) return;
 
       this.isMintingDefaultZero = true;
@@ -1241,7 +946,6 @@ export default {
         // result silently in those cases — we'd otherwise leak an orphaned
         // invoice + monitor.
         if (!this.show
-            || this.receiveMode !== 'lightning'
             || this.showAmountInput
             || this.generatedInvoice) {
           return;
@@ -1279,14 +983,11 @@ export default {
     },
 
     /**
-     * Set receive mode programmatically (for parent component access)
-     * @param {string} mode - 'lightning', 'spark', or 'bitcoin'
+     * Kept for parent callers (the wallet home's deposit chip used to jump
+     * to the Bitcoin tab). The unified view already shows every rail and
+     * the incoming deposits, so there is nothing to switch any more.
      */
-    setReceiveMode(mode) {
-      if (['lightning', 'spark', 'bitcoin'].includes(mode)) {
-        this.receiveMode = mode;
-      }
-    },
+    setReceiveMode() {},
 
     /**
      * Handle Bitcoin deposit claimed - show confirmation
@@ -1864,11 +1565,6 @@ export default {
         return;
       }
 
-      // Spark tab: the keypad mints a Spark payment request, not a BOLT11.
-      if (this.walletStore.activeWalletType === 'spark' && this.receiveMode === 'spark') {
-        return this.createSparkAmountRequest();
-      }
-
       this.isCreatingInvoice = true;
       try {
         // LUD-09 note: `successAction` does not apply to a plain BOLT11 invoice.
@@ -1993,6 +1689,12 @@ export default {
         this.generatedInvoice = processedInvoice;
         this.$emit('invoice-created', processedInvoice);
 
+        // The unified views show the new amount on their own QR; other
+        // wallets move to the dedicated invoice screen.
+        if (this.isSparkWallet || this.isArkadeWallet) {
+          this.showAmountInput = false;
+        }
+
         this.$q.notify({
           type: 'positive',
           message: this.$t('Invoice ready'),
@@ -2083,229 +1785,6 @@ export default {
       }
     },
 
-    async copySparkAddress() {
-      if (!this.sparkAddress) return;
-
-      try {
-        await navigator.clipboard.writeText(this.sparkAddress);
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Spark address copied'),
-          
-        });
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t copy'),
-          
-        });
-      }
-    },
-
-    async shareSparkAddress() {
-      if (!this.sparkAddress) return;
-
-      const qrBlob = await qrBlobFromRef(this.$refs.sparkQr, { label: this.sparkAddress });
-      const result = await shareContent({
-        title: this.$t('Spark Address'),
-        // Pure address so recipients can copy-paste cleanly. The
-        // BuhoGO wordmark is baked into the QR image by qrShare.
-        text: this.sparkAddress,
-        files: qrBlob ? [{ blob: qrBlob, name: 'spark-address.png', mimeType: 'image/png' }] : undefined,
-      });
-
-      if (result.success) {
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Shared'),
-        });
-      } else if (result.reason === 'unsupported') {
-        // Fallback: copy to clipboard
-        await this.copySparkAddress();
-      } else if (result.reason === 'error') {
-        console.error('Failed to share Spark address:', result.error);
-        await this.copySparkAddress();
-      }
-      // 'cancelled' → user closed the dialog, no action needed.
-    },
-
-    /**
-     * Mint a Spark payment request from the keypad amount + description.
-     * The Spark-tab sibling of the BOLT11 path in createInvoice: same
-     * entry (keypad + Create button), but the artifact is a spark1…
-     * invoice paid wallet-to-wallet with zero fees.
-     */
-    async createSparkAmountRequest() {
-      this.isCreatingInvoice = true;
-      try {
-        const provider = this.walletStore.getActiveProvider();
-        if (!provider) {
-          throw new Error('Spark wallet not unlocked. Please enter your PIN.');
-        }
-        const created = await provider.createSparkInvoice({
-          amountSats: this.amountInSats,
-          memo: this.description || '',
-        });
-
-        this.sparkInvoice = created;
-        this.showAmountInput = false;
-        this.keypadValue = '';
-        this.startSparkInvoicePoll();
-      } catch (error) {
-        console.error('Failed to create Spark payment request:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to create invoice'),
-          caption: error?.message || '',
-        });
-      } finally {
-        this.isCreatingInvoice = false;
-      }
-    },
-
-    /**
-     * Watch a created Spark payment request until it is paid. Polling
-     * mirrors the cadence of the existing invoice monitor; FINALIZED is
-     * the only success state (paid AND matching what we issued — the
-     * mismatch statuses stay pending on purpose, per the proto docs).
-     */
-    startSparkInvoicePoll() {
-      this.stopSparkInvoicePoll();
-      this.sparkInvoicePollTimer = setInterval(async () => {
-        if (!this.sparkInvoice) {
-          this.stopSparkInvoicePoll();
-          return;
-        }
-
-        // Local expiry beats a network round trip.
-        const expiresAt = Date.parse(this.sparkInvoice.expiresAt || '');
-        if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
-          this.stopSparkInvoicePoll();
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t('Invoice expired'),
-            caption: this.$t('Please create a new invoice'),
-            timeout: 4000,
-          });
-          this.backFromSparkInvoice();
-          return;
-        }
-
-        try {
-          const provider = this.walletStore.getActiveProvider();
-          if (!provider?.querySparkInvoiceStatus) return;
-          const status = await provider.querySparkInvoiceStatus(this.sparkInvoice.invoice);
-
-          if (status === 'FINALIZED') {
-            // Idempotency guard — mirrors handlePaymentStatus(CONFIRMED).
-            if (this.isPaymentConfirmed) return;
-            this.isPaymentConfirmed = true;
-            this.stopSparkInvoicePoll();
-
-            const paidAmountSats = this.sparkInvoice.amountSats || 0;
-            this.sparkInvoice = null;
-
-            if (paidAmountSats > 0) {
-              this.confirmedAmount = paidAmountSats;
-              this.confirmedFiatAmount = this.formatInvoiceFiat(paidAmountSats);
-              this.show = false;
-              this.$nextTick(() => {
-                this.showPaymentConfirmation = true;
-              });
-            } else {
-              // A free-amount request: the status response doesn't carry
-              // what was paid, so a "+0" confirmation screen would lie.
-              // Toast the arrival and let the balance refresh tell the
-              // number.
-              this.$q.notify({
-                type: 'positive',
-                message: this.$t('Payment received!'),
-                timeout: 4000,
-              });
-              this.show = false;
-            }
-
-            if (this.walletStore.activeWalletId) {
-              this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
-            }
-          } else if (status === 'RETURNED') {
-            this.stopSparkInvoicePoll();
-            this.$q.notify({
-              type: 'warning',
-              message: this.$t('The payment was returned'),
-              timeout: 4000,
-            });
-          }
-          // NOT_FOUND / PENDING / mismatches: keep waiting.
-        } catch (err) {
-          // Transient failures must not kill the watch; the next tick retries.
-          console.warn('Spark invoice status check failed:', err?.message);
-        }
-      }, 5000);
-    },
-
-    stopSparkInvoicePoll() {
-      if (this.sparkInvoicePollTimer) {
-        clearInterval(this.sparkInvoicePollTimer);
-        this.sparkInvoicePollTimer = null;
-      }
-    },
-
-    /** Back from the Spark payment request view to the Spark address view. */
-    backFromSparkInvoice() {
-      this.stopSparkInvoicePoll();
-      this.sparkInvoice = null;
-      this.keypadValue = '';
-      this.description = '';
-    },
-
-    async copySparkInvoice() {
-      if (!this.sparkInvoice?.invoice) return;
-
-      try {
-        await navigator.clipboard.writeText(this.sparkInvoice.invoice);
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Invoice copied'),
-        });
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t copy'),
-        });
-      }
-    },
-
-    async shareSparkInvoice() {
-      if (!this.sparkInvoice?.invoice) return;
-
-      const qrBlob = await qrBlobFromRef(this.$refs.sparkInvoiceQr, { label: this.sparkInvoice.invoice });
-      const result = await shareContent({
-        title: this.$t('Payment request'),
-        // Pure invoice string so recipients can copy-paste cleanly. The
-        // BuhoGO wordmark is baked into the QR image by qrShare.
-        text: this.sparkInvoice.invoice,
-        files: qrBlob ? [{ blob: qrBlob, name: 'payment-request.png', mimeType: 'image/png' }] : undefined,
-      });
-
-      if (result.success) {
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Shared'),
-        });
-      } else if (result.reason === 'unsupported' || result.reason === 'error') {
-        if (result.reason === 'error') {
-          console.error('Failed to share payment request:', result.error);
-        }
-        await this.copySparkInvoice();
-      }
-      // 'cancelled' → user closed the dialog, no action needed.
-    },
-
-    truncateSparkAddress(address) {
-      return truncateAddress(address);
-    },
-
     truncateArkadeAddress(address) {
       return truncateAddress(address);
     },
@@ -2338,7 +1817,9 @@ export default {
       const qrBlob = await qrBlobFromRef(this.$refs.arkadeBoardingQr, { label: this.arkadeBoardingAddress });
       const result = await shareContent({
         title: this.$t('Bitcoin Address'),
-        text: this.arkadeBoardingAddress,
+        // The full unified string - exactly what the QR encodes, so the
+        // recipient's wallet gets every rail.
+        text: this.arkadeUnifiedQrValue,
         files: qrBlob ? [{ blob: qrBlob, name: 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
       });
       if (result.success) {
@@ -2363,28 +1844,6 @@ export default {
           message: this.$t('Couldn\'t copy'),
         });
       }
-    },
-
-    async shareArkadeAddress() {
-      if (!this.arkadeAddress) return;
-
-      const qrBlob = await qrBlobFromRef(this.$refs.arkadeQr, { label: this.arkadeAddress });
-      const result = await shareContent({
-        title: this.$t('Arkade Address'),
-        text: this.arkadeAddress,
-        files: qrBlob ? [{ blob: qrBlob, name: 'arkade-address.png', mimeType: 'image/png' }] : undefined,
-      });
-
-      if (result.success) {
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Shared'),
-        });
-      } else if (result.reason === 'unsupported' || result.reason === 'error') {
-        if (result.reason === 'error') console.error('Failed to share Arkade address:', result.error);
-        await this.copyArkadeAddress();
-      }
-      // 'cancelled' → user closed the dialog, no action needed.
     },
 
     formatInvoiceAmount(sats) {
@@ -3195,52 +2654,152 @@ export default {
   min-height: 0;
 }
 
-/* Address Pill - Shared by Spark */
-.address-pill {
-  display: inline-flex;
+/* ==========================================
+   Unified receive: identity line, one accented Amount / Note action,
+   copy chooser and the amount badge. Kept visually in sync with
+   L1BitcoinReceive.vue (the Spark unified view).
+   ========================================== */
+.identity-line {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 20px;
+  gap: 3px;
+  margin-top: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  margin: 12px auto 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.address-pill:active {
+.identity-line:active {
   transform: scale(0.98);
 }
 
-.pill-dark {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.pill-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.pill-light {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.pill-light:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.pill-icon-img {
-  width: 16px;
-  height: 16px;
-}
-
-.pill-address {
+.identity-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.02em;
 }
 
-.pill-copy {
+.identity-copy {
   opacity: 0.4;
 }
+
+.identity-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.amount-note-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  align-self: stretch;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.amount-note-light {
+  border: 1px solid rgba(247, 147, 26, 0.5);
+  color: #B86E0F;
+}
+.amount-note-light:hover { background: rgba(247, 147, 26, 0.06); }
+
+.amount-note-dark {
+  border: 1px solid rgba(247, 147, 26, 0.45);
+  color: #FBBF77;
+}
+.amount-note-dark:hover { background: rgba(247, 147, 26, 0.10); }
+
+.copy-menu {
+  min-width: 230px;
+  padding: 4px 0;
+}
+
+.copy-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.copy-item span {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.copy-item small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.invoice-badge-slot {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.invoice-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.invoice-badge:active { transform: scale(0.98); }
+
+.invoice-badge-light { background: rgba(0, 0, 0, 0.05); color: rgba(0, 0, 0, 0.85); }
+.invoice-badge-dark  { background: rgba(255, 255, 255, 0.10); color: rgba(255, 255, 255, 0.9); }
+
+.invoice-badge-amount {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.invoice-badge-fiat {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.invoice-badge-note {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+
+/* Address Pill - Shared by Spark */
+
+
+
+
+
+
+
+
 
 .address-hint {
   font-family: 'Manrope', sans-serif;
@@ -3358,100 +2917,28 @@ export default {
 }
 
 /* Spark/Lightning Toggle */
-.receive-type-toggle {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
 
 /* Spark / Lightning / Bitcoin segmented control — compact row of
    tabs matching the Wallet page's Business/Personal spark-tabs
    grammar: tight padding, icons tucked left of each label. Active
    segment keeps the green tinted fill that matches the rest of the
    receive flow. */
-.type-toggle {
-  border-radius: 12px;
-  overflow: hidden;
-  max-width: 260px;
-  width: 100%;
-  padding: 3px;
-}
 
-.type-toggle :deep(.q-btn) {
-  position: relative;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  padding: 0 0.875rem;
-  min-height: 34px;
-  border-radius: 9px;
-  margin-left: 3px;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
-}
 
-.type-toggle :deep(.q-btn:first-child) {
-  margin-left: 0;
-}
 
-.type-toggle :deep(.q-btn__content) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
 
-.type-toggle :deep(.q-btn--active) {
-  font-weight: 600;
-}
 
 /* Wipe Quasar's utility active fill so our grey pane wins */
-.type-toggle :deep(.q-btn.bg-primary) {
-  background: transparent !important;
-}
 
-.type-toggle :deep(.q-btn__content .q-icon) {
-  margin: 0;
-  font-size: 14px;
-}
 
-.type-toggle :deep(.q-btn__content img) {
-  width: 12px;
-  height: 12px;
-}
 
 /* Hairline dividers sit in the 3px gap between segments
    (margin-left on each btn after the first). Hidden next
    to the active segment so the grey pane reads cleanly. */
-.type-toggle :deep(.q-btn + .q-btn)::before {
-  content: '';
-  position: absolute;
-  left: -2px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1px;
-  height: 16px;
-  pointer-events: none;
-  transition: opacity 0.18s ease;
-}
 
-.type-toggle :deep(.q-btn--active)::before,
-.type-toggle :deep(.q-btn--active + .q-btn)::before {
-  opacity: 0;
-}
 
 /* Kill Quasar's default pre-active overlay so tinted fills read
    cleanly without a darkening wash over the top. */
-.type-toggle :deep(.q-btn .q-focus-helper) {
-  display: none;
-}
 
 /* --- Dark --- */
 .toggle-dark {
@@ -3503,11 +2990,6 @@ export default {
   background: rgba(40, 34, 20, 0.12);
 }
 
-.mode-hint {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  text-align: center;
-}
 
 /* Spark Address Specific */
 .spark-icon {
