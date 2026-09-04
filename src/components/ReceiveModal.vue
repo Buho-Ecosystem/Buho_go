@@ -34,7 +34,20 @@
           <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
             {{ headerTitle }}
           </div>
-          <div class="header-actions"></div>
+          <div class="header-actions">
+            <q-btn
+              flat
+              round
+              dense
+              class="header-redeem-btn"
+              :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
+              :aria-label="$t('Redeem')"
+              @click="$emit('scan-withdraw')"
+            >
+              <Icon icon="tabler:scan" width="20" height="20" />
+              <q-tooltip>{{ $t('Scan to redeem') }}</q-tooltip>
+            </q-btn>
+          </div>
         </div>
       </q-card-section>
 
@@ -55,10 +68,12 @@
                   :options="sparkQrOptions"
                   class="qr-code"
                 />
+                <!-- One mark on every code: this is a BuhoGO code,
+                     whatever rail ends up paying it. -->
+                <span class="qr-logo" aria-hidden="true">
+                  <img src="/buho_logo.svg" alt="" />
+                </span>
               </div>
-            </div>
-            <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('Tap QR to copy address') }}
             </div>
           </div>
 
@@ -271,10 +286,10 @@
             <button
               class="action-btn"
               :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-              @click="$emit('scan-withdraw')"
+              @click="copyLightningAddress"
             >
-              <Icon icon="tabler:download" width="18" height="18" />
-              <span>{{ $t('Redeem') }}</span>
+              <Icon icon="tabler:copy" width="18" height="18" />
+              <span>{{ $t('Copy') }}</span>
             </button>
             <button
               class="action-btn"
@@ -290,7 +305,7 @@
               @click="tapAmountButton"
             >
               <Icon icon="tabler:edit" width="18" height="18" />
-              <span>{{ $t('Amount') }}</span>
+              <span>{{ $t('Amount / Note') }}</span>
             </button>
           </div>
         </div>
@@ -361,17 +376,6 @@
       <!-- Footer (only on the keypad) -->
       <q-card-section class="receive-footer" v-if="showAmountKeypadView">
         <div class="receive-footer-buttons">
-          <q-btn
-            flat
-            round
-            dense
-            class="scan-withdraw-btn"
-            :class="$q.dark.isActive ? 'scan-btn-dark' : 'scan-btn-light'"
-            @click="$emit('scan-withdraw')"
-          >
-            <Icon icon="tabler:qrcode" width="20" height="20" />
-            <q-tooltip>{{ $t('Scan to redeem') }}</q-tooltip>
-          </q-btn>
           <q-btn
             class="create-invoice-btn"
             :class="$q.dark.isActive ? 'create-invoice-btn-dark' : 'create-invoice-btn-light'"
@@ -2008,6 +2012,9 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
   padding: 1rem;
   overflow-y: auto;
   justify-content: space-between;
@@ -2046,15 +2053,39 @@ export default {
 }
 
 .qr-frame {
+  position: relative;
   background: #FFFFFF;
   padding: 14px;
   border-radius: var(--radius-md);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
+/* No radius on the code itself: margin-0 modules reach the image edge and
+   rounding would shave the finder squares. The frame is the rounded part. */
 .qr-frame .qr-code {
   display: block;
-  border-radius: 8px;
+  border-radius: 0;
+}
+
+.qr-logo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+}
+
+.qr-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .qr-hint {
@@ -2478,22 +2509,8 @@ export default {
   gap: 12px;
 }
 
-.scan-withdraw-btn {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
 
-.scan-btn-dark {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
-}
 
-.scan-btn-light {
-  background: rgba(0, 0, 0, 0.05);
-  color: rgba(0, 0, 0, 0.5);
-}
 
 /* Primary CTA for the receive flow — tinted green fill, same
    grammar as the Receive button on the wallet and the Spark/

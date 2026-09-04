@@ -12,10 +12,12 @@
             class="qr-code"
           />
           <q-spinner v-else size="32px" color="primary" />
+          <!-- One mark on every code: this is a BuhoGO code, whatever
+               rail ends up paying it. -->
+          <span v-if="depositAddress" class="qr-logo" aria-hidden="true">
+            <img src="/buho_logo.svg" alt="" />
+          </span>
         </div>
-      </div>
-      <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-        {{ $t('Tap QR to copy address') }}
       </div>
     </div>
 
@@ -141,24 +143,11 @@
       </button>
     </div>
 
-    <!-- Empty State: Check Button -->
-    <div v-else class="empty-state">
-      <q-btn
-        flat
-        no-caps
-        class="check-btn"
-        :class="$q.dark.isActive ? 'check-dark' : 'check-light'"
-        :loading="isCheckingDeposits"
-        @click="checkDeposits"
-      >
-        <Icon icon="tabler:refresh" width="16" height="16" class="q-mr-xs" />
-        {{ $t('Check for deposits') }}
-      </q-btn>
-    </div>
-
     <!-- End cap: what this code can do, in small quiet type. Last on
          purpose, so its per-language height can never push a control out
-         of view. -->
+         of view. Deposits need no manual check: the 30s poll here, the
+         wallet home's 60s poll and the store's refresh signal already
+         cover detection - chips appear above when something arrives. -->
     <div class="unified-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
       {{ $t('Lightning and Spark pay instantly - on-chain needs 3 confirmations') }}
     </div>
@@ -427,7 +416,7 @@ export default {
      * width/height attributes.
      */
     bitcoinQrOptions() {
-      return { ...this.qrOptions, width: 220 };
+      return { ...this.qrOptions, width: 232 };
     },
 
     netClaimAmount() {
@@ -512,9 +501,8 @@ export default {
     },
 
     async checkDeposits() {
+      if (this.isCheckingDeposits) return;
       this.isCheckingDeposits = true;
-      const startTime = Date.now();
-      const minLoadingTime = 2000; // Minimum 2 seconds for better UX
 
       try {
         // Ensure Spark is connected (auto-reconnects with session PIN if needed)
@@ -548,12 +536,6 @@ export default {
       } catch (error) {
         console.error('Failed to check deposits:', error);
       } finally {
-        // Ensure minimum loading time for better UX feedback
-        const elapsed = Date.now() - startTime;
-        const remainingTime = minLoadingTime - elapsed;
-        if (remainingTime > 0) {
-          await new Promise(resolve => setTimeout(resolve, remainingTime));
-        }
         this.isCheckingDeposits = false;
       }
     },
@@ -1089,15 +1071,16 @@ export default {
 }
 
 .qr-frame {
+  position: relative;
   background: white;
-  padding: 12px;
+  padding: 14px;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 .qr-frame.loading {
-  width: 220px;
-  height: 220px;
+  width: 260px;
+  height: 260px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1105,13 +1088,28 @@ export default {
 
 .qr-code {
   display: block;
-  border-radius: 8px;
+  border-radius: 0;
 }
 
-.qr-hint {
-  font-size: 12px;
-  margin-top: 8px;
-  opacity: 0.5;
+.qr-logo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+}
+
+.qr-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* ==========================================
@@ -1122,7 +1120,7 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  margin-top: 10px;
+  margin-top: 13px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -1160,7 +1158,7 @@ export default {
   justify-content: center;
   gap: 8px;
   align-self: stretch;
-  margin-top: 12px;
+  margin-top: 21px;
   padding: 12px 16px;
   border-radius: 12px;
   background: transparent;
@@ -1213,7 +1211,7 @@ export default {
    End cap - quiet capability sentence
    ========================================== */
 .unified-hint {
-  margin-top: 14px;
+  margin-top: 21px;
   padding: 0 12px;
   font-size: 11px;
   line-height: 1.4;
@@ -1277,7 +1275,7 @@ export default {
    ========================================== */
 .deposits-list {
   align-self: stretch;
-  margin-top: 14px;
+  margin-top: 21px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1393,31 +1391,6 @@ export default {
   background: #F7931A;
   box-shadow: 0 0 0 0 rgba(247, 147, 26, 0.55);
   animation: eyebrow-pulse 1.8s ease-out infinite;
-}
-
-/* ==========================================
-   Empty State
-   ========================================== */
-.empty-state {
-  text-align: center;
-  padding: 8px 0;
-}
-
-.check-btn {
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.check-dark {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.check-light {
-  color: rgba(0, 0, 0, 0.6);
-  background: rgba(0, 0, 0, 0.04);
 }
 
 /* ==========================================
