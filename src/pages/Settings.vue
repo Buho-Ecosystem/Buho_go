@@ -1178,25 +1178,21 @@
       </q-card>
     </q-dialog>
 
-    <!-- Enhanced Wallets Management Dialog -->
-    <q-dialog v-model="showWalletsDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+    <!-- Enhanced Wallets Management Dialog - full-width bottom sheet -->
+    <q-dialog
+      v-model="showWalletsDialog"
+      position="bottom"
+      transition-show="slide-up"
+      transition-hide="slide-down"
+      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    >
       <q-card class="wallets-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
         <!-- Fixed Header -->
         <q-card-section class="dialog-header wallets-dialog-header">
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Manage Wallets') }}
           </div>
-          <q-btn
-            flat
-            round
-            dense
-            v-close-popup
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
         </q-card-section>
 
         <!-- Scrollable Content -->
@@ -1222,7 +1218,7 @@
             </div>
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
             <div class="stat-item">
-              <div class="stat-value online-value">
+              <div class="stat-value online-value" :class="$q.dark.isActive ? 'online-dark' : 'online-light'">
                 {{ connectedWallets.length }}/{{ wallets.length }}
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
@@ -1230,18 +1226,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Add Wallet Button -->
-          <q-btn
-            class="add-wallet-btn"
-            :class="$q.dark.isActive ? 'add-wallet-btn-dark' : 'add-wallet-btn-light'"
-            no-caps
-            flat
-            @click="showAddWalletDialog = true"
-          >
-            <Icon icon="tabler:plus" width="20" height="20" class="q-mr-sm" />
-            {{ $t('Add Wallet') }}
-          </q-btn>
 
           <!-- Scrollable Wallet List -->
           <div class="wallets-list-container">
@@ -1256,7 +1240,7 @@
               </div>
             </div>
 
-            <div class="wallets-list-scroll">
+            <div class="wallets-list-scroll" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
               <div
                 v-for="wallet in sortedWallets"
                 :key="wallet.id"
@@ -1335,7 +1319,7 @@
                       <Icon v-else icon="tabler:wallet" width="10" height="10" />
                       <span>{{ getWalletTypeLabel(wallet) }}</span>
                     </div>
-                    <div v-if="wallet.id === activeWalletId" class="wallet-tag tag-active">{{ $t('Active') }}</div>
+                    <div v-if="wallet.id === activeWalletId" class="wallet-tag" :class="$q.dark.isActive ? 'tag-active-dark' : 'tag-active-light'">{{ $t('Active') }}</div>
                   </div>
                   <div class="wallet-balance-row" :class="$q.dark.isActive ? 'wallet-balance-dark' : 'wallet-balance-light'">
                     <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
@@ -1397,6 +1381,20 @@
               </div>
           </div>
           </div>
+        </q-card-section>
+
+        <!-- The sheet's one CTA, pinned hard at the bottom edge. -->
+        <q-card-section class="wallets-dialog-footer" :class="$q.dark.isActive ? 'wallets-footer-dark' : 'wallets-footer-light'">
+          <q-btn
+            class="add-wallet-btn"
+            :class="$q.dark.isActive ? 'add-wallet-btn-dark' : 'add-wallet-btn-light'"
+            no-caps
+            unelevated
+            @click="showAddWalletDialog = true"
+          >
+            <Icon icon="tabler:plus" width="20" height="20" class="q-mr-sm" />
+            {{ $t('Add Wallet') }}
+          </q-btn>
         </q-card-section>
       </q-card>
     </q-dialog>
@@ -5905,9 +5903,8 @@ export default {
   margin-bottom: 0.25rem;
 }
 
-.stat-value.online-value {
-  color: #15DE72;
-}
+.stat-value.online-value.online-light { color: #1A1A1A; }
+.stat-value.online-value.online-dark  { color: #15DE72; }
 
 .stat-label {
   font-family: 'Manrope', sans-serif;
@@ -5934,56 +5931,74 @@ export default {
 /* Wallets Dialog - Scrollable Layout */
 .wallets-dialog-card {
   width: 100%;
-  max-width: min(480px, 95vw);
-  max-height: 85vh;
-  border-radius: 24px;
+  max-width: 100%;
+  max-height: 92dvh;
+  border-radius: 24px 24px 0 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
-.wallets-dialog-header {
+.wallets-dialog-card .sheet-grabber {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
   flex-shrink: 0;
 }
 
-/* Add Wallet Button */
+.wallets-dialog-card .grabber-bar {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.35);
+}
+
+.wallets-dialog-header {
+  flex-shrink: 0;
+  justify-content: center;
+  border-bottom: none;
+  padding-top: 0.25rem;
+  padding-bottom: 0.5rem;
+}
+
+/* Pinned footer + its one CTA: dark ink in light mode, the app's credit
+   green in dark mode. */
+.wallets-dialog-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  padding-bottom: max(0.875rem, var(--safe-bottom, 0px));
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.wallets-footer-dark { background: #171717; }
+.wallets-footer-light { background: var(--bg-primary); }
+
 .add-wallet-btn {
   width: 100%;
-  height: 48px;
-  border-radius: 14px;
+  min-height: 48px;
+  border-radius: 12px;
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 600;
-  margin-top: 1rem;
-  border: 2px dashed;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .add-wallet-btn-dark {
-  color: #15DE72;
-  border-color: #2A342A;
-  background: transparent;
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #15DE72, #0DBB5F);
 }
 
 .add-wallet-btn-dark:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.1);
+  filter: brightness(1.05);
 }
 
 .add-wallet-btn-light {
-  /* "Add Wallet" is the CTA inside the wallets dialog; the dashed
-     border keeps it visually distinct from the filled primary buttons
-     on the rest of the Settings surface. Neutralised to text-primary
-     so the action reads as inviting without re-introducing a second
-     green accent on cream. */
-  color: var(--text-primary);
-  border-color: var(--border-card);
-  background: transparent;
+  color: #FFFFFF;
+  background: #1A1A1A;
 }
 
 .add-wallet-btn-light:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.08);
+  background: #2A2A2A;
 }
 
 .add-pocket-btn-dark {
@@ -6024,15 +6039,20 @@ export default {
 }
 
 .wallets-list-container {
-  margin-top: 1rem;
+  margin-top: 0.25rem;
 }
 
+/* Inset grouped list: one rounded surface, hairline separators inset past
+   the leading mark - the same reading as the wallet switcher sheet. */
 .wallets-list-scroll {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  border-radius: 16px;
   overflow: hidden;
 }
+
+.wallets-group-light { background: #FFFFFF; }
+.wallets-group-dark  { background: #2C2C2E; }
 
 .no-wallets {
   text-align: center;
@@ -6056,13 +6076,19 @@ export default {
   font-weight: 500;
 }
 
-/* Wallet Card - Clean iOS-style */
-.wallet-card-wrapper {
-  margin-bottom: 0.5rem;
+/* Wallet row inside the grouped surface */
+.wallet-card-wrapper:not(:first-child) .wallet-card {
+  position: relative;
 }
 
-.wallet-card-wrapper:last-child {
-  margin-bottom: 0;
+.wallet-card-wrapper:not(:first-child) .wallet-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 74px;
+  right: 0;
+  height: 1px;
+  background: rgba(128, 128, 128, 0.18);
 }
 
 .wallet-card {
@@ -6070,39 +6096,17 @@ export default {
   align-items: center;
   gap: 0.875rem;
   padding: 0.875rem 1rem;
-  border-radius: 12px;
-  transition: background 0.15s ease;
+  transition: background 0.12s ease;
   overflow: hidden;
   max-width: 100%;
 }
 
-.wallet-card-dark {
-  background: var(--bg-card);
-}
-
-.wallet-card-light {
-  background: var(--bg-card);
-}
-
 .wallet-card-dark:hover {
-  background: #222;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .wallet-card-light:hover {
-  background: var(--bg-input);
-}
-
-.wallet-card-active {
-  box-shadow: inset 0 0 0 1px #15DE72;
-  background: rgba(21, 222, 114, 0.03);
-}
-
-.wallet-card-active.wallet-card-dark:hover {
-  background: rgba(21, 222, 114, 0.06);
-}
-
-.wallet-card-active.wallet-card-light:hover {
-  background: rgba(21, 222, 114, 0.05);
+  background: rgba(0, 0, 0, 0.045);
 }
 
 .wallet-card-disconnected {
@@ -6160,7 +6164,7 @@ export default {
 }
 
 .wallet-card-dark .wallet-status-dot {
-  border-color: #1A1A1A;
+  border-color: #2C2C2E;
 }
 
 .wallet-card-light .wallet-status-dot {
@@ -6273,9 +6277,14 @@ export default {
   letter-spacing: 0.02em;
 }
 
-.tag-active {
-  background: #D1FAE5;
-  color: #065F46;
+.tag-active-light {
+  background: rgba(0, 0, 0, 0.08);
+  color: #1A1A1A;
+}
+
+.tag-active-dark {
+  background: rgba(21, 222, 114, 0.15);
+  color: #15DE72;
 }
 
 /* Wallet Balance */
