@@ -488,18 +488,19 @@
     </q-dialog>
 
     <!-- Wallet Switcher Dialog -->
-    <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+    <q-dialog
+      v-model="showWalletSwitcher"
+      position="bottom"
+      transition-show="slide-up"
+      transition-hide="slide-down"
+      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    >
       <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
         <q-card-section class="switcher-header">
           <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Switch Wallet') }}
           </div>
-          <q-btn flat round dense v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
         </q-card-section>
 
         <q-card-section class="switcher-content">
@@ -574,7 +575,7 @@
                     <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
-                  <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
+                  <div v-if="wallet.id === storeActiveWalletId" class="switch-tag" :class="$q.dark.isActive ? 'tag-active-dark' : 'tag-active-light'">{{ $t('Active') }}</div>
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
@@ -589,6 +590,7 @@
                 width="20"
                 height="20"
                 class="switch-check-icon"
+                :class="$q.dark.isActive ? 'check-accent-dark' : 'check-accent-light'"
               />
             </div>
 
@@ -8414,30 +8416,50 @@ export default {
 }
 
 /* Wallet Switcher Dialog */
+/* Bottom sheet: full width, rounded top, sized to its content with the
+   list scrolling inside and the CTAs pinned hard at the bottom. */
 .wallet-switcher-card {
   width: 100%;
-  max-width: 360px;
-  border-radius: 20px;
+  max-width: 100%;
+  max-height: 78dvh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px 24px 0 0;
   overflow: hidden;
+}
+
+.wallet-switcher-card .sheet-grabber {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+  flex-shrink: 0;
+}
+
+.wallet-switcher-card .grabber-bar {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.35);
 }
 
 .switcher-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  padding: 0.25rem 1.25rem 0.5rem;
+  flex-shrink: 0;
 }
 
 .switcher-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .switcher-content {
-  padding: 0.5rem;
-  max-height: 320px;
+  flex: 1;
+  min-height: 0;
+  padding: 0.25rem 0.75rem 0.5rem;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -8452,13 +8474,13 @@ export default {
   gap: 0.375rem;
 }
 
-/* Wallet Switch Card - iOS style */
+/* Wallet row */
 .wallet-switch-card {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: 12px;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem;
+  border-radius: 14px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -8479,17 +8501,22 @@ export default {
   background: #F3F4F6;
 }
 
-.wallet-switch-card-active {
-  box-shadow: inset 0 0 0 1px #15DE72;
-  background: rgba(21, 222, 114, 0.03) !important;
-}
-
-.wallet-switch-card-active.wallet-switch-card-dark:hover {
-  background: rgba(21, 222, 114, 0.06) !important;
+.wallet-switch-card-active.wallet-switch-card-light {
+  box-shadow: inset 0 0 0 1.5px #1A1A1A;
+  background: rgba(0, 0, 0, 0.03) !important;
 }
 
 .wallet-switch-card-active.wallet-switch-card-light:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+.wallet-switch-card-active.wallet-switch-card-dark {
+  box-shadow: inset 0 0 0 1.5px #15DE72;
   background: rgba(21, 222, 114, 0.05) !important;
+}
+
+.wallet-switch-card-active.wallet-switch-card-dark:hover {
+  background: rgba(21, 222, 114, 0.08) !important;
 }
 
 /* Switch Avatar */
@@ -8499,8 +8526,8 @@ export default {
 }
 
 .switch-avatar-circle {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -8567,7 +8594,7 @@ export default {
 
 .switch-name {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -8643,15 +8670,20 @@ export default {
   letter-spacing: 0.02em;
 }
 
-.tag-active {
-  background: #D1FAE5;
-  color: #065F46;
+.tag-active-light {
+  background: rgba(0, 0, 0, 0.08);
+  color: #1A1A1A;
+}
+
+.tag-active-dark {
+  background: rgba(21, 222, 114, 0.15);
+  color: #15DE72;
 }
 
 /* Switch Balance */
 .switch-balance {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -8666,17 +8698,21 @@ export default {
 /* Check Icon */
 .switch-check-icon {
   flex-shrink: 0;
-  color: #15DE72;
 }
 
-/* Switcher Footer */
+.check-accent-light { color: #1A1A1A; }
+.check-accent-dark  { color: #15DE72; }
+
+/* Switcher Footer - pinned hard at the sheet's bottom edge. */
 .switcher-footer {
+  flex-shrink: 0;
   padding: 0.75rem 1rem;
+  padding-bottom: max(0.875rem, var(--safe-bottom, 0px));
   border-top: 1px solid;
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .switcher-footer-dark {
@@ -8689,51 +8725,56 @@ export default {
   background: var(--bg-primary);
 }
 
-/* Transfer Funds Button */
+/* Transfer Funds - the primary CTA: dark ink in light mode, the app's
+   credit green in dark mode. */
 .transfer-funds-btn {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  border-radius: 10px;
+  border-radius: 12px;
+  min-height: 48px;
   padding: 0.5rem 1rem;
   flex: 1;
   transition: all 0.15s ease;
 }
 
 .transfer-btn-dark {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #15DE72, #0DBB5F);
 }
 
 .transfer-btn-dark:hover {
-  background: rgba(34, 197, 94, 0.2);
+  filter: brightness(1.05);
 }
 
 .transfer-btn-light {
-  color: #16a34a;
-  background: rgba(34, 197, 94, 0.1);
+  color: #FFFFFF;
+  background: #1A1A1A;
 }
 
 .transfer-btn-light:hover {
-  background: rgba(34, 197, 94, 0.15);
+  background: #2A2A2A;
 }
 
 .manage-wallets-btn {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  min-height: 48px;
   padding: 0.5rem 1rem;
   flex: 1;
   transition: all 0.15s ease;
 }
 
 .manage-btn-dark {
-  color: #888;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .manage-btn-light {
-  color: var(--text-secondary);
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .manage-wallets-btn:hover {
