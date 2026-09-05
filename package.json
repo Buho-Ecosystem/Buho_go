@@ -15,8 +15,7 @@
     "release:activate": "node scripts/activate-update.mjs"
   },
   "dependencies": {
-    "@arkade-os/boltz-swap": "^0.3.46",
-    "@arkade-os/sdk": "^0.4.41",
+    "@arkade-os/sdk": "^0.4.69",
     "@branta-ops/branta": "3.1.3",
     "@buildonspark/spark-sdk": "^0.9.0",
     "@capacitor-mlkit/barcode-scanning": "8.0.1",

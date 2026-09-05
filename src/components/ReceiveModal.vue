@@ -64,14 +64,6 @@
                 <Icon icon="tabler:edit" width="14" height="14" />
               </button>
 
-              <!-- The Lightning rail rides a swap; disclose the net amount. -->
-              <div
-                v-if="generatedInvoice && generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
-                class="address-hint hero-subhint"
-                :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-              >
-                {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
-              </div>
             </template>
 
             <div v-if="arkadeBoardingAddress" class="qr-section">
@@ -117,7 +109,7 @@
           </div>
 
           <div class="address-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Arkade pays instantly - set an amount to also receive over Lightning') }}
+            {{ $t('Arkade pays instantly - on-chain needs a confirmation') }}
           </div>
 
           <!-- One row of equal, labeled actions in the thumb zone. Copy asks
@@ -137,7 +129,7 @@
               <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
               <q-menu anchor="top middle" self="bottom middle" :offset="[0, 6]">
                 <q-list class="copy-menu">
-                  <q-item v-if="generatedInvoice && generatedInvoice.amount > 0" v-close-popup clickable @click="copyInvoice">
+                  <q-item v-if="generatedInvoice && generatedInvoice.amount > 0 && generatedInvoice.payment_request" v-close-popup clickable @click="copyInvoice">
                     <div class="copy-item">
                       <span>{{ $t('Lightning invoice') }}</span>
                       <small>{{ truncateArkadeAddress(generatedInvoice.payment_request) }}</small>
@@ -198,10 +190,6 @@
             </span>
             <span class="ln-fiat" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
               {{ formatInvoiceFiat(generatedInvoice.amount) }}
-            </span>
-            <span v-if="generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
-                  class="ln-memo" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
             </span>
             <span v-if="generatedInvoice.description && generatedInvoice.description !== 'BuhoGO Payment'"
                   class="ln-memo" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
@@ -390,7 +378,7 @@
             no-caps
             unelevated
           >
-            <span v-if="!isCreatingInvoice">{{ $t('Create Invoice') }}</span>
+            <span v-if="!isCreatingInvoice">{{ isArkadeWallet ? $t('Set Amount') : $t('Create Invoice') }}</span>
             <template v-slot:loading>
               <q-spinner-dots class="q-mr-sm"/>
               {{ $t('Creating...') }}
@@ -655,6 +643,9 @@ export default {
         lightning: invoice,
         ark: this.arkadeAddress || '',
         amountSats: this.generatedInvoice?.amount || null,
+        // With no invoice to carry a memo, the note rides BIP21's own
+        // message= field so BIP21-aware payers still see it.
+        message: this.generatedInvoice?.description || '',
       });
     },
     // The user-created specific-amount invoice screen (LNbits / NWC). The
@@ -677,7 +668,9 @@ export default {
     },
     headerTitle() {
       if (this.showSpecificInvoiceView || this.showAmountKeypadView) {
-        return this.$t('Invoice');
+        // Arkade mints no invoice while its Lightning rail is out - the
+        // keypad only sets the request amount on the unified code.
+        return this.isArkadeWallet ? this.$t('Set Amount') : this.$t('Invoice');
       }
       return this.$t('Receive');
     },
@@ -1077,41 +1070,10 @@ export default {
 
       if (this.isSparkWallet) {
         await this.startSparkEventMonitor();
-      } else if (this.isArkadeWallet) {
-        await this.startArkadeIncomingMonitor();
       } else if (this.isLNBitsWallet) {
         await this.startLNBitsPollingMonitor();
       } else {
         await this.startNWCPollingMonitor();
-      }
-    },
-
-    /**
-     * Arkade Lightning receive monitor. The Boltz reverse swap is auto-claimed
-     * by the SwapManager into a VTXO, which surfaces through notifyIncomingFunds
-     * — the same signal as a native ark1 receipt. We treat the next incoming
-     * funds while this invoice is open as the payment landing. Best-effort: if
-     * the stream is unavailable the balance/tx list still reflects the payment.
-     */
-    async startArkadeIncomingMonitor() {
-      let provider;
-      try {
-        provider = await this.walletStore.ensureArkadeConnected();
-      } catch (error) {
-        console.warn('Could not connect Arkade provider for monitoring:', error);
-        return;
-      }
-      try {
-        this._arkadeStopIncoming = await provider.startIncomingFundsListener(() => {
-          if (this.isPaymentConfirmed) return;
-          const hash = this.generatedInvoice?.payment_hash;
-          if (hash) provider.markReverseSwapClaimed(hash);
-          this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
-            amount: this.generatedInvoice?.amount,
-          });
-        });
-      } catch (error) {
-        console.warn('Could not start Arkade incoming-funds monitor:', error);
       }
     },
 
@@ -1131,9 +1093,18 @@ export default {
       }
       let baseline = 0;
       try { baseline = Number((await provider.getBalance())?.balance ?? 0); } catch (e) { /* ignore */ }
+      // The awaits above race a quick modal close (and the four call sites
+      // never await this method): registering now would orphan a listener
+      // that pops the success screen with a stale baseline after close.
+      if (!this.show) return;
+      if (this._arkadeStopIncoming) {
+        try { this._arkadeStopIncoming(); } catch { /* already gone */ }
+        this._arkadeStopIncoming = null;
+      }
       this.paymentStatus = PaymentStatus.PENDING;
       try {
         this._arkadeStopIncoming = await provider.startIncomingFundsListener(async () => {
+          if (!this.show) return;
           if (this.isPaymentConfirmed) return;
           let received;
           try {
@@ -1625,23 +1596,24 @@ export default {
             expires_at: result.expiresAt
           };
         } else if (walletType === 'arkade') {
-          // Arkade Lightning = Boltz reverse swap (provider.createInvoice).
-          const provider = this.walletStore.getActiveProvider();
-          if (!provider) {
-            throw new Error('Arkade wallet not connected');
-          }
-
-          const result = await provider.createInvoice(invoiceParams);
-          invoice = {
-            paymentRequest: result.paymentRequest,
-            payment_hash: result.paymentHash,
+          // Arkade Lightning is out of service (its Boltz swap rail is
+          // retired - see Plans WIP/arkade-maintenance-map.md). The request
+          // still deserves an amount: it rides the unified QR's amount=
+          // param for ark and on-chain payers, with no lightning= leg.
+          this.generatedInvoice = {
+            payment_request: '',
+            payment_hash: null,
+            invoice_id: null,
             amount: this.amountInSats,
-            // Net sats that land after the Boltz reverse-swap fee. The QR keeps
-            // encoding the gross `amount` the payer pays; this is display-only.
-            amountReceivable: result.amountReceivable,
             description: invoiceParams.description,
-            expires_at: result.expiresAt
+            created_at: Math.floor(Date.now() / 1000)
           };
+          this.showAmountInput = false;
+          // tapAmountButton stopped the native ark1 monitor; nothing
+          // invoice-shaped will watch for the payment, so re-arm it.
+          this.startArkadeNativeMonitor();
+          this.isCreatingInvoice = false;
+          return;
         } else {
           // Use NWC for NWC wallets
           const activeWallet = this.walletState.connectedWallets?.find(
@@ -1686,9 +1658,6 @@ export default {
           payment_hash: paymentHash,
           invoice_id: invoice.invoice_id || invoice.id || null,
           amount: invoice.amount || this.amountInSats,
-          // Carry the Arkade reverse-swap net amount through so the receive
-          // view can show it (undefined for other wallet types -> hint hidden).
-          amountReceivable: invoice.amountReceivable,
           description: invoice.description || this.description || 'BuhoGO Payment',
           expires_at: invoice.expires_at || invoice.expiresAt,
           created_at: Math.floor(Date.now() / 1000)

@@ -633,6 +633,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
+import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
@@ -1004,6 +1005,12 @@ function canSelectContact(contact) {
   }
   // ark1 contacts only payable with an Arkade wallet
   if (contact.addressType === 'arkade' && !isArkadeWallet.value) {
+    return false
+  }
+  // Everything else is a Lightning destination - gate it through the shared
+  // capability check so an Arkade wallet (Lightning out of service) dims
+  // these rows instead of minting N real invoices that all fail at pay time.
+  if (!canWalletPay(walletStore.activeWalletType, contact.addressType || 'lightning')) {
     return false
   }
   return true

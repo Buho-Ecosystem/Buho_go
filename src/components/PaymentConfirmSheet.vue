@@ -353,177 +353,17 @@ export default {
      * where a bare spinner would hide what's actually happening.
      */
     statusMessage: { type: String, default: '' },
-    /**
-     * Extra parent-owned commit condition, ANDed into the standard gates
-     * (wallet capability + amount validity). Used by flows whose slot
-     * content must settle before committing — e.g. the on-chain fee
-     * panel: no confirmed fee quote, no send. Defaults open so ordinary
-     * payments never need to pass it.
-     */
-    commitGate: { type: Boolean, default: true }
-  },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed'],
-  data() {
-    return {
-      showAddress: false,
-      displayAmount: '',
-      currentCurrency: 'sats',
-      isAmountFocused: false,
-      comment: '',
-      fiatRates: {},
-      logoFailed: false
-    }
-  },
-  computed: {
-    ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format', 'isActiveWalletArkade', 'arkadeLnSendLimits']),
-
-    show: {
-      get() { return this.modelValue },
-      set(v) { this.$emit('update:modelValue', v) }
-    },
-
-    // ───── Recipient ─────
-    recipientName() {
-      return this.payment?.recipient?.name || this.$t('Recipient')
-    },
-    recipientColor() {
-      return this.payment?.recipient?.color || '#3B82F6'
-    },
-    recipientLogo() {
-      return this.payment?.recipient?.logoUrl || ''
-    },
-    // Render the logo image only when we have a URL that has not failed to
-    // load; otherwise the avatar falls back to the colored initial rather
-    // than a broken-image glyph (this is a verified-merchant trust surface).
-    showRecipientLogo() {
-      return !!this.recipientLogo && !this.logoFailed
-    },
-    // Art without its own background plate (merchant marks from Branta, a
-    // wordmark, a bare wallet logomark) is fitted whole inside the circle
-    // rather than cropped edge-to-edge. App-icon art stays full-bleed.
-    recipientLogoContain() {
-      return this.payment?.recipient?.logoContain === true
-    },
-    // Optional per-logo override of the contain padding, for art whose
-    // silhouette is known to clear the circle at a tighter inset (see
-    // walletBrands). Empty -> the conservative default in the stylesheet.
-    recipientLogoInset() {
-      return this.payment?.recipient?.logoInset || ''
-    },
-    // Optional avatar backdrop for a logo that needs one (e.g. ZBD's white
-    // wordmark, which would vanish on the default white circle). Empty -> the
-    // default `.has-logo` white background.
-    recipientLogoBg() {
-      return this.payment?.recipient?.logoBg || ''
-    },
-    recipientInitial() {
-      const explicit = this.payment?.recipient?.initial
-      if (explicit) return explicit
-      const name = this.payment?.recipient?.name
-      return name ? name.charAt(0).toUpperCase() : '?'
-    },
-    recipientAddress() {
-      return this.payment?.recipient?.address || ''
-    },
-    recipientAddressType() {
-      return this.payment?.recipient?.addressType || 'lightning'
-    },
-    // Branta merchant verification, present only when the parent's adapter
-    // attached it after a positive lookup. Absent on every unverified
-    // payment, so the badge simply never renders in the common case.
-    recipientVerification() {
-      return this.payment?.recipient?.verification || null
-    },
-
-    // Picture-less matched contact → the app-wide silhouette mark. A
-    // loaded logo (photo / brand / Branta) always wins over it.
-    isSilhouetteRecipient() {
-      return !!this.payment?.recipient?.silhouette && !this.showRecipientLogo
-    },
-
-    // Fiat-payout service context (Tando, Bitzed, …), attached by the
-    // parent adapter when the destination is a recognized phone-payout
-    // Lightning Address. Absent on every normal payment, so the hint
-    // simply never renders in the common case.
-    recipientLnService() {
-      return this.payment?.recipient?.lnService || null
-    },
-
-    // Hosting consumer wallet name (Wallet of Satoshi, Phoenix, Blink, …),
-    // attached by the parent adapter when the address domain matches a known
-    // wallet. Absent otherwise, so the brand hint never renders in that case.
-    recipientWalletBrand() {
-      return this.payment?.recipient?.walletBrand || null
-    },
-
-    // Label for the payment-indicator row: the human description when the
-    // invoice / LNURL carried one (real content), otherwise a plain
-    // "Show details" so the row reads as what it is — the reveal for the
-    // raw destination string. Never the rail name: the payment-language
-    // unification says only "Bitcoin payment" on send, and the hero
-    // identity already carries that, so repeating it here would be the
-    // old shown-twice bug in new clothes.
-    paymentLabel() {
-      if (this.payment?.description) return this.payment.description
-      return this.$t('Show details')
-    },
-
-    // LUD-21 / currency-extension (#207) payout currency, present when the
-    // provider returns one (fiat-payout addresses: ChapSmart TZS, Tando KES,
-    // Bitzed ZMW). Shape: { code, symbol, decimals, minSendable, maxSendable,
-    // multiplier }, where multiplier is millisats per 1 unit of the currency.
-    // Lets the sender denominate in the recipient's currency with the sat cost
-    // derived from the callback's own multiplier — no external rate needed.
-    payoutCurrency() {
-      return this.payment?.payoutCurrency || null
-    },
-    // True while the amount is being entered in the recipient's local currency.
-    isLocalDenomination() {
-      return !!this.payoutCurrency && this.currentCurrency === this.payoutCurrency.code
-    },
-    // Single source of truth for how the amount is denominated, so every
-    // consumer switches on one value instead of re-deriving from currentCurrency
-    // (which now also holds a payout code like 'TZS', not just sats/btc/fiat).
-    denominationMode() {
-      if (this.isLocalDenomination) return 'local'
-      if (this.currentCurrency === 'sats') return 'sats'
-      if (this.currentCurrency === 'btc') return 'btc'
-      return 'fiat'
-    },
-
-    // ───── Amount mode ─────
-
-    // Arkade pays Lightning through a swap with its own floor and ceiling.
-    // Surface those bounds in the amount entry itself so the user can never
-    // confirm an amount the swap layer would refuse a moment later. Null for
-    // every non-Arkade wallet, for non-Lightning destinations (ark1/bitcoin
-    // ride other rails), and for redeem (receive-direction) flows.
-    arkadeSwapBounds() {
-      if (!this.isActiveWalletArkade || this.isRedeem) return null
-      const t = this.recipientAddressType
-      if (t !== 'lightning' && t !== 'invoice' && t !== 'lnurl') return null
-      return this.arkadeLnSendLimits || null
-    },
     amountMode() {
-      const mode = this.payment?.amount?.mode || 'free'
-      // A free-amount Lightning send on Arkade is still bounded by the swap;
-      // present it as a range so the hint and validation engage.
-      if (mode === 'free' && this.arkadeSwapBounds) return 'range'
-      return mode
+      return this.payment?.amount?.mode || 'free'
     },
     fixedSats() {
       return this.payment?.amount?.fixedSats || 0
     },
     minSats() {
-      const base = this.payment?.amount?.minSats || 0
-      const swap = this.arkadeSwapBounds
-      return swap?.min ? Math.max(base, swap.min) : base
+      return this.payment?.amount?.minSats || 0
     },
     maxSats() {
-      const base = this.payment?.amount?.maxSats || 0
-      const swap = this.arkadeSwapBounds
-      if (!swap?.max) return base
-      return base ? Math.min(base, swap.max) : swap.max
+      return this.payment?.amount?.maxSats || 0
     },
 
     fiatCurrencyCode() {
@@ -569,17 +409,6 @@ export default {
     // registration vue-i18n skips placeholder substitution and the user
     // sees a literal "{n}" in the UI.
     amountInvalidReason() {
-      // A fixed-amount invoice outside the Arkade swap bounds can never be
-      // paid from this wallet, and the user can't edit the amount — say so
-      // up front instead of failing after the Send tap.
-      if (this.amountMode === 'fixed' && this.arkadeSwapBounds && this.fixedSats > 0) {
-        if (this.minSats && this.fixedSats < this.minSats) {
-          return this.$t('Minimum is {n} sats', { n: this.minSats.toLocaleString() })
-        }
-        if (this.maxSats && this.fixedSats > this.maxSats) {
-          return this.$t('Maximum is {n} sats', { n: this.maxSats.toLocaleString() })
-        }
-      }
       if (!this.displayAmount || this.amountMode === 'fixed') return ''
       // Local-currency mode: validate the entered LOCAL amount against the
       // provider's own min/max. Runs before the sats>0 check below so a

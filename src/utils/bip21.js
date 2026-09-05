@@ -149,7 +149,7 @@ export function selectBip21Destination(parsed) {
  * }} parts
  * @returns {string} The URI, or '' without an address.
  */
-export function composeUnifiedBip21({ address, lightning = '', spark = '', ark = '', amountSats = null }) {
+export function composeUnifiedBip21({ address, lightning = '', spark = '', ark = '', amountSats = null, message = '' }) {
   if (!address) return '';
   const params = [];
   const sats = Number(amountSats);
@@ -159,6 +159,10 @@ export function composeUnifiedBip21({ address, lightning = '', spark = '', ark =
   if (lightning) params.push('lightning=' + lightning);
   if (spark) params.push('spark=' + spark);
   if (ark) params.push('ark=' + ark);
+  // BIP21's own free-text field, URL-encoded like the spec asks. Used when
+  // no embedded invoice exists to carry the note (e.g. Arkade while its
+  // Lightning rail is out).
+  if (message) params.push('message=' + encodeURIComponent(message));
   return 'bitcoin:' + address + (params.length ? '?' + params.join('&') : '');
 }
 

@@ -66,6 +66,14 @@ test('unified BIP21 amounts are BTC with trimmed zeros', () => {
   assert.equal(composeUnifiedBip21({ address: 'a', lightning: 'ln' }), 'bitcoin:a?lightning=ln');
 });
 
+test('unified BIP21 message rides URL-encoded and only when present', () => {
+  assert.equal(
+    composeUnifiedBip21({ address: 'bc1qabc', ark: 'ark1qqel', amountSats: 21000, message: 'Table 4 & tip' }),
+    'bitcoin:bc1qabc?amount=0.00021&ark=ark1qqel&message=Table%204%20%26%20tip'
+  );
+  assert.equal(composeUnifiedBip21({ address: 'a', message: '' }), 'bitcoin:a');
+});
+
 test('unified BIP21 degrades and never fabricates', () => {
   assert.equal(composeUnifiedBip21({ address: '' }), '');
   assert.equal(composeUnifiedBip21({ address: 'bc1qabc' }), 'bitcoin:bc1qabc');
