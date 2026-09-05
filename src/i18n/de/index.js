@@ -1465,7 +1465,6 @@ export default {
   "Spark address": "Spark-Adresse",
   "Arkade address": "Arkade-Adresse",
   "Lightning invoice": "Lightning-Rechnung",
-  "Lightning and Spark pay instantly - on-chain needs 3 confirmations": "Lightning und Spark zahlen sofort - On-Chain braucht 3 Bestätigungen",
   "Minimum": "Minimum",
   "Ready": "Bereit",
   "confirmations": "Bestätigungen",
@@ -3172,4 +3171,19 @@ export default {
   "This payment request is reserved for a different wallet.": "Diese Zahlungsanfrage ist für ein anderes Wallet reserviert.",
   "Unlock your Spark wallet first, then try this payment request again.": "Entsperre zuerst dein Spark-Wallet und versuche die Zahlungsanfrage dann erneut.",
   "This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.": "Das ist eine einmalige Zahlungsanfrage, keine dauerhafte Adresse. Bezahle sie und speichere den Kontakt stattdessen im Zahlungsbildschirm.",
+
+  // --- Spark lightning address (Breez engine) ---
+  "Claim address": "Adresse sichern",
+  "Checking availability": "Verfügbarkeit wird geprüft",
+  "Taken. Try another name.": "Vergeben. Probiere einen anderen Namen.",
+  "Use 3 to 32 lowercase letters or numbers": "Nutze 3 bis 32 Kleinbuchstaben oder Zahlen",
+  "Could not check right now. Try again.": "Prüfung gerade nicht möglich. Versuche es erneut.",
+  "Pick a name. Payments sent to it arrive in this wallet.": "Wähle einen Namen. Zahlungen daran landen in diesem Wallet.",
+  "Payments sent to this address arrive in this wallet. It stays yours after reinstalling or restoring from your recovery phrase.": "Zahlungen an diese Adresse landen in diesem Wallet. Sie bleibt deine, auch nach Neuinstallation oder Wiederherstellung mit deiner Wiederherstellungsphrase.",
+  "Lightning address ready": "Lightning-Adresse ist bereit",
+  "Could not claim the address. Try again.": "Adresse konnte nicht gesichert werden. Versuche es erneut.",
+  "name": "name",
+  "Change address": "Adresse ändern",
+  "Use this name": "Diesen Namen verwenden",
+  "Pick a new name. Your current name stays reserved for this wallet.": "Wähle einen neuen Namen. Dein aktueller Name bleibt für dieses Wallet reserviert.",
 }

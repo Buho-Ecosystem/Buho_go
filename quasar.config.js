@@ -92,6 +92,24 @@ export default defineConfig((ctx) => {
         // Disable crossorigin attribute on script/link tags — can cause loading issues in Capacitor Android WebView
         viteConf.build = viteConf.build || {}
         viteConf.build.crossOriginLoading = false
+
+        // The Breez SDK ships a WASM module loaded via its own storage-global
+        // wrapper; Vite's dependency optimizer must not pre-bundle it or the
+        // wasm URL resolution and IndexedDB globals break at runtime.
+        viteConf.optimizeDeps = viteConf.optimizeDeps || {}
+        viteConf.optimizeDeps.exclude = viteConf.optimizeDeps.exclude || []
+        viteConf.optimizeDeps.exclude.push('@breeztech/breez-sdk-spark')
+
+        // The Arkade SDK's descriptor dependency references Node's `global`;
+        // map it to globalThis in the dev pre-bundle (the production build
+        // resolves it on its own).
+        viteConf.optimizeDeps.esbuildOptions = {
+          ...(viteConf.optimizeDeps.esbuildOptions || {}),
+          define: {
+            ...((viteConf.optimizeDeps.esbuildOptions || {}).define || {}),
+            global: 'globalThis',
+          },
+        }
       },
       // viteVuePluginOptions: {},
 
@@ -198,7 +216,25 @@ export default defineConfig((ctx) => {
       // useCredentialsForManifestTag: true,
       // injectPwaMetaTags: false,
       // extendPWACustomSWConf (esbuildConf) {},
-      // extendGenerateSWOptions (cfg) {},
+      extendGenerateSWOptions (cfg) {
+        // The ~12.5 MB Breez SDK wasm must NOT be precached - that would
+        // push it to every installer while the engine defaults to the
+        // direct SDK. Instead it is cached on first use, so only devices
+        // actually running the Breez engine pay for it, and those stay
+        // offline-capable afterwards.
+        cfg.globIgnores = [...(cfg.globIgnores || []), '**/breez_sdk_spark_wasm_bg*.wasm']
+        cfg.runtimeCaching = [
+          ...(cfg.runtimeCaching || []),
+          {
+            urlPattern: /breez_sdk_spark_wasm_bg.*\.wasm$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'breez-wasm',
+              expiration: { maxEntries: 2 },
+            },
+          },
+        ]
+      },
       // extendInjectManifestOptions (cfg) {}
     },
 

@@ -1466,7 +1466,6 @@ export default {
   "Spark address": "Dirección Spark",
   "Arkade address": "Dirección Arkade",
   "Lightning invoice": "Factura Lightning",
-  "Lightning and Spark pay instantly - on-chain needs 3 confirmations": "Lightning y Spark pagan al instante - on-chain necesita 3 confirmaciones",
   "Minimum": "Mínimo",
   "Ready": "Listo",
   "confirmations": "confirmaciones",
@@ -3171,4 +3170,19 @@ export default {
   "This payment request is reserved for a different wallet.": "Esta solicitud de pago está reservada para otro wallet.",
   "Unlock your Spark wallet first, then try this payment request again.": "Desbloquea primero tu wallet Spark y vuelve a intentar esta solicitud de pago.",
   "This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.": "Es una solicitud de pago de un solo uso, no una dirección permanente. Págala y guarda el contacto desde la pantalla de pago.",
+
+  // --- Spark lightning address (Breez engine) ---
+  "Claim address": "Reservar dirección",
+  "Checking availability": "Comprobando disponibilidad",
+  "Taken. Try another name.": "Ocupado. Prueba otro nombre.",
+  "Use 3 to 32 lowercase letters or numbers": "Usa de 3 a 32 letras minúsculas o números",
+  "Could not check right now. Try again.": "No se pudo comprobar ahora. Inténtalo de nuevo.",
+  "Pick a name. Payments sent to it arrive in this wallet.": "Elige un nombre. Los pagos enviados a él llegan a esta cartera.",
+  "Payments sent to this address arrive in this wallet. It stays yours after reinstalling or restoring from your recovery phrase.": "Los pagos a esta dirección llegan a esta cartera. Sigue siendo tuya tras reinstalar o restaurar con tu frase de recuperación.",
+  "Lightning address ready": "Dirección Lightning lista",
+  "Could not claim the address. Try again.": "No se pudo reservar la dirección. Inténtalo de nuevo.",
+  "name": "nombre",
+  "Change address": "Cambiar dirección",
+  "Use this name": "Usar este nombre",
+  "Pick a new name. Your current name stays reserved for this wallet.": "Elige un nombre nuevo. Tu nombre actual queda reservado para esta cartera.",
 }
