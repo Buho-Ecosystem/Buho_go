@@ -74,7 +74,8 @@ export default boot(async ({ router }) => {
       parsed = { type: 'lnurl', lnurl: raw, valid: true }
     }
 
-    if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
+    const EXPLAINED_UNPAYABLE = ['bolt12_offer', 'silent_payment']
+    if (!parsed || (!parsed.valid && !EXPLAINED_UNPAYABLE.includes(parsed.type)) || parsed.type === 'unknown') {
       Notify.create({
         type: 'warning',
         icon: 'nfc',
@@ -90,6 +91,10 @@ export default boot(async ({ router }) => {
     // an unreadable NFC tag or asking the user to configure a wallet.
     if (parsed.type === 'bolt12_offer') {
       walletStore.showUnsupportedBolt12Offer({ route: 'NFC tag' })
+      return
+    }
+    if (parsed.type === 'silent_payment') {
+      walletStore.showUnsupportedSilentPayment({ route: 'NFC tag' })
       return
     }
 

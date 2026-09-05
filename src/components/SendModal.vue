@@ -361,7 +361,7 @@ import { useWalletStore } from '../stores/wallet';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
-import {
+import { isSilentPaymentAddress,
   isSparkAddress,
   isArkadeAddress,
   isBolt12Offer,
@@ -520,6 +520,7 @@ export default {
       const labels = {
         spark: this.$t('Bitcoin'),
         bolt12_offer: this.$t('BOLT12 offer'),
+        silent_payment: this.$t('Silent payment'),
         lightning_invoice: this.$t('Bitcoin'),
         lightning_address: this.$t('Bitcoin'),
         lnurl: this.$t('Bitcoin'),
@@ -537,6 +538,7 @@ export default {
       // glyph (it is a link), phone and Nostr keep their identities.
       const icons = {
         bolt12_offer: 'tabler:bolt',
+        silent_payment: 'tabler:eye-off',
         lightning_invoice: 'tabler:currency-bitcoin',
         lightning_address: 'tabler:currency-bitcoin',
         lnurl: 'tabler:link',
@@ -793,6 +795,7 @@ export default {
     isSuggestibleDestination(text) {
       const paymentType = this.determinePaymentType(text);
       if (paymentType === 'bolt12_offer') return false;
+      if (paymentType === 'silent_payment') return false;
       if (paymentType !== 'unknown') {
         return canWalletPay(this.walletStore.activeWalletType, paymentType);
       }
@@ -1036,6 +1039,8 @@ export default {
       const { cleaned } = this.normalizePaymentInput(data);
       if (!cleaned) return 'unknown';
 
+      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
+      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
       if (isSparkAddress(cleaned)) return 'spark_address';
       if (isArkadeAddress(cleaned)) return 'arkade_address';
       if (isBolt12Offer(cleaned)) return 'bolt12_offer';
@@ -1591,6 +1596,7 @@ export default {
 
 .detected-pill--spark,
 .detected-pill--arkade,
+.detected-pill--silent_payment,
 .detected-pill--bolt12_offer {
   background: rgba(120, 120, 120, 0.12);
   color: var(--text-primary);

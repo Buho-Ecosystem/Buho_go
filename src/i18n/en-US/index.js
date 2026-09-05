@@ -981,6 +981,8 @@ export default {
   "Connected": "Connected",
   "Total Balance": "Total Balance",
   "Online": "Online",
+  "Silent payment": "Silent payment",
+  "This is a Silent Payment address. BuhoGO cannot pay these yet, so no money was sent. Ask the recipient for a Lightning address, an invoice, or a regular Bitcoin address instead.": "This is a Silent Payment address. BuhoGO cannot pay these yet, so no money was sent. Ask the recipient for a Lightning address, an invoice, or a regular Bitcoin address instead.",
   "Offline": "Offline",
   "Use this wallet": "Use this wallet",
   "Reconnecting...": "Reconnecting...",

@@ -36,6 +36,19 @@ export function getUnsupportedBolt12OfferCopy($t = null) {
 }
 
 /**
+ * Copy for a scanned/pasted BIP-352 Silent Payment address. Recognized so
+ * the error can name the format, but not payable: deriving the one-time
+ * output address needs sender-side BIP-352 support none of our rails have.
+ */
+export function getUnsupportedSilentPaymentCopy($t = null) {
+  const t = typeof $t === 'function' ? $t : ((value) => value);
+  return {
+    title: t("This payment request isn't supported yet"),
+    reason: t('This is a Silent Payment address. BuhoGO cannot pay these yet, so no money was sent. Ask the recipient for a Lightning address, an invoice, or a regular Bitcoin address instead.'),
+  };
+}
+
+/**
  * Build a structured payment-error descriptor.
  *
  * The `reasonSource` discriminates how `reason` was produced so the UI

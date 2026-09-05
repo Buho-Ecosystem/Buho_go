@@ -15,6 +15,7 @@
 import { strict as assert } from 'node:assert';
 import { bech32m } from 'bech32';
 import {
+  isSilentPaymentAddress,
   isSparkAddress,
   isArkadeAddress,
   isBolt12Offer,
@@ -62,6 +63,22 @@ test('isBitcoinAddress: accepts bech32 + base58, rejects junk', () => {
 test('isLightningAddress: user@domain only', () => {
   assert.equal(isLightningAddress('alice@example.com'), true);
   assert.equal(isLightningAddress('bc1qsomething'), false);
+});
+
+const SILENT_PAYMENT_ADDR =
+  'sp1qqgf49ckkg60unm3zzzz8zdza696xtp3aj5ylg8q0lv2yku6t67xlsqhmr246e2v72gaz3cvzfnydckq6ca2w8wsvaj60mrqu07a6h5y9xcxygql9';
+
+test('isSilentPaymentAddress: recognizes BIP-352, never Spark', () => {
+  assert.equal(isSilentPaymentAddress(SILENT_PAYMENT_ADDR), true);
+  // The prefix collides with legacy Spark; the payload decides.
+  assert.equal(isSparkAddress(SILENT_PAYMENT_ADDR), false);
+  // A short legacy-style spark string is not a silent payment.
+  assert.equal(isSilentPaymentAddress('sp1abcdef'), false);
+  assert.equal(isSparkAddress('sp1abcdef'), true);
+  // A corrupted checksum is neither.
+  const corrupted = SILENT_PAYMENT_ADDR.slice(0, -1) + 'q';
+  assert.equal(isSilentPaymentAddress(corrupted), false);
+  assert.equal(isSilentPaymentAddress(null), false);
 });
 
 test('isSparkAddress: new + legacy prefixes', () => {

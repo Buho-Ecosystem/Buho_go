@@ -19,6 +19,7 @@ import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
 import {
   buildPaymentError,
   getUnsupportedBolt12OfferCopy,
+  getUnsupportedSilentPaymentCopy,
   getUserFriendlyError,
   getUserFriendlyErrorMessage,
 } from '../utils/userErrors';
@@ -593,6 +594,20 @@ export const useWalletStore = defineStore('wallet', {
      *
      * @param {{route?: string, t?: Function}} [ctx]
      */
+    showUnsupportedSilentPayment(ctx = {}) {
+      const t = typeof ctx.t === 'function'
+        ? ctx.t
+        : i18n.global.t.bind(i18n.global);
+      const copy = getUnsupportedSilentPaymentCopy(t);
+      this.showPaymentError(new Error('Silent Payment address detected'), {
+        context: 'payment',
+        title: copy.title,
+        reason: copy.reason,
+        route: ctx.route || 'Silent Payment address',
+        t,
+      });
+    },
+
     showUnsupportedBolt12Offer(ctx = {}) {
       const t = typeof ctx.t === 'function'
         ? ctx.t

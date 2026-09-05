@@ -4804,6 +4804,17 @@ export default {
         paymentData = this.preferNativeBip21Rail(paymentData);
 
         // Transform the payment data to match expected structure
+        if (paymentData.type === 'silent_payment' && paymentData.data) {
+          // Recognized BIP-352 format, unpayable on every rail we have.
+          // Stop before any provider call with the explanation, exactly
+          // like BOLT12 offers.
+          this.walletStore.showUnsupportedSilentPayment({
+            route: 'Silent Payment address',
+            t: this.$t.bind(this),
+          });
+          return;
+        }
+
         if (paymentData.type === 'bolt12_offer' && paymentData.data) {
           // This is a recognized payment request, but none of our wallet
           // providers can request and pay the BOLT12 invoice behind an offer.
