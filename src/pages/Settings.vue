@@ -46,6 +46,35 @@
             </template>
           </SettingsRow>
 
+          <!--
+            Lightning Address row - Breez engine only. The address is
+            registered server-side against the wallet identity, so it
+            survives reinstall and recovery; the sheet handles claim,
+            copy, and removal. Hidden entirely on the direct engine.
+          -->
+          <SettingsRow
+            v-if="sparkOnBreezEngine"
+            icon="tabler:at"
+            :label="$t('Lightning Address')"
+            :caption-mono="!!activeWalletLightningAddress"
+            :interactive="true"
+            :show-chevron="true"
+            @click="showSparkLnAddressSheet = true"
+          >
+            <template #caption>
+              <template v-if="activeWalletLightningAddress">{{ activeWalletLightningAddress }}</template>
+              <template v-else>{{ $t('Get one to receive payments by name') }}</template>
+            </template>
+            <template v-if="activeWalletLightningAddress" #right>
+              <q-btn
+                flat round dense size="sm"
+                @click.stop="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
+              >
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </q-btn>
+            </template>
+          </SettingsRow>
+
         </template>
 
         <!-- Arkade Wallet -->
@@ -283,6 +312,13 @@
         :create-address="lnAddressPrompt.createAddress"
         @confirm="onLightningAddressConfirm"
         @skip="onLightningAddressSkip"
+      />
+
+      <!-- Breez-engine Spark Lightning address: claim / copy / remove -->
+      <SparkLightningAddressSheet
+        v-if="sparkOnBreezEngine && activeWalletId"
+        v-model="showSparkLnAddressSheet"
+        :wallet-id="activeWalletId"
       />
 
       <!-- ─────────────── PREFERENCES ───────────────
@@ -2125,6 +2161,8 @@ import ArkadeLogo from '../components/ArkadeLogo.vue'
 import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
+import { isBreezEngine } from '../config/breez'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
@@ -2164,6 +2202,7 @@ export default {
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
+    SparkLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
     SettingsSection,
@@ -2182,6 +2221,7 @@ export default {
   data() {
     return {
       showWalletsDialog: false,
+      showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
       // Per-wallet detail sheet (opened from a Manage Wallets row).
       showWalletDetail: false,
@@ -2384,6 +2424,16 @@ export default {
     }
   },
   computed: {
+    /**
+     * Lightning addresses for Spark wallets exist only on the Breez engine
+     * (registered server-side against the wallet identity). The engine is
+     * device-local and read once per page lifetime - flipping it requires
+     * a reconnect anyway.
+     */
+    sparkOnBreezEngine() {
+      return isBreezEngine();
+    },
+
     /**
      * An Arkade wallet's auto-withdraw cannot ride Lightning while the rail
      * is out of service (Boltz retired) - the pill is disabled and existing
@@ -3010,6 +3060,11 @@ export default {
     this.exchangeRateInterval = setInterval(() => {
       this.loadExchangeRates();
     }, 300000); // 5 minutes
+
+    // The Breez lightning address is fetched lazily after connect, so the
+    // cached wallet info can lag one refresh cycle behind. Pull it live so
+    // the row shows the current state on first paint.
+    this.refreshSparkLightningAddress();
 
     // Handle deep link from backup banner (Spark or Arkade — whichever
     // seed wallet still needs its phrase confirmed). The dialog resolves the
@@ -4177,6 +4232,19 @@ export default {
     openWalletDetail(walletId) {
       this.detailWalletId = walletId;
       this.showWalletDetail = true;
+    },
+
+    async refreshSparkLightningAddress() {
+      if (!this.sparkOnBreezEngine || !this.isActiveWalletSpark) return;
+      const provider = this.walletStore.providers[this.activeWalletId];
+      if (!provider?.getLightningAddress) return;
+      try {
+        const info = await provider.getLightningAddress();
+        if (this.walletStore.walletInfos[this.activeWalletId]) {
+          this.walletStore.walletInfos[this.activeWalletId].lightningAddress =
+            info?.lightningAddress || null;
+        }
+      } catch (e) { /* row falls back to the cached value */ }
     },
 
     async copyToClipboard(text, successMessage) {

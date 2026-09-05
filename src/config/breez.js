@@ -27,14 +27,13 @@ const ENGINE_STORAGE_KEY = 'buhoGO_spark_engine';
 export const BREEZ_API_KEY = String(import.meta.env?.VITE_BREEZ_API_KEY || '').trim();
 
 /**
- * Custom domain for Breez-hosted Lightning addresses (user@domain).
- * Empty string keeps the SDK's own default domain, `breez.tips` (verified
- * from defaultConfig('mainnet') at runtime), so addresses mint as
- * user@breez.tips with zero DNS work. A branded domain requires a CNAME to
- * breez.tips plus Breez-side registration against the API key; set it here
- * once provisioned. Changing the domain later changes users' addresses.
+ * Domain for Breez-hosted Lightning addresses (user@domain). BuhoGO's
+ * domain is CNAME'd to breez.tips and registered with Breez against the
+ * API key. Changing this later changes every user's address, so treat it
+ * as permanent. (Empty string would fall back to the SDK default domain,
+ * breez.tips.)
  */
-export const BREEZ_LNURL_DOMAIN = '';
+export const BREEZ_LNURL_DOMAIN = 'btc.mybuho.de';
 
 /**
  * Which engine powers Spark wallets on this device.

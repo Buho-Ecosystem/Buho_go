@@ -3166,4 +3166,20 @@ export default {
   "This payment request is reserved for a different wallet.": "This payment request is reserved for a different wallet.",
   "Unlock your Spark wallet first, then try this payment request again.": "Unlock your Spark wallet first, then try this payment request again.",
   "This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.": "This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.",
+
+  // --- Spark lightning address (Breez engine) ---
+  "Claim address": "Claim address",
+  "Checking availability": "Checking availability",
+  "Taken. Try another name.": "Taken. Try another name.",
+  "Use 3 to 32 lowercase letters or numbers": "Use 3 to 32 lowercase letters or numbers",
+  "Could not check right now. Try again.": "Could not check right now. Try again.",
+  "Pick a name. Payments sent to it arrive in this wallet.": "Pick a name. Payments sent to it arrive in this wallet.",
+  "Payments sent to this address arrive in this wallet. It stays yours after reinstalling or restoring from your recovery phrase.": "Payments sent to this address arrive in this wallet. It stays yours after reinstalling or restoring from your recovery phrase.",
+  "This address stops working right away. The name stays reserved for this wallet.": "This address stops working right away. The name stays reserved for this wallet.",
+  "Remove address": "Remove address",
+  "Lightning address ready": "Lightning address ready",
+  "Lightning address removed": "Lightning address removed",
+  "Could not claim the address. Try again.": "Could not claim the address. Try again.",
+  "Could not remove the address. Try again.": "Could not remove the address. Try again.",
+  "name": "name",
 }
