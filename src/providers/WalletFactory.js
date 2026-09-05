@@ -6,6 +6,8 @@
  */
 
 import { SparkWalletProvider } from './SparkWalletProvider';
+import { BreezSparkWalletProvider } from './BreezSparkWalletProvider';
+import { isBreezEngine } from '../config/breez';
 import { NWCWalletProvider } from './NWCWalletProvider';
 import { LNBitsWalletProvider } from './LNBitsWalletProvider';
 import { ArkadeWalletProvider } from './ArkadeWalletProvider';
@@ -38,14 +40,20 @@ export function createWalletProvider(wallet) {
   const type = wallet.type || inferWalletType(wallet);
 
   switch (type) {
-    case 'spark':
-      return new SparkWalletProvider(wallet.id, {
+    case 'spark': {
+      // Engine switch: Spark wallets run on the direct SDK by default, or on
+      // the Breez SDK when the device opts in. Both derive the identical
+      // wallet from the same mnemonic + account number, and both providers
+      // implement the same contract, so callers never branch on the engine.
+      const SparkEngine = isBreezEngine() ? BreezSparkWalletProvider : SparkWalletProvider;
+      return new SparkEngine(wallet.id, {
         name: wallet.name,
         network: wallet.connectionData?.network || 'MAINNET',
         accountNumber: wallet.connectionData?.accountNumber,
         encryptedMnemonic: wallet.connectionData?.encryptedMnemonic,
         ...wallet
       });
+    }
 
     case 'arkade':
       if (!wallet.connectionData?.encryptedMnemonic) {

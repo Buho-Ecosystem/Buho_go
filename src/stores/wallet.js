@@ -13,6 +13,10 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
+import {
+  deleteWalletStorage as deleteBreezStorage,
+  deleteAllStorage as deleteAllBreezStorage,
+} from '../services/breezSdk';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
@@ -275,15 +279,13 @@ export const useWalletStore = defineStore('wallet', {
      *   2. For NWC wallets only: parse the `lud16` query param from `nwcUrl` as a fallback
      *      so wallets added before lud16 extraction was implemented still light up.
      *
-     * Always returns a validated `user@domain` string or null. Spark wallets don't
-     * support lightning addresses and always return null.
+     * Always returns a validated `user@domain` string or null. Spark wallets
+     * return one only on the Breez engine (address registered against the
+     * wallet identity); on the direct engine they always return null.
      */
     activeWalletLightningAddress: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
       if (!activeWallet) return null;
-
-      // Spark wallets don't have lightning addresses
-      if (activeWallet.type === 'spark') return null;
 
       // Helper: validate lightning address format (user@domain)
       const isValidLnAddress = (addr) => {
@@ -291,6 +293,14 @@ export const useWalletStore = defineStore('wallet', {
         const parts = addr.split('@');
         return parts.length === 2 && parts[0].length > 0 && parts[1].includes('.') && !addr.includes('://');
       };
+
+      // Spark wallets have a lightning address only on the Breez engine
+      // (registered against the wallet identity, surfaced via getInfo into
+      // walletInfos). On the direct engine this is always null.
+      if (activeWallet.type === 'spark') {
+        const breezAddress = state.walletInfos?.[activeWallet.id]?.lightningAddress;
+        return isValidLnAddress(breezAddress) ? breezAddress : null;
+      }
 
       // Helper: extract lud16 from NWC URL string
       const extractLud16FromUrl = (url) => {
@@ -1215,16 +1225,17 @@ export const useWalletStore = defineStore('wallet', {
           wallet.connectionData.encryptedMnemonic
         );
 
-        // Create provider (accountNumber falls back to network default for pre-1.5.0 wallets)
-        const provider = new SparkWalletProvider(walletId, {
-          name: wallet.name,
-          network: wallet.connectionData.network,
-          accountNumber: wallet.connectionData.accountNumber,
-        });
+        // Create provider through the factory so the device's Spark engine
+        // (direct SDK or Breez SDK) decides the class. Both engines derive
+        // the identical wallet from this mnemonic + accountNumber; the full
+        // wallet object rides along so the Breez engine can assert identity
+        // against the stored spark address before going live.
+        const provider = createWalletProvider(wallet);
 
-        // Initialize with mnemonic. getOrCreateWallet (inside) reuses the SDK's
-        // single live instance for this wallet, so calling connectSparkWallet
-        // repeatedly (startup, switch, balance poll, history load) no longer
+        // Initialize with mnemonic. Both engines dedupe live instances per
+        // wallet (the direct SDK inside getOrCreateWallet, the Breez engine
+        // in its instance registry), so calling connectSparkWallet
+        // repeatedly (startup, switch, balance poll, history load) never
         // piles up duplicate event streams. Pass forceReinit only when
         // recovering from a confirmed-dead connection.
         await provider.initializeWithMnemonic(mnemonic, { forceReinit });
@@ -1251,6 +1262,15 @@ export const useWalletStore = defineStore('wallet', {
         // Get info
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
+
+        // Backfill the stored spark address for wallets created before it
+        // was persisted (migration-created entries hold null). It is the
+        // ground truth the Breez engine's identity assertion checks against,
+        // so the first successful connect on any engine records it.
+        if (info?.sparkAddress && !wallet.metadata.sparkAddress) {
+          wallet.metadata.sparkAddress = info.sparkAddress;
+          this.persistState();
+        }
 
       } catch (error) {
         this.connectionStates[walletId] = {
@@ -1915,6 +1935,13 @@ export const useWalletStore = defineStore('wallet', {
           await ArkadeWalletProvider.deleteStorage(walletId);
         }
 
+        // Same for the Breez engine's per-wallet databases: wallet deletion
+        // must not leave payment history behind in IndexedDB. No-op for
+        // wallets that never connected on the Breez engine.
+        if (wallet.type === WALLET_TYPES.SPARK) {
+          try { await deleteBreezStorage(walletId); } catch (e) { /* best-effort */ }
+        }
+
         // If this wallet is in a group, also remove all other group members
         const groupId = wallet.connectionData?.walletGroupId;
         if (groupId) {
@@ -1929,6 +1956,9 @@ export const useWalletStore = defineStore('wallet', {
             delete this.walletInfos[member.id];
             const idx = this.wallets.indexOf(member);
             if (idx !== -1) this.wallets.splice(idx, 1);
+            if (member.type === WALLET_TYPES.SPARK) {
+              try { await deleteBreezStorage(member.id); } catch (e) { /* best-effort */ }
+            }
             const autoWithdrawStore = useAutoWithdrawStore();
             await autoWithdrawStore.removeConfig(member.id);
           }
@@ -3101,6 +3131,10 @@ export const useWalletStore = defineStore('wallet', {
       this.$reset();
       localStorage.removeItem(STORAGE_KEYS.WALLET_STORE);
       localStorage.removeItem(STORAGE_KEYS.LEGACY_STATE);
+
+      // Full reset also removes every Breez-engine database (fire-and-forget;
+      // clearAll is sync by contract and the deletes are independent).
+      deleteAllBreezStorage().catch(() => {});
     },
 
     // ─── Kiosk Mode ───────────────────────────────────────────

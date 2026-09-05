@@ -92,6 +92,13 @@ export default defineConfig((ctx) => {
         // Disable crossorigin attribute on script/link tags — can cause loading issues in Capacitor Android WebView
         viteConf.build = viteConf.build || {}
         viteConf.build.crossOriginLoading = false
+
+        // The Breez SDK ships a WASM module loaded via its own storage-global
+        // wrapper; Vite's dependency optimizer must not pre-bundle it or the
+        // wasm URL resolution and IndexedDB globals break at runtime.
+        viteConf.optimizeDeps = viteConf.optimizeDeps || {}
+        viteConf.optimizeDeps.exclude = viteConf.optimizeDeps.exclude || []
+        viteConf.optimizeDeps.exclude.push('@breeztech/breez-sdk-spark')
       },
       // viteVuePluginOptions: {},
 
@@ -198,7 +205,12 @@ export default defineConfig((ctx) => {
       // useCredentialsForManifestTag: true,
       // injectPwaMetaTags: false,
       // extendPWACustomSWConf (esbuildConf) {},
-      // extendGenerateSWOptions (cfg) {},
+      extendGenerateSWOptions (cfg) {
+        // Workbox precaches nothing over 2 MiB by default, which silently
+        // drops the ~12.5 MB Breez SDK wasm and breaks offline use on the
+        // Breez engine. Raise the cap so the wasm ships in the precache.
+        cfg.maximumFileSizeToCacheInBytes = 15 * 1024 * 1024
+      },
       // extendInjectManifestOptions (cfg) {}
     },
 
